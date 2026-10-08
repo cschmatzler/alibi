@@ -361,6 +361,9 @@ impl<S: AuthSchema> DeviceCodeStore for PluginStore<S> {
     async fn create_device_code(&self, input: CreateDeviceCode) -> AuthResult<DeviceCode> {
         self.inner.create_device_code(input).await
     }
+    async fn create_device_code_with_fields(&self, input: CreateDeviceCode, fields: serde_json::Map<String, serde_json::Value>) -> AuthResult<DeviceCode> {self.inner.create_device_code_with_fields(input, fields).await}
+    async fn device_code_fields(&self, id: &str) -> AuthResult<serde_json::Map<String, serde_json::Value>> {self.inner.device_code_fields(id).await}
+    async fn consume_device_code(&self, id: &str, status: &str, ownership: &serde_json::Map<String, serde_json::Value>) -> AuthResult<Option<DeviceCode>> {self.inner.consume_device_code(id, status, ownership).await}
     async fn get_device_code_by_device_code(
         &self,
         device_code: &str,

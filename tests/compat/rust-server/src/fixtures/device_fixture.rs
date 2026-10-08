@@ -43,14 +43,10 @@ struct GeneratorSelector { client_id: String }
 struct DeviceOwner { device_code: String, user_id: String }
 pub(crate) fn router(database: DatabaseConnection) -> Router<Arc<BetterAuth<TestSchema>>> {
     let read_database = database.clone();
-    let grant_database=database.clone();
+
     let generator_database = database.clone();
     let owner_database = database.clone();
-    Router::new().route("/__test/device-grant/control",get(move |Query(query):Query<std::collections::HashMap<String,String>>|{let database=grant_database.clone();async move {
-      let rows=device_code::Entity::find().filter(device_code::Column::DeviceCode.eq(query.get("deviceCode").cloned().unwrap_or_default())).all(&database).await.unwrap();
-      // Native currently has no grant configuration, callbacks, or grant-owned columns.
-      Json(json!({"rows":rows.iter().map(|row|json!({"id":row.id,"deviceCode":row.device_code,"userCode":row.user_code,"userId":row.user_id,"status":row.status,"clientId":row.client_id})).collect::<Vec<_>>(),"events":[],"receipts":[]}))
-    }})).route("/__test/device-generator-state", get(move |Query(body): Query<GeneratorSelector>| { let database = generator_database.clone(); async move {
+    Router::new().merge(super::application_device_grant_fixture::router(database.clone())).route("/__test/device-generator-state", get(move |Query(body): Query<GeneratorSelector>| { let database = generator_database.clone(); async move {
         match device_code::Entity::find().filter(device_code::Column::ClientId.eq(body.client_id)).all(&database).await {
             Ok(rows) => { let mut grants: Vec<Value> = rows.into_iter().map(|row| json!({"deviceCode":row.device_code,"userCode":row.user_code,"userId":row.user_id,"status":row.status,"clientId":row.client_id,"scope":row.scope})).collect(); grants.sort_by(|a,b| a["deviceCode"].as_str().cmp(&b["deviceCode"].as_str())); (StatusCode::OK,Json(json!({"events": std::mem::take(&mut *GENERATOR_EVENTS.lock().unwrap()), "grants":grants}))) },
             Err(error) => (StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"message":error.to_string()})))
@@ -80,6 +76,7 @@ pub(crate) async fn profiles(
     base: &AuthConfig,
     database: DatabaseConnection,
 ) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
+    super::application_device_grant_fixture::initialize(&database).await?;
     let mut router = Router::new();
     for name in [
         "device-collision-retry",
@@ -107,7 +104,7 @@ pub(crate) async fn profiles(
     ] {
         let mut plugin = DeviceAuthorizationPlugin::new();
         match name {
-            "device-grant" => { plugin = plugin.interval(Duration::zero()); }
+            "device-grant" => { plugin = plugin.interval(Duration::zero()).grant(super::application_device_grant_fixture::Grant); }
             "device-collision-retry" | "device-collision-exhaustion" => {
                 let device_index = Arc::new(std::sync::atomic::AtomicUsize::new(0));
                 let user_index = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -200,8 +197,7 @@ pub(crate) async fn profiles(
         }
         let path = format!("/__test/profiles/{name}/api/auth");
         let config = base.clone().base_path(&path);
-        let auth = Arc::new(
-            AuthBuilder::<TestSchema>::new(config.clone())
+        let mut builder = AuthBuilder::<TestSchema>::new(config.clone())
                 .store(crate::backend::store::<TestSchema>(
                     config,
                     database.clone(),
@@ -214,10 +210,9 @@ pub(crate) async fn profiles(
                 )
                 .plugin(SessionManagementPlugin::new())
             .plugin(alibi::plugins::open_api::OpenApiPlugin::new())
-                .plugin(plugin)
-                .build()
-                .await?,
-        );
+                .plugin(plugin);
+        if name=="device-grant" {builder=builder.plugin(super::application_device_grant_fixture::ApplicationToken(database.clone()));}
+        let auth=Arc::new(builder.build().await?);
         let routes: Router<Arc<BetterAuth<TestSchema>>> =
             auth.clone().axum_router().with_state(auth);
         router = router.nest(&path, routes);

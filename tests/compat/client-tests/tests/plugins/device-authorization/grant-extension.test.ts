@@ -85,6 +85,7 @@ compatScenario(
     const nonce = "application-owned-nonce";
     const issued = await issue(ctx, owner, nonce);
     const code = issued.data.device_code;
+    const persistedRowId = (await state(ctx, code)).rows[0].id;
     const guest = actor(ctx, "guest");
     const guestView = await guest.$fetch<any>("/device", {
       method: "GET",
@@ -123,6 +124,7 @@ compatScenario(
     const after = await state(ctx, code);
     expect(after.rows).toEqual([]);
     expect(after.receipts).toHaveLength(1);
+    expect(after.receipts[0].rowId).toBe(persistedRowId);
     expect(after.receipts[0]).toMatchObject({
       userId: signup.data!.user.id,
       audience: "application-api",
@@ -149,7 +151,7 @@ compatScenario(
       approve,
       standalone,
       completed,
-      after,
+      after: { ...after, receipts: after.receipts.map((receipt: any) => ({ ...receipt, rowId: { id: receipt.rowId } })) },
       replay,
     });
   },

@@ -1,3 +1,5 @@
+mod grant;
+pub use grant::*;
 mod http;
 mod issuance;
 mod redemption;
@@ -83,6 +85,7 @@ struct DeviceAuthorizationConfig {
     validate_client: Option<Arc<ValidateClientCallback>>,
     on_device_auth_request: Option<Arc<DeviceAuthRequestCallback>>,
     verification_uri: Option<String>,
+    grant: Option<Arc<dyn DeviceAuthorizationGrant>>,
 }
 
 impl Default for DeviceAuthorizationConfig {
@@ -97,6 +100,7 @@ impl Default for DeviceAuthorizationConfig {
             validate_client: None,
             on_device_auth_request: None,
             verification_uri: None,
+            grant: None,
         }
     }
 }
@@ -330,11 +334,11 @@ alibi_core::impl_auth_plugin! {
     }
     extra {
     fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
-        crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self))
+        self.grant_openapi(crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self)))
     }
 
     fn openapi_metadata(&self, ctx: &alibi_core::AuthInitContext<S>) -> alibi_core::PluginOpenApiMetadata {
-        crate::metadata::instance_plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self), ctx)
+        self.grant_openapi(crate::metadata::instance_plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self), ctx))
     }
 
         fn rate_limits(&self) -> Vec<alibi_core::PluginRateLimit> {

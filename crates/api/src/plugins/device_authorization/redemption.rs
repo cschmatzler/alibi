@@ -18,6 +18,11 @@ impl DeviceAuthorizationPlugin {
             return device_error_response(400, "invalid_grant", INVALID_DEVICE_CODE);
         };
 
+        if let Some(grant)=&self.config.grant {
+            let record=DeviceGrantRecord {fields:ctx.database.device_code_fields(&device_code.id).await?, device_code:device_code.clone()};
+            if let Err(error)=grant.assert_session_redemption(&record).await {return error.into_response();}
+        }
+
         if let Some(client_id) = device_code.client_id.as_deref()
             && client_id != body.client_id
         {

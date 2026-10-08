@@ -1501,6 +1501,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let invitation_lifecycle_reset = invitation_lifecycle_reset.clone();
                 let anonymous_reset = anonymous_reset.clone();
                 async move {
+                    if let Err(error)=fixtures::application_device_grant_fixture::reset(&database).await {return (axum::http::StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"message":error.to_string()})));}
                     api_key_storage_reset.reset().await;
                     railway_reset.reset().await;
                     reddit_reset.reset().await;
