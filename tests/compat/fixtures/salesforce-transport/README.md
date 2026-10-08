@@ -1,0 +1,3 @@
+This public certificate and private key belong exclusively to the local compatibility HTTPS transport. They authenticate the three synthetic transport destinations; they are not credentials for Salesforce. The native fixture process trusts this certificate through its process-owned SSL_CERT_FILE. The reference fixture supplies the same trust anchor to Bun's actual proxy fetch.
+
+Provider authorization, token, and captured user-info URLs are left intact. The CONNECT proxy terminates the TLS connection locally and records the actual HTTP destination before responding with deterministic OAuth inputs. No DNS or host-file changes and no external Salesforce connections are required.

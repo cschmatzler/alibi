@@ -7,7 +7,12 @@ import { multiSessionClient } from "better-auth/client/plugins";
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 
-type Profile = "bearer-default" | "bearer-signed" | "bearer-composition";
+type Profile =
+  | "bearer-default"
+  | "bearer-signed"
+  | "bearer-composition"
+  | "bearer-renamed-cookie"
+  | "bearer-secure-cookie";
 
 function client(ctx: ScenarioContext, profile: Profile, actor: string) {
   return createAuthClient({
@@ -260,5 +265,119 @@ for (const profile of ["bearer-default", "bearer-signed", "bearer-composition"] 
       };
     },
     ["POST /sign-up/email", "POST /sign-in/email", "GET /get-session", "POST /sign-out"],
+  );
+}
+
+for (const profile of ["bearer-renamed-cookie", "bearer-secure-cookie"] as const) {
+  compatScenario(
+    `bearer configured cookies: ${profile} selects the actual owner and issuance receipt`,
+    async (ctx) => {
+      const owner = client(ctx, profile, "configured-owner");
+      const foreign = client(ctx, profile, "configured-foreign");
+      const cookieName =
+        profile === "bearer-renamed-cookie"
+          ? "configured-bearer-token"
+          : "__Secure-bearer-app.session_token";
+      let issued: { token: string | null; expose: string | null; cookies: string[] } | undefined;
+      let foreignIssued: typeof issued;
+      function capture(response: Response) {
+        return { ...receipt(response), cookies: response.headers.getSetCookie() };
+      }
+      const first = await owner.signUp.email(
+        {
+          email: ctx.uniqueEmail("configured-bearer"),
+          name: "Configured Bearer",
+          password: "password123",
+        },
+        {
+          onResponse({ response }) {
+            issued = capture(response);
+          },
+        },
+      );
+      const other = await foreign.signUp.email(
+        {
+          email: ctx.uniqueEmail("configured-bearer-foreign"),
+          name: "Foreign Bearer",
+          password: "password123",
+        },
+        {
+          onResponse({ response }) {
+            foreignIssued = capture(response);
+          },
+        },
+      );
+      expect(first.error).toBeNull();
+      expect(other.error).toBeNull();
+      for (const delivered of [issued!, foreignIssued!]) {
+        expect(delivered.token).toBeTruthy();
+        const sessionCookies = delivered.cookies.filter((cookie) =>
+          cookie.startsWith(`${cookieName}=`),
+        );
+        expect(sessionCookies).toHaveLength(1);
+        const rawValue = sessionCookies[0]!.split(";", 1)[0]!.slice(cookieName.length + 1);
+        expect(decodeURIComponent(rawValue)).toBe(delivered.token!);
+        expect(delivered.expose?.split(", ")).toContain("set-auth-token");
+        expect(
+          delivered.cookies.some((cookie) =>
+            /^(?:__Secure-)?better-auth\.session_token=/.test(cookie),
+          ),
+        ).toBe(false);
+        if (profile === "bearer-secure-cookie") expect(sessionCookies[0]).toContain("Secure");
+      }
+      const ownerId = first.data!.user.id;
+      const foreignId = other.data!.user.id;
+      expect((await owner.getSession()).data?.user.id).toBe(ownerId);
+      expect((await foreign.getSession()).data?.user.id).toBe(foreignId);
+      const before = await ctx.readUserState({ userId: ownerId });
+      const foreignBefore = await ctx.readUserState({ userId: foreignId });
+      const results = [];
+      for (const authorization of [`Bearer ${issued!.token}`, `Bearer ${first.data!.token}`]) {
+        const fresh = client(ctx, profile, `configured-fresh-${results.length}`);
+        const current = await fresh.getSession({ fetchOptions: { headers: { authorization } } });
+        expect(current.data?.user.id).toBe(ownerId);
+        const protectedCall = await fresh.listSessions({
+          fetchOptions: { headers: { authorization } },
+        });
+        expect(protectedCall.error).toBeNull();
+        expect(protectedCall.data?.map((session) => session.userId)).toEqual([ownerId]);
+        const precedence = await foreign.getSession({
+          fetchOptions: { headers: { authorization } },
+        });
+        expect(precedence.data?.user.id).toBe(ownerId);
+        const invalid = await foreign.getSession({
+          fetchOptions: { headers: { authorization: "Bearer invalid.signature" } },
+        });
+        expect(invalid.data?.user.id).toBe(foreignId);
+        expect(await ctx.readUserState({ userId: ownerId })).toEqual(before);
+        expect(await ctx.readUserState({ userId: foreignId })).toEqual(foreignBefore);
+        results.push({ current, protectedCall, precedence, invalid });
+      }
+      let signedOut: ReturnType<typeof capture> | undefined;
+      const signOut = await client(ctx, profile, "configured-signout").signOut(
+        {},
+        {
+          headers: { authorization: `Bearer ${issued!.token}` },
+          onResponse({ response }) {
+            signedOut = capture(response);
+          },
+        },
+      );
+      expect(signOut.error).toBeNull();
+      expect(signedOut?.token).toBeNull();
+      expect(
+        signedOut?.cookies.some(
+          (cookie) => cookie.startsWith(`${cookieName}=`) && /Max-Age=0/i.test(cookie),
+        ),
+      ).toBe(true);
+      expect(
+        ((await ctx.readUserState({ userId: ownerId })) as { sessions: unknown[] }).sessions,
+      ).toEqual([]);
+      expect((await owner.getSession()).data).toBeNull();
+      expect((await foreign.getSession()).data?.user.id).toBe(foreignId);
+      expect(await ctx.readUserState({ userId: foreignId })).toEqual(foreignBefore);
+      return ctx.snapshot({ first, other, issued, foreignIssued, results, signOut, signedOut });
+    },
+    ["GET /get-session", "GET /list-sessions", "POST /sign-out"],
   );
 }

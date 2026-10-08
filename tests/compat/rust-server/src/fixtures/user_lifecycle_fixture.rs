@@ -196,6 +196,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
     let mut router = Router::new();
     let mut profiles = HashMap::new();
     for name in [
+        "disabled",
         "default",
         "required",
         "delivery",
@@ -267,9 +268,9 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
         let mail = name.starts_with("delete-")
             && !["delete-policy", "delete-no-freshness"].contains(&name);
         let mut user_plugin = UserManagementPlugin::new()
-            .change_email_enabled(true)
+            .change_email_enabled(name != "disabled")
             .update_without_verification(name.starts_with("promotion"))
-            .delete_user_enabled(true)
+            .delete_user_enabled(name != "disabled")
             .require_delete_verification(false)
             .delete_token_expires_in(Duration::seconds(match name {
                 "delete-zero" => 0,
