@@ -142,6 +142,7 @@ impl SqlxPool {
         .map_err(map_sqlx_err)?;
         Ok(SqlxTransaction {
             engine: self.engine(),
+            config: None,
             inner: tokio::sync::Mutex::new(Some(inner)),
         })
     }
@@ -163,6 +164,7 @@ pub(crate) enum TransactionKind {
 #[derive(Debug)]
 pub struct SqlxTransaction {
     engine: Engine,
+    pub(crate) config: Option<std::sync::Arc<alibi_core::config::AuthConfig>>,
     inner: tokio::sync::Mutex<Option<TransactionKind>>,
 }
 
@@ -260,36 +262,86 @@ scalar!(for<'r> Decode<'r, Postgres> + Type<Postgres>);
 
 /// Where a statement runs: the shared pool or an open transaction.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum Exec<'a> {
+enum ExecConnection<'a> {
     Pool(&'a SqlxPool),
     Tx(&'a SqlxTransaction),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Exec<'a> {
+    connection: ExecConnection<'a>,
+    config: Option<&'a alibi_core::config::AuthConfig>,
+}
+impl<'a> Exec<'a> {
+    #[allow(non_snake_case)]
+    pub(crate) const fn Pool(pool: &'a SqlxPool) -> Self {
+        Self {
+            connection: ExecConnection::Pool(pool),
+            config: None,
+        }
+    }
+    #[allow(non_snake_case)]
+    pub(crate) fn Tx(tx: &'a SqlxTransaction) -> Self {
+        Self {
+            connection: ExecConnection::Tx(tx),
+            config: tx.config.as_deref(),
+        }
+    }
+    pub(crate) const fn with_config(mut self, config: &'a alibi_core::config::AuthConfig) -> Self {
+        self.config = Some(config);
+        self
+    }
+    pub(crate) fn schema_name(self) -> Option<&'a str> {
+        self.config
+            .and_then(|config| config.advanced.database.schema_name.as_deref())
+    }
+    fn qualify(self, mut sql: String) -> AuthResult<String> {
+        if let Some(mapping) = self.config.and_then(|config| config.advanced.database.two_factor.as_ref()) {
+            sql = alibi_core::database_sql::map_two_factor(&sql, mapping)?;
+        }
+        if self.engine() == Engine::Postgres {
+            if let Some(schema) = self
+                .config
+                .and_then(|config| config.advanced.database.schema_name.as_deref())
+            {
+                return alibi_core::database_sql::qualify_schema(&sql, schema);
+            }
+        }
+        Ok(sql)
+    }
 }
 
 /// Bind `$sql` for the engine behind `$exec` and run `$body` with `$query`
 /// (text and arguments) on `$executor`.
 macro_rules! dispatch {
     ($exec:expr, $sql:expr, |$query:ident, $executor:ident| $body:expr) => {{
+        let exec = $exec;
         let (text, args) = $sql.into_parts();
-        match $exec {
+        let text = exec.qualify(text)?;
+        match exec.connection {
             #[cfg(feature = "sqlite")]
-            Exec::Pool(SqlxPool::Sqlite(pool)) => match crate::sql::sqlite_arguments(args) {
-                Ok(arguments) => {
-                    let $executor = pool;
-                    let $query = (AssertSqlSafe(text), arguments);
-                    $body
+            ExecConnection::Pool(SqlxPool::Sqlite(pool)) => {
+                match crate::sql::sqlite_arguments(args) {
+                    Ok(arguments) => {
+                        let $executor = pool;
+                        let $query = (AssertSqlSafe(text), arguments);
+                        $body
+                    }
+                    Err(error) => Err(sqlx::Error::Encode(error)),
                 }
-                Err(error) => Err(sqlx::Error::Encode(error)),
-            },
+            }
             #[cfg(feature = "postgres")]
-            Exec::Pool(SqlxPool::Postgres(pool)) => match crate::sql::postgres_arguments(args) {
-                Ok(arguments) => {
-                    let $executor = pool;
-                    let $query = (AssertSqlSafe(text), arguments);
-                    $body
+            ExecConnection::Pool(SqlxPool::Postgres(pool)) => {
+                match crate::sql::postgres_arguments(args) {
+                    Ok(arguments) => {
+                        let $executor = pool;
+                        let $query = (AssertSqlSafe(text), arguments);
+                        $body
+                    }
+                    Err(error) => Err(sqlx::Error::Encode(error)),
                 }
-                Err(error) => Err(sqlx::Error::Encode(error)),
-            },
-            Exec::Tx(transaction) => {
+            }
+            ExecConnection::Tx(transaction) => {
                 let mut guard = transaction.inner.lock().await;
                 match guard.as_mut() {
                     #[cfg(feature = "sqlite")]
@@ -323,9 +375,9 @@ macro_rules! dispatch {
 
 impl Exec<'_> {
     pub(crate) const fn engine(self) -> Engine {
-        match self {
-            Self::Pool(pool) => pool.engine(),
-            Self::Tx(transaction) => transaction.engine,
+        match self.connection {
+            ExecConnection::Pool(pool) => pool.engine(),
+            ExecConnection::Tx(transaction) => transaction.engine,
         }
     }
 
@@ -373,25 +425,38 @@ impl Exec<'_> {
 
     /// Run a fixed multi-statement script without bound arguments.
     pub(crate) async fn execute_script(self, script: &'static str) -> AuthResult<()> {
-        let result = match self {
+        let script = self.qualify(script.to_owned())?;
+        let result = match self.connection {
             #[cfg(feature = "sqlite")]
-            Exec::Pool(SqlxPool::Sqlite(pool)) => {
-                sqlx::raw_sql(script).execute(pool).await.map(drop)
+            ExecConnection::Pool(SqlxPool::Sqlite(pool)) => {
+                sqlx::raw_sql(AssertSqlSafe(script.clone()))
+                    .execute(pool)
+                    .await
+                    .map(drop)
             }
             #[cfg(feature = "postgres")]
-            Exec::Pool(SqlxPool::Postgres(pool)) => {
-                sqlx::raw_sql(script).execute(pool).await.map(drop)
+            ExecConnection::Pool(SqlxPool::Postgres(pool)) => {
+                sqlx::raw_sql(AssertSqlSafe(script.clone()))
+                    .execute(pool)
+                    .await
+                    .map(drop)
             }
-            Exec::Tx(transaction) => {
+            ExecConnection::Tx(transaction) => {
                 let mut guard = transaction.inner.lock().await;
                 match guard.as_mut() {
                     #[cfg(feature = "sqlite")]
                     Some(TransactionKind::Sqlite(open)) => {
-                        sqlx::raw_sql(script).execute(&mut **open).await.map(drop)
+                        sqlx::raw_sql(AssertSqlSafe(script.clone()))
+                            .execute(&mut **open)
+                            .await
+                            .map(drop)
                     }
                     #[cfg(feature = "postgres")]
                     Some(TransactionKind::Postgres(open)) => {
-                        sqlx::raw_sql(script).execute(&mut **open).await.map(drop)
+                        sqlx::raw_sql(AssertSqlSafe(script.clone()))
+                            .execute(&mut **open)
+                            .await
+                            .map(drop)
                     }
                     None => Err(sqlx::Error::PoolClosed),
                 }

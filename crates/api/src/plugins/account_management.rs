@@ -1,4 +1,5 @@
 use super::StatusResponse;
+use super::authentication_helpers::{JsonField, RequestBody, parse_body};
 use alibi_core::entity::{AuthAccount, AuthUser};
 use alibi_core::{AuthContext, AuthError, AuthResult};
 use alibi_core::{AuthRequest, AuthResponse};
@@ -21,6 +22,10 @@ pub struct AccountManagementConfig {
 struct UnlinkAccountRequest {
     #[serde(rename = "accountId")]
     account_id: String,
+}
+
+impl RequestBody for UnlinkAccountRequest {
+    const FIELDS: &'static [JsonField] = &[JsonField::string("accountId", true)];
 }
 
 alibi_core::impl_auth_plugin! {
@@ -64,7 +69,7 @@ impl AccountManagementPlugin {
     ) -> AuthResult<AuthResponse> {
         let (user, _session) = ctx.require_cached_session(req).await?;
 
-        let unlink_req: UnlinkAccountRequest = match alibi_core::validate_request_body(req) {
+        let unlink_req: UnlinkAccountRequest = match parse_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };

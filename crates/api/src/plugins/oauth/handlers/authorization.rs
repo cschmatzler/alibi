@@ -1,3 +1,14 @@
+const RESERVED_AUTHORIZATION_PARAMS: [&str; 8] = [
+    "state",
+    "client_id",
+    "redirect_uri",
+    "response_type",
+    "code_challenge",
+    "code_challenge_method",
+    "nonce",
+    "scope",
+];
+
 use super::*;
 pub(in crate::plugins::oauth::handlers) fn generate_pkce() -> (String, String) {
     const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
@@ -184,6 +195,9 @@ pub(in crate::plugins::oauth::handlers) fn build_authorization_url(
         set_authorization_param(&mut url, "login_hint", login_hint);
     }
     for (key, value) in &provider.authorization_params {
+        if RESERVED_AUTHORIZATION_PARAMS.contains(&key.as_str()) {
+            continue;
+        }
         set_authorization_param(&mut url, key, value);
     }
     if let Some(params) = additional_params {
@@ -266,23 +280,17 @@ pub(in crate::plugins::oauth::handlers) fn set_authorization_param(
 pub(in crate::plugins::oauth::handlers) fn validate_authorization_params(
     params: Option<&std::collections::BTreeMap<String, String>>,
 ) -> AuthResult<()> {
-    const RESERVED: [&str; 8] = [
-        "state",
-        "client_id",
-        "redirect_uri",
-        "response_type",
-        "code_challenge",
-        "code_challenge_method",
-        "nonce",
-        "scope",
-    ];
-    if params.is_some_and(|params| params.keys().any(|key| RESERVED.contains(&key.as_str()))) {
+    if params.is_some_and(|params| {
+        params
+            .keys()
+            .any(|key| RESERVED_AUTHORIZATION_PARAMS.contains(&key.as_str()))
+    }) {
         return Err(AuthError::Api {
             status: 400,
             code: Some("VALIDATION_ERROR".into()),
             message: format!(
                 "[body.additionalParams] additionalParams cannot include reserved OAuth parameters: {}",
-                RESERVED.join(", ")
+                RESERVED_AUTHORIZATION_PARAMS.join(", ")
             ),
         });
     }
