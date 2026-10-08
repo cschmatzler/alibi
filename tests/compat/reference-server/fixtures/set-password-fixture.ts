@@ -16,7 +16,12 @@ export function createSetPasswordFixture(database: Database, options: BetterAuth
   let watchUserId = "";
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
 
-  for (const name of ["set-password-default", "set-password-policy", "set-password-cache"]) {
+  for (const name of [
+    "set-password-default",
+    "set-password-policy",
+    "set-password-cache",
+    "set-password-schema",
+  ]) {
     profiles.set(
       name,
       betterAuth({
@@ -98,7 +103,11 @@ export function createSetPasswordFixture(database: Database, options: BetterAuth
 
               return hash;
             },
-            verify: verifyPassword,
+            async verify(input) {
+              if (mode === "schema-observe")
+                events.push({ stage: "verify-enter", password: input.password });
+              return verifyPassword(input);
+            },
           },
         },
       }),

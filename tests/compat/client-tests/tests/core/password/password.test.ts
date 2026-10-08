@@ -272,3 +272,90 @@ compatScenario(
   },
   ["POST /request-password-reset", "GET /reset-password/{}"],
 );
+
+compatScenario(
+  "expired stored reset proof replaces callback error without changing credentials",
+  async (ctx) => {
+    const owner = ctx.actor();
+    const email = ctx.uniqueEmail("expired-reset-owner");
+    const signup = await owner.client.signUp.email({
+      email,
+      password: "password123",
+      name: "Expired reset owner",
+    });
+    expect(signup.error).toBeNull();
+    const before = await ctx.readUserState({ userId: signup.data!.user.id });
+    const readSql = async () =>
+      (await (await fetch(`${ctx.baseURL}/__test/provider-batch/sql-state`)).json()) as Record<
+        string,
+        any[]
+      >;
+    const physical = await readSql();
+    const source = "verification" in physical;
+    const callbackURL = "/done?error=old&keep=a%2Bb#details";
+    expect(
+      (await owner.client.requestPasswordReset({ email, redirectTo: callbackURL })).error,
+    ).toBeNull();
+    const delivery = await ctx.rawRequest({
+      path: `/__test/reset-password-token?email=${encodeURIComponent(email)}`,
+    });
+    const record = deliveredReset.parse(delivery.body);
+    const identifier = `reset-password:${record.token}`;
+    const expiredAt = "2020-01-01T00:00:00.000Z";
+    const expire = await ctx.rawRequest({
+      path: "/__test/verification-state",
+      method: "POST",
+      json: { action: "expire", identifier, expiresAt: expiredAt },
+    });
+    expect(expire.status).toBe(200);
+    const proofBefore = await ctx.readVerificationState({ identifier });
+    expect(proofBefore).toMatchObject([
+      { identifier, value: signup.data!.user.id, expiresAt: expiredAt },
+    ]);
+    const rejected = await ctx.rawRequest({ path: record.url, redirect: "manual" });
+    expect(rejected.status).toBe(302);
+    const expected = new URL(callbackURL, ctx.baseURL);
+    expected.searchParams.set("error", "INVALID_TOKEN");
+    expect(rejected.location).toBe(expected.href);
+    const proofAfter = await ctx.readVerificationState({ identifier });
+    expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(before);
+    const sqlAfter = await readSql();
+    expect(sqlAfter[source ? "account" : "accounts"]).toEqual(
+      physical[source ? "account" : "accounts"],
+    );
+    expect(sqlAfter[source ? "session" : "sessions"]).toEqual(
+      physical[source ? "session" : "sessions"],
+    );
+    expect(
+      (await owner.client.requestPasswordReset({ email, redirectTo: callbackURL })).error,
+    ).toBeNull();
+    const freshDelivery = await ctx.rawRequest({
+      path: `/__test/reset-password-token?email=${encodeURIComponent(email)}`,
+    });
+    const fresh = deliveredReset.parse(freshDelivery.body);
+    expect(fresh.token).not.toBe(record.token);
+    const accepted = await ctx.rawRequest({ path: fresh.url, redirect: "manual" });
+    expect(accepted.status).toBe(302);
+    expect(new URL(accepted.location!, ctx.baseURL).searchParams.get("token")).toBe(fresh.token);
+    const reset = await owner.client.resetPassword({
+      token: fresh.token,
+      newPassword: "replacementPassword123",
+    });
+    expect(reset.error).toBeNull();
+    const login = await ctx
+      .actor("fresh-login")
+      .client.signIn.email({ email, password: "replacementPassword123" });
+    expect(login.data?.user.id).toBe(signup.data!.user.id);
+    return {
+      delivery,
+      rejected,
+      proofBefore: ctx.snapshot(proofBefore),
+      proofAfter: ctx.snapshot(proofAfter),
+      freshDelivery,
+      accepted,
+      reset: ctx.snapshot(reset),
+      login: ctx.snapshot(login),
+    };
+  },
+  ["GET /reset-password/{}", "POST /request-password-reset", "POST /reset-password"],
+);

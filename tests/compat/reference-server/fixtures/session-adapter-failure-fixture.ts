@@ -26,24 +26,35 @@ export async function createSessionAdapterFailureFixture(
     if (mode) events.push(operation);
     if (mode === operation) throw new Error("application-selected-session-adapter-failure");
   }
-  const auth = betterAuth({
-    ...base,
-    basePath: "/__test/profiles/session-adapter-failure/api/auth",
-    plugins: [],
-    database: (options) => {
-      const adapter = factory(options);
-      return {
-        ...adapter,
-        async findOne(args) {
-          if (args.model === "session") check("get_session");
-          if (args.model === "user" && args.where.some((condition) => condition.field === "email"))
-            check("get_user_by_email");
-          return adapter.findOne(args);
-        },
-        async findMany(args) {
-          if (args.model === "session") check("get_user_sessions");
-          return adapter.findMany(args);
-        },
+  const profiles = new Map(
+    ["session-adapter-failure", "password-reset-no-sender"].map(
+      (profile) =>
+        [
+          profile,
+          betterAuth({
+            ...base,
+            basePath: `/__test/profiles/${profile}/api/auth`,
+            ...(profile === "password-reset-no-sender"
+              ? { emailAndPassword: { ...base.emailAndPassword, sendResetPassword: undefined } }
+              : {}),
+            plugins: [],
+            database: (options) => {
+              const adapter = factory(options);
+              return {
+                ...adapter,
+                async findOne(args) {
+                  if (args.model === "session") check("get_session");
+                  if (
+                    args.model === "user" &&
+                    args.where.some((condition) => condition.field === "email")
+                  )
+                    check("get_user_by_email");
+                  return adapter.findOne(args);
+                },
+                async findMany(args) {
+                  if (args.model === "session") check("get_user_sessions");
+                  return adapter.findMany(args);
+                },
         async delete(args) {
           if (args.model === "session") check("delete_session");
           if (mode === "parallel" && args.model === "session") {
@@ -61,15 +72,18 @@ export async function createSessionAdapterFailureFixture(
           }
           return adapter.delete(args);
         },
-        async deleteMany(args) {
-          if (args.model === "session") check("delete_user_sessions");
-          return adapter.deleteMany(args);
-        },
-      };
-    },
-  });
+                async deleteMany(args) {
+                  if (args.model === "session") check("delete_user_sessions");
+                  return adapter.deleteMany(args);
+                },
+              };
+            },
+          }),
+        ] as const,
+    ),
+  );
   return {
-    auth,
+    profiles,
     control(body: { mode?: string; operation?: string; heldToken?: string; rejectToken?: string }) {
       if (body.operation) {
         if (body.operation === "arm") {
