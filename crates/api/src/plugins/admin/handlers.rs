@@ -361,6 +361,22 @@ pub(in crate::plugins) async fn update_user_core(
         update.role = Some(joined_role(&role));
     }
 
+    if ["banned", "banReason", "banExpires"]
+        .iter()
+        .any(|key| body.data.contains_key(*key))
+    {
+        let permissions =
+            std::collections::HashMap::from([("user".to_owned(), vec!["ban".to_owned()])]);
+        if !has_permission(
+            Some(acting_user.id.as_str()),
+            acting_user.role.as_deref(),
+            config,
+            &permissions,
+        ) {
+            return Err(AuthError::forbidden("You are not allowed to ban users"));
+        }
+    }
+
     if let Some(value) = body.data.get("email").and_then(|value| value.as_str()) {
         update.email = Some(value.to_owned());
     }
