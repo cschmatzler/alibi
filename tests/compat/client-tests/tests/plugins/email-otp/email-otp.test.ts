@@ -302,7 +302,39 @@ compatScenario(
       name: "Foreign",
     });
     const initial = await owner.getSession();
-    const request = await owner.emailOtp.requestEmailChange({ newEmail: target });
+    const currentIdentifier = `email-verification-otp-${email}`;
+    expect(
+      (await owner.emailOtp.sendVerificationOtp({ email, type: "email-verification" })).error,
+    ).toBeNull();
+    const currentOtp = await readOtp(ctx, email, "email-verification");
+    const currentProof = await ctx.readVerificationState({ identifier: currentIdentifier });
+    expect(currentProof).toHaveLength(1);
+    const optionalRequests = [];
+    for (const [label, optionalOtp] of [
+      ["genuine", currentOtp],
+      ["omitted", undefined],
+      ["wrong", currentOtp === "000000" ? "111111" : "000000"],
+    ] as const) {
+      const optionalTarget = label === "genuine" ? target : ctx.uniqueEmail(`optional-${label}`);
+      const requested = await owner.emailOtp.requestEmailChange({
+        newEmail: optionalTarget,
+        otp: optionalOtp,
+      });
+      expect(requested.error).toBeNull();
+      expect(await ctx.readVerificationState({ identifier: currentIdentifier })).toEqual(
+        currentProof,
+      );
+      const delivered = await readOtp(ctx, optionalTarget, "change-email");
+      const identifier = `change-email-otp-${email}-${optionalTarget}`;
+      const proof = z
+        .array(z.object({ identifier: z.string(), value: z.string() }))
+        .parse(await ctx.readVerificationState({ identifier }));
+      expect(proof).toHaveLength(1);
+      expect(proof[0]).toMatchObject({ identifier, value: `${delivered}:0` });
+      expect(await owner.getSession()).toEqual(initial);
+      optionalRequests.push(requested);
+    }
+    const request = optionalRequests[0]!;
     expect(request.error).toBeNull();
 
     const otp = await readOtp(ctx, target, "change-email");
@@ -326,6 +358,9 @@ compatScenario(
     const state = await readUserState(ctx, user.id);
     expect(state.user?.email).toBe(target);
     expect(state.user?.emailVerified).toBe(true);
+    expect(await ctx.readVerificationState({ identifier: currentIdentifier })).toEqual(
+      currentProof,
+    );
 
     const replay = await owner.emailOtp.changeEmail({ newEmail: target, otp });
     expect(replay.error?.message).toBe("Email is the same");
@@ -337,6 +372,7 @@ compatScenario(
     expect(unauthorized.error?.status).toBe(401);
 
     return {
+      optionalRequests: ctx.snapshot(optionalRequests),
       initial: ctx.snapshot(initial),
       request: ctx.snapshot(request),
       foreignChange: ctx.snapshot(foreignChange),
