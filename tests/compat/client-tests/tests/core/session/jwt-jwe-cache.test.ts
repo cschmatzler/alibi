@@ -865,3 +865,41 @@ for (const strategy of ["jwt", "jwe"] as const) {
 async function controlRows(ctx: ScenarioContext, userId: string, mode: string) {
   return control(ctx, mode, { action: "rows", userId });
 }
+
+compatScenario(
+  "managed JWT session-cache version rollover rejects a valid old signature and republishes authoritative identity",
+  async (ctx) => {
+    await control(ctx, "managed", { action: "reset" });
+    const owner = client(ctx, "managed");
+    const signup = await owner.sdk.signUp.email({
+      email: ctx.uniqueEmail("managed-version-owner"),
+      name: "Cached version one",
+      password: "password123",
+    });
+    expect(signup.error).toBeNull();
+    const userId = signup.data!.user.id;
+    const issued = await observation(ctx, owner, "managed", owner.headers.at(-1)!);
+    expect(issued.sessionCache.payload.version).toBe("1");
+    await control(ctx, "managed", { action: "rename", userId, name: "Authoritative version two" });
+    const before = await control(ctx, "managed", { action: "rows", userId });
+    const cached = await owner.sdk.getSession();
+    expect(cached.data!.user.name).toBe("Cached version one");
+    await control(ctx, "managed", { action: "policy", version: "2" });
+    const renewed = await owner.sdk.getSession();
+    expect(renewed.error).toBeNull();
+    expect(renewed.data!.user.name).toBe("Authoritative version two");
+    expect(renewed.data!.session.token).toBe(signup.data!.token!);
+    const replacement = await observation(ctx, owner, "managed", owner.headers.at(-1)!);
+    expect(replacement.sessionCache.payload.version).toBe("2");
+    expect(replacement.sessionCache.payload.user).toMatchObject({
+      name: "Authoritative version two",
+    });
+    expect(replacement.sessionCache.header.kid).toBe(issued.sessionCache.header.kid);
+    const after = await control(ctx, "managed", { action: "rows", userId });
+    expect(after.sessions).toEqual(before.sessions);
+    expect(after.accounts).toEqual(before.accounts);
+    expect(after.users).toEqual(before.users);
+    return { signup, issued, before, cached, renewed, replacement, after };
+  },
+  ["GET /get-session", "GET /jwks"],
+);

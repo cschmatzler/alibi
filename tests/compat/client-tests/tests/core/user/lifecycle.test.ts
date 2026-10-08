@@ -1,6 +1,7 @@
 import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
 
+import { createAuthClient } from "better-auth/client";
 import { getCookieCache } from "better-auth/cookies";
 import { z } from "zod";
 
@@ -644,6 +645,38 @@ for (const mode of ["wrong-owner", "before-delete", "after-delete", "deletion-ma
       expect(final.sessions).toEqual(after.sessions);
       expect(final.verifications).toEqual([]);
 
+      let reverse: unknown = null;
+      if (mode === "wrong-owner") {
+        const reverseRequested = await foreign.client.deleteUser();
+        expect(reverseRequested.error).toBeNull();
+        const reverseIssued = await control(ctx, name);
+        const reverseMail = delivery(reverseIssued, "deletion-mail");
+        const reverseResponse = await owner.fetch(
+          path(name, `delete-user/callback?token=${encodeURIComponent(reverseMail.token)}`),
+          { redirect: "manual" },
+        );
+        const reverseCallback = {
+          status: reverseResponse.status,
+          body: await reverseResponse.json(),
+          cookies: reverseResponse.headers.getSetCookie(),
+          location: reverseResponse.headers.get("location"),
+        };
+        expect(reverseCallback.status).toBe(404);
+        expect(reverseCallback.location).toBeNull();
+        expect(reverseCallback.cookies).toEqual([]);
+        const reverseAfter = await control(ctx, name);
+        expect(reverseAfter.users).toEqual(final.users);
+        expect(reverseAfter.accounts).toEqual(final.accounts);
+        expect(reverseAfter.sessions).toEqual(final.sessions);
+        expect(reverseAfter.verifications).toEqual([]);
+        expect(
+          reverseAfter.events.filter((event) =>
+            ["before-delete", "after-delete"].includes(String(event.stage)),
+          ),
+        ).toEqual([]);
+        reverse = { reverseRequested, reverseIssued, reverseCallback, reverseAfter };
+      }
+
       return evidence({
         signup,
         foreignSignup,
@@ -655,6 +688,7 @@ for (const mode of ["wrong-owner", "before-delete", "after-delete", "deletion-ma
         replay,
         session,
         final,
+        reverse,
       });
     },
     ["GET /delete-user/callback"],
@@ -1659,3 +1693,140 @@ compatScenario(
   },
   ["POST /send-verification-email", "POST /change-email"],
 );
+
+for (const operation of ["change", "delete", "callback"] as const) {
+  compatScenario(
+    `disabled user lifecycle ${operation} preserves delivered proof and physical authority`,
+    async (ctx) => {
+      const owner = ctx.actor("disabled-owner", profile("delete-mail"));
+      const sibling = ctx.actor("disabled-sibling", profile("delete-mail"));
+      const foreign = ctx.actor("disabled-foreign", profile("delete-mail"));
+      const email = ctx.uniqueEmail("disabled-owner");
+      const password = "password123";
+      const signup = await owner.client.signUp.email({
+        email,
+        password,
+        name: "Disabled policy owner",
+      });
+      expect(signup.error).toBeNull();
+      const userId = signup.data!.user.id;
+      expect((await sibling.client.signIn.email({ email, password })).error).toBeNull();
+      const other = await foreign.client.signUp.email({
+        email: ctx.uniqueEmail("disabled-foreign"),
+        password,
+        name: "Foreign owner",
+      });
+      expect(other.error).toBeNull();
+      const foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
+      expect(
+        (await owner.client.deleteUser({ callbackURL: "/disabled-policy-return" })).error,
+      ).toBeNull();
+      const issued = await control(ctx, "delete-mail");
+      const mail = delivery(issued, "deletion-mail");
+      expect(mail.user.id).toBe(userId);
+      expect(issued.verifications).toHaveLength(1);
+      const before = await control(ctx, "disabled");
+      expect(before.events).toEqual([]);
+      const disabled = createAuthClient({
+        baseURL: ctx.baseURL + path("disabled", "").replace(/\/$/, ""),
+        fetchOptions: { customFetchImpl: owner.fetch },
+      });
+      const guestActor = ctx.actor("disabled-guest", profile("disabled"));
+      const guest = createAuthClient({
+        baseURL: ctx.baseURL + path("disabled", "").replace(/\/$/, ""),
+        fetchOptions: { customFetchImpl: guestActor.fetch },
+      });
+      const outcomes = [];
+      if (operation !== "callback") {
+        for (const [label, auth] of [
+          ["owner", disabled],
+          ["guest", guest],
+        ] as const) {
+          let cookies: string[] = [];
+          const fetchOptions = {
+            onResponse({ response }: { response: Response }) {
+              cookies = response.headers.getSetCookie();
+            },
+          };
+          const result =
+            operation === "change"
+              ? await auth.changeEmail({ newEmail: ctx.uniqueEmail("disabled-new"), fetchOptions })
+              : await auth.deleteUser({ password, token: mail.token, fetchOptions });
+          expect(result.error?.status).toBe(
+            label === "guest" ? 401 : operation === "change" ? 400 : 404,
+          );
+          if (label === "owner" && operation === "change")
+            expect(result.error?.code).toBe("CHANGE_EMAIL_DISABLED");
+          expect(cookies).toEqual([]);
+          outcomes.push({ label, result: ctx.snapshot(result) });
+          expect(await control(ctx, "disabled")).toEqual(before);
+        }
+      } else {
+        for (const [label, actor] of [
+          ["owner", owner],
+          ["guest", guestActor],
+        ] as const) {
+          const response = await actor.fetch(
+            ctx.baseURL +
+              path("disabled", "delete-user/callback") +
+              `?token=${encodeURIComponent(mail.token)}&callbackURL=${encodeURIComponent("/disabled-policy-return")}`,
+            { redirect: "manual" },
+          );
+          const body = await responseBody(response);
+          expect(response.status).toBe(404);
+          expect(body).toEqual({ code: "NOT_FOUND", message: "Not found" });
+          expect(response.headers.getSetCookie()).toEqual([]);
+          outcomes.push({ label, status: response.status, body });
+          expect(await control(ctx, "disabled")).toEqual(before);
+        }
+      }
+      expect((await owner.client.getSession()).data?.user.id).toBe(userId);
+      expect((await sibling.client.getSession()).data?.user.id).toBe(userId);
+      expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+      if (operation === "change") {
+        const newEmail = ctx.uniqueEmail("enabled-policy-new");
+        const changed = await owner.client.changeEmail({
+          newEmail,
+          callbackURL: "/enabled-email-return",
+        });
+        expect(changed.error).toBeNull();
+        const changedState = await control(ctx, "delete-mail");
+        const confirmation = delivery(changedState, "verification-mail");
+        expect(confirmation.user.email).toBe(newEmail);
+        const verified = await owner.fetch(confirmation.url, { redirect: "manual" });
+        expect(verified.status).toBe(302);
+        expect(verified.headers.get("location")).toBe("/enabled-email-return");
+        expect((await owner.client.getSession()).data?.user.email).toBe(newEmail);
+      }
+      const enabled = await owner.fetch(mail.url, { redirect: "manual" });
+      expect(enabled.status).toBe(302);
+      expect(enabled.headers.get("location")).toBe("/disabled-policy-return");
+      const after = await control(ctx, "delete-mail");
+      expect(after.users.some((user) => user.id === userId)).toBe(false);
+      expect(after.accounts.some((row) => row.userId === userId)).toBe(false);
+      expect(after.sessions.some((row) => row.userId === userId)).toBe(false);
+      expect(after.verifications).toEqual([]);
+      expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+      expect((await foreign.client.getSession()).data?.user.id).toBe(other.data!.user.id);
+      return {
+        signup: ctx.snapshot(signup),
+        outcomes,
+        before: evidence(before),
+        after: evidence(after),
+        enabled: { status: enabled.status, location: enabled.headers.get("location") },
+        foreign: ctx.snapshot(foreignBefore),
+      };
+    },
+    ["POST /change-email", "POST /delete-user", "GET /delete-user/callback"],
+    30_000,
+    {
+      oracle:
+        operation === "delete"
+          ? {
+              unroutedRequests:
+                "The registered disabled delete-user handler intentionally returns an empty 404 via APIError.fromStatus; genuine enabled delivery and deletion prove the route.",
+            }
+          : {},
+    },
+  );
+}

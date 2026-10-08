@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
-import { oAuthProxy } from "better-auth/plugins";
+import { genericOAuth, oAuthProxy } from "better-auth/plugins";
 
 export const OAUTH_PROXY_SECRET = "local-fixture-dedicated-oauth-proxy-secret-32";
 export const OAUTH_PROXY_PATH = "/__test/profiles/oauth-proxy/api/auth";
@@ -40,6 +40,7 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
     "signup-disabled",
     "custom",
     "bad-key",
+    "form-post",
   ];
   const preview = String(base.baseURL);
   const production = preview.replace("localhost", "127.0.0.1");
@@ -120,6 +121,28 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
         basePath: path,
         trustedOrigins: [preview, production],
         plugins: [
+          ...(mode === "form-post"
+            ? [
+                genericOAuth({
+                  config: [
+                    {
+                      providerId: "gitlab",
+                      clientId: "proxy-fixture-client",
+                      clientSecret: "proxy-fixture-secret",
+                      authorizationUrl: `${preview}${control}/provider/oauth/authorize`,
+                      tokenUrl: `${preview}${control}/provider/oauth/token`,
+                      userInfoUrl: `${preview}${control}/provider/api/v4/user`,
+                      scopes: ["read_user"],
+                      responseMode: "form_post",
+                      disableSignUp: false,
+                      mapProfileToUser: (raw) => ({
+                        id: String(raw.id),
+                      }),
+                    },
+                  ],
+                }),
+              ]
+            : []),
           oAuthProxy({
             ...(["request", "dynamic", "environment", "environment-skip"].includes(mode)
               ? {}
@@ -204,15 +227,20 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
           },
         },
         emailAndPassword: { enabled: true },
-        socialProviders: {
-          gitlab: {
-            clientId: "proxy-fixture-client",
-            clientSecret: "proxy-fixture-secret",
-            issuer: `${preview}${control}/provider`,
-            disableImplicitSignUp: false,
-            ...(mode === "signup-absent" ? {} : { disableSignUp: mode === "signup-disabled" }),
-          },
-        },
+        socialProviders:
+          mode === "form-post"
+            ? {}
+            : {
+                gitlab: {
+                  clientId: "proxy-fixture-client",
+                  clientSecret: "proxy-fixture-secret",
+                  issuer: `${preview}${control}/provider`,
+                  disableImplicitSignUp: false,
+                  ...(mode === "signup-absent"
+                    ? {}
+                    : { disableSignUp: mode === "signup-disabled" }),
+                },
+              },
       };
       await (await getMigrations(options)).runMigrations();
       instances.set(`${origin}:${mode}`, betterAuth(options));
@@ -383,6 +411,26 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
           redirect: url.searchParams.get("redirect_uri")!,
           used: false,
         });
+        if (url.searchParams.get("response_mode") === "form_post") {
+          const fields = {
+            code,
+            state: url.searchParams.get("state")!,
+            user: JSON.stringify({
+              name: { firstName: "Élodie &", lastName: "Form <Owner>" },
+              email: profile.email,
+            }),
+          };
+          const escape = (value: string) =>
+            value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+          return new Response(
+            `<form method="post" action="${escape(url.searchParams.get("redirect_uri")!)}">${Object.entries(
+              fields,
+            )
+              .map(([name, value]) => `<input name="${name}" value="${escape(value)}">`)
+              .join("")}</form>`,
+            { headers: { "content-type": "text/html" } },
+          );
+        }
         const callback = new URL(url.searchParams.get("redirect_uri")!);
         callback.searchParams.set("code", code);
         callback.searchParams.set("state", url.searchParams.get("state")!);

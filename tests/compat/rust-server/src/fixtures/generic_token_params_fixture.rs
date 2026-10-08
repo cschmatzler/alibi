@@ -253,6 +253,10 @@ pub(crate) async fn router(
         "dynamic-error",
         "dynamic-custom",
         "override",
+        "local-verified",
+        "implicit-disabled",
+        "skip-state-cookie",
+        "linking-disabled",
         "expiry-positive",
         "expiry-zero",
         "expiry-negative",
@@ -294,7 +298,19 @@ pub(crate) async fn router(
         "jwt-getter-error",
     ] {
         let path = format!("/__test/profiles/generic-token-{mode}/api/auth");
-        let settings = config.clone().base_path(&path);
+        let mut settings = config.clone().base_path(&path);
+        if mode == "local-verified" {
+            settings.account.account_linking.require_local_email_verified = true;
+        }
+        if mode == "implicit-disabled" {
+            settings.account.account_linking.disable_implicit_linking = true;
+        }
+        if mode == "skip-state-cookie" {
+            settings.account.skip_state_cookie_check = true;
+        }
+        if mode == "linking-disabled" {
+            settings.account.account_linking.enabled = false;
+        }
         let configured_mode = if mode.starts_with("dynamic") {
             "post"
         } else {

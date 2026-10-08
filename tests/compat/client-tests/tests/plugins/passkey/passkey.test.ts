@@ -142,7 +142,7 @@ compatScenario(
       actor: "owner",
       path: "/api/auth/passkey/update-passkey",
       method: "POST",
-      json: { id: passkey.id, name: "Renamed" },
+      json: { id: passkey.id, name: " \uFEFF\u00A0Renamed\u2028\t " },
     });
     expect(renamed.status).toBe(200);
 
@@ -156,6 +156,23 @@ compatScenario(
         .parse(listed.body)
         .map((key) => key.name),
     ).toEqual(["Renamed"]);
+
+    const rejectedLabels = [];
+    for (const name of [" \t\n", "\uFEFF\u00A0", "\u2028\u2029"]) {
+      const rejected = await ctx.rawRequest({
+        actor: "owner",
+        path: "/api/auth/passkey/update-passkey",
+        method: "POST",
+        json: { id: passkey.id, name },
+      });
+      expect(rejected.status).toBe(400);
+      const unchanged = await ctx.rawRequest({
+        actor: "owner",
+        path: "/api/auth/passkey/list-user-passkeys",
+      });
+      expect(unchanged.body).toEqual(listed.body);
+      rejectedLabels.push(rejected);
+    }
 
     await owner.client.signOut();
     expect((await owner.client.getSession()).data).toBeNull();
@@ -214,6 +231,7 @@ compatScenario(
     return {
       registration,
       renamed,
+      rejectedLabels,
       authentication,
       session: ctx.snapshot(session),
       forbiddenDelete,

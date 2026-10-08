@@ -90,6 +90,10 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
     "dynamic-error",
     "dynamic-custom",
     "override",
+    "local-verified",
+    "implicit-disabled",
+    "skip-state-cookie",
+    "linking-disabled",
     "expiry-positive",
     "expiry-zero",
     "expiry-negative",
@@ -140,6 +144,36 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
         ...base,
         basePath: path,
         socialProviders: {},
+        ...(mode === "linking-disabled"
+          ? {
+              account: {
+                ...base.account,
+                accountLinking: { ...base.account?.accountLinking, enabled: false },
+              },
+            }
+          : {}),
+        ...(mode === "skip-state-cookie"
+          ? { account: { ...base.account, skipStateCookieCheck: true } }
+          : {}),
+        ...(mode === "implicit-disabled"
+          ? {
+              account: {
+                ...base.account,
+                accountLinking: { ...base.account?.accountLinking, disableImplicitLinking: true },
+              },
+            }
+          : {}),
+        ...(mode === "local-verified"
+          ? {
+              account: {
+                ...base.account,
+                accountLinking: {
+                  ...base.account?.accountLinking,
+                  requireLocalEmailVerified: true,
+                },
+              },
+            }
+          : {}),
         plugins: [
           genericOAuth({
             config: [

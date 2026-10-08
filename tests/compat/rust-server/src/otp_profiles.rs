@@ -183,6 +183,10 @@ pub(super) async fn router(
         },
     );
     for name in [
+        "otp-change-disabled-omitted",
+        "otp-change-disabled-false",
+        "passwordless-rate-policy",
+        "otp-signup-verification",
         "passwordless-hashed",
         "passwordless-encrypted-reuse",
         "passwordless-proof",
@@ -214,9 +218,10 @@ pub(super) async fn router(
             .base_path(format!("/__test/profiles/{name}/api/auth"));
         config.verification.disable_cleanup = name == "verification-no-cleanup";
         let otp = EmailOtpPlugin::new(EmailOtpConfig {
+            rate_limit: if name == "passwordless-rate-policy" { alibi_core::EndpointRateLimit {window_seconds: 1.0, max_requests: 2.0} } else { EmailOtpConfig::default().rate_limit },
             generate_otp: Some(Arc::new(Sender(outbox.clone()))),
             send_verification_otp: Some(Arc::new(Sender(outbox.clone()))),
-            change_email_enabled: true,
+            change_email_enabled: !name.starts_with("otp-change-disabled-"),
             storage: match name {
                 "passwordless-hashed" => EmailOtpStorage::Hashed,
                 "passwordless-encrypted-reuse" => EmailOtpStorage::Encrypted,
@@ -228,6 +233,7 @@ pub(super) async fn router(
                 OtpResendStrategy::Rotate
             },
             override_default_email_verification: proof,
+            send_verification_on_sign_up: name == "otp-signup-verification",
             verify_current_email: proof,
             disable_sign_up: name == "passwordless-disabled",
             otp_length: numeric_setting(name, "length", 6.0),
@@ -251,7 +257,7 @@ pub(super) async fn router(
                     config.clone(),
                     database.clone(),
                 ))
-                .rate_limit(RateLimitConfig::new().enabled(false))
+                .rate_limit(RateLimitConfig::new().enabled(name == "passwordless-rate-policy").default_limit(std::time::Duration::from_secs(60), 10000))
                 .plugin(
                     EmailPasswordPlugin::new()
                         .enable_username(false)

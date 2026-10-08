@@ -201,6 +201,7 @@ fn start_rust_compat_server(
     node_env: &str,
     test_flag: &str,
     proxy_environment: bool,
+    salesforce_proxy: Option<&str>,
 ) -> ManagedChild {
     // Own the server process directly, so Drop cannot leave a cargo child behind.
     let child = Command::new(executable)
@@ -211,6 +212,11 @@ fn start_rust_compat_server(
             ("NETLIFY_URL", format!("http://localhost:{port}")),
             ("BETTER_AUTH_URL", format!("http://127.0.0.1:{port}")),
         ]).into_iter().flatten())
+        .envs(salesforce_proxy.into_iter().flat_map(|proxy| [
+            ("HTTPS_PROXY", proxy.to_owned()),
+            ("https_proxy", proxy.to_owned()),
+            ("SSL_CERT_FILE", project_root().join("tests/compat/fixtures/salesforce-transport/cert.pem").display().to_string()),
+        ]))
         .env("PORT", port.to_string())
         .env("NODE_ENV", node_env)
         .env("BUN_ENV", node_env)
@@ -478,15 +484,39 @@ async fn run_client_compat_in_environment(
 
     let mut ts_server =
         start_reference_server(ts_port, node_env, test_flag, paths == ["environment"]);
+    // Configure process-owned TLS transport before native HTTP clients exist.
+    wait_for_health(ts_port, &mut ts_server, Duration::from_secs(20)).await;
+    let needs_salesforce = work.is_some()
+        || paths.iter().any(|path| {
+            matches!(*path, "tests" | "tests/core") || path.starts_with("tests/core/social")
+        });
+    let salesforce_proxy = if needs_salesforce {
+        let response: serde_json::Value = reqwest::get(format!(
+            "http://localhost:{ts_port}/__test/salesforce-transport/config"
+        ))
+        .await
+        .expect("Salesforce transport configuration")
+        .json()
+        .await
+        .expect("Salesforce transport JSON");
+        Some(
+            response["proxyURL"]
+                .as_str()
+                .expect("Salesforce proxy URL")
+                .to_owned(),
+        )
+    } else {
+        None
+    };
     let mut rust_server = start_rust_compat_server(
         rust_port,
         executable,
         node_env,
         test_flag,
         paths == ["environment"],
+        salesforce_proxy.as_deref(),
     );
 
-    wait_for_health(ts_port, &mut ts_server, Duration::from_secs(20)).await;
     wait_for_health(rust_port, &mut rust_server, Duration::from_secs(90)).await;
 
     if let Some(work) = work {
