@@ -158,7 +158,7 @@ impl PhoneNumberPlugin {
             .verifications()
             .consume(identifier)
             .await?
-            .ok_or_else(invalid_otp)?;
+            .ok_or_else(|| phone_error(400, "OTP_NOT_FOUND", "OTP not found"))?;
         let (code, attempts_2) = split_code(consumed.value()?);
         if super::super::passwordless_numeric::attempts_number(attempts_2)
             >= self.config.allowed_attempts
