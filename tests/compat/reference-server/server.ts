@@ -1316,7 +1316,11 @@ const ottProfiles = new Map(
                       : null,
                   });
                   ottCallbackResult("generate");
-                  return name === "ott-custom-header" ? `ott-header-token-${++ottCallbackState.serial}` : ctx.request ? "ott-custom-token" : "ott-custom-server-token";
+                  return name === "ott-custom-header"
+                    ? `ott-header-token-${++ottCallbackState.serial}`
+                    : ctx.request
+                      ? "ott-custom-token"
+                      : "ott-custom-server-token";
                 },
               }
             : {}),
@@ -1826,6 +1830,7 @@ for (const { options } of teamProfiles.values()) {
   await (await getMigrations(options)).runMigrations();
 }
 
+const teamStorageBackups = new Map<string, Record<string, unknown>>();
 async function teamFixture(request: Request, url: URL): Promise<Response | undefined> {
   const profileName = url.pathname.match(/^\/__test\/profiles\/([^/]+)\/api\/auth(?:\/|$)/)?.[1];
   if (profileName) {
@@ -1904,6 +1909,35 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
     }
     try {
+      if (body?.operation === "set-team-storage" && typeof body.teamId === "string") {
+        if (body.restore) {
+          const original = teamStorageBackups.get(body.teamId)!;
+          database.query("DELETE FROM team WHERE id=?").run(body.teamId);
+          database
+            .query(
+              "INSERT INTO team(id,organizationId,name,createdAt,updatedAt,memberCount) VALUES (?,?,?,?,?,?)",
+            )
+            .run(
+              original.id,
+              original.organizationId,
+              original.name,
+              original.createdAt,
+              original.updatedAt,
+              original.memberCount,
+            );
+        } else {
+          const original = database
+            .query("SELECT * FROM team WHERE id=?")
+            .get(body.teamId) as Record<string, unknown>;
+          teamStorageBackups.set(body.teamId, original);
+          if (typeof body.organizationId === "string")
+            database
+              .query("UPDATE team SET organizationId=? WHERE id=?")
+              .run(body.organizationId, body.teamId);
+          else database.query("DELETE FROM team WHERE id=?").run(body.teamId);
+        }
+        return jsonResponse({ changed: true });
+      }
       if (
         body?.operation === "seed-stray-team-member" &&
         typeof body.teamId === "string" &&
