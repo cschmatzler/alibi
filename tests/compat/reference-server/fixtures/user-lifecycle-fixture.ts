@@ -20,6 +20,7 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
   >();
 
   for (const name of [
+    "disabled",
     "default",
     "required",
     "delivery",
@@ -162,7 +163,7 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
       user: {
         ...base.user,
         changeEmail: {
-          enabled: true,
+          enabled: name !== "disabled",
           updateEmailWithoutVerification: name.startsWith("promotion"),
           ...(name === "change"
             ? {
@@ -172,7 +173,7 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
             : {}),
         },
         deleteUser: {
-          enabled: true,
+          enabled: name !== "disabled",
           deleteTokenExpiresIn: name === "delete-zero" ? 0 : name === "delete-expired" ? -1 : 90,
           ...(name.startsWith("delete-") && !["delete-policy", "delete-no-freshness"].includes(name)
             ? {

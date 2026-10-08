@@ -5,9 +5,27 @@ import { applyDefaultAccessTokenExpiry } from "@better-auth/core/oauth2";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 
 import inputs from "../../fixtures/provider-batch-profiles.json";
+import { salesforceTransport } from "./salesforce-transport";
+const salesforceFamilyModes = [
+  "family-default",
+  "family-sandbox",
+  "family-custom",
+  "family-custom-sandbox",
+  "family-empty",
+  "family-empty-sandbox",
+] as const;
 
 export const providerBatchModes = [
   "default",
+  "claims-empty",
+  "claims-custom",
+
+  "language-en",
+  "prompt-none",
+  "prompt-consent",
+  "prompt-empty",
+
+  "pkce-disabled",
   "expiry-positive",
   "expiry-zero",
   "expiry-negative",
@@ -89,6 +107,7 @@ const destinations: Record<string, { token: string[]; user?: string }> = {
 
 /** Inputs are provider responses; the published factories produce every assertion target. */
 export function providerBatchFixture(base: BetterAuthOptions, database: Database) {
+  const salesforce = salesforceTransport();
   let control: Record<string, unknown> = {};
   const receipts: unknown[] = [];
   const callbacks: unknown[] = [];
@@ -159,6 +178,15 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
   });
   const previousFetch = globalThis.fetch.bind(globalThis);
   globalThis.fetch = (async (input, init) => {
+    const originalURL = new URL(input instanceof Request ? input.url : String(input));
+    if (
+      control.salesforceFamily &&
+      ["login.salesforce.com", "test.salesforce.com", "login.fixture.test"].includes(
+        originalURL.hostname,
+      )
+    ) {
+      return salesforce.fetch(new Request(input, init));
+    }
     const active = typeof control.provider === "string" ? control.provider : undefined;
     if (!active || !destinations[active]) return previousFetch(input, init);
     const request = new Request(input, init);
@@ -183,7 +211,14 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
   }) as typeof fetch;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   for (const provider of Object.keys(inputs)) {
-    for (const mode of providerBatchModes) {
+    for (const mode of [
+      ...providerBatchModes,
+      ...(provider === "salesforce" ? salesforceFamilyModes : []),
+    ]) {
+      if (mode.startsWith("claims-") && provider !== "twitch") continue;
+      if (mode === "language-en" && provider !== "wechat") continue;
+      if (mode.startsWith("prompt-") && provider !== "roblox") continue;
+      if (mode === "pkce-disabled" && provider !== "zoom") continue;
       const path = `/__test/profiles/provider-batch-${provider}-${mode}/api/auth`;
       const providerOptions: Record<string, unknown> = {
         clientId:
@@ -194,6 +229,16 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
               : "batch-client",
         ...(provider === "tiktok" ? { clientKey: "batch-client" } : {}),
         clientSecret: "batch-secret",
+        ...(mode === "claims-empty"
+          ? { claims: [] }
+          : mode === "claims-custom"
+            ? { claims: ["custom", "custom", "email", "__proto__"] }
+            : {}),
+        ...(mode === "language-en" ? { lang: "en" } : {}),
+        ...(mode.startsWith("prompt-")
+          ? { prompt: mode === "prompt-empty" ? "" : mode.slice(7) }
+          : {}),
+        ...(mode === "pkce-disabled" ? { pkce: false } : {}),
         ...(["configured", "disabled-configured"].includes(mode)
           ? {
               scope: ["configured", "shared", "configured"],
@@ -205,6 +250,11 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
         ...(mode === "implicit-disabled" ? { disableImplicitSignUp: true } : {}),
         ...(mode === "required" ? { requireEmailVerification: true } : {}),
       };
+      if (mode.startsWith("family-")) {
+        if (mode.includes("sandbox")) providerOptions.environment = "sandbox";
+        if (mode.includes("custom")) providerOptions.loginUrl = "login.fixture.test";
+        if (mode.includes("empty")) providerOptions.loginUrl = "";
+      }
       if (["mapped-async", "mapper-error"].includes(mode)) {
         providerOptions.mapProfileToUser = async (profile: unknown) => {
           callbacks.push({ kind: "mapper", provider, profile });
@@ -318,6 +368,8 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
       callbacks.length = 0;
     },
     async handle(request: Request) {
+      const transportResponse = await salesforce.handle(request);
+      if (transportResponse) return transportResponse;
       const path = new URL(request.url).pathname;
       if (path === "/__test/provider-batch/control" && request.method === "POST") {
         control = await request.json();
