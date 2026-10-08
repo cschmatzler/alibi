@@ -86,13 +86,20 @@ function grantBody(row: Record<string, any>) {
     },
   };
 }
-async function flow(ctx: ScenarioContext, provider: Provider, mode: string, scopes?: string[]) {
+async function flow(
+  ctx: ScenarioContext,
+  provider: Provider,
+  mode: string,
+  scopes?: string[],
+  requestSignUp?: boolean,
+) {
   const profile = selected(provider, mode);
   const actor = ctx.actor("batch", profile);
   const start = await actor.client.signIn.social({
     provider,
     callbackURL: "/dashboard",
     scopes,
+    requestSignUp,
     additionalParams: {
       owner: "batch",
       client_key: "must-not-replace-key",
@@ -939,5 +946,48 @@ for (const emailMode of ["http-error", "missing", "empty", "confirmed", "primary
       },
       ["POST /sign-in/social", "GET /callback/{}", "GET /get-session"],
     );
+  }
+}
+
+for (const provider of ["zoom", "roblox"] as const) {
+  for (const mode of ["signup-disabled", "implicit-disabled"] as const) {
+    for (const requestSignUp of [false, true]) {
+      compatScenario(
+        `factory signup flags ${provider} ${mode} request=${requestSignUp}`,
+        async (ctx) => {
+          await control(ctx, provider);
+          const completed = await flow(ctx, provider, mode, undefined, requestSignUp);
+          const denied =
+            (provider === "roblox" && mode === "signup-disabled") ||
+            (mode === "implicit-disabled" && !requestSignUp);
+          expect(completed.response.status).toBe(302);
+          if (denied) expect(status(completed.response, ctx.baseURL).error).toBe("signup_disabled");
+          else expect(completed.response.headers.get("location")).toBe("/dashboard");
+          const session = await completed.actor.client.getSession();
+          if (denied) expect(session.data).toBeNull();
+          else expect(session.data?.user.name).toBe("Batch Name");
+          const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
+          const source = "user" in sql;
+          for (const table of source
+            ? ["user", "account", "session"]
+            : ["users", "accounts", "sessions"])
+            expect(sql[table]).toHaveLength(denied ? 0 : 1);
+          expect(sql[source ? "verification" : "verifications"]).toHaveLength(0);
+          const receipts: any[] = await read(ctx, "receipts");
+          expect(receipts.map((row) => row.stage)).toEqual(["token", "user"]);
+          return {
+            session: ctx.snapshot(session),
+            callback: status(completed.response, ctx.baseURL),
+            wire: receipts.map((row) => ({
+              stage: row.stage,
+              method: row.method,
+              query: row.query,
+              body: grantBody(row),
+            })),
+          };
+        },
+        ["POST /sign-in/social", "GET /callback/{}", "GET /get-session"],
+      );
+    }
   }
 }
