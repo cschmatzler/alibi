@@ -20,6 +20,7 @@ const INPUTS: &str = include_str!("../../../fixtures/provider-batch-profiles.jso
 const MODES: &[&str] = &[
     "default",
     "language-en",
+    "pkce-disabled",
     "expiry-positive",
     "expiry-zero",
     "expiry-negative",
@@ -218,6 +219,7 @@ fn factory(provider: &str, mode: &str, local: Option<&str>) -> OAuthProvider {
         }
         "zoom" => {
             let mut options = ZoomOptions::new(client, Some(secret.into()));
+            options.pkce = mode != "pkce-disabled";
             options.user_info_endpoint =
                 local.map(|base| format!("{base}/__test/provider-batch/zoom/user"));
             OAuthProvider::zoom_with_options(options)
@@ -235,6 +237,7 @@ pub(crate) async fn router(
     for provider_id in PROVIDERS {
         for mode in MODES {
             if *mode == "language-en" && *provider_id != "wechat" { continue; }
+            if *mode == "pkce-disabled" && *provider_id != "zoom" { continue; }
             let path = format!("/__test/profiles/provider-batch-{provider_id}-{mode}/api/auth");
             let mut settings = config.clone().base_path(&path);
             settings.account.encrypt_oauth_tokens = *mode == "encrypted";
