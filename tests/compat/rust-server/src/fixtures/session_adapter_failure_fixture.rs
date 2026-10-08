@@ -2,7 +2,7 @@
 use crate::TestSchema;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
-use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::plugins::{EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, AuthSchema};
 use alibi_core::store::*;
 use alibi_core::types::*;
@@ -179,25 +179,29 @@ forward!(JwkStore {});
 
 pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
     let state = Arc::new(Mutex::new(State::default()));
-    let path = "/__test/profiles/session-adapter-failure/api/auth";
-    let config = base.clone().base_path(path);
-    let store = ApplicationStore {
-        inner: Arc::new(crate::backend::store::<TestSchema>(
-            config.clone(),
-            database,
-        )),
-        state: state.clone(),
-    };
-    let auth = Arc::new(
-        AuthBuilder::<TestSchema>::new(config)
-            .store(store)
-            .rate_limit(RateLimitConfig::new().enabled(false))
-            .plugin(EmailPasswordPlugin::new().enable_username(false))
-            .plugin(SessionManagementPlugin::new())
-            .build()
-            .await?,
-    );
-    let router = Router::new().nest(path, auth.clone().axum_router().with_state(auth));
+    let mut router = Router::new();
+    for profile in ["session-adapter-failure", "password-reset-no-sender"] {
+        let path = format!("/__test/profiles/{profile}/api/auth");
+        let config = base.clone().base_path(&path);
+        let store = ApplicationStore {
+            inner: Arc::new(crate::backend::store::<TestSchema>(
+                config.clone(),
+                database.clone(),
+            )),
+            state: state.clone(),
+        };
+        let auth = Arc::new(
+            AuthBuilder::<TestSchema>::new(config)
+                .store(store)
+                .rate_limit(RateLimitConfig::new().enabled(false))
+                .plugin(EmailPasswordPlugin::new().enable_username(false))
+                .plugin(SessionManagementPlugin::new())
+                .plugin(PasswordManagementPlugin::new())
+                .build()
+                .await?,
+        );
+        router = router.nest(&path, auth.clone().axum_router().with_state(auth));
+    }
     Ok(router.route(
         "/__test/session-adapter-failure",
         post(move |Json(body): Json<Value>| {

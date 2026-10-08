@@ -2528,8 +2528,10 @@ const server = Bun.serve({
       ) {
         return organizationMemberRoleFixture.state(url.searchParams.get("waitFor"));
       }
-      if (url.pathname.startsWith("/__test/profiles/session-adapter-failure/api/auth/"))
-        return sessionAdapterFailureFixture.auth.handler(request);
+      for (const [profile, auth] of sessionAdapterFailureFixture.profiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${profile}/api/auth/`))
+          return auth.handler(request);
+      }
       if (url.pathname === "/__test/session-adapter-failure" && request.method === "POST")
         return sessionAdapterFailureFixture.control(await request.json());
       for (const [name, auth] of twoFactorPendingLookupFixture.profiles) {
