@@ -175,11 +175,15 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
                 additional_fields: Default::default(),
                 id,
                 email: resolved_email,
-                name: profile
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .map(String::from)
-                    .or(login),
+                name: Some(
+                    profile
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .filter(|name| !name.is_empty())
+                        .map(String::from)
+                        .or(login)
+                        .unwrap_or_default(),
+                ),
                 image: profile
                     .get("avatar_url")
                     .and_then(Value::as_str)
