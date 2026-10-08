@@ -123,7 +123,14 @@ impl MagicLinkPlugin {
         match &self.config.storage {
             MagicLinkTokenStorage::Plain => Ok(token.to_owned()),
             MagicLinkTokenStorage::Hashed => Ok(hash_token(token)),
-            MagicLinkTokenStorage::Custom(hasher) => hasher.hash(token).await,
+            MagicLinkTokenStorage::Custom(hasher) => {
+                hasher.hash(token).await.map_err(|error| match error {
+                    AuthError::Api { .. }
+                    | AuthError::Upstream { .. }
+                    | AuthError::CallbackFailure(_) => error,
+                    error => AuthError::CallbackFailure(Box::new(error)),
+                })
+            }
         }
     }
 
