@@ -1215,6 +1215,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ott_router = one_time_token_fixture::router(&config, reset_database.clone()).await?;
     let open_api_router = open_api_fixture::router(&config, reset_database.clone()).await?;
 
+    let factor_table_router = fixtures::two_factor_table_fixture::router(&config, reset_database.clone()).await?;
     let postgres_schema_router = fixtures::postgres_schema_fixture::router(&config).await?;
     let app = Router::new()
         .merge(lifecycle_controls)
@@ -2160,6 +2161,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(deletion_hooks_router)
         .nest("/api/auth", auth_router)
         .with_state(auth)
+        .merge(factor_table_router)
         .merge(postgres_schema_router)
         .merge(error_page_router)
         .merge(error_url_router)
