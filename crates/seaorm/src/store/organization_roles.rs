@@ -30,7 +30,7 @@ impl<S: AuthSchema> OrganizationRoleStore for SeaOrmStore<S> {
             created_at: Set(Utc::now()),
             updated_at: Set(None),
         }
-        .insert(self.connection())
+        .insert(self.scoped_connection())
         .await
         .map_err(map_db_err)?
         .try_into()
@@ -41,7 +41,7 @@ impl<S: AuthSchema> OrganizationRoleStore for SeaOrmStore<S> {
         selector: &OrganizationRoleSelector,
     ) -> AuthResult<Option<OrganizationRole>> {
         scoped(organization_id, selector)
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
             .map(TryInto::try_into)
@@ -54,7 +54,7 @@ impl<S: AuthSchema> OrganizationRoleStore for SeaOrmStore<S> {
         Entity::find()
             .filter(Column::OrganizationId.eq(organization_id))
             .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map_err(map_db_err)?
             .into_iter()
@@ -64,7 +64,7 @@ impl<S: AuthSchema> OrganizationRoleStore for SeaOrmStore<S> {
     async fn count_organization_roles(&self, organization_id: &str) -> AuthResult<usize> {
         let count = Entity::find()
             .filter(Column::OrganizationId.eq(organization_id))
-            .count(self.connection())
+            .count(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
         usize::try_from(count)
@@ -79,7 +79,7 @@ impl<S: AuthSchema> OrganizationRoleStore for SeaOrmStore<S> {
             .filter(member::Column::OrganizationId.eq(organization_id))
             .filter(member::Column::Role.contains(role))
             .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
         Ok(members.iter().any(|member| {
@@ -97,7 +97,7 @@ impl<S: AuthSchema> OrganizationRoleStore for SeaOrmStore<S> {
         update: UpdateOrganizationRole,
     ) -> AuthResult<OrganizationRole> {
         let mut row = scoped(organization_id, selector)
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
             .ok_or_else(|| AuthError::bad_request("Role not found"))?;
@@ -114,7 +114,10 @@ impl<S: AuthSchema> OrganizationRoleStore for SeaOrmStore<S> {
             query = query.col_expr(Column::Permission, Expr::value(permission.clone()));
             row.permission = permission;
         }
-        let _ignored_map_err = query.exec(self.connection()).await.map_err(map_db_err)?;
+        let _ignored_map_err = query
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
         row.updated_at = Some(updated_at);
         row.try_into()
     }
@@ -125,7 +128,7 @@ impl<S: AuthSchema> OrganizationRoleStore for SeaOrmStore<S> {
     ) -> AuthResult<bool> {
         Entity::delete_many()
             .filter(scope(organization_id, selector))
-            .exec(self.connection())
+            .exec(self.scoped_connection())
             .await
             .map(|r| r.rows_affected > 0)
             .map_err(map_db_err)

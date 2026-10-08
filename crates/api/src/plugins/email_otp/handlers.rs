@@ -686,7 +686,14 @@ impl EmailOtpPlugin {
         }
         let settings = self.verification_settings(ctx);
         if let Some(hook) = &settings.before {
-            hook(&ctx.user_view(&current)).await?;
+            hook(&ctx.user_view(&current))
+                .await
+                .map_err(|error| match error {
+                    AuthError::Api { .. }
+                    | AuthError::Upstream { .. }
+                    | AuthError::CallbackFailure(_) => error,
+                    error => AuthError::CallbackFailure(Box::new(error)),
+                })?;
         }
         let updated = ctx
             .database
@@ -700,7 +707,14 @@ impl EmailOtpPlugin {
             )
             .await?;
         if let Some(hook) = &settings.after {
-            hook(&ctx.user_view(&updated)).await?;
+            hook(&ctx.user_view(&updated))
+                .await
+                .map_err(|error| match error {
+                    AuthError::Api { .. }
+                    | AuthError::Upstream { .. }
+                    | AuthError::CallbackFailure(_) => error,
+                    error => AuthError::CallbackFailure(Box::new(error)),
+                })?;
         }
         Ok(AuthResponse::json(200, &json!({"success":true}))
             .map_err(AuthError::from)?

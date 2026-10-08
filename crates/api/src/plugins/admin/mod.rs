@@ -294,6 +294,13 @@ impl AdminPlugin {
         {
             self.authorize(&user, "user", "set-role", MESSAGE_CHANGE_ROLE)?;
         }
+        if body.data.as_ref().is_some_and(|data| {
+            ["banned", "banReason", "banExpires"]
+                .iter()
+                .any(|key| data.contains_key(*key))
+        }) {
+            self.authorize(&user, "user", "ban", MESSAGE_BAN_USERS)?;
+        }
         let response = create_user_core(&body, &self.config, ctx).await?;
         AuthResponse::json(200, &response).map_err(AuthError::from)
     }
@@ -558,11 +565,19 @@ impl AdminPlugin {
         }
 
         let admin_cookie_name = related_cookie_name(&ctx.config, "admin_session");
-        let admin_cookie_value = get_cookie(req, &admin_cookie_name)
-            .ok_or_else(|| AuthError::internal("Failed to find admin session"))?;
+        let admin_cookie_value =
+            get_cookie(req, &admin_cookie_name).ok_or_else(|| AuthError::Api {
+                status: 500,
+                code: None,
+                message: "Failed to find admin session".into(),
+            })?;
         let admin_cookie =
             decode_admin_session_cookie_value(ctx.config.current_secret(), &admin_cookie_value)
-                .map_err(|_error| AuthError::internal("Failed to find admin session"))?;
+                .map_err(|_error| AuthError::Api {
+                    status: 500,
+                    code: None,
+                    message: "Failed to find admin session".into(),
+                })?;
 
         let (response, new_token) = stop_impersonating_core(&session, &admin_cookie, ctx).await?;
 

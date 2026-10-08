@@ -1,3 +1,4 @@
+use super::ScopedTransaction;
 use super::{SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmSessionModel};
 use alibi_core::error::{AuthError, AuthResult};
@@ -7,8 +8,8 @@ use alibi_core::types::CreateSession;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, ExprTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, IntoActiveModel,
+    QueryFilter, QueryOrder, QuerySelect,
 };
 
 impl<S> SeaOrmStore<S>
@@ -23,7 +24,7 @@ where
     async fn create_session_with_connection<C>(
         &self,
         db: &C,
-        tx: Option<&DatabaseTransaction>,
+        tx: Option<&ScopedTransaction>,
         mut create_session: CreateSession,
         persist: bool,
         complete: bool,
@@ -120,7 +121,7 @@ where
     pub(crate) async fn prepare_secondary_update_with_connection<C: ConnectionTrait>(
         &self,
         db: &C,
-        tx: Option<&DatabaseTransaction>,
+        tx: Option<&ScopedTransaction>,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
         mut fields: alibi_core::field_policy::FieldValues,
@@ -154,7 +155,7 @@ where
     pub(crate) async fn complete_secondary_update_with_connection<C: ConnectionTrait>(
         &self,
         db: &C,
-        tx: Option<&DatabaseTransaction>,
+        tx: Option<&ScopedTransaction>,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
         mut fields: alibi_core::field_policy::FieldValues,
@@ -209,7 +210,7 @@ where
 
     pub(crate) async fn prepare_secondary_session_in_tx(
         &self,
-        tx: &DatabaseTransaction,
+        tx: &ScopedTransaction,
         input: CreateSession,
         persist: bool,
     ) -> AuthResult<S::Session> {
@@ -219,7 +220,7 @@ where
 
     pub(crate) async fn create_session_in_tx(
         &self,
-        tx: &DatabaseTransaction,
+        tx: &ScopedTransaction,
         create_session: CreateSession,
     ) -> AuthResult<S::Session> {
         self.create_session_with_connection(tx, Some(tx), create_session, true, true)
@@ -259,7 +260,11 @@ where
         if expires_at.is_some() {
             query = query.filter(S::Session::active_column().eq(true));
         }
-        let Some(model) = query.one(self.connection()).await.map_err(map_db_err)? else {
+        let Some(model) = query
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+        else {
             for hook in self.hooks() {
                 hook.after_update_session_missing(token, &hook_context)
                     .await?;
@@ -267,12 +272,15 @@ where
             return Ok(None);
         };
         let mut active = model.into_active_model();
-        let backend = self.connection().get_database_backend();
+        let backend = self.scoped_connection().get_database_backend();
         if !fields.is_empty() {
             for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
-                let value =
-                    crate::additional_fields::prepare_value(self.connection(), &column, value)
-                        .await?;
+                let value = crate::additional_fields::prepare_value(
+                    self.scoped_connection(),
+                    &column,
+                    value,
+                )
+                .await?;
                 S::Session::set_additional_field(&mut active, column, value, backend)?;
             }
         }
@@ -280,7 +288,7 @@ where
             S::Session::set_expires_at(&mut active, expires_at);
         }
         S::Session::set_updated_at(&mut active, Utc::now());
-        let session = match active.update(self.connection()).await {
+        let session = match active.update(self.scoped_connection()).await {
             Ok(session) => session,
             Err(sea_orm::DbErr::RecordNotUpdated) => {
                 for hook in self.hooks() {
@@ -338,7 +346,7 @@ where
         input: CreateSession,
         persist: bool,
     ) -> AuthResult<S::Session> {
-        self.create_session_with_connection(self.connection(), None, input, persist, false)
+        self.create_session_with_connection(self.scoped_connection(), None, input, persist, false)
             .await
     }
     async fn complete_secondary_session_creation(&self, session: &S::Session) -> AuthResult<()> {
@@ -358,7 +366,7 @@ where
         fields: alibi_core::field_policy::FieldValues,
     ) -> AuthResult<Option<(S::Session, alibi_core::field_policy::FieldValues)>> {
         self.prepare_secondary_update_with_connection(
-            self.connection(),
+            self.scoped_connection(),
             None,
             session,
             expires_at,
@@ -374,7 +382,7 @@ where
         persist: bool,
     ) -> AuthResult<Option<S::Session>> {
         self.complete_secondary_update_with_connection(
-            self.connection(),
+            self.scoped_connection(),
             None,
             session,
             expires_at,
@@ -419,7 +427,7 @@ where
                     now,
                 )),
             )
-            .exec(self.connection())
+            .exec(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
         for hook in self.hooks() {
@@ -442,7 +450,7 @@ where
         };
         let sessions = live()
             .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
         let context = self.hook_context(None);
@@ -472,7 +480,7 @@ where
                     now,
                 )),
             )
-            .exec(self.connection())
+            .exec(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
         for session in &sessions {
@@ -484,15 +492,21 @@ where
     }
 
     async fn create_session(&self, create_session: CreateSession) -> AuthResult<S::Session> {
-        self.create_session_with_connection(self.connection(), None, create_session, true, true)
-            .await
+        self.create_session_with_connection(
+            self.scoped_connection(),
+            None,
+            create_session,
+            true,
+            true,
+        )
+        .await
     }
 
     async fn get_session(&self, token: &str) -> AuthResult<Option<S::Session>> {
         <S::Session as SeaOrmSessionModel>::Entity::find()
             .filter(<S::Session as SeaOrmSessionModel>::token_column().eq(token))
             .filter(<S::Session as SeaOrmSessionModel>::active_column().eq(true))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)
     }
@@ -504,7 +518,7 @@ where
             )
             .filter(<S::Session as SeaOrmSessionModel>::active_column().eq(true))
             .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map_err(map_db_err)
     }
@@ -515,7 +529,7 @@ where
             .filter(<S::Session as SeaOrmSessionModel>::user_id_column().eq(user_id))
             .filter(<S::Session as SeaOrmSessionModel>::active_column().eq(true))
             .order_by_asc(<S::Session as SeaOrmSessionModel>::created_at_column())
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map_err(map_db_err)
     }
@@ -574,7 +588,7 @@ where
         }
         let _ignored_map_err = <S::Session as SeaOrmSessionModel>::Entity::delete_many()
             .filter(<S::Session as SeaOrmSessionModel>::token_column().eq(token))
-            .exec(self.connection())
+            .exec(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
         if let Some(session) = &session {
@@ -589,7 +603,7 @@ where
         let user_id = <S::Session as SeaOrmSessionModel>::parse_user_id(user_id)?;
         <S::Session as SeaOrmSessionModel>::Entity::delete_many()
             .filter(<S::Session as SeaOrmSessionModel>::user_id_column().eq(user_id))
-            .exec(self.connection())
+            .exec(self.scoped_connection())
             .await
             .map(|_| ())
             .map_err(map_db_err)
@@ -605,7 +619,7 @@ where
                     ))
                     .or(<S::Session as SeaOrmSessionModel>::active_column().eq(false)),
             )
-            .exec(self.connection())
+            .exec(self.scoped_connection())
             .await
             .map_err(map_db_err)
             .and_then(|result| {
@@ -622,7 +636,7 @@ where
         let Some(model) = <S::Session as SeaOrmSessionModel>::Entity::find()
             .filter(<S::Session as SeaOrmSessionModel>::token_column().eq(token))
             .filter(<S::Session as SeaOrmSessionModel>::active_column().eq(true))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
         else {
@@ -632,7 +646,10 @@ where
         let mut active = model.into_active_model();
         S::Session::set_active_organization_id(&mut active, organization_id.map(str::to_owned));
         S::Session::set_updated_at(&mut active, Utc::now());
-        active.update(self.connection()).await.map_err(map_db_err)
+        active
+            .update(self.scoped_connection())
+            .await
+            .map_err(map_db_err)
     }
 
     async fn update_session_active_team(
@@ -647,6 +664,9 @@ where
         let mut active = model.into_active_model();
         S::Session::set_active_team_id(&mut active, team_id.map(str::to_owned))?;
         S::Session::set_updated_at(&mut active, Utc::now());
-        active.update(self.connection()).await.map_err(map_db_err)
+        active
+            .update(self.scoped_connection())
+            .await
+            .map_err(map_db_err)
     }
 }

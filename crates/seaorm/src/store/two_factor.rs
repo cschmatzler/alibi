@@ -31,7 +31,7 @@ where
             created_at: Set(now),
             updated_at: Set(now),
         };
-        let backend = self.connection().get_database_backend();
+        let backend = self.scoped_connection().get_database_backend();
         if !matches!(
             backend,
             sea_orm::DatabaseBackend::Sqlite | sea_orm::DatabaseBackend::Postgres
@@ -44,7 +44,7 @@ where
         let _ignored_returning = QueryTrait::query(&mut query).returning(factor_returning(backend));
         Entity::find()
             .from_raw_sql(query.build(backend))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
             .map(|model| TwoFactor::from(&model))
@@ -56,7 +56,7 @@ where
     async fn get_two_factor_by_user_id(&self, user_id: &str) -> AuthResult<Option<TwoFactor>> {
         factor_select()
             .filter(Column::UserId.eq(user_id))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map(|model| model.map(|model| TwoFactor::from(&model)))
             .map_err(map_db_err)
@@ -82,7 +82,7 @@ where
         if unchanged {
             return factor_select()
                 .filter(Column::Id.eq(id))
-                .one(self.connection())
+                .one(self.scoped_connection())
                 .await
                 .map(|row| row.map(|row| TwoFactor::from(&row)))
                 .map_err(map_db_err);
@@ -164,7 +164,7 @@ where
     ) -> AuthResult<TwoFactor> {
         let Some(model) = factor_select()
             .filter(Column::UserId.eq(user_id))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
         else {
@@ -186,7 +186,7 @@ where
     async fn delete_two_factor(&self, user_id: &str) -> AuthResult<()> {
         Entity::delete_many()
             .filter(Column::UserId.eq(user_id))
-            .exec(self.connection())
+            .exec(self.scoped_connection())
             .await
             .map(|_| ())
             .map_err(map_db_err)
@@ -198,7 +198,7 @@ impl<S: AuthSchema + Send + Sync> SeaOrmStore<S> {
         &self,
         mut query: UpdateMany<Entity>,
     ) -> AuthResult<Option<TwoFactor>> {
-        let backend = self.connection().get_database_backend();
+        let backend = self.scoped_connection().get_database_backend();
         if !matches!(
             backend,
             sea_orm::DatabaseBackend::Sqlite | sea_orm::DatabaseBackend::Postgres
@@ -213,7 +213,7 @@ impl<S: AuthSchema + Send + Sync> SeaOrmStore<S> {
             QueryTrait::query(&mut query).returning(factor_returning(backend));
         Entity::find()
             .from_raw_sql(query.build(backend))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map(|row| row.map(|row| TwoFactor::from(&row)))
             .map_err(map_db_err)
@@ -221,22 +221,22 @@ impl<S: AuthSchema + Send + Sync> SeaOrmStore<S> {
 }
 
 fn factor_select() -> Select<Entity> {
-    Entity::find()
-        .select_only()
-        .columns(Column::iter().filter(|column| !matches!(column, Column::FailedVerificationCount)))
-        .column_as(
-            Expr::col((Entity, Column::FailedVerificationCount))
-                .cast_as(Alias::new("DOUBLE PRECISION")),
-            Column::FailedVerificationCount,
-        )
+    let mut select = Entity::find().select_only();
+    for column in Column::iter() {
+        let expression = Expr::col((Entity, column));
+        select = if matches!(column, Column::FailedVerificationCount) {
+            select.column_as(expression.cast_as(Alias::new("DOUBLE PRECISION")), column)
+        } else {select.column_as(expression, column)};
+    }
+    select
 }
 
-fn factor_returning(backend: sea_orm::DatabaseBackend) -> sea_orm::sea_query::ReturningClause {
+fn factor_returning(_backend: sea_orm::DatabaseBackend) -> sea_orm::sea_query::ReturningClause {
+    use sea_orm::IdenStatic;
     Query::returning().exprs(Column::iter().map(|column| {
+        let name = column.as_str();
         if matches!(column, Column::FailedVerificationCount) {
-            // SQLite INTEGER affinity retains integral storage, while SQLx's
-            // typed f64 decoder needs a REAL projection with its original name.
-            Expr::cust("CAST(\"failed_verification_count\" AS DOUBLE PRECISION) AS \"failed_verification_count\"")
-        } else { column.select_as(column.into_returning_expr(backend)) }
+            Expr::cust(format!("CAST(\"{name}\" AS DOUBLE PRECISION) AS \"{name}\""))
+        } else {Expr::cust(format!("\"{name}\" AS \"{name}\""))}
     }))
 }
