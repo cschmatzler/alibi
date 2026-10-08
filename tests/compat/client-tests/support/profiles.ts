@@ -29,6 +29,7 @@ export const FIXTURE_PROFILES = [
   "otp-change-disabled-false",
   ...variants("generic-discovery-", [
     "success",
+    "static-params",
     "nonce-unbound",
     "response-type",
     "override",
