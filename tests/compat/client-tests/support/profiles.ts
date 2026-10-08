@@ -211,6 +211,7 @@ export const FIXTURE_PROFILES = [
     "disabled-idtoken",
   ] as const),
   "error-page",
+  "custom-session-gated",
   "custom-session-list-default",
   "custom-session-list-false",
   "custom-session",

@@ -3150,6 +3150,12 @@ const server = Bun.serve({
       }
       if (url.pathname === "/__test/phone-validator-events")
         return Response.json(phoneFixture.validatorEvents);
+      if (url.pathname === "/__test/custom-session-work")
+        return Response.json(
+          customSessionFixture.control(
+            request.method === "POST" ? await request.json() : undefined,
+          ),
+        );
       if (url.pathname === "/__test/phone-otp" && request.method === "GET") {
         return jsonResponse(
           phoneFixture.outbox.get(
