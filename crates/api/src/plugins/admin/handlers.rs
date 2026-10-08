@@ -333,6 +333,20 @@ pub(in crate::plugins) async fn update_user_core(
         return Err(AuthError::bad_request(MESSAGE_NO_DATA_TO_UPDATE));
     }
 
+    if body.data.get("banned") == Some(&serde_json::Value::Bool(true))
+        && body.user_id == acting_user.id
+    {
+        return Err(AuthError::bad_request("You cannot ban yourself"));
+    }
+
+    if body.data.contains_key("password") {
+        return Err(AuthError::Api {
+            status: 400,
+            code: Some("PASSWORD_CANNOT_BE_UPDATED_VIA_UPDATE_USER".into()),
+            message: "Password cannot be updated through update-user. Use the set-user-password endpoint instead".into(),
+        });
+    }
+
     let mut update = UpdateUser::default();
 
     if let Some(value) = body.data.get("role") {
