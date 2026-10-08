@@ -1509,3 +1509,119 @@ compatScenario(
   },
   ["GET /jwks", "POST /sign-up/email"],
 );
+
+compatScenario(
+  "server-only JWT claim overrides replace nested defaults without changing configured signing policy",
+  async (ctx) => {
+    const mode = "jwt-keyring-claims";
+    await control(ctx, { operation: "reset" }, mode);
+    const guest = client(ctx, "claims-jwks", mode);
+    const ordinary = { application: "claims-source", sub: "actual-server-owner" };
+    const issue = async (
+      payload: Record<string, unknown>,
+      overrideOptions?: Record<string, unknown>,
+    ) => {
+      const result = await signed(
+        ctx,
+        payload,
+        {
+          operation: "api-sign-overrides",
+          absentRequest: true,
+          ...(overrideOptions === undefined ? {} : { overrideOptions }),
+        },
+        mode,
+      );
+      return { result, token: await token(result) };
+    };
+    const first = await issue(ordinary);
+    const firstState = await state(ctx, mode);
+    expect(firstState.keys).toHaveLength(1);
+    const jwks = await guest.jwks();
+    expect(jwks.error).toBeNull();
+    const keys = jwks.data!.keys as JWK[];
+    const check = async (signedToken: string, issuer: string, audience: string | string[]) => {
+      const protectedHeader = JSON.parse(
+        Buffer.from(signedToken.split(".")[0]!, "base64url").toString(),
+      );
+      const publicKey = keys.find((key) => key.kid === protectedHeader.kid)!;
+      expect(publicKey).toBeDefined();
+      const verified = await jwtVerify(
+        signedToken,
+        await importJWK(publicKey, protectedHeader.alg),
+        { algorithms: [protectedHeader.alg], issuer, audience },
+      );
+      return { header: verified.protectedHeader, payload: verified.payload };
+    };
+    const baseline = await check(first.token, "configured-issuer", "configured-audience");
+    expect(baseline.payload).toMatchObject(ordinary);
+    const expiration = (payload: Record<string, unknown>, duration: number) => {
+      expect(Object.hasOwn(payload, "iat")).toBe(false);
+      const expected = Math.floor(Date.now() / 1000) + duration;
+      expect(payload.exp).toBeNumber();
+      expect(payload.exp as number).toBeGreaterThanOrEqual(expected - 5);
+      expect(payload.exp as number).toBeLessThanOrEqual(expected + 1);
+    };
+    expiration(baseline.payload, 10800);
+    const observations = [];
+    for (const variant of ["full", "partial", "payload"] as const) {
+      const explicit = {
+        ...ordinary,
+        iss: "payload-issuer",
+        aud: "payload-audience",
+        iat: 100,
+        exp: 4102444800,
+      };
+      const jwt =
+        variant === "partial"
+          ? { issuer: "override-issuer" }
+          : {
+              issuer: "override-issuer",
+              audience: ["override-a", "override-b"],
+              expirationTime: "2h",
+            };
+      const issued = await issue(variant === "payload" ? explicit : ordinary, { jwt });
+      const checked = await check(
+        issued.token,
+        variant === "payload" ? "payload-issuer" : "override-issuer",
+        variant === "payload"
+          ? "payload-audience"
+          : variant === "partial"
+            ? ctx.baseURL
+            : ["override-a", "override-b"],
+      );
+      expect(checked.payload).toMatchObject(variant === "payload" ? explicit : ordinary);
+      expect(checked.payload.aud).toEqual(
+        variant === "payload"
+          ? "payload-audience"
+          : variant === "partial"
+            ? ctx.baseURL
+            : ["override-a", "override-b"],
+      );
+      if (variant !== "payload") expiration(checked.payload, variant === "partial" ? 900 : 7200);
+      expect((await state(ctx, mode)).keys).toEqual(firstState.keys);
+      observations.push({ variant, issued: ctx.snapshot(issued.result), checked });
+    }
+    const repeated = await issue(ordinary);
+    const restored = await check(repeated.token, "configured-issuer", "configured-audience");
+    expiration(restored.payload, 10800);
+    expect(restored.payload).toMatchObject(ordinary);
+    const finalState = await state(ctx, mode);
+    expect(finalState.keys).toEqual(firstState.keys);
+    expect(
+      finalState.events.every(
+        (event) => event.operation !== "payload" && event.operation !== "subject",
+      ),
+    ).toBe(true);
+    return {
+      first: ctx.snapshot(first.result),
+      baseline,
+      observations,
+      repeated: ctx.snapshot(repeated.result),
+      restored,
+      jwks: ctx.snapshot(jwks),
+      firstState,
+      finalState,
+    };
+  },
+  ["GET /jwks"],
+);
