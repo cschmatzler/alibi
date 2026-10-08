@@ -1900,6 +1900,19 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
     }
     try {
+      if (
+        body?.operation === "seed-stray-team-member" &&
+        typeof body.teamId === "string" &&
+        typeof body.userId === "string"
+      ) {
+        const { adapter } = await selected.$context;
+        await adapter.create({
+          model: "teamMember",
+          data: { teamId: body.teamId, userId: body.userId, createdAt: new Date() },
+        });
+        database.query("UPDATE team SET memberCount=memberCount+1 WHERE id=?").run(body.teamId);
+        return jsonResponse({ inserted: true });
+      }
       if (body?.operation === "team-config-evidence" && typeof body.organizationId === "string") {
         return jsonResponse(teamConfigEvidence(database, body.organizationId));
       }

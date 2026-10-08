@@ -888,3 +888,79 @@ compatScenario(
     "POST /organization/set-active-team",
   ],
 );
+
+compatScenario(
+  "team-member listing denies a persisted stray member without organization membership",
+  async (ctx) => {
+    const owner = await signUp(ctx, "stray-team-owner");
+    const member = await signUp(ctx, "actual-team-member");
+    const outsider = await signUp(ctx, "stray-team-outsider");
+    const tenant = data(
+      await owner.client.organization.create({
+        name: "Team Tenant",
+        slug: ctx.uniqueToken("team-tenant"),
+      }),
+    );
+    const otherTenant = data(
+      await outsider.client.organization.create({
+        name: "Other Tenant",
+        slug: ctx.uniqueToken("other-team-tenant"),
+      }),
+    );
+    const initial = await state(ctx, tenant.id);
+    const team = initial.parsed.teams[0]!;
+    const invitation = data(
+      await owner.client.organization.inviteMember({
+        organizationId: tenant.id,
+        email: member.email,
+        role: "member",
+        teamId: team.id,
+      }),
+    );
+    expect(
+      (await member.client.organization.acceptInvitation({ invitationId: invitation.id })).error,
+    ).toBeNull();
+    const seeded = await serverOperation(ctx, {
+      operation: "seed-stray-team-member",
+      teamId: team.id,
+      userId: outsider.user.id,
+    });
+    expect(seeded.status).toBe(200);
+    expect(seeded.body).toEqual({ inserted: true });
+    const before = await state(ctx, tenant.id);
+    expect(before.parsed.teamMembers).toContainEqual(
+      expect.objectContaining({ teamId: team.id, userId: outsider.user.id }),
+    );
+    expect(before.parsed.members.some((row) => row.userId === outsider.user.id)).toBe(false);
+    const otherBefore = await state(ctx, otherTenant.id);
+    const sessionsBefore = await Promise.all(
+      [owner, member, outsider].map((actor) => ctx.readUserState({ userId: actor.user.id })),
+    );
+    const denied = await outsider.client.organization.listTeamMembers({
+      query: { teamId: team.id },
+    });
+    expect(denied.data).toBeNull();
+    expect(await state(ctx, tenant.id)).toEqual(before);
+    expect(await state(ctx, otherTenant.id)).toEqual(otherBefore);
+    expect(
+      await Promise.all(
+        [owner, member, outsider].map((actor) => ctx.readUserState({ userId: actor.user.id })),
+      ),
+    ).toEqual(sessionsBefore);
+    const allowed = await owner.client.organization.listTeamMembers({ query: { teamId: team.id } });
+    expect(allowed.error).toBeNull();
+    expect(allowed.data?.map((row) => row.userId).sort()).toEqual(
+      [owner.user.id, member.user.id, outsider.user.id].sort(),
+    );
+    expect((await outsider.client.getSession()).data?.user.id).toBe(outsider.user.id);
+    expect(denied.error).toMatchObject({ status: 400, code: "USER_IS_NOT_A_MEMBER_OF_THE_TEAM", message: "User is not a member of the team" });
+    return {
+      seeded,
+      denied: ctx.snapshot(denied),
+      allowed: ctx.snapshot(allowed),
+      before: before.raw,
+      otherBefore: otherBefore.raw,
+    };
+  },
+  ["GET /organization/list-team-members"],
+);
