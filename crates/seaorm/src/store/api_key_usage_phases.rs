@@ -28,7 +28,7 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         observed: &ApiKey,
         global_rate_limit_enabled: bool,
     ) -> AuthResult<ConsumeApiKeyResult> {
-        let database = self.connection();
+        let database = self.scoped_connection();
         if !matches!(
             database.get_database_backend(),
             DbBackend::Sqlite | DbBackend::Postgres

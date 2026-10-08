@@ -56,13 +56,15 @@ impl<S: AuthSchema> SeaOrmStore<S> {
 #[async_trait]
 impl<S: AuthSchema> JwkStore for SeaOrmStore<S> {
     async fn list_jwks(&self) -> AuthResult<Vec<Jwk>> {
-        self.list_jwks_with_connection(self.connection()).await
+        self.list_jwks_with_connection(self.scoped_connection())
+            .await
     }
     async fn get_jwk_by_id(&self, id: &str) -> AuthResult<Option<Jwk>> {
-        self.get_jwk_with_connection(self.connection(), id).await
+        self.get_jwk_with_connection(self.scoped_connection(), id)
+            .await
     }
     async fn create_jwk(&self, data: CreateJwk) -> AuthResult<Jwk> {
-        self.create_jwk_with_connection(self.connection(), data)
+        self.create_jwk_with_connection(self.scoped_connection(), data)
             .await
     }
 }

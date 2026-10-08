@@ -308,7 +308,7 @@ where
         user_id: &str,
         maximum: Option<f64>,
     ) -> AuthResult<AddTeamMemberResult> {
-        let tx = self.pool().begin(true).await?;
+        let tx = self.begin(true).await?;
         let result = self
             .add_team_member_in_tx(&tx, team_id, user_id, maximum)
             .await?;

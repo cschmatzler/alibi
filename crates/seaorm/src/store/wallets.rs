@@ -1,3 +1,4 @@
+use super::ScopedTransaction;
 use super::entities::wallet_address;
 use super::{SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmUserModel};
@@ -7,10 +8,9 @@ use alibi_core::{AuthUser, CreateWalletAddress, WalletAddress};
 use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QuerySelect, Set,
     SqliteTransactionMode, TransactionOptions, TransactionTrait,
 };
-use sea_orm_migration::SchemaManager;
 use uuid::Uuid;
 
 #[async_trait]
@@ -33,7 +33,7 @@ where
         // preserves insertion order for an address-only scan; a chain/address
         // index or creation-time sort would change the selected owner.
         Ok(query
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
             .map(Into::into))
@@ -44,7 +44,7 @@ where
             return Err(AuthError::bad_request("Wallet chain ID must be finite"));
         }
         let transaction = self
-            .connection()
+            .scoped_connection()
             .begin_with_options(TransactionOptions {
                 sqlite_transaction_mode: Some(SqliteTransactionMode::Immediate),
                 ..Default::default()
@@ -78,10 +78,10 @@ where
 }
 
 pub(super) async fn remove_owned_wallets(
-    transaction: &DatabaseTransaction,
+    transaction: &ScopedTransaction,
     user_id: &str,
 ) -> AuthResult<()> {
-    if !SchemaManager::new(transaction)
+    if !transaction
         .has_table("wallet_address")
         .await
         .map_err(map_db_err)?
