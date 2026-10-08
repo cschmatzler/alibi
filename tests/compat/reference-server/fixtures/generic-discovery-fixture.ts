@@ -75,6 +75,7 @@ export function genericDiscoveryFixture(base: BetterAuthOptions) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   for (const mode of [
     "success",
+    "static-params",
     "response-type",
     "expiry-positive",
     "expiry-zero",
@@ -108,6 +109,15 @@ export function genericDiscoveryFixture(base: BetterAuthOptions) {
             config: [
               {
                 providerId: "discovery",
+                ...(mode === "static-params"
+                  ? {
+                      authorizationUrlParams: {
+                        audience: "static-audience",
+                        scope: "configured-scope",
+                        prompt: "consent",
+                      },
+                    }
+                  : {}),
                 disableIdTokenNonceBinding: mode === "nonce-unbound",
                 ...(mode === "response-type" ? { responseType: "token" } : {}),
                 clientId: "discovery-client",

@@ -20,9 +20,11 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
   >();
 
   for (const name of [
+    "disabled",
     "default",
     "required",
     "delivery",
+    "request-body",
     "auto",
     "change",
     "promotion",
@@ -87,7 +89,8 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
       emailAndPassword: {
         ...base.emailAndPassword,
         enabled: true,
-        requireEmailVerification: name === "required" || name === "delivery",
+        requireEmailVerification:
+          name === "required" || name === "delivery" || name === "request-body",
         ...(name === "delete-policy"
           ? {
               maxPasswordLength: 12,
@@ -134,17 +137,23 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
       emailVerification: {
         expiresIn: name === "verification-expired" ? -1 : 90,
         sendOnSignUp:
-          name === "delivery"
+          name === "delivery" || name === "request-body"
             ? true
             : name === "required" || name === "default"
               ? undefined
               : false,
-        sendOnSignIn: name === "delivery" ? true : undefined,
+        sendOnSignIn: name === "delivery" || name === "request-body" ? true : undefined,
         autoSignInAfterVerification: name === "auto",
         ...(!["no-mail", "promotion-no-mail"].includes(name)
           ? {
-              sendVerificationEmail: async ({ user, url, token }, request) =>
-                hook("verification-mail", user, request, { url, token }),
+              sendVerificationEmail: async ({ user, url, token }, request) => {
+                const requestBody = name === "request-body" ? await request!.json() : undefined;
+                return hook("verification-mail", user, request, {
+                  url,
+                  token,
+                  ...(requestBody === undefined ? {} : { requestBody }),
+                });
+              },
             }
           : {}),
         beforeEmailVerification: async (user, request) =>
@@ -154,7 +163,7 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
       user: {
         ...base.user,
         changeEmail: {
-          enabled: true,
+          enabled: name !== "disabled",
           updateEmailWithoutVerification: name.startsWith("promotion"),
           ...(name === "change"
             ? {
@@ -164,7 +173,7 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
             : {}),
         },
         deleteUser: {
-          enabled: true,
+          enabled: name !== "disabled",
           deleteTokenExpiresIn: name === "delete-zero" ? 0 : name === "delete-expired" ? -1 : 90,
           ...(name.startsWith("delete-") && !["delete-policy", "delete-no-freshness"].includes(name)
             ? {

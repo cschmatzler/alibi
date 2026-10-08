@@ -445,3 +445,25 @@ pub async fn no_default_router(base: &AuthConfig, database: DatabaseConnection) 
         .build().await?);
     Ok(Router::new().nest(path, auth.clone().axum_router().with_state(auth)))
 }
+
+pub async fn organization_static_router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
+    use alibi::plugins::organization::{OrganizationConfig, RolePermissions};
+    use alibi::plugins::{OrganizationPlugin};
+    let roles = std::collections::HashMap::from([
+        ("owner".into(), RolePermissions { invitation: vec!["create".into()], member: vec!["update".into()], api_key: vec!["create".into(), "read".into(), "update".into(), "delete".into()], ..Default::default() }),
+        ("admin".into(), RolePermissions { api_key: vec!["create".into()], ..Default::default() }),
+        ("member".into(), RolePermissions { api_key: vec!["read".into()], ..Default::default() }),
+        ("updater".into(), RolePermissions { api_key: vec!["read".into(), "update".into()], ..Default::default() }),
+        ("deleter".into(), RolePermissions { api_key: vec!["read".into(), "delete".into()], ..Default::default() }),
+    ]);
+    let path = "/__test/profiles/api-key-org-static/api/auth";
+    let config = base.clone().base_path(path);
+    let auth = Arc::new(AuthBuilder::<TestSchema>::new(config.clone())
+        .store(crate::backend::store::<TestSchema>(config.clone(), database))
+        .rate_limit(RateLimitConfig::new().enabled(false))
+        .plugin(EmailPasswordPlugin::new()).plugin(SessionManagementPlugin::new())
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {roles:Some(roles),..Default::default()}))
+        .plugin(ApiKeyPlugin::with_config(ApiKeyConfig::default()).configuration(ApiKeyConfig {config_id:"organization".into(),references:ApiKeyReferences::Organization,..Default::default()}))
+        .build().await?);
+    Ok(Router::new().nest(path, auth.clone().axum_router().with_state(auth)))
+}

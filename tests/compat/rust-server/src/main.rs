@@ -1,3 +1,4 @@
+mod account_linking_profiles;
 use serde_json::{Value, json};
 use axum::http::StatusCode;
 mod additional_field_models;
@@ -288,6 +289,7 @@ fn default_github_profile() -> GitHubProfile {
 }
 
 async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr> {
+    alibi_seaorm::rate_limit::entity::Entity::delete_many().exec(database).await?;
     alibi_seaorm::store::entities::jwk::Entity::delete_many()
         .exec(database)
         .await?;
@@ -340,7 +342,7 @@ async fn database_residue(
         .query_all_raw(Statement::from_string(
             DbBackend::Sqlite,
             // Migration bookkeeping is schema, not scenario state.
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'better_auth_migrations' ORDER BY name",
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('better_auth_migrations', 'better_auth_rate_limit_migrations') ORDER BY name",
         ))
         .await?;
     let mut residue = serde_json::Map::new();
@@ -833,6 +835,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .await?;
 
+    let account_linking_router = account_linking_profiles::router(
+        &config,
+        database.clone(),
+        || {
+            mock_oauth_plugin(
+                port,
+                social_profile.clone(),
+                social_id_token_valid.clone(),
+                oauth_refresh_mode.clone(),
+            )
+        },
+    )
+    .await?;
     let verification_profile_router =
         verification_profiles::router(&config, database.clone(), verification_outbox.clone())
             .await?;
@@ -958,6 +973,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_key_generation_router =
         api_key_generation_fixture::router(&config, database.clone()).await?;
     let api_key_options_router = api_key_options_fixture::router(&config, database.clone()).await?;
+    let api_key_org_static_router = api_key_options_fixture::organization_static_router(&config, database.clone()).await?;
     let api_key_no_default_router = api_key_options_fixture::no_default_router(&config, database.clone()).await?;
     let passkey_auth_events: passkey_authentication_fixture::Events = Arc::default();
     let passkey_auth_router = passkey_authentication_fixture::router(
@@ -2179,6 +2195,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(invitation_acceptance_router)
         .merge(invitation_lifecycle_router)
         .merge(verification_profile_router)
+        .merge(account_linking_router)
         .merge(session_profile_router)
         .merge(bearer_router)
         .merge(captcha_router)
@@ -2194,6 +2211,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(admin_banned_message_router)
         .merge(api_key_generation_router)
         .merge(api_key_options_router)
+        .merge(api_key_org_static_router)
         .merge(api_key_no_default_router)
         .merge(api_key_storage_router)
         .merge(api_key_background_router)

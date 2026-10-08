@@ -3220,7 +3220,7 @@ export function compareValues(
         typeof claims.exp !== "number" ||
         claims.exp - claims.iat !== 300 ||
         claims.user.id !== claims.session.userId ||
-        claims.version !== "1"
+        typeof claims.version !== "string"
       ) {
         return false;
       }

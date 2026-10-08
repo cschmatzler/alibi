@@ -48,6 +48,9 @@ pub(crate) async fn router(
         ("passkey-fresh", 1),
         ("passkey-no-freshness", 0),
         ("passkey-acceptance", 0),
+        ("passkey-rp-options", 0),
+        ("passkey-origin-list", 0),
+        ("passkey-origin-null", 0),
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut configured = config.clone().base_path(&path);
@@ -72,7 +75,11 @@ pub(crate) async fn router(
             PasskeyPlugin::new()
                 .web_authn_challenge_cookie("ceremony-proof")
                 .attestation_root_certificates(roots)
+        } else if name == "passkey-rp-options" {
+            // Native configuration exposes rpName, but no authenticatorSelection policy.
+            PasskeyPlugin::new().rp_name("Configured ceremony RP")
         } else {
+            // Native configuration exposes one origin, not upstream list/null policies.
             PasskeyPlugin::new()
         };
         let auth = Arc::new(
