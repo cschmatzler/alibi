@@ -333,14 +333,6 @@ pub(in crate::plugins) async fn update_user_core(
         return Err(AuthError::bad_request(MESSAGE_NO_DATA_TO_UPDATE));
     }
 
-    if body.data.contains_key("password") {
-        return Err(AuthError::Api {
-            status: 400,
-            code: Some("PASSWORD_CANNOT_BE_UPDATED_VIA_UPDATE_USER".into()),
-            message: "Password cannot be updated through update-user. Use the set-user-password endpoint instead".into(),
-        });
-    }
-
     let mut update = UpdateUser::default();
 
     if let Some(value) = body.data.get("role") {
@@ -374,6 +366,26 @@ pub(in crate::plugins) async fn update_user_core(
             &permissions,
         ) {
             return Err(AuthError::forbidden("You are not allowed to ban users"));
+        }
+    }
+
+    if ["email", "emailVerified"]
+        .iter()
+        .any(|key| body.data.contains_key(*key))
+    {
+        let permissions =
+            std::collections::HashMap::from([("user".to_owned(), vec!["set-email".to_owned()])]);
+        if !has_permission(
+            Some(acting_user.id.as_str()),
+            acting_user.role.as_deref(),
+            config,
+            &permissions,
+        ) {
+            return Err(AuthError::Api {
+                status: 403,
+                code: Some("YOU_ARE_NOT_ALLOWED_TO_SET_USERS_EMAIL".into()),
+                message: "You are not allowed to update users email".into(),
+            });
         }
     }
 
@@ -434,9 +446,6 @@ pub(in crate::plugins) async fn update_user_core(
         .database
         .update_user_record(&body.user_id, update)
         .await?;
-    if body.data.get("banned") == Some(&serde_json::Value::Bool(true)) {
-        ctx.database.delete_user_sessions(&body.user_id).await?;
-    }
     AdminUserView::from_output(ctx, &updated_user)
 }
 
