@@ -690,3 +690,78 @@ for (const variant of ["missing", "malformed", "valid"] as const) {
     ["POST /sign-in/social", "GET /callback/{}", "GET /get-session"],
   );
 }
+
+// Missing/empty optional fields must reach the provider's actual fallback branch.
+for (const variant of ["missing", "empty"] as const) {
+  for (const provider of ["roblox", "slack", "salesforce", "spotify"] as const) {
+    compatScenario(
+      `provider profile fallback ${provider} ${variant}`,
+      async (ctx) => {
+        const foreign = ctx.actor("foreign");
+        const foreignEmail = ctx.uniqueEmail("fallback-foreign");
+        const foreignSignup = await foreign.client.signUp.email({
+          email: foreignEmail,
+          password: "password123",
+          name: "Unrelated owner",
+        });
+        expect(foreignSignup.error).toBeNull();
+        const before = await foreign.client.getSession();
+        const profile: any = structuredClone(inputs[provider]);
+        const fallback = "https://images.example.invalid/fallback.png";
+        let expectedName = "Batch Name";
+        let expectedImage: string | null = fallback;
+        if (provider === "roblox") {
+          if (variant === "empty") profile.nickname = "";
+          else delete profile.nickname;
+          profile.preferred_username = "Fallback username";
+          expectedName = "Fallback username";
+          expectedImage = "https://images.example.invalid/batch.png";
+        } else if (provider === "slack") {
+          if (variant === "empty") profile.picture = "";
+          else delete profile.picture;
+          profile["https://slack.com/user_image_512"] = fallback;
+        } else if (provider === "salesforce") {
+          if (variant === "empty") profile.photos.picture = "";
+          else delete profile.photos.picture;
+          profile.photos.thumbnail = fallback;
+        } else {
+          profile.images =
+            variant === "empty"
+              ? []
+              : [{ url: fallback }, { url: "https://images.example.invalid/second.png" }];
+          expectedImage = variant === "empty" ? null : fallback;
+        }
+        await control(ctx, provider, { profile });
+        const completed = await flow(ctx, provider, "default");
+        expect(completed.response.status).toBe(302);
+        expect(completed.response.headers.get("location")).toBe("/dashboard");
+        const session = await completed.actor.client.getSession();
+        expect(session.error).toBeNull();
+        expect(session.data?.user.name).toBe(expectedName);
+        expect(session.data?.user.image ?? null).toBe(expectedImage);
+        expect(session.data?.user.emailVerified).toBe(["salesforce", "slack"].includes(provider));
+        const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
+        const source = "user" in sql;
+        const users = sql[source ? "user" : "users"]!;
+        const accounts = sql[source ? "account" : "accounts"]!;
+        const owner = users.find((row) => row.id === session.data!.user.id);
+        expect(owner).toMatchObject({ name: expectedName, image: expectedImage });
+        expect(
+          accounts.find((row) => row[source ? "providerId" : "provider_id"] === provider),
+        ).toMatchObject({
+          [source ? "accountId" : "account_id"]: "batch-subject",
+          [source ? "userId" : "user_id"]: owner.id,
+        });
+        expect(users).toHaveLength(2);
+        expect(accounts).toHaveLength(2);
+        expect(await foreign.client.getSession()).toEqual(before);
+        return {
+          session: ctx.snapshot(session),
+          callback: status(completed.response, ctx.baseURL),
+          foreign: ctx.snapshot(before),
+        };
+      },
+      ["POST /sign-in/social", "GET /callback/{}", "GET /get-session"],
+    );
+  }
+}
