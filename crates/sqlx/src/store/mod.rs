@@ -154,7 +154,23 @@ impl<S: AuthSchema> SqlxStore<S> {
 #[async_trait]
 impl<S: AuthSchema> SchemaMigrator for SqlxStore<S> {
     async fn migrate(&self) -> AuthResult<()> {
-        migrator::run_migrations_scoped(&self.pool, &self.config).await
+        migrator::run_migrations_scoped(&self.pool, &self.config).await?;
+        if let Some(mapping) = &self.config.advanced.database.two_factor {
+            let commands = mapping.migration_statements()?;
+            self.in_transaction(false, async move |tx| {
+                let exec = Exec::Tx(tx);
+                if migrator::has_table(exec, "two_factor").await? {
+                    for command in commands {
+                        _ = exec
+                            .execute(crate::sql::Sql::with(exec.engine(), &command))
+                            .await?;
+                    }
+                }
+                Ok(())
+            })
+            .await?;
+        }
+        Ok(())
     }
 }
 
