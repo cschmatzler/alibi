@@ -19,6 +19,9 @@ use tokio::sync::Mutex;
 const INPUTS: &str = include_str!("../../../fixtures/provider-batch-profiles.json");
 const MODES: &[&str] = &[
     "default",
+    "claims-empty",
+    "claims-custom",
+
     "expiry-positive",
     "expiry-zero",
     "expiry-negative",
@@ -171,6 +174,7 @@ fn factory(provider: &str, mode: &str, local: Option<&str>) -> OAuthProvider {
         }
         "twitch" => {
             let mut options = TwitchOptions::new(client, Some(secret.into()));
+            options.claims = match mode { "claims-empty" => Some(vec![]), "claims-custom" => Some(vec!["custom".into(), "custom".into(), "email".into(), "__proto__".into()]), _ => None };
             options.scope = configured(mode);
             options.disable_default_scope = mode == "disabled-configured";
             OAuthProvider::twitch_with_options(options)
@@ -232,6 +236,7 @@ pub(crate) async fn router(
     let mut router = Router::new();
     for provider_id in PROVIDERS {
         for mode in MODES {
+            if mode.starts_with("claims-") && *provider_id != "twitch" { continue; }
             let path = format!("/__test/profiles/provider-batch-{provider_id}-{mode}/api/auth");
             let mut settings = config.clone().base_path(&path);
             settings.account.encrypt_oauth_tokens = *mode == "encrypted";

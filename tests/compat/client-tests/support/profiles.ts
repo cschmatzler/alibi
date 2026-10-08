@@ -124,6 +124,8 @@ export const FIXTURE_PROFILES = [
   ).flatMap((provider) =>
     variants(`provider-batch-${provider}-`, [
       "default",
+      "claims-empty",
+      "claims-custom",
       "configured",
       "disabled-configured",
       "mapped-async",
