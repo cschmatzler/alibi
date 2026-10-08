@@ -1,4 +1,4 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 /// Request body for `POST /request-password-reset`.
@@ -14,7 +14,6 @@ pub(in crate::plugins) struct RequestPasswordResetRequest {
 #[derive(Debug, Deserialize, Validate)]
 pub(in crate::plugins) struct ResetPasswordRequest {
     #[serde(rename = "newPassword")]
-    #[validate(length(min = 1, message = "New password is required"))]
     pub(in crate::plugins) new_password: String,
     pub(in crate::plugins) token: Option<String>,
 }
@@ -23,16 +22,10 @@ pub(in crate::plugins) struct ResetPasswordRequest {
 #[derive(Debug, Deserialize, Validate)]
 pub(in crate::plugins) struct ChangePasswordRequest {
     #[serde(rename = "newPassword")]
-    #[validate(length(min = 1, message = "New password is required"))]
     pub(in crate::plugins) new_password: String,
     #[serde(rename = "currentPassword")]
-    #[validate(length(min = 1, message = "Current password is required"))]
     pub(in crate::plugins) current_password: String,
-    #[serde(
-        default,
-        rename = "revokeOtherSessions",
-        deserialize_with = "deserialize_bool_or_string"
-    )]
+    #[serde(default, rename = "revokeOtherSessions")]
     pub(in crate::plugins) revoke_other_sessions: Option<bool>,
 }
 
@@ -68,26 +61,20 @@ pub(in crate::plugins) enum ResetPasswordTokenResult {
     Redirect(String),
 }
 
-/// Deserialize a value that can be either a boolean or a string ("true"/"false") into Option<bool>.
-/// This is needed because the better-auth TypeScript SDK sends `revokeOtherSessions` as a boolean,
-/// while some clients may send it as a string.
-fn deserialize_bool_or_string<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = alibi_core::utils::json::deserialize_optional_value(deserializer)?;
-    match value {
-        None => Ok(None),
-        Some(serde_json::Value::Bool(b)) => Ok(Some(b)),
-        Some(serde_json::Value::String(s)) => match s.to_lowercase().as_str() {
-            "true" => Ok(Some(true)),
-            "false" => Ok(Some(false)),
-            _ => Err(serde::de::Error::custom(format!(
-                "invalid value for revokeOtherSessions: {s}"
-            ))),
+impl crate::plugins::authentication_helpers::RequestBody for ResetPasswordRequest {
+    const FIELDS: &'static [crate::plugins::authentication_helpers::JsonField] = &[
+        crate::plugins::authentication_helpers::JsonField::string("newPassword", true),
+        crate::plugins::authentication_helpers::JsonField::string("token", false),
+    ];
+}
+impl crate::plugins::authentication_helpers::RequestBody for ChangePasswordRequest {
+    const FIELDS: &'static [crate::plugins::authentication_helpers::JsonField] = &[
+        crate::plugins::authentication_helpers::JsonField::string("newPassword", true),
+        crate::plugins::authentication_helpers::JsonField::string("currentPassword", true),
+        crate::plugins::authentication_helpers::JsonField {
+            name: "revokeOtherSessions",
+            kind: crate::plugins::authentication_helpers::JsonFieldKind::Boolean,
+            required: false,
         },
-        Some(other) => Err(serde::de::Error::custom(format!(
-            "invalid type for revokeOtherSessions: {other}"
-        ))),
-    }
+    ];
 }
