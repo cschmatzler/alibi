@@ -34,8 +34,12 @@ struct DeviceExpiry {
     device_code: String,
     expires_at: DateTime<Utc>,
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceOwner { device_code: String, user_id: String }
 pub(crate) fn router(database: DatabaseConnection) -> Router<Arc<BetterAuth<TestSchema>>> {
     let read_database = database.clone();
+    let owner_database = database.clone();
     Router::new().route("/__test/device-callback-events", get(|| async { Json(std::mem::take(&mut *CALLBACK_EVENTS.lock().unwrap())) })).route("/__test/device-state",get(move |Query(body):Query<DeviceSelector>| {
   let database=read_database.clone();async move {
    match device_code::Entity::find().filter(device_code::Column::DeviceCode.eq(body.device_code)).one(&database).await {
@@ -43,7 +47,11 @@ pub(crate) fn router(database: DatabaseConnection) -> Router<Arc<BetterAuth<Test
     Err(error)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"message":error.to_string()})))
    }
   }
- })).route("/__test/expire-device",post(move |Json(body):Json<DeviceExpiry>| {
+ })).route("/__test/device-owner", post(move |Json(body): Json<DeviceOwner>| {let database = owner_database.clone(); async move {
+    match device_code::Entity::update_many().filter(device_code::Column::DeviceCode.eq(body.device_code)).col_expr(device_code::Column::UserId, Expr::value(body.user_id)).exec(&database).await {
+      Ok(_) => (StatusCode::OK, Json(json!({"changed": true}))), Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"message": error.to_string()})))
+    }
+ }})).route("/__test/expire-device",post(move |Json(body):Json<DeviceExpiry>| {
   let database=database.clone();async move {
    match device_code::Entity::update_many().filter(device_code::Column::DeviceCode.eq(body.device_code)).col_expr(device_code::Column::ExpiresAt,Expr::value(body.expires_at)).exec(&database).await {
     Ok(_)=>(StatusCode::OK,Json(json!({"status":true}))),

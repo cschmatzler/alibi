@@ -1150,3 +1150,88 @@ compatScenario(
   },
   ["POST /device/code", "POST /device/token"],
 );
+
+compatScenario(
+  "approved device redemption retains its grant when the persisted owner is missing",
+  async (ctx) => {
+    const { owner, signup, userId } = await signUpOwner(ctx, "missing-device-owner");
+    const foreign = ctx.actor("foreign-device-owner");
+    const other = await foreign.client.signUp.email({
+      email: ctx.uniqueEmail("foreign-device"),
+      password: "password123",
+      name: "Foreign Device",
+    });
+    expect(other.error).toBeNull();
+    const foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
+    const code = await requestCode(ctx);
+    expect((await owner.device({ query: { user_code: code.user_code } })).error).toBeNull();
+    expect((await owner.device.approve({ userCode: code.user_code })).error).toBeNull();
+    const approved = deviceState.parse(await ctx.readDeviceState({ deviceCode: code.device_code }));
+    expect(approved).toMatchObject({ status: "approved", userId });
+    async function setOwner(id: string) {
+      const result = await ctx.rawRequest({
+        path: "/__test/device-owner",
+        method: "POST",
+        json: { deviceCode: code.device_code, userId: id },
+      });
+      expect(result.status).toBe(200);
+      expect(result.body).toEqual({ changed: true });
+      return result;
+    }
+    const orphanId = "11111111-1111-4111-8111-111111111111";
+    const altered = await setOwner(orphanId);
+    const before = deviceState.parse(await ctx.readDeviceState({ deviceCode: code.device_code }));
+    expect(before.userId).toBe(orphanId);
+    expect(before.status).toBe("approved");
+    const ownerBefore = await ctx.readUserState({ userId });
+    const failed = await deviceActor(ctx, "device").device.token(tokenRequest(code.device_code));
+    expect(failed.data).toBeNull();
+    const retained = deviceState.parse(await ctx.readDeviceState({ deviceCode: code.device_code }));
+    expect({ ...retained, lastPolledAt: before.lastPolledAt }).toEqual(before);
+    expect(retained.lastPolledAt).not.toBeNull();
+    expect(Number.isFinite(Date.parse(retained.lastPolledAt!))).toBe(true);
+    expect(await ctx.readUserState({ userId })).toEqual(ownerBefore);
+    expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+    const repaired = await setOwner(userId);
+    await Bun.sleep(Math.max(code.interval * 1000, retained.pollingInterval ?? 0) + 30);
+    const restored = await deviceActor(ctx, "device").device.token(tokenRequest(code.device_code));
+    expect(restored.error).toBeNull();
+    expect(restored.data?.access_token).toBeTruthy();
+    expect(await ctx.readDeviceState({ deviceCode: code.device_code })).toBeNull();
+    const sessions = await owner.listSessions();
+    expect(sessions.error).toBeNull();
+    expect(sessions.data).toHaveLength(2);
+    expect(sessions.data).toContainEqual(
+      expect.objectContaining({ token: restored.data!.access_token, userId }),
+    );
+    const bearer = await ctx.rawRequest({
+      actor: "repaired-device-bearer",
+      path: "/__test/profiles/bearer-default/api/auth/get-session",
+      headers: { authorization: `Bearer ${restored.data!.access_token}` },
+    });
+    expect(bearer.status).toBe(200);
+    expect((bearer.body as { user: { id: string } }).user.id).toBe(userId);
+    expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+    const replay = await deviceActor(ctx, "device").device.token(tokenRequest(code.device_code));
+    expect(replay.error).toMatchObject({ status: 400, error: "invalid_grant" });
+    expect(failed.error).toMatchObject({
+      status: 500,
+      error: "server_error",
+      error_description: "User not found",
+    });
+    return ctx.snapshot({
+      signup,
+      other,
+      code,
+      altered,
+      failed,
+      retained,
+      repaired,
+      restored,
+      sessions,
+      bearer,
+      replay,
+    });
+  },
+  ["POST /device/token"],
+);

@@ -2682,6 +2682,15 @@ const server = Bun.serve({
           }),
         );
       }
+      if (url.pathname === "/__test/device-owner" && request.method === "POST") {
+        const body = (await request.json()) as { deviceCode: string; userId: string };
+        await authContext.adapter.update({
+          model: "deviceCode",
+          where: [{ field: "deviceCode", value: body.deviceCode }],
+          update: { userId: body.userId },
+        });
+        return jsonResponse({ changed: true });
+      }
       if (url.pathname === "/__test/expire-device" && request.method === "POST") {
         const body: unknown = await readJson(request);
         if (
