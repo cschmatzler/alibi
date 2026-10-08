@@ -99,3 +99,8 @@ pub(crate) mod generic_token_params_fixture;
 pub(crate) mod oauth_popup_fixture;
 
 pub(crate) mod generic_discovery_fixture;
+
+pub(crate) mod delete_hooks_fixture;
+pub(crate) mod two_factor_table_fixture;
+pub(crate) mod postgres_schema_fixture;
+pub(crate) mod api_error_fixture;
