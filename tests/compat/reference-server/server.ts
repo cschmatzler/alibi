@@ -1035,7 +1035,14 @@ function createOtpProfile(name: string) {
         disableSignUp: name === "passwordless-disabled",
         overrideDefaultEmailVerification: proof,
         sendVerificationOnSignUp: name === "otp-signup-verification",
-        changeEmail: { enabled: true, verifyCurrentEmail: proof },
+        ...(name === "otp-change-disabled-omitted"
+          ? {}
+          : {
+              changeEmail: {
+                enabled: name !== "otp-change-disabled-false",
+                verifyCurrentEmail: proof,
+              },
+            }),
         generateOTP: captureOtpGenerator,
         sendVerificationOTP: captureOtpSender,
       }),
@@ -1044,6 +1051,8 @@ function createOtpProfile(name: string) {
 }
 const otpProfiles = new Map<string, ReturnType<typeof createOtpProfile>>();
 for (const name of [
+  "otp-change-disabled-omitted",
+  "otp-change-disabled-false",
   "passwordless-rate-policy",
   "otp-signup-verification",
   "passwordless-hashed",
