@@ -6,12 +6,12 @@ import { twoFactor } from "better-auth/plugins";
 export async function twoFactorTableFixture(base: BetterAuthOptions) {
   const db = new Database(":memory:");
   const deliveries = new Map<string, string>();
-  const options: BetterAuthOptions = {
-    ...base,
-    database: db,
-    basePath: "/__test/profiles/two-factor-custom-table/api/auth",
-    plugins: [
-      twoFactor({
+  // The pinned plugin mutates its shared schema when applying mappings.
+  // Snapshot this application's schema and restore the module defaults before
+  // any other profile lazily initializes its adapter.
+  const sharedSchema = twoFactor().schema!;
+  const defaultSchema = structuredClone(sharedSchema);
+  const customPlugin = twoFactor({
         twoFactorTable: "application_second_factor",
         schema: {
           twoFactor: {
@@ -27,8 +27,23 @@ export async function twoFactorTableFixture(base: BetterAuthOptions) {
             deliveries.set(user.email, otp);
           },
         },
-      }),
-    ],
+      });
+  customPlugin.schema = structuredClone(customPlugin.schema);
+  for (const [name, table] of Object.entries(sharedSchema)) {
+    const saved = (defaultSchema as any)[name];
+    if (saved.modelName === undefined) delete (table as any).modelName;
+    else (table as any).modelName = saved.modelName;
+    for (const [field, definition] of Object.entries(table.fields)) {
+      const original = saved.fields[field];
+      if (original.fieldName === undefined) delete definition.fieldName;
+      else definition.fieldName = original.fieldName;
+    }
+  }
+  const options: BetterAuthOptions = {
+    ...base,
+    database: db,
+    basePath: "/__test/profiles/two-factor-custom-table/api/auth",
+    plugins: [customPlugin],
   };
   await (await getMigrations(options)).runMigrations();
   const auth = betterAuth(options);
