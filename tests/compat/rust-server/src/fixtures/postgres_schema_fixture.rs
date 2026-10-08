@@ -37,7 +37,7 @@ pub(crate) async fn router(base: &AuthConfig) -> AuthResult<Router> {
         AuthBuilder::<TestSchema>::new(config)
             .store(store)
             .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
-            .plugin(EmailPasswordPlugin::new())
+            .plugin(EmailPasswordPlugin::new().enable_username(false))
             .plugin(SessionManagementPlugin::new())
             .plugin(UserManagementPlugin::new())
             .build()

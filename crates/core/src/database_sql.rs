@@ -1,7 +1,10 @@
 //! Relation qualification shared by relational adapters.
 use crate::error::{AuthError, AuthResult};
 use sqlparser::{
-    ast::{Ident, ObjectName, ObjectNamePart, Query, VisitMut, VisitorMut},
+    ast::{
+        ColumnOption, Ident, ObjectName, ObjectNamePart, Query, Statement, TableConstraint,
+        VisitMut, VisitorMut,
+    },
     dialect::PostgreSqlDialect,
     parser::Parser,
 };
@@ -32,6 +35,25 @@ pub fn qualify_schema(sql: &str, schema: &str) -> AuthResult<String> {
         }
         fn post_visit_query(&mut self, _: &mut Query) -> ControlFlow<()> {
             let _ = self.ctes.pop();
+            ControlFlow::Continue(())
+        }
+        fn pre_visit_statement(&mut self, statement: &mut Statement) -> ControlFlow<()> {
+            if let Statement::CreateTable(table) = statement {
+                // Foreign-key targets are ObjectNames but are not annotated as
+                // relations by sqlparser's visitor, so visit them explicitly.
+                for column in &mut table.columns {
+                    for option in &mut column.options {
+                        if let ColumnOption::ForeignKey(key) = &mut option.option {
+                            let _ = self.pre_visit_relation(&mut key.foreign_table);
+                        }
+                    }
+                }
+                for constraint in &mut table.constraints {
+                    if let TableConstraint::ForeignKey(key) = constraint {
+                        let _ = self.pre_visit_relation(&mut key.foreign_table);
+                    }
+                }
+            }
             ControlFlow::Continue(())
         }
         fn pre_visit_relation(&mut self, relation: &mut ObjectName) -> ControlFlow<()> {
