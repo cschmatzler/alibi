@@ -1,13 +1,11 @@
 //! Public authentication requests with the genuine enabled limiter.
 use crate::{TestSchema, otp_profiles};
-use axum::Router;
 use alibi::integrations::axum::AxumIntegration;
-use alibi::middleware::{
-    EndpointRateLimit, RateLimitConfig, RateLimitResolver, RateLimitRule,
-};
+use alibi::middleware::{EndpointRateLimit, RateLimitConfig, RateLimitResolver, RateLimitRule};
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
 use alibi_seaorm::DatabaseConnection;
+use axum::Router;
 use std::{sync::Arc, time::Duration};
 
 #[derive(Debug)]
@@ -51,17 +49,34 @@ pub(crate) async fn router(
 ) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
     let mut router = Router::new();
     let cache = Arc::new(alibi_core::MemoryCacheAdapter::new());
-    for name in ["ordered", "default", "secondary-a", "secondary-b"] {
+    for name in [
+        "ordered",
+        "default",
+        "secondary-a",
+        "secondary-b",
+        "concurrent-memory",
+        "concurrent-secondary-a",
+        "concurrent-secondary-b",
+    ] {
         let mut config = base.clone();
         config.base_path = format!("/__test/profiles/rate-limit-{name}/api/auth");
         let path = config.base_path.clone();
         let mut limits = RateLimitConfig::new().default_limit(
-            Duration::from_secs(60), if name == "ordered" { 1 } else { 10000 },
+            Duration::from_secs(60),
+            if name == "ordered" { 1 } else { 10000 },
         );
-        if name.starts_with("secondary-") {
-            limits = limits.storage(Arc::new(alibi_core::CacheRateLimitStorage::new(cache.clone())))
-                .endpoint("/get-session", Duration::from_secs(1), 2)
-                .rule("/list-sessions", RateLimitRule::Disabled);
+        if name.contains("secondary") {
+            limits = limits.storage(Arc::new(alibi_core::CacheRateLimitStorage::new(
+                cache.clone(),
+            )));
+            if !name.starts_with("concurrent-") {
+                limits = limits
+                    .endpoint("/get-session", Duration::from_secs(1), 2)
+                    .rule("/list-sessions", RateLimitRule::Disabled);
+            }
+        }
+        if name.starts_with("concurrent-") {
+            limits = limits.endpoint("/sign-up/email", Duration::from_secs(60), 3);
         }
         if name == "ordered" {
             limits = limits
@@ -73,18 +88,19 @@ pub(crate) async fn router(
                 )
                 .rule("/list-sessions", RateLimitRule::Disabled);
         }
-        let auth = Arc::new(
-            AuthBuilder::<TestSchema>::new(config.clone())
-                .store(crate::backend::store::<TestSchema>(
-                    config,
-                    database.clone(),
-                ))
-                .rate_limit(limits)
-                .plugin(EmailPasswordPlugin::new().enable_username(false))
-                .plugin(otp_profiles::plugin(outbox.clone()))
-                .build()
-                .await?,
-        );
+        let builder = AuthBuilder::<TestSchema>::new(config.clone())
+            .store(crate::backend::store::<TestSchema>(
+                config,
+                database.clone(),
+            ))
+            .rate_limit(limits)
+            .plugin(EmailPasswordPlugin::new().enable_username(false));
+        let builder = if name.starts_with("concurrent-") {
+            builder
+        } else {
+            builder.plugin(otp_profiles::plugin(outbox.clone()))
+        };
+        let auth = Arc::new(builder.build().await?);
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
     let control_cache = cache.clone();
