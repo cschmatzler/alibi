@@ -1366,8 +1366,11 @@ const ottProfiles = new Map(
   }),
 );
 const deviceCallbackEvents: Record<string, unknown>[] = [];
+const deviceGeneratorEvents: { kind: string; value: string }[] = [];
 const deviceProfiles = new Map(
   [
+    "device-collision-retry",
+    "device-collision-exhaustion",
     "device-callback-success",
     "device-length-507",
     "device-length-506",
@@ -1388,6 +1391,30 @@ const deviceProfiles = new Map(
     "device-validation-throw",
     "device-request-throw",
   ].map((name) => {
+    let deviceIndex = 0;
+    let userIndex = 0;
+    const generateCollisionCode = (kind: "device" | "user") => {
+      const index = kind === "device" ? deviceIndex++ : userIndex++;
+      const values =
+        kind === "device"
+          ? [
+              "retry-device-original",
+              "retry-device-original",
+              "retry-device-user-collision",
+              "retry-device-later",
+              "retry-device-third",
+            ]
+          : [
+              "retry-user-original",
+              "retry-user-device-collision",
+              "retry-user-original",
+              "retry-user-later",
+              "retry-user-third",
+            ];
+      const value = name === "device-collision-exhaustion" ? `constant-${kind}` : values[index]!;
+      deviceGeneratorEvents.push({ kind, value });
+      return value;
+    };
     const failCallback = () => {
       if (name.endsWith("-throw")) throw new Error("Private device callback failure");
       throw new APIError("BAD_REQUEST", {
@@ -1400,6 +1427,12 @@ const deviceProfiles = new Map(
       basePath: `/__test/profiles/${name}/api/auth`,
       plugins: [
         deviceAuthorization({
+          ...(name.startsWith("device-collision-")
+            ? {
+                generateDeviceCode: async () => generateCollisionCode("device"),
+                generateUserCode: async () => generateCollisionCode("user"),
+              }
+            : {}),
           ...(name === "device-callback-success"
             ? {
                 onDeviceAuthRequest: async (clientId: string, scope: string | undefined) => {
@@ -2681,6 +2714,25 @@ const server = Bun.serve({
             where: [{ field: "deviceCode", value: deviceCode }],
           }),
         );
+      }
+      if (url.pathname === "/__test/device-generator-state") {
+        const grants = await authContext.adapter.findMany({
+          model: "deviceCode",
+          where: [{ field: "clientId", value: url.searchParams.get("clientId")! }],
+        });
+        return Response.json({
+          events: deviceGeneratorEvents.splice(0),
+          grants: grants
+            .map((row: any) => ({
+              deviceCode: row.deviceCode,
+              userCode: row.userCode,
+              userId: row.userId ?? null,
+              status: row.status,
+              clientId: row.clientId,
+              scope: row.scope ?? null,
+            }))
+            .sort((a: any, b: any) => a.deviceCode.localeCompare(b.deviceCode)),
+        });
       }
       if (url.pathname === "/__test/device-owner" && request.method === "POST") {
         const body = (await request.json()) as { deviceCode: string; userId: string };
