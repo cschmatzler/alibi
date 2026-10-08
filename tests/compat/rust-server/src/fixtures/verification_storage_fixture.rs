@@ -1,21 +1,9 @@
 //! Actual initialized verification service, physical SQL and application cache.
 use crate::TestSchema;
 use crate::backend::entities::{account, session, user, verification};
-use async_trait::async_trait;
-use axum::{
-    Json, Router,
-    body::{Body, to_bytes},
-    extract::{Request, State},
-    middleware::{self, Next},
-    response::{IntoResponse, Response},
-    routing::{get, post},
-};
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
-use alibi::plugins::email_otp::{
-    EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, SendEmailOtp,
-};
+use alibi::plugins::email_otp::{EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, SendEmailOtp};
 use alibi::plugins::magic_link::{
     MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, MagicLinkTokenGenerator, SendMagicLink,
 };
@@ -25,9 +13,7 @@ use alibi::plugins::one_time_token::{
 };
 use alibi::plugins::password_management::{PasswordManagementConfig, SendResetPassword};
 use alibi::plugins::two_factor::{SendTwoFactorOtp, TwoFactorPlugin};
-use alibi::plugins::{
-    EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin,
-};
+use alibi::plugins::{EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use alibi_core::{
     AuthRequest, UpdateVerification,
@@ -42,6 +28,16 @@ use alibi_seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ActiveModelTrait, Set},
 };
+use async_trait::async_trait;
+use axum::{
+    Json, Router,
+    body::{Body, to_bytes},
+    extract::{Request, State},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};

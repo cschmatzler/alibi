@@ -1013,10 +1013,11 @@ for (const mode of ["missing", "moved"] as const) {
       const before = await state(ctx, tenant.id);
       const foreignBefore = await state(ctx, otherTenant.id);
       expect(before.parsed.teams.some((team) => team.id === room.id)).toBe(false);
-      if (mode === "moved")
+      if (mode === "moved") {
         expect(foreignBefore.parsed.teams).toContainEqual(
           expect.objectContaining({ id: room.id, organizationId: otherTenant.id }),
         );
+      }
       const sessions = await Promise.all(
         [owner, recipient, foreign].map((actor) => ctx.readUserState({ userId: actor.user.id })),
       );

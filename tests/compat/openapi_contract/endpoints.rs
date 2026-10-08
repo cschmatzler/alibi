@@ -114,7 +114,7 @@ mod tests {
                 serde_json::json!({
                     "currentPassword": "password123",
                     "newPassword": "newpassword456",
-                    "revokeOtherSessions": "false"
+                    "revokeOtherSessions": false
                 }),
                 &pw_token,
             ),

@@ -1,6 +1,5 @@
 //! Equivalent configured session-token generation and multiple-session runtimes.
 use crate::TestSchema;
-use axum::Router;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::{
@@ -9,6 +8,7 @@ use alibi::plugins::{
 use alibi::{AuthBuilder, AuthConfig, AuthResult, prelude::CreateSession};
 use alibi_core::{CookieAttributes, CookieOverride, SameSite};
 use alibi_seaorm::sea_orm::DatabaseConnection;
+use axum::Router;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},

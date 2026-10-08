@@ -48,10 +48,11 @@ for (const mode of ["other", "all"] as const) {
       expect(after.sessions).toEqual(
         mode === "other" ? before.sessions.filter((s: any) => s.token !== active.data!.token) : [],
       );
-      if (mode === "other")
+      if (mode === "other") {
         expect(after.sessions.find((s: any) => s.token === expired.data!.token).expiresAt).toBe(
           expiredAt,
         );
+      }
       expect(after.user).toEqual(before.user);
       expect(after.accounts).toEqual(before.accounts);
       expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(otherBefore);

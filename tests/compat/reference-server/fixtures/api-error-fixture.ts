@@ -4,7 +4,7 @@ import { z } from "zod";
 export function apiErrorFixture(base: BetterAuthOptions) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   const events: unknown[] = [];
-  for (const mode of ["masked", "throw"])
+  for (const mode of ["masked", "throw"]) {
     profiles.set(
       mode,
       betterAuth({
@@ -25,11 +25,12 @@ export function apiErrorFixture(base: BetterAuthOptions) {
                     method: ctx.request!.method,
                     marker: ctx.headers!.get("x-error-marker"),
                   });
-                  if (ctx.body.kind === "coded")
+                  if (ctx.body.kind === "coded") {
                     throw new APIError("FORBIDDEN", {
                       code: "APPLICATION_DENIED",
                       message: "Application handler rejected",
                     });
+                  }
                   throw new Error("Application handler failed");
                 },
               ),
@@ -38,6 +39,7 @@ export function apiErrorFixture(base: BetterAuthOptions) {
         ],
       }),
     );
+  }
   return {
     async handle(request: Request) {
       if (new URL(request.url).pathname !== "/__test/api-error/invoke") return null;

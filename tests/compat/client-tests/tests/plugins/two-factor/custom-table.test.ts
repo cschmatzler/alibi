@@ -28,8 +28,9 @@ compatScenario(
     const enable = await owner.twoFactor.enable({ password: "password123" });
     expect(enable.error).toBeNull();
     const enrollment = enable.data!;
-    if (!("totpURI" in enrollment))
+    if (!("totpURI" in enrollment)) {
       throw new Error("Custom-table enrollment must provide a TOTP URI");
+    }
     expect(enrollment.backupCodes).toHaveLength(10);
     const enrolled = await state();
     expect(enrolled.customTableExists).toBe(true);

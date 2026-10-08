@@ -299,11 +299,16 @@ for (const strategy of ["jwt", "jwe", "managed"] as const) {
     ]);
     for (const change of [
       (c: any) => (c.user.id = "authentic-foreign-id"),
-      (c: any) => (c.version = "2"),
       (c: any) => (c.updatedAt += 60000),
     ]) {
       rejects(await rewritten(change));
     }
+    // A legitimately re-signed version change authenticates but must remain a
+    // literal claim difference; it is not a provenance/authentication failure.
+    expect(compareValues(a, await rewritten((c) => (c.version = "2")), ctx)).toEqual([
+      { path: "sessionCache.payload.version", reason: "value or type differs" },
+      { path: "sessionCache.decoded.version", reason: "value or type differs" },
+    ]);
     const foreignToken = await rewritten(
       (c) =>
         (c.session.token = (c.session.token[0] === "X" ? "Y" : "X") + c.session.token.slice(1)),

@@ -53,11 +53,12 @@ for (const mode of ["coded", "ordinary"] as const) {
       expect(await ctx.readVerificationState({ identifier: phoneNumber })).toEqual([]);
       const replay = await client.phoneNumber.verify({ phoneNumber, code });
       expect(replay.error!.code).toBe("INVALID_OTP");
-      if (mode === "coded")
+      if (mode === "coded") {
         expect(denied.error).toMatchObject({
           code: "PHONE_VERIFIER_REJECTED",
           message: "Application verifier rejected",
         });
+      }
       return ctx.snapshot({
         signup,
         before,

@@ -104,8 +104,9 @@ export function createSetPasswordFixture(database: Database, options: BetterAuth
               return hash;
             },
             async verify(input) {
-              if (mode === "schema-observe")
+              if (mode === "schema-observe") {
                 events.push({ stage: "verify-enter", password: input.password });
+              }
               return verifyPassword(input);
             },
           },

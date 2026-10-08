@@ -1,5 +1,11 @@
 //! Real Kick profiles and observed trusted endpoint exchanges.
 use crate::TestSchema;
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::oauth::{KickOptions, OAuthProvider, OAuthUserInfo};
+use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_seaorm::DatabaseConnection;
 use axum::{
     Json, Router,
     extract::State,
@@ -7,12 +13,6 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use alibi::integrations::axum::AxumIntegration;
-use alibi::middleware::RateLimitConfig;
-use alibi::plugins::oauth::{KickOptions, OAuthProvider, OAuthUserInfo};
-use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
-use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;

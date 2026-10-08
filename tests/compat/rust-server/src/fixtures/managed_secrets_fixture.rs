@@ -1,12 +1,5 @@
 //! Actual managed-key runtimes sharing the ordinary fixture database.
 use crate::TestSchema;
-use async_trait::async_trait;
-use axum::{
-    Json, Router,
-    extract::Query,
-    response::IntoResponse,
-    routing::{get, post},
-};
 use alibi::plugins::jwt::JwtPlugin;
 use alibi::plugins::{
     EmailPasswordPlugin, MultiSessionPlugin, OAuthPlugin, SessionManagementPlugin, TwoFactorConfig,
@@ -19,6 +12,13 @@ use alibi::{
 };
 use alibi_core::ManagedSecrets;
 use alibi_seaorm::DatabaseConnection;
+use async_trait::async_trait;
+use axum::{
+    Json, Router,
+    extract::Query,
+    response::IntoResponse,
+    routing::{get, post},
+};
 use std::{
     collections::HashMap,
     sync::{

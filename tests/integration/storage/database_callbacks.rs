@@ -257,8 +257,12 @@ async fn database_callback_veto_mutation_missing_and_after_error_effects<B: Back
     );
     hooks.set("account-delete");
     let retained = db.table("accounts").await?;
-    assert!(store.delete_account(&id).await.is_err());
+    store.delete_account(&id).await?;
     assert_eq!(db.table("accounts").await?, retained);
+    assert_eq!(
+        *hooks.events.lock().unwrap(),
+        vec![json!(["account-delete", [id, "hook-updated"]])]
+    );
     hooks.set("account-deleted");
     assert!(store.delete_account(&id).await.is_err());
     assert_eq!(db.count("accounts").await?, 0);
@@ -332,8 +336,15 @@ async fn database_callback_veto_mutation_missing_and_after_error_effects<B: Back
     );
     hooks.set("session-delete");
     let retained = db.table("sessions").await?;
-    assert!(store.delete_session(session.token()).await.is_err());
+    store.delete_session(session.token()).await?;
     assert_eq!(db.table("sessions").await?, retained);
+    assert_eq!(
+        *hooks.events.lock().unwrap(),
+        vec![json!([
+            "session-delete",
+            [session.token(), "198.51.100.77"]
+        ])]
+    );
     hooks.set("session-deleted");
     assert!(store.delete_session(session.token()).await.is_err());
     assert_eq!(db.count("sessions").await?, 0);

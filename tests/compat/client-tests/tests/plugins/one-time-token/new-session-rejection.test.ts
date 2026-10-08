@@ -116,8 +116,9 @@ compatScenario(
               ? transport.body !== ""
               : transport.body !==
                 JSON.stringify({ code: "OTT_VETO", message: "OTT callback veto" }))
-          )
+          ) {
             mismatches.push({ label, transport });
+          }
           await control("success");
           let token: string | null = null;
           const restored = await owner.client.signIn.email(

@@ -207,25 +207,23 @@ pub(in crate::plugins) async fn create_organization_core(
     })
 }
 
-/// Activate a newly created organization and publish the final stored session,
-/// including its default team, through both HTTP and native dispatch.
+/// Activate a newly created organization in durable session storage.
+/// Creation does not republish the existing browser session/cache cookies.
 pub(in crate::plugins) async fn activate_created_organization(
     response: &CreateOrganizationResponse<CreatedOrganizationResponse, BasicMemberResponse>,
-    user: &impl AuthUser,
     token: &str,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<()> {
-    let mut updated = ctx
+    let _ = ctx
         .database
         .update_session_active_organization_record(token, Some(&response.organization.id))
         .await?;
     if let Some(team_id) = &response.default_team_id {
-        updated = ctx
+        let _ = ctx
             .database
             .update_session_active_team_record(token, Some(team_id))
             .await?;
     }
-    alibi_core::session::cookie_cache::runtime::emit_issuance(ctx, user, &updated).await?;
     Ok(())
 }
 
@@ -738,7 +736,7 @@ pub async fn handle_create_organization(
     let response =
         create_organization_core(&body, &user, Some(req), Some(&session), config, ctx).await?;
     if !body.keep_current_active_organization.unwrap_or(false) {
-        activate_created_organization(&response, &user, session.token(), ctx).await?;
+        activate_created_organization(&response, session.token(), ctx).await?;
     }
     Ok(AuthResponse::json(200, &response)?)
 }

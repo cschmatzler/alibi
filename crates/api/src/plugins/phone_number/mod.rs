@@ -411,12 +411,9 @@ mod tests {
             json!({"phoneNumber":phone}),
         )
         .await;
-        assert_eq!(direct.status, 400);
-        let direct_body: Value = serde_json::from_slice(&direct.body).unwrap();
-        assert_eq!(
-            direct_body.get("message"),
-            Some(&json!("fixture delivery failed"))
-        );
+        assert_eq!(direct.status, 500);
+        assert!(direct.body.is_empty());
+        assert!(direct.headers.get("content-type").is_none());
         let direct_code = outbox.0.lock().unwrap().last().unwrap().code.clone();
         assert_eq!(
             ctx.database

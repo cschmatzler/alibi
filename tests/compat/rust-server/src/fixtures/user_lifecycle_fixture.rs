@@ -1,7 +1,5 @@
 //! Real application callbacks and persisted observations for mailbox lifecycles.
 use crate::TestSchema;
-use async_trait::async_trait;
-use axum::{Json, Router, routing::post};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::email_verification::SendVerificationEmail;
@@ -25,6 +23,8 @@ use alibi_seaorm::{
     sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr},
     store::entities::{account, session, user, verification},
 };
+use async_trait::async_trait;
+use axum::{Json, Router, routing::post};
 use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -91,15 +91,15 @@ impl SendVerificationEmail for Application {
     async fn send(&self, user: &UserView, url: &str, token: &str) -> AuthResult<()> {
         let mut extra = json!({"url":url,"token":token});
         if self.capture_body {
-            let request = current_request_hook_context().ok_or_else(|| AuthError::internal("Missing genuine request"))?;
-            let body = request.body.as_deref().ok_or_else(|| AuthError::internal("Missing genuine request body"))?;
+            let request = current_request_hook_context()
+                .ok_or_else(|| AuthError::internal("Missing genuine request"))?;
+            let body = request
+                .body
+                .as_deref()
+                .ok_or_else(|| AuthError::internal("Missing genuine request body"))?;
             extra["requestBody"] = serde_json::from_slice(body)?;
         }
-        self.event(
-            "verification-mail",
-            serde_json::to_value(user)?,
-            extra,
-        )
+        self.event("verification-mail", serde_json::to_value(user)?, extra)
     }
 }
 #[async_trait]
@@ -214,7 +214,10 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
         "delete-policy",
         "delete-no-freshness",
     ] {
-        let app = Arc::new(Application {capture_body:name == "request-body",..Default::default()});
+        let app = Arc::new(Application {
+            capture_body: name == "request-body",
+            ..Default::default()
+        });
         let path = format!("/__test/profiles/user-lifecycle-{name}/api/auth");
         let mut config = base.clone().base_path(&path);
         config.session.fresh_age = Some(Duration::seconds(if name == "delete-no-freshness" {
@@ -260,7 +263,8 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                 })
             }));
         if !["default", "required"].contains(&name) {
-            verification_plugin = verification_plugin.send_on_sign_up(name == "delivery" || name == "request-body");
+            verification_plugin =
+                verification_plugin.send_on_sign_up(name == "delivery" || name == "request-body");
         }
         if !["no-mail", "promotion-no-mail"].contains(&name) {
             verification_plugin = verification_plugin.custom_send_verification_email(app.clone());

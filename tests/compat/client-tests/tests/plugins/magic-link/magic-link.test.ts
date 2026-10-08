@@ -358,8 +358,9 @@ compatScenario(
     const receipt = signupCookies
       .map((cookie) => Cookie.parse(cookie))
       .find((cookie) => cookie?.key.endsWith("dont_remember"));
-    if (!receipt)
+    if (!receipt) {
       throw new Error("rememberMe=false must issue a genuine signed browser preference");
+    }
     expect(receipt.value).toContain(".");
     const observations = [];
     for (const persistent of [false, true]) {

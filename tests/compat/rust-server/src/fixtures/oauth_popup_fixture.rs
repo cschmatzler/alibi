@@ -1,13 +1,5 @@
 //! A real auth store and one-use local OAuth provider for popup acceptance.
 use crate::TestSchema;
-use axum::{
-    Form, Json, Router,
-    extract::{Query, State},
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
-    routing::{get, post},
-};
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::{CorsConfig, RateLimitConfig};
 use alibi::plugins::oauth::OAuthProvider;
@@ -16,6 +8,14 @@ use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use alibi_seaorm::sea_orm::{ActiveModelTrait, EntityTrait, Set};
 use alibi_seaorm::store::entities::{account, session, user, verification};
 use alibi_seaorm::{Database, DatabaseConnection};
+use axum::{
+    Form, Json, Router,
+    extract::{Query, State},
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, sync::Arc};

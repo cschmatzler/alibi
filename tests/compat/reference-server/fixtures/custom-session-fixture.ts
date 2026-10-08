@@ -50,11 +50,12 @@ export function createCustomSessionFixture(base: BetterAuthOptions) {
       await application.all;
       if (application.mode !== "success") {
         application.events.push({ stage: "rejected", token, userId, request });
-        if (application.mode === "coded")
+        if (application.mode === "coded") {
           throw new APIError("FORBIDDEN", {
             code: "DEVICE_LIST_REJECTED",
             message: "Application device projection rejected",
           });
+        }
         throw new Error("Private device projection failure");
       }
       application.events.push({ stage: "completed", token, userId, request });

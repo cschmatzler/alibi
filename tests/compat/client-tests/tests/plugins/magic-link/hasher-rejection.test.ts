@@ -26,11 +26,12 @@ for (const mode of ["coded", "ordinary"] as const) {
       await configure(mode);
       const denied = await actor.client.magicLink.verify({ query: { token: delivered.token } });
       expect(denied.error!.status).toBe(mode === "coded" ? 403 : 500);
-      if (mode === "coded")
+      if (mode === "coded") {
         expect(denied.error).toMatchObject({
           code: "MAGIC_HASH_REJECTED",
           message: "Application hasher rejected",
         });
+      }
       expect(await ctx.readVerificationState({ identifier })).toEqual(before);
       expect((await actor.client.getSession()).data).toBeNull();
       const untouched = (await ctx.rawRequest({ path: "/__test/social-provider/state" }))

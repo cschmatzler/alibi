@@ -4,7 +4,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { Cookie } from "tough-cookie";
 
 import { compatScenario } from "../../../support/scenario";
-for (const authenticated of [true, false])
+for (const authenticated of [true, false]) {
   compatScenario(
     `legacy verification mailbox update publishes unverified identity then a fresh proof (${authenticated ? "authenticated" : "guest"})`,
     async (ctx) => {
@@ -39,8 +39,8 @@ for (const authenticated of [true, false])
       const secret = new TextEncoder().encode("compat-test-only-key-not-real-minimum-32chars");
       const proof = await new SignJWT({ email, updateTo: next })
         .setProtectedHeader({ alg: "HS256" })
-        .setIssuedAt()
-        .setExpirationTime("1h")
+        .setIssuedAt(946684800)
+        .setExpirationTime(4102444800)
         .sign(secret);
       const actor = authenticated ? owner : ctx.actor("guest", profile);
       let rawCookies: string[] = [];
@@ -110,7 +110,7 @@ for (const authenticated of [true, false])
         pending,
         verified,
         session,
-        claims: followup.payload,
+        claims: { token: deliveries[0].token },
         before: project(before),
         after: project(after),
         final: project(final),
@@ -118,3 +118,4 @@ for (const authenticated of [true, false])
     },
     ["GET /verify-email", "GET /get-session"],
   );
+}

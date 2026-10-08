@@ -1,15 +1,15 @@
 //! Fixture-only persisted-state inspection; these are not authentication endpoints.
 
 use crate::TestSchema;
+use alibi::{
+    BetterAuth,
+    prelude::{AuthAccount, AuthSession, AuthUser},
+};
 use axum::{
     Json, Router,
     extract::{Query, State},
     http::StatusCode,
     routing::get,
-};
-use alibi::{
-    BetterAuth,
-    prelude::{AuthAccount, AuthSession, AuthUser},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};

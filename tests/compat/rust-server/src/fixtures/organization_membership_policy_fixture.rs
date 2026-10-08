@@ -1,13 +1,5 @@
 //! Immutable policies and observations of actual member admission/read SQL.
 use crate::{CompatVerificationSender, EmailOutboxRecord, TestSchema};
-use async_trait::async_trait;
-use axum::{
-    Json, Router,
-    extract::Query,
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
-    routing::{get, post},
-};
 use alibi::plugins::organization::{
     MembershipLimit, OrganizationConfig, OrganizationLimitResolver,
     OrganizationMembershipLimitResolver, TeamsConfig,
@@ -26,6 +18,14 @@ use alibi::{
 use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
+use async_trait::async_trait;
+use axum::{
+    Json, Router,
+    extract::Query,
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{get, post},
 };
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
@@ -216,13 +216,9 @@ pub(crate) async fn router(
         let organization = OrganizationConfig {
             membership_limit: limit,
             invitation_limit: if name == "org-membership-pending-one" {
-                Some(alibi::plugins::organization::InvitationLimit::Fixed(
-                    1.0,
-                ))
+                Some(alibi::plugins::organization::InvitationLimit::Fixed(1.0))
             } else {
-                Some(alibi::plugins::organization::InvitationLimit::Fixed(
-                    100.0,
-                ))
+                Some(alibi::plugins::organization::InvitationLimit::Fixed(100.0))
             },
             require_email_verification_on_invitation: Some(true),
             teams: TeamsConfig {

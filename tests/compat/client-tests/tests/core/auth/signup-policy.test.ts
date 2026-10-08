@@ -1775,13 +1775,15 @@ compatScenario(
         JSON.stringify(after.events.map((event) => event.stage)) !== JSON.stringify(entry.stages) ||
         result.status !== entry.status ||
         (entry.code && result.body?.code !== entry.code)
-      )
+      ) {
         mismatches.push({ entry, result, events: after.events.map((event) => event.stage) });
-      for (const event of after.events)
+      }
+      for (const event of after.events) {
         if (String(event.stage).startsWith("verify-")) {
           expect(event.password).toBe(entry.password);
           expect(event.hash).toBe(credential.password);
         }
+      }
       observations.push({ entry, result, after: observed(after) });
     }
     await control(ctx, { operation: "mode", mode: "normal" });
@@ -1802,8 +1804,9 @@ compatScenario(
       expect(rows(after)).toEqual(rows(noCredential));
       expect(after.events).toEqual([]);
       const code = attempted.length > 20 ? "PASSWORD_TOO_LONG" : "INVALID_PASSWORD";
-      if (result.status !== 400 || result.body.code !== code)
+      if (result.status !== 400 || result.body.code !== code) {
         mismatches.push({ attempted, result, expected: code });
+      }
       observations.push({ attempted, result, after: observed(after) });
     }
     expect((await owner.client.getSession()).data?.user.id).toBe(signup.data!.user.id);

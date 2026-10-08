@@ -46,8 +46,9 @@ compatScenario(
       if (
         result.error?.code !== "RESET_PASSWORD_DISABLED" ||
         result.error?.message !== "Reset password isn't enabled"
-      )
+      ) {
         mismatches.push(ctx.snapshot(result));
+      }
       results.push(ctx.snapshot(result));
     }
     await control("");

@@ -88,8 +88,9 @@ compatScenario(
     expect(reset.error).toBeNull();
     const after = await readPhoneState(ctx, profile, userId);
     expect(after.sessions).toEqual([]);
-    for (const client of [owner, second, fresh])
+    for (const client of [owner, second, fresh]) {
       expect((await client.getSession()).data).toBeNull();
+    }
     const receipts = await control();
     expect(receipts.events).toHaveLength(2);
     expect(receipts.events[1]).toMatchObject({

@@ -1,5 +1,4 @@
 use crate::TestSchema;
-use axum::{Json, Router, body::Bytes, http::StatusCode, response::IntoResponse, routing::post};
 use alibi::plugins::two_factor::TwoFactorConfig;
 use alibi::{
     AuthBuilder, AuthConfig, AuthResult, BetterAuth,
@@ -9,6 +8,7 @@ use alibi::{
 };
 use alibi_core::utils::json::{self, JsValue};
 use alibi_seaorm::DatabaseConnection;
+use axum::{Json, Router, body::Bytes, http::StatusCode, response::IntoResponse, routing::post};
 use serde_json::json;
 use std::{collections::HashMap, sync::Arc};
 type Auth = Arc<BetterAuth<TestSchema>>;

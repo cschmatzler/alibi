@@ -1,12 +1,5 @@
 //! Microsoft's real public factory with application-owned network destinations.
 use crate::TestSchema;
-use axum::{
-    Json, Router,
-    extract::State,
-    http::HeaderMap,
-    response::IntoResponse,
-    routing::{get, post},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::oauth::{
@@ -16,6 +9,13 @@ use alibi::plugins::oauth::{
 use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use alibi_seaorm::DatabaseConnection;
+use axum::{
+    Json, Router,
+    extract::State,
+    http::HeaderMap,
+    response::IntoResponse,
+    routing::{get, post},
+};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;

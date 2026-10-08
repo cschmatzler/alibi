@@ -151,9 +151,12 @@ export function collectCoverage(
           !location.href.includes("#") &&
           (location.pathname === `${prefix}/error` || configuredProxyDenial) &&
           errors.length === 1 &&
-          ["email_does_not_match", "unable_to_get_user_info", "state_mismatch"].includes(
-            errors[0]!,
-          );
+          [
+            "email_does_not_match",
+            "unable_to_get_user_info",
+            "state_mismatch",
+            "state_not_found",
+          ].includes(errors[0]!);
       } catch {
         /* Malformed locations cannot supply callback admission evidence. */
       }
@@ -217,7 +220,12 @@ export function collectCoverage(
         code === "ACCOUNT_NOT_FOUND") ||
         (route === "POST /delete-user" && code === "CREDENTIAL_ACCOUNT_NOT_FOUND"));
 
-    if ([401, 403].includes(trace.responseStatus) || rejectedOwnership) {
+    const rejectedDeletionProof =
+      route === "GET /delete-user/callback" &&
+      trace.responseStatus === 404 &&
+      code === "INVALID_TOKEN";
+
+    if ([401, 403].includes(trace.responseStatus) || rejectedOwnership || rejectedDeletionProof) {
       kinds.push("authorization");
     }
 
@@ -234,6 +242,42 @@ export function collectCoverage(
     }
 
     observations.set(route, record);
+
+    // Form-post callbacks forward to a GET without admitting the grant. Credit
+    // their denial only when this actor actually follows that exact redirect
+    // and the default error channel rejects the forwarded state.
+    if (rejectedCallback && baseURL && route === "GET /callback/{}") {
+      const forwarded = traces.slice(0, traces.indexOf(trace)).findLast((previous) => {
+        if (
+          previous.actor !== trace.actor ||
+          previous.method !== "POST" ||
+          previous.responseStatus !== 302 ||
+          !previous.responseHeaders.location
+        ) {
+          return false;
+        }
+        try {
+          const source = new URL(previous.path, baseURL);
+          const target = new URL(previous.responseHeaders.location, baseURL);
+          const followed = new URL(trace.path, baseURL);
+          return source.pathname === pathname && target.href === followed.href;
+        } catch {
+          return false;
+        }
+      });
+      if (forwarded) {
+        const postRoute = "POST /callback/{}";
+        const postRecord = observations.get(postRoute) ?? new Map<EvidenceKind, Set<string>>();
+        postRecord.get("success")?.delete(scenario);
+        if (!postRecord.get("success")?.size) postRecord.delete("success");
+        for (const kind of ["rejection", "authorization"] as const) {
+          const names = postRecord.get(kind) ?? new Set<string>();
+          names.add(scenario);
+          postRecord.set(kind, names);
+        }
+        observations.set(postRoute, postRecord);
+      }
+    }
   }
   return Object.fromEntries(
     [...observations]

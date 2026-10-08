@@ -1,12 +1,6 @@
 //! Private fixture configuration and server-side organization team operations.
 
 use crate::TestSchema;
-use axum::{
-    Json, Router,
-    extract::Query,
-    http::StatusCode,
-    routing::{get, post},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::organization::{
@@ -27,6 +21,12 @@ use alibi_seaorm::sea_orm::{
 };
 use alibi_seaorm::store::entities::{
     invitation, member, organization, organization_role, team, team_member,
+};
+use axum::{
+    Json, Router,
+    extract::Query,
+    http::StatusCode,
+    routing::{get, post},
 };
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Deserialize;
@@ -507,8 +507,20 @@ struct OrganizationQuery {
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case")]
 enum TeamOperation {
-    SetTeamStorage { #[serde(rename = "teamId")] team_id: String, #[serde(rename = "organizationId")] organization_id: Option<String>, #[serde(default)] restore: bool },
-    SeedStrayTeamMember { #[serde(rename = "teamId")] team_id: String, #[serde(rename = "userId")] user_id: String },
+    SetTeamStorage {
+        #[serde(rename = "teamId")]
+        team_id: String,
+        #[serde(rename = "organizationId")]
+        organization_id: Option<String>,
+        #[serde(default)]
+        restore: bool,
+    },
+    SeedStrayTeamMember {
+        #[serde(rename = "teamId")]
+        team_id: String,
+        #[serde(rename = "userId")]
+        user_id: String,
+    },
     TeamConfigEvidence {
         #[serde(rename = "organizationId")]
         organization_id: String,
@@ -669,7 +681,9 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
     }
     let operation_profiles = profiles.clone();
     let operation_database = database.clone();
-    let team_backups = Arc::new(tokio::sync::Mutex::new(HashMap::<String, team::Model>::new()));
+    let team_backups = Arc::new(tokio::sync::Mutex::new(
+        HashMap::<String, team::Model>::new(),
+    ));
     router
         .route("/__test/organization-api", post(move |headers: axum::http::HeaderMap, Json(body): Json<ServerRequest>| {
             let profiles = operation_profiles.clone();

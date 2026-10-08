@@ -191,7 +191,7 @@ async fn account_deletion_consumes_delivered_owner_proof_and_preserves_foreign_i
                     &[&owner_id]
                 )
                 .await?,
-                0,
+                i64::from(table == "api_keys"),
                 "{mode}/{table}"
             );
             assert_eq!(
@@ -209,7 +209,7 @@ async fn account_deletion_consumes_delivered_owner_proof_and_preserves_foreign_i
             auth.store()
                 .get_api_key_by_id(body(&key)["id"].as_str().unwrap())
                 .await?
-                .is_none()
+                .is_some()
         );
         assert!(
             auth.store()

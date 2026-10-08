@@ -24,17 +24,18 @@ compatScenario(
       .client.signUp.email({ email, name: "Proof Owner", password: "password123" });
     expect(signup.error).toBeNull();
     const before = await control();
-    const now = Math.floor(Date.now() / 1000);
+    // Application-authored claims stay literal across independent server runs.
+    const now = 946684800;
     const secret = new TextEncoder().encode("compat-test-only-key-not-real-minimum-32chars");
     const token = (payload: Record<string, any>) =>
       new SignJWT(payload).setProtectedHeader({ alg: "HS256" }).sign(secret);
-    const valid = { email, iat: now, nbf: now - 60, exp: now + 3600 };
+    const valid = { email, iat: now, nbf: now - 60, exp: 4102444800 };
     const guest = ctx.actor("guest", profile);
     let cookies: string[] = [];
     const denied = [];
     for (const [label, claims] of [
       ["invalid-email", { ...valid, email: "invalid-mailbox" }],
-      ["missing-email", { iat: now, exp: now + 3600 }],
+      ["missing-email", { iat: now, exp: 4102444800 }],
       ["update-number", { ...valid, updateTo: 7 }],
       ["update-null", { ...valid, updateTo: null }],
       ["request-number", { ...valid, requestType: 7 }],

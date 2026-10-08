@@ -45,13 +45,11 @@ compatScenario(
           throw new Error("Phone HTTP request did not finish after callback gate");
         }),
       ]);
-    const foreign = await ctx
-      .actor("notification-foreign")
-      .client.signUp.email({
-        email: ctx.uniqueEmail("notification-foreign"),
-        password: "password123",
-        name: "Foreign Notification Owner",
-      });
+    const foreign = await ctx.actor("notification-foreign").client.signUp.email({
+      email: ctx.uniqueEmail("notification-foreign"),
+      password: "password123",
+      name: "Foreign Notification Owner",
+    });
     expect(foreign.error).toBeNull();
     const foreignBefore = await ctx.readUserState({ userId: foreign.data!.user.id });
     const observations = [];
@@ -144,15 +142,16 @@ compatScenario(
           if (
             JSON.stringify(result.error) !==
             JSON.stringify({ status: 500, statusText: "Internal Server Error" })
-          )
+          ) {
             mismatches.push({ mode, endpoint, error: result.error });
-        } else if (endpoint === "unverified-signin")
+          }
+        } else if (endpoint === "unverified-signin") {
           expect(result.error).toMatchObject({
             status: 401,
             code: "PHONE_NUMBER_NOT_VERIFIED",
             message: "Phone number not verified",
           });
-        else {
+        } else {
           expect(result.error).toBeNull();
           expect(result.data).toEqual(
             endpoint === "send-otp" ? { message: "code sent" } : { status: true },
@@ -198,8 +197,14 @@ compatScenario(
           signup,
           // Receipts carry random OTPs; preserve their relationships as typed
           // tokens after asserting the exact delivered proof and replay behavior.
-          started: { ...started, events: started.events.map((event) => ({ ...event, code: { token: event.code } })) },
-          finished: { ...finished, events: finished.events.map((event) => ({ ...event, code: { token: event.code } })) },
+          started: {
+            ...started,
+            events: started.events.map((event) => ({ ...event, code: { token: event.code } })),
+          },
+          finished: {
+            ...finished,
+            events: finished.events.map((event) => ({ ...event, code: { token: event.code } })),
+          },
           result,
           consumed,
           replay,

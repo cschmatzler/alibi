@@ -1,11 +1,6 @@
 //! Real application callbacks and observations of their SQLite effects.
 use crate::TestSchema;
 use crate::fixtures::organization_update_hooks_fixture::snapshot;
-use axum::{
-    Json, Router,
-    extract::Query,
-    routing::{get, post},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::organization::{
@@ -20,6 +15,11 @@ use alibi_core::{
     wire::UserView,
 };
 use alibi_seaorm::DatabaseConnection;
+use axum::{
+    Json, Router,
+    extract::Query,
+    routing::{get, post},
+};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify};

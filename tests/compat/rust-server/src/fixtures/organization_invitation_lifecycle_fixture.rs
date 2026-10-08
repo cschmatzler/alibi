@@ -1,12 +1,6 @@
 //! Application-owned invitation receipts over the actual configured store.
 use super::organization_invitation_acceptance_fixture::snapshot;
 use crate::TestSchema;
-use async_trait::async_trait;
-use axum::{
-    Json, Router,
-    extract::Query,
-    routing::{get, post},
-};
 use alibi::plugins::organization::{
     InvitationLimit, OrganizationConfig, OrganizationInvitationContext,
     OrganizationInvitationCreatePatch, OrganizationInvitationCreationContext,
@@ -20,6 +14,12 @@ use alibi::{
     middleware::RateLimitConfig,
 };
 use alibi_seaorm::DatabaseConnection;
+use async_trait::async_trait;
+use axum::{
+    Json, Router,
+    extract::Query,
+    routing::{get, post},
+};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,

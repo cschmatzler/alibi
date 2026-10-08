@@ -1,5 +1,17 @@
 //! Application-owned verifier and BotID callbacks around real CAPTCHA admission.
 use crate::TestSchema;
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::captcha::{
+    BotIdConfig, BotIdVerification, CaptchaConfig, CaptchaPlugin, CaptchaProvider, CheckBotId,
+    RecaptchaConfig, SiteKeyCaptchaConfig, TurnstileConfig, ValidateBotIdRequest,
+};
+use alibi::plugins::{EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi_core::{
+    AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, BeforeRequestAction,
+};
+use alibi_seaorm::DatabaseConnection;
 use async_trait::async_trait;
 use axum::{
     Json, Router,
@@ -9,20 +21,6 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use alibi::integrations::axum::AxumIntegration;
-use alibi::middleware::RateLimitConfig;
-use alibi::plugins::captcha::{
-    BotIdConfig, BotIdVerification, CaptchaConfig, CaptchaPlugin, CaptchaProvider, CheckBotId,
-    RecaptchaConfig, SiteKeyCaptchaConfig, TurnstileConfig, ValidateBotIdRequest,
-};
-use alibi::plugins::{
-    EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin,
-};
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi_core::{
-    AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, BeforeRequestAction,
-};
-use alibi_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;

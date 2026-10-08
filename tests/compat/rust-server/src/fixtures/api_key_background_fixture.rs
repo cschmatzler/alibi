@@ -1,11 +1,5 @@
 //! Explicit application background-task integration around the real store.
 use crate::TestSchema;
-use axum::{
-    Json, Router,
-    extract::Query,
-    response::IntoResponse,
-    routing::{get, post},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::api_key::{
@@ -17,6 +11,12 @@ use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BackgroundTaskCompletion, BackgroundTaskHandler,
 };
 use alibi_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use axum::{
+    Json, Router,
+    extract::Query,
+    response::IntoResponse,
+    routing::{get, post},
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{

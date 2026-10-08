@@ -1,14 +1,14 @@
 use crate::TestSchema;
+use alibi::{AuthError, BetterAuth};
+use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
+use alibi_core::{
+    AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, BeforeRequestAction,
+};
 use async_trait::async_trait;
 use axum::{
     Json, Router,
     extract::{Query, State},
     routing::get,
-};
-use alibi::{AuthError, BetterAuth};
-use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
-use alibi_core::{
-    AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, BeforeRequestAction,
 };
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};

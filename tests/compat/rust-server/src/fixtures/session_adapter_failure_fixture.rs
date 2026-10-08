@@ -2,7 +2,10 @@
 use crate::TestSchema;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
-use alibi::plugins::{DeviceAuthorizationPlugin, EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin};
+use alibi::plugins::{
+    DeviceAuthorizationPlugin, EmailPasswordPlugin, PasswordManagementPlugin,
+    SessionManagementPlugin,
+};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, AuthSchema};
 use alibi_core::store::*;
 use alibi_core::types::*;
@@ -355,8 +358,6 @@ impl DeviceCodeStore for ApplicationStore {
     }
 }
 
-
-
 forward!(TeamStore {});
 
 forward!(OrganizationRoleStore {});
@@ -390,7 +391,9 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             .plugin(PasswordManagementPlugin::new());
         let builder = if profile == "session-adapter-failure" {
             builder.plugin(DeviceAuthorizationPlugin::new().interval(chrono::Duration::zero()))
-        } else { builder };
+        } else {
+            builder
+        };
         let auth = Arc::new(builder.build().await?);
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
@@ -402,34 +405,34 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             let device = device.clone();
             async move {
                 if body["gate"].is_string() || !device.selector.lock().unwrap().1.is_empty() {
-                if let Some(operation) = body["operation"].as_str() {
-                    match operation {
-                        "arm" => {
-                            *device.selector.lock().unwrap() = (
-                                body["id"].as_str().unwrap().to_owned(),
-                                body["gate"].as_str().unwrap().to_owned(),
-                            );
-                            device.events.lock().unwrap().clear();
-                            device.count.store(0, std::sync::atomic::Ordering::SeqCst);
-                            device.second.send_replace(false);
-                            device.first.send_replace(false);
-                        }
-                        "release-first" => {
-                            device.first.send_replace(true);
-                        }
-                        "release-second" => {
-                            device.second.send_replace(true);
-                        }
-                        "restore" => {
-                            device.second.send_replace(true);
-                            device.first.send_replace(true);
+                    if let Some(operation) = body["operation"].as_str() {
+                        match operation {
+                            "arm" => {
+                                *device.selector.lock().unwrap() = (
+                                    body["id"].as_str().unwrap().to_owned(),
+                                    body["gate"].as_str().unwrap().to_owned(),
+                                );
+                                device.events.lock().unwrap().clear();
+                                device.count.store(0, std::sync::atomic::Ordering::SeqCst);
+                                device.second.send_replace(false);
+                                device.first.send_replace(false);
+                            }
+                            "release-first" => {
+                                device.first.send_replace(true);
+                            }
+                            "release-second" => {
+                                device.second.send_replace(true);
+                            }
+                            "restore" => {
+                                device.second.send_replace(true);
+                                device.first.send_replace(true);
 
-                            device.selector.lock().unwrap().1 = String::new();
+                                device.selector.lock().unwrap().1 = String::new();
+                            }
+                            _ => {}
                         }
-                        _ => {}
+                        return Json(json!({"events":*device.events.lock().unwrap()}));
                     }
-                    return Json(json!({"events":*device.events.lock().unwrap()}));
-                }
                 }
                 if let Some(operation) = body["operation"].as_str() {
                     match operation {

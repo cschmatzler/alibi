@@ -1,6 +1,5 @@
 //! Application callbacks and physical tracking state for actual public login flows.
 use crate::{OAuthRefreshMode, SocialProfile, TestSchema};
-use axum::{Json, Router, routing::get};
 use alibi::plugins::siwe::{
     Eip191Verifier, SiweCallbackResult, SiweConfig, SiweNonceProvider, SiwePlugin,
 };
@@ -22,6 +21,7 @@ use alibi_seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
+use axum::{Json, Router, routing::get};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -165,10 +165,7 @@ impl alibi_core::AuthPlugin<TestSchema> for Application {
     ) -> AuthResult<Option<alibi_core::AuthResponse>> {
         Ok(None)
     }
-    async fn on_init(
-        &self,
-        ctx: &mut alibi_core::AuthInitContext<TestSchema>,
-    ) -> AuthResult<()> {
+    async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<TestSchema>) -> AuthResult<()> {
         if self.mode == "transform" {
             ctx.register_user_update_transform(|_, mut update| {
                 if let Some(Some(method)) = update.last_login_method {

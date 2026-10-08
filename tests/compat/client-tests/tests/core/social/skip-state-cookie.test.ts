@@ -29,11 +29,12 @@ for (const skip of [false, true]) {
         });
         expect(start.error).toBeNull();
         const state = new URL(start.data!.url!).searchParams.get("state")!;
-        if (cookie === "mismatched")
+        if (cookie === "mismatched") {
           expect(
             (await receiver.client.signIn.social({ provider: "generic", callbackURL: "/wrong" }))
               .error,
           ).toBeNull();
+        }
         const physical = async () =>
           (await ctx.rawRequest({ path: "/__test/social-provider/state" })).body as any;
         const before = await physical();

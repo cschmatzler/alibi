@@ -1,7 +1,7 @@
 import { expect } from "bun:test";
 
 import { compatScenario } from "../../../support/scenario";
-for (const mode of ["masked", "throw"] as const)
+for (const mode of ["masked", "throw"] as const) {
   for (const kind of ["ordinary", "coded"] as const) {
     compatScenario(
       `onAPIError ${mode} ${kind} preserves the actual public handler return or exception boundary`,
@@ -33,14 +33,16 @@ for (const mode of ["masked", "throw"] as const)
         } else {
           expect(observed.outcome).toBe("returned");
           expect(observed.status).toBe(kind === "coded" ? 403 : 500);
-          if (kind === "coded")
+          if (kind === "coded") {
             expect(observed.body).toEqual({
               code: "APPLICATION_DENIED",
               message: "Application handler rejected",
             });
+          }
           expect(observed.headers["set-cookie"]).toEqual([]);
         }
         return ctx.snapshot({ before, observed });
       },
     );
   }
+}

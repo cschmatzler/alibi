@@ -27,11 +27,12 @@ export async function deviceGrantFixture(base: BetterAuthOptions) {
     },
     async authorizeRequest({ request }: any) {
       events.push({ phase: "authorize", audience: request.audience, nonce: request.nonce });
-      if (request.audience !== "application-api")
+      if (request.audience !== "application-api") {
         throw new APIError("UNPROCESSABLE_ENTITY", {
           error: "invalid_audience",
           error_description: "Audience is not allowed",
         });
+      }
       return {
         clientId: "application-client",
         deviceCodeFields: { grantAudience: request.audience, grantNonce: request.nonce },
@@ -76,11 +77,12 @@ export async function deviceGrantFixture(base: BetterAuthOptions) {
             },
             prepareRedemption: async (row, authorization) => {
               events.push({ phase: "prepare", nonce: authorization.nonce });
-              if (ctx.body.prepareFailure)
+              if (ctx.body.prepareFailure) {
                 throw new APIError("FORBIDDEN", {
                   code: "APPLICATION_PREPARE_REJECTED",
                   message: "Application preparation rejected",
                 });
+              }
               return { audience: row.grantAudience };
             },
           });
@@ -119,21 +121,24 @@ export async function deviceGrantFixture(base: BetterAuthOptions) {
         "account",
         "verification",
         "user",
-      ])
+      ]) {
         db.query(`DELETE FROM "${table}"`).run();
+      }
     },
     async handle(request: Request) {
       const url = new URL(request.url);
-      if (url.pathname.startsWith("/__test/profiles/device-grant/api/auth/"))
+      if (url.pathname.startsWith("/__test/profiles/device-grant/api/auth/")) {
         return auth.handler(request);
+      }
       if (url.pathname === "/__test/device-grant/control") {
         if (request.method === "POST") {
           const input = await request.json();
-          if (input.expiresAt)
+          if (input.expiresAt) {
             db.query('UPDATE deviceCode SET "expiresAt"=? WHERE "deviceCode"=?').run(
               new Date(input.expiresAt).getTime(),
               input.deviceCode,
             );
+          }
         }
         const rows = db
           .query(

@@ -335,6 +335,26 @@ test("complete enrollment responses retain credential formats, relationships and
   literal.traces[0]!.responseBody.metadata!.backupCodes = ["changed-code"];
   expect(compareValues(left, literal, context).length).toBeGreaterThan(0);
 
+  const shortCodes = (enrolled: string, regenerated: string) => ({
+    traces: [
+      { path: "/api/auth/two-factor/enable", responseBody: { backupCodes: [enrolled] } },
+      {
+        path: "/api/auth/two-factor/generate-backup-codes",
+        responseBody: { backupCodes: [regenerated] },
+      },
+    ],
+  });
+  // Tiny configured credentials can collide across independent issuances.
+  expect(compareValues(shortCodes("A-", "A-"), shortCodes("B-", "C-"), context)).toEqual([]);
+  const inconsistent = shortCodes("B-", "C-");
+  inconsistent.traces[0]!.responseBody.backupCodes.push("D-");
+  const repeated = shortCodes("A-", "A-");
+  repeated.traces[0]!.responseBody.backupCodes.push("A-");
+  expect(compareValues(repeated, inconsistent, context).length).toBeGreaterThan(0);
+  expect(
+    compareValues(shortCodes("A-", "A-"), shortCodes("B-", "C_"), context).length,
+  ).toBeGreaterThan(0);
+
   const duplicate = structuredClone(right);
   duplicate.traces[0]!.responseBody.totpURI += "&secret=WRONG";
   expect(compareValues(left, duplicate, context).length).toBeGreaterThan(0);

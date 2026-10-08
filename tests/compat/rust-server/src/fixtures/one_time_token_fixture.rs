@@ -1,10 +1,4 @@
 use crate::TestSchema;
-use axum::{
-    Json, Router,
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
-    routing::post,
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::anonymous::{AnonymousConfig, AnonymousIdentity};
@@ -23,6 +17,12 @@ use alibi::prelude::{AuthRequest, HttpMethod};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use alibi_core::{AuthContext, AuthPlugin, AuthResponse, AuthRoute};
 use alibi_seaorm::DatabaseConnection;
+use axum::{
+    Json, Router,
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+    routing::post,
+};
 use serde::Deserialize;
 use serde_json::json;
 use std::{
@@ -150,7 +150,11 @@ impl HashOneTimeToken for CustomCallbacks {
 struct HeaderCallbacks(CustomCallbacks);
 #[async_trait::async_trait]
 impl GenerateOneTimeToken for HeaderCallbacks {
-    async fn generate(&self, session: &OneTimeTokenSession, request: Option<&AuthRequest>) -> AuthResult<String> {
+    async fn generate(
+        &self,
+        session: &OneTimeTokenSession,
+        request: Option<&AuthRequest>,
+    ) -> AuthResult<String> {
         self.0.generate(session, request).await?;
         let mut state = self.0.0.lock().unwrap();
         state.serial += 1;
@@ -221,7 +225,12 @@ pub(crate) async fn router(
             } else {
                 chrono::Duration::minutes(3)
             },
-            generator: if *name == "ott-custom-header" { Some(Arc::new(HeaderCallbacks(callbacks.clone()))) } else { (*name == "ott-custom-callback").then(|| Arc::new(callbacks.clone()) as Arc<dyn GenerateOneTimeToken>) },
+            generator: if *name == "ott-custom-header" {
+                Some(Arc::new(HeaderCallbacks(callbacks.clone())))
+            } else {
+                (*name == "ott-custom-callback")
+                    .then(|| Arc::new(callbacks.clone()) as Arc<dyn GenerateOneTimeToken>)
+            },
             storage: if matches!(*name, "ott-custom-callback" | "ott-custom-header") {
                 OneTimeTokenStorage::Custom(Arc::new(callbacks.clone()))
             } else if *name == "ott-hashed" {
@@ -231,8 +240,10 @@ pub(crate) async fn router(
             },
             disable_client_request: *name == "ott-server-header",
             disable_set_session_cookie: *name == "ott-no-cookie",
-            set_ott_header_on_new_session: matches!(*name, "ott-server-header" | "ott-composed" | "ott-custom-header"),
-            ..Default::default()
+            set_ott_header_on_new_session: matches!(
+                *name,
+                "ott-server-header" | "ott-composed" | "ott-custom-header"
+            ),
         });
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = base.clone().base_path(&path);

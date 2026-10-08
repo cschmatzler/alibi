@@ -4189,7 +4189,9 @@ export function compareValues(
         ) {
           fail(path, "backup-code format differs");
         }
-        identity(a, b, path, "backup-code");
+        // A one-character code can legitimately recur across independent
+        // enable/regenerate operations. Keep its identity scoped to its issuer.
+        identity(a, b, path, a.length <= 2 ? `backup-code:${leftEndpoint}` : "backup-code");
         return;
       }
       if (key === "responseBody" && /\/(?:reference|docs)$/.test(leftEndpoint)) {

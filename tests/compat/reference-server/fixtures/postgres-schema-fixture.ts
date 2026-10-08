@@ -4,12 +4,13 @@ import { SQL } from "bun";
 import { PostgresDialect } from "kysely";
 export async function postgresSchemaFixture(base: BetterAuthOptions) {
   const connectionURL = process.env.BETTER_AUTH_TEST_POSTGRES_URL;
-  if (!connectionURL)
+  if (!connectionURL) {
     return {
       async handle(_request: Request) {
         return null;
       },
     };
+  }
   const sql = new SQL(connectionURL);
   const namespace = `compat_schema_ts_${process.env.PORT}`;
   // Adapt the real Bun Postgres connection to Kysely's documented pg-pool interface.
@@ -49,8 +50,9 @@ export async function postgresSchemaFixture(base: BetterAuthOptions) {
   return {
     async handle(request: Request) {
       const url = new URL(request.url);
-      if (url.pathname.startsWith("/__test/profiles/postgres-schema/api/auth/"))
+      if (url.pathname.startsWith("/__test/profiles/postgres-schema/api/auth/")) {
         return auth.handler(request);
+      }
       if (url.pathname === "/__test/postgres-schema/state") {
         const schemas = await sql.unsafe(
           "SELECT schema_name FROM information_schema.schemata WHERE schema_name = $1",

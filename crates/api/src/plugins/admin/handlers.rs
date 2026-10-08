@@ -406,7 +406,11 @@ pub(in crate::plugins) async fn update_user_core(
     if let Some(value) = body.data.get("email").and_then(|value| value.as_str()) {
         let email = value.to_lowercase();
         if !super::validation::valid_email(&email) {
-            return Err(AuthError::Api { status:400,code:Some("INVALID_EMAIL".into()),message:"Invalid email".into() });
+            return Err(AuthError::Api {
+                status: 400,
+                code: Some("INVALID_EMAIL".into()),
+                message: "Invalid email".into(),
+            });
         }
         if let Some(existing) = ctx.database.get_user_by_email_record(&email).await?
             && existing.id().as_ref() != body.user_id
@@ -473,6 +477,9 @@ pub(in crate::plugins) async fn update_user_core(
         .database
         .update_user_record(&body.user_id, update)
         .await?;
+    if body.data.get("banned").and_then(serde_json::Value::as_bool) == Some(true) {
+        ctx.database.delete_user_sessions(&body.user_id).await?;
+    }
     AdminUserView::from_output(ctx, &updated_user)
 }
 

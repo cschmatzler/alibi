@@ -716,7 +716,7 @@ mod tests {
         let change_data = json!({
             "currentPassword": "password123",
             "newPassword": "newpassword123",
-            "revokeOtherSessions": "false"
+            "revokeOtherSessions": false
         });
 
         let request = Request::builder()
@@ -757,7 +757,7 @@ mod tests {
         let change_data = json!({
             "currentPassword": "password123",
             "newPassword": "newpassword123",
-            "revokeOtherSessions": "true"
+            "revokeOtherSessions": true
         });
 
         let request = Request::builder()
@@ -1645,7 +1645,7 @@ mod tests {
         let change_data = json!({
             "currentPassword": "password123",
             "newPassword": "newpassword123",
-            "revokeOtherSessions": "false"
+            "revokeOtherSessions": false
         });
 
         let request_5 = Request::builder()

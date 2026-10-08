@@ -1,11 +1,5 @@
 //! Real installed endpoint callbacks and independently read persisted rows.
 use crate::TestSchema;
-use axum::{
-    Json, Router,
-    body::to_bytes,
-    extract::Request,
-    routing::{get, post},
-};
 use alibi::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointError, EndpointHook,
     EndpointOptions, EndpointResponse, ServerEndpoint, current_endpoint_call_context,
@@ -16,9 +10,7 @@ use alibi::plugins::api_key::{
     ApiKeyCallbackContext, ApiKeyConfig, ApiKeyGenerationOptions, ApiKeyGenerator, ApiKeyGetter,
     ApiKeyValidator, RateLimitDefaults,
 };
-use alibi::plugins::email_otp::{
-    EmailOtpConfig, EmailOtpGenerator, EmailOtpPlugin, EmailOtpType,
-};
+use alibi::plugins::email_otp::{EmailOtpConfig, EmailOtpGenerator, EmailOtpPlugin, EmailOtpType};
 use alibi::plugins::haveibeenpwned::{
     HaveIBeenPwnedConfig, HaveIBeenPwnedPlugin, PwnedPasswordClient,
 };
@@ -33,6 +25,12 @@ use alibi_core::utils::json::{self, JsValue};
 use alibi_core::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, HttpMethod};
 use alibi_core::{PasswordHasher, ScryptHasher};
 use alibi_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use axum::{
+    Json, Router,
+    body::to_bytes,
+    extract::Request,
+    routing::{get, post},
+};
 use serde::Deserialize;
 use serde_json::{Value, json as value};
 use std::{

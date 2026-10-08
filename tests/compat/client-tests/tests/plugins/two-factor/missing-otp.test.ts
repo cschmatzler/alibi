@@ -81,8 +81,9 @@ for (const profile of [
       }
       const enrolled = await owner.client.twoFactor.enable({ password, method: "totp" });
       expect(enrolled.error).toBeNull();
-      if (!enrolled.data || enrolled.data.method !== "totp")
+      if (!enrolled.data || enrolled.data.method !== "totp") {
         throw new Error("Actual TOTP enrollment required");
+      }
       const uri = enrolled.data.totpURI;
       expect(
         (await owner.client.twoFactor.verifyTotp({ code: await generateCurrentTotp(uri) })).error,

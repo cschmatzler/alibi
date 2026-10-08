@@ -1,12 +1,5 @@
 //! Configured application callbacks, real row observations and trusted cookie calls.
 use crate::TestSchema;
-use axum::{
-    Json, Router,
-    extract::Query,
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
-    routing::{get, post},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::organization::{
@@ -20,6 +13,13 @@ use alibi_core::store::OrganizationStore;
 use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
+use axum::{
+    Json, Router,
+    extract::Query,
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{get, post},
 };
 use serde_json::{Map, Value, json};
 use std::{collections::HashMap, sync::Arc};

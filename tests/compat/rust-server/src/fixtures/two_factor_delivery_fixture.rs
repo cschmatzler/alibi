@@ -1,5 +1,4 @@
 use crate::TestSchema;
-use axum::{Router, extract::Json, routing::post};
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BackgroundTaskCompletion,
     BackgroundTaskHandler, BetterAuth,
@@ -15,6 +14,7 @@ use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
+use axum::{Router, extract::Json, routing::post};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{

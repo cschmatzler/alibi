@@ -1698,6 +1698,7 @@ for (const operation of ["change", "delete", "callback"] as const) {
   compatScenario(
     `disabled user lifecycle ${operation} preserves delivered proof and physical authority`,
     async (ctx) => {
+      await control(ctx, "delete-mail", "reset");
       const owner = ctx.actor("disabled-owner", profile("delete-mail"));
       const sibling = ctx.actor("disabled-sibling", profile("delete-mail"));
       const foreign = ctx.actor("disabled-foreign", profile("delete-mail"));
@@ -1755,8 +1756,9 @@ for (const operation of ["change", "delete", "callback"] as const) {
           expect(result.error?.status).toBe(
             label === "guest" ? 401 : operation === "change" ? 400 : 404,
           );
-          if (label === "owner" && operation === "change")
+          if (label === "owner" && operation === "change") {
             expect(result.error?.code).toBe("CHANGE_EMAIL_DISABLED");
+          }
           expect(cookies).toEqual([]);
           outcomes.push({ label, result: ctx.snapshot(result) });
           expect(await control(ctx, "disabled")).toEqual(before);
@@ -1819,14 +1821,13 @@ for (const operation of ["change", "delete", "callback"] as const) {
     },
     ["POST /change-email", "POST /delete-user", "GET /delete-user/callback"],
     30_000,
-    {
-      oracle:
-        operation === "delete"
-          ? {
-              unroutedRequests:
-                "The registered disabled delete-user handler intentionally returns an empty 404 via APIError.fromStatus; genuine enabled delivery and deletion prove the route.",
-            }
-          : {},
-    },
+    operation === "delete"
+      ? {
+          oracle: {
+            unroutedRequests:
+              "The registered disabled delete-user handler intentionally returns an empty 404 via APIError.fromStatus; genuine enabled delivery and deletion prove the route.",
+          },
+        }
+      : {},
   );
 }

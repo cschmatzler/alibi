@@ -25,8 +25,9 @@ compatScenario(
       digest,
       `magic-link:${delivered.token}`,
       `magic-link:${new Bun.CryptoHasher("sha256").update(delivered.token).digest("base64url")}`,
-    ])
+    ]) {
       expect(await ctx.readVerificationState({ identifier: other })).toEqual([]);
+    }
     const verified = await actor.client.magicLink.verify({ query: { token: delivered.token } });
     expect(verified.error).toBeNull();
     expect(verified.data!.user).toMatchObject({ email, emailVerified: true, name: "Hasher owner" });

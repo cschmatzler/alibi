@@ -433,8 +433,8 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, backend: &str) -> TestRes
     Ok(cookies.remove(0))
 }
 
-// A real SQLite writer lock holds both handler writes after their pending reads.
-// Source's custom-adapter barrier independently establishes the same contract.
+// A real SQLite writer lock delays decision writes, but does not order reads.
+// The source custom-adapter barrier separately pins both reads to pending.
 async fn delayed_device_decisions<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let config = AuthConfig::new(SECRET).base_url(ORIGIN);
@@ -557,9 +557,28 @@ async fn delayed_device_decisions<B: Backend>(db: Db) -> TestResult {
                 serde_json::to_vec_pretty(&json!({"trace":trace,"effects":effects}))?,
             )?;
         }
-        assert_eq!((approve.status, deny.status), (200, 200));
-        assert_eq!(body(&approve), json!({"success":true}));
-        assert_eq!(body(&deny), json!({"success":true}));
+        // The writer lock delays mutations, but it is not a read barrier: under
+        // load one request may fetch the row only after the other's write.
+        // That request must reject the already-processed code, not overwrite it.
+        assert!(
+            matches!(
+                (approve.status, deny.status),
+                (200, 200) | (200, 400) | (400, 200)
+            ),
+            "approve: {:?}; deny: {:?}",
+            body(&approve),
+            body(&deny)
+        );
+        for response in [&approve, &deny] {
+            assert_eq!(
+                body(response),
+                if response.status == 200 {
+                    json!({"success":true})
+                } else {
+                    json!({"error":"invalid_request", "error_description":"Device code already processed"})
+                }
+            );
+        }
         let row = auth
             .store()
             .get_device_code_by_device_code(device)
@@ -567,6 +586,12 @@ async fn delayed_device_decisions<B: Backend>(db: Db) -> TestResult {
             .unwrap();
         assert_eq!(row.user_id.as_deref(), Some(owner.as_str()));
         assert!(matches!(row.status.as_str(), "approved" | "denied"));
+        if approve.status == 400 {
+            assert_eq!(row.status, "denied");
+        }
+        if deny.status == 400 {
+            assert_eq!(row.status, "approved");
+        }
         assert_eq!(
             call(
                 &auth,

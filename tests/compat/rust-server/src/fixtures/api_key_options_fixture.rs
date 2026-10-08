@@ -1,22 +1,22 @@
 use crate::TestSchema;
-use axum::{
-    Json, Router,
-    extract::State,
-    http::HeaderMap,
-    routing::{get, post},
-};
 use alibi::__private_core::{AuthRequest, HttpMethod};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::api_key::{
-    ApiKeyReferences, ApiKeyCallbackContext, ApiKeyConfig, ApiKeyGenerationOptions, ApiKeyGenerator, ApiKeyGetter,
-    ApiKeyValidator, ApiKeyVerificationError, CreateKeyRequest, KeyExpirationConfig,
-    RateLimitDefaults, UpdateKeyRequest, VerifyApiKey,
+    ApiKeyCallbackContext, ApiKeyConfig, ApiKeyGenerationOptions, ApiKeyGenerator, ApiKeyGetter,
+    ApiKeyReferences, ApiKeyValidator, ApiKeyVerificationError, CreateKeyRequest,
+    KeyExpirationConfig, RateLimitDefaults, UpdateKeyRequest, VerifyApiKey,
 };
 use alibi::plugins::{ApiKeyPlugin, EmailPasswordPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use alibi_seaorm::sea_orm::{
     ConnectionTrait, DatabaseConnection, DbBackend, QueryResult, Statement,
+};
+use axum::{
+    Json, Router,
+    extract::State,
+    http::HeaderMap,
+    routing::{get, post},
 };
 use serde_json::{Value, json};
 use std::sync::{
@@ -355,7 +355,11 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         callbacks.config_id = id.into();
         configurations.push(ApiKeyConfig {
             config_id: id.into(),
-            references: if entry["references"] == "organization" { ApiKeyReferences::Organization } else { ApiKeyReferences::User },
+            references: if entry["references"] == "organization" {
+                ApiKeyReferences::Organization
+            } else {
+                ApiKeyReferences::User
+            },
             require_name: entry["requireName"].as_bool().unwrap_or(false),
             key_length: number(entry.get("keyLength"), 16.0),
             prefix: Some(entry["prefix"].as_str().unwrap_or("optKEY_").into()),
@@ -369,19 +373,19 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             min_name_length: number(entry.get("minName"), 1.0),
             max_name_length: number(entry.get("maxName"), 32.0),
             key_expiration: KeyExpirationConfig {
-                disable_custom_expires_time: entry["disableCustomExpiresTime"].as_bool().unwrap_or(false),
+                disable_custom_expires_time: entry["disableCustomExpiresTime"]
+                    .as_bool()
+                    .unwrap_or(false),
                 default_expires_in: entry
                     .get("expiration")
                     .map(|value| number(Some(value), 0.0)),
                 min_expires_in: number(entry.get("minExpiration"), 0.0),
                 max_expires_in: number(entry.get("maxExpiration"), 365.0),
-                ..Default::default()
             },
             rate_limit: RateLimitDefaults {
                 enabled: entry["rateEnabled"].as_bool().unwrap_or(false),
                 max_requests: number(entry.get("rateMax"), 10.0),
                 time_window: number(entry.get("rateWindow"), 86_400_000.0),
-                ..Default::default()
             },
             enable_metadata: entry["metadata"].as_bool().unwrap_or(true),
             custom_key_generator: (entry["custom"] == true)
@@ -433,37 +437,106 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
 }
 
 /// A named-only API-key instance deliberately has no implicit default.
-pub async fn no_default_router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
+pub async fn no_default_router(
+    base: &AuthConfig,
+    database: DatabaseConnection,
+) -> AuthResult<Router> {
     let path = "/__test/profiles/api-key-no-default/api/auth";
     let config = base.clone().base_path(path);
-    let auth = Arc::new(AuthBuilder::<TestSchema>::new(config.clone())
-        .store(crate::backend::store::<TestSchema>(config.clone(), database))
-        .rate_limit(RateLimitConfig::new().enabled(false))
-        .plugin(EmailPasswordPlugin::new())
-        .plugin(SessionManagementPlugin::new())
-        .plugin(ApiKeyPlugin::with_config(ApiKeyConfig {config_id:"other".into(),enable_metadata:true,..Default::default()}))
-        .build().await?);
+    let auth = Arc::new(
+        AuthBuilder::<TestSchema>::new(config.clone())
+            .store(crate::backend::store::<TestSchema>(
+                config.clone(),
+                database,
+            ))
+            .rate_limit(RateLimitConfig::new().enabled(false))
+            .plugin(EmailPasswordPlugin::new())
+            .plugin(SessionManagementPlugin::new())
+            .plugin(ApiKeyPlugin::with_config(ApiKeyConfig {
+                config_id: "other".into(),
+                enable_metadata: true,
+                ..Default::default()
+            }))
+            .build()
+            .await?,
+    );
     Ok(Router::new().nest(path, auth.clone().axum_router().with_state(auth)))
 }
 
-pub async fn organization_static_router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
+pub async fn organization_static_router(
+    base: &AuthConfig,
+    database: DatabaseConnection,
+) -> AuthResult<Router> {
+    use alibi::plugins::OrganizationPlugin;
     use alibi::plugins::organization::{OrganizationConfig, RolePermissions};
-    use alibi::plugins::{OrganizationPlugin};
     let roles = std::collections::HashMap::from([
-        ("owner".into(), RolePermissions { invitation: vec!["create".into()], member: vec!["update".into()], api_key: vec!["create".into(), "read".into(), "update".into(), "delete".into()], ..Default::default() }),
-        ("admin".into(), RolePermissions { api_key: vec!["create".into()], ..Default::default() }),
-        ("member".into(), RolePermissions { api_key: vec!["read".into()], ..Default::default() }),
-        ("updater".into(), RolePermissions { api_key: vec!["read".into(), "update".into()], ..Default::default() }),
-        ("deleter".into(), RolePermissions { api_key: vec!["read".into(), "delete".into()], ..Default::default() }),
+        (
+            "owner".into(),
+            RolePermissions {
+                invitation: vec!["create".into()],
+                member: vec!["update".into()],
+                api_key: vec![
+                    "create".into(),
+                    "read".into(),
+                    "update".into(),
+                    "delete".into(),
+                ],
+                ..Default::default()
+            },
+        ),
+        (
+            "admin".into(),
+            RolePermissions {
+                api_key: vec!["create".into()],
+                ..Default::default()
+            },
+        ),
+        (
+            "member".into(),
+            RolePermissions {
+                api_key: vec!["read".into()],
+                ..Default::default()
+            },
+        ),
+        (
+            "updater".into(),
+            RolePermissions {
+                api_key: vec!["read".into(), "update".into()],
+                ..Default::default()
+            },
+        ),
+        (
+            "deleter".into(),
+            RolePermissions {
+                api_key: vec!["read".into(), "delete".into()],
+                ..Default::default()
+            },
+        ),
     ]);
     let path = "/__test/profiles/api-key-org-static/api/auth";
     let config = base.clone().base_path(path);
-    let auth = Arc::new(AuthBuilder::<TestSchema>::new(config.clone())
-        .store(crate::backend::store::<TestSchema>(config.clone(), database))
-        .rate_limit(RateLimitConfig::new().enabled(false))
-        .plugin(EmailPasswordPlugin::new()).plugin(SessionManagementPlugin::new())
-        .plugin(OrganizationPlugin::with_config(OrganizationConfig {roles:Some(roles),..Default::default()}))
-        .plugin(ApiKeyPlugin::with_config(ApiKeyConfig::default()).configuration(ApiKeyConfig {config_id:"organization".into(),references:ApiKeyReferences::Organization,..Default::default()}))
-        .build().await?);
+    let auth = Arc::new(
+        AuthBuilder::<TestSchema>::new(config.clone())
+            .store(crate::backend::store::<TestSchema>(
+                config.clone(),
+                database,
+            ))
+            .rate_limit(RateLimitConfig::new().enabled(false))
+            .plugin(EmailPasswordPlugin::new())
+            .plugin(SessionManagementPlugin::new())
+            .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+                roles: Some(roles),
+                ..Default::default()
+            }))
+            .plugin(
+                ApiKeyPlugin::with_config(ApiKeyConfig::default()).configuration(ApiKeyConfig {
+                    config_id: "organization".into(),
+                    references: ApiKeyReferences::Organization,
+                    ..Default::default()
+                }),
+            )
+            .build()
+            .await?,
+    );
     Ok(Router::new().nest(path, auth.clone().axum_router().with_state(auth)))
 }

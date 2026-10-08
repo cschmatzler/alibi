@@ -1,8 +1,6 @@
 //! Real compact-cache profiles. Application controls never enter public auth routes.
 use crate::backend::entities::{account, user, verification};
 use crate::session_field_model::{ApplicationSchema, application_session};
-use async_trait::async_trait;
-use axum::{Json, Router, routing::post};
 use alibi::field_policy::FieldConfig;
 use alibi::plugins::anonymous::{
     AnonymousConfig, AnonymousIdentity, AnonymousLink, LinkAnonymousAccount,
@@ -30,6 +28,8 @@ use alibi_core::{
     CookieCacheVersionResolver, UpdateUser,
 };
 use alibi_seaorm::DatabaseConnection;
+use async_trait::async_trait;
+use axum::{Json, Router, routing::post};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
@@ -50,9 +50,7 @@ struct Application {
 }
 struct SessionTokens(Arc<Mutex<State>>);
 #[async_trait]
-impl alibi_seaorm::DatabaseHooks<ApplicationSchema, crate::backend::Backend>
-    for SessionTokens
-{
+impl alibi_seaorm::DatabaseHooks<ApplicationSchema, crate::backend::Backend> for SessionTokens {
     async fn before_create_session(
         &self,
         session: &mut alibi_core::CreateSession,
@@ -167,12 +165,7 @@ impl Application {
 }
 #[async_trait]
 impl SendVerificationEmail for Application {
-    async fn send(
-        &self,
-        user: &alibi_core::UserView,
-        url: &str,
-        token: &str,
-    ) -> AuthResult<()> {
+    async fn send(&self, user: &alibi_core::UserView, url: &str, token: &str) -> AuthResult<()> {
         self.verification_event(
             "verification-mail",
             serde_json::to_value(user)?,
@@ -258,16 +251,19 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             "negative-infinite" => f64::NEG_INFINITY,
             _ => 300.0,
         };
-        let version =
-            if mode.starts_with("version") || mode.ends_with("interactions") || mode == "exotic" || mode == "managed" {
-                CookieCacheVersion::Resolver(application.clone())
+        let version = if mode.starts_with("version")
+            || mode.ends_with("interactions")
+            || mode == "exotic"
+            || mode == "managed"
+        {
+            CookieCacheVersion::Resolver(application.clone())
+        } else {
+            CookieCacheVersion::Literal(if mode == "date-version" {
+                "2026-10-01T00:00:00.000Z".into()
             } else {
-                CookieCacheVersion::Literal(if mode == "date-version" {
-                    "2026-10-01T00:00:00.000Z".into()
-                } else {
-                    "1".into()
-                })
-            };
+                "1".into()
+            })
+        };
         let mut config = base
             .clone()
             .base_path(&path)
@@ -277,9 +273,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                     "jwe" | "jwe-interactions" | "jwe-old" | "jwe-retained" | "jwe-retired" => {
                         alibi_core::CookieCacheStrategy::Jwe
                     }
-                    "jwt" | "jwt-interactions" | "managed" => {
-                        alibi_core::CookieCacheStrategy::Jwt
-                    }
+                    "jwt" | "jwt-interactions" | "managed" => alibi_core::CookieCacheStrategy::Jwt,
                     _ => alibi_core::CookieCacheStrategy::Compact,
                 },
                 max_age,

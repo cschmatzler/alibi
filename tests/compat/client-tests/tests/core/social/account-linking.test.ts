@@ -46,7 +46,7 @@ compatScenario(
 
     // A second stored account keeps the default last-account unlink rejection
     // out of the way while the policy under test stays disabled.
-    const seeded = await ctx.seedOAuthAccount({
+    await ctx.seedOAuthAccount({
       email,
       providerId: "github",
       accountId: ctx.uniqueToken("account-linking-github-sub"),
@@ -93,7 +93,10 @@ compatScenario(
     const afterUnlink = (await ctx.readUserState({
       userId: signup.data!.user.id,
     })) as UserState;
-    expect(afterUnlink.accounts.map((row) => row.providerId).sort()).toEqual(["credential", "github"]);
+    expect(afterUnlink.accounts.map((row) => row.providerId).sort()).toEqual([
+      "credential",
+      "github",
+    ]);
 
     const relink = await actor.client.linkSocial({
       provider: "google",
@@ -112,7 +115,11 @@ compatScenario(
     const afterRelink = (await ctx.readUserState({
       userId: signup.data!.user.id,
     })) as UserState;
-    expect(afterRelink.accounts.map((row) => row.providerId).sort()).toEqual(["credential", "github", "google"]);
+    expect(afterRelink.accounts.map((row) => row.providerId).sort()).toEqual([
+      "credential",
+      "github",
+      "google",
+    ]);
 
     return {
       signup: ctx.snapshot(signup),

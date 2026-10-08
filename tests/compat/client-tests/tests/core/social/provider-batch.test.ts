@@ -317,16 +317,17 @@ for (const provider of providers) {
             expect(Date.parse(token.accessTokenExpiresAt) - Date.now()).toBeLessThanOrEqual(
               3600000,
             );
-            if (provider === "wechat")
+            if (provider === "wechat") {
               expect(token.openid ?? token.raw?.openid).toBe("batch-subject");
-            else {
+            } else {
               expect(token.raw).toEqual(grant);
               expect(Date.parse(token.refreshTokenExpiresAt) - Date.now()).toBeGreaterThan(7190000);
               expect(Date.parse(token.refreshTokenExpiresAt) - Date.now()).toBeLessThanOrEqual(
                 7200000,
               );
-              if (provider === "paybin" || provider === "twitch")
+              if (provider === "paybin" || provider === "twitch") {
                 expect(token.idToken).toBe(grant.id_token);
+              }
             }
           }
         }
@@ -569,6 +570,7 @@ for (const provider of ["spotify", "wechat", "vercel"] as const) {
         expect(token.error).toBeNull();
         expect(token.data?.accessToken).toBe("callback-access");
         expect(token.data?.refreshToken).toBe("callback-refresh");
+        expect(Date.parse(String(token.data?.accessTokenExpiresAt))).toBe(4102444800000);
         expect(callbacks).toEqual([{ kind: "refresh", provider, refreshToken: "batch-refresh" }]);
         const after: any = await read(ctx, "sql-state");
         expect(
@@ -641,8 +643,9 @@ for (const variant of ["missing", "malformed", "valid"] as const) {
         scope: "openid user:read:email",
       };
       if (variant === "malformed") grant.id_token = "not-a-jwt";
-      if (variant === "valid")
+      if (variant === "valid") {
         grant.id_token = `e30.${Buffer.from(JSON.stringify(inputs.twitch)).toString("base64url")}.fixture`;
+      }
       await control(ctx, "twitch", { tokenResponse: grant });
       const completed = await flow(ctx, "twitch", "default");
       const publicResult = status(completed.response, ctx.baseURL);
@@ -970,8 +973,9 @@ for (const provider of ["zoom", "roblox"] as const) {
           const source = "user" in sql;
           for (const table of source
             ? ["user", "account", "session"]
-            : ["users", "accounts", "sessions"])
+            : ["users", "accounts", "sessions"]) {
             expect(sql[table]).toHaveLength(denied ? 0 : 1);
+          }
           expect(sql[source ? "verification" : "verifications"]).toHaveLength(0);
           const receipts: any[] = await read(ctx, "receipts");
           expect(receipts.map((row) => row.stage)).toEqual(["token", "user"]);
@@ -1091,8 +1095,9 @@ for (const stage of ["token", "user", "refresh"] as const) {
           const source = "user" in sql;
           for (const table of source
             ? ["user", "account", "session"]
-            : ["users", "accounts", "sessions"])
+            : ["users", "accounts", "sessions"]) {
             expect(sql[table]).toHaveLength(failed ? 1 : 2);
+          }
           expect(sql[source ? "verification" : "verifications"]).toHaveLength(0);
           const firstReceipts: any[] = await read(ctx, "receipts");
           expect(firstReceipts.map((row) => row.stage)).toEqual(
@@ -1157,10 +1162,11 @@ for (const mode of ["default", "pkce-disabled"] as const) {
       expect(grant.redirect_uri).toBe(
         ctx.baseURL + authProfilePath(selected("zoom", mode)) + "/callback/zoom",
       );
-      if (mode === "default")
+      if (mode === "default") {
         expect(createHash("sha256").update(grant.code_verifier!).digest("base64url")).toBe(
           completed.url.searchParams.get("code_challenge")!,
         );
+      }
       const session = await completed.actor.client.getSession();
       expect(session.data?.user.email).toBe("batch@example.invalid");
       return {

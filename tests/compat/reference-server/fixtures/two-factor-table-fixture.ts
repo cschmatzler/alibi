@@ -12,22 +12,22 @@ export async function twoFactorTableFixture(base: BetterAuthOptions) {
   const sharedSchema = twoFactor().schema!;
   const defaultSchema = structuredClone(sharedSchema);
   const customPlugin = twoFactor({
-        twoFactorTable: "application_second_factor",
-        schema: {
-          twoFactor: {
-            fields: {
-              secret: "application_secret",
-              backupCodes: "application_backups",
-              userId: "application_owner",
-            },
-          },
+    twoFactorTable: "application_second_factor",
+    schema: {
+      twoFactor: {
+        fields: {
+          secret: "application_secret",
+          backupCodes: "application_backups",
+          userId: "application_owner",
         },
-        otpOptions: {
-          async sendOTP({ user, otp }) {
-            deliveries.set(user.email, otp);
-          },
-        },
-      });
+      },
+    },
+    otpOptions: {
+      async sendOTP({ user, otp }) {
+        deliveries.set(user.email, otp);
+      },
+    },
+  });
   customPlugin.schema = structuredClone(customPlugin.schema);
   for (const [name, table] of Object.entries(sharedSchema)) {
     const saved = (defaultSchema as any)[name];
@@ -50,10 +50,12 @@ export async function twoFactorTableFixture(base: BetterAuthOptions) {
   return {
     async handle(request: Request) {
       const url = new URL(request.url);
-      if (url.pathname.startsWith("/__test/profiles/two-factor-custom-table/api/auth/"))
+      if (url.pathname.startsWith("/__test/profiles/two-factor-custom-table/api/auth/")) {
         return auth.handler(request);
-      if (url.pathname === "/__test/two-factor-custom-table/otp")
+      }
+      if (url.pathname === "/__test/two-factor-custom-table/otp") {
         return Response.json({ otp: deliveries.get(url.searchParams.get("email")!) });
+      }
       if (url.pathname === "/__test/two-factor-custom-table/state") {
         const tables = db.query("SELECT name FROM sqlite_master WHERE type='table'").all() as {
           name: string;

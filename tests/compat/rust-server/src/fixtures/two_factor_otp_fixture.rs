@@ -1,5 +1,4 @@
 use crate::TestSchema;
-use axum::{Router, extract::Json, routing::post};
 use alibi::{
     AuthBuilder, AuthConfig, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
@@ -17,6 +16,7 @@ use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
 };
+use axum::{Router, extract::Json, routing::post};
 use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -168,7 +168,11 @@ pub(crate) async fn router(
                 )
                 .plugin(SessionManagementPlugin::new())
                 .plugin(TwoFactorPlugin::with_config(TwoFactorConfig {
-                    send_otp: if name.contains("missing-") { None } else { Some(callback) },
+                    send_otp: if name.contains("missing-") {
+                        None
+                    } else {
+                        Some(callback)
+                    },
                     otp_digits: digits,
                     otp_period_minutes: period,
                     otp_allowed_attempts: attempts,

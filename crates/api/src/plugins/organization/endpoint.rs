@@ -275,7 +275,6 @@ impl OrganizationPlugin {
                     if !body.keep_current_active_organization.unwrap_or(false) {
                         handlers::org::activate_created_organization(
                             &response,
-                            &user,
                             &session.token,
                             ctx,
                         )

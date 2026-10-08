@@ -1,12 +1,12 @@
 //! Genuine physical token/preference production and independent scoped SQLite rows.
 use crate::TestSchema;
-use axum::{Json, Router, extract::Query, routing::get};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use alibi_core::{CookieAttributes, CookieOverride, SameSite};
 use alibi_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use axum::{Json, Router, extract::Query, routing::get};
 use chrono::Duration;
 use serde::Deserialize;
 use serde_json::{Value, json};

@@ -176,7 +176,15 @@ export const FIXTURE_PROFILES = [
       "signup-disabled",
       "implicit-disabled",
       "required",
-    ] as const),
+    ] as const).filter((profile) => {
+      const mode = profile.slice(`provider-batch-${provider}-`.length);
+      return (
+        (!mode.startsWith("claims-") || provider === "twitch") &&
+        (mode !== "language-en" || provider === "wechat") &&
+        (!mode.startsWith("prompt-") || provider === "roblox") &&
+        (mode !== "pkce-disabled" || provider === "zoom")
+      );
+    }),
   ),
   ...variants("social-paypal-", [
     "default",

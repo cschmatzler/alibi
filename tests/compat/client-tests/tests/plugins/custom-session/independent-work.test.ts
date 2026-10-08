@@ -58,13 +58,11 @@ compatScenario(
         verifications: body.verification ?? body.verifications!,
       };
     };
-    const foreign = await ctx
-      .actor("independent-list-foreign")
-      .client.signUp.email({
-        email: ctx.uniqueEmail("independent-list-foreign"),
-        password: "password123",
-        name: "Foreign Device Owner",
-      });
+    const foreign = await ctx.actor("independent-list-foreign").client.signUp.email({
+      email: ctx.uniqueEmail("independent-list-foreign"),
+      password: "password123",
+      name: "Foreign Device Owner",
+    });
     expect(foreign.error).toBeNull();
     const foreignBefore = await ctx.readUserState({ userId: foreign.data!.user.id });
     const observations = [];
@@ -98,8 +96,8 @@ compatScenario(
         )
         .parse(initial.data);
       expect(entries).toHaveLength(2);
-      const held = entries[0]!,
-        rejected = entries[1]!;
+      const held = entries[0]!;
+      const rejected = entries[1]!;
       expect(held.user.id).not.toBe(rejected.user.id);
       const original = await physical();
       const marker = ctx.uniqueToken(`${name}-marker`);

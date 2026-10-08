@@ -71,9 +71,9 @@ for (const operation of ["delete_session", "delete_user_sessions"] as const) {
       expect(retry.data).toEqual({ status: true });
       expect((await sibling.client.getSession()).data).toBeNull();
       const ownerAfter = await owner.client.getSession();
-      if (operation === "delete_session")
+      if (operation === "delete_session") {
         expect(ownerAfter.data?.session.token).toBe(current.data!.session.token);
-      else expect(ownerAfter.data).toBeNull();
+      } else expect(ownerAfter.data).toBeNull();
       const final = (await ctx.readUserState({ userId: ownerId })) as { sessions: unknown[] };
       expect(final.sessions).toHaveLength(operation === "delete_session" ? 1 : 0);
       expect(await ctx.readUserState({ userId: foreignId })).toEqual(foreignBefore);

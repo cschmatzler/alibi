@@ -1,10 +1,5 @@
 //! Trusted server signing through an actual application-owned HS256 signer.
 use crate::TestSchema;
-use axum::{Json, Router, body::Bytes, http::StatusCode, response::IntoResponse, routing::get};
-use base64::{
-    Engine,
-    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
-};
 use alibi::plugins::jwt::{
     DefineJwtPayload, JwtAlgorithm, JwtAudience, JwtClaimsConfig, JwtExpiration, JwtPlugin,
     JwtPluginConfig, JwtSession, JwtSignOptions, RemoteJwtClaim, RemoteJwtPayload, SignRemoteJwt,
@@ -16,6 +11,11 @@ use alibi::{
 };
 use alibi_core::utils::json::JsValue;
 use alibi_seaorm::DatabaseConnection;
+use axum::{Json, Router, body::Bytes, http::StatusCode, response::IntoResponse, routing::get};
+use base64::{
+    Engine,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use std::{

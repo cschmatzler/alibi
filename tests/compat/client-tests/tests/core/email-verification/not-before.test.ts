@@ -24,16 +24,17 @@ compatScenario(
       .client.signUp.email({ email, name: "Proof Owner", password: "password123" });
     expect(signup.error).toBeNull();
     const before = await control();
-    const now = Math.floor(Date.now() / 1000);
+    // Application-authored claims stay literal across independent server runs.
+    const now = 946684800;
     const secret = new TextEncoder().encode("compat-test-only-key-not-real-minimum-32chars");
     const token = (nbf: number) =>
-      new SignJWT({ email, iat: now, nbf, exp: now + 3600 })
+      new SignJWT({ email, iat: now, nbf, exp: 4102444800 })
         .setProtectedHeader({ alg: "HS256" })
         .sign(secret);
     const guest = ctx.actor("guest", profile);
     let cookies: string[] = [];
     const denied = await guest.client.verifyEmail({
-      query: { token: await token(now + 1800) },
+      query: { token: await token(4102444790) },
       fetchOptions: {
         onResponse({ response }) {
           cookies = response.headers.getSetCookie();

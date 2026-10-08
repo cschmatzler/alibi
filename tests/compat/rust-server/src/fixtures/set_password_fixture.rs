@@ -1,12 +1,5 @@
 //! Trusted bridge to the actual server-only password operation.
 use crate::TestSchema;
-use async_trait::async_trait;
-use axum::{
-    Json, Router,
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
-    routing::{get, post},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::password_management::set_password;
@@ -23,6 +16,13 @@ use alibi_seaorm::{
         QueryFilter, QueryOrder, Set, Statement,
     },
     store::entities::{account, session, user},
+};
+use async_trait::async_trait;
+use axum::{
+    Json, Router,
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+    routing::{get, post},
 };
 use serde_json::{Value, json};
 use std::{
@@ -97,7 +97,10 @@ impl PasswordHasher for Application {
     }
     async fn verify(&self, hash: &str, password: &str) -> AuthResult<bool> {
         if *self.mode.lock().unwrap() == "schema-observe" {
-            self.events.lock().unwrap().push(json!({"stage":"verify-enter","password":password}));
+            self.events
+                .lock()
+                .unwrap()
+                .push(json!({"stage":"verify-enter","password":password}));
         }
         ScryptHasher.verify(hash, password).await
     }
@@ -156,10 +159,12 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     enable_username: false,
                     ..Default::default()
                 }))
-                .plugin(alibi::plugins::PasswordManagementPlugin::with_config(alibi::plugins::PasswordManagementConfig {
-                    password_hasher: Some(app.clone()),
-                    ..Default::default()
-                }))
+                .plugin(alibi::plugins::PasswordManagementPlugin::with_config(
+                    alibi::plugins::PasswordManagementConfig {
+                        password_hasher: Some(app.clone()),
+                        ..Default::default()
+                    },
+                ))
                 .plugin(SessionManagementPlugin::new())
                 .plugin(TwoFactorPlugin::new())
                 .build()
