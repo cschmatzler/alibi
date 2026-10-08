@@ -19,6 +19,8 @@ struct DeviceApplication {
     selector: Mutex<(String, String)>,
     events: Mutex<Vec<Value>>,
     first: tokio::sync::watch::Sender<bool>,
+    second: tokio::sync::watch::Sender<bool>,
+    count: std::sync::atomic::AtomicUsize,
 }
 impl Default for DeviceApplication {
     fn default() -> Self {
@@ -26,6 +28,8 @@ impl Default for DeviceApplication {
             selector: Mutex::new((String::new(), String::new())),
             events: Mutex::new(Vec::new()),
             first: tokio::sync::watch::channel(true).0,
+            second: tokio::sync::watch::channel(true).0,
+            count: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 }
@@ -200,8 +204,26 @@ impl DeviceCodeStore for ApplicationStore {
         &self,
         user_code: &str,
     ) -> AuthResult<Option<DeviceCode>> {
-        self.check("get_device_code_by_user_code")?;
-        self.inner.get_device_code_by_user_code(user_code).await
+        let row = self.inner.get_device_code_by_user_code(user_code).await?;
+        let (selected, mode) = self.device.selector.lock().unwrap().clone();
+        if mode == "review" && row.as_ref().is_some_and(|row| row.id == selected) {
+            let ordinal = self
+                .device
+                .count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                + 1;
+            if ordinal <= 2 {
+                let row = row.as_ref().unwrap();
+                self.device.events.lock().unwrap().push(json!({"operation":"review","ordinal":ordinal,"id":row.id,"userId":row.user_id}));
+                wait_device_gate(if ordinal == 1 {
+                    &self.device.first
+                } else {
+                    &self.device.second
+                })
+                .await?;
+            }
+        }
+        Ok(row)
     }
     async fn update_device_code(
         &self,
@@ -290,12 +312,18 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                                 body["gate"].as_str().unwrap().to_owned(),
                             );
                             device.events.lock().unwrap().clear();
+                            device.count.store(0, std::sync::atomic::Ordering::SeqCst);
+                            device.second.send_replace(false);
                             device.first.send_replace(false);
                         }
                         "release-first" => {
                             device.first.send_replace(true);
                         }
+                        "release-second" => {
+                            device.second.send_replace(true);
+                        }
                         "restore" => {
+                            device.second.send_replace(true);
                             device.first.send_replace(true);
 
                             device.selector.lock().unwrap().1 = String::new();
