@@ -8,6 +8,7 @@ import inputs from "../../fixtures/provider-batch-profiles.json";
 
 export const providerBatchModes = [
   "default",
+  "language-en",
   "expiry-positive",
   "expiry-zero",
   "expiry-negative",
@@ -184,6 +185,7 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   for (const provider of Object.keys(inputs)) {
     for (const mode of providerBatchModes) {
+      if (mode === "language-en" && provider !== "wechat") continue;
       const path = `/__test/profiles/provider-batch-${provider}-${mode}/api/auth`;
       const providerOptions: Record<string, unknown> = {
         clientId:
@@ -194,6 +196,7 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
               : "batch-client",
         ...(provider === "tiktok" ? { clientKey: "batch-client" } : {}),
         clientSecret: "batch-secret",
+        ...(mode === "language-en" ? { lang: "en" } : {}),
         ...(["configured", "disabled-configured"].includes(mode)
           ? {
               scope: ["configured", "shared", "configured"],

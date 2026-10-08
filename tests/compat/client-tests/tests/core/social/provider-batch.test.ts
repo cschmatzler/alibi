@@ -991,3 +991,60 @@ for (const provider of ["zoom", "roblox"] as const) {
     }
   }
 }
+
+for (const mode of ["default", "language-en"] as const) {
+  compatScenario(
+    `WeChat authorization language ${mode} keeps separate user-info language`,
+    async (ctx) => {
+      const foreign = ctx.actor("foreign");
+      expect(
+        (
+          await foreign.client.signUp.email({
+            email: ctx.uniqueEmail("wechat-language-foreign"),
+            password: "password123",
+            name: "Foreign owner",
+          })
+        ).error,
+      ).toBeNull();
+      const foreignBefore = await foreign.client.getSession();
+      await control(ctx, "wechat");
+      const completed = await flow(ctx, "wechat", mode);
+      expect(completed.url.searchParams.get("lang")).toBe(mode === "default" ? "cn" : "en");
+      expect(completed.url.searchParams.get("scope")).toBe("snsapi_login");
+      expect(completed.url.searchParams.get("appid")).toBe("batch-client");
+      expect(completed.url.searchParams.get("state")).toBeString();
+      expect(completed.url.hash).toBe("#wechat_redirect");
+      expect(completed.response.headers.get("location")).toBe("/dashboard");
+      const receipts: any[] = await read(ctx, "receipts");
+      expect(receipts.map((row) => row.stage)).toEqual(["token", "user"]);
+      expect(receipts[1].query).toEqual({
+        access_token: "batch-access",
+        openid: "batch-subject",
+        lang: "zh_CN",
+      });
+      const session = await completed.actor.client.getSession();
+      expect(session.data?.user.email).toBe("batch-subject@wechat.placeholder.invalid");
+      const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
+      const source = "user" in sql;
+      const account = sql[source ? "account" : "accounts"]!.find(
+        (row) => row[source ? "providerId" : "provider_id"] === "wechat",
+      );
+      expect(account[source ? "accountId" : "account_id"]).toBe("batch-subject");
+      expect(account[source ? "userId" : "user_id"]).toBe(session.data!.user.id);
+      expect(sql[source ? "session" : "sessions"]).toHaveLength(2);
+      expect(await foreign.client.getSession()).toEqual(foreignBefore);
+      return {
+        start: ctx.snapshot(completed.start),
+        session: ctx.snapshot(session),
+        callback: status(completed.response, ctx.baseURL),
+        wire: receipts.map((row) => ({
+          stage: row.stage,
+          method: row.method,
+          query: row.query,
+          body: row.body,
+        })),
+      };
+    },
+    ["POST /sign-in/social", "GET /callback/{}", "GET /get-session"],
+  );
+}

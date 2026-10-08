@@ -19,6 +19,7 @@ use tokio::sync::Mutex;
 const INPUTS: &str = include_str!("../../../fixtures/provider-batch-profiles.json");
 const MODES: &[&str] = &[
     "default",
+    "language-en",
     "expiry-positive",
     "expiry-zero",
     "expiry-negative",
@@ -204,6 +205,7 @@ fn factory(provider: &str, mode: &str, local: Option<&str>) -> OAuthProvider {
         }
         "wechat" => {
             let mut options = WeChatOptions::new(client, secret);
+            if mode == "language-en" { options.language = WeChatLanguage::English; }
             options.scope = configured(mode);
             options.disable_default_scope = mode == "disabled-configured";
             options.user_info_endpoint =
@@ -232,6 +234,7 @@ pub(crate) async fn router(
     let mut router = Router::new();
     for provider_id in PROVIDERS {
         for mode in MODES {
+            if *mode == "language-en" && *provider_id != "wechat" { continue; }
             let path = format!("/__test/profiles/provider-batch-{provider_id}-{mode}/api/auth");
             let mut settings = config.clone().base_path(&path);
             settings.account.encrypt_oauth_tokens = *mode == "encrypted";
