@@ -296,3 +296,73 @@ compatScenario(
     };
   },
 );
+
+for (const placeholder of [null, false, 0, ""] as const) {
+  compatScenario(
+    `update user falsy readonly email placeholder ${JSON.stringify(placeholder)}`,
+    async (ctx) => {
+      const owner = ctx.actor();
+      const email = ctx.uniqueEmail("readonly-placeholder");
+      const signup = await owner.client.signUp.email({
+        email,
+        password: "password123",
+        name: "Original Name",
+      });
+      expect(signup.error).toBeNull();
+      const before = await owner.client.getSession();
+      const physicalBefore: any = await ctx.readUserState({ userId: signup.data!.user.id });
+      const update = await ctx.rawRequest({
+        path: "/api/auth/update-user",
+        method: "POST",
+        json: { name: "Allowed profile update", email: placeholder },
+      });
+      expect(update.status).toBe(200);
+      expect(update.body).toEqual({ status: true });
+      const session = await owner.client.getSession();
+      expect(session.data?.user).toMatchObject({
+        id: signup.data!.user.id,
+        email,
+        name: "Allowed profile update",
+      });
+      expect(session.data?.session.id).toBe(before.data?.session.id);
+      const physical: any = await ctx.readUserState({ userId: signup.data!.user.id });
+      expect(physical.user).toMatchObject({ id: signup.data!.user.id, email });
+      const sql = (await (
+        await fetch(`${ctx.baseURL}/__test/provider-batch/sql-state`)
+      ).json()) as Record<string, any[]>;
+      const source = "user" in sql;
+      expect(
+        sql[source ? "user" : "users"]!.find((row) => row.id === signup.data!.user.id),
+      ).toMatchObject({ email, name: "Allowed profile update" });
+      expect(physical.accounts).toEqual(physicalBefore.accounts);
+      expect(physical.sessions).toEqual(physicalBefore.sessions);
+      const truthy = await ctx.rawRequest({
+        path: "/api/auth/update-user",
+        method: "POST",
+        json: { name: "Must not commit", email: ctx.uniqueEmail("blocked-email") },
+      });
+      expect(truthy.status).toBe(400);
+      expect(truthy.body).toMatchObject({ code: "EMAIL_CAN_NOT_BE_UPDATED" });
+      const onlyPlaceholder = await ctx.rawRequest({
+        path: "/api/auth/update-user",
+        method: "POST",
+        json: { email: placeholder },
+      });
+      expect(onlyPlaceholder.status).toBe(400);
+      expect(onlyPlaceholder.body).toMatchObject({ message: "No fields to update" });
+      expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(physical);
+      const fresh = ctx.actor("fresh-login");
+      const login = await fresh.client.signIn.email({ email, password: "password123" });
+      expect(login.error).toBeNull();
+      expect(login.data?.user.id).toBe(signup.data!.user.id);
+      return {
+        update,
+        session: ctx.snapshot(session),
+        truthy,
+        onlyPlaceholder,
+        login: ctx.snapshot(login),
+      };
+    },
+    ["POST /update-user", "GET /get-session", "POST /sign-in/email"],
+  );
+}

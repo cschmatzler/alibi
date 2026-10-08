@@ -43,6 +43,16 @@ pub(super) async fn router(
         "session-secondary-preserve-only",
         "session-secondary-combined",
         "session-secondary-preserved",
+        "id-strategy-uuid",
+        "id-strategy-serial",
+        "id-strategy-custom",
+        "id-strategy-false",
+        "id-strategy-throw",
+        "stateless-refresh-compact",
+        "stateless-refresh-jwt",
+        "stateless-refresh-deferred",
+        "stateless-refresh-v2",
+        "stateless-refresh-jwt-v2",
         "session-update-age",
         "session-update-age-cache",
         "session-update-age-long",
@@ -53,9 +63,11 @@ pub(super) async fn router(
         "session-no-freshness",
         "snake-casing",
         "session-cookie-cleanup",
+        "account-unlink-all",
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = config.clone().base_path(&path);
+        if name == "id-strategy-serial" { config.advanced.database.use_number_id = true; }
         if name.starts_with("session-secondary-") {
             let cache: Arc<dyn CacheAdapter> = Arc::new(MemoryCacheAdapter::new());
             config.session.secondary_storage = Some(cache.clone());
@@ -65,6 +77,11 @@ pub(super) async fn router(
             config.session.preserve_in_database = name.contains("preserve");
             drop(caches.insert(name.to_owned(), cache));
         }
+        if name.starts_with("stateless-refresh-") {
+            config.session = config.session.stateless();
+            config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {enabled: true, max_age: 5.0, strategy: if name.contains("jwt") {alibi_core::CookieCacheStrategy::Jwt} else {alibi_core::CookieCacheStrategy::Compact}, version: Some(alibi_core::CookieCacheVersion::Literal(if name.ends_with("v2") {"2"} else {"1"}.into()))});
+            config.session.cookie_refresh_cache = alibi_core::CookieRefreshCache::UpdateAge(4.0);
+        }
         if name.contains("update-age") {
             config.session.expires_in = chrono::Duration::seconds(3600);
             config.session.update_age = Some(chrono::Duration::seconds(if name.ends_with("-long") {7200} else {120}));
@@ -72,14 +89,17 @@ pub(super) async fn router(
         if name == "session-update-age-cache" {
             config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {enabled: true, max_age: 300.0, ..Default::default()});
         }
-        config.session.defer_session_refresh = name.starts_with("session-deferred");
-        config.session.disable_session_refresh = name.ends_with("no-refresh");
+        config.session.defer_session_refresh = name.starts_with("session-deferred") || name.ends_with("refresh-deferred");
+        config.session.disable_session_refresh = name.ends_with("no-refresh") || name.starts_with("stateless-refresh-");
         if name == "session-no-freshness" {
             config.session.fresh_age = Some(chrono::Duration::zero());
         }
         if name == "session-cookie-cleanup" {
             config.account.store_account_cookie = true;
             config.account.store_state_strategy = alibi::config::OAuthStateStrategy::Cookie;
+        }
+        if name == "account-unlink-all" {
+            config.account.account_linking.allow_unlinking_all = true;
         }
         let mut builder = AuthBuilder::<TestSchema>::new(config.clone())
             .store(crate::backend::store::<TestSchema>(
@@ -99,6 +119,9 @@ pub(super) async fn router(
             .plugin(TwoFactorPlugin::new())
             .plugin(OrganizationPlugin::new())
             .plugin(alibi::plugins::open_api::OpenApiPlugin::new());
+        if name == "account-unlink-all" {
+            builder = builder.plugin(alibi::plugins::AccountManagementPlugin::new());
+        }
         if name.starts_with("session-secondary-") {
             builder = builder
                 .plugin(MultiSessionPlugin::new())
@@ -112,6 +135,17 @@ pub(super) async fn router(
         let routes = auth.clone().axum_router().with_state(auth);
         router = router.nest(&path, routes);
     }
+    // Native currently has no configured ID generator or serial-ID policy.
+    let ids_database = database.clone();
+    router = router.route("/__test/id-strategy/{mode}/state", axum::routing::get(move || {let database = ids_database.clone(); async move {
+        use alibi_seaorm::sea_orm::{ConnectionTrait, Statement};
+        let read = async |table: &str, owner: bool| {
+            let columns = if owner {"id, user_id"} else {"id"};
+            let rows = database.query_all_raw(Statement::from_string(database.get_database_backend(), format!("SELECT {columns} FROM {table}"))).await.unwrap();
+            rows.iter().map(|row| {let mut value = json!({"id": row.try_get::<String>("", "id").unwrap()}); if owner {value["userId"] = json!(row.try_get::<String>("", "user_id").unwrap());} value}).collect::<Vec<_>>()
+        };
+        Json(json!({"users": read("users",false).await, "accounts": read("accounts",true).await, "sessions": read("sessions",true).await, "verification": read("verifications",false).await, "events": []}))
+    }}));
     let casing_database = database.clone();
     router = router.route("/__test/casing/state", axum::routing::get(move |axum::extract::Query(query): axum::extract::Query<HashMap<String,String>>| {let database = casing_database.clone(); async move {
         use alibi_seaorm::sea_orm::{ConnectionTrait, Statement};

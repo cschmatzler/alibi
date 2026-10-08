@@ -1,3 +1,4 @@
+mod account_linking_profiles;
 use serde_json::{Value, json};
 use axum::http::StatusCode;
 mod additional_field_models;
@@ -288,6 +289,7 @@ fn default_github_profile() -> GitHubProfile {
 }
 
 async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr> {
+    alibi_seaorm::rate_limit::entity::Entity::delete_many().exec(database).await?;
     alibi_seaorm::store::entities::jwk::Entity::delete_many()
         .exec(database)
         .await?;
@@ -317,7 +319,7 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
     // keyring profiles.
     {
         use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
-        for table in ["fixtureJwtKeyring"] {
+        for table in ["fixtureJwtKeyring", "application_delete_receipts"] {
             let _ = database
                 .execute_raw(Statement::from_string(
                     DbBackend::Sqlite,
@@ -340,7 +342,7 @@ async fn database_residue(
         .query_all_raw(Statement::from_string(
             DbBackend::Sqlite,
             // Migration bookkeeping is schema, not scenario state.
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'better_auth_migrations' ORDER BY name",
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('better_auth_migrations', 'better_auth_rate_limit_migrations') ORDER BY name",
         ))
         .await?;
     let mut residue = serde_json::Map::new();
@@ -792,6 +794,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         organization_member_removal_hooks_fixture::router(&config, database.clone()).await?;
     let member_role_hooks_router =
         organization_member_role_hooks_fixture::router(&config, database.clone()).await?;
+    let session_adapter_failure_router = fixtures::session_adapter_failure_fixture::router(&config, database.clone()).await?;
     let pending_lookup_router =
         two_factor_pending_lookup_fixture::router(&config, database.clone()).await?;
     let update_hooks_router =
@@ -833,6 +836,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .await?;
 
+    let account_linking_router = account_linking_profiles::router(
+        &config,
+        database.clone(),
+        || {
+            mock_oauth_plugin(
+                port,
+                social_profile.clone(),
+                social_id_token_valid.clone(),
+                oauth_refresh_mode.clone(),
+            )
+        },
+    )
+    .await?;
     let verification_profile_router =
         verification_profiles::router(&config, database.clone(), verification_outbox.clone())
             .await?;
@@ -852,6 +868,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_key_hook_router = api_key_hook_fixture::router(&config, database.clone()).await?;
     let multiple_session_counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let physical_cookie_router = physical_cookie_fixture::router(&config, database.clone()).await?;
+    let api_error_router = fixtures::api_error_fixture::router(&config, database.clone()).await?;
     let dispatch_router = dispatch_fixture::router(&config, database.clone()).await?;
     let server_endpoint_router =
         server_endpoint_fixture::router(&config, database.clone(), "server-dispatch", false)
@@ -1101,6 +1118,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     let otp_outbox_for_reset = otp_outbox.clone();
     let auth_router = auth.clone().axum_router();
+    let mut error_url_router = Router::new();
+    for mode in ["redirect", "html"] {
+        let path = format!("/__test/profiles/error-url-{mode}/api/auth");
+        let mut profile_config = config.clone().base_path(&path).api_error_url("/problem?keep=a%2Bb#error-panel");
+        profile_config.render_error_page = mode == "html";
+        let profile_auth = Arc::new(AuthBuilder::<TestSchema>::new(profile_config.clone())
+            .store(crate::backend::store::<TestSchema>(profile_config, reset_database.clone()))
+            .rate_limit(RateLimitConfig::new().enabled(false)).build().await?);
+        error_url_router = error_url_router.nest(&path, profile_auth.clone().axum_router().with_state(profile_auth));
+    }
     let error_page_path = "/__test/profiles/error-page/api/auth";
     let mut error_page_config = config.clone().base_path(error_page_path);
     error_page_config.render_error_page = true;
@@ -1189,6 +1216,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ott_router = one_time_token_fixture::router(&config, reset_database.clone()).await?;
     let open_api_router = open_api_fixture::router(&config, reset_database.clone()).await?;
 
+    let database_delete_hooks_router = fixtures::delete_hooks_fixture::router(&config, reset_database.clone()).await?;
+    let factor_table_router = fixtures::two_factor_table_fixture::router(&config, reset_database.clone()).await?;
+    let postgres_schema_router = fixtures::postgres_schema_fixture::router(&config).await?;
     let app = Router::new()
         .merge(lifecycle_controls)
         .merge(organization_timestamp_fixture::router(
@@ -2133,7 +2163,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(deletion_hooks_router)
         .nest("/api/auth", auth_router)
         .with_state(auth)
+        .merge(session_adapter_failure_router)
+        .merge(database_delete_hooks_router)
+        .merge(factor_table_router)
+        .merge(postgres_schema_router)
         .merge(error_page_router)
+        .merge(error_url_router)
         .merge(railway_router)
         .merge(reddit_router)
         .merge(provider_batch_router)
@@ -2169,9 +2204,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(invitation_acceptance_router)
         .merge(invitation_lifecycle_router)
         .merge(verification_profile_router)
+        .merge(account_linking_router)
         .merge(session_profile_router)
         .merge(bearer_router)
         .merge(captcha_router)
+        .merge(api_error_router)
         .merge(dispatch_router)
         .merge(physical_cookie_router)
         .merge(server_endpoint_router)
