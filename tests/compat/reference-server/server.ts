@@ -1113,6 +1113,32 @@ const passkeyTrustFormats = [
   "apple",
 ];
 
+const emailChangeHookState = { stage: "none", error: "ordinary", events: [] as unknown[] };
+async function emailChangeHook(
+  stage: string,
+  user: { id: string; email: string; emailVerified: boolean },
+  request?: Request,
+) {
+  emailChangeHookState.events.push({
+    stage,
+    user: { id: user.id, email: user.email, emailVerified: user.emailVerified },
+    request: request
+      ? {
+          path: new URL(request.url).pathname,
+          method: request.method,
+          marker: request.headers.get("x-email-change-marker"),
+        }
+      : null,
+  });
+  if (emailChangeHookState.stage === stage) {
+    if (emailChangeHookState.error === "coded")
+      throw new APIError("FORBIDDEN", {
+        code: "EMAIL_CHANGE_HOOK_VETO",
+        message: "Application verification hook rejected",
+      });
+    throw new Error("Private verification hook failure");
+  }
+}
 function createOtpProfile(name: string) {
   const proof = name.startsWith("passwordless-proof");
   return betterAuth({
@@ -1123,13 +1149,20 @@ function createOtpProfile(name: string) {
       : {}),
     verification: { disableCleanup: name === "verification-no-cleanup" },
     emailVerification:
-      name === "passwordless-proof"
-        ? { sendOnSignUp: false, autoSignInAfterVerification: true }
-        : {
+      name === "otp-change-hooks"
+        ? {
             ...authOptions.emailVerification,
             sendOnSignUp: false,
-            autoSignInAfterVerification: proof,
-          },
+            beforeEmailVerification: (user, request) => emailChangeHook("before", user, request),
+            afterEmailVerification: (user, request) => emailChangeHook("after", user, request),
+          }
+        : name === "passwordless-proof"
+          ? { sendOnSignUp: false, autoSignInAfterVerification: true }
+          : {
+              ...authOptions.emailVerification,
+              sendOnSignUp: false,
+              autoSignInAfterVerification: proof,
+            },
     plugins: [
       emailOTP({
         ...(name === "passwordless-rate-policy"
@@ -1188,6 +1221,7 @@ function createOtpProfile(name: string) {
 }
 const otpProfiles = new Map<string, ReturnType<typeof createOtpProfile>>();
 for (const name of [
+  "otp-change-hooks",
   "otp-change-disabled-omitted",
   "otp-change-disabled-false",
   "passwordless-rate-policy",
@@ -2911,6 +2945,15 @@ const server = Bun.serve({
             }))
             .sort((a: any, b: any) => a.deviceCode.localeCompare(b.deviceCode)),
         });
+      }
+      if (url.pathname === "/__test/email-change-hooks") {
+        if (request.method === "POST") {
+          const body = await request.json();
+          emailChangeHookState.stage = body.stage;
+          emailChangeHookState.error = body.error;
+          emailChangeHookState.events.length = 0;
+        }
+        return Response.json({ events: [...emailChangeHookState.events] });
       }
       if (url.pathname === "/__test/device-owner" && request.method === "POST") {
         const body = (await request.json()) as { deviceCode: string; userId: string };
