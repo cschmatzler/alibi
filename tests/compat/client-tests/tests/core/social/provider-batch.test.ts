@@ -685,3 +685,83 @@ for (const variant of ["missing", "empty"] as const) {
     );
   }
 }
+
+for (const hasUnion of [true, false]) {
+  compatScenario(
+    `WeChat union identity ${hasUnion ? "stable across applications" : "empty falls back"}`,
+    async (ctx) => {
+      const foreign = ctx.actor("foreign");
+      expect(
+        (
+          await foreign.client.signUp.email({
+            email: ctx.uniqueEmail("wechat-foreign"),
+            password: "password123",
+            name: "Unrelated owner",
+          })
+        ).error,
+      ).toBeNull();
+      const foreignSession = await foreign.client.getSession();
+      const subject = hasUnion ? "stable-union" : "application-one";
+      const observations = [];
+      let originalOwner: string | undefined;
+      let originalAccount: string | undefined;
+      for (const app of hasUnion ? ["one", "two"] : ["one"]) {
+        await control(ctx, "wechat", {
+          profile: {
+            ...inputs.wechat,
+            unionid: hasUnion ? "stable-union" : "",
+            openid: `application-${app}`,
+          },
+          tokenResponse: {
+            access_token: `wechat-${app}-access`,
+            refresh_token: `wechat-${app}-refresh`,
+            expires_in: 3600,
+            scope: "snsapi_login",
+            openid: `transport-${app}`,
+          },
+        });
+        const completed = await flow(ctx, "wechat", "default");
+        expect(completed.response.headers.get("location")).toBe("/dashboard");
+        const session = await completed.actor.client.getSession();
+        expect(session.data?.user.email).toBe(`${subject}@wechat.placeholder.invalid`);
+        expect(session.data?.user.emailVerified).toBe(false);
+        const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
+        const source = "user" in sql;
+        const accounts = sql[source ? "account" : "accounts"]!;
+        const account = accounts.find(
+          (row) => row[source ? "providerId" : "provider_id"] === "wechat",
+        );
+        expect(account[source ? "accountId" : "account_id"]).toBe(subject);
+        expect(account[source ? "userId" : "user_id"]).toBe(session.data!.user.id);
+        if (app === "one") {
+          originalOwner = session.data!.user.id;
+          originalAccount = account.id;
+        } else {
+          expect(session.data!.user.id).toBe(originalOwner!);
+          expect(account.id).toBe(originalAccount!);
+        }
+        expect(sql[source ? "user" : "users"]).toHaveLength(2);
+        expect(accounts).toHaveLength(2);
+        expect(sql[source ? "session" : "sessions"]).toHaveLength(app === "one" ? 2 : 3);
+        const receipts: any[] = await read(ctx, "receipts");
+        expect(receipts.map((row) => row.stage)).toEqual(
+          app === "one" ? ["token", "user"] : ["token", "user", "token", "user"],
+        );
+        expect(receipts.at(-1)!.query).toMatchObject({
+          openid: `transport-${app}`,
+          access_token: `wechat-${app}-access`,
+          lang: "zh_CN",
+        });
+        observations.push({
+          session: ctx.snapshot(session),
+          callback: status(completed.response, ctx.baseURL),
+          subject,
+          query: receipts.at(-1)!.query,
+        });
+      }
+      expect(await foreign.client.getSession()).toEqual(foreignSession);
+      return { observations, foreign: ctx.snapshot(foreignSession) };
+    },
+    ["POST /sign-in/social", "GET /callback/{}", "GET /get-session"],
+  );
+}
