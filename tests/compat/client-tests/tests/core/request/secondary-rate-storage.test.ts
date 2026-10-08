@@ -118,7 +118,11 @@ compatScenario(
       // comparison last so recovery and physical invariants run on both engines.
       if (
         JSON.stringify(failed.error) !==
-        JSON.stringify({ message: "Internal server error", status: 500, statusText: "Internal Server Error" })
+        JSON.stringify({
+          message: "Internal server error",
+          status: 500,
+          statusText: "Internal Server Error",
+        })
       )
         mismatches.push({ mode, error: failed.error });
       const disabled = await signUp(`atomic-${mode}-disabled`, ip, true);
@@ -153,9 +157,20 @@ compatScenario(
       });
     }
     expect(mismatches).toEqual([]);
-    return ctx.snapshot({ observations, wire });
+    return ctx.snapshot({
+      observations,
+      wire: wire.map(({ status, cookies }) => ({
+        status,
+        cookies: cookies.map((cookie) => ({ headers: { "set-cookie": cookie } })),
+      })),
+    });
   },
   ["POST /sign-up/email"],
   30_000,
-  { oracle: { collapsedFixtureErrors: "The fixture awaits public handler quota failures inside its explicit host catch; this scenario separately asserts the missing/throwing increment calls, unchanged physical state, no fallback and recovery." } },
+  {
+    oracle: {
+      collapsedFixtureErrors:
+        "The fixture awaits public handler quota failures inside its explicit host catch; this scenario separately asserts the missing/throwing increment calls, unchanged physical state, no fallback and recovery.",
+    },
+  },
 );
