@@ -40,6 +40,7 @@ export async function createPhoneFixture(
     notification.events.push({ stage: held ? "rejected" : "completed", ...receipt });
     if (held) throw new Error("Application SMS delivery rejected");
   }
+  const validatorEvents: string[] = [];
   const resetEvents: unknown[] = [];
   const challenges = new Map<string, string>();
   const callbacks: {
@@ -120,6 +121,16 @@ export async function createPhoneFixture(
             if (name.startsWith("phone-notification-"))
               await notify("password-reset", phoneNumber, code, ctx);
           },
+          ...(name === "phone-no-otp-sender"
+            ? {
+                sendOTP: undefined!,
+                phoneNumberValidator: (phone: string) => {
+                  validatorEvents.push(phone);
+                  throw new Error("Validator must not run before required sender guard");
+                },
+              }
+            : {}),
+          ...(name === "phone-no-reset-sender" ? { sendPasswordResetOTP: undefined } : {}),
           requireVerification: name === "phone-proof" || name.startsWith("phone-notification-"),
           ...(name !== "phone-default"
             ? {
@@ -178,6 +189,8 @@ export async function createPhoneFixture(
     "phone-notification-awaited",
     "phone-notification-background",
     "phone-notification-schedule-error",
+    "phone-no-otp-sender",
+    "phone-no-reset-sender",
     "phone-default",
     "phone-signup",
     "phone-proof",
@@ -210,6 +223,7 @@ export async function createPhoneFixture(
       }
       return { events: [...notification.events], scheduled: notification.scheduled };
     },
+    validatorEvents,
     outbox,
     callbacks,
     resetControl(mode?: string) {

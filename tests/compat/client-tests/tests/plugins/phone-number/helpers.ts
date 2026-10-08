@@ -13,6 +13,8 @@ export type PhoneProfile =
   | "phone-notification-awaited"
   | "phone-notification-background"
   | "phone-notification-schedule-error"
+  | "phone-no-otp-sender"
+  | "phone-no-reset-sender"
   | "phone-default"
   | "phone-signup"
   | "phone-proof"

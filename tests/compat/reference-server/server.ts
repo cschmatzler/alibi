@@ -3154,6 +3154,8 @@ const server = Bun.serve({
             request.method === "POST" ? (await request.json()).operation : undefined,
           ),
         );
+      if (url.pathname === "/__test/phone-validator-events")
+        return Response.json(phoneFixture.validatorEvents);
       if (url.pathname === "/__test/phone-otp" && request.method === "GET") {
         return jsonResponse(
           phoneFixture.outbox.get(

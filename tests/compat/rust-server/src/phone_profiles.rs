@@ -68,6 +68,7 @@ pub(super) struct Controls {
     reset_mode: Arc<Mutex<String>>,
     reset_events: Arc<Mutex<Vec<Value>>>,
     notification: Arc<NotificationApplication>,
+    validator_events: Arc<Mutex<Vec<String>>>,
 }
 impl Controls {
     pub(super) async fn reset(&self) {
@@ -150,6 +151,16 @@ impl PhoneSignupIdentity for Identity {
     }
     fn temporary_name(&self, phone: &str) -> Option<String> {
         Some(phone.into())
+    }
+}
+struct GuardValidator(Controls);
+#[async_trait]
+impl PhoneNumberValidator for GuardValidator {
+    async fn is_valid(&self, phone: &str) -> AuthResult<bool> {
+        self.0.validator_events.lock().await.push(phone.to_owned());
+        Err(alibi::AuthError::internal(
+            "Validator must not run before required sender guard",
+        ))
     }
 }
 struct Validator;
@@ -260,6 +271,8 @@ pub(super) async fn build(
         "phone-notification-awaited",
         "phone-notification-background",
         "phone-notification-schedule-error",
+        "phone-no-otp-sender",
+        "phone-no-reset-sender",
         "phone-default",
         "phone-signup",
         "phone-proof",
@@ -295,23 +308,34 @@ pub(super) async fn build(
             }));
         }
         let plugin = PhoneNumberPlugin::new(PhoneNumberConfig {
-            send_otp: Some(Arc::new(Sender {
-                controls: controls.clone(),
-                purpose: "verification",
-                custom,
-                notification: name.starts_with("phone-notification-"),
-            })),
-            send_password_reset_otp: Some(Arc::new(Sender {
-                controls: controls.clone(),
-                purpose: "password-reset",
-                custom: false,
-                notification: name.starts_with("phone-notification-"),
-            })),
+            send_otp: if name == "phone-no-otp-sender" {
+                None
+            } else {
+                Some(Arc::new(Sender {
+                    controls: controls.clone(),
+                    purpose: "verification",
+                    custom,
+                    notification: name.starts_with("phone-notification-"),
+                }))
+            },
+            send_password_reset_otp: if name == "phone-no-reset-sender" {
+                None
+            } else {
+                Some(Arc::new(Sender {
+                    controls: controls.clone(),
+                    purpose: "password-reset",
+                    custom: false,
+                    notification: name.starts_with("phone-notification-"),
+                }))
+            },
             require_verification: name == "phone-proof" || name.starts_with("phone-notification-"),
             sign_up_on_verification: (name != "phone-default")
                 .then(|| Arc::new(Identity) as Arc<dyn PhoneSignupIdentity>),
-            phone_number_validator: custom
-                .then(|| Arc::new(Validator) as Arc<dyn PhoneNumberValidator>),
+            phone_number_validator: if name == "phone-no-otp-sender" {
+                Some(Arc::new(GuardValidator(controls.clone())))
+            } else {
+                custom.then(|| Arc::new(Validator) as Arc<dyn PhoneNumberValidator>)
+            },
             verify_otp: custom
                 .then(|| Arc::new(Verifier(controls.clone())) as Arc<dyn PhoneOtpVerifier>),
             callback_on_verification: Some(Arc::new(Callback(controls.clone()))),
@@ -363,12 +387,14 @@ pub(super) async fn build(
     let reset_controls = controls.clone();
     let consume_runtimes = Arc::new(runtimes);
     let selected_runtimes = consume_runtimes.clone();
+    let validator_controls = controls.clone();
     let notification_read = controls.notification.clone();
     let notification_write = controls.notification.clone();
     router = router.route("/__test/phone-notifications",get(move ||{let app=notification_read.clone();async move {Json(json!({"events":*app.events.lock().unwrap(),"scheduled":app.scheduled.load(std::sync::atomic::Ordering::SeqCst)}))}}).post(move |Json(body):Json<Value>|{let app=notification_write.clone();async move {
         match body["operation"].as_str().unwrap() {"arm"=>{app.events.lock().unwrap().clear();app.scheduled.store(0,std::sync::atomic::Ordering::SeqCst);*app.held.lock().unwrap()=true;app.release.send_replace(false);},"release"=>{app.release.send_replace(true);},"restore"=>{*app.held.lock().unwrap()=false;app.release.send_replace(true);},_=>{}}
         Json(json!({"events":*app.events.lock().unwrap(),"scheduled":app.scheduled.load(std::sync::atomic::Ordering::SeqCst)}))
     }}))
+        .route("/__test/phone-validator-events",get(move || {let controls=validator_controls.clone();async move {Json(controls.validator_events.lock().await.clone())}}))
         .route("/__test/phone-reset-control", post(move |Json(body): Json<Value>| {
             let controls = reset_controls.clone();
             async move {
