@@ -31,6 +31,22 @@ use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
+static EMAIL_CHANGE_HOOK_MODE: std::sync::Mutex<(String,String)> = std::sync::Mutex::new((String::new(),String::new()));
+static EMAIL_CHANGE_HOOK_EVENTS: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
+fn email_change_hook(stage: &'static str) -> alibi::plugins::email_verification::EmailVerificationHook {
+    Arc::new(move |user| {
+        let request=alibi_core::hooks::current_request_hook_context().map(|request| json!({"path":request.url.as_ref().map(|url|url.path().to_owned()).unwrap_or(request.path),"method":format!("{:?}",request.method).to_uppercase(),"marker":request.headers.get("x-email-change-marker")}));
+        EMAIL_CHANGE_HOOK_EVENTS.lock().unwrap().push(json!({"stage":stage,"user":{"id":user.id,"email":user.email,"emailVerified":user.email_verified},"request":request}));
+        let (selected,error)=EMAIL_CHANGE_HOOK_MODE.lock().unwrap().clone();
+        Box::pin(async move {
+            if selected == stage {
+                if error == "coded" { return Err(AuthError::Api{ status:403, code:Some("EMAIL_CHANGE_HOOK_VETO".to_owned()), message:"Application verification hook rejected".to_owned() }); }
+                return Err(AuthError::internal("Private verification hook failure"));
+            }
+            Ok(())
+        })
+    })
+}
 pub(super) type Outbox = Arc<Mutex<HashMap<String, Value>>>;
 #[derive(Clone)]
 pub(super) struct Sender(pub Outbox);
@@ -183,6 +199,7 @@ pub(super) async fn router(
         },
     );
     for name in [
+        "otp-change-hooks",
         "otp-change-disabled-omitted",
         "otp-change-disabled-false",
         "passwordless-rate-policy",
@@ -251,6 +268,7 @@ pub(super) async fn router(
                 outbox: verification_outbox.clone(),
             }))
         };
+        let verification = if name == "otp-change-hooks" { verification.before_email_verification(email_change_hook("before")).after_email_verification(email_change_hook("after")) } else {verification};
         let auth = Arc::new(
             AuthBuilder::new(config.clone())
                 .store(crate::backend::store::<TestSchema>(
@@ -318,5 +336,6 @@ pub(super) async fn router(
             }
         }.await)}
     }));
+    router=router.route("/__test/email-change-hooks",get(|| async {Json(json!({"events":*EMAIL_CHANGE_HOOK_EVENTS.lock().unwrap()}))}).post(|Json(body):Json<Value>| async move {*EMAIL_CHANGE_HOOK_MODE.lock().unwrap()=(body["stage"].as_str().unwrap().to_owned(),body["error"].as_str().unwrap().to_owned());EMAIL_CHANGE_HOOK_EVENTS.lock().unwrap().clear();Json(json!({"events":[]}))}));
     Ok(router)
 }

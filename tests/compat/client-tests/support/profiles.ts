@@ -17,6 +17,7 @@ export const FIXTURE_PROFILES = [
   "email-verification-rate-limited",
   "bearer-renamed-cookie",
   "bearer-secure-cookie",
+  "otp-change-hooks",
   "otp-change-disabled-omitted",
   "otp-change-disabled-false",
   ...variants("generic-discovery-", [
