@@ -2,7 +2,7 @@
 use crate::TestSchema;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
-use alibi::plugins::{DeviceAuthorizationPlugin, EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::plugins::{DeviceAuthorizationPlugin, EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, AuthSchema};
 use alibi_core::store::*;
 use alibi_core::types::*;
@@ -33,7 +33,23 @@ impl Default for DeviceApplication {
         }
     }
 }
-async fn wait_device_gate(signal: &tokio::sync::watch::Sender<bool>) -> AuthResult<()> {
+struct DeletionApplication {
+    tokens: Mutex<(String, String)>,
+    events: Mutex<Vec<Value>>,
+    held: tokio::sync::watch::Sender<bool>,
+    reject: tokio::sync::watch::Sender<bool>,
+}
+impl Default for DeletionApplication {
+    fn default() -> Self {
+        Self {
+            tokens: Mutex::new((String::new(), String::new())),
+            events: Mutex::new(Vec::new()),
+            held: tokio::sync::watch::channel(true).0,
+            reject: tokio::sync::watch::channel(true).0,
+        }
+    }
+}
+async fn wait_release(signal: &tokio::sync::watch::Sender<bool>) -> AuthResult<()> {
     let mut receiver = signal.subscribe();
     while !*receiver.borrow_and_update() {
         receiver
@@ -46,6 +62,7 @@ async fn wait_device_gate(signal: &tokio::sync::watch::Sender<bool>) -> AuthResu
 struct ApplicationStore {
     inner: Arc<dyn AuthStore<TestSchema>>,
     state: Arc<Mutex<State>>,
+    deletion: Arc<DeletionApplication>,
     device: Arc<DeviceApplication>,
 }
 impl ApplicationStore {
@@ -176,16 +193,88 @@ forward!(TwoFactorStore {
     async fn delete_two_factor(&self, user_id: &str) -> AuthResult<()>;
 });
 
-forward!(SessionStore<TestSchema> {
-    async fn create_session(&self, create_session: CreateSession) -> AuthResult<<TestSchema as AuthSchema>::Session>;
-    async fn get_session(&self, token: &str) -> AuthResult<Option<<TestSchema as AuthSchema>::Session>>;
-    async fn get_user_sessions(&self, user_id: &str) -> AuthResult<Vec<<TestSchema as AuthSchema>::Session>>;
-    async fn update_session_expiry( &self, token: &str, expires_at: chrono::DateTime<chrono::Utc> ) -> AuthResult<()>;
-    async fn delete_session(&self, token: &str) -> AuthResult<()>;
-    async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()>;
-    async fn delete_expired_sessions(&self) -> AuthResult<usize>;
-    async fn update_session_active_organization( &self, token: &str, organization_id: Option<&str> ) -> AuthResult<<TestSchema as AuthSchema>::Session>;
-});
+#[async_trait::async_trait]
+impl SessionStore<TestSchema> for ApplicationStore {
+    async fn create_session(
+        &self,
+        create_session: CreateSession,
+    ) -> AuthResult<<TestSchema as AuthSchema>::Session> {
+        self.check("create_session")?;
+        self.inner.create_session(create_session).await
+    }
+    async fn get_session(
+        &self,
+        token: &str,
+    ) -> AuthResult<Option<<TestSchema as AuthSchema>::Session>> {
+        self.check("get_session")?;
+        self.inner.get_session(token).await
+    }
+    async fn get_user_sessions(
+        &self,
+        user_id: &str,
+    ) -> AuthResult<Vec<<TestSchema as AuthSchema>::Session>> {
+        self.check("get_user_sessions")?;
+        self.inner.get_user_sessions(user_id).await
+    }
+    async fn update_session_expiry(
+        &self,
+        token: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<()> {
+        self.check("update_session_expiry")?;
+        self.inner.update_session_expiry(token, expires_at).await
+    }
+    async fn delete_session(&self, token: &str) -> AuthResult<()> {
+        self.check("delete_session")?;
+        let active = self.state.lock().unwrap().mode == "parallel";
+        if !active {
+            return self.inner.delete_session(token).await;
+        }
+        let (held, reject) = self.deletion.tokens.lock().unwrap().clone();
+        self.deletion
+            .events
+            .lock()
+            .unwrap()
+            .push(json!({"stage":"started","token":token}));
+        if token == held {
+            wait_release(&self.deletion.held).await?;
+        }
+        if token == reject {
+            wait_release(&self.deletion.reject).await?;
+            self.deletion
+                .events
+                .lock()
+                .unwrap()
+                .push(json!({"stage":"rejected","token":token}));
+            return Err(AuthError::internal("Application sibling deletion rejected"));
+        }
+        self.inner.delete_session(token).await?;
+        self.deletion
+            .events
+            .lock()
+            .unwrap()
+            .push(json!({"stage":"completed","token":token}));
+        Ok(())
+    }
+    async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
+        self.check("delete_user_sessions")?;
+        self.inner.delete_user_sessions(user_id).await
+    }
+    async fn delete_expired_sessions(&self) -> AuthResult<usize> {
+        self.check("delete_expired_sessions")?;
+        self.inner.delete_expired_sessions().await
+    }
+    async fn update_session_active_organization(
+        &self,
+        token: &str,
+        organization_id: Option<&str>,
+    ) -> AuthResult<<TestSchema as AuthSchema>::Session> {
+        self.check("update_session_active_organization")?;
+        self.inner
+            .update_session_active_organization(token, organization_id)
+            .await
+    }
+}
 
 #[async_trait::async_trait]
 impl DeviceCodeStore for ApplicationStore {
@@ -215,7 +304,7 @@ impl DeviceCodeStore for ApplicationStore {
             if ordinal <= 2 {
                 let row = row.as_ref().unwrap();
                 self.device.events.lock().unwrap().push(json!({"operation":"review","ordinal":ordinal,"id":row.id,"userId":row.user_id}));
-                wait_device_gate(if ordinal == 1 {
+                wait_release(if ordinal == 1 {
                     &self.device.first
                 } else {
                     &self.device.second
@@ -260,11 +349,13 @@ impl DeviceCodeStore for ApplicationStore {
                 .lock()
                 .unwrap()
                 .push(json!({"operation":"consume","id":id}));
-            wait_device_gate(&self.device.first).await?;
+            wait_release(&self.device.first).await?;
         }
         self.inner.delete_device_code_if_status(id, status).await
     }
 }
+
+
 
 forward!(TeamStore {});
 
@@ -277,33 +368,40 @@ forward!(JwkStore {});
 pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
     let state = Arc::new(Mutex::new(State::default()));
     let device = Arc::new(DeviceApplication::default());
-    let path = "/__test/profiles/session-adapter-failure/api/auth";
-    let config = base.clone().base_path(path);
-    let store = ApplicationStore {
-        inner: Arc::new(crate::backend::store::<TestSchema>(
-            config.clone(),
-            database,
-        )),
-        state: state.clone(),
-        device: device.clone(),
-    };
-    let auth = Arc::new(
-        AuthBuilder::<TestSchema>::new(config)
+    let deletion = Arc::new(DeletionApplication::default());
+    let mut router = Router::new();
+    for profile in ["session-adapter-failure", "password-reset-no-sender"] {
+        let path = format!("/__test/profiles/{profile}/api/auth");
+        let config = base.clone().base_path(&path);
+        let store = ApplicationStore {
+            inner: Arc::new(crate::backend::store::<TestSchema>(
+                config.clone(),
+                database.clone(),
+            )),
+            state: state.clone(),
+            deletion: deletion.clone(),
+            device: device.clone(),
+        };
+        let builder = AuthBuilder::<TestSchema>::new(config)
             .store(store)
             .rate_limit(RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new().enable_username(false))
             .plugin(SessionManagementPlugin::new())
-            .plugin(DeviceAuthorizationPlugin::new().interval(chrono::Duration::zero()))
-            .build()
-            .await?,
-    );
-    let router = Router::new().nest(path, auth.clone().axum_router().with_state(auth));
+            .plugin(PasswordManagementPlugin::new());
+        let builder = if profile == "session-adapter-failure" {
+            builder.plugin(DeviceAuthorizationPlugin::new().interval(chrono::Duration::zero()))
+        } else { builder };
+        let auth = Arc::new(builder.build().await?);
+        router = router.nest(&path, auth.clone().axum_router().with_state(auth));
+    }
     Ok(router.route(
         "/__test/session-adapter-failure",
         post(move |Json(body): Json<Value>| {
             let state = state.clone();
+            let deletion = deletion.clone();
             let device = device.clone();
             async move {
+                if body["gate"].is_string() || !device.selector.lock().unwrap().1.is_empty() {
                 if let Some(operation) = body["operation"].as_str() {
                     match operation {
                         "arm" => {
@@ -331,6 +429,34 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                         _ => {}
                     }
                     return Json(json!({"events":*device.events.lock().unwrap()}));
+                }
+                }
+                if let Some(operation) = body["operation"].as_str() {
+                    match operation {
+                        "arm" => {
+                            state.lock().unwrap().mode = "parallel".to_owned();
+                            *deletion.tokens.lock().unwrap() = (
+                                body["heldToken"].as_str().unwrap().to_owned(),
+                                body["rejectToken"].as_str().unwrap().to_owned(),
+                            );
+                            deletion.events.lock().unwrap().clear();
+                            deletion.held.send_replace(false);
+                            deletion.reject.send_replace(false);
+                        }
+                        "reject" => {
+                            deletion.reject.send_replace(true);
+                        }
+                        "release" => {
+                            deletion.held.send_replace(true);
+                        }
+                        "restore" => {
+                            deletion.held.send_replace(true);
+                            deletion.reject.send_replace(true);
+                            state.lock().unwrap().mode = String::new();
+                        }
+                        _ => {}
+                    }
+                    return Json(json!({"events":*deletion.events.lock().unwrap()}));
                 }
                 let mut state = state.lock().unwrap();
                 if let Some(mode) = body.get("mode").and_then(Value::as_str) {

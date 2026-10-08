@@ -21,6 +21,15 @@ export async function createSessionAdapterFailureFixture(
     releaseFirst: () => {},
     releaseSecond: () => {},
   };
+  const deletion = {
+    held: "",
+    reject: "",
+    events: [] as { stage: string; token: string }[],
+    heldGate: Promise.resolve(),
+    rejectGate: Promise.resolve(),
+    releaseHeld: () => {},
+    releaseReject: () => {},
+  };
   const actual = await createKyselyAdapter({ ...base, database });
   if (!actual.kysely) throw new Error("real Bun Kysely adapter required");
   const factory = kyselyAdapter(actual.kysely, { type: "sqlite" });
@@ -28,18 +37,29 @@ export async function createSessionAdapterFailureFixture(
     if (mode) events.push(operation);
     if (mode === operation) throw new Error("application-selected-session-adapter-failure");
   }
-  const auth = betterAuth({
-    ...base,
-    basePath: "/__test/profiles/session-adapter-failure/api/auth",
-    plugins: [deviceAuthorization({ interval: "0s" })],
-    database: (options) => {
-      const adapter = factory(options);
-      return {
-        ...adapter,
-        async findOne(args) {
-          if (args.model === "session") check("get_session");
-          if (args.model === "user" && args.where.some((condition) => condition.field === "email"))
-            check("get_user_by_email");
+  const profiles = new Map(
+    ["session-adapter-failure", "password-reset-no-sender"].map(
+      (profile) =>
+        [
+          profile,
+          betterAuth({
+            ...base,
+            basePath: `/__test/profiles/${profile}/api/auth`,
+            ...(profile === "password-reset-no-sender"
+              ? { emailAndPassword: { ...base.emailAndPassword, sendResetPassword: undefined } }
+              : {}),
+            plugins: profile === "session-adapter-failure" ? [deviceAuthorization({ interval: "0s" })] : [],
+            database: (options) => {
+              const adapter = factory(options);
+              return {
+                ...adapter,
+                async findOne(args) {
+                  if (args.model === "session") check("get_session");
+                  if (
+                    args.model === "user" &&
+                    args.where.some((condition) => condition.field === "email")
+                  )
+                    check("get_user_by_email");
           const row = await adapter.findOne(args);
           if (
             deviceGate.mode === "review" &&
@@ -59,11 +79,12 @@ export async function createSessionAdapterFailureFixture(
             }
           }
           return row;
-        },
-        async findMany(args) {
-          if (args.model === "session") check("get_user_sessions");
-          return adapter.findMany(args);
-        },
+
+                },
+                async findMany(args) {
+                  if (args.model === "session") check("get_user_sessions");
+                  return adapter.findMany(args);
+                },
         async consumeOne(args) {
           if (
             deviceGate.mode === "consume" &&
@@ -79,19 +100,35 @@ export async function createSessionAdapterFailureFixture(
         },
         async delete(args) {
           if (args.model === "session") check("delete_session");
+          if (mode === "parallel" && args.model === "session") {
+            const token = String(args.where.find((row) => row.field === "token")?.value);
+            deletion.events.push({ stage: "started", token });
+            if (token === deletion.held) await deletion.heldGate;
+            if (token === deletion.reject) {
+              await deletion.rejectGate;
+              deletion.events.push({ stage: "rejected", token });
+              throw new Error("Application sibling deletion rejected");
+            }
+            const result = await adapter.delete(args);
+            deletion.events.push({ stage: "completed", token });
+            return result;
+          }
           return adapter.delete(args);
         },
-        async deleteMany(args) {
-          if (args.model === "session") check("delete_user_sessions");
-          return adapter.deleteMany(args);
-        },
-      };
-    },
-  });
+                async deleteMany(args) {
+                  if (args.model === "session") check("delete_user_sessions");
+                  return adapter.deleteMany(args);
+                },
+              };
+            },
+          }),
+        ] as const,
+    ),
+  );
   return {
-    auth,
-    control(body: { mode?: string; operation?: string; gate?: string; id?: string }) {
-      if (body.operation) {
+    profiles,
+    control(body: { mode?: string; operation?: string; heldToken?: string; rejectToken?: string; gate?: string; id?: string }) {
+      if (body.operation && (body.gate || deviceGate.mode)) {
         if (body.operation === "arm") {
           deviceGate.id = body.id!;
           deviceGate.mode = body.gate!;
@@ -112,6 +149,28 @@ export async function createSessionAdapterFailureFixture(
           deviceGate.mode = "";
         }
         return Response.json({ events: [...deviceGate.events] });
+      }
+      if (body.operation) {
+        if (body.operation === "arm") {
+          mode = "parallel";
+          deletion.held = body.heldToken!;
+          deletion.reject = body.rejectToken!;
+          deletion.events.length = 0;
+          deletion.heldGate = new Promise<void>((resolve) => {
+            deletion.releaseHeld = resolve;
+          });
+          deletion.rejectGate = new Promise<void>((resolve) => {
+            deletion.releaseReject = resolve;
+          });
+        }
+        if (body.operation === "reject") deletion.releaseReject();
+        if (body.operation === "release") deletion.releaseHeld();
+        if (body.operation === "restore") {
+          deletion.releaseHeld();
+          deletion.releaseReject();
+          mode = "";
+        }
+        return Response.json({ events: [...deletion.events] });
       }
       if (typeof body.mode === "string") {
         mode = body.mode;

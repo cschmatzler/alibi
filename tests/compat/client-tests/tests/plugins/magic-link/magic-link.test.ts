@@ -79,6 +79,20 @@ compatScenario(
     expect(issue.error).toBeNull();
 
     const delivery = await readMagicLink(ctx, email);
+    const identifier = `magic-link:${delivery.token}`;
+    const proofBefore = await ctx.readVerificationState({ identifier });
+    expect(proofBefore).toHaveLength(1);
+    const sqlBefore = await (await fetch(`${ctx.baseURL}/__test/provider-batch/sql-state`)).json();
+    const malformed = await ctx.rawRequest({
+      path: `/api/auth/magic-link/verify?token=${encodeURIComponent(delivery.token)}&callbackURL=${encodeURIComponent("/broken%")}`,
+      redirect: "manual",
+    });
+    expect(malformed.status).toBe(500);
+    expect(await ctx.readVerificationState({ identifier })).toEqual(proofBefore);
+    expect(await (await fetch(`${ctx.baseURL}/__test/provider-batch/sql-state`)).json()).toEqual(
+      sqlBefore,
+    );
+    expect((await client.getSession()).data).toBeNull();
     const forbidden = await ctx.rawRequest({
       path: `/api/auth/magic-link/verify?token=${encodeURIComponent(delivery.token)}&callbackURL=${encodeURIComponent("https://foreign.example/steal")}`,
       redirect: "manual",
@@ -110,6 +124,7 @@ compatScenario(
 
     return {
       issue: ctx.snapshot(issue),
+      malformed: ctx.snapshot(malformed),
       forbidden: ctx.snapshot(forbidden),
       verified: ctx.snapshot(verified),
       session: ctx.snapshot(session),
