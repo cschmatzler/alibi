@@ -69,6 +69,8 @@ export function createApiKeyOptionsFixture(
       apiKey(
         configurations.map((entry: Data) => ({
           configId: entry.id,
+          references: entry.references ?? "user",
+          requireName: entry.requireName ?? false,
           defaultKeyLength: number(entry.keyLength, 16),
           defaultPrefix: entry.prefix ?? "optKEY_",
           apiKeyHeaders: `x-options-${entry.id}`,
@@ -83,12 +85,17 @@ export function createApiKeyOptionsFixture(
           minimumNameLength: number(entry.minName, 1),
           maximumNameLength: number(entry.maxName, 32),
           keyExpiration: {
+            disableCustomExpiresTime: entry.disableCustomExpiresTime ?? false,
             defaultExpiresIn: entry.expiration === undefined ? null : number(entry.expiration, 0),
             minExpiresIn: number(entry.minExpiration, 0),
             maxExpiresIn: number(entry.maxExpiration, 365),
           },
-          rateLimit: { enabled: false },
-          enableMetadata: true,
+          rateLimit: {
+            enabled: entry.rateEnabled ?? false,
+            maxRequests: entry.rateMax,
+            timeWindow: entry.rateWindow,
+          },
+          enableMetadata: entry.metadata ?? true,
           ...(entry.custom
             ? {
                 async customKeyGenerator(input: { length: number; prefix: string | undefined }) {

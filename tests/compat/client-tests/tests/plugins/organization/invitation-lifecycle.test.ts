@@ -936,6 +936,37 @@ compatScenario(
       status: "rejected",
     });
     expect(after.receipts.map((r) => r.phase)).toEqual(["before-reject", "after-reject"]);
-    return ctx.snapshot({ created, before, result, after, observations: await observed(s) });
+    const listed = await s.owner.client.organization.listInvitations({
+      query: { organizationId: s.org.id },
+    });
+    expect(listed.error).toBeNull();
+    expect(listed.data).toContainEqual(
+      expect.objectContaining({
+        id: invitation.id,
+        status: "rejected",
+      }),
+    );
+    const fetched = await s.target.client.organization.getInvitation({
+      query: { id: invitation.id },
+    });
+    expect(fetched.error).not.toBeNull();
+    const repeated = await s.target.client.organization.rejectInvitation({
+      invitationId: invitation.id,
+    });
+    expect(repeated.error).not.toBeNull();
+    const afterRepeated = await state(ctx);
+    expect(afterRepeated).toEqual(after);
+    return ctx.snapshot({
+      created,
+      before,
+      result,
+      after,
+      listed,
+      fetched,
+      repeated,
+      afterRepeated,
+      observations: await observed(s),
+    });
   },
+  ["POST /organization/reject-invitation"],
 );

@@ -8,13 +8,30 @@ export function createBearerFixture(base: BetterAuthOptions) {
   let counter = 0;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
 
-  for (const name of ["bearer-default", "bearer-signed", "bearer-composition"]) {
+  for (const name of [
+    "bearer-default",
+    "bearer-signed",
+    "bearer-composition",
+    "bearer-renamed-cookie",
+    "bearer-secure-cookie",
+  ]) {
     const path = `/__test/profiles/${name}/api/auth`;
     profiles.set(
       path,
       betterAuth({
         ...base,
         basePath: path,
+        ...(name === "bearer-renamed-cookie"
+          ? {
+              advanced: {
+                ...base.advanced,
+                cookies: { session_token: { name: "configured-bearer-token" } },
+              },
+            }
+          : {}),
+        ...(name === "bearer-secure-cookie"
+          ? { advanced: { ...base.advanced, useSecureCookies: true, cookiePrefix: "bearer-app" } }
+          : {}),
         databaseHooks: {
           session: {
             create: {

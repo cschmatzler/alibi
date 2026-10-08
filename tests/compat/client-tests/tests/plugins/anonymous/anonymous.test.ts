@@ -340,6 +340,16 @@ compatScenario(
       code: "DELETE_ANONYMOUS_USER_DISABLED",
     });
     expect(await state(ctx)).toEqual(beforeDisabled);
+    const retainedSession = await disabled.client.getSession();
+    expect(retainedSession.error).toBeNull();
+    expect(retainedSession.data?.user.id).toBe(anonymous.data!.user.id);
+    const repeatedDenied = await disabled.anonymous.deleteAnonymousUser();
+    expect(repeatedDenied.error).toMatchObject({
+      status: 400,
+      code: "DELETE_ANONYMOUS_USER_DISABLED",
+    });
+    expect(await state(ctx)).toEqual(beforeDisabled);
+    results.push({ retainedSession, repeatedDenied });
 
     const upgraded = await disabled.client.signUp.email({
       email: ctx.uniqueEmail("anonymous-disabled"),
