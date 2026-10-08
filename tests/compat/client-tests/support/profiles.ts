@@ -940,6 +940,7 @@ export const FIXTURE_PROFILES = [
   "phone-custom",
   "phone-callback-reject",
   "phone-reset-callback",
+  "openapi-collisions",
   "openapi-parameters",
   "openapi-minimal",
   "openapi-last-login",
