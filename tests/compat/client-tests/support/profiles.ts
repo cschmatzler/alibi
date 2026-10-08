@@ -13,6 +13,7 @@ function variants<P extends string, S extends string>(
  * profile parity scenario proves that both fixture servers serve each entry.
  */
 export const FIXTURE_PROFILES = [
+  "ott-custom-header",
   "email-verification-rate-limited",
   "bearer-renamed-cookie",
   "bearer-secure-cookie",
