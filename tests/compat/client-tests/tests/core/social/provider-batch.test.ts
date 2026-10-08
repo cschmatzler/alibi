@@ -991,3 +991,47 @@ for (const provider of ["zoom", "roblox"] as const) {
     }
   }
 }
+
+for (const mode of ["default", "prompt-none", "prompt-consent", "prompt-empty"] as const) {
+  compatScenario(
+    `Roblox configured prompt ${mode} preserves actual callback owner`,
+    async (ctx) => {
+      await control(ctx, "roblox");
+      const completed = await flow(ctx, "roblox", mode);
+      expect(completed.url.searchParams.get("prompt")).toBe(
+        mode === "prompt-none"
+          ? "none"
+          : mode === "prompt-consent"
+            ? "consent"
+            : "select_account consent",
+      );
+      expect(completed.url.searchParams.get("state")).toBeString();
+      expect(completed.response.status).toBe(302);
+      expect(completed.response.headers.get("location")).toBe("/dashboard");
+      const session = await completed.actor.client.getSession();
+      expect(session.data?.user.name).toBe("Batch Name");
+      const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
+      const source = "user" in sql;
+      const account = sql[source ? "account" : "accounts"]![0];
+      expect(account[source ? "accountId" : "account_id"]).toBe("batch-subject");
+      expect(account[source ? "userId" : "user_id"]).toBe(session.data!.user.id);
+      expect(sql[source ? "user" : "users"]).toHaveLength(1);
+      expect(sql[source ? "session" : "sessions"]).toHaveLength(1);
+      expect(sql[source ? "verification" : "verifications"]).toHaveLength(0);
+      const receipts: any[] = await read(ctx, "receipts");
+      expect(receipts.map((row) => row.stage)).toEqual(["token", "user"]);
+      return {
+        start: ctx.snapshot(completed.start),
+        callback: status(completed.response, ctx.baseURL),
+        session: ctx.snapshot(session),
+        wire: receipts.map((row) => ({
+          stage: row.stage,
+          method: row.method,
+          query: row.query,
+          body: row.body,
+        })),
+      };
+    },
+    ["POST /sign-in/social", "GET /callback/{}", "GET /get-session"],
+  );
+}

@@ -124,6 +124,9 @@ export const FIXTURE_PROFILES = [
   ).flatMap((provider) =>
     variants(`provider-batch-${provider}-`, [
       "default",
+      "prompt-none",
+      "prompt-consent",
+      "prompt-empty",
       "configured",
       "disabled-configured",
       "mapped-async",
