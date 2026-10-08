@@ -961,6 +961,7 @@ export const FIXTURE_PROFILES = [
   "device-length-507",
   "device-length-506",
   "device-custom",
+  "device-grant",
   "device-configured",
   "device-unicode",
   "device-too-long",

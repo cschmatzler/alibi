@@ -45,6 +45,7 @@ import { cloudflareProviderFixture } from "./fixtures/cloudflare-provider-fixtur
 import { cognitoProviderFixture } from "./fixtures/cognito-provider-fixture";
 import { createCompromisedPasswordFixture } from "./fixtures/compromised-password-fixture";
 import { createCustomSessionFixture } from "./fixtures/custom-session-fixture";
+import { deviceGrantFixture } from "./fixtures/device-grant-fixture";
 import { deleteHooksFixture } from "./fixtures/delete-hooks-fixture";
 import { createDispatchFixture } from "./fixtures/dispatch-fixture";
 import { dropboxProviderFixture } from "./fixtures/dropbox-provider-fixture";
@@ -1303,6 +1304,7 @@ const physicalCookies = physicalCookieProfiles(authOptions, database);
 for (const [path, auth] of physicalCookies.profiles) {
   verificationProfiles.set(path, auth);
 }
+const deviceGrant = await deviceGrantFixture(authOptions);
 const deletionHooks = deleteHooksFixture(authOptions);
 const customFactorTable = await twoFactorTableFixture(authOptions);
 const postgresSchema = await postgresSchemaFixture(authOptions);
@@ -2361,6 +2363,7 @@ const RESET_MODELS = [
 ] as const;
 
 async function resetDatabaseState() {
+  await deviceGrant.reset();
   const { adapter } = await teamProfiles.get("org-teams")!.auth.$context;
   for (const model of ["teamMember", "team"]) {
     await adapter.deleteMany({ model, where: [] });
@@ -2454,6 +2457,8 @@ const server = Bun.serve({
     await capturePasswordlessRequest(request);
     try {
       const url = new URL(request.url);
+      const grantResponse = await deviceGrant.handle(request);
+      if (grantResponse) return grantResponse;
       const deletionResponse = await deletionHooks.handle(request);
       if (deletionResponse) return deletionResponse;
       const factorTableResponse = await customFactorTable.handle(request);
