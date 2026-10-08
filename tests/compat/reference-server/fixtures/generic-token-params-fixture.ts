@@ -99,6 +99,7 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
     "local-verified",
     "implicit-disabled",
     "skip-state-cookie",
+    "idp-initiated",
     "linking-disabled",
     "expiry-positive",
     "expiry-zero",
@@ -198,6 +199,7 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
             config: [
               {
                 providerId: "generic",
+                allowIdpInitiated: mode === "idp-initiated",
                 overrideUserInfo: mode === "override",
                 ...(mode.startsWith("subject-") && mode !== "subject-default"
                   ? {

@@ -262,6 +262,10 @@ pub(crate) async fn router(
         "local-verified",
         "implicit-disabled",
         "skip-state-cookie",
+        // Native OAuthProvider currently has no allowIdpInitiated policy.
+        // Keep the real ordinary callback boundary so the differential test
+        // reports the missing behavior rather than implementing it in a fixture.
+        "idp-initiated",
         "linking-disabled",
         "expiry-positive",
         "expiry-zero",
