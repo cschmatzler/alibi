@@ -275,7 +275,28 @@ pub(crate) async fn router(
             builder.plugin(otp_profiles::plugin(outbox.clone()))
         };
         let auth = Arc::new(builder.build().await?);
-        router = router.nest(&path, auth.clone().axum_router().with_state(auth));
+        if name == "secondary-failure" {
+            // The reference fixture awaits this public handler inside its outer
+            // host catch. Preserve that host boundary for propagated quota errors.
+            let mounted: Router<Arc<BetterAuth<TestSchema>>> = Router::new().fallback(move |axum::extract::OriginalUri(uri): axum::extract::OriginalUri, request: axum::extract::Request| {
+                let auth=auth.clone();async move {
+                    use axum::response::IntoResponse;
+                    let (parts,body)=request.into_parts();
+                    let method=match parts.method.as_str() {"POST"=>alibi_core::HttpMethod::Post,"GET"=>alibi_core::HttpMethod::Get,_=>alibi_core::HttpMethod::Options};
+                    let headers=parts.headers.iter().filter_map(|(name,value)|value.to_str().ok().map(|value|(name.to_string(),value.to_owned()))).collect();
+                    let bytes=axum::body::to_bytes(body,1024*1024).await.unwrap();
+                    let query=url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes()).map(|(name,value)|(name.into_owned(),value.into_owned())).collect();
+                    let request=alibi_core::AuthRequest::from_parts(method,uri.path(),headers,(!bytes.is_empty()).then(||bytes.to_vec()),query);
+                    match auth.handle_request(request).await {
+                        Ok(result)=>{let mut response=axum::response::Response::builder().status(result.status);for (name,value) in result.headers {response=response.header(name,value);}response.body(axum::body::Body::from(result.body)).unwrap()},
+                        Err(_)=>(axum::http::StatusCode::INTERNAL_SERVER_ERROR,[("content-type","application/json;charset=utf-8")],Json(json!({"message":"Internal server error"}))).into_response(),
+                    }
+                }
+            });
+            router=router.nest(&path,mounted);
+        } else {
+            router = router.nest(&path, auth.clone().axum_router().with_state(auth));
+        }
     }
     let read_application = application.clone();
     router = router.route(
