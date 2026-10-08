@@ -1,3 +1,5 @@
+import { expect } from "bun:test";
+
 import { compatScenario } from "../../../support/scenario";
 
 compatScenario("send verification email then verify marks the user verified", async (ctx) => {
@@ -125,3 +127,56 @@ compatScenario("verify email rejects untrusted callbackURL", async (ctx) => {
     verify: ctx.snapshot(verify),
   };
 });
+
+compatScenario(
+  "verification delivery preserves encoded callback query and fragment bytes",
+  async (ctx) => {
+    const owner = ctx.actor("callback-owner");
+    const email = ctx.uniqueEmail("callback-bytes");
+    const signup = await owner.client.signUp.email({
+      email,
+      password: "password123",
+      name: "Callback owner",
+    });
+    const userId = signup.data!.user.id;
+    const before: any = await ctx.readUserState({ userId });
+    const callbackURL =
+      "/sign-in?verifiedEmail=a%2Bb%40fixture.test&next=%2Fdashboard%3Fx%3D1#done";
+    const send = await owner.client.sendVerificationEmail({ email, callbackURL });
+    expect(send.error).toBeNull();
+    const delivery: any = await ctx.readVerificationEmail({ email });
+    const deliveredURL = new URL(delivery.url);
+    expect(deliveredURL.searchParams.get("callbackURL")).toBe(callbackURL);
+    expect(deliveredURL.searchParams.get("token")).toBe(delivery.token);
+    const guest = ctx.actor("callback-guest");
+    const response = await fetch(delivery.url, { redirect: "manual" });
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(callbackURL);
+    expect(
+      response.headers.getSetCookie().filter((cookie) => cookie.startsWith("better-auth.session")),
+    ).toEqual([]);
+    const after: any = await ctx.readUserState({ userId });
+    expect(after.user).toEqual({ ...before.user, emailVerified: true });
+    expect(after.accounts).toEqual(before.accounts);
+    expect(after.sessions).toEqual(before.sessions);
+    const guestSession = await guest.client.getSession();
+    expect(guestSession.data).toBeNull();
+    const ownerSession = await owner.client.getSession();
+    expect(ownerSession.data?.user.id).toBe(userId);
+    expect(ownerSession.data?.user.emailVerified).toBe(true);
+    return {
+      send: ctx.snapshot(send),
+      callbackURL: deliveredURL.searchParams.get("callbackURL"),
+      response: {
+        status: response.status,
+        location: response.headers.get("location"),
+        cookies: response.headers.getSetCookie(),
+      },
+      before: ctx.snapshot(before),
+      after: ctx.snapshot(after),
+      guestSession: ctx.snapshot(guestSession),
+      ownerSession: ctx.snapshot(ownerSession),
+    };
+  },
+  ["POST /send-verification-email", "GET /verify-email", "GET /get-session"],
+);
