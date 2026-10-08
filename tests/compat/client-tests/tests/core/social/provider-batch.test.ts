@@ -1132,3 +1132,44 @@ for (const stage of ["token", "user", "refresh"] as const) {
     );
   }
 }
+
+for (const mode of ["default", "pkce-disabled"] as const) {
+  compatScenario(
+    `Zoom configured PKCE ${mode} retains actual code grant verifier`,
+    async (ctx) => {
+      await control(ctx, "zoom");
+      const completed = await flow(ctx, "zoom", mode);
+      expect(completed.url.searchParams.get("code_challenge_method")).toBe(
+        mode === "default" ? "S256" : null,
+      );
+      expect(completed.url.searchParams.has("code_challenge")).toBe(mode === "default");
+      expect(completed.response.headers.get("location")).toBe("/dashboard");
+      const receipts: any[] = await read(ctx, "receipts");
+      expect(receipts.map((row) => row.stage)).toEqual(["token", "user"]);
+      const grant = receipts[0].body;
+      expect(grant).toMatchObject({
+        grant_type: "authorization_code",
+        code: "batch-code",
+        client_id: "batch-client",
+        client_secret: "batch-secret",
+      });
+      expect(grant.code_verifier).toMatch(/^[A-Za-z0-9_-]{43,128}$/);
+      expect(grant.redirect_uri).toBe(
+        ctx.baseURL + authProfilePath(selected("zoom", mode)) + "/callback/zoom",
+      );
+      if (mode === "default")
+        expect(createHash("sha256").update(grant.code_verifier!).digest("base64url")).toBe(
+          completed.url.searchParams.get("code_challenge")!,
+        );
+      const session = await completed.actor.client.getSession();
+      expect(session.data?.user.email).toBe("batch@example.invalid");
+      return {
+        start: ctx.snapshot(completed.start),
+        callback: status(completed.response, ctx.baseURL),
+        session: ctx.snapshot(session),
+        grant: grantBody(receipts[0]),
+      };
+    },
+    ["POST /sign-in/social", "GET /callback/{}", "GET /get-session"],
+  );
+}
