@@ -4,6 +4,14 @@ use super::*;
 #[async_trait]
 impl DeviceCodeStore for StatelessStore {
     async fn create_device_code(&self, input: CreateDeviceCode) -> AuthResult<DeviceCode> {
+        self.create_device_code_with_fields(input, serde_json::Map::new())
+            .await
+    }
+    async fn create_device_code_with_fields(
+        &self,
+        input: CreateDeviceCode,
+        fields: serde_json::Map<String, serde_json::Value>,
+    ) -> AuthResult<DeviceCode> {
         let device_code = DeviceCode {
             id: uuid::Uuid::new_v4().to_string(),
             device_code: input.device_code,
@@ -16,14 +24,50 @@ impl DeviceCodeStore for StatelessStore {
             client_id: input.client_id,
             scope: input.scope,
         };
-        drop(
-            self.lock()?
-                .device_codes
-                .insert(device_code.id.clone(), device_code.clone()),
-        );
+        let mut state = self.lock()?;
+        _ = state
+            .device_code_fields
+            .insert(device_code.id.clone(), fields);
+        _ = state
+            .device_codes
+            .insert(device_code.id.clone(), device_code.clone());
         Ok(device_code)
     }
-
+    async fn device_code_fields(
+        &self,
+        id: &str,
+    ) -> AuthResult<serde_json::Map<String, serde_json::Value>> {
+        Ok(self
+            .lock()?
+            .device_code_fields
+            .get(id)
+            .cloned()
+            .unwrap_or_default())
+    }
+    async fn consume_device_code(
+        &self,
+        id: &str,
+        status: &str,
+        ownership: &serde_json::Map<String, serde_json::Value>,
+    ) -> AuthResult<Option<DeviceCode>> {
+        let mut state = self.lock()?;
+        let matches = state
+            .device_codes
+            .get(id)
+            .is_some_and(|row| row.status == status)
+            && ownership.iter().all(|(key, value)| {
+                state
+                    .device_code_fields
+                    .get(id)
+                    .and_then(|fields| fields.get(key))
+                    == Some(value)
+            });
+        if !matches {
+            return Ok(None);
+        }
+        _ = state.device_code_fields.shift_remove(id);
+        Ok(state.device_codes.shift_remove(id))
+    }
     async fn get_device_code_by_device_code(
         &self,
         device_code: &str,
@@ -120,7 +164,9 @@ impl DeviceCodeStore for StatelessStore {
     }
 
     async fn delete_device_code(&self, id: &str) -> AuthResult<()> {
-        drop(self.lock()?.device_codes.shift_remove(id));
+        let mut state = self.lock()?;
+        drop(state.device_codes.shift_remove(id));
+        drop(state.device_code_fields.shift_remove(id));
         Ok(())
     }
 
@@ -133,6 +179,7 @@ impl DeviceCodeStore for StatelessStore {
 
         if should_delete {
             drop(state.device_codes.shift_remove(id));
+            drop(state.device_code_fields.shift_remove(id));
         }
 
         let locked_result = Ok(should_delete);

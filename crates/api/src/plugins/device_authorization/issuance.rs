@@ -2,7 +2,16 @@ use super::*;
 impl DeviceAuthorizationPlugin {
     pub(in crate::plugins::device_authorization) async fn issue_device_code(
         &self,
+        body: DeviceCodeRequest,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
+        self.issue_device_code_with_fields(body, serde_json::Map::new(), ctx)
+            .await
+    }
+    pub(super) async fn issue_device_code_with_fields(
+        &self,
         mut body: DeviceCodeRequest,
+        fields: serde_json::Map<String, serde_json::Value>,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         if body.client_id.is_empty() {
@@ -42,17 +51,20 @@ impl DeviceAuthorizationPlugin {
             }
             match ctx
                 .database
-                .create_device_code(CreateDeviceCode {
-                    device_code: device_code.clone(),
-                    user_code: user_code.clone(),
-                    user_id: body.user_id.clone(),
-                    expires_at,
-                    status: DEVICE_STATUS_PENDING.to_owned(),
-                    last_polled_at: None,
-                    polling_interval: Some(polling_interval),
-                    client_id: Some(body.client_id.clone()),
-                    scope: body.scope.clone(),
-                })
+                .create_device_code_with_fields(
+                    CreateDeviceCode {
+                        device_code: device_code.clone(),
+                        user_code: user_code.clone(),
+                        user_id: body.user_id.clone(),
+                        expires_at,
+                        status: DEVICE_STATUS_PENDING.to_owned(),
+                        last_polled_at: None,
+                        polling_interval: Some(polling_interval),
+                        client_id: Some(body.client_id.clone()),
+                        scope: body.scope.clone(),
+                    },
+                    fields.clone(),
+                )
                 .await
             {
                 Ok(_) => {}
