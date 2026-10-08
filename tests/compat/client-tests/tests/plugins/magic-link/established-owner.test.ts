@@ -52,8 +52,9 @@ compatScenario(
     const previousSession = await previous.client.getSession();
     const secondSession = await second.client.getSession();
     const newSession = await browser.getSession();
-    for (const result of [previousSession, secondSession, newSession])
+    for (const result of [previousSession, secondSession, newSession]) {
       expect(result.data!.user.id).toBe(userId);
+    }
     const passwordStillWorks = await ctx
       .actor("password-control")
       .client.signIn.email({ email, password });

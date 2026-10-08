@@ -1,7 +1,5 @@
 //! Local Google JWKS transport and actual persisted One Tap configuration profiles.
 use crate::{CompatVerificationSender, EmailOutboxRecord, TestSchema};
-use async_trait::async_trait;
-use axum::{Json, Router, routing::get};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::oauth::{OAuthIdTokenVerifier, OAuthProvider};
@@ -13,6 +11,8 @@ use alibi::plugins::{
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use alibi_seaorm::sea_orm::{DatabaseConnection, EntityTrait};
 use alibi_seaorm::store::entities::{account, session, user};
+use async_trait::async_trait;
+use axum::{Json, Router, routing::get};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,

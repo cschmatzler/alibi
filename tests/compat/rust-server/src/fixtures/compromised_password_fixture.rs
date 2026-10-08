@@ -1,14 +1,5 @@
 //! Real application password policy, HTTP range service and physical database evidence.
 use crate::TestSchema;
-use async_trait::async_trait;
-use axum::{
-    Json, Router,
-    body::Bytes,
-    extract::OriginalUri,
-    http::{HeaderMap, Method, StatusCode},
-    response::IntoResponse,
-    routing::{get, post},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::{
@@ -28,6 +19,15 @@ use alibi_seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, QueryOrder, Set},
     store::entities::{account, session, user, verification},
+};
+use async_trait::async_trait;
+use axum::{
+    Json, Router,
+    body::Bytes,
+    extract::OriginalUri,
+    http::{HeaderMap, Method, StatusCode},
+    response::IntoResponse,
+    routing::{get, post},
 };
 use serde_json::{Value, json};
 use std::{

@@ -40,8 +40,9 @@ compatScenario(
     expect(replay.status).toBe(302);
     expect(new URL(replay.location!, ctx.baseURL).searchParams.get("error")).toBe("state_mismatch");
     const after = (await ctx.rawRequest({ path: "/__test/social-provider/state" })).body as any;
-    for (const table of ["users", "accounts", "sessions"])
+    for (const table of ["users", "accounts", "sessions"]) {
       expect(after[table]).toEqual(allBefore[table]);
+    }
     expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(before);
     // A real successful provider control proves the same callback path can issue a session.
     const email = ctx.uniqueEmail("valid-control");

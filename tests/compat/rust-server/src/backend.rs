@@ -24,8 +24,7 @@ mod selected {
     pub use alibi_sqlx::SqlxHookContext as HookContext;
     pub use alibi_sqlx::SqlxStore as Store;
     pub use alibi_sqlx::store::entities;
-    pub type TestSchema =
-        alibi_sqlx::store::__private_test_support::bundled_schema::BundledSchema;
+    pub type TestSchema = alibi_sqlx::store::__private_test_support::bundled_schema::BundledSchema;
 }
 
 pub(crate) use selected::*;
@@ -144,10 +143,7 @@ pub(crate) async fn hook_execute(
 
 /// Read rows on a hook's transaction when present, otherwise its connection.
 #[cfg(feature = "seaorm")]
-pub(crate) async fn hook_rows<M>(
-    context: &HookContext<'_>,
-    sql: &str,
-) -> alibi::AuthResult<Vec<M>>
+pub(crate) async fn hook_rows<M>(context: &HookContext<'_>, sql: &str) -> alibi::AuthResult<Vec<M>>
 where
     M: alibi_seaorm::sea_orm::FromQueryResult,
 {
@@ -162,10 +158,7 @@ where
 
 /// Read rows on a hook's transaction when present, otherwise its connection.
 #[cfg(not(feature = "seaorm"))]
-pub(crate) async fn hook_rows<M>(
-    context: &HookContext<'_>,
-    sql: &str,
-) -> alibi::AuthResult<Vec<M>>
+pub(crate) async fn hook_rows<M>(context: &HookContext<'_>, sql: &str) -> alibi::AuthResult<Vec<M>>
 where
     M: for<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> + Send + Unpin,
 {

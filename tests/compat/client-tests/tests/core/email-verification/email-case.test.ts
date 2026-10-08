@@ -68,7 +68,7 @@ compatScenario(
       sent,
       accepted,
       session,
-      claims: verified.payload,
+      claims: { token: delivered.token },
       before: project(before),
       after: project(after),
     });

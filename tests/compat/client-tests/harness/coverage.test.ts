@@ -54,20 +54,52 @@ test("fixture control paths cannot manufacture authentication evidence", () => {
 test("Source default OAuth error redirects record admission denial without counting them as successful callbacks", () => {
   const baseURL = "http://fixture.local:42921";
   const scenario = "actual OAuth admission";
-  const rejected = ["email_does_not_match", "unable_to_get_user_info", "state_mismatch"].map(
-    (error) => ({
-      ...trace(
-        "/__test/profiles/social-gitlab-issuer/api/auth/callback/gitlab?code=issued&state=issued",
-        302,
-      ),
-      responseHeaders: {
-        location: `${baseURL}/__test/profiles/social-gitlab-issuer/api/auth/error?error=${error}`,
-      },
-    }),
-  );
+  const rejected = [
+    "email_does_not_match",
+    "unable_to_get_user_info",
+    "state_mismatch",
+    "state_not_found",
+  ].map((error) => ({
+    ...trace(
+      "/__test/profiles/social-gitlab-issuer/api/auth/callback/gitlab?code=issued&state=issued",
+      302,
+    ),
+    responseHeaders: {
+      location: `${baseURL}/__test/profiles/social-gitlab-issuer/api/auth/error?error=${error}`,
+    },
+  }));
   expect(collectCoverage(scenario, rejected, ["GET /callback/{}"], baseURL)).toEqual({
     "GET /callback/{}": { rejection: [scenario], authorization: [scenario], state: [scenario] },
   });
+
+  const forwarded = {
+    ...trace(rejected[0]!.path, 302),
+    method: "POST",
+    responseHeaders: { location: new URL(rejected[0]!.path, baseURL).href },
+  };
+  expect(
+    collectCoverage(scenario, [forwarded, rejected[0]!], [], baseURL)["POST /callback/{}"],
+  ).toEqual({
+    rejection: [scenario],
+    authorization: [scenario],
+  });
+  for (const changed of [
+    { actor: "foreign" },
+    { responseStatus: 200 },
+    { responseHeaders: { location: "/api/auth/callback/google?state=foreign" } },
+    { responseHeaders: { location: "http://foreign.local" + rejected[0]!.path } },
+    { path: "/__test/profiles/foreign/api/auth/callback/gitlab" },
+  ]) {
+    expect(
+      collectCoverage(scenario, [{ ...forwarded, ...changed }, rejected[0]!], [], baseURL)[
+        "POST /callback/{}"
+      ]?.authorization,
+    ).toBeUndefined();
+  }
+  expect(
+    collectCoverage(scenario, [rejected[0]!, forwarded], [], baseURL)["POST /callback/{}"]
+      ?.authorization,
+  ).toBeUndefined();
 
   const proxyDenied = {
     ...trace("/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab/oauth-proxy", 302),
@@ -234,6 +266,26 @@ test("real account ownership errors and request-bound reset denials retain evide
   expect(collectCoverage(scenario, [{ ...account, responseStatus: 500 }], [], baseURL)).toEqual({
     "POST /refresh-token": {},
   });
+
+  const deletion = {
+    ...trace("/api/auth/delete-user/callback?token=foreign-issued", 404),
+    responseErrorBody: { code: "INVALID_TOKEN", message: "Invalid token" },
+  };
+  expect(collectCoverage(scenario, [deletion], [], baseURL)).toEqual({
+    "GET /delete-user/callback": { rejection: [scenario], authorization: [scenario] },
+  });
+  for (const changed of [
+    { responseStatus: 500 },
+    { responseErrorBody: { code: "USER_NOT_FOUND" } },
+    { path: "/api/auth/arbitrary" },
+    { method: "POST" },
+  ]) {
+    for (const record of Object.values(
+      collectCoverage(scenario, [{ ...deletion, ...changed }], [], baseURL),
+    )) {
+      expect(record.authorization).toBeUndefined();
+    }
+  }
 
   const reset = {
     ...trace(

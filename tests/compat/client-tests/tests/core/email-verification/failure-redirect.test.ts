@@ -8,22 +8,23 @@ compatScenario(
   "verification failure redirects append errors after existing encoded query and before fragments",
   async (ctx) => {
     const profile = "user-lifecycle-auto";
-    const control = async () => {
+    const control = async (action = "state") => {
       const r = await ctx.rawRequest({
         path: "/__test/user-lifecycle/control",
         method: "POST",
-        json: { profile: "auto", action: "state" },
+        json: { profile: "auto", action },
       });
       expect(r.status).toBe(200);
       return r.body as any;
     };
+    await control("reset");
     const email = ctx.uniqueEmail("redirect-owner");
     const signup = await ctx
       .actor("owner", profile)
       .client.signUp.email({ email, name: "Owner", password: "password123" });
     expect(signup.error).toBeNull();
     const before = await control();
-    const now = Math.floor(Date.now() / 1000);
+    const now = 946684800;
     const secret = new TextEncoder().encode("compat-test-only-key-not-real-minimum-32chars");
     const sign = (email: string, exp: number) =>
       new SignJWT({ email, iat: now - 60, exp }).setProtectedHeader({ alg: "HS256" }).sign(secret);
@@ -32,7 +33,7 @@ compatScenario(
     for (const [token, code] of [
       ["not-a-jwt", "INVALID_TOKEN"],
       [await sign(email, now - 30), "TOKEN_EXPIRED"],
-      [await sign(ctx.uniqueEmail("missing-owner"), now + 3600), "USER_NOT_FOUND"],
+      [await sign(ctx.uniqueEmail("missing-owner"), 4102444800), "USER_NOT_FOUND"],
     ] as const) {
       const response = await ctx
         .actor("guest", profile)
@@ -60,7 +61,7 @@ compatScenario(
     }
     const accepted = await ctx
       .actor("guest", profile)
-      .client.verifyEmail({ query: { token: await sign(email, now + 3600) } });
+      .client.verifyEmail({ query: { token: await sign(email, 4102444800) } });
     expect(accepted.error).toBeNull();
     expect((await ctx.actor("guest", profile).client.getSession()).data!.user.id).toBe(
       signup.data!.user.id,

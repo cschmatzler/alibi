@@ -13,13 +13,11 @@ compatScenario(
     const created = await owner.magicLink.verify({ query: { token: initial.token } });
     expect(created.error).toBeNull();
     const userId = created.data!.user.id;
-    const foreign = await ctx
-      .actor("foreign")
-      .client.signUp.email({
-        email: ctx.uniqueEmail("race-foreign"),
-        name: "Foreign owner",
-        password: "password123",
-      });
+    const foreign = await ctx.actor("foreign").client.signUp.email({
+      email: ctx.uniqueEmail("race-foreign"),
+      name: "Foreign owner",
+      password: "password123",
+    });
     expect(foreign.error).toBeNull();
     const before = (await ctx.readUserState({ userId })) as any;
     const foreignBefore = await ctx.readUserState({ userId: foreign.data!.user.id });

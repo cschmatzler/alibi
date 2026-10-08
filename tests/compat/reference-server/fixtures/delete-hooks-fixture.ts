@@ -4,8 +4,8 @@ import { betterAuth, type BetterAuthOptions } from "better-auth";
 export function deleteHooksFixture(base: BetterAuthOptions) {
   const db = base.database as Database;
   db.exec("CREATE TABLE IF NOT EXISTS application_delete_receipts (model TEXT, row_id TEXT)");
-  let model = "",
-    mode = "";
+  let model = "";
+  let mode = "";
   const events: unknown[] = [];
   const hooks = Object.fromEntries(
     ["user", "account", "session"].map((owner) => [

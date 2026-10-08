@@ -55,14 +55,29 @@ compatScenario(
     expect(await ctx.readDeviceState({ deviceCode: other.data!.device_code })).toEqual(
       foreignBefore,
     );
+    const redemptionStartedAt = Date.now();
     const redeemed = await device.device.token({
       grant_type: "urn:ietf:params:oauth:grant-type:device_code",
       device_code: issued.data!.device_code,
       client_id: "compat-device-client",
     });
+    const redemptionCompletedAt = Date.now();
     expect(redeemed.error).toBeNull();
     expect(redeemed.data?.token_type).toBe("Bearer");
     expect(redeemed.data?.scope).toBe("read");
+    const sessions = await owner.listSessions();
+    expect(sessions.error).toBeNull();
+    expect(sessions.data).toHaveLength(2);
+    const session = sessions.data!.find((row) => row.token === redeemed.data?.access_token);
+    expect(session?.userId).toBe(signup.data!.user.id);
+    if (!session) throw new Error("redemption must persist its owner's session");
+    const expiry = new Date(session.expiresAt).getTime();
+    expect(redeemed.data!.expires_in).toBeGreaterThanOrEqual(
+      Math.floor((expiry - redemptionCompletedAt) / 1000),
+    );
+    expect(redeemed.data!.expires_in).toBeLessThanOrEqual(
+      Math.floor((expiry - redemptionStartedAt) / 1000),
+    );
     const consumed = await ctx.readDeviceState({ deviceCode: issued.data!.device_code });
     expect(consumed).toBeNull();
     return ctx.snapshot({
@@ -74,6 +89,7 @@ compatScenario(
       claimed,
       approved,
       redeemed,
+      sessions,
       consumed,
     });
   },

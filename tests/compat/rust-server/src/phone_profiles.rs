@@ -191,10 +191,24 @@ impl PhoneOtpVerifier for Verifier {
                 json!({"context":snapshot}),
             );
         }
-        if _context.context::<TestSchema>().unwrap().config.base_path.contains("phone-custom-errors") {
+        if _context
+            .context::<TestSchema>()
+            .unwrap()
+            .config
+            .base_path
+            .contains("phone-custom-errors")
+        {
             match self.0.verifier_mode.lock().await.as_str() {
-                "coded" => return Err(alibi::AuthError::Api { status: 403, code: Some("PHONE_VERIFIER_REJECTED".into()), message: "Application verifier rejected".into() }),
-                "ordinary" => return Err(alibi::AuthError::internal("Application verifier failed")),
+                "coded" => {
+                    return Err(alibi::AuthError::Api {
+                        status: 403,
+                        code: Some("PHONE_VERIFIER_REJECTED".into()),
+                        message: "Application verifier rejected".into(),
+                    });
+                }
+                "ordinary" => {
+                    return Err(alibi::AuthError::internal("Application verifier failed"));
+                }
                 _ => {}
             }
         }

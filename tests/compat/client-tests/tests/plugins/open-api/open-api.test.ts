@@ -516,8 +516,9 @@ compatScenario(
     const generated = await actor.client.$fetch("/open-api/generate-schema", { method: "GET" });
     expect(generated.error).toBeNull();
     const schema = documentSchema.parse(generated.data);
-    for (const [route, operationId] of Object.entries(expected))
+    for (const [route, operationId] of Object.entries(expected)) {
       expect(schema.paths[`/collisions/${route}`]).toHaveProperty("get.operationId", operationId);
+    }
     const identifiers = Object.keys(expected).map(
       (route) => (schema.paths[`/collisions/${route}`]!.get as any).operationId,
     );

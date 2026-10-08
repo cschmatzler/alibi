@@ -121,10 +121,11 @@ export function organizationInvitationAcceptanceFixture(
                   return;
                 }
                 await note("before-accept", context);
-                if (mode === "replace-team")
+                if (mode === "replace-team") {
                   database
                     .query("UPDATE invitation SET teamId=? WHERE id=?")
                     .run(replacementTeamId!, context.invitation.id);
+                }
                 if (mode === "pause-before") {
                   let release!: () => void;
                   const promise = new Promise<void>((resolve) => {

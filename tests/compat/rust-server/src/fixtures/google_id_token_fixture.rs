@@ -1,7 +1,5 @@
 //! Real default Google verification with application-owned local key transport.
 use crate::TestSchema;
-use async_trait::async_trait;
-use axum::Router;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::oauth::{OAuthIdTokenVerifier, OAuthPlugin, OAuthProvider};
@@ -11,6 +9,8 @@ use alibi::plugins::{
 };
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use alibi_seaorm::DatabaseConnection;
+use async_trait::async_trait;
+use axum::Router;
 use std::sync::Arc;
 struct ApplicationVerifier(bool);
 #[async_trait]
@@ -42,7 +42,9 @@ pub(crate) async fn router(
         let mut provider =
             OAuthProvider::google("google-default-client", "local-google-default-secret");
         if name == "google-granted-scopes-disabled" {
-            provider.authorization_params.retain(|(key, _)| key != "include_granted_scopes");
+            provider
+                .authorization_params
+                .retain(|(key, _)| key != "include_granted_scopes");
         }
         if name == "google-id-array" {
             provider = provider.with_client_ids(vec![

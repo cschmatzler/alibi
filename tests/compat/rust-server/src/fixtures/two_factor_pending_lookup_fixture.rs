@@ -1,6 +1,5 @@
 //! Application-owned database metrics and physical state for pending challenges.
 use crate::TestSchema;
-use axum::{Json, Router, routing::post};
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
@@ -19,6 +18,7 @@ use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
+use axum::{Json, Router, routing::post};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
 use std::{

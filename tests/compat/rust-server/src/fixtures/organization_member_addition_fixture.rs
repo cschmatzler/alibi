@@ -1,13 +1,5 @@
 //! Application-owned server-only admission and genuine callback/storage observations.
 use crate::{TestSchema, organization_update_hooks_fixture::snapshot as base_snapshot};
-use async_trait::async_trait;
-use axum::{
-    Json, Router,
-    extract::Query,
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
-    routing::{get, post},
-};
 use alibi::plugins::organization::{
     OrganizationConfig, OrganizationMemberAddedContext, OrganizationMemberAdditionContext,
     OrganizationMemberAdditionHooks, OrganizationMemberCreatePatch, TeamsConfig,
@@ -27,6 +19,14 @@ use alibi_core::{
 use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
+use async_trait::async_trait;
+use axum::{
+    Json, Router,
+    extract::Query,
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{get, post},
 };
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
@@ -422,16 +422,14 @@ pub(crate) async fn router(
             member_addition_hooks: Some(application.clone()),
             organization_limit: name.starts_with("org-member-multiplicity").then_some(3.0),
             membership_limit: match name {
-                "org-member-addition-limit-one" => Some(
-                    alibi::plugins::organization::MembershipLimit::Fixed(1.0),
-                ),
-                "org-member-addition-zero" => Some(
-                    alibi::plugins::organization::MembershipLimit::Fixed(0.0),
-                ),
+                "org-member-addition-limit-one" => {
+                    Some(alibi::plugins::organization::MembershipLimit::Fixed(1.0))
+                }
+                "org-member-addition-zero" => {
+                    Some(alibi::plugins::organization::MembershipLimit::Fixed(0.0))
+                }
                 "org-member-addition-none" => None,
-                _ => Some(alibi::plugins::organization::MembershipLimit::Fixed(
-                    100.0,
-                )),
+                _ => Some(alibi::plugins::organization::MembershipLimit::Fixed(100.0)),
             },
             teams: TeamsConfig {
                 enabled: name != "org-member-addition-no-team",

@@ -153,8 +153,9 @@ compatScenario(
       throw new Error("approved code must issue a session token");
     }
 
-    if (!tokenResponse)
+    if (!tokenResponse) {
       throw new Error("Successful token redemption must expose its actual HTTP response");
+    }
     expect(tokenResponse.status).toBe(200);
     expect(tokenResponse.headers.get("cache-control")).toBe("no-store");
     expect(tokenResponse.headers.get("pragma")).toBe("no-cache");

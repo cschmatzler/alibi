@@ -113,6 +113,13 @@ for (const mode of ["hash", "cipher", "cipher-failure"] as const) {
     },
     ["POST /email-otp/send-verification-otp", "POST /sign-in/email-otp"],
     30_000,
-    mode === "cipher-failure" ? { oracle: { collapsedFixtureErrors: "The server-only getVerificationOTP call deliberately throws the configured decryption error; the fixture host renders it as a generic 500. Proof retention and the subsequent HTTP failures are asserted separately." } } : {},
+    mode === "cipher-failure"
+      ? {
+          oracle: {
+            collapsedFixtureErrors:
+              "The server-only getVerificationOTP call deliberately throws the configured decryption error; the fixture host renders it as a generic 500. Proof retention and the subsequent HTTP failures are asserted separately.",
+          },
+        }
+      : {},
   );
 }

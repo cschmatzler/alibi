@@ -1,6 +1,5 @@
 //! Real OpenAPI plugin configurations; no fixture endpoint manufactures schema output.
 use crate::TestSchema;
-use axum::Router;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::jwt::JwtPlugin;
@@ -12,6 +11,7 @@ use alibi::plugins::{
 };
 use alibi::{AuthBuilder, AuthConfig, AuthResult, AuthSchema};
 use alibi_seaorm::sea_orm::DatabaseConnection;
+use axum::Router;
 use std::sync::Arc;
 
 struct DocumentationSchema;
@@ -49,13 +49,11 @@ impl AuthSchema for DocumentationSchema {
                 serde_json::json!({"type":"string","format":"date-time"}),
             ),
         ] {
-            models[0]
-                .fields
-                .push(alibi::plugin::OpenApiField::new(
-                    name,
-                    schema,
-                    name == "access",
-                ));
+            models[0].fields.push(alibi::plugin::OpenApiField::new(
+                name,
+                schema,
+                name == "access",
+            ));
         }
         models
     }
@@ -284,9 +282,7 @@ impl<S: AuthSchema> alibi::plugin::AuthPlugin<S> for DocumentationPlugin {
         _ctx: &alibi::plugin::AuthInitContext<S>,
     ) -> alibi::plugin::PluginOpenApiMetadata {
         use alibi::__private_core::HttpMethod;
-        use alibi::plugin::{
-            OpenApiEndpoint, OpenApiField, OpenApiModel, PluginOpenApiMetadata,
-        };
+        use alibi::plugin::{OpenApiEndpoint, OpenApiField, OpenApiModel, PluginOpenApiMetadata};
         use serde_json::json;
         let read = OpenApiEndpoint {
             operation_id: Some("document".into()),

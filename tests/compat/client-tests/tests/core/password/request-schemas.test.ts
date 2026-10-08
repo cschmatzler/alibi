@@ -21,6 +21,12 @@ for (const input of cases) {
     `password mutation schema ${input.label} preserves transport and handler ordering`,
     async (ctx) => {
       const profile = "set-password-schema";
+      const reset = await ctx.rawRequest({
+        path: "/__test/set-password",
+        method: "POST",
+        json: { operation: "mode", mode: "normal", profile },
+      });
+      expect(reset.status).toBe(200);
       const owner = ctx.actor("schema-owner", profile);
       const sibling = ctx.actor("schema-sibling", profile);
       const foreign = ctx.actor("schema-foreign", profile);
@@ -68,10 +74,11 @@ for (const input of cases) {
       if ("code" in input) expect((result.body as any).code).toBe(input.code);
       const after: any = (await ctx.rawRequest({ path: "/__test/set-password/state" })).body;
       const entered = input.accepted || input.label === "empty-current";
-      for (const stage of ["hash-enter", "verify-enter"])
+      for (const stage of ["hash-enter", "verify-enter"]) {
         expect(after.events.filter((event: any) => event.stage === stage)).toHaveLength(
           entered ? 1 : 0,
         );
+      }
       if (!input.accepted) {
         expect(after.accounts).toEqual(before.accounts);
         expect(after.sessions).toEqual(before.sessions);

@@ -1,18 +1,23 @@
 //! Local magic-link delivery and explicit configuration fixtures.
 use crate::TestSchema;
 use crate::fixtures::passwordless_numeric_fixture::numeric_setting;
-use async_trait::async_trait;
-use axum::{Json, Router, extract::Query, routing::{get, post}};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::magic_link::{
-    MagicLinkTokenHasher, MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, MagicLinkTokenStorage, MagicLinkTokenGenerator, SendMagicLink,
+    MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, MagicLinkTokenGenerator,
+    MagicLinkTokenHasher, MagicLinkTokenStorage, SendMagicLink,
 };
 use alibi::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin, SessionManagementPlugin,
 };
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use alibi_seaorm::sea_orm::DatabaseConnection;
+use async_trait::async_trait;
+use axum::{
+    Json, Router,
+    extract::Query,
+    routing::{get, post},
+};
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
@@ -23,7 +28,13 @@ impl MagicLinkTokenHasher for ApplicationHasher {
     async fn hash(&self, token: &str) -> AuthResult<String> {
         tokio::task::yield_now().await;
         match self.0.lock().await.as_str() {
-            "coded" => return Err(alibi::AuthError::Api { status: 403, code: Some("MAGIC_HASH_REJECTED".into()), message: "Application hasher rejected".into() }),
+            "coded" => {
+                return Err(alibi::AuthError::Api {
+                    status: 403,
+                    code: Some("MAGIC_HASH_REJECTED".into()),
+                    message: "Application hasher rejected".into(),
+                });
+            }
             "ordinary" => return Err(alibi::AuthError::internal("Application hasher failed")),
             _ => {}
         }
@@ -32,7 +43,10 @@ impl MagicLinkTokenHasher for ApplicationHasher {
 }
 
 #[derive(Default)]
-struct GeneratorState { mode: String, receipts: Vec<String> }
+struct GeneratorState {
+    mode: String,
+    receipts: Vec<String>,
+}
 struct ControlledGenerator(Arc<Mutex<GeneratorState>>);
 #[async_trait]
 impl MagicLinkTokenGenerator for ControlledGenerator {
@@ -40,7 +54,13 @@ impl MagicLinkTokenGenerator for ControlledGenerator {
         tokio::task::yield_now().await;
         let mut state = self.0.lock().await;
         state.receipts.push(email.to_owned());
-        if state.mode == "coded" { return Err(alibi::AuthError::Api { status: 403, code: Some("MAGIC_GENERATOR_REJECTED".into()), message: "Application generator rejected".into() }); }
+        if state.mode == "coded" {
+            return Err(alibi::AuthError::Api {
+                status: 403,
+                code: Some("MAGIC_GENERATOR_REJECTED".into()),
+                message: "Application generator rejected".into(),
+            });
+        }
         Ok(format!("controlled-link-{email}"))
     }
 }
@@ -85,8 +105,16 @@ impl SendMagicLink for Sender {
             value["context"] = context;
         }
         _ = self.0.lock().await.insert(delivery.email.clone(), value);
-        if auth.config.base_path.contains("magic-link-sender-coded") { return Err(alibi::AuthError::Api { status: 403, code: Some("MAGIC_DELIVERY_REJECTED".into()), message: "Application delivery rejected".into() }); }
-        if auth.config.base_path.contains("magic-link-sender-ordinary") { return Err(alibi::AuthError::internal("Application delivery failed")); }
+        if auth.config.base_path.contains("magic-link-sender-coded") {
+            return Err(alibi::AuthError::Api {
+                status: 403,
+                code: Some("MAGIC_DELIVERY_REJECTED".into()),
+                message: "Application delivery rejected".into(),
+            });
+        }
+        if auth.config.base_path.contains("magic-link-sender-ordinary") {
+            return Err(alibi::AuthError::internal("Application delivery failed"));
+        }
         Ok(())
     }
 }
@@ -132,17 +160,40 @@ pub(super) async fn router(
                     config.clone(),
                     database.clone(),
                 ))
-                .rate_limit(RateLimitConfig::new().enabled(name == "magic-link-rate-policy").default_limit(std::time::Duration::from_secs(60), 10000))
+                .rate_limit(
+                    RateLimitConfig::new()
+                        .enabled(name == "magic-link-rate-policy")
+                        .default_limit(std::time::Duration::from_secs(60), 10000),
+                )
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(EmailVerificationPlugin::new().send_on_sign_up(false))
                 .plugin(PasswordManagementPlugin::new())
                 .plugin(SessionManagementPlugin::new())
                 .plugin(MagicLinkPlugin::new(MagicLinkConfig {
-                    rate_limit: if name == "magic-link-rate-policy" { alibi_core::EndpointRateLimit {window_seconds: 1.0, max_requests: 2.0} } else { MagicLinkConfig::default().rate_limit },
+                    rate_limit: if name == "magic-link-rate-policy" {
+                        alibi_core::EndpointRateLimit {
+                            window_seconds: 1.0,
+                            max_requests: 2.0,
+                        }
+                    } else {
+                        MagicLinkConfig::default().rate_limit
+                    },
                     send_magic_link: Some(Arc::new(Sender(outbox.clone()))),
-                    generate_token: if name == "magic-link-generator-reject" { Some(Arc::new(ControlledGenerator(generator_state.clone())) as Arc<dyn MagicLinkTokenGenerator>) } else { (name == "magic-link-hashed-custom-token").then(|| Arc::new(CustomToken) as Arc<dyn MagicLinkTokenGenerator>) },
+                    generate_token: if name == "magic-link-generator-reject" {
+                        Some(Arc::new(ControlledGenerator(generator_state.clone()))
+                            as Arc<dyn MagicLinkTokenGenerator>)
+                    } else {
+                        (name == "magic-link-hashed-custom-token")
+                            .then(|| Arc::new(CustomToken) as Arc<dyn MagicLinkTokenGenerator>)
+                    },
                     storage: if name.starts_with("magic-link-custom-hasher") {
-                        MagicLinkTokenStorage::Custom(Arc::new(ApplicationHasher(if name.ends_with("-errors") { hasher_mode.clone() } else { Arc::new(Mutex::new("success".to_owned())) })))
+                        MagicLinkTokenStorage::Custom(Arc::new(ApplicationHasher(
+                            if name.ends_with("-errors") {
+                                hasher_mode.clone()
+                            } else {
+                                Arc::new(Mutex::new("success".to_owned()))
+                            },
+                        )))
                     } else if name.starts_with("magic-link-hashed") {
                         MagicLinkTokenStorage::Hashed
                     } else {
@@ -150,7 +201,6 @@ pub(super) async fn router(
                     },
                     disable_sign_up: name == "magic-link-disabled",
                     expires_in: numeric_setting(name, "lifetime", 300.0),
-                    ..Default::default()
                 }))
                 .build()
                 .await?,
@@ -160,10 +210,16 @@ pub(super) async fn router(
             auth.clone().axum_router().with_state(auth),
         );
     }
-    router = router.route("/__test/magic-link/hasher-control", post(move |Json(body): Json<Value>| {
-        let mode = hasher_mode.clone();
-        async move { *mode.lock().await = body["mode"].as_str().unwrap_or("success").to_owned(); Json(json!({"status":true})) }
-    }));
+    router = router.route(
+        "/__test/magic-link/hasher-control",
+        post(move |Json(body): Json<Value>| {
+            let mode = hasher_mode.clone();
+            async move {
+                *mode.lock().await = body["mode"].as_str().unwrap_or("success").to_owned();
+                Json(json!({"status":true}))
+            }
+        }),
+    );
     router = router.route("/__test/magic-link/generator-control", post(move |Json(body): Json<Value>| {
         let state = generator_state.clone();
         let database = database.clone();

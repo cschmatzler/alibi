@@ -125,24 +125,27 @@ compatScenario(
         // wins. Check each real email/owner binding above before assigning local
         // outcome ranks to otherwise complete SDK responses and wire traces.
         const aliases = new Map<string, string>();
-        for (const [rank, row] of admitted.entries())
+        for (const [rank, row] of admitted.entries()) {
           aliases.set(
             row.contender.email,
             ctx.uniqueEmail(`quota-${storage}-${round}-admitted-${rank}`),
           );
-        for (const [rank, row] of rejected.entries())
+        }
+        for (const [rank, row] of rejected.entries()) {
           aliases.set(
             row.contender.email,
             ctx.uniqueEmail(`quota-${storage}-${round}-rejected-${rank}`),
           );
+        }
         const rankValues = (value: unknown): unknown => {
           if (typeof value === "string") return aliases.get(value) ?? value;
           if (value instanceof Date) return value;
           if (Array.isArray(value)) return value.map(rankValues);
-          if (value && typeof value === "object")
+          if (value && typeof value === "object") {
             return Object.fromEntries(
               Object.entries(value).map(([key, child]) => [key, rankValues(child)]),
             );
+          }
           return value;
         };
         const authority = [];

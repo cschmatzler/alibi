@@ -1,11 +1,5 @@
 //! Real discovery and provider HTTP authority for the generic SDK owner.
 use crate::TestSchema;
-use axum::{
-    Json, Router,
-    extract::{Path, State},
-    http::{HeaderMap, StatusCode},
-    routing::{get, post},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::oauth::{
@@ -15,6 +9,12 @@ use alibi::plugins::oauth::{
 use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use alibi_seaorm::DatabaseConnection;
+use axum::{
+    Json, Router,
+    extract::{Path, State},
+    http::{HeaderMap, StatusCode},
+    routing::{get, post},
+};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -36,10 +36,7 @@ impl Fixture {
 struct Mapper;
 #[async_trait::async_trait]
 impl OAuthProfileMapper for Mapper {
-    async fn map_profile(
-        &self,
-        _: Value,
-    ) -> Result<alibi_core::field_policy::FieldOutput, String> {
+    async fn map_profile(&self, _: Value) -> Result<alibi_core::field_policy::FieldOutput, String> {
         Ok([
             ("id".into(), json!("mapped-id")),
             ("name".into(), json!("Mapped Name")),
@@ -192,13 +189,12 @@ pub(crate) async fn router(
                     .authorization
                     .as_mut()
                     .expect("generic authorization policy")
-                    .authorization_code =
-                    Some(alibi::plugins::oauth::OAuthAuthorizationCodeCallback(
-                        Arc::new(CustomCode {
-                            fixture: fixture.clone(),
-                            denied: mode == "custom-token-error",
-                        }),
-                    ));
+                    .authorization_code = Some(
+                    alibi::plugins::oauth::OAuthAuthorizationCodeCallback(Arc::new(CustomCode {
+                        fixture: fixture.clone(),
+                        denied: mode == "custom-token-error",
+                    })),
+                );
             }
         }
         let mut plugin = OAuthPlugin::new();

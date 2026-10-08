@@ -1,11 +1,5 @@
 //! Application-owned anonymous identity/link handlers and actual stored-state observer.
 use crate::anonymous_user_model::{ApplicationSchema as TestSchema, Model as ApplicationUser};
-use async_trait::async_trait;
-use axum::{
-    Json, Router,
-    extract::Query,
-    routing::{get, post},
-};
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult,
     integrations::axum::AxumIntegration,
@@ -30,6 +24,12 @@ use alibi_seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{EntityTrait, QueryOrder},
     store::entities::{account, session},
+};
+use async_trait::async_trait;
+use axum::{
+    Json, Router,
+    extract::Query,
+    routing::{get, post},
 };
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
@@ -347,9 +347,7 @@ pub(crate) async fn router(
                 FieldConfig::new(json!({"type":"string"}))
                     .field_name("cargo_label")
                     .default_callback(|| {
-                        alibi_core::utils::json::JsValue::String(
-                            "Application Original".into(),
-                        )
+                        alibi_core::utils::json::JsValue::String("Application Original".into())
                     }),
             );
             settings.user.additional_fields.insert(

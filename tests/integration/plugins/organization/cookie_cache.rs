@@ -1,4 +1,4 @@
-//! Organization selection must be readable from the newly issued cache alone.
+//! Creation persists selection; explicit selection publishes a readable cache.
 use alibi::plugins::organization::{OrganizationConfig, TeamsConfig};
 use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin};
 use alibi::{AuthBuilder, AuthConfig, BetterAuth};
@@ -66,7 +66,7 @@ fn cookie_header(cookies: &BTreeMap<String, String>) -> String {
 }
 
 #[tokio::test]
-async fn organization_changes_refresh_the_cache_for_http_and_native_calls() {
+async fn organization_creation_persists_and_selection_refreshes_http_and_native_cache() {
     for native in [false, true] {
         for strategy in [
             CookieCacheStrategy::Compact,
@@ -95,6 +95,8 @@ async fn organization_changes_refresh_the_cache_for_http_and_native_calls() {
                 .await
                 .unwrap();
             assert_eq!(signup.status, 200);
+            let signup_body: Value = serde_json::from_slice(&signup.body).unwrap();
+            let token = signup_body.get("token").unwrap().as_str().unwrap();
             let mut cookies = BTreeMap::new();
             update_cookies(
                 &mut cookies,
@@ -170,7 +172,13 @@ async fn organization_changes_refresh_the_cache_for_http_and_native_calls() {
                             .collect::<Vec<_>>(),
                     )
                 };
-                let changed = matches!(step, 0 | 2 | 3);
+                let changed = matches!(step, 2 | 3);
+                if step < 2 {
+                    assert!(
+                        headers.is_empty(),
+                        "creation must not publish session cookies"
+                    );
+                }
                 assert_eq!(
                     headers
                         .iter()
@@ -195,6 +203,25 @@ async fn organization_changes_refresh_the_cache_for_http_and_native_calls() {
                 } else if step == 1 {
                     second_id = value.get("id").unwrap().clone();
                 }
+                let stored: Value = serde_json::to_value(
+                    auth.context()
+                        .session_view(&auth.store().get_session(token).await.unwrap().unwrap()),
+                )
+                .unwrap();
+                let expected_stored = match step {
+                    0 | 1 => &first_id,
+                    2 => &second_id,
+                    _ => &Value::Null,
+                };
+                assert_eq!(stored.get("activeOrganizationId").unwrap(), expected_stored);
+                if step == 0 {
+                    team_id = stored.get("activeTeamId").unwrap().clone();
+                    assert!(
+                        team_id.is_string(),
+                        "creation must persist its default team"
+                    );
+                }
+                assert_eq!(stored.get("activeTeamId").unwrap(), &team_id);
                 let read = reader
                     .handle_request(request(
                         HttpMethod::Get,
@@ -210,19 +237,14 @@ async fn organization_changes_refresh_the_cache_for_http_and_native_calls() {
                     .get("session")
                     .expect("the refreshed cache must authenticate without a stored session");
                 let expected = match step {
-                    0 | 1 => &first_id,
                     2 => &second_id,
                     _ => &Value::Null,
                 };
                 assert_eq!(session.get("activeOrganizationId").unwrap(), expected);
-                if step == 0 {
-                    team_id = session.get("activeTeamId").unwrap().clone();
-                    assert!(
-                        team_id.is_string(),
-                        "creation must publish its default team"
-                    );
-                }
-                assert_eq!(session.get("activeTeamId").unwrap(), &team_id);
+                assert_eq!(
+                    session.get("activeTeamId").unwrap(),
+                    if step < 2 { &Value::Null } else { &team_id }
+                );
             }
         }
     }

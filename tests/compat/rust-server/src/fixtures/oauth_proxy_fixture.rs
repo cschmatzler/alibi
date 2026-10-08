@@ -1,5 +1,19 @@
 //! Actual two-host authentication and one-use HTTP provider grants.
 use crate::TestSchema;
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::oauth::{
+    GenericOAuthConfig, OAuthAccountKey, OAuthAccountKeyContext, OAuthAccountKeyResolver,
+    OAuthProvider,
+};
+use alibi::plugins::{
+    EmailPasswordPlugin, OAuthPlugin, OAuthProxyConfig, OAuthProxyPlugin, SessionManagementPlugin,
+};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi_core::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, CreateSession};
+use alibi_seaorm::sea_orm::{ConnectionTrait, EntityTrait, QueryOrder, Statement};
+use alibi_seaorm::store::entities::{account, session, user, verification};
+use alibi_seaorm::{Database, DatabaseConnection, DatabaseHooks, HookControl};
 use async_trait::async_trait;
 use axum::{
     Form, Json, Router,
@@ -9,21 +23,6 @@ use axum::{
     routing::{any, get, post},
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use alibi::integrations::axum::AxumIntegration;
-use alibi::middleware::RateLimitConfig;
-use alibi::plugins::oauth::{
-    GenericOAuthConfig, OAuthAccountKey, OAuthAccountKeyContext, OAuthAccountKeyResolver, OAuthProvider,
-};
-use alibi::plugins::{
-    EmailPasswordPlugin, OAuthPlugin, OAuthProxyConfig, OAuthProxyPlugin, SessionManagementPlugin,
-};
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi_core::{
-    AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, CreateSession,
-};
-use alibi_seaorm::sea_orm::{ConnectionTrait, EntityTrait, QueryOrder, Statement};
-use alibi_seaorm::store::entities::{account, session, user, verification};
-use alibi_seaorm::{Database, DatabaseConnection, DatabaseHooks, HookControl};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -55,10 +54,7 @@ const SECRET: &str = "local-fixture-dedicated-oauth-proxy-secret-32";
 struct CacheFailure;
 #[async_trait]
 impl alibi_core::CookieCacheVersionResolver for CacheFailure {
-    async fn resolve(
-        &self,
-        _context: &alibi_core::CacheVersionContext,
-    ) -> AuthResult<String> {
+    async fn resolve(&self, _context: &alibi_core::CacheVersionContext) -> AuthResult<String> {
         Err(AuthError::internal("private cache publication failure"))
     }
 }
@@ -311,15 +307,13 @@ async fn build_router(
                 settings.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
                     enabled: true,
                     max_age: 120.0,
-                    version: (mode == "cache-error").then(|| {
-                        alibi_core::CookieCacheVersion::Resolver(Arc::new(CacheFailure))
-                    }),
+                    version: (mode == "cache-error")
+                        .then(|| alibi_core::CookieCacheVersion::Resolver(Arc::new(CacheFailure))),
                     ..Default::default()
                 });
             }
             if cookie {
-                settings.account.store_state_strategy =
-                    alibi_core::OAuthStateStrategy::Cookie;
+                settings.account.store_state_strategy = alibi_core::OAuthStateStrategy::Cookie;
             }
             if managed {
                 const OLD: &str = "managed-old-reader-key-at-least-32-characters";
@@ -328,9 +322,7 @@ async fn build_router(
                 settings.secret = LEGACY.into();
                 settings.managed_secrets = match mode {
                     "old" => Some(alibi_core::ManagedSecrets::new(0, OLD)),
-                    "retained" => {
-                        Some(alibi_core::ManagedSecrets::new(2, CURRENT).retain(0, OLD))
-                    }
+                    "retained" => Some(alibi_core::ManagedSecrets::new(2, CURRENT).retain(0, OLD)),
                     "retired" => Some(alibi_core::ManagedSecrets::new(2, CURRENT)),
                     "legacy" => Some(
                         alibi_core::ManagedSecrets::new(2, CURRENT)
@@ -346,14 +338,23 @@ async fn build_router(
                 &format!("{}{control}/provider", config.base_url),
             );
             if mode == "form-post" {
-                let mut generic = GenericOAuthConfig::new("proxy-fixture-client", "proxy-fixture-secret");
+                let mut generic =
+                    GenericOAuthConfig::new("proxy-fixture-client", "proxy-fixture-secret");
                 generic.authorization_url = Some(provider.auth_url.clone());
                 generic.token_url = Some(provider.token_url.clone());
                 generic.user_info_url = provider.user_info_url.clone();
                 generic.provider = provider;
-                provider = generic.resolve().await.map_err(|error| AuthError::config(error.to_string()))?
-                    .ok_or_else(|| AuthError::config("form-post provider unavailable"))?.provider;
-                provider.authorization.as_mut().expect("generic policy").response_mode = Some("form_post".into());
+                provider = generic
+                    .resolve()
+                    .await
+                    .map_err(|error| AuthError::config(error.to_string()))?
+                    .ok_or_else(|| AuthError::config("form-post provider unavailable"))?
+                    .provider;
+                provider
+                    .authorization
+                    .as_mut()
+                    .expect("generic policy")
+                    .response_mode = Some("form_post".into());
             }
             provider.disable_sign_up = mode == "signup-disabled";
             let policy = provider.authorization.as_mut().expect("factory policy");
@@ -469,10 +470,24 @@ async fn authorize(
             used: false,
         },
     );
-    if query.get("response_mode").is_some_and(|mode| mode == "form_post") {
+    if query
+        .get("response_mode")
+        .is_some_and(|mode| mode == "form_post")
+    {
         let user = json!({"name":{"firstName":"Élodie &","lastName":"Form <Owner>"},"email":provider.profile["email"]}).to_string();
-        let escape = |value: &str| value.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;");
-        let html = format!("<form method=\"post\" action=\"{}\"><input name=\"code\" value=\"{}\"><input name=\"state\" value=\"{}\"><input name=\"user\" value=\"{}\"></form>", escape(redirect), escape(&code), escape(state), escape(&user));
+        let escape = |value: &str| {
+            value
+                .replace('&', "&amp;")
+                .replace('"', "&quot;")
+                .replace('<', "&lt;")
+        };
+        let html = format!(
+            "<form method=\"post\" action=\"{}\"><input name=\"code\" value=\"{}\"><input name=\"state\" value=\"{}\"><input name=\"user\" value=\"{}\"></form>",
+            escape(redirect),
+            escape(&code),
+            escape(state),
+            escape(&user)
+        );
         return ([("content-type", "text/html")], html).into_response();
     }
     (StatusCode::FOUND, [("location", url.to_string())]).into_response()

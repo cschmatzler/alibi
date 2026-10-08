@@ -370,14 +370,18 @@ export function compatScenario(
     readonly managedAccountCookieProfiles?: ComparisonContext["managedAccountCookieProfiles"];
     readonly remoteJwtSignerSecret?: ComparisonContext["remoteJwtSignerSecret"];
     readonly sessionCookieSecret?: string;
+    /** External service required by this scenario; register an explicit skip when absent. */
+    readonly requiresEnvironment?: string;
     /** Deliberate unrouted or failing reference requests; see `support/oracle.ts`. */
     readonly oracle?: OracleExpectations;
   } = {},
   reproduction?: unknown,
 ) {
-  const { oracle, ...comparisonOptions } = options;
+  const { oracle, requiresEnvironment, ...comparisonOptions } = options;
   assuranceEvent({ event: "registered", name: scenarioName });
-  test.serial(
+  const register =
+    requiresEnvironment && !process.env[requiresEnvironment] ? test.skip : test.serial;
+  register(
     scenarioName,
     async () => {
       const seed = `${Date.now()}-${crypto.randomUUID()}`;

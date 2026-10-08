@@ -1,5 +1,11 @@
 //! Actual Facebook app inspection, Graph profiles and signed Limited Login.
 use crate::TestSchema;
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::oauth::{FacebookOptions, HttpOAuthJwksSource, OAuthProvider, OAuthUserInfo};
+use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_seaorm::DatabaseConnection;
 use axum::{
     Json, Router,
     extract::{Query, State},
@@ -7,14 +13,6 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use alibi::integrations::axum::AxumIntegration;
-use alibi::middleware::RateLimitConfig;
-use alibi::plugins::oauth::{
-    FacebookOptions, HttpOAuthJwksSource, OAuthProvider, OAuthUserInfo,
-};
-use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
-use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::Mutex;

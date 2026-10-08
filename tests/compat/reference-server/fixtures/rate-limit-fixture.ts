@@ -1,8 +1,9 @@
 /** Installed Source policies exercised through actual authentication mutations. */
 import { Database } from "bun:sqlite";
-import { getMigrations } from "better-auth/db/migration";
+
 import { createKyselyAdapter, kyselyAdapter } from "@better-auth/kysely-adapter";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
+import { getMigrations } from "better-auth/db/migration";
 
 export async function createRateLimitFixture(base: BetterAuthOptions) {
   // Share the actual SQL connection provider across concurrent auth instances.
@@ -60,11 +61,12 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
       if (customFailure) throw new Error("Application quota storage failed");
       const now = Date.now();
       const row = customRows.get(key);
-      if (row && now - row.lastRequest < rule.window * 1000 && row.count >= rule.max)
+      if (row && now - row.lastRequest < rule.window * 1000 && row.count >= rule.max) {
         return {
           allowed: false,
           retryAfter: Math.ceil((row.lastRequest + rule.window * 1000 - now) / 1000),
         };
+      }
       customRows.set(key, {
         count: row && now - row.lastRequest < rule.window * 1000 ? row.count + 1 : 1,
         lastRequest: now,
@@ -94,7 +96,9 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
           ...base,
           plugins: (base.plugins ?? []).filter((plugin) => plugin.id === "email-otp"),
           basePath: `/__test/profiles/${profile}/api/auth`,
-          ...(name.includes("secondary") ? { secondaryStorage: name === "secondary-failure" ? failureStorage : secondary } : {}),
+          ...(name.includes("secondary")
+            ? { secondaryStorage: name === "secondary-failure" ? failureStorage : secondary }
+            : {}),
           ...(name.startsWith("concurrent-")
             ? {
                 database: concurrentDatabase,
@@ -105,11 +109,17 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
             : {}),
           rateLimit: {
             enabled: true,
-            storage: name.startsWith("database-") ? "database" : (name.includes("secondary") || name === "custom") ? "secondary-storage" : "memory",
+            storage: name.startsWith("database-")
+              ? "database"
+              : name.includes("secondary") || name === "custom"
+                ? "secondary-storage"
+                : "memory",
             ...(name === "custom" ? { customStorage } : {}),
             window: 60,
             max: name === "ordered" ? 1 : 10000,
-            ...(name.startsWith("database-") ? { customRules: { "/get-session": { window: 1, max: 2 } } } : {}),
+            ...(name.startsWith("database-")
+              ? { customRules: { "/get-session": { window: 1, max: 2 } } }
+              : {}),
             ...(name.includes("secondary") || name.startsWith("custom")
               ? { customRules: { "/get-session": { window: 1, max: 2 }, "/list-sessions": false } }
               : {}),
@@ -153,6 +163,9 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
   const context = await databaseAuth.$context;
   await (await getMigrations(context.options)).runMigrations();
   return {
+    async reset() {
+      await context.adapter.deleteMany({ model: "rateLimit", where: [] });
+    },
     async handle(request: Request) {
       const url = new URL(request.url);
       if (url.pathname === "/__test/rate-limit-secondary/failure") {
@@ -177,8 +190,9 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
       }
       if (url.pathname === "/__test/rate-database-control" && request.method === "POST") {
         const { action } = await request.json();
-        if (!(base.database instanceof Database))
+        if (!(base.database instanceof Database)) {
           throw new Error("Fixture requires SQLite database");
+        }
         base.database.run(
           action === "disable"
             ? 'ALTER TABLE "rateLimit" RENAME TO "fixtureRateLimitHeld"'
@@ -201,8 +215,9 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
           })),
         );
       }
-      if (url.pathname === "/__test/rate-limit-secondary/control")
+      if (url.pathname === "/__test/rate-limit-secondary/control") {
         return Response.json({ value: await secondary.get(url.searchParams.get("key")!) });
+      }
       for (const [profile, auth] of profiles) {
         if (url.pathname.startsWith(`/__test/profiles/${profile}/api/auth/`)) {
           return auth.handler(request);

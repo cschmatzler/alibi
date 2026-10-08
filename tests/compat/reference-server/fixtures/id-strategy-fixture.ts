@@ -38,8 +38,9 @@ export async function idStrategyFixture(base: BetterAuthOptions) {
     async handle(request: Request) {
       const path = new URL(request.url).pathname;
       for (const [mode, auth] of profiles) {
-        if (path.startsWith(`/__test/profiles/id-strategy-${mode}/api/auth/`))
+        if (path.startsWith(`/__test/profiles/id-strategy-${mode}/api/auth/`)) {
           return auth.handler(request);
+        }
         if (path === `/__test/id-strategy/${mode}/state`) {
           const db = databases.get(mode)!;
           // Compare identifier values across application-selected integer/text schemas.

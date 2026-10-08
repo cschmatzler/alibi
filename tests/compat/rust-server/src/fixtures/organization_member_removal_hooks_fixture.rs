@@ -1,12 +1,5 @@
 //! Real removal callbacks, SQLite observations and signed-cookie server calls.
 use crate::{TestSchema, organization_update_hooks_fixture::snapshot as base_snapshot};
-use axum::{
-    Json, Router,
-    extract::Query,
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
-    routing::{get, post},
-};
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
@@ -24,6 +17,13 @@ use alibi_core::{
 use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
+use axum::{
+    Json, Router,
+    extract::Query,
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+    routing::{get, post},
 };
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};

@@ -1,13 +1,13 @@
 //! Account linking policy fixtures, outside the public route inventory.
 
 use crate::TestSchema;
-use axum::Router;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::oauth::OAuthPlugin;
 use alibi::plugins::{AccountManagementPlugin, EmailPasswordPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use alibi_seaorm::DatabaseConnection;
+use axum::Router;
 use std::sync::Arc;
 
 pub(crate) async fn router(
@@ -22,9 +22,16 @@ pub(crate) async fn router(
         settings.account.account_linking.allow_different_emails = true;
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(settings.clone())
-                .store(crate::backend::store::<TestSchema>(settings, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    settings,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
-                .plugin(EmailPasswordPlugin::new().enable_username(false).enable_signup(true))
+                .plugin(
+                    EmailPasswordPlugin::new()
+                        .enable_username(false)
+                        .enable_signup(true),
+                )
                 .plugin(SessionManagementPlugin::new())
                 .plugin(AccountManagementPlugin::new())
                 .plugin(oauth())

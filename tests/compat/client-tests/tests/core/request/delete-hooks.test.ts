@@ -4,7 +4,7 @@ import { createAuthClient } from "better-auth/client";
 import { adminClient } from "better-auth/client/plugins";
 
 import { compatScenario } from "../../../support/scenario";
-for (const model of ["user", "session", "account"] as const)
+for (const model of ["user", "session", "account"] as const) {
   for (const mode of ["continue", "cancel", "data", "before-error", "after-error"] as const) {
     compatScenario(
       `${model} database delete hooks ${mode} preserve real callback snapshots and committed effects`,
@@ -18,12 +18,13 @@ for (const model of ["user", "session", "account"] as const)
         });
         expect(signup.error).toBeNull();
         const userId = signup.data!.user.id;
-        if (model === "account")
+        if (model === "account") {
           await ctx.seedOAuthAccount({
             email,
             providerId: "mock",
             accountId: ctx.uniqueToken("delete-provider"),
           });
+        }
         const project = (physical: any) => ({
           ...physical,
           user: physical.user && {
@@ -82,9 +83,9 @@ for (const model of ["user", "session", "account"] as const)
         const state = callbacks.body as any;
         const retained = mode === "cancel" || mode === "before-error";
         if (model === "user") expect(after.user !== null).toBe(retained);
-        else if (model === "session")
+        else if (model === "session") {
           expect(after.sessions.some((s: any) => s.id === rowId)).toBe(retained);
-        else expect(after.accounts.some((a: any) => a.id === rowId)).toBe(retained);
+        } else expect(after.accounts.some((a: any) => a.id === rowId)).toBe(retained);
         expect(state.events).toEqual([
           { model, phase: "before", rowId },
           ...(retained ? [] : [{ model, phase: "after", rowId }]),
@@ -111,3 +112,4 @@ for (const model of ["user", "session", "account"] as const)
       ["POST /admin/remove-user", "POST /revoke-session", "POST /unlink-account"],
     );
   }
+}

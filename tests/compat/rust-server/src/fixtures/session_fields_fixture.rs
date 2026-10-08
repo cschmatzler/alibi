@@ -1,6 +1,5 @@
 //! Application configuration with concrete session columns and real callbacks.
 use crate::session_field_model::{ApplicationSchema, application_session};
-use axum::{Json, Router, extract::Query, routing::get};
 use alibi::__private_core::utils::json::JsValue;
 use alibi::field_policy::{FieldConfig, FieldValues};
 use alibi::integrations::axum::AxumIntegration;
@@ -11,11 +10,10 @@ use alibi::plugins::{
     SessionManagementPlugin, UserManagementPlugin,
 };
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_seaorm::sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Statement,
-};
+use alibi_seaorm::sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Statement};
 use alibi_seaorm::store::entities::user;
 use alibi_seaorm::{DatabaseConnection, DatabaseHooks, HookControl};
+use axum::{Json, Router, extract::Query, routing::get};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -116,9 +114,9 @@ pub(crate) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthR
             FieldConfig::new(json!({"type":"string"})).transform(|value| {
                 match value.and_then(JsValue::as_str) {
                     None => Ok(Some(JsValue::String("generated-without-default".into()))),
-                    Some("stage:throw-at-binding") => Err(alibi::AuthError::internal(
-                        "configured transform failed",
-                    )),
+                    Some("stage:throw-at-binding") => {
+                        Err(alibi::AuthError::internal("configured transform failed"))
+                    }
                     Some("omit" | "stage:omit-at-binding") => Ok(None),
                     Some(value) => Ok(Some(JsValue::String(format!("stage:{value}")))),
                 }

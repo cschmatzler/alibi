@@ -912,8 +912,11 @@ compatScenario(
     expect(absentReplay.error?.code).toBe("OTP_NOT_FOUND");
     const physicalAfter = await readSql();
     const source = "user" in physicalBefore;
-    for (const table of source ? ["user", "account", "session"] : ["users", "accounts", "sessions"])
+    for (const table of source
+      ? ["user", "account", "session"]
+      : ["users", "accounts", "sessions"]) {
       expect(physicalAfter[table]).toEqual(physicalBefore[table]);
+    }
     expect(await readPhoneState(ctx, profile, user.id)).toEqual(ownerBefore);
     expect((await client.getSession()).data?.user.id).toBe(user.id);
 

@@ -63,8 +63,9 @@ export async function createPhoneFixture(
                 handler: (promise: Promise<unknown>) => {
                   notification.scheduled++;
                   void promise.catch(() => {});
-                  if (name === "phone-notification-schedule-error")
+                  if (name === "phone-notification-schedule-error") {
                     throw new Error("Application scheduling observation rejected");
+                  }
                 },
               },
             },
@@ -87,11 +88,12 @@ export async function createPhoneFixture(
                       }
                     : null,
                 });
-                if (resetMode === "reject")
+                if (resetMode === "reject") {
                   throw new APIError("FORBIDDEN", {
                     code: "PHONE_RESET_REJECTED",
                     message: "Application reset callback rejected",
                   });
+                }
               },
             }
           : {}),
@@ -110,8 +112,9 @@ export async function createPhoneFixture(
           async sendOTP({ phoneNumber, code }, ctx) {
             const context = await callbackSnapshot(ctx, phoneNumber);
             outbox.set(`verification:${phoneNumber}`, { code, ...(context ? { context } : {}) });
-            if (name.startsWith("phone-notification-"))
+            if (name.startsWith("phone-notification-")) {
               await notify("verification", phoneNumber, code, ctx);
+            }
             if (name.startsWith("phone-custom")) {
               challenges.set(phoneNumber, code);
             }
@@ -119,8 +122,9 @@ export async function createPhoneFixture(
           async sendPasswordResetOTP({ phoneNumber, code }, ctx) {
             const context = await callbackSnapshot(ctx, `${phoneNumber}-request-password-reset`);
             outbox.set(`password-reset:${phoneNumber}`, { code, ...(context ? { context } : {}) });
-            if (name.startsWith("phone-notification-"))
+            if (name.startsWith("phone-notification-")) {
               await notify("password-reset", phoneNumber, code, ctx);
+            }
           },
           ...(name === "phone-no-otp-sender"
             ? {
@@ -154,13 +158,15 @@ export async function createPhoneFixture(
                     outbox.set(`verifier:${phoneNumber}`, { context });
                   }
 
-                  if (name === "phone-custom-errors" && verifierMode === "coded")
+                  if (name === "phone-custom-errors" && verifierMode === "coded") {
                     throw new APIError("FORBIDDEN", {
                       code: "PHONE_VERIFIER_REJECTED",
                       message: "Application verifier rejected",
                     });
-                  if (name === "phone-custom-errors" && verifierMode === "ordinary")
+                  }
+                  if (name === "phone-custom-errors" && verifierMode === "ordinary") {
                     throw new Error("Application verifier failed");
+                  }
                   if (challenges.get(phoneNumber) !== code) {
                     return false;
                   }
@@ -180,11 +186,12 @@ export async function createPhoneFixture(
               userId: user.id,
               ...(context ? { context, verifiedOwner: owner?.phoneNumberVerified === true } : {}),
             });
-            if (name === "phone-callback-reject")
+            if (name === "phone-callback-reject") {
               throw new APIError("FORBIDDEN", {
                 code: "PHONE_CALLBACK_REJECTED",
                 message: "Application verification callback rejected",
               });
+            }
           },
         }),
       ],

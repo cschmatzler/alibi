@@ -279,12 +279,13 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
               },
             },
     };
-    if (mode === "claims")
+    if (mode === "claims") {
       Object.assign(options.jwt, {
         issuer: "configured-issuer",
         audience: "configured-audience",
         expirationTime: "3h",
       });
+    }
     configurations.set(name, options);
     profiles.set(
       name,

@@ -1529,12 +1529,25 @@ for (const mode of ["hashed", "custom", "cache", "mixed"] as const) {
       };
       expect(Date.parse(live.expiresAt)).toBeGreaterThan(Date.now());
 
-      const editedExpired = await call(ctx, {
-        operation: "update",
-        profile: selected,
-        identifier: `auth-state:${expiredState}`,
-        data: { value: JSON.stringify(expiredPayload) },
-      });
+      // Corrupt the actual issued payload in its authoritative store. Cache
+      // seeding preserves the original proof fields without an unrelated TTL
+      // recalculation by the adapter-update control.
+      const editedExpired = await call(
+        ctx,
+        mode === "cache" || mode === "mixed"
+          ? {
+              operation: "cache-seed",
+              profile: selected,
+              key: `verification:${expiredStored}`,
+              value: JSON.stringify({ ...live, value: JSON.stringify(expiredPayload) }),
+            }
+          : {
+              operation: "update",
+              profile: selected,
+              identifier: `auth-state:${expiredState}`,
+              data: { value: JSON.stringify(expiredPayload) },
+            },
+      );
       expect(editedExpired.status).toBe(200);
 
       const expiryBefore = await state(ctx);

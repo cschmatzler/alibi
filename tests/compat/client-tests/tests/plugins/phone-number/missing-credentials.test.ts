@@ -96,8 +96,9 @@ compatScenario(
       expect(await readPhoneState(ctx, profile, credentialUser.id)).toEqual(before);
       expect(await readPhoneState(ctx, profile, foreignId)).toEqual(foreignBefore);
       expect((await credentialOwner.getSession()).data?.user.id).toBe(credentialUser.id);
-      if (result.error?.status !== 401 || result.error?.code !== "UNEXPECTED_ERROR")
+      if (result.error?.status !== 401 || result.error?.code !== "UNEXPECTED_ERROR") {
         mismatches.push({ shape, result: ctx.snapshot(result) });
+      }
       observations.push({ shape, result: ctx.snapshot(result), before });
     }
     expect(await readPhoneState(ctx, profile, user.id)).toEqual(otpState);

@@ -1,10 +1,10 @@
 //! Trusted fixture writes for exercising actual persisted timestamp precision.
 
-use axum::{Json, Router, http::StatusCode, routing::post};
 use alibi_seaorm::sea_orm::{
     ActiveModelTrait, DatabaseConnection, EntityTrait, IntoActiveModel, Set,
 };
 use alibi_seaorm::store::entities::{member, organization};
+use axum::{Json, Router, http::StatusCode, routing::post};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};

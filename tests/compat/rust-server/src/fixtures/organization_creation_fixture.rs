@@ -1,11 +1,5 @@
 //! Private organization creation configurations and real SQLite state observations.
 use crate::TestSchema;
-use axum::{
-    Json, Router,
-    extract::Query,
-    http::StatusCode,
-    routing::{get, post},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::organization::{
@@ -21,6 +15,12 @@ use alibi_seaorm::sea_orm::{
     Statement,
 };
 use alibi_seaorm::store::entities::{member, organization, session, user};
+use axum::{
+    Json, Router,
+    extract::Query,
+    http::StatusCode,
+    routing::{get, post},
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};

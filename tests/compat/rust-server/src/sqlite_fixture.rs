@@ -128,9 +128,8 @@ mod tests {
             }
             let database = Database::connect(configured).await.unwrap();
             crate::backend::migrate(&database).await.unwrap();
-            let config = alibi::AuthConfig::new(
-                "fixture-database-retention-test-secret-at-least-32chars",
-            );
+            let config =
+                alibi::AuthConfig::new("fixture-database-retention-test-secret-at-least-32chars");
             let store = crate::backend::store::<crate::TestSchema>(config, database.clone());
             let issued = alibi_core::store::UserStore::create_user(
                 &store,
@@ -172,8 +171,7 @@ mod tests {
             .fetch_one(pool)
             .await;
             let found =
-                alibi_core::store::UserStore::get_user_by_id(&store, issued.id().as_ref())
-                    .await;
+                alibi_core::store::UserStore::get_user_by_id(&store, issued.id().as_ref()).await;
             eprintln!(
                 "{label}: tables={tables_before}->{tables_after}; connection={before}->{connection:?}; user={found:?}"
             );

@@ -19,13 +19,11 @@ compatScenario(
       plugins: [deviceAuthorizationClient()],
       fetchOptions: { customFetchImpl: actor.fetch },
     });
-    const foreign = await ctx
-      .actor("device-atomic-foreign")
-      .client.signUp.email({
-        email: ctx.uniqueEmail("device-atomic-foreign"),
-        password: "password123",
-        name: "Foreign Device Owner",
-      });
+    const foreign = await ctx.actor("device-atomic-foreign").client.signUp.email({
+      email: ctx.uniqueEmail("device-atomic-foreign"),
+      password: "password123",
+      name: "Foreign Device Owner",
+    });
     expect(foreign.error).toBeNull();
     const foreignBefore = await ctx.readUserState({ userId: foreign.data!.user.id });
     const signup = await client.signUp.email({

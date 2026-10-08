@@ -38,13 +38,11 @@ compatScenario(
     const validatorEvents = await validatorResponse.json();
     expect(validatorEvents).toEqual([]);
     expect(await ctx.readVerificationState({ identifier: "not-a-phone" })).toEqual([]);
-    const foreign = await ctx
-      .actor("missing-sender-foreign")
-      .client.signUp.email({
-        email: ctx.uniqueEmail("missing-sender-foreign"),
-        password: "password123",
-        name: "Foreign Sender Owner",
-      });
+    const foreign = await ctx.actor("missing-sender-foreign").client.signUp.email({
+      email: ctx.uniqueEmail("missing-sender-foreign"),
+      password: "password123",
+      name: "Foreign Sender Owner",
+    });
     expect(foreign.error).toBeNull();
     const foreignBefore = await ctx.readUserState({ userId: foreign.data!.user.id });
     const profile = "phone-no-reset-sender";

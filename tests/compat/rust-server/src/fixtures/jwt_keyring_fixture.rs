@@ -1,12 +1,5 @@
 //! Application-owned SQL key storage and actual public JWT callback receipts.
 use crate::TestSchema;
-use axum::{
-    Json, Router,
-    body::Bytes,
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
-    routing::post,
-};
 use alibi::plugins::jwt::{
     DefineJwtPayload, DefineJwtSubject, JwtAlgorithm, JwtClaimsConfig, JwtExpiration,
     JwtKeyPairConfig, JwtKeyring, JwtKeyringContext, JwtPlugin, JwtPluginConfig, JwtSession,
@@ -20,6 +13,13 @@ use alibi::{
 use alibi_core::{AuthRequest, CookieCacheConfig, CreateJwk, HttpMethod, Jwk};
 use alibi_seaorm::DatabaseConnection;
 use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, QueryResult, Statement};
+use axum::{
+    Json, Router,
+    body::Bytes,
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+    routing::post,
+};
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -367,7 +367,13 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             ..Default::default()
         };
         if mode == "claims" {
-            options.claims = JwtClaimsConfig { issuer: Some("configured-issuer".into()), audience: Some(alibi::plugins::jwt::JwtAudience::One("configured-audience".into())), expiration: JwtExpiration::AfterSeconds(10800.0) };
+            options.claims = JwtClaimsConfig {
+                issuer: Some("configured-issuer".into()),
+                audience: Some(alibi::plugins::jwt::JwtAudience::One(
+                    "configured-audience".into(),
+                )),
+                expiration: JwtExpiration::AfterSeconds(10800.0),
+            };
         }
         if mode == "cache" {
             options.define_payload = None;

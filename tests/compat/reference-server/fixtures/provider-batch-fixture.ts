@@ -299,7 +299,8 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
           return {
             accessToken: "callback-access",
             refreshToken: "callback-refresh",
-            accessTokenExpiresAt: new Date(Date.now() + 3600000),
+            // Application-owned callback deadline, separate from factory expiry clocks.
+            accessTokenExpiresAt: new Date("2100-01-01T00:00:00.000Z"),
             scopes: ["callback-scope"],
           };
         };

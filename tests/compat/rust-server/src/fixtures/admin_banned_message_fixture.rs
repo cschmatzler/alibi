@@ -1,11 +1,6 @@
 //! Stored application fields and awaited callbacks on the real admin lifecycle.
 use crate::TestSchema;
 use crate::backend::entities::user::Model;
-use axum::{
-    Json, Router,
-    extract::{Query, State},
-    routing::get,
-};
 use alibi::config::CookieCacheConfig;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
@@ -17,6 +12,11 @@ use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use alibi_core::store::UserStore;
 use alibi_core::{AuthUser, CreateUser};
 use alibi_seaorm::DatabaseConnection;
+use axum::{
+    Json, Router,
+    extract::{Query, State},
+    routing::get,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -31,9 +31,7 @@ impl alibi::plugins::anonymous::AnonymousIdentity for CallbackAnonymousIdentity 
 }
 struct ApplicationMetadata;
 #[async_trait::async_trait]
-impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
-    for ApplicationMetadata
-{
+impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for ApplicationMetadata {
     async fn before_create_user(
         &self,
         input: &mut CreateUser,

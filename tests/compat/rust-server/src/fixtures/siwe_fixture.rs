@@ -1,21 +1,12 @@
 //! Real EIP-191 and local ERC-1271 provider configurations of the public plugin.
 use crate::TestSchema;
-use async_trait::async_trait;
-use axum::{
-    Json, Router,
-    extract::State,
-    http::StatusCode,
-    routing::{get, post},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::siwe::{
     Eip191Verifier, EnsLookup, EnsProfile, SiweCallbackError, SiweCallbackResult, SiweConfig,
     SiweNonceProvider, SiwePlugin, SiweVerification, SiweVerifier, ethereum_message_hash,
 };
-use alibi::plugins::{
-    AdminPlugin, EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin,
-};
+use alibi::plugins::{AdminPlugin, EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin};
 use alibi::prelude::{CreateUser, UpdateUser};
 use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
 use alibi_core::AuthResponse;
@@ -23,6 +14,13 @@ use alibi_seaorm::sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr,
 };
 use alibi_seaorm::store::entities::{account, session, user, verification, wallet_address};
+use async_trait::async_trait;
+use axum::{
+    Json, Router,
+    extract::State,
+    http::StatusCode,
+    routing::{get, post},
+};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};

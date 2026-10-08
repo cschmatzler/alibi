@@ -1,17 +1,8 @@
 //! Actual application policies and scrypt callbacks at the public HTTP boundary.
 use crate::TestSchema;
-use async_trait::async_trait;
-use axum::{
-    Json, Router,
-    extract::Query,
-    response::IntoResponse,
-    routing::{get, post},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
-use alibi::plugins::email_otp::{
-    EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, SendEmailOtp,
-};
+use alibi::plugins::email_otp::{EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, SendEmailOtp};
 use alibi::plugins::email_verification::SendVerificationEmail;
 use alibi::plugins::password_management::SendResetPassword;
 use alibi::plugins::phone_number::{
@@ -30,6 +21,13 @@ use alibi_seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, QueryOrder, Set},
     store::entities::{account, session, user, verification},
+};
+use async_trait::async_trait;
+use axum::{
+    Json, Router,
+    extract::Query,
+    response::IntoResponse,
+    routing::{get, post},
 };
 use serde_json::{Value, json};
 use std::{

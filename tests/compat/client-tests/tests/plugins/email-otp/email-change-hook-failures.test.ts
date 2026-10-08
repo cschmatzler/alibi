@@ -76,7 +76,9 @@ compatScenario(
         expect(committed.sessions).toEqual(before.sessions);
         expect(committed.accounts).toEqual(before.accounts);
         expect(committed.user).toEqual(
-          stage === "before" ? before.user : { ...before.user!, email: target, emailVerified: true },
+          stage === "before"
+            ? before.user
+            : { ...before.user!, email: target, emailVerified: true },
         );
         const events = (await control()).events;
         expect(events.map((row) => row.stage)).toEqual(
@@ -93,19 +95,21 @@ compatScenario(
             method: "POST",
             marker,
           };
-          if (JSON.stringify(event.request) !== JSON.stringify(expectedRequest))
+          if (JSON.stringify(event.request) !== JSON.stringify(expectedRequest)) {
             mismatches.push({ stage, error, event });
+          }
         }
-        if (error === "coded")
+        if (error === "coded") {
           expect(failed.error).toMatchObject({
             code: "EMAIL_CHANGE_HOOK_VETO",
             message: "Application verification hook rejected",
           });
-        else if (
+        } else if (
           JSON.stringify(failed.error) !==
           JSON.stringify({ status: 500, statusText: "Internal Server Error" })
-        )
+        ) {
           mismatches.push({ stage, error, failure: failed.error });
+        }
         const authority = await actor.client.getSession();
         expect(authority.data?.session.id).toBe(before.sessions[0]!.id);
         expect(authority.data?.user.email).toBe(stage === "before" ? email : target);

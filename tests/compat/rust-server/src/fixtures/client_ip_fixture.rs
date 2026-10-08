@@ -1,6 +1,5 @@
 //! Actual configured IP policies and physical session observations.
 use crate::TestSchema;
-use axum::{Json, Router, routing::get};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::{
@@ -12,6 +11,7 @@ use alibi_core::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute};
 use alibi_seaorm::DatabaseConnection;
 use alibi_seaorm::sea_orm::{EntityTrait, QueryOrder};
 use alibi_seaorm::store::entities::session;
+use axum::{Json, Router, routing::get};
 use chrono::SecondsFormat;
 use serde_json::{Value, json};
 use std::sync::Arc;

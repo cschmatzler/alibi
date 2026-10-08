@@ -46,20 +46,21 @@ for (const mode of ["uuid", "serial", "custom", "false", "throw"] as const) {
         ["verification", after.verification],
       ] as const) {
         const id = String(rows[0].id);
-        if (mode === "uuid")
+        if (mode === "uuid") {
           expect(id).toMatch(
             /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
           );
-        else if (mode === "serial") expect(id).toBe("1");
+        } else if (mode === "serial") expect(id).toBe("1");
         else expect(id).toMatch(new RegExp(`^${model}_application_[1-4]$`));
       }
-      if (mode === "custom")
+      if (mode === "custom") {
         expect(after.events.map((e: any) => e.model).sort()).toEqual([
           "account",
           "session",
           "user",
           "verification",
         ]);
+      }
       let invitationPolicy: unknown;
       if (mode === "uuid" || mode === "serial") {
         const ownerOrg = orgActor(ctx, "owner", `id-strategy-${mode}`);

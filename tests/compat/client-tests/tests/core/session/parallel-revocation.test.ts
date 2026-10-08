@@ -27,13 +27,11 @@ compatScenario(
       }
       return false;
     };
-    const foreign = await ctx
-      .actor("parallel-foreign")
-      .client.signUp.email({
-        email: ctx.uniqueEmail("parallel-foreign"),
-        password: "password123",
-        name: "Foreign Revocation Owner",
-      });
+    const foreign = await ctx.actor("parallel-foreign").client.signUp.email({
+      email: ctx.uniqueEmail("parallel-foreign"),
+      password: "password123",
+      name: "Foreign Revocation Owner",
+    });
     expect(foreign.error).toBeNull();
     const foreignBefore = await ctx.readUserState({ userId: foreign.data!.user.id });
     const email = ctx.uniqueEmail("parallel-owner");
@@ -68,21 +66,23 @@ compatScenario(
         (await control("read")).events.filter((row) => row.stage === "started").length === 3,
     );
     const launchState = await control("read");
-    if (launched)
+    if (launched) {
       expect(
         launchState.events
           .filter((row) => row.stage === "started")
           .map((row) => row.token)
           .sort(),
       ).toEqual(siblings.map((row) => row.token).sort());
+    }
     await control("reject");
     const rejectedWhileHeld = await pauseUntil(async () => settled);
-    if (launched)
+    if (launched) {
       await pauseUntil(async () =>
         (await control("read")).events.some(
           (row) => row.stage === "completed" && row.token === completed!.token,
         ),
       );
+    }
     const beforeRelease = await readUserState(ctx, signup.data!.user.id);
     const eventsBeforeRelease = await control("read");
     const retainedBeforeRelease = beforeRelease.sessions.map((row) => row.token).sort();
@@ -128,27 +128,32 @@ compatScenario(
       (await readUserState(ctx, signup.data!.user.id)).sessions.map((row) => row.token),
     ).toEqual([signup.data!.token!]);
     const mismatches = [];
-    if (!launched)
+    if (!launched) {
       mismatches.push({
         contract: "all sibling deletes started while first is held",
         events: launchState,
       });
-    if (!rejectedWhileHeld)
+    }
+    if (!rejectedWhileHeld) {
       mismatches.push({ contract: "rejection completes before held deletion is released" });
-    if (JSON.stringify(retainedBeforeRelease) !== JSON.stringify(expectedBeforeRelease))
+    }
+    if (JSON.stringify(retainedBeforeRelease) !== JSON.stringify(expectedBeforeRelease)) {
       mismatches.push({
         contract: "independent completed deletion commits before release",
         retainedBeforeRelease,
       });
-    if (final.sessions.some((row) => row.token === completed!.token))
+    }
+    if (final.sessions.some((row) => row.token === completed!.token)) {
       mismatches.push({
         contract: "all successful sibling deletions remain committed after rejection",
       });
+    }
     if (
       JSON.stringify(failed.error) !==
       JSON.stringify({ status: 500, statusText: "Internal Server Error" })
-    )
+    ) {
       mismatches.push({ contract: "bare ordinary storage rejection", error: failed.error });
+    }
     expect(mismatches).toEqual([]);
     return ctx.snapshot({
       foreign,

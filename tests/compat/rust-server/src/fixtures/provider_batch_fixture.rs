@@ -146,15 +146,8 @@ fn factory(provider: &str, mode: &str, local: Option<&str>) -> OAuthProvider {
         }
         "roblox" => {
             let mut options = RobloxOptions::new(client, Some(secret.into()));
-            if mode.starts_with("prompt-") {
-                options.prompt = Some(
-                    if mode == "prompt-empty" {
-                        ""
-                    } else {
-                        &mode[7..]
-                    }
-                    .into(),
-                );
+            if let Some(prompt) = mode.strip_prefix("prompt-") {
+                options.prompt = Some(if mode == "prompt-empty" { "" } else { prompt }.into());
             }
             options.scope = configured(mode);
             options.disable_default_scope = mode == "disabled-configured";
@@ -509,7 +502,11 @@ impl OAuthRefreshTokenHandler for Refresh {
         Ok(OAuthTokenSet {
             access_token: Some("callback-access".into()),
             refresh_token: Some("callback-refresh".into()),
-            access_token_expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
+            // Match the application-owned callback deadline, not a factory clock.
+            access_token_expires_at: Some(
+                chrono::DateTime::from_timestamp(4_102_444_800, 0)
+                    .expect("valid application refresh deadline"),
+            ),
             scopes: vec!["callback-scope".into()],
             ..Default::default()
         })

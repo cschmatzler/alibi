@@ -66,8 +66,8 @@ compatScenario(
       return state;
     };
     await control("arm");
-    let settledA = false,
-      settledB = false;
+    let settledA = false;
+    let settledB = false;
     const pendingA = first.device({ query: { user_code: code.user_code } }).then((result) => {
       settledA = true;
       return result;

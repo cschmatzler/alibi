@@ -1,11 +1,5 @@
 //! Actual immutable built-in provider policies and local provider transport.
 use crate::TestSchema;
-use axum::{
-    Json, Router,
-    extract::State,
-    http::HeaderMap,
-    routing::{get, post},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::oauth::OAuthProvider;
@@ -23,6 +17,12 @@ use alibi_seaorm::sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set,
 };
 use alibi_seaorm::store::entities::{account, session, user};
+use axum::{
+    Json, Router,
+    extract::State,
+    http::HeaderMap,
+    routing::{get, post},
+};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -82,9 +82,10 @@ pub(crate) async fn router(
                     config.base_url
                 ));
             }
-            let policy = provider.authorization.as_mut().ok_or_else(|| {
-                alibi::AuthError::internal("Missing builtin fixture policy")
-            })?;
+            let policy = provider
+                .authorization
+                .as_mut()
+                .ok_or_else(|| alibi::AuthError::internal("Missing builtin fixture policy"))?;
             policy.disable_default_scopes = mode.starts_with("disabled");
             if mode == "configured" || mode == "disabled-configured" {
                 policy.configured_scopes.push("configured-scope".into());

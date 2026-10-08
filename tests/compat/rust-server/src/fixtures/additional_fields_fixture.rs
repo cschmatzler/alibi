@@ -3,11 +3,6 @@ use crate::additional_field_models::{
     ApplicationSchema, application_account, application_session, application_user,
 };
 use crate::backend::entities::verification;
-use axum::{
-    Json, Router,
-    extract::Query,
-    routing::{get, post},
-};
 use alibi::field_policy::{FieldConfig, FieldConfigs};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
@@ -24,10 +19,13 @@ use alibi_core::{
     store::{AdapterAfterHook, AdapterEvent, AuthStore},
     utils::json::JsValue,
 };
-use alibi_seaorm::sea_orm::{
-    ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement,
-};
+use alibi_seaorm::sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
 use alibi_seaorm::{DatabaseHooks, HookControl};
+use axum::{
+    Json, Router,
+    extract::Query,
+    routing::{get, post},
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
@@ -381,9 +379,7 @@ impl AuthPlugin<ApplicationSchema> for Application {
     ) -> AuthResult<alibi_core::AuthResponse> {
         if self.mode == "cached" {
             let snapshot =
-                alibi_core::session::cookie_cache::runtime::published_session_snapshot(
-                    request,
-                );
+                alibi_core::session::cookie_cache::runtime::published_session_snapshot(request);
             let record = snapshot
                 .as_ref()
                 .map(|snapshot| json!({"user":snapshot.user(),"session":snapshot.session()}));

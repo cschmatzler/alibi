@@ -24,11 +24,11 @@ compatScenario(
       .client.signUp.email({ email, name: "Proof Owner", password: "password123" });
     expect(signup.error).toBeNull();
     const before = await control();
-    const now = Math.floor(Date.now() / 1000);
     const secret = new TextEncoder().encode("compat-test-only-key-not-real-minimum-32chars");
     const token = (payload: Record<string, any>) =>
       new SignJWT(payload).setProtectedHeader({ alg: "HS256" }).sign(secret);
-    const valid = { email, iat: now, nbf: now - 60, exp: now + 3600 };
+    // Fixed application claims isolate type validation from independent wall clocks.
+    const valid = { email, iat: 946684800, nbf: 946684740, exp: 4102444800 };
     const guest = ctx.actor("guest", profile);
     let cookies: string[] = [];
     const denied = [];

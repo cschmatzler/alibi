@@ -1,6 +1,5 @@
 //! Real configured router policy, application hooks and ordinary SQL sessions.
 use crate::TestSchema;
-use axum::{Json, Router, routing::get};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
@@ -9,6 +8,7 @@ use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, BeforeRequestAction,
 };
 use alibi_seaorm::DatabaseConnection;
+use axum::{Json, Router, routing::get};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;

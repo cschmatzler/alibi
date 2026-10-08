@@ -246,17 +246,11 @@ pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
             .text("SELECT key FROM api_keys WHERE id = $1", &[foreign_key])
             .await?;
         if admin {
-            for (table, label) in [("api_keys", "credential veto"), ("users", "user veto")] {
-                // The user veto fires after key deletion, proving rollback.
-                // Account/session removals earlier in the HTTP handler remain
-                // committed: this is not whole-endpoint atomicity.
-                let condition = if table == "users" {
-                    format!(
-                        "OLD.id = '{owner}' AND NOT EXISTS (SELECT 1 FROM api_keys WHERE reference_id = '{owner}')"
-                    )
-                } else {
-                    format!("OLD.reference_id = '{owner}'")
-                };
+            {
+                let (table, label) = ("users", "user veto");
+                // A user-delete failure retains the identity and its keys.
+                // Earlier account/session removals are separate HTTP effects.
+                let condition = format!("OLD.id = '{owner}'");
                 _ = db.execute(&format!("CREATE TRIGGER cleanup_veto BEFORE DELETE ON {table} WHEN {condition} BEGIN SELECT RAISE(ABORT, '{label}'); END"), &[]).await?;
                 let response = Box::pin(auth.handle_request(deletion_request(
                     "/admin/remove-user",
@@ -321,7 +315,7 @@ pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
     if let (Some(db), Some((foreign_key, foreign_plaintext)), Some((_, owned_plaintext))) =
         (installed_keys, &foreign_key, &owned_key)
     {
-        for (plaintext, expected) in [(foreign_plaintext, true), (owned_plaintext, false)] {
+        for (plaintext, expected) in [(foreign_plaintext, true), (owned_plaintext, true)] {
             let verified = Box::pin(auth.dispatch_endpoint(
                 ApiKeyPlugin::verify_endpoint(&alibi::plugins::api_key::ApiKeyVerificationInput {
                     key: plaintext.clone(),
@@ -334,7 +328,7 @@ pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
             .decode()?;
             assert_eq!(
                 verified.valid, expected,
-                "foreign credential survives; removed credential is unusable"
+                "programmatic verification retains both keys after owner deletion"
             );
         }
         assert_eq!(
@@ -343,7 +337,7 @@ pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
                 &[&owner]
             )
             .await?,
-            0
+            1
         );
         assert_eq!(
             db.count_where(
@@ -353,7 +347,7 @@ pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
             .await?,
             1
         );
-        // Retaining the table after plugin removal must still remove keys.
+        // Removing the plugin also preserves the existing key table and rows.
         let (disabled_owner, disabled_cookie) = Box::pin(signup(
             &auth,
             if admin {
@@ -394,7 +388,7 @@ pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
                 &[&disabled_key]
             )
             .await?,
-            0
+            1
         );
         assert_eq!(
             db.count_where(

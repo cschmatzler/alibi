@@ -891,11 +891,12 @@ for (const name of [
         if (
           name === "email-verification-rate-limited" &&
           request?.headers.get("x-verification-sender-mode") === "fail"
-        )
+        ) {
           throw new APIError("TOO_MANY_REQUESTS", {
             code: "APPLICATION_MAIL_LIMIT",
             message: "Application mail limit reached",
           });
+        }
         if (name === "email-verification-failing-notifications") {
           throw new APIError("BAD_REQUEST", { message: "fixture delivery failed" });
         }
@@ -1029,18 +1030,21 @@ function passkeyExtensions(mode: string, registration: boolean) {
     registration
       ? { credProps: false, minPinLength: marker === "registration-marker" }
       : { appid: `https://extensions.fixture.test/${marker}/${path.split("/").at(-1)}` };
-  if (mode === "static")
+  if (mode === "static") {
     return registration ? { credProps: true } : { appid: "https://extensions.fixture.test/static" };
+  }
   return async ({ ctx }: any) => {
     await Promise.resolve();
-    if (mode === "coded")
+    if (mode === "coded") {
       throw new APIError("FORBIDDEN", {
         code: "EXTENSIONS_DENIED",
         message: "Application extensions rejected",
       });
+    }
     if (mode === "ordinary") throw new Error("Application extensions failed");
-    if (registration && !ctx.context.session?.user)
+    if (registration && !ctx.context.session?.user) {
       throw new Error("actual registration session required");
+    }
     return inputs(ctx.headers.get("x-extension-marker"), ctx.path);
   };
 }
@@ -1131,11 +1135,12 @@ async function emailChangeHook(
       : null,
   });
   if (emailChangeHookState.stage === stage) {
-    if (emailChangeHookState.error === "coded")
+    if (emailChangeHookState.error === "coded") {
       throw new APIError("FORBIDDEN", {
         code: "EMAIL_CHANGE_HOOK_VETO",
         message: "Application verification hook rejected",
       });
+    }
     throw new Error("Private verification hook failure");
   }
 }
@@ -1184,8 +1189,9 @@ function createOtpProfile(name: string) {
                     return `application:${Buffer.from([...Buffer.from(otp)].map((byte) => byte ^ 0x5a)).toString("hex")}`;
                   },
                   async decrypt(stored: string) {
-                    if (name.endsWith("failure"))
+                    if (name.endsWith("failure")) {
                       throw new Error("Application OTP decryption failed");
+                    }
                     return Buffer.from(
                       [...Buffer.from(stored.slice("application:".length), "hex")].map(
                         (byte) => byte ^ 0x5a,
@@ -1276,13 +1282,15 @@ for (const name of [
                 type: "custom-hasher",
                 hash: async (token: string) => {
                   await Promise.resolve();
-                  if (name.endsWith("-errors") && magicHasherMode === "coded")
+                  if (name.endsWith("-errors") && magicHasherMode === "coded") {
                     throw new APIError("FORBIDDEN", {
                       code: "MAGIC_HASH_REJECTED",
                       message: "Application hasher rejected",
                     });
-                  if (name.endsWith("-errors") && magicHasherMode === "ordinary")
+                  }
+                  if (name.endsWith("-errors") && magicHasherMode === "ordinary") {
                     throw new Error("Application hasher failed");
+                  }
                   return `application:${token}`;
                 },
               }
@@ -1297,11 +1305,12 @@ for (const name of [
                 generateToken: async (email: string) => {
                   await Promise.resolve();
                   magicGeneratorState.receipts.push(email);
-                  if (magicGeneratorState.mode === "coded")
+                  if (magicGeneratorState.mode === "coded") {
                     throw new APIError("FORBIDDEN", {
                       code: "MAGIC_GENERATOR_REJECTED",
                       message: "Application generator rejected",
                     });
+                  }
                   return `controlled-link-${email}`;
                 },
               }
@@ -1320,13 +1329,15 @@ for (const name of [
               metadata: metadata ?? null,
               ...(context ? { context } : {}),
             });
-            if (name === "magic-link-sender-coded")
+            if (name === "magic-link-sender-coded") {
               throw new APIError("FORBIDDEN", {
                 code: "MAGIC_DELIVERY_REJECTED",
                 message: "Application delivery rejected",
               });
-            if (name === "magic-link-sender-ordinary")
+            }
+            if (name === "magic-link-sender-ordinary") {
               throw new Error("Application delivery failed");
+            }
           },
         }),
       ],
@@ -2155,11 +2166,11 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
             .query("SELECT * FROM team WHERE id=?")
             .get(body.teamId) as Record<string, unknown>;
           teamStorageBackups.set(body.teamId, original);
-          if (typeof body.organizationId === "string")
+          if (typeof body.organizationId === "string") {
             database
               .query("UPDATE team SET organizationId=? WHERE id=?")
               .run(body.organizationId, body.teamId);
-          else database.query("DELETE FROM team WHERE id=?").run(body.teamId);
+          } else database.query("DELETE FROM team WHERE id=?").run(body.teamId);
         }
         return jsonResponse({ changed: true });
       }
@@ -2839,13 +2850,16 @@ const server = Bun.serve({
         return organizationMemberRoleFixture.state(url.searchParams.get("waitFor"));
       }
       for (const [profile, auth] of sessionAdapterFailureFixture.profiles) {
-        if (url.pathname.startsWith(`/__test/profiles/${profile}/api/auth/`))
+        if (url.pathname.startsWith(`/__test/profiles/${profile}/api/auth/`)) {
           return auth.handler(request);
+        }
       }
-      if (url.pathname === "/__test/session-adapter-failure" && request.method === "POST")
+      if (url.pathname === "/__test/session-adapter-failure" && request.method === "POST") {
         return sessionAdapterFailureFixture.control(await request.json());
-      if (url.pathname === "/__test/verification-sender-calls")
+      }
+      if (url.pathname === "/__test/verification-sender-calls") {
         return Response.json({ calls: verificationSenderCalls });
+      }
       for (const [name, auth] of twoFactorPendingLookupFixture.profiles) {
         if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return auth.handler(request);
@@ -2913,8 +2927,9 @@ const server = Bun.serve({
         }
       }
 
-      if (url.pathname === "/__test/device-callback-events")
+      if (url.pathname === "/__test/device-callback-events") {
         return jsonResponse(deviceCallbackEvents.splice(0));
+      }
       if (url.pathname === "/__test/device-state" && request.method === "GET") {
         const deviceCode = url.searchParams.get("deviceCode");
         if (deviceCode === null) {
@@ -3373,20 +3388,23 @@ const server = Bun.serve({
       if (url.pathname === "/__test/magic-link" && request.method === "GET") {
         return jsonResponse(magicLinkOutbox.get(url.searchParams.get("email") ?? "") ?? null);
       }
-      if (url.pathname === "/__test/phone-notifications")
+      if (url.pathname === "/__test/phone-notifications") {
         return Response.json(
           phoneFixture.notificationControl(
             request.method === "POST" ? (await request.json()).operation : undefined,
           ),
         );
-      if (url.pathname === "/__test/phone-validator-events")
+      }
+      if (url.pathname === "/__test/phone-validator-events") {
         return Response.json(phoneFixture.validatorEvents);
-      if (url.pathname === "/__test/custom-session-work")
+      }
+      if (url.pathname === "/__test/custom-session-work") {
         return Response.json(
           customSessionFixture.control(
             request.method === "POST" ? await request.json() : undefined,
           ),
         );
+      }
       if (url.pathname === "/__test/phone-otp" && request.method === "GET") {
         return jsonResponse(
           phoneFixture.outbox.get(
@@ -3568,6 +3586,7 @@ const server = Bun.serve({
         bearerFixture.reset();
         twoFactorPolicyFixture.reset();
         twoFactorOtpFixture.reset();
+        await rateLimitFixture.reset();
         await resetDatabaseState();
         emailOtpOutbox.clear();
         magicLinkOutbox.clear();

@@ -1,12 +1,5 @@
 //! Genuine application callbacks, barriers, and actual SQLite failure controls.
 use crate::TestSchema;
-use async_trait::async_trait;
-use axum::{
-    Json, Router,
-    extract::Query,
-    http::StatusCode,
-    routing::{get, post},
-};
 use alibi::plugins::organization::{
     MembershipLimit, OrganizationConfig, OrganizationInvitationAcceptanceContext,
     OrganizationInvitationAcceptanceHooks, OrganizationInvitationAcceptedContext, TeamsConfig,
@@ -20,6 +13,13 @@ use alibi::{
 use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
+use async_trait::async_trait;
+use axum::{
+    Json, Router,
+    extract::Query,
+    http::StatusCode,
+    routing::{get, post},
 };
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
@@ -192,7 +192,8 @@ impl Application {
     }
     async fn configure(&self, input: Value) -> AuthResult<Value> {
         self.reset().await;
-        *self.replacement_team_id.lock().await = input["replacementTeamId"].as_str().map(str::to_owned);
+        *self.replacement_team_id.lock().await =
+            input["replacementTeamId"].as_str().map(str::to_owned);
         *self.mode.lock().await = input["mode"].as_str().unwrap_or("record").into();
         for name in [
             "invitation_stage_member",
@@ -276,8 +277,20 @@ impl OrganizationInvitationAcceptanceHooks for Application {
         }
         self.note("before-accept",json!({"invitation":context.invitation,"user":context.user,"organization":context.organization})).await?;
         if *self.mode.lock().await == "replace-team" {
-            let team_id = self.replacement_team_id.lock().await.clone().ok_or_else(|| AuthError::internal("replacement team required"))?;
-            self.database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite, "UPDATE invitation SET team_id=? WHERE id=?", vec![team_id.into(), context.invitation.id.clone().into()])).await.map_err(|e| AuthError::internal(e.to_string()))?;
+            let team_id = self
+                .replacement_team_id
+                .lock()
+                .await
+                .clone()
+                .ok_or_else(|| AuthError::internal("replacement team required"))?;
+            self.database
+                .execute_raw(Statement::from_sql_and_values(
+                    DbBackend::Sqlite,
+                    "UPDATE invitation SET team_id=? WHERE id=?",
+                    vec![team_id.into(), context.invitation.id.clone().into()],
+                ))
+                .await
+                .map_err(|e| AuthError::internal(e.to_string()))?;
         }
         if *self.mode.lock().await == "pause-before" {
             let (sender, receiver) = oneshot::channel();

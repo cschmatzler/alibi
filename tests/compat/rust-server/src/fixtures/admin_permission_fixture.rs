@@ -1,10 +1,5 @@
 //! Actual immutable admin role policy configurations.
 use crate::TestSchema;
-use axum::{
-    Json, Router,
-    extract::{Query, State},
-    routing::{get, post},
-};
 use alibi::__private_core::store::{AccountStore, SessionStore, UserStore};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
@@ -17,15 +12,18 @@ use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
 };
+use axum::{
+    Json, Router,
+    extract::{Query, State},
+    routing::{get, post},
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 
 struct ApplicationDateErrors;
 #[async_trait::async_trait]
-impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
-    for ApplicationDateErrors
-{
+impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for ApplicationDateErrors {
     async fn before_update_user(
         &self,
         _id: &str,
@@ -215,9 +213,7 @@ async fn set_timestamps(
         ))
         .await
         .map_err(|error| {
-            alibi::AuthError::Database(alibi_core::DatabaseError::Query(
-                error.to_string(),
-            ))
+            alibi::AuthError::Database(alibi_core::DatabaseError::Query(error.to_string()))
         })?;
     if result.rows_affected() != 1 {
         return Err(alibi::AuthError::NotFound("user required".into()));
@@ -230,9 +226,7 @@ async fn set_timestamps(
         ))
         .await
         .map_err(|error| {
-            alibi::AuthError::Database(alibi_core::DatabaseError::Query(
-                error.to_string(),
-            ))
+            alibi::AuthError::Database(alibi_core::DatabaseError::Query(error.to_string()))
         })?
         .ok_or(alibi::AuthError::UserNotFound)?;
     Ok(Json(json!({

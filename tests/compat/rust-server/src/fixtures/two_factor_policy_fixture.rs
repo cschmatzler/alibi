@@ -1,5 +1,4 @@
 use crate::TestSchema;
-use axum::{Json, Router, body::Bytes, http::StatusCode, response::IntoResponse, routing::post};
 use alibi::{
     AuthBuilder, AuthConfig, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
@@ -21,6 +20,7 @@ use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
 };
+use axum::{Json, Router, body::Bytes, http::StatusCode, response::IntoResponse, routing::post};
 use chrono::{Duration, Utc};
 use serde_json::json;
 use std::{collections::HashMap, sync::Arc};
@@ -53,9 +53,7 @@ struct RejectSessionCreate {
     ordinary: bool,
 }
 #[async_trait::async_trait]
-impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
-    for RejectSessionCreate
-{
+impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for RejectSessionCreate {
     async fn before_create_session(
         &self,
         _session: &mut alibi_core::CreateSession,
@@ -73,9 +71,7 @@ impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
             }
             if self.ordinary {
                 return Err(alibi_core::AuthError::CallbackFailure(Box::new(
-                    alibi_core::AuthError::internal(
-                        "session creation cancelled by database hook",
-                    ),
+                    alibi_core::AuthError::internal("session creation cancelled by database hook"),
                 )));
             }
             return Err(alibi_core::AuthError::forbidden(

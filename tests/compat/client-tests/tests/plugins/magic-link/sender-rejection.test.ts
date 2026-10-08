@@ -49,11 +49,12 @@ for (const mode of ["coded", "ordinary"] as const) {
       expect(after).toMatchObject({ proofCount: 0, userCount: 1, sessionCount: 1 });
       const replay = await actor.client.magicLink.verify({ query: { token: delivered.token } });
       expect(replay.error).not.toBeNull();
-      if (mode === "coded")
+      if (mode === "coded") {
         expect(denied.error).toMatchObject({
           code: "MAGIC_DELIVERY_REJECTED",
           message: "Application delivery rejected",
         });
+      }
       return ctx.snapshot({
         before,
         denied,
