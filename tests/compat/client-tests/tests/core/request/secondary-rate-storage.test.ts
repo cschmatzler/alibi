@@ -123,8 +123,9 @@ compatScenario(
           status: 500,
           statusText: "Internal Server Error",
         })
-      )
+      ) {
         mismatches.push({ mode, error: failed.error });
+      }
       const disabled = await signUp(`atomic-${mode}-disabled`, ip, true);
       expect(disabled.error).toBeNull();
       expect(disabled.data?.user.email).toBe(ctx.uniqueEmail(`atomic-${mode}-disabled`));

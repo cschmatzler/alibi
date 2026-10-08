@@ -1,15 +1,18 @@
 //! Public authentication requests with the genuine enabled limiter.
 use crate::{TestSchema, otp_profiles};
-use axum::{Json, routing::{get, post}};
-use alibi_core::store::SchemaMigrator;
-use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
-use serde_json::{Value, json};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::{EndpointRateLimit, RateLimitConfig, RateLimitResolver, RateLimitRule};
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use alibi_core::store::SchemaMigrator;
 use alibi_seaorm::DatabaseConnection;
+use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
 use axum::Router;
+use axum::{
+    Json,
+    routing::{get, post},
+};
+use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};
 
 #[derive(Clone)]
@@ -155,15 +158,35 @@ struct CustomQuota {
 }
 #[async_trait::async_trait]
 impl alibi_core::RateLimitStorage for CustomQuota {
-    async fn consume(&self, key: &str, rule: &EndpointRateLimit) -> AuthResult<alibi_core::RateLimitDecision> {
-        if self.failure.load(std::sync::atomic::Ordering::SeqCst) {return Err(alibi::AuthError::internal("Application quota storage failed"));}
+    async fn consume(
+        &self,
+        key: &str,
+        rule: &EndpointRateLimit,
+    ) -> AuthResult<alibi_core::RateLimitDecision> {
+        if self.failure.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(alibi::AuthError::internal(
+                "Application quota storage failed",
+            ));
+        }
         let now = chrono::Utc::now().timestamp_millis();
         let mut rows = self.rows.lock().unwrap();
-        if let Some((count,last)) = rows.get(key).filter(|(_,last)| ((now-*last) as f64) < rule.window_seconds*1000.0) {
-            if f64::from(*count) >= rule.max_requests {return Ok(alibi_core::RateLimitDecision::Blocked {retry_after: (((*last as f64)+rule.window_seconds*1000.0-(now as f64))/1000.0).ceil()});}
+        if let Some((count, last)) = rows
+            .get(key)
+            .filter(|(_, last)| ((now - *last) as f64) < rule.window_seconds * 1000.0)
+        {
+            if f64::from(*count) >= rule.max_requests {
+                return Ok(alibi_core::RateLimitDecision::Blocked {
+                    retry_after: (((*last as f64) + rule.window_seconds * 1000.0 - (now as f64))
+                        / 1000.0)
+                        .ceil(),
+                });
+            }
         }
-        let count = rows.get(key).filter(|(_,last)| ((now-*last) as f64) < rule.window_seconds*1000.0).map_or(1, |(count,_)| count+1);
-        rows.insert(key.into(),(count,now));
+        let count = rows
+            .get(key)
+            .filter(|(_, last)| ((now - *last) as f64) < rule.window_seconds * 1000.0)
+            .map_or(1, |(count, _)| count + 1);
+        rows.insert(key.into(), (count, now));
         Ok(alibi_core::RateLimitDecision::Allowed)
     }
 }
@@ -175,7 +198,9 @@ pub(crate) async fn router(
     #[cfg(feature = "seaorm")]
     let storage = Arc::new(alibi_seaorm::SeaOrmRateLimitStorage::new(database.clone()));
     #[cfg(not(feature = "seaorm"))]
-    let storage = Arc::new(alibi_sqlx::SqlxRateLimitStorage::new(alibi_sqlx::SqlxPool::from(database.get_sqlite_connection_pool().clone())));
+    let storage = Arc::new(alibi_sqlx::SqlxRateLimitStorage::new(
+        alibi_sqlx::SqlxPool::from(database.get_sqlite_connection_pool().clone()),
+    ));
     storage.migrate().await?;
     let control_database = database.clone();
     let read_database = database.clone();
@@ -186,14 +211,24 @@ pub(crate) async fn router(
             Json(rows.into_iter().map(|row| json!({"key": row.try_get::<String>("", "key").unwrap(), "count": row.try_get::<f64>("", "count").unwrap(), "lastRequest": row.try_get::<i64>("", "last_request").unwrap()})).collect::<Vec<_>>())
         }
     }));
-    router = router.route("/__test/rate-database-control", post(move |Json(body): Json<Value>| {
-        let database = control_database.clone();
-        async move {
-            let sql = if body["action"] == "disable" { "ALTER TABLE rate_limit RENAME TO fixtureRateLimitHeld" } else { "ALTER TABLE fixtureRateLimitHeld RENAME TO rate_limit" };
-            database.execute_raw(Statement::from_string(DbBackend::Sqlite, sql)).await.unwrap();
-            Json(json!({"status": true}))
-        }
-    }));
+    router = router.route(
+        "/__test/rate-database-control",
+        post(move |Json(body): Json<Value>| {
+            let database = control_database.clone();
+            async move {
+                let sql = if body["action"] == "disable" {
+                    "ALTER TABLE rate_limit RENAME TO fixtureRateLimitHeld"
+                } else {
+                    "ALTER TABLE fixtureRateLimitHeld RENAME TO rate_limit"
+                };
+                database
+                    .execute_raw(Statement::from_string(DbBackend::Sqlite, sql))
+                    .await
+                    .unwrap();
+                Json(json!({"status": true}))
+            }
+        }),
+    );
     let custom = Arc::new(CustomQuota::default());
     let cache = Arc::new(alibi_core::MemoryCacheAdapter::new());
     let application = CounterApplication {
@@ -223,7 +258,10 @@ pub(crate) async fn router(
             if name == "ordered" { 1 } else { 10000 },
         );
         if name.starts_with("database-") {
-            limits = limits.storage(storage.clone()).endpoint("/get-session", Duration::from_secs(1), 2);
+            limits =
+                limits
+                    .storage(storage.clone())
+                    .endpoint("/get-session", Duration::from_secs(1), 2);
         }
         if name.contains("secondary") {
             limits = limits.storage(Arc::new(alibi_core::CacheRateLimitStorage::new(
@@ -240,7 +278,9 @@ pub(crate) async fn router(
         }
         if name.starts_with("custom") {
             limits = limits.endpoint("/get-session", Duration::from_secs(1), 2);
-            if name == "custom" {limits = limits.storage(custom.clone());}
+            if name == "custom" {
+                limits = limits.storage(custom.clone());
+            }
         }
         if name == "secondary-failure" {
             limits = limits
@@ -278,22 +318,60 @@ pub(crate) async fn router(
         if name == "secondary-failure" {
             // The reference fixture awaits this public handler inside its outer
             // host catch. Preserve that host boundary for propagated quota errors.
-            let mounted: Router<Arc<BetterAuth<TestSchema>>> = Router::new().fallback(move |axum::extract::OriginalUri(uri): axum::extract::OriginalUri, request: axum::extract::Request| {
-                let auth=auth.clone();async move {
-                    use axum::response::IntoResponse;
-                    let (parts,body)=request.into_parts();
-                    let method=match parts.method.as_str() {"POST"=>alibi_core::HttpMethod::Post,"GET"=>alibi_core::HttpMethod::Get,_=>alibi_core::HttpMethod::Options};
-                    let headers=parts.headers.iter().filter_map(|(name,value)|value.to_str().ok().map(|value|(name.to_string(),value.to_owned()))).collect();
-                    let bytes=axum::body::to_bytes(body,1024*1024).await.unwrap();
-                    let query=url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes()).map(|(name,value)|(name.into_owned(),value.into_owned())).collect();
-                    let request=alibi_core::AuthRequest::from_parts(method,uri.path().to_owned(),headers,(!bytes.is_empty()).then(||bytes.to_vec()),query);
-                    match auth.handle_request(request).await {
-                        Ok(result)=>{let mut response=axum::response::Response::builder().status(result.status);for (name,value) in result.headers {response=response.header(name,value);}response.body(axum::body::Body::from(result.body)).unwrap()},
-                        Err(_)=>(axum::http::StatusCode::INTERNAL_SERVER_ERROR,[("content-type","application/json;charset=utf-8")],Json(json!({"message":"Internal server error"}))).into_response(),
+            let mounted: Router<Arc<BetterAuth<TestSchema>>> = Router::new().fallback(
+                move |axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
+                      request: axum::extract::Request| {
+                    let auth = auth.clone();
+                    async move {
+                        use axum::response::IntoResponse;
+                        let (parts, body) = request.into_parts();
+                        let method = match parts.method.as_str() {
+                            "POST" => alibi_core::HttpMethod::Post,
+                            "GET" => alibi_core::HttpMethod::Get,
+                            _ => alibi_core::HttpMethod::Options,
+                        };
+                        let headers = parts
+                            .headers
+                            .iter()
+                            .filter_map(|(name, value)| {
+                                value
+                                    .to_str()
+                                    .ok()
+                                    .map(|value| (name.to_string(), value.to_owned()))
+                            })
+                            .collect();
+                        let bytes = axum::body::to_bytes(body, 1024 * 1024).await.unwrap();
+                        let query =
+                            url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes())
+                                .map(|(name, value)| (name.into_owned(), value.into_owned()))
+                                .collect();
+                        let request = alibi_core::AuthRequest::from_parts(
+                            method,
+                            uri.path().to_owned(),
+                            headers,
+                            (!bytes.is_empty()).then(|| bytes.to_vec()),
+                            query,
+                        );
+                        match auth.handle_request(request).await {
+                            Ok(result) => {
+                                let mut response =
+                                    axum::response::Response::builder().status(result.status);
+                                for (name, value) in result.headers {
+                                    response = response.header(name, value);
+                                }
+                                response.body(axum::body::Body::from(result.body)).unwrap()
+                            }
+                            Err(_) => (
+                                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                                [("content-type", "application/json;charset=utf-8")],
+                                Json(json!({"message":"Internal server error"})),
+                            )
+                                .into_response(),
+                        }
                     }
-                }
-            });
-            router=router.nest(&path,mounted);
+                },
+            );
+            router = router.nest(&path, mounted);
         } else {
             router = router.nest(&path, auth.clone().axum_router().with_state(auth));
         }
