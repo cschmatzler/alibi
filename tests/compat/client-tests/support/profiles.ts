@@ -1141,6 +1141,7 @@ export const FIXTURE_PROFILES = [
   "magic-link-hashed",
   "magic-link-hashed-custom-token",
   "magic-link-custom-hasher",
+  "magic-link-custom-hasher-errors",
   "magic-link-generator-reject",
   "magic-link-sender-coded",
   "magic-link-sender-ordinary",
