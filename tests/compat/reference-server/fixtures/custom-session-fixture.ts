@@ -4,9 +4,12 @@ import { customSession, jwt, multiSession } from "better-auth/plugins";
 
 export function createCustomSessionFixture(base: BetterAuthOptions) {
   let counter = 0;
+  const calls = new Map<string, number>();
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
 
   for (const name of [
+    "custom-session-list-default",
+    "custom-session-list-false",
     "custom-session",
     "custom-session-jwt",
     "custom-session-deferred",
@@ -52,6 +55,8 @@ export function createCustomSessionFixture(base: BetterAuthOptions) {
         plugins: [
           customSession(
             async (session, ctx) => {
+              const count = (calls.get(name) ?? 0) + 1;
+              calls.set(name, count);
               const mode = ctx.headers?.get("x-custom-session");
 
               if (mode === "error") {
@@ -81,11 +86,18 @@ export function createCustomSessionFixture(base: BetterAuthOptions) {
 
               return {
                 ...session,
-                application: { userId: stored.id, label: stored.name, path: ctx.path },
+                application: {
+                  userId: stored.id,
+                  label: stored.name,
+                  path: ctx.path,
+                  ...(name.startsWith("custom-session-list-") ? { calls: count } : {}),
+                },
               };
             },
             undefined,
-            { shouldMutateListDeviceSessionsEndpoint: true },
+            name === "custom-session-list-default"
+              ? undefined
+              : { shouldMutateListDeviceSessionsEndpoint: name !== "custom-session-list-false" },
           ),
           multiSession(),
           ...(name.endsWith("-jwt") || name.endsWith("-deferred") ? [jwt()] : []),
@@ -98,6 +110,7 @@ export function createCustomSessionFixture(base: BetterAuthOptions) {
     profiles,
     reset() {
       counter = 0;
+      calls.clear();
     },
   };
 }
