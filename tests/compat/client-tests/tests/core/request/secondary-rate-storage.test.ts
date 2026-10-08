@@ -88,6 +88,7 @@ compatScenario(
       expect(response.status).toBe(200);
       return response.json();
     };
+    const wire: { status: number; cookies: string[] }[] = [];
     const signUp = (name: string, ip: string, bypass = false) =>
       ctx.actor(name, profile).client.signUp.email({
         email: ctx.uniqueEmail(name),
@@ -95,6 +96,9 @@ compatScenario(
         name,
         fetchOptions: {
           headers: { "x-forwarded-for": ip, ...(bypass ? { "x-rate-bypass": "yes" } : {}) },
+          onResponse: ({ response }) => {
+            wire.push({ status: response.status, cookies: response.headers.getSetCookie() });
+          },
         },
       });
     const observations = [];
@@ -106,6 +110,7 @@ compatScenario(
       const failed = await signUp(`atomic-${mode}-blocked`, ip);
       expect(failed.data).toBeNull();
       expect(failed.error?.status).toBe(500);
+      expect(wire.at(-1)).toEqual({ status: 500, cookies: [] });
       expect(await physical()).toEqual(before);
       const failedCalls = await control();
       expect(failedCalls.events).toEqual(mode === "missing" ? [] : ["increment"]);
@@ -134,6 +139,7 @@ compatScenario(
         message: "Too many requests. Please try again later.",
       });
       expect(rejected.data).toBeNull();
+      expect(wire.at(-1)).toEqual({ status: 429, cookies: [] });
       expect(await physical()).toEqual(quotaBefore);
       observations.push({
         mode,
@@ -147,7 +153,7 @@ compatScenario(
       });
     }
     expect(mismatches).toEqual([]);
-    return ctx.snapshot(observations);
+    return ctx.snapshot({ observations, wire });
   },
   ["POST /sign-up/email"],
 );
