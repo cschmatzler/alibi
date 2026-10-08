@@ -32,7 +32,9 @@ where
         let now = Utc::now();
         let start = input
             .start
-            .map(|start| ApiKeyStart::prepare(start, self.connection().get_database_backend()))
+            .map(|start| {
+                ApiKeyStart::prepare(start, self.scoped_connection().get_database_backend())
+            })
             .transpose()?;
         let sqlite_cast = start
             .as_ref()
@@ -83,9 +85,9 @@ where
                 .query()
                 .select_from(values)
                 .map_err(|error| AuthError::internal(error.to_string()))?;
-            insert.exec_with_returning(self.connection()).await
+            insert.exec_with_returning(self.scoped_connection()).await
         } else {
-            model.insert(self.connection()).await
+            model.insert(self.scoped_connection()).await
         };
         inserted
             .map(|model| ApiKey::from(&model))
@@ -94,7 +96,7 @@ where
 
     async fn get_api_key_by_id(&self, id: &str) -> AuthResult<Option<ApiKey>> {
         Entity::find_by_id(id.to_owned())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map(|model| model.map(|model| ApiKey::from(&model)))
             .map_err(map_db_err)
@@ -103,7 +105,7 @@ where
     async fn get_api_key_by_hash(&self, hash: &str) -> AuthResult<Option<ApiKey>> {
         Entity::find()
             .filter(Column::KeyHash.eq(hash))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map(|model| model.map(|model| ApiKey::from(&model)))
             .map_err(map_db_err)
@@ -115,7 +117,7 @@ where
         Entity::find()
             .filter(Column::ReferenceId.eq(reference_id))
             .order_by_asc(Column::CreatedAt)
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map(|models| models.iter().map(ApiKey::from).collect())
             .map_err(map_db_err)
@@ -123,7 +125,7 @@ where
 
     async fn update_api_key(&self, id: &str, update: UpdateApiKey) -> AuthResult<ApiKey> {
         let Some(model) = Entity::find_by_id(id.to_owned())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
         else {
@@ -132,7 +134,7 @@ where
 
         let active = apply_update_fields(model.into_active_model(), update)?;
         active
-            .update(self.connection())
+            .update(self.scoped_connection())
             .await
             .map(|model_2| ApiKey::from(&model_2))
             .map_err(map_db_err)
@@ -150,7 +152,7 @@ where
     ) -> AuthResult<ConsumeApiKeyResult> {
         // SQLite must acquire its write reservation before reading usage counters.
         let transaction = self
-            .connection()
+            .scoped_connection()
             .begin_with_options(TransactionOptions {
                 sqlite_transaction_mode: Some(SqliteTransactionMode::Immediate),
                 ..Default::default()
@@ -246,7 +248,7 @@ where
 
     async fn delete_api_key(&self, id: &str) -> AuthResult<()> {
         Entity::delete_by_id(id.to_owned())
-            .exec(self.connection())
+            .exec(self.scoped_connection())
             .await
             .map(|_| ())
             .map_err(map_db_err)
@@ -258,7 +260,7 @@ where
         Entity::delete_many()
             .filter(Column::ExpiresAt.is_not_null())
             .filter(Column::ExpiresAt.lt(Utc::now()))
-            .exec(self.connection())
+            .exec(self.scoped_connection())
             .await
             .map_err(map_db_err)
             .and_then(|result| {

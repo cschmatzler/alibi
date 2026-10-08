@@ -59,6 +59,7 @@ pub(super) fn default_roles() -> HashMap<String, RolePermissions> {
                         "impersonate",
                         "delete",
                         "set-password",
+                        "set-email",
                         "get",
                         "update",
                     ],

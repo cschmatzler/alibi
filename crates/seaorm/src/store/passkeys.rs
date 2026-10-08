@@ -48,13 +48,13 @@ where
 #[async_trait]
 impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
     async fn create_passkey(&self, input: CreatePasskey) -> AuthResult<Passkey> {
-        self.create_passkey_with_connection(self.connection(), input)
+        self.create_passkey_with_connection(self.scoped_connection(), input)
             .await
     }
 
     async fn get_passkey_by_id(&self, id: &str) -> AuthResult<Option<Passkey>> {
         Entity::find_by_id(id.to_owned())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map(|model| model.map(|model| Passkey::from(&model)))
             .map_err(map_db_err)
@@ -66,7 +66,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
     ) -> AuthResult<Option<Passkey>> {
         Entity::find()
             .filter(Column::CredentialId.eq(credential_id))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map(|model| model.map(|model| Passkey::from(&model)))
             .map_err(map_db_err)
@@ -75,7 +75,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
     async fn list_passkeys_by_user(&self, user_id: &str) -> AuthResult<Vec<Passkey>> {
         Entity::find()
             .filter(Column::UserId.eq(user_id))
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map(|models| models.iter().map(Passkey::from).collect())
             .map_err(map_db_err)
@@ -87,7 +87,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
         update: UpdatePasskeyAuthentication,
     ) -> AuthResult<Option<Passkey>> {
         let Some(model) = Entity::find_by_id(id.to_owned())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
         else {
@@ -102,7 +102,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
         active.credential = Set(update.credential);
         active.updated_at = Set(Utc::now());
         active
-            .update(self.connection())
+            .update(self.scoped_connection())
             .await
             .map(|model_2| Some(Passkey::from(&model_2)))
             .map_err(map_db_err)
@@ -110,7 +110,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
 
     async fn update_passkey_name(&self, id: &str, name: &str) -> AuthResult<Passkey> {
         let Some(model) = Entity::find_by_id(id.to_owned())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
         else {
@@ -121,7 +121,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
         active.name = Set(Some(name.to_owned()));
         active.updated_at = Set(Utc::now());
         active
-            .update(self.connection())
+            .update(self.scoped_connection())
             .await
             .map(|model_2| Passkey::from(&model_2))
             .map_err(map_db_err)
@@ -129,7 +129,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
 
     async fn delete_passkey(&self, id: &str) -> AuthResult<()> {
         Entity::delete_by_id(id.to_owned())
-            .exec(self.connection())
+            .exec(self.scoped_connection())
             .await
             .map(|_| ())
             .map_err(map_db_err)

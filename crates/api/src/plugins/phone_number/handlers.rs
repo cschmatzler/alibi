@@ -125,7 +125,13 @@ impl PhoneNumberPlugin {
                     },
                     &alibi_core::CallbackContext::new(ctx, request),
                 )
-                .await?
+                .await
+                .map_err(|error| match error {
+                    AuthError::Api { .. }
+                    | AuthError::Upstream { .. }
+                    | AuthError::CallbackFailure(_) => error,
+                    error => AuthError::CallbackFailure(Box::new(error)),
+                })?
             {
                 return Err(invalid_otp());
             }
@@ -158,7 +164,7 @@ impl PhoneNumberPlugin {
             .verifications()
             .consume(identifier)
             .await?
-            .ok_or_else(invalid_otp)?;
+            .ok_or_else(|| phone_error(400, "OTP_NOT_FOUND", "OTP not found"))?;
         let (code, attempts_2) = split_code(consumed.value()?);
         if super::super::passwordless_numeric::attempts_number(attempts_2)
             >= self.config.allowed_attempts
@@ -210,7 +216,13 @@ impl PhoneNumberPlugin {
             },
             alibi_core::AwaitedNotificationErrorPolicy::Propagate,
         )
-        .await?;
+        .await
+        .map_err(|error| match error {
+            AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => {
+                error
+            }
+            error => AuthError::CallbackFailure(Box::new(error)),
+        })?;
         AuthResponse::json(200, &json!({"message":"code sent"})).map_err(AuthError::from)
     }
     #[expect(
@@ -267,6 +279,7 @@ impl PhoneNumberPlugin {
             .ok_or_else(invalid_credentials)?;
         let stored = account
             .password()
+            .filter(|hash| !hash.is_empty())
             .ok_or_else(|| phone_error(401, "UNEXPECTED_ERROR", "Unexpected error"))?;
         alibi_core::utils::password::verify_password(
             settings.hasher.as_ref(),

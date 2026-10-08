@@ -8,6 +8,7 @@ pub use account::AccountLinkingConfig;
 pub use account::OAuthStateStrategy;
 pub use advanced::AdvancedConfig;
 pub use advanced::AdvancedDatabaseConfig;
+pub use advanced::TwoFactorDatabaseConfig;
 pub use advanced::CookieAttributes;
 pub use advanced::CookieOverride;
 pub use advanced::CrossSubDomainConfig;
