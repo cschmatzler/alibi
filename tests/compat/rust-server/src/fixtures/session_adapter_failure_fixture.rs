@@ -2,7 +2,7 @@
 use crate::TestSchema;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
-use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::plugins::{DeviceAuthorizationPlugin, EmailPasswordPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, AuthSchema};
 use alibi_core::store::*;
 use alibi_core::types::*;
@@ -15,9 +15,34 @@ struct State {
     mode: String,
     events: Vec<String>,
 }
+struct DeviceApplication {
+    selector: Mutex<(String, String)>,
+    events: Mutex<Vec<Value>>,
+    first: tokio::sync::watch::Sender<bool>,
+}
+impl Default for DeviceApplication {
+    fn default() -> Self {
+        Self {
+            selector: Mutex::new((String::new(), String::new())),
+            events: Mutex::new(Vec::new()),
+            first: tokio::sync::watch::channel(true).0,
+        }
+    }
+}
+async fn wait_device_gate(signal: &tokio::sync::watch::Sender<bool>) -> AuthResult<()> {
+    let mut receiver = signal.subscribe();
+    while !*receiver.borrow_and_update() {
+        receiver
+            .changed()
+            .await
+            .map_err(|error| AuthError::internal(error.to_string()))?;
+    }
+    Ok(())
+}
 struct ApplicationStore {
     inner: Arc<dyn AuthStore<TestSchema>>,
     state: Arc<Mutex<State>>,
+    device: Arc<DeviceApplication>,
 }
 impl ApplicationStore {
     fn check(&self, operation: &str) -> AuthResult<()> {
@@ -158,16 +183,66 @@ forward!(SessionStore<TestSchema> {
     async fn update_session_active_organization( &self, token: &str, organization_id: Option<&str> ) -> AuthResult<<TestSchema as AuthSchema>::Session>;
 });
 
-forward!(DeviceCodeStore {
-    async fn create_device_code(&self, input: CreateDeviceCode) -> AuthResult<DeviceCode>;
-    async fn get_device_code_by_device_code( &self, device_code: &str ) -> AuthResult<Option<DeviceCode>>;
-    async fn get_device_code_by_user_code(&self, user_code: &str) -> AuthResult<Option<DeviceCode>>;
-    async fn update_device_code( &self, id: &str, update: UpdateDeviceCode ) -> AuthResult<DeviceCode>;
-    async fn update_device_code_if_status( &self, id: &str, current_status: &str, update: UpdateDeviceCode ) -> AuthResult<bool>;
-    async fn claim_device_code(&self, id: &str, user_id: &str) -> AuthResult<bool>;
-    async fn delete_device_code(&self, id: &str) -> AuthResult<()>;
-    async fn delete_device_code_if_status(&self, id: &str, status: &str) -> AuthResult<bool>;
-});
+#[async_trait::async_trait]
+impl DeviceCodeStore for ApplicationStore {
+    async fn create_device_code(&self, input: CreateDeviceCode) -> AuthResult<DeviceCode> {
+        self.check("create_device_code")?;
+        self.inner.create_device_code(input).await
+    }
+    async fn get_device_code_by_device_code(
+        &self,
+        device_code: &str,
+    ) -> AuthResult<Option<DeviceCode>> {
+        self.check("get_device_code_by_device_code")?;
+        self.inner.get_device_code_by_device_code(device_code).await
+    }
+    async fn get_device_code_by_user_code(
+        &self,
+        user_code: &str,
+    ) -> AuthResult<Option<DeviceCode>> {
+        self.check("get_device_code_by_user_code")?;
+        self.inner.get_device_code_by_user_code(user_code).await
+    }
+    async fn update_device_code(
+        &self,
+        id: &str,
+        update: UpdateDeviceCode,
+    ) -> AuthResult<DeviceCode> {
+        self.check("update_device_code")?;
+        self.inner.update_device_code(id, update).await
+    }
+    async fn update_device_code_if_status(
+        &self,
+        id: &str,
+        current_status: &str,
+        update: UpdateDeviceCode,
+    ) -> AuthResult<bool> {
+        self.check("update_device_code_if_status")?;
+        self.inner
+            .update_device_code_if_status(id, current_status, update)
+            .await
+    }
+    async fn claim_device_code(&self, id: &str, user_id: &str) -> AuthResult<bool> {
+        self.check("claim_device_code")?;
+        self.inner.claim_device_code(id, user_id).await
+    }
+    async fn delete_device_code(&self, id: &str) -> AuthResult<()> {
+        self.check("delete_device_code")?;
+        self.inner.delete_device_code(id).await
+    }
+    async fn delete_device_code_if_status(&self, id: &str, status: &str) -> AuthResult<bool> {
+        let (selected, mode) = self.device.selector.lock().unwrap().clone();
+        if mode == "consume" && selected == id {
+            self.device
+                .events
+                .lock()
+                .unwrap()
+                .push(json!({"operation":"consume","id":id}));
+            wait_device_gate(&self.device.first).await?;
+        }
+        self.inner.delete_device_code_if_status(id, status).await
+    }
+}
 
 forward!(TeamStore {});
 
@@ -179,6 +254,7 @@ forward!(JwkStore {});
 
 pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
     let state = Arc::new(Mutex::new(State::default()));
+    let device = Arc::new(DeviceApplication::default());
     let path = "/__test/profiles/session-adapter-failure/api/auth";
     let config = base.clone().base_path(path);
     let store = ApplicationStore {
@@ -187,6 +263,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             database,
         )),
         state: state.clone(),
+        device: device.clone(),
     };
     let auth = Arc::new(
         AuthBuilder::<TestSchema>::new(config)
@@ -194,6 +271,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             .rate_limit(RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new().enable_username(false))
             .plugin(SessionManagementPlugin::new())
+            .plugin(DeviceAuthorizationPlugin::new().interval(chrono::Duration::zero()))
             .build()
             .await?,
     );
@@ -202,7 +280,30 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         "/__test/session-adapter-failure",
         post(move |Json(body): Json<Value>| {
             let state = state.clone();
+            let device = device.clone();
             async move {
+                if let Some(operation) = body["operation"].as_str() {
+                    match operation {
+                        "arm" => {
+                            *device.selector.lock().unwrap() = (
+                                body["id"].as_str().unwrap().to_owned(),
+                                body["gate"].as_str().unwrap().to_owned(),
+                            );
+                            device.events.lock().unwrap().clear();
+                            device.first.send_replace(false);
+                        }
+                        "release-first" => {
+                            device.first.send_replace(true);
+                        }
+                        "restore" => {
+                            device.first.send_replace(true);
+
+                            device.selector.lock().unwrap().1 = String::new();
+                        }
+                        _ => {}
+                    }
+                    return Json(json!({"events":*device.events.lock().unwrap()}));
+                }
                 let mut state = state.lock().unwrap();
                 if let Some(mode) = body.get("mode").and_then(Value::as_str) {
                     state.mode = mode.into();
