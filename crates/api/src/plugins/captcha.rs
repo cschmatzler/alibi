@@ -1,7 +1,10 @@
 //! CAPTCHA admission before endpoint parsing and authentication side effects.
 use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
-    utils::json::{JsValue, parse_value},
+    utils::{
+        json::{JsValue, parse_value},
+        wildcard,
+    },
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -368,49 +371,7 @@ fn path_matches(pattern: &str, path: &str) -> Result<bool, regex::Error> {
     if !pattern.contains('*') {
         return Ok(pattern == path);
     }
-    // Compile the configured segment glob to a linear-time regular expression.
-    // Separators accept slash/backslash; globstar consumes whole path segments.
-    let segments = pattern.split('/').collect::<Vec<_>>();
-    let separator = r"[/\\]";
-    let wildcard = r"[^/\\]";
-    let mut expression = String::from("^");
-    for (index, segment) in segments.iter().enumerate() {
-        if segment.is_empty() && index > 0 {
-            continue;
-        }
-        let current_separator = if index + 1 == segments.len() {
-            format!("{separator}*?")
-        } else if segments.get(index + 1) == Some(&"**") {
-            String::new()
-        } else {
-            format!("{separator}+?")
-        };
-        if *segment == "**" {
-            if !current_separator.is_empty() {
-                if index > 0 {
-                    expression.push_str(&current_separator);
-                }
-                expression.push_str(&format!("(?:{wildcard}*?{current_separator})*?"));
-            }
-            continue;
-        }
-        let mut chars = segment.chars();
-        while let Some(character) = chars.next() {
-            match character {
-                '\\' => {
-                    if let Some(escaped) = chars.next() {
-                        expression.push_str(&regex::escape(&escaped.to_string()));
-                    }
-                }
-                '?' => expression.push_str(wildcard),
-                '*' => expression.push_str(&format!("{wildcard}*?")),
-                character => expression.push_str(&regex::escape(&character.to_string())),
-            }
-        }
-        expression.push_str(&current_separator);
-    }
-    expression.push('$');
-    regex::Regex::new(&expression).map(|pattern| pattern.is_match(path))
+    wildcard::compile(pattern).map(|compiled| compiled.is_match(path))
 }
 
 #[async_trait]

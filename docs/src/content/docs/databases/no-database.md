@@ -33,7 +33,7 @@ async fn build_auth() -> AuthResult<BetterAuth<StatelessSchema>> {
 
 ```rust
 use axum::Json;
-use alibi::integrations::axum::CurrentSession;
+use alibi::integrations::CurrentSession;
 use alibi::store::StatelessSchema;
 use alibi::wire::UserView;
 

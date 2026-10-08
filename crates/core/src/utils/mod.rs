@@ -16,3 +16,4 @@ pub(crate) fn normalize_user_email(email: &str) -> String {
 }
 
 pub mod jwe;
+pub mod wildcard;

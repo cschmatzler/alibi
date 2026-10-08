@@ -399,30 +399,7 @@ pub type AuthResult<T> = Result<T, AuthError>;
 #[cfg(feature = "axum")]
 impl axum::response::IntoResponse for AuthError {
     fn into_response(self) -> axum::response::Response {
-        if matches!(&self, Self::CallbackFailure(_) | Self::Encryption(_)) {
-            tracing::error!(error = %self, "Authentication operation failed");
-            return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-        let ordinary = self.status_code() == 500 && !crate::endpoint::is_endpoint_api_error(&self);
-        let retry_after = self.retry_after_header();
-        let (status_u16, code, message) = self.error_payload();
-        let status = axum::http::StatusCode::from_u16(status_u16)
-            .unwrap_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
-        let mut response = (
-            status,
-            axum::Json(crate::types::ErrorCodeMessageResponse { code, message }),
-        )
-            .into_response();
-        if ordinary {
-            let _ = response.headers_mut().insert(
-                "content-type",
-                axum::http::HeaderValue::from_static("application/json;charset=utf-8"),
-            );
-        }
-        if let Some(value) = retry_after.and_then(|value| value.parse().ok()) {
-            drop(response.headers_mut().insert("x-retry-after", value));
-        }
-        response
+        self.to_auth_response().into_response()
     }
 }
 

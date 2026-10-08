@@ -9,7 +9,7 @@ repository = { workspace = true }
 homepage = { workspace = true }
 documentation = "https://docs.rs/alibi"
 publish = ["crates-io"]
-include = ["/src/**", "/scripts/*.rs", "/scripts/generate-openapi-matrix.mjs", "/README.md", "/LICENSE"]
+include = ["/src/**", "/README.md", "/LICENSE"]
 readme = { workspace = true }
 keywords = { workspace = true }
 categories = { workspace = true }
@@ -87,6 +87,7 @@ hmac = "0.13"
 totp-rs = { version = "6", features = ["gen_secret", "otpauth"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "form", "query"] }
 axum = "0.8"
+http = "1"
 poem = { version = "3.1.12", default-features = false }
 tower = "0.5"
 url = "2"
@@ -108,12 +109,12 @@ rustls = [
 ]
 axum = [
     "dep:axum",
-    "dep:tower",
+    "dep:http",
     "dep:http-body-util",
     "alibi-core/axum",
     "alibi-api/axum",
 ]
-poem = ["dep:poem"]
+poem = ["dep:poem", "dep:http"]
 seaorm = ["dep:alibi-seaorm"]
 sqlx = ["sqlx-sqlite", "sqlx-postgres"]
 sqlx-sqlite = ["dep:alibi-sqlx", "alibi-sqlx/sqlite"]
@@ -128,21 +129,13 @@ tokio = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = "0.9"
 multer = { version = "3.1", features = ["tokio-io"] }
-clap = { version = "4.6", features = ["derive"] }
-thiserror = { workspace = true }
-chrono = { workspace = true }
-uuid = { workspace = true }
-rand = { workspace = true }
-base64 = { workspace = true }
-jsonwebtoken = { workspace = true }
 axum = { workspace = true, optional = true }
 poem = { workspace = true, optional = true }
-tower = { workspace = true, optional = true }
-url = { workspace = true }
-tracing.workspace = true
 http-body-util = { version = "0.1", optional = true }
+http = { workspace = true, optional = true }
+url = { workspace = true }
+tracing = { workspace = true }
 [dev-dependencies]
 rsa = { workspace = true }
 # Enable adapters for repository tests without changing downstream defaults.
@@ -163,8 +156,11 @@ alibi-seaorm = { workspace = true }
 alibi-sqlx = { workspace = true }
 sqlx = { version = "0.9", default-features = false, features = ["sqlite", "postgres", "chrono", "json", "derive"] }
 tokio = { workspace = true, features = ["full", "test-util"] }
-serde_yaml = "0.9"
-multer = { version = "3.1", features = ["tokio-io"] }
+chrono = { workspace = true }
+uuid = { workspace = true }
+rand = { workspace = true }
+base64 = { workspace = true }
+tower = { workspace = true }
 tower-http = { version = "0.7", features = ["cors"] }
 tracing-subscriber = { workspace = true }
 oas3 = { version = "0.22.0", features = ["yaml-spec"] }
@@ -174,12 +170,6 @@ reqwest = { workspace = true, features = ["cookies"] }
 name = "e2e"
 path = "tests/e2e/main.rs"
 required-features = ["axum"]
-[[bin]]
-name = "sync_better_auth_openapi"
-path = "scripts/sync_better_auth_openapi.rs"
-[[bin]]
-name = "openapi_alignment_report"
-path = "scripts/openapi_alignment_report.rs"
 [workspace.lints.clippy]
 allow_attributes = "warn"
 allow_attributes_without_reason = "warn"

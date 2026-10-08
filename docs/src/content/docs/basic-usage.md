@@ -71,7 +71,7 @@ Without a valid session the response is `null` with status 200. `GET /list-sessi
 use crate::auth_schema::AppAuthSchema;
 use axum::{Json, Router, routing::get};
 use alibi::BetterAuth;
-use alibi::integrations::axum::{AxumIntegration, CurrentSession, OptionalSession};
+use alibi::integrations::{CurrentSession, OptionalSession, axum::AxumIntegration};
 use alibi::prelude::AuthUser;
 use serde_json::{Value, json};
 use std::sync::Arc;

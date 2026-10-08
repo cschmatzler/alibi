@@ -17,7 +17,7 @@ Build the auth instance with your SQLx or SeaORM store as usual, then nest `poem
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use alibi::BetterAuth;
-use alibi::integrations::poem::{CurrentSession, PoemIntegration};
+use alibi::integrations::{CurrentSession, poem::PoemIntegration};
 use alibi::prelude::AuthUser;
 use poem::{Endpoint, EndpointExt, Route, get, handler};
 use std::sync::Arc;
@@ -63,7 +63,7 @@ Both expose `user` and `session` in your own model types. The extractors need th
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::integrations::poem::OptionalSession;
+use alibi::integrations::OptionalSession;
 use poem::handler;
 
 #[handler]

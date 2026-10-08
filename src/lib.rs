@@ -25,10 +25,6 @@
 //! }
 //! ```
 
-#![expect(
-    unused_crate_dependencies,
-    reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
-)]
 #![cfg_attr(
     test,
     allow(

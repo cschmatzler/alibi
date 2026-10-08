@@ -6,7 +6,7 @@
     reason = "boundary assertions use known fixture values"
 )]
 use crate::storage::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use alibi::integrations::poem::{CurrentSession, OptionalSession, PoemIntegration};
+use alibi::integrations::{CurrentSession, OptionalSession, poem::PoemIntegration};
 use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig};
 use alibi_core::entity::AuthUser;

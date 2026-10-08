@@ -10,28 +10,31 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-fn path_matches(pattern: &str, path: &str) -> AuthResult<bool> {
-    if !pattern.contains('*') {
-        return Ok(pattern == path);
+/// A compiled `per_endpoint` key. Patterns without `*` match exactly.
+#[derive(Debug)]
+enum PathPattern {
+    Exact,
+    Glob(regex::Regex),
+    Invalid,
+}
+
+impl PathPattern {
+    fn new(pattern: &str) -> Self {
+        if !pattern.contains('*') {
+            return Self::Exact;
+        }
+        crate::utils::wildcard::compile_path_glob(pattern).map_or(Self::Invalid, Self::Glob)
     }
-    let mut expression = String::from("^");
-    let mut characters = pattern.chars();
-    while let Some(character) = characters.next() {
-        match character {
-            '*' => expression.push_str(".*?"),
-            '?' => expression.push('.'),
-            '\\' => {
-                if let Some(escaped) = characters.next() {
-                    expression.push_str(&regex::escape(&escaped.to_string()));
-                }
-            }
-            literal => expression.push_str(&regex::escape(&literal.to_string())),
+
+    fn matches(&self, pattern: &str, path: &str) -> AuthResult<bool> {
+        match self {
+            Self::Exact => Ok(pattern == path),
+            Self::Glob(compiled) => Ok(compiled.is_match(path)),
+            Self::Invalid => Err(crate::error::AuthError::internal(
+                "Invalid rate-limit path pattern",
+            )),
         }
     }
-    expression.push('$');
-    regex::Regex::new(&expression)
-        .map(|compiled| compiled.is_match(path))
-        .map_err(|_| crate::error::AuthError::internal("Invalid rate-limit path pattern"))
 }
 
 /// A rate-limit backend must atomically decide and consume before returning.
@@ -328,6 +331,7 @@ impl RateLimitConfig {
 #[derive(Debug)]
 pub struct RateLimitMiddleware {
     config: RateLimitConfig,
+    endpoint_patterns: Vec<PathPattern>,
     base_path: String,
     memory: MemoryRateLimitStorage,
     plugin_rules: Vec<PluginRateLimit>,
@@ -375,8 +379,14 @@ impl RateLimitMiddleware {
                 }
             }
         }
+        let endpoint_patterns = config
+            .per_endpoint
+            .keys()
+            .map(|pattern| PathPattern::new(pattern))
+            .collect();
         Self {
             config,
+            endpoint_patterns,
             base_path: String::new(),
             memory,
             plugin_rules: Vec::new(),
@@ -423,8 +433,10 @@ impl RateLimitMiddleware {
         if let Some(rule) = self.plugin_rules.iter().find(|rule| (rule.matches)(path)) {
             limit = rule.limit.clone();
         }
-        for (pattern, rule) in &self.config.per_endpoint {
-            if path_matches(pattern, path)? {
+        for ((pattern, rule), compiled) in
+            self.config.per_endpoint.iter().zip(&self.endpoint_patterns)
+        {
+            if compiled.matches(pattern, path)? {
                 return match rule {
                     RateLimitRule::Limit(limit) => Ok(Some(limit.clone())),
                     RateLimitRule::Disabled => Ok(None),

@@ -1,4 +1,4 @@
-use alibi::integrations::axum::{AxumIntegration, CurrentSession, OptionalSession};
+use alibi::integrations::{CurrentSession, OptionalSession, axum::AxumIntegration};
 use alibi::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin,
     SessionManagementPlugin, UserManagementPlugin, password_management::SendResetPassword,

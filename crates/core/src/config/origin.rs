@@ -1,6 +1,9 @@
 use super::AuthConfig;
+use crate::utils::wildcard;
 use crate::{AuthError, AuthRequest, AuthResult};
 use async_trait::async_trait;
+use regex::Regex;
+use std::sync::LazyLock;
 
 /// Protocol used when resolving a dynamic base URL. `None` on the config
 /// infers the request scheme, while trusting HTTPS (and HTTP loopback) origins.
@@ -97,7 +100,7 @@ impl AuthConfig {
                 });
             let accepted = host.as_deref().filter(|host| {
                 dynamic.allowed_hosts.iter().any(|pattern| {
-                    wildcard(
+                    wildcard::matches(
                         &normalize_host_pattern(pattern),
                         &normalize_host_pattern(host),
                     )
@@ -251,60 +254,14 @@ fn trusted_loopback(host: &str) -> bool {
             })
 }
 
+/// Source `validateProxyHeader`: DNS labels, IPv4 or bracketed IPv6 and a
+/// one-to-five digit port; no whitespace, userinfo, path or delimiter tricks.
 fn valid_host(host: &str) -> bool {
-    // Source validateProxyHeader: DNS labels, IPv4 or bracketed IPv6 and a
-    // one-to-five digit port; no whitespace, userinfo, path or delimiter tricks.
-    if host.contains("..") {
-        return false;
-    }
-    regex::Regex::new(r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*|(?:\d{1,3}\.){3}\d{1,3}|\[[0-9a-fA-F:]+\])(?::[0-9]{1,5})?$")
-        .is_ok_and(|pattern| pattern.is_match(host))
-}
-
-// Source wildcardMatch defaults to slash/backslash separators. `**` is
-// recursive only as a complete segment; ordinary `*` and `?` stay within it.
-fn wildcard(pattern: &str, value: &str) -> bool {
-    let separator = r"[/\\]";
-    let wildcard = r"[^/\\]";
-    let segments: Vec<_> = pattern.split('/').collect();
-    let mut expression = String::from("\\A");
-    for (index, segment) in segments.iter().enumerate() {
-        if segment.is_empty() && index > 0 {
-            continue;
-        }
-        let current_separator = if index + 1 == segments.len() {
-            format!("{separator}*?")
-        } else if segments.get(index + 1) != Some(&"**") {
-            format!("{separator}+?")
-        } else {
-            String::new()
-        };
-        if *segment == "**" {
-            if !current_separator.is_empty() {
-                if index > 0 {
-                    expression.push_str(&current_separator);
-                }
-                expression.push_str(&format!("(?:{wildcard}*?{current_separator})*?"));
-            }
-            continue;
-        }
-        let mut chars = segment.chars();
-        while let Some(character) = chars.next() {
-            match character {
-                '*' => expression.push_str(&format!("{wildcard}*?")),
-                '?' => expression.push_str(wildcard),
-                '\\' => {
-                    if let Some(escaped) = chars.next() {
-                        expression.push_str(&regex::escape(&escaped.to_string()));
-                    }
-                }
-                literal => expression.push_str(&regex::escape(&literal.to_string())),
-            }
-        }
-        expression.push_str(&current_separator);
-    }
-    expression.push_str("\\z");
-    regex::Regex::new(&expression).is_ok_and(|compiled| compiled.is_match(value))
+    static HOST: LazyLock<Option<Regex>> = LazyLock::new(|| {
+        Regex::new(r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*|(?:\d{1,3}\.){3}\d{1,3}|\[[0-9a-fA-F:]+\])(?::[0-9]{1,5})?$")
+            .ok()
+    });
+    !host.contains("..") && HOST.as_ref().is_some_and(|pattern| pattern.is_match(host))
 }
 
 pub(super) fn matches_origin(value: &str, pattern: &str) -> bool {
@@ -318,11 +275,11 @@ pub(super) fn matches_origin(value: &str, pattern: &str) -> bool {
                 .as_ref()
                 .filter(|url| matches!(url.origin(), url::Origin::Tuple(..)))
                 .map(|url| url.origin().ascii_serialization());
-            return wildcard(pattern, origin.as_deref().unwrap_or(value));
+            return wildcard::matches(pattern, origin.as_deref().unwrap_or(value));
         }
         return parsed.is_some_and(|url| {
             url.host_str().is_some()
-                && wildcard(
+                && wildcard::matches(
                     pattern,
                     &url[url::Position::BeforeHost..url::Position::AfterPort],
                 )

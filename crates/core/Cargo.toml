@@ -51,7 +51,6 @@ cookie = { workspace = true }
 percent-encoding = "2"
 
 # Pattern matching
-glob-match = "0.2.1"
 regex = { workspace = true }
 # Crypto
 scrypt = { workspace = true }
@@ -72,6 +71,7 @@ alibi-macros = { workspace = true }
 alibi-schema-registry = { workspace = true }
 axum = { workspace = true, optional = true }
 url = { workspace = true }
+http = { workspace = true }
 tracing.workspace = true
 sqlparser = { version = "0.63.0", features = ["visitor"] }
 

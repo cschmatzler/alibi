@@ -454,49 +454,32 @@ impl AuthResponse {
         }
     }
 
-    ///
+    fn with_content(status: u16, content_type: &str, body: Vec<u8>) -> Self {
+        Self {
+            status,
+            headers: Headers(vec![("content-type".to_owned(), content_type.to_owned())]),
+            body,
+        }
+    }
+
     /// # Errors
-    ///
     /// Returns an error if the response body cannot be serialized.
     pub fn json<T: Serialize>(status: u16, data: &T) -> Result<Self, serde_json::Error> {
-        let body = crate::utils::json::to_vec(data)?;
-        let mut headers = Headers::new();
-        drop(headers.insert("content-type".to_owned(), "application/json".to_owned()));
-
-        Ok(Self {
+        Ok(Self::with_content(
             status,
-            headers,
-            body,
-        })
+            "application/json",
+            crate::utils::json::to_vec(data)?,
+        ))
     }
 
     #[must_use]
     pub fn text(status: u16, text: impl Into<String>) -> Self {
-        let body = text.into().into_bytes();
-        let mut headers = Headers::new();
-        drop(headers.insert("content-type".to_owned(), "text/plain".to_owned()));
-
-        Self {
-            status,
-            headers,
-            body,
-        }
+        Self::with_content(status, "text/plain", text.into().into_bytes())
     }
 
     #[must_use]
     pub fn html(status: u16, html: impl Into<String>) -> Self {
-        let body = html.into().into_bytes();
-        let mut headers = Headers::new();
-        drop(headers.insert(
-            "content-type".to_owned(),
-            "text/html; charset=utf-8".to_owned(),
-        ));
-
-        Self {
-            status,
-            headers,
-            body,
-        }
+        Self::with_content(status, "text/html; charset=utf-8", html.into().into_bytes())
     }
 
     #[must_use]
@@ -513,5 +496,31 @@ impl AuthResponse {
     ) -> Self {
         self.headers.append(name.into(), value.into());
         self
+    }
+}
+
+impl From<AuthResponse> for ::http::Response<Vec<u8>> {
+    /// Headers that are not valid HTTP names or values are dropped.
+    fn from(response: AuthResponse) -> Self {
+        let mut converted = Self::new(response.body);
+        *converted.status_mut() = ::http::StatusCode::from_u16(response.status)
+            .unwrap_or(::http::StatusCode::INTERNAL_SERVER_ERROR);
+        let headers = converted.headers_mut();
+        for (name, value) in response.headers {
+            if let (Ok(name), Ok(value)) = (
+                ::http::HeaderName::try_from(name),
+                ::http::HeaderValue::try_from(value),
+            ) {
+                _ = headers.append(name, value);
+            }
+        }
+        converted
+    }
+}
+
+#[cfg(feature = "axum")]
+impl axum::response::IntoResponse for AuthResponse {
+    fn into_response(self) -> axum::response::Response {
+        ::http::Response::from(self).map(axum::body::Body::from)
     }
 }
