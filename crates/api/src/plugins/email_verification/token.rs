@@ -96,7 +96,9 @@ pub(in crate::plugins) fn decode_email_verification_token(
     }
     for field in ["updateTo", "requestType"] {
         if payload.get(field).is_some_and(|value| !value.is_string()) {
-            return Err(AuthError::internal("Invalid verification claims"));
+            return Err(AuthError::CallbackFailure(Box::new(AuthError::internal(
+                "Invalid verification claims",
+            ))));
         }
     }
     if !payload
@@ -104,7 +106,10 @@ pub(in crate::plugins) fn decode_email_verification_token(
         .and_then(serde_json::Value::as_str)
         .is_some_and(crate::plugins::authentication_helpers::is_valid_email)
     {
-        return Err(AuthError::internal("Invalid verification claims"));
+        return Err(AuthError::CallbackFailure(Box::new(AuthError::internal(
+            "Invalid verification claims",
+        ))));
     }
-    serde_json::from_value(payload).map_err(AuthError::from)
+    serde_json::from_value(payload)
+        .map_err(|error| AuthError::CallbackFailure(Box::new(AuthError::from(error))))
 }

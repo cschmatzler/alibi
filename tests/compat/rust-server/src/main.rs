@@ -1,6 +1,6 @@
 mod account_linking_profiles;
-use serde_json::{Value, json};
 use axum::http::StatusCode;
+use serde_json::{Value, json};
 mod additional_field_models;
 mod fixtures;
 use fixtures::managed_secrets_fixture;
@@ -75,12 +75,6 @@ async fn private_json_content_type(
     response
 }
 
-use axum::{
-    Json, Router,
-    extract::Query,
-    response::IntoResponse,
-    routing::{get, post},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::api_key::{
@@ -100,15 +94,19 @@ use alibi::plugins::{
     password_management::SendResetPassword,
     user_management::SendChangeEmailConfirmation,
 };
-use alibi::prelude::{
-    AuthAccount, AuthUser, CreateAccount, CreateVerification, UpdateAccount,
-};
+use alibi::prelude::{AuthAccount, AuthUser, CreateAccount, CreateVerification, UpdateAccount};
 use alibi::wire::UserView;
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use alibi_seaorm::sea_orm::{DatabaseConnection, DbErr, EntityTrait};
 use alibi_seaorm::store::entities::{
     account, api_key, device_code, invitation, member, organization, passkey, session, two_factor,
     user, verification, wallet_address,
+};
+use axum::{
+    Json, Router,
+    extract::Query,
+    response::IntoResponse,
+    routing::{get, post},
 };
 use chrono::{DateTime, Utc};
 use fixtures::microsoft_provider_fixture;
@@ -289,7 +287,9 @@ fn default_github_profile() -> GitHubProfile {
 }
 
 async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr> {
-    alibi_seaorm::rate_limit::entity::Entity::delete_many().exec(database).await?;
+    alibi_seaorm::rate_limit::entity::Entity::delete_many()
+        .exec(database)
+        .await?;
     alibi_seaorm::store::entities::jwk::Entity::delete_many()
         .exec(database)
         .await?;
@@ -794,7 +794,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         organization_member_removal_hooks_fixture::router(&config, database.clone()).await?;
     let member_role_hooks_router =
         organization_member_role_hooks_fixture::router(&config, database.clone()).await?;
-    let session_adapter_failure_router = fixtures::session_adapter_failure_fixture::router(&config, database.clone()).await?;
+    let session_adapter_failure_router =
+        fixtures::session_adapter_failure_fixture::router(&config, database.clone()).await?;
     let pending_lookup_router =
         two_factor_pending_lookup_fixture::router(&config, database.clone()).await?;
     let update_hooks_router =
@@ -836,19 +837,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .await?;
 
-    let account_linking_router = account_linking_profiles::router(
-        &config,
-        database.clone(),
-        || {
+    let account_linking_router =
+        account_linking_profiles::router(&config, database.clone(), || {
             mock_oauth_plugin(
                 port,
                 social_profile.clone(),
                 social_id_token_valid.clone(),
                 oauth_refresh_mode.clone(),
             )
-        },
-    )
-    .await?;
+        })
+        .await?;
     let verification_profile_router =
         verification_profiles::router(&config, database.clone(), verification_outbox.clone())
             .await?;
@@ -975,8 +973,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_key_generation_router =
         api_key_generation_fixture::router(&config, database.clone()).await?;
     let api_key_options_router = api_key_options_fixture::router(&config, database.clone()).await?;
-    let api_key_org_static_router = api_key_options_fixture::organization_static_router(&config, database.clone()).await?;
-    let api_key_no_default_router = api_key_options_fixture::no_default_router(&config, database.clone()).await?;
+    let api_key_org_static_router =
+        api_key_options_fixture::organization_static_router(&config, database.clone()).await?;
+    let api_key_no_default_router =
+        api_key_options_fixture::no_default_router(&config, database.clone()).await?;
     let passkey_auth_events: passkey_authentication_fixture::Events = Arc::default();
     let passkey_auth_router = passkey_authentication_fixture::router(
         &config,
@@ -1121,12 +1121,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut error_url_router = Router::new();
     for mode in ["redirect", "html"] {
         let path = format!("/__test/profiles/error-url-{mode}/api/auth");
-        let mut profile_config = config.clone().base_path(&path).api_error_url("/problem?keep=a%2Bb#error-panel");
+        let mut profile_config = config
+            .clone()
+            .base_path(&path)
+            .api_error_url("/problem?keep=a%2Bb#error-panel");
         profile_config.render_error_page = mode == "html";
-        let profile_auth = Arc::new(AuthBuilder::<TestSchema>::new(profile_config.clone())
-            .store(crate::backend::store::<TestSchema>(profile_config, reset_database.clone()))
-            .rate_limit(RateLimitConfig::new().enabled(false)).build().await?);
-        error_url_router = error_url_router.nest(&path, profile_auth.clone().axum_router().with_state(profile_auth));
+        let profile_auth = Arc::new(
+            AuthBuilder::<TestSchema>::new(profile_config.clone())
+                .store(crate::backend::store::<TestSchema>(
+                    profile_config,
+                    reset_database.clone(),
+                ))
+                .rate_limit(RateLimitConfig::new().enabled(false))
+                .build()
+                .await?,
+        );
+        error_url_router = error_url_router.nest(
+            &path,
+            profile_auth.clone().axum_router().with_state(profile_auth),
+        );
     }
     let error_page_path = "/__test/profiles/error-page/api/auth";
     let mut error_page_config = config.clone().base_path(error_page_path);
@@ -1216,8 +1229,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ott_router = one_time_token_fixture::router(&config, reset_database.clone()).await?;
     let open_api_router = open_api_fixture::router(&config, reset_database.clone()).await?;
 
-    let database_delete_hooks_router = fixtures::delete_hooks_fixture::router(&config, reset_database.clone()).await?;
-    let factor_table_router = fixtures::two_factor_table_fixture::router(&config, reset_database.clone()).await?;
+    let database_delete_hooks_router =
+        fixtures::delete_hooks_fixture::router(&config, reset_database.clone()).await?;
+    let factor_table_router =
+        fixtures::two_factor_table_fixture::router(&config, reset_database.clone()).await?;
     let postgres_schema_router = fixtures::postgres_schema_fixture::router(&config).await?;
     let app = Router::new()
         .merge(lifecycle_controls)
@@ -1501,6 +1516,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let invitation_lifecycle_reset = invitation_lifecycle_reset.clone();
                 let anonymous_reset = anonymous_reset.clone();
                 async move {
+                    if let Err(error)=fixtures::application_device_grant_fixture::reset(&database).await {return (axum::http::StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"message":error.to_string()})));}
                     api_key_storage_reset.reset().await;
                     railway_reset.reset().await;
                     reddit_reset.reset().await;
