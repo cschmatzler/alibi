@@ -10,6 +10,9 @@ import { compatScenario } from "../../../support/scenario";
 
 export type ScenarioContext = Parameters<Parameters<typeof compatScenario>[1]>[0];
 export type PhoneProfile =
+  | "phone-notification-awaited"
+  | "phone-notification-background"
+  | "phone-notification-schedule-error"
   | "phone-default"
   | "phone-signup"
   | "phone-proof"

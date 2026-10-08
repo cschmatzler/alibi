@@ -3148,6 +3148,12 @@ const server = Bun.serve({
       if (url.pathname === "/__test/magic-link" && request.method === "GET") {
         return jsonResponse(magicLinkOutbox.get(url.searchParams.get("email") ?? "") ?? null);
       }
+      if (url.pathname === "/__test/phone-notifications")
+        return Response.json(
+          phoneFixture.notificationControl(
+            request.method === "POST" ? (await request.json()).operation : undefined,
+          ),
+        );
       if (url.pathname === "/__test/phone-otp" && request.method === "GET") {
         return jsonResponse(
           phoneFixture.outbox.get(
