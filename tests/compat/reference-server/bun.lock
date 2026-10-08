@@ -6,6 +6,7 @@
       "name": "better-auth-compat-reference",
       "dependencies": {
         "@better-auth/api-key": "1.7.7",
+        "@better-auth/kysely-adapter": "1.7.7",
         "@better-auth/passkey": "1.7.7",
         "@noble/curves": "2.0.1",
         "@noble/hashes": "2.0.1",
