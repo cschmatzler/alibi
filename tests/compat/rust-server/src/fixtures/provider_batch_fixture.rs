@@ -22,6 +22,7 @@ const MODES: &[&str] = &[
     "claims-empty",
     "claims-custom",
 
+    "language-en",
     "prompt-none",
     "prompt-consent",
     "prompt-empty",
@@ -214,6 +215,7 @@ fn factory(provider: &str, mode: &str, local: Option<&str>) -> OAuthProvider {
         }
         "wechat" => {
             let mut options = WeChatOptions::new(client, secret);
+            if mode == "language-en" { options.language = WeChatLanguage::English; }
             options.scope = configured(mode);
             options.disable_default_scope = mode == "disabled-configured";
             options.user_info_endpoint =
@@ -244,6 +246,7 @@ pub(crate) async fn router(
     for provider_id in PROVIDERS {
         for mode in MODES {
             if mode.starts_with("claims-") && *provider_id != "twitch" { continue; }
+            if *mode == "language-en" && *provider_id != "wechat" { continue; }
             if mode.starts_with("prompt-") && *provider_id != "roblox" { continue; }
             if *mode == "pkce-disabled" && *provider_id != "zoom" { continue; }
             let path = format!("/__test/profiles/provider-batch-{provider_id}-{mode}/api/auth");

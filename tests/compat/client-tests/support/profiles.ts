@@ -126,6 +126,7 @@ export const FIXTURE_PROFILES = [
       "default",
       "claims-empty",
       "claims-custom",
+      "language-en",
       "prompt-none",
       "prompt-consent",
       "prompt-empty",
