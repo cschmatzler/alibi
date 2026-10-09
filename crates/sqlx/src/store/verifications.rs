@@ -291,7 +291,6 @@ where
             sql.compare_model::<S::Verification>(table, column, " = ", value.clone());
         }
         model::returning::<S::Verification>(&mut sql);
-        // The statement updates every matching row; the first returned row is the snapshot.
         self.exec().fetch_optional::<S::Verification>(sql).await
     }
 }
@@ -484,9 +483,8 @@ where
                 return Ok(false);
             }
         }
-        // RETURNING preserves the winning snapshot in the update itself. A
-        // second SELECT can lose the row to consumption or observe a later
-        // mutation, including changes made by application database triggers.
+        // RETURNING captures the winning snapshot; a second SELECT could lose
+        // the row to consumption or observe a later mutation.
         let Some(model) = self
             .update_verifications_returning(
                 &[

@@ -279,10 +279,8 @@ where
                 return Err(AuthError::bad_request("Value must be an array"));
             }
         };
-        // The upstream schema transform coerces a scalar string on a
-        // boolean field before the adapter binds it. Array operands
-        // retain their original strings. The actual model column type
-        // also supports custom boolean fields and physical renames.
+        // Upstream coerces a scalar string on a boolean field before binding;
+        // array operands keep their original strings.
         let numeric_cast = if self.exec().engine() == Engine::Postgres {
             match <S::User as SqlxModel>::column_kind(column) {
                 ColumnKind::Int => Some("int4"),
@@ -424,7 +422,7 @@ where
         let mut sql = Sql::with(backend, "SELECT CAST(");
         sql.bind(value);
         sql.push(" AS TEXT) AS value");
-        // The configured database's own CAST decides the stored text.
+        // The database's own CAST decides the stored text.
         self.exec()
             .fetch_scalar::<String>(sql)
             .await?

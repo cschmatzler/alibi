@@ -309,10 +309,8 @@ where
             .into_iter()
             .map(|model| (model.id.clone(), Organization::from(&model)))
             .collect();
-        // The source maps the member page's joined organizations. Repeated
-        // memberships repeat the organization; organization creation order
-        // cannot reorder this page. Missing joins retain the existing store's
-        // omission behavior, rather than inventing a nullable public result.
+        // Source maps the member page's joined organizations: repeated
+        // memberships repeat the organization, and missing joins are omitted.
         Ok(member_models
             .into_iter()
             .filter_map(|member| organizations.get(&member.organization_id).cloned())

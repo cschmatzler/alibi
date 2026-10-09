@@ -70,9 +70,7 @@ where
         active.set("permissions", input.permissions);
         active.set("metadata", input.metadata);
         let inserted = if sqlite_cast {
-            // Keep one bound INSERT with every ordinary model value. Only the
-            // invalid-surrogate SQLite start needs a bytes-to-TEXT expression;
-            // other engines and valid strings retain the ordinary insert path.
+            // Only an invalid-surrogate SQLite start needs a bytes-to-TEXT expression.
             let mut sql = Sql::with(self.exec().engine(), "INSERT INTO ");
             sql.ident(Model::TABLE);
             sql.push(" (");
@@ -125,8 +123,7 @@ where
     }
 
     async fn list_api_keys_by_reference(&self, reference_id: &str) -> AuthResult<Vec<ApiKey>> {
-        // Explicit ASC order matches TS insertion-order behavior and avoids
-        // nondeterministic results across database backends.
+        // Explicit ASC order matches TS insertion order on every backend.
         let mut sql = model::select_model::<Model>(self.exec());
         sql.push(" WHERE ");
         sql.compare(Model::TABLE, "reference_id", " = ", reference_id);
@@ -264,8 +261,6 @@ where
     }
 
     async fn delete_expired_api_keys(&self) -> AuthResult<usize> {
-        // Single query: DELETE FROM api_keys WHERE expires_at IS NOT NULL AND expires_at < NOW()
-        // Matches TS: adapter.deleteMany({ where: [{ field: "expiresAt", operator: "lt", value: new Date() }, ...] })
         let mut sql = Sql::with(self.exec().engine(), "DELETE FROM ");
         sql.ident(Model::TABLE);
         sql.push(" WHERE ");
