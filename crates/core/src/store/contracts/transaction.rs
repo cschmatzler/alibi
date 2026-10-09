@@ -289,5 +289,5 @@ where
     value
         .downcast::<T>()
         .map(|boxed| *boxed)
-        .map_err(|_error| AuthError::internal("store returned an invalid transaction payload"))
+        .map_err(|_| AuthError::internal("store returned an invalid transaction payload"))
 }

@@ -1,8 +1,4 @@
 //! Shared cookie utilities for building `Set-Cookie` headers.
-//!
-//! This module centralises the session cookie construction that was previously
-//! duplicated across every plugin (`email_password`, `passkey`, `two_factor`,
-//! `admin`, `password_management`, `session_management`, `email_verification`).
 
 use crate::config::{AuthConfig, CookieAttributes, SameSite};
 use crate::utils::javascript::number_from_i64;

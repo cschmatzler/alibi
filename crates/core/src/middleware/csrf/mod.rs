@@ -9,17 +9,11 @@ use std::sync::Arc;
 
 const CROSS_SITE_NAVIGATION_LOGIN_BLOCKED: &str =
     "Cross-site navigation login blocked. This request appears to be a CSRF attack.";
-
 const INVALID_CALLBACK_URL: &str = "Invalid callbackURL";
-
 const INVALID_ERROR_CALLBACK_URL: &str = "Invalid errorCallbackURL";
-
 const INVALID_NEW_USER_CALLBACK_URL: &str = "Invalid newUserCallbackURL";
-
 const INVALID_REDIRECT_URL: &str = "Invalid redirectURL";
-
 const INVALID_ORIGIN: &str = "Invalid origin";
-
 const MISSING_OR_NULL_ORIGIN: &str = "Missing or null Origin";
 
 /// Configuration for Better Auth request-origin and CSRF protection.
@@ -270,10 +264,6 @@ impl CsrfMiddleware {
         }
     }
 
-    fn reject(error: AuthError) -> AuthResponse {
-        error.to_auth_response()
-    }
-
     /// Router protection after route/body resolution and before application hooks.
     ///
     /// # Errors
@@ -313,21 +303,13 @@ impl Middleware for CsrfMiddleware {
         }
 
         let path = self.normalized_path(req.path());
-        let csrf_result = if Self::is_form_csrf_path(path) {
+        let result = if Self::is_form_csrf_path(path) {
             self.validate_form_csrf(req)
         } else {
             self.validate_origin(req, false)
-        };
-
-        if let Err(error) = csrf_result {
-            return Ok(Some(Self::reject(error)));
         }
-
-        if let Err(error) = self.validate_redirect_targets(req) {
-            return Ok(Some(Self::reject(error)));
-        }
-
-        Ok(None)
+        .and_then(|()| self.validate_redirect_targets(req));
+        Ok(result.err().map(AuthError::to_auth_response))
     }
 }
 

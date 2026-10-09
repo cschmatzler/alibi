@@ -36,7 +36,7 @@ pub fn callback_error(error: AuthError) -> AuthError {
 pub fn parse_rfc3339(value: &str, field: &str) -> AuthResult<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(value)
         .map(|dt| dt.with_timezone(&Utc))
-        .map_err(|_error| AuthError::bad_request(format!("Invalid RFC 3339 timestamp for {field}")))
+        .map_err(|_| AuthError::bad_request(format!("Invalid RFC 3339 timestamp for {field}")))
 }
 
 /// [`parse_rfc3339`] over an optional value.

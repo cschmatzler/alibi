@@ -471,7 +471,7 @@ impl Parser<'_> {
             .ok_or_else(|| invalid("invalid JSON number bounds"))?
             .parse::<f64>()
             .map(JsValue::Number)
-            .map_err(|_error| invalid("invalid JSON number"))
+            .map_err(|_| invalid("invalid JSON number"))
     }
 }
 
@@ -495,7 +495,7 @@ pub fn parse_value(input: &str) -> Result<JsValue, serde_json::Error> {
 ///
 /// Returns an error if the input is not valid JSON or cannot be deserialized into the requested type.
 pub fn from_slice<T: DeserializeOwned + 'static>(input: &[u8]) -> Result<T, serde_json::Error> {
-    let text = std::str::from_utf8(input).map_err(|_error| invalid("invalid JSON UTF8"))?;
+    let text = std::str::from_utf8(input).map_err(|_| invalid("invalid JSON UTF8"))?;
     from_value(parse_value(text)?)
 }
 
@@ -514,7 +514,7 @@ pub fn from_value<T: DeserializeOwned + 'static>(input: JsValue) -> Result<T, se
         return value
             .downcast::<T>()
             .map(|value| *value)
-            .map_err(|_error| invalid("invalid JSON value type"));
+            .map_err(|_| invalid("invalid JSON value type"));
     }
     T::deserialize(input)
 }
@@ -624,7 +624,7 @@ pub fn to_vec<T: Serialize + ?Sized>(data: &T) -> Result<Vec<u8>, serde_json::Er
 ///
 /// Returns an error if the input cannot be serialized as JavaScript-compatible JSON.
 pub fn to_string<T: Serialize + ?Sized>(data: &T) -> Result<String, serde_json::Error> {
-    String::from_utf8(to_vec(data)?).map_err(|_error| invalid("invalid JSON output UTF8"))
+    String::from_utf8(to_vec(data)?).map_err(|_| invalid("invalid JSON output UTF8"))
 }
 
 /// # Errors

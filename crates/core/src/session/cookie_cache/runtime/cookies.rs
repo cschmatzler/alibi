@@ -155,7 +155,7 @@ pub fn chunked_cookie_headers<H: std::hash::BuildHasher + Sync>(
         // Encoded compact values are ASCII, so byte chunking matches JS strings.
         for (index, chunk) in value.as_bytes().chunks(capacity).enumerate() {
             let chunk = std::str::from_utf8(chunk)
-                .map_err(|_error| AuthError::internal("Invalid compact cache encoding"))?;
+                .map_err(|_| AuthError::internal("Invalid compact cache encoding"))?;
             let part = format!("{name}.{index}");
             _ = output.insert(part.clone(), render(&part, chunk, max_age)?);
         }

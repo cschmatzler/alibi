@@ -47,7 +47,7 @@ pub(crate) fn encode(payload: Value, secret: &str, max_age: f64) -> AuthResult<S
         URL_SAFE_NO_PAD.encode(crate::utils::json::to_vec(&time_claims(payload, max_age)?)?)
     );
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
-        .map_err(|_error| AuthError::internal("Invalid signing key"))?;
+        .map_err(|_| AuthError::internal("Invalid signing key"))?;
     mac.update(input.as_bytes());
     Ok(format!(
         "{input}.{}",

@@ -40,7 +40,7 @@ pub mod redis_adapter {
                 .map_err(|e| AuthError::internal(format!("Redis connection error: {e}")))?;
 
             let seconds = u64::try_from(expires_in.num_seconds())
-                .map_err(|_error| AuthError::internal("Redis set_ex requires non-negative TTL"))?;
+                .map_err(|_| AuthError::internal("Redis set_ex requires non-negative TTL"))?;
             conn.set_ex::<_, _, ()>(key, value, seconds)
                 .map_err(|e| AuthError::internal(format!("Redis set error: {e}")))?;
 
@@ -259,7 +259,7 @@ impl CacheAdapter for MemoryCacheAdapter {
         let mut data = self
             .data
             .lock()
-            .map_err(|_error| AuthError::internal("Cache lock poisoned"))?;
+            .map_err(|_| AuthError::internal("Cache lock poisoned"))?;
         _ = data.insert(key.to_owned(), entry);
         drop(data);
 
@@ -287,7 +287,7 @@ impl CacheAdapter for MemoryCacheAdapter {
         let data = self
             .data
             .lock()
-            .map_err(|_error| AuthError::internal("Cache lock poisoned"))?;
+            .map_err(|_| AuthError::internal("Cache lock poisoned"))?;
         let now = Utc::now();
 
         data.get(key).map_or(Ok(None), |entry| {
@@ -303,7 +303,7 @@ impl CacheAdapter for MemoryCacheAdapter {
         let mut data = self
             .data
             .lock()
-            .map_err(|_error| AuthError::internal("Cache lock poisoned"))?;
+            .map_err(|_| AuthError::internal("Cache lock poisoned"))?;
         _ = data.remove(key);
         drop(data);
 
@@ -314,7 +314,7 @@ impl CacheAdapter for MemoryCacheAdapter {
         let mut data = self
             .data
             .lock()
-            .map_err(|_error| AuthError::internal("Cache lock poisoned"))?;
+            .map_err(|_| AuthError::internal("Cache lock poisoned"))?;
         Ok(data
             .remove(key)
             .filter(|entry| {
@@ -364,7 +364,7 @@ impl CacheAdapter for MemoryCacheAdapter {
         let data = self
             .data
             .lock()
-            .map_err(|_error| AuthError::internal("Cache lock poisoned"))?;
+            .map_err(|_| AuthError::internal("Cache lock poisoned"))?;
         let now = Utc::now();
 
         data.get(key).map_or(Ok(false), |entry| {
@@ -376,7 +376,7 @@ impl CacheAdapter for MemoryCacheAdapter {
         let mut data = self
             .data
             .lock()
-            .map_err(|_error| AuthError::internal("Cache lock poisoned"))?;
+            .map_err(|_| AuthError::internal("Cache lock poisoned"))?;
 
         if let Some(entry) = data.get_mut(key) {
             entry.expires_at = Some(Utc::now() + expires_in);
@@ -390,7 +390,7 @@ impl CacheAdapter for MemoryCacheAdapter {
         let mut data = self
             .data
             .lock()
-            .map_err(|_error| AuthError::internal("Cache lock poisoned"))?;
+            .map_err(|_| AuthError::internal("Cache lock poisoned"))?;
         data.clear();
         drop(data);
 
