@@ -353,14 +353,12 @@ impl OpenApiBuilder {
 }
 
 impl OpenApiSpec {
-    ///
     /// # Errors
     ///
     /// Returns an error if the `OpenAPI` document cannot be serialized.
     pub fn to_json(&self) -> serde_json::Result<String> {
         serde_json::to_string_pretty(self)
     }
-    ///
     /// # Errors
     ///
     /// Returns an error if the `OpenAPI` document cannot be serialized.

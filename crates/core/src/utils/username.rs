@@ -21,7 +21,6 @@ pub fn normalize_username(username: &str) -> String {
     username.to_lowercase()
 }
 
-///
 /// # Errors
 ///
 /// Returns an error if the username fails the configured length or character validation.

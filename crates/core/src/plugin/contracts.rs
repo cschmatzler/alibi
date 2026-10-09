@@ -67,7 +67,6 @@ pub enum HttpEndpointResponse {
 }
 
 /// Plugin trait that all authentication plugins must implement.
-///
 #[async_trait]
 pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
     /// Plugin name - should be unique

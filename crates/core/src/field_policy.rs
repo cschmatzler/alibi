@@ -448,7 +448,6 @@ impl SessionFields {
             }
         }
     }
-    ///
     /// # Errors
     ///
     /// Returns a validation error for disallowed fields or rejected field validators.

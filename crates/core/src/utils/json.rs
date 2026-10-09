@@ -482,7 +482,6 @@ pub fn parse_value(input: &str) -> Result<JsValue, serde_json::Error> {
     Ok(value)
 }
 
-///
 /// # Errors
 ///
 /// Returns an error if the input is not valid JSON or cannot be deserialized into the requested type.
@@ -591,7 +590,6 @@ pub fn number_as_f64(number: &Number) -> Option<f64> {
     number.as_f64()
 }
 
-///
 /// # Errors
 ///
 /// Returns an error if the number cannot be serialized in JavaScript-compatible notation.
@@ -613,7 +611,6 @@ pub fn to_vec<T: Serialize + ?Sized>(data: &T) -> Result<Vec<u8>, serde_json::Er
     Ok(bytes)
 }
 
-///
 /// # Errors
 ///
 /// Returns an error if the input cannot be serialized as JavaScript-compatible JSON.
@@ -621,7 +618,6 @@ pub fn to_string<T: Serialize + ?Sized>(data: &T) -> Result<String, serde_json::
     String::from_utf8(to_vec(data)?).map_err(|_error| invalid("invalid JSON output UTF8"))
 }
 
-///
 /// # Errors
 ///
 /// Returns an error if the `OpenAPI` document cannot be serialized.
@@ -629,7 +625,6 @@ pub fn to_value<T: Serialize + ?Sized>(data: &T) -> Result<Value, serde_json::Er
     finite_value(&JsValue::from(serde_json::to_value(data)?))
 }
 
-///
 /// # Errors
 ///
 /// Propagates errors from the serializer.

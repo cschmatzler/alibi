@@ -5,17 +5,13 @@ mod initialization;
 mod routes;
 
 pub use context::AuthContext;
-pub use contracts::AuthPlugin;
-pub use contracts::BeforeRequestAction;
-pub use contracts::HttpEndpointResponse;
-pub use contracts::HttpRequestAction;
-pub use contracts::VerificationEmailOverride;
-pub use contracts::VerificationEmailOverrideHandle;
+pub use contracts::{
+    AuthPlugin, BeforeRequestAction, HttpEndpointResponse, HttpRequestAction,
+    VerificationEmailOverride, VerificationEmailOverrideHandle,
+};
 pub use extensions::ContextExtensions;
-pub use initialization::AuthInitContext;
-pub use initialization::AuthInitParts;
-pub use routes::AuthRoute;
-pub use routes::ResolvedEndpoint;
+pub use initialization::{AuthInitContext, AuthInitParts};
+pub use routes::{AuthRoute, ResolvedEndpoint};
 use std::collections::HashMap;
 
 type MetadataMap = HashMap<String, serde_json::Value>;

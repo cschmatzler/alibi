@@ -87,6 +87,14 @@ impl<S: AuthSchema> PluginStore<S> {
         }
     }
 
+    pub(in crate::store) fn ephemeral(
+        &self,
+    ) -> AuthResult<std::sync::MutexGuard<'_, indexmap::IndexMap<String, S::Session>>> {
+        self.ephemeral_sessions
+            .lock()
+            .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))
+    }
+
     pub(in crate::store) fn field_policies(&self) -> crate::field_policy::AdapterFieldPolicies {
         self.projection_context
             .extensions
@@ -115,6 +123,37 @@ impl<S: AuthSchema> PluginStore<S> {
             record.retain_provider_verification(value);
         }
         Ok(record)
+    }
+
+    pub(in crate::store) async fn optional_user_record(
+        &self,
+        user: Option<S::User>,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+        match user {
+            Some(user) => self.user_record(user).await.map(Some),
+            None => Ok(None),
+        }
+    }
+
+    pub(in crate::store) async fn user_records(
+        &self,
+        users: Vec<S::User>,
+    ) -> AuthResult<Vec<crate::AdapterRecord<S::User>>> {
+        let mut records = Vec::with_capacity(users.len());
+        for user in users {
+            records.push(self.user_record(user).await?);
+        }
+        Ok(records)
+    }
+
+    pub(in crate::store) async fn optional_account_record(
+        &self,
+        account: Option<S::Account>,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::Account>>> {
+        match account {
+            Some(account) => self.account_record(account).await.map(Some),
+            None => Ok(None),
+        }
     }
 
     pub(in crate::store) async fn session_record(

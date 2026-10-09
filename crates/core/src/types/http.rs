@@ -406,7 +406,6 @@ impl AuthRequest {
         self.virtual_session = Some(session);
     }
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the request body is missing or cannot be deserialized.

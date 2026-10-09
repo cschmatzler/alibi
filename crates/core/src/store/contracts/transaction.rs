@@ -266,7 +266,6 @@ pub trait TransactionStore<S: AuthSchema>: Send + Sync {
     ) -> AuthResult<BoxedTransactionValue>;
 }
 
-///
 /// # Errors
 ///
 /// Propagates transaction or callback errors; also rejects an unexpected transaction result type.

@@ -24,11 +24,8 @@ impl<S: AuthSchema> AccountStore<S> for PluginStore<S> {
         provider: &str,
         provider_account_id: &str,
     ) -> AuthResult<Option<crate::AdapterRecord<S::Account>>> {
-        let Some(model) = self.get_account(provider, provider_account_id).await? else {
-            return Ok(None);
-        };
-        let record = self.account_record(model).await?;
-        Ok(Some(record))
+        let account = self.get_account(provider, provider_account_id).await?;
+        self.optional_account_record(account).await
     }
 
     async fn get_credential_account_record(
@@ -36,17 +33,14 @@ impl<S: AuthSchema> AccountStore<S> for PluginStore<S> {
         user_id: &str,
     ) -> AuthResult<Option<crate::AdapterRecord<S::Account>>> {
         use crate::AuthAccount;
-        let model = self
+        let account = self
             .get_user_accounts(user_id)
             .await?
             .into_iter()
             .find(|account| {
                 account.provider_id() == "credential" && account.account_id() == user_id
             });
-        match model {
-            Some(model) => self.account_record(model).await.map(Some),
-            None => Ok(None),
-        }
+        self.optional_account_record(account).await
     }
 
     async fn get_user_accounts_record(

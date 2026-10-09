@@ -30,12 +30,32 @@ impl<S: AuthSchema> PluginStore<S> {
     pub(super) fn remember_ephemeral_session(&self, session: &S::Session) -> AuthResult<()> {
         if self.config.session.stateless {
             _ = self
-                .ephemeral_sessions
-                .lock()
-                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
+                .ephemeral()?
                 .insert(session.token().to_owned(), session.clone());
         }
         Ok(())
+    }
+
+    /// Set one nullable session scope field (`activeOrganizationId`, `activeTeamId`).
+    pub(super) async fn update_session_scope(
+        &self,
+        token: &str,
+        field: &str,
+        value: Option<&str>,
+    ) -> AuthResult<S::Session> {
+        let mut fields = crate::field_policy::FieldValues::new();
+        _ = fields.insert(
+            field.into(),
+            value.map_or(crate::utils::json::JsValue::Null, |value| {
+                crate::utils::json::JsValue::String(value.to_owned())
+            }),
+        );
+        let updated = if self.config.session.stateless {
+            self.update_ephemeral_session(token, None, fields).await?
+        } else {
+            self.update_secondary_session(token, None, fields).await?
+        };
+        updated.ok_or(AuthError::SessionNotFound)
     }
 
     pub(super) async fn update_ephemeral_session(
@@ -44,12 +64,7 @@ impl<S: AuthSchema> PluginStore<S> {
         expires_at: Option<DateTime<Utc>>,
         fields: crate::field_policy::FieldValues,
     ) -> AuthResult<Option<S::Session>> {
-        let original = self
-            .ephemeral_sessions
-            .lock()
-            .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
-            .get(token)
-            .cloned();
+        let original = self.ephemeral()?.get(token).cloned();
         let Some(original) = original else {
             return Ok(None);
         };
@@ -62,10 +77,7 @@ impl<S: AuthSchema> PluginStore<S> {
         };
         // Never resurrect a session concurrently removed while hooks awaited.
         {
-            let mut sessions = self
-                .ephemeral_sessions
-                .lock()
-                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?;
+            let mut sessions = self.ephemeral()?;
             let Some(destination) = sessions.get_mut(token) else {
                 return Ok(None);
             };

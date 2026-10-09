@@ -50,9 +50,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
             Some(session) => session,
             None => self
                 .record_store
-                .ephemeral_sessions
-                .lock()
-                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
+                .ephemeral()?
                 .get(token)
                 .cloned()
                 .ok_or(AuthError::SessionNotFound)?,
@@ -456,10 +454,7 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
                     .lock()
                     .map_err(|_| AuthError::internal("Ephemeral scope queue poisoned"))?,
             );
-            let mut sessions = self
-                .ephemeral_sessions
-                .lock()
-                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?;
+            let mut sessions = self.ephemeral()?;
             for (token, session) in scopes {
                 if let Some(destination) = sessions.get_mut(&token) {
                     *destination = session;

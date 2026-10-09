@@ -52,55 +52,40 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
         &self,
         id: &str,
     ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
-        let Some(model) = self.get_user_by_id(id).await? else {
-            return Ok(None);
-        };
-        let record = self.user_record(model).await?;
-        Ok(Some(record))
+        let user = self.get_user_by_id(id).await?;
+        self.optional_user_record(user).await
     }
 
     async fn get_user_by_email_record(
         &self,
         email: &str,
     ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
-        let Some(model) = self.get_user_by_email(email).await? else {
-            return Ok(None);
-        };
-        let record = self.user_record(model).await?;
-        Ok(Some(record))
+        let user = self.get_user_by_email(email).await?;
+        self.optional_user_record(user).await
     }
 
     async fn get_user_by_username_record(
         &self,
         username: &str,
     ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
-        let Some(model) = self.get_user_by_username(username).await? else {
-            return Ok(None);
-        };
-        let record = self.user_record(model).await?;
-        Ok(Some(record))
+        let user = self.get_user_by_username(username).await?;
+        self.optional_user_record(user).await
     }
 
     async fn get_user_by_phone_number_record(
         &self,
         phone_number: &str,
     ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
-        let Some(model) = self.get_user_by_phone_number(phone_number).await? else {
-            return Ok(None);
-        };
-        let record = self.user_record(model).await?;
-        Ok(Some(record))
+        let user = self.get_user_by_phone_number(phone_number).await?;
+        self.optional_user_record(user).await
     }
 
     async fn list_users_by_ids_record(
         &self,
         ids: &[String],
     ) -> AuthResult<Vec<crate::AdapterRecord<S::User>>> {
-        let mut records = Vec::new();
-        for model in self.list_users_by_ids(ids).await? {
-            records.push(self.user_record(model).await?);
-        }
-        Ok(records)
+        let users = self.list_users_by_ids(ids).await?;
+        self.user_records(users).await
     }
 
     async fn list_users_by_ids_page_record(
@@ -108,11 +93,8 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
         ids: &[String],
         limit: f64,
     ) -> AuthResult<Vec<crate::AdapterRecord<S::User>>> {
-        let mut records = Vec::new();
-        for model in self.list_users_by_ids_page(ids, limit).await? {
-            records.push(self.user_record(model).await?);
-        }
-        Ok(records)
+        let users = self.list_users_by_ids_page(ids, limit).await?;
+        self.user_records(users).await
     }
 
     async fn update_user_record(
@@ -132,12 +114,8 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
         &self,
         params: ListUsersParams,
     ) -> AuthResult<(Vec<crate::AdapterRecord<S::User>>, usize)> {
-        let (models, count) = self.list_users(params).await?;
-        let mut records = Vec::new();
-        for model in models {
-            records.push(self.user_record(model).await?);
-        }
-        Ok((records, count))
+        let (users, count) = self.list_users(params).await?;
+        Ok((self.user_records(users).await?, count))
     }
 
     async fn create_user(&self, mut create_user: CreateUser) -> AuthResult<S::User> {
