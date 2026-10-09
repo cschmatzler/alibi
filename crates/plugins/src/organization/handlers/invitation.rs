@@ -320,7 +320,7 @@ pub(crate) async fn invite_member_core(
         team_ids: requested_teams.iter().map(|id| (*id).to_owned()).collect(),
         inviter_id: user.id().to_string(),
         expires_at: None,
-        options: Default::default(),
+        options: alibi_core::store::InvitationCreateOptions::default(),
     };
     if let Some(hooks) = &config.invitation_hooks
         && let Some(patch) = hooks

@@ -10,6 +10,7 @@ use alibi_core::types::{Team, TeamMember};
 use alibi_core::utils::json::JsValue;
 use alibi_core::wire::InvitationView;
 use alibi_core::{AuthContext, AuthError, AuthResponse, AuthResult, AuthSchema, HttpMethod};
+use std::collections::HashMap;
 
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
@@ -684,7 +685,7 @@ fn query_pairs(call: &EndpointCall) -> AuthResult<std::collections::HashMap<Stri
                 })
                 .collect()
         })
-        .unwrap_or_else(|| Ok(Default::default()))
+        .unwrap_or_else(|| Ok(HashMap::default()))
 }
 
 pub(super) async fn execute<S: AuthSchema>(

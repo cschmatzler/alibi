@@ -1026,7 +1026,7 @@ mod tests {
 
     fn test_config() -> OrganizationConfig {
         OrganizationConfig {
-            organization_fields: Default::default(),
+            organization_fields: alibi_core::field_policy::SessionFields::default(),
             allow_user_to_create_organization: true,
             organization_limit: None,
             creation_policy: None,
@@ -1074,7 +1074,7 @@ mod tests {
         let existing = ctx
             .database
             .create_organization(CreateOrganization {
-                additional_fields: Default::default(),
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
                 id: None,
                 name: "Existing".to_owned(),
                 slug: "existing".to_owned(),
@@ -1168,7 +1168,7 @@ mod tests {
         let organization = ctx
             .database
             .create_organization(CreateOrganization {
-                additional_fields: Default::default(),
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
                 id: None,
                 name: "Team".to_owned(),
                 slug: "team".to_owned(),

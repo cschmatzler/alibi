@@ -1,27 +1,10 @@
 mod config;
 mod http;
 mod signin;
+mod signup;
 mod types;
 
-pub use config::EmailPasswordConfig;
-pub(crate) use config::password_length_limits;
-pub(crate) use signin::sign_in_core;
-pub(crate) use signin::sign_in_username_core;
-use types::IsUsernameAvailableRequest;
-use types::IsUsernameAvailableResponse;
-pub(crate) use types::SignInCoreResult;
-pub(crate) use types::SignInRequest;
-pub(crate) use types::SignInResponse;
-pub(crate) use types::SignInUsernameFailure;
-pub(crate) use types::SignInUsernameRequest;
-pub(crate) use types::SignInUsernameResponse;
-pub(crate) use types::SignUpRequest;
-pub(crate) use types::SignUpResponse;
-mod signup;
 use super::{email_verification::EmailVerificationPlugin, two_factor};
-use crate::authentication_helpers::{
-    JsonField, JsonFieldKind, RequestBody, is_valid_email, parse_body,
-};
 use crate::helpers::{SessionIssueError, apply_default_role};
 use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
 use alibi_core::field_policy::FieldValues;
@@ -42,11 +25,17 @@ use alibi_core::{
     HttpMethod, RequestMeta,
 };
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+pub use config::EmailPasswordConfig;
+pub(crate) use config::password_length_limits;
+pub(crate) use signin::sign_in_core;
+pub(crate) use signin::sign_in_username_core;
 pub use signup::{CustomSyntheticUserCallback, ExistingUserSignupCallback, SyntheticUserContext};
 use std::io::Write;
 use std::sync::Arc;
-use validator::Validate;
+pub(crate) use types::SignInCoreResult;
+pub(crate) use types::SignInResponse;
+pub(crate) use types::SignUpRequest;
+pub(crate) use types::SignUpResponse;
 
 const MESSAGE_INVALID_USERNAME_OR_PASSWORD: &str = "Invalid username or password";
 
@@ -224,7 +213,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
         if self.config.enable_username {
             self.config.username.fields()
         } else {
-            Default::default()
+            indexmap::IndexMap::default()
         }
     }
 
@@ -510,7 +499,7 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
 
             drop(
                 tx.create_account_record(CreateAccount {
-                    additional_fields: Default::default(),
+                    additional_fields: FieldValues::default(),
                     user_id: user.id().to_string(),
                     account_id: user.id().to_string(),
                     provider_id: "credential".to_owned(),

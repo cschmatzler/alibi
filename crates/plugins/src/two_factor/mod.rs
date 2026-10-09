@@ -843,7 +843,7 @@ mod tests {
                 drop(
                     ctx.database
                         .create_account(CreateAccount {
-                            additional_fields: Default::default(),
+                            additional_fields: alibi_core::field_policy::FieldValues::default(),
                             user_id: user.id.clone(),
                             account_id: user.id.clone(),
                             provider_id: "credential".into(),
@@ -1279,7 +1279,7 @@ mod tests {
         drop(
             ctx.database
                 .create_account(CreateAccount {
-                    additional_fields: Default::default(),
+                    additional_fields: alibi_core::field_policy::FieldValues::default(),
                     user_id: user.id.clone(),
                     account_id: user.id.clone(),
                     provider_id: "credential".to_owned(),

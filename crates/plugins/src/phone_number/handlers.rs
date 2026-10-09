@@ -12,6 +12,7 @@ use crate::{
     email_password::EmailPasswordConfig,
     password_management::{OnPasswordResetCallback, PasswordManagementConfig},
 };
+use alibi_core::field_policy::FieldValues;
 use alibi_core::{
     AuthAccount, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema,
     AuthUser, CreateAccount, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
@@ -581,7 +582,7 @@ impl PhoneNumberPlugin {
             drop(
                 ctx.database
                     .create_account_record(CreateAccount {
-                        additional_fields: Default::default(),
+                        additional_fields: FieldValues::default(),
                         user_id: user.id().to_string(),
                         account_id: user.id().to_string(),
                         provider_id: "credential".into(),

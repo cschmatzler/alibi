@@ -1,4 +1,14 @@
-use super::*;
+use super::EmailVerificationPlugin;
+use super::types::{SignInCoreResult, SignInRequest, SignInUsernameFailure, SignInUsernameRequest};
+use super::{
+    EmailPasswordConfig, finalize_sign_in_with_user_core, send_required_sign_in_verification,
+    verify_user_password,
+};
+use crate::authentication_helpers::is_valid_email;
+use alibi_core::entity::{AuthAccount, AuthUser};
+use alibi_core::utils::password as password_utils;
+use alibi_core::wire::UserView;
+use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResult, RequestMeta};
 pub(crate) async fn sign_in_core(
     req: &AuthRequest,
     body: &SignInRequest,

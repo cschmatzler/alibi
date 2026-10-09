@@ -1035,7 +1035,7 @@ mod tests {
             drop(
                 ctx.database
                     .create_account(CreateAccount {
-                        additional_fields: Default::default(),
+                        additional_fields: alibi_core::field_policy::FieldValues::default(),
                         user_id: user.id().to_string(),
                         account_id: format!("{provider}-identity"),
                         provider_id: provider.into(),
@@ -1447,7 +1447,7 @@ mod tests {
         let account = ctx
             .database
             .create_account(CreateAccount {
-                additional_fields: Default::default(),
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
                 user_id: user.id().to_string(),
                 account_id: user.id().to_string(),
                 provider_id: "credential".into(),

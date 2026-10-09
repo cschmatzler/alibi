@@ -8,6 +8,7 @@ use super::types::{
 use super::{AdminConfig, target_is_admin};
 use crate::StatusResponse;
 use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
+use alibi_core::field_policy::FieldValues;
 use alibi_core::wire::{SessionView, UserView};
 use alibi_core::{AuthContext, AuthError, AuthResult, CreateAccount, CreateSession, UpdateUser};
 use chrono::{DateTime, Duration, Utc};
@@ -284,7 +285,7 @@ pub(crate) async fn create_user_core(
         drop(
             ctx.database
                 .create_account_record(CreateAccount {
-                    additional_fields: Default::default(),
+                    additional_fields: FieldValues::default(),
                     user_id: user.id().to_string(),
                     account_id: user.id().to_string(),
                     provider_id: "credential".to_owned(),
@@ -829,7 +830,7 @@ pub(crate) async fn set_user_password_core(
         drop(
             ctx.database
                 .create_account_record(CreateAccount {
-                    additional_fields: Default::default(),
+                    additional_fields: FieldValues::default(),
                     user_id: body.user_id.clone(),
                     account_id: target.id().to_string(),
                     provider_id: "credential".into(),

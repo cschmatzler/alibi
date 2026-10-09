@@ -1,4 +1,7 @@
-use super::*;
+use super::types::DeleteExpiredApiKeysResponse;
+use super::{ApiKeyConfig, ApiKeyPlugin, admit_expired_cleanup};
+use alibi_core::{AuthContext, AuthResult};
+use std::sync::Arc;
 impl ApiKeyPlugin {
     /// Start automatic cleanup without awaiting its deletion.
     pub(super) async fn maybe_delete_expired(

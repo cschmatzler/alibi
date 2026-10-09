@@ -10,6 +10,7 @@ use crate::authentication_helpers::{
     find_verification, parse_body, parse_email, prepare_additional_user_fields,
     revoke_unproven_access, session_response,
 };
+use alibi_core::field_policy::FieldValues;
 use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthUser,
     CreateAccount, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
@@ -515,7 +516,7 @@ impl EmailOtpPlugin {
             drop(
                 ctx.database
                     .create_account_record(CreateAccount {
-                        additional_fields: Default::default(),
+                        additional_fields: FieldValues::default(),
                         user_id: user.id().to_string(),
                         account_id: user.id().to_string(),
                         provider_id: "credential".to_owned(),

@@ -76,7 +76,7 @@ pub struct RolePermissions {
 #[plugin(name = "OrganizationPlugin")]
 pub struct OrganizationConfig {
     /// Input policies for additional organization model fields.
-    #[config(default = Default::default(), skip)]
+    #[config(default = alibi_core::field_policy::SessionFields::default(), skip)]
     pub organization_fields: alibi_core::field_policy::SessionFields,
     /// Allow users to create organizations (default: true)
     #[config(default = true)]

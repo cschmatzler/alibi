@@ -1,4 +1,16 @@
-use super::*;
+use super::types::{
+    IsUsernameAvailableRequest, IsUsernameAvailableResponse, SignInCoreResult, SignInRequest,
+    SignInUsernameFailure, SignInUsernameRequest, SignInUsernameResponse, SignUpRequest,
+};
+use super::{
+    EmailPasswordPlugin, MESSAGE_EMAIL_NOT_VERIFIED, MESSAGE_INVALID_USERNAME_OR_PASSWORD,
+    MESSAGE_USERNAME_IS_ALREADY_TAKEN, UsernameValidationOrder, append_dont_remember_cookie,
+    create_session_cookie_for_remember_me, sign_in_core, sign_in_username_core, sign_up_core,
+    username_error_response,
+};
+use crate::authentication_helpers::parse_body;
+use alibi_core::{AuthContext, AuthRequest, AuthResponse, AuthResult, RequestMeta};
+use std::sync::Arc;
 impl EmailPasswordPlugin {
     pub(in crate::email_password) async fn handle_sign_up(
         &self,

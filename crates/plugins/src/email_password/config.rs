@@ -1,4 +1,6 @@
-use super::*;
+use super::{CustomSyntheticUserCallback, ExistingUserSignupCallback, UsernameConfig};
+use alibi_core::utils::password::PasswordHasher;
+use std::sync::Arc;
 #[derive(Clone)]
 #[expect(
     clippy::struct_excessive_bools,
