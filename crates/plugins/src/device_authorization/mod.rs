@@ -4,6 +4,7 @@ pub use grant::{
     DeviceRedemptionAuthorization, DeviceRedemptionPolicy, DeviceRedemptionResult,
     redeem_device_code,
 };
+
 mod http;
 mod issuance;
 mod redemption;

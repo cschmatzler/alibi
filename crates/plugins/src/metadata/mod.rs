@@ -17,6 +17,7 @@ use alibi_core::AuthRoute;
 use alibi_core::{OpenApiEndpoint, OpenApiField, OpenApiModel, PluginOpenApiMetadata};
 use alibi_schema_registry::{FieldDef, plugin_schemas};
 use serde_json::{Value, json};
+
 fn wire_name(name: &str) -> String {
     let mut words = name.split('_');
     let mut output = words.next().unwrap_or_default().to_owned();

@@ -26,6 +26,7 @@ use alibi_core::RequestMeta;
 use alibi_core::UpdateDeviceCode;
 use alibi_core::entity::{AuthSession, AuthUser};
 use chrono::Utc;
+
 impl DeviceAuthorizationPlugin {
     pub(in crate::device_authorization) async fn redeem_device_token(
         &self,

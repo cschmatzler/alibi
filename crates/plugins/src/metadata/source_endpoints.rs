@@ -4,6 +4,7 @@
 //! No generated document or fixture response was captured.
 use super::OpenApiEndpoint;
 use serde_json::json;
+
 pub(super) fn endpoint(plugin: &str, path: &str) -> Option<OpenApiEndpoint> {
     Some(match(plugin,path){
 ("admin","/admin/set-role")=>OpenApiEndpoint{operation_id:Some("setUserRole".into()),description:Some("Set the role of a user".into()),tags:None,parameters:vec![],request_body:Some(json!({"required":true,"content":{"application/json":{"schema":{"type":"object","properties":{"userId":{"type":"string","description":"The user id"},"role":{"anyOf":[{"type":"string","description":"The role to set. `admin` or `user` by default"},{"type":"array","items":{"type":"string","description":"The roles to set. `admin` or `user` by default"}}],"description":"The role to set, this can be a string or an array of strings. Eg: `admin` or `[admin, user]`"}},"required":["userId","role"]}}}})),responses:[("200".into(),json!({"description":"User role updated","content":{"application/json":{"schema":{"type":"object","properties":{"user":{"$ref":"#/components/schemas/User"}}}}}}))].into_iter().collect(),server_only:false,..Default::default()},

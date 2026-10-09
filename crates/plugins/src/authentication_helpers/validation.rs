@@ -1,5 +1,8 @@
+use alibi_core::types::{MultipartFiles, ParsedRequestBody};
+use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthError, AuthRequest, AuthResponse, AuthResult};
 use serde::de::DeserializeOwned;
+
 #[derive(Clone, Copy)]
 pub(crate) enum JsonFieldKind {
     String,
@@ -114,10 +117,10 @@ pub(in crate::authentication_helpers) fn parse_body_with_fields_and_ignored<
     // but validate missing properties instead of reparsing them as JSON.
     let opaque = req
         .extensions()
-        .get::<alibi_core::types::ParsedRequestBody>()
-        .is_some_and(|body| matches!(&*body, alibi_core::types::ParsedRequestBody::Opaque(_)));
-    let mut value: alibi_core::utils::json::JsValue = if opaque {
-        alibi_core::utils::json::JsValue::Object(indexmap::IndexMap::default())
+        .get::<ParsedRequestBody>()
+        .is_some_and(|body| matches!(&*body, ParsedRequestBody::Opaque(_)));
+    let mut value: JsValue = if opaque {
+        JsValue::Object(indexmap::IndexMap::default())
     } else {
         req.body_as_json().map_err(|_error| {
             AuthResponse::json(
@@ -127,7 +130,7 @@ pub(in crate::authentication_helpers) fn parse_body_with_fields_and_ignored<
             .unwrap_or_else(|_| AuthResponse::text(400, "Invalid JSON in request body"))
         })?
     };
-    if let alibi_core::utils::json::JsValue::Object(object) = &mut value {
+    if let JsValue::Object(object) = &mut value {
         for field in ignored {
             _ = object.shift_remove(*field);
         }
@@ -146,7 +149,7 @@ pub(in crate::authentication_helpers) fn parse_body_with_fields_and_ignored<
         }
         let received_type = if req
             .extensions()
-            .get::<alibi_core::types::MultipartFiles>()
+            .get::<MultipartFiles>()
             .is_some_and(|files| files.0.contains_key(field.name))
         {
             "Blob"
@@ -155,7 +158,7 @@ pub(in crate::authentication_helpers) fn parse_body_with_fields_and_ignored<
         };
         let issue = match field.kind {
             JsonFieldKind::String | JsonFieldKind::NonEmptyString | JsonFieldKind::Email
-                if !field_value.is_some_and(alibi_core::utils::json::JsValue::is_string) =>
+                if !field_value.is_some_and(JsValue::is_string) =>
             {
                 Some(format!(
                     "Invalid input: expected string, received {received_type}"
@@ -163,29 +166,25 @@ pub(in crate::authentication_helpers) fn parse_body_with_fields_and_ignored<
             }
             JsonFieldKind::NonEmptyString
                 if field_value
-                    .and_then(alibi_core::utils::json::JsValue::as_str)
+                    .and_then(JsValue::as_str)
                     .is_some_and(str::is_empty) =>
             {
                 Some("Too small: expected string to have >=1 characters".to_owned())
             }
-            JsonFieldKind::Boolean
-                if !field_value.is_some_and(alibi_core::utils::json::JsValue::is_boolean) =>
-            {
-                Some(format!(
-                    "Invalid input: expected boolean, received {received_type}"
-                ))
-            }
+            JsonFieldKind::Boolean if !field_value.is_some_and(JsValue::is_boolean) => Some(
+                format!("Invalid input: expected boolean, received {received_type}"),
+            ),
             JsonFieldKind::Email
                 if !field_value
-                    .and_then(alibi_core::utils::json::JsValue::as_str)
+                    .and_then(JsValue::as_str)
                     .is_some_and(is_valid_email) =>
             {
                 Some("Invalid email address".to_owned())
             }
             JsonFieldKind::OneOf(choices)
                 if !field_value
-                    .and_then(alibi_core::utils::json::JsValue::as_str)
-                    .is_some_and(|value_2| choices.contains(&value_2)) =>
+                    .and_then(JsValue::as_str)
+                    .is_some_and(|value| choices.contains(&value)) =>
             {
                 Some(format!(
                     "Invalid option: expected one of {}",
@@ -196,19 +195,10 @@ pub(in crate::authentication_helpers) fn parse_body_with_fields_and_ignored<
                         .join("|")
                 ))
             }
-            JsonFieldKind::Record
-                if !field_value.is_some_and(alibi_core::utils::json::JsValue::is_object) =>
-            {
-                Some(format!(
-                    "Invalid input: expected record, received {received_type}"
-                ))
-            }
-            JsonFieldKind::String
-            | JsonFieldKind::NonEmptyString
-            | JsonFieldKind::Email
-            | JsonFieldKind::Boolean
-            | JsonFieldKind::Record
-            | JsonFieldKind::OneOf(_) => None,
+            JsonFieldKind::Record if !field_value.is_some_and(JsValue::is_object) => Some(format!(
+                "Invalid input: expected record, received {received_type}"
+            )),
+            _ => None,
         };
         if let Some(issue) = issue {
             issues.push(format!("[body.{}] {issue}", field.name));
@@ -221,8 +211,7 @@ pub(in crate::authentication_helpers) fn parse_body_with_fields_and_ignored<
         .map_err(|_error| validation_response("[body] Invalid input"))
 }
 
-pub(crate) const fn json_type(value: Option<&alibi_core::utils::json::JsValue>) -> &'static str {
-    use alibi_core::utils::json::JsValue;
+pub(crate) const fn json_type(value: Option<&JsValue>) -> &'static str {
     match value {
         None => "undefined",
         Some(JsValue::Null) => "null",

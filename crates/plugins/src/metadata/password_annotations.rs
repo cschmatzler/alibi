@@ -1,6 +1,7 @@
 //! Core password endpoint DTO schemas declared by Better Auth 1.7.6.
 use super::OpenApiEndpoint;
 use serde_json::{Value, json};
+
 fn response(schema: &Value) -> Value {
     json!({"description":"Success","content":{"application/json":{"schema":schema}}})
 }

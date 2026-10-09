@@ -4,6 +4,7 @@
 //! No generated document or fixture response was captured.
 use super::{OpenApiField, OpenApiModel};
 use serde_json::json;
+
 pub(super) fn models(plugin: &str) -> Option<Vec<OpenApiModel>> {
     Some(match plugin {
         "admin" => vec![

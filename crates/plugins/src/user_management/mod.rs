@@ -1,5 +1,6 @@
 mod update;
 pub use update::handle_update_user;
+
 pub(super) mod handlers;
 
 pub(super) mod types;

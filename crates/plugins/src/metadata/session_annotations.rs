@@ -1,6 +1,7 @@
 //! Source-declared core session endpoint schemas (Better Auth 1.7.6).
 use super::OpenApiEndpoint;
 use serde_json::{Value, json};
+
 fn response(description: &str, schema: &Value) -> Value {
     json!({"description":description,"content":{"application/json":{"schema":schema}}})
 }

@@ -28,6 +28,7 @@ use alibi_core::AuthResult;
 use alibi_core::UpdateDeviceCode;
 use alibi_core::entity::AuthUser;
 use chrono::Utc;
+
 impl DeviceAuthorizationPlugin {
     pub(in crate::device_authorization) async fn handle_device_code(
         &self,

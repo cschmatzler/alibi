@@ -13,6 +13,7 @@ use alibi_core::AuthResponse;
 use alibi_core::AuthResult;
 use alibi_core::CreateDeviceCode;
 use chrono::Utc;
+
 impl DeviceAuthorizationPlugin {
     pub(in crate::device_authorization) async fn issue_device_code(
         &self,

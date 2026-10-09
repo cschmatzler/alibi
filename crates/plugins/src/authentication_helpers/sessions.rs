@@ -4,6 +4,7 @@ use alibi_core::{
 };
 use chrono::{Duration, Utc};
 use serde_json::Value;
+
 pub(crate) async fn session_response<S: AuthSchema>(
     ctx: &AuthContext<S>,
     req: &AuthRequest,
