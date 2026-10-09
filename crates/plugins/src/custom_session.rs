@@ -127,7 +127,7 @@ impl<S: AuthSchema> AuthPlugin<S> for CustomSessionPlugin<S> {
             .transform
             .transform(session, req, ctx)
             .await
-            .map_err(callback_error)?;
+            .map_err(crate::helpers::callback_failure)?;
         response.body = serde_json::to_vec(&transformed)?;
         for (name, value) in core_headers {
             response.headers.append(name, value);
@@ -196,7 +196,7 @@ impl<S: AuthSchema> CustomSessionPlugin<S> {
                             let result = transform
                                 .transform(session, request, context)
                                 .await
-                                .map_err(callback_error);
+                                .map_err(crate::helpers::callback_failure);
                             let _closed = sender.send((index, result));
                         }
                     },
@@ -224,14 +224,6 @@ impl<S: AuthSchema> CustomSessionPlugin<S> {
             *slot = Some(value?);
         }
         Ok(results.into_iter().flatten().collect())
-    }
-}
-
-fn callback_error(error: alibi_core::AuthError) -> alibi_core::AuthError {
-    use alibi_core::AuthError;
-    match error {
-        AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => error,
-        error => AuthError::CallbackFailure(Box::new(error)),
     }
 }
 

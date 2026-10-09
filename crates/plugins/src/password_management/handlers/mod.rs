@@ -17,8 +17,6 @@ use url::Url;
 const PASSWORD_RESET_SUCCESS_MESSAGE: &str =
     "If this email exists in our system, check your email for the reset link";
 
-// Core functions (framework-agnostic business logic)
-
 pub(crate) async fn request_password_reset_core(
     body: &RequestPasswordResetRequest,
     config: &PasswordManagementConfig,
@@ -294,10 +292,7 @@ pub(crate) async fn verify_password_core(
         .await
         .map_err(|error| match error {
             error if error.status_code() != 500 => error,
-            AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => {
-                error
-            }
-            error => AuthError::CallbackFailure(Box::new(error)),
+            error => crate::helpers::callback_failure(error),
         })
         .map_err(|error| match error {
             AuthError::InvalidCredentials => AuthError::bad_request("Invalid password"),

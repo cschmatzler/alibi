@@ -46,8 +46,6 @@ alibi_core::impl_auth_plugin! {
  }
 }
 
-// Old handler methods — delegate to core functions
-
 impl AccountManagementPlugin {
     async fn handle_list_accounts(
         &self,
@@ -83,8 +81,6 @@ impl std::fmt::Debug for AccountManagementPlugin {
             .finish_non_exhaustive()
     }
 }
-
-// Core functions — framework-agnostic business logic
 
 pub(crate) async fn list_accounts_core(
     user: &impl AuthUser,

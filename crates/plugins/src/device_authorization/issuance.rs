@@ -2,12 +2,12 @@ use super::DEVICE_STATUS_PENDING;
 use super::DeviceAuthorizationPlugin;
 use super::INVALID_CLIENT_ID;
 use super::build_verification_uris;
-use super::device_callback_error;
 use super::device_error_response;
 use super::duration_seconds_floor;
 use super::is_unique_constraint_error;
 use super::types::DeviceCodeRequest;
 use super::types::DeviceCodeResponse;
+use crate::helpers::callback_failure;
 use alibi_core::AuthContext;
 use alibi_core::AuthResponse;
 use alibi_core::AuthResult;
@@ -41,7 +41,7 @@ impl DeviceAuthorizationPlugin {
         if let Some(callback) = &self.config.on_device_auth_request {
             callback(body.client_id.clone(), body.scope.clone())
                 .await
-                .map_err(device_callback_error)?;
+                .map_err(callback_failure)?;
         }
 
         let expires_at = Utc::now() + self.config.expires_in;

@@ -160,7 +160,7 @@ impl OneTimeTokenPlugin {
             Some(generator) => generator
                 .generate(session, request)
                 .await
-                .map_err(callback_error)?,
+                .map_err(crate::helpers::callback_failure)?,
             None => random_token(),
         };
         let stored = self.stored_token(&token).await?;
@@ -198,7 +198,10 @@ impl OneTimeTokenPlugin {
             OneTimeTokenStorage::Hashed => {
                 Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(token.as_bytes())))
             }
-            OneTimeTokenStorage::Custom(hasher) => hasher.hash(token).await.map_err(callback_error),
+            OneTimeTokenStorage::Custom(hasher) => hasher
+                .hash(token)
+                .await
+                .map_err(crate::helpers::callback_failure),
         }
     }
 
@@ -484,13 +487,6 @@ impl<S: AuthSchema> AuthPlugin<S> for OneTimeTokenPlugin {
                 .insert("access-control-expose-headers", expose.join(", "));
         }
         Ok(response)
-    }
-}
-
-fn callback_error(error: AuthError) -> AuthError {
-    match error {
-        AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => error,
-        error => AuthError::CallbackFailure(Box::new(error)),
     }
 }
 

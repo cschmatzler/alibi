@@ -43,6 +43,19 @@ pub(crate) fn auth_base_url(config: &alibi_core::AuthConfig) -> String {
     }
 }
 
+/// Wrap an ordinary application callback failure as an empty HTTP 500; explicit
+/// API errors keep their public status and body.
+pub(crate) fn callback_failure(error: AuthError) -> AuthError {
+    if matches!(
+        error,
+        AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_)
+    ) {
+        error
+    } else {
+        AuthError::CallbackFailure(Box::new(error))
+    }
+}
+
 /// Result of issuing a real session for a user.
 pub struct IssuedSession<S: alibi_core::AuthSchema> {
     pub user: S::User,

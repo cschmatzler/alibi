@@ -26,7 +26,6 @@ pub struct SessionManagementConfig {
     pub require_authentication: bool,
 }
 
-// Request structures for session endpoints
 #[derive(Debug, Deserialize)]
 struct RevokeSessionRequest {
     token: String,
@@ -114,8 +113,6 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
         }
     }
 }
-
-// Old handler methods — delegate to core functions
 
 impl SessionManagementPlugin {
     #[expect(
@@ -477,8 +474,6 @@ impl std::fmt::Debug for SessionManagementPlugin {
     }
 }
 
-// Core functions — framework-agnostic business logic
-
 pub(crate) async fn sign_out_core(
     session: &impl AuthSession,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -574,12 +569,7 @@ pub(crate) async fn revoke_other_sessions_core(
             .recv()
             .await
             .ok_or_else(|| AuthError::internal("Session revocation task stopped"))?
-            .map_err(|error| match error {
-                AuthError::Api { .. }
-                | AuthError::Upstream { .. }
-                | AuthError::CallbackFailure(_) => error,
-                error => AuthError::CallbackFailure(Box::new(error)),
-            })?;
+            .map_err(crate::helpers::callback_failure)?;
     }
     Ok(StatusResponse { status: true })
 }

@@ -9,6 +9,7 @@ mod issuance;
 mod redemption;
 pub(super) mod types;
 
+use crate::helpers::callback_failure;
 use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult};
 use chrono::Duration;
 use rand::distr::{Alphanumeric, SampleString};
@@ -20,49 +21,27 @@ use types::DeviceErrorResponse;
 use url::Url;
 
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
-
 const DEVICE_STATUS_PENDING: &str = "pending";
-
 const DEVICE_STATUS_APPROVED: &str = "approved";
-
 const DEVICE_STATUS_DENIED: &str = "denied";
-
 const DEFAULT_USER_CODE_CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
 const INVALID_DEVICE_CODE: &str = "Invalid device code";
-
 const EXPIRED_DEVICE_CODE: &str = "Device code has expired";
-
 const EXPIRED_USER_CODE: &str = "User code has expired";
-
 const AUTHORIZATION_PENDING: &str = "Authorization pending";
-
 const ACCESS_DENIED: &str = "Access denied";
-
 const INVALID_USER_CODE: &str = "Invalid user code";
-
 const DEVICE_CODE_ALREADY_PROCESSED: &str = "Device code already processed";
-
 const DEVICE_CODE_NOT_CLAIMED: &str = "Device code has not been claimed by a verifying session; call `GET /device` with the `user_code` while signed in before approving or denying";
-
 const POLLING_TOO_FREQUENTLY: &str = "Polling too frequently";
-
 const USER_NOT_FOUND: &str = "User not found";
-
 const FAILED_TO_CREATE_SESSION: &str = "Failed to create session";
-
 const INVALID_DEVICE_CODE_STATUS: &str = "Invalid device code status";
-
 const AUTHENTICATION_REQUIRED: &str = "Authentication required";
-
 const INVALID_CLIENT_ID: &str = "Invalid client ID";
-
 const CLIENT_ID_MISMATCH: &str = "Client ID mismatch";
-
 const INVALID_REQUEST: &str = "Invalid request";
-
 type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
-
 type ValidateClientCallback = dyn Fn(String) -> BoxFuture<AuthResult<bool>> + Send + Sync;
 
 type DeviceAuthRequestCallback =
@@ -290,14 +269,14 @@ impl DeviceAuthorizationPlugin {
         match &self.config.validate_client {
             Some(callback) => callback(client_id.to_owned())
                 .await
-                .map_err(device_callback_error),
+                .map_err(callback_failure),
             None => Ok(true),
         }
     }
 
     async fn generate_device_code(&self) -> AuthResult<String> {
         match &self.config.generate_device_code {
-            Some(generator) => generator().await.map_err(device_callback_error),
+            Some(generator) => generator().await.map_err(callback_failure),
             None => {
                 Ok(Alphanumeric.sample_string(&mut rand::rng(), self.config.device_code_length))
             }
@@ -306,7 +285,7 @@ impl DeviceAuthorizationPlugin {
 
     async fn generate_user_code(&self) -> AuthResult<String> {
         match &self.config.generate_user_code {
-            Some(generator) => generator().await.map_err(device_callback_error),
+            Some(generator) => generator().await.map_err(callback_failure),
             None => Ok(default_generate_user_code(self.config.user_code_length)),
         }
     }
@@ -347,13 +326,6 @@ alibi_core::impl_auth_plugin! {
                 vec!["application/json"]
             }
         }
-    }
-}
-
-fn device_callback_error(error: AuthError) -> AuthError {
-    match error {
-        AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => error,
-        error => AuthError::CallbackFailure(Box::new(error)),
     }
 }
 

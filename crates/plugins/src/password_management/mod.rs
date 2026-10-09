@@ -181,7 +181,6 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
     }
 }
 
-// Implementation methods outside the trait
 impl PasswordManagementPlugin {
     async fn handle_request_password_reset(
         &self,

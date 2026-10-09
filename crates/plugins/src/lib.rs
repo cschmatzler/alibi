@@ -25,76 +25,46 @@ compile_error!(
 
 pub mod access;
 pub mod account_management;
-pub mod metadata;
-
 pub mod admin;
-
 pub mod anonymous;
-
+pub mod api_key;
+pub(crate) mod authentication_helpers;
 pub mod bearer;
 pub mod captcha;
 pub mod custom_session;
-pub use custom_session::{CustomSessionPlugin, SessionTransform};
-
-pub mod api_key;
-
-pub(crate) mod authentication_helpers;
-
 pub mod device_authorization;
-
 pub mod email_otp;
-mod endpoint;
-
 pub mod email_password;
-pub mod haveibeenpwned;
-
 pub mod email_verification;
-
+mod endpoint;
+pub mod haveibeenpwned;
 pub mod helpers;
-
 pub mod jwt;
 pub mod last_login_method;
-pub use last_login_method::{LastLoginMethodConfig, LastLoginMethodPlugin};
-
 pub mod magic_link;
-
+pub mod metadata;
 pub mod multi_session;
-
 pub mod oauth;
-
 pub mod oauth_popup;
 pub mod oauth_proxy;
-pub use oauth_popup::OAuthPopupPlugin;
-
+pub mod oauth_token_conversion;
 pub mod one_tap;
-
 pub mod one_time_token;
-
 pub mod open_api;
-
 pub mod organization;
-
 pub mod passkey;
-
 pub mod password_management;
-
 mod passwordless_numeric;
 pub mod phone_number;
-
 pub mod session_management;
-
 pub mod siwe;
-
 pub(crate) mod token_crypto;
-
 pub mod two_factor;
-
 pub mod user_management;
 
 // LCOV_EXCL_START
 #[cfg(test)]
 pub(crate) mod test_helpers {
-
     use alibi_core::config::AuthConfig;
     use alibi_core::wire::{SessionView, UserView};
     use alibi_core::{AuthContext, AuthRequest, CreateSession, CreateUser, HttpMethod};
@@ -259,16 +229,17 @@ pub use admin::{
     RolePermissions,
 };
 pub use alibi_core::PasswordHasher;
-pub use anonymous::{AnonymousConfig, AnonymousPlugin};
-pub use anonymous::{AnonymousIdentity, AnonymousLink, LinkAnonymousAccount};
-pub use api_key::{
-    ApiKeyCallbackContext, ApiKeyDefaultPermissions, ApiKeyErrorMessage, ApiKeyGenerationOptions,
-    ApiKeyGenerator, ApiKeyGetter, ApiKeyPermissions, ApiKeyValidator,
-    DeleteExpiredApiKeysResponse,
+pub use anonymous::{
+    AnonymousConfig, AnonymousIdentity, AnonymousLink, AnonymousPlugin, LinkAnonymousAccount,
 };
-pub use api_key::{ApiKeyConfig, ApiKeyPlugin};
+pub use api_key::{
+    ApiKeyCallbackContext, ApiKeyConfig, ApiKeyDefaultPermissions, ApiKeyErrorMessage,
+    ApiKeyGenerationOptions, ApiKeyGenerator, ApiKeyGetter, ApiKeyPermissions, ApiKeyPlugin,
+    ApiKeyValidator, DeleteExpiredApiKeysResponse,
+};
 pub use bearer::{BearerConfig, BearerPlugin};
 pub use captcha::{CaptchaConfig, CaptchaPlugin, CaptchaProvider};
+pub use custom_session::{CustomSessionPlugin, SessionTransform};
 pub use device_authorization::DeviceAuthorizationPlugin;
 pub use email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
 pub use email_password::{EmailPasswordConfig, EmailPasswordPlugin};
@@ -277,14 +248,15 @@ pub use email_verification::{
 };
 pub use haveibeenpwned::{HaveIBeenPwnedConfig, HaveIBeenPwnedPlugin, PwnedPasswordClient};
 pub use last_login_method::{
-    BeforeStoreLastLoginMethodCookie, LastLoginMethodContext, ResolveLastLoginMethod,
+    BeforeStoreLastLoginMethodCookie, LastLoginMethodConfig, LastLoginMethodContext,
+    LastLoginMethodPlugin, ResolveLastLoginMethod,
 };
 pub use magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
 pub use multi_session::{MultiSessionConfig, MultiSessionPlugin};
 pub use oauth::OAuthPlugin;
+pub use oauth_popup::OAuthPopupPlugin;
 pub use oauth_proxy::{OAuthProxyConfig, OAuthProxyPlugin};
-pub use one_tap::{OAuthJwksSource, OneTapClientId};
-pub use one_tap::{OneTapConfig, OneTapPlugin};
+pub use one_tap::{OAuthJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin};
 pub use open_api::{OpenApiConfig, OpenApiPlugin};
 pub use organization::{
     OrganizationConfig, OrganizationCreatePatch, OrganizationCreatedContext,
@@ -293,32 +265,28 @@ pub use organization::{
 };
 pub use passkey::{
     AuthenticationResult, PasskeyAuthenticationAfterVerification, PasskeyAuthenticationConfig,
-    PasskeyAuthenticationContext, PasskeyAuthenticatorSelection, PasskeyExtensions,
-    PasskeyExtensionsResolver, PasskeyOptionsContext, PasskeyRegistrationAfterVerification,
-    PasskeyRegistrationConfig, PasskeyRegistrationContext, PasskeyRegistrationOverride,
-    PasskeyRegistrationUser, PasskeyUserResolver, VerifiedPasskeyAuthentication,
-    VerifiedPasskeyRegistration,
+    PasskeyAuthenticationContext, PasskeyAuthenticatorSelection, PasskeyConfig, PasskeyExtensions,
+    PasskeyExtensionsResolver, PasskeyOptionsContext, PasskeyPlugin,
+    PasskeyRegistrationAfterVerification, PasskeyRegistrationConfig, PasskeyRegistrationContext,
+    PasskeyRegistrationOverride, PasskeyRegistrationUser, PasskeyUserResolver,
+    VerifiedPasskeyAuthentication, VerifiedPasskeyRegistration,
 };
-pub use passkey::{PasskeyConfig, PasskeyPlugin};
 pub use password_management::{
     PasswordManagementConfig, PasswordManagementPlugin, SendResetPassword,
 };
 pub use phone_number::{PhoneNumberConfig, PhoneNumberPlugin, SendPhoneOtp};
-use serde::{Deserialize, Serialize};
 pub use session_management::SessionManagementPlugin;
 pub use siwe::{SiweConfig, SiwePlugin};
 pub use two_factor::{
     SendTwoFactorOtp, TwoFactorBackupCipher, TwoFactorBackupStorage, TwoFactorConfig,
     TwoFactorOtpCipher, TwoFactorOtpHasher, TwoFactorOtpStorage, TwoFactorPlugin,
 };
-pub use user_management::SendChangeEmailConfirmation;
 pub use user_management::{
-    ChangeEmailConfig, DeleteUserConfig, UserManagementConfig, UserManagementPlugin,
+    ChangeEmailConfig, DeleteUserConfig, SendChangeEmailConfirmation, UserManagementConfig,
+    UserManagementPlugin,
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct StatusResponse {
     status: bool,
 }
-
-pub mod oauth_token_conversion;

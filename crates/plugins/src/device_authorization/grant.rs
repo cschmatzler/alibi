@@ -10,10 +10,10 @@ use super::INVALID_DEVICE_CODE;
 use super::INVALID_DEVICE_CODE_STATUS;
 use super::POLLING_TOO_FREQUENTLY;
 use super::USER_NOT_FOUND;
-use super::device_callback_error;
 use super::device_error_response;
 use super::types::DeviceCodeRequest;
 use super::validate_device_media;
+use crate::helpers::callback_failure;
 use alibi_core::AuthContext;
 use alibi_core::AuthError;
 use alibi_core::AuthRequest;
@@ -55,7 +55,7 @@ impl DeviceGrantFailure {
                 error,
                 description,
             } => device_error_response(status, &error, &description),
-            Self::Application(error) => Err(device_callback_error(error)),
+            Self::Application(error) => Err(callback_failure(error)),
         }
     }
 }
