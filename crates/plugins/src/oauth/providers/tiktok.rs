@@ -3,6 +3,7 @@ use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
+use serde_json::Map;
 use serde_json::Value;
 
 #[derive(Clone)]
@@ -159,7 +160,7 @@ impl OAuthUserInfoHandler for TikTokProfile {
             drop(output.insert("image".into(), image.clone()));
         }
         let user = OAuthUserInfo {
-            additional_fields: Default::default(),
+            additional_fields: Map::default(),
             id: raw_id,
             name: super::remaining_profile::scalar(Some(&name))?,
             email: email.as_str().unwrap_or_default().into(),

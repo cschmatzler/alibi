@@ -5,6 +5,7 @@ mod config;
 
 mod crypto;
 
+use alibi_core::field_policy::FieldValues;
 use alibi_core::utils::datetime as date;
 
 mod parse;
@@ -354,7 +355,7 @@ impl SiwePlugin {
         drop(
             ctx.database
                 .create_account_record(CreateAccount {
-                    additional_fields: Default::default(),
+                    additional_fields: FieldValues::default(),
                     user_id: user_id.to_owned(),
                     account_id: format!("{address}:{}", number.format(chain_id)),
                     provider_id: "siwe".to_owned(),

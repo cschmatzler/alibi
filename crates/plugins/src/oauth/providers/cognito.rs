@@ -9,6 +9,7 @@ use crate::oauth::{
 };
 use async_trait::async_trait;
 use base64::Engine;
+use serde_json::Map;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -276,7 +277,7 @@ fn finish_profile(
     let user = match mapped {
         Some(user) => user,
         None => OAuthUserInfo {
-            additional_fields: Default::default(),
+            additional_fields: Map::default(),
             id: id.clone(),
             email: profile
                 .get("email")

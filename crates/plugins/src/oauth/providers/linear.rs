@@ -4,6 +4,7 @@ use super::{
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use async_trait::async_trait;
+use serde_json::Map;
 use serde_json::Value;
 
 /// Application-owned Linear configuration. Generic signup and asynchronous
@@ -160,7 +161,7 @@ impl OAuthUserInfoHandler for LinearUserInfo {
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id: scalar(profile.get("id"))?.unwrap_or_default(),
                 name: scalar(profile.get("name"))?,
                 email: profile

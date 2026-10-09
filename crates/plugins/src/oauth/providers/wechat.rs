@@ -4,6 +4,7 @@ use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthRefreshTokenHandler, OAuthTokenSet,
     OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
+use serde_json::Map;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -342,7 +343,7 @@ impl OAuthUserInfoHandler for WeChatProfile {
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id,
                 name: super::remaining_profile::scalar(
                     profile

@@ -5,6 +5,7 @@ use super::{
 };
 use async_trait::async_trait;
 use base64::Engine;
+use serde_json::Map;
 use serde_json::Value;
 
 /// Application-owned Line configuration. Generic signup and asynchronous
@@ -187,7 +188,7 @@ impl OAuthUserInfoHandler for LineUserInfo {
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id: scalar(profile.get("sub"))?.unwrap_or_default(),
                 name: Some(
                     scalar(profile.get("name").filter(|value| truthy(value)))?.unwrap_or_default(),

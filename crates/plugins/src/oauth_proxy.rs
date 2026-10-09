@@ -21,6 +21,7 @@ use alibi_core::{
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Map;
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -357,7 +358,7 @@ impl OAuthProxyPlugin {
                 email: info.user.email,
                 name: info.user.name.unwrap_or_default(),
                 image: info.user.image,
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 email_verified: info.user.email_verified,
             },
             profile: Some(info.data),

@@ -7,6 +7,7 @@ use crate::oauth::{OAuthIdTokenConfig, OAuthJwksSource};
 use alibi_core::utils::json::{JsValue, parse_value};
 use async_trait::async_trait;
 use base64::Engine;
+use serde_json::Map;
 use std::sync::Arc;
 
 /// Apple-specific immutable configuration. Generic provider policy and trusted
@@ -200,7 +201,7 @@ impl OAuthUserInfoHandler for AppleUserInfo {
             mapped
         } else {
             OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id,
                 email,
                 name: Some(name),

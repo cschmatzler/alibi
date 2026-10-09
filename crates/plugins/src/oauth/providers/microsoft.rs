@@ -11,6 +11,7 @@ use crate::oauth::{
 use alibi_core::utils::json::JsValue;
 use async_trait::async_trait;
 use base64::Engine;
+use serde_json::Map;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -339,7 +340,7 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id,
                 email,
                 name: scalar(profile.get("name"))?,

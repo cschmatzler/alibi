@@ -8,6 +8,7 @@ use crate::oauth::{HttpOAuthJwksSource, OAuthJwksSource};
 use async_trait::async_trait;
 use base64::Engine;
 use jsonwebtoken::{Algorithm, DecodingKey};
+use serde_json::Map;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -359,7 +360,7 @@ impl OAuthUserInfoHandler for GenericUserInfo {
             profile
         };
         let user = OAuthUserInfo {
-            additional_fields: Default::default(),
+            additional_fields: Map::default(),
             id: string(&raw, "id").unwrap_or_default(),
             email: string(&raw, "email").unwrap_or_default(),
             name: string(&raw, "name"),

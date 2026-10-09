@@ -722,6 +722,7 @@ impl RawCredential {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
     fn decode(hex: &str) -> Result<(Cbor, usize), WebauthnError> {
         let bytes = (0..hex.len())
@@ -805,7 +806,7 @@ mod tests {
                 true,
             ),
             (
-                Cbor::Array(vec![entry(Cbor::Map(Default::default()))]),
+                Cbor::Array(vec![entry(Cbor::Map(BTreeMap::default()))]),
                 true,
             ),
             (Cbor::Array(vec![Cbor::Integer(1)]), false),

@@ -7,6 +7,7 @@ use super::{
     raw_truthy, validate_user_info,
 };
 use alibi_core::AuthAccount;
+use alibi_core::field_policy::FieldValues;
 pub(in crate::oauth::handlers) async fn finish_oauth_session<S: alibi_core::AuthSchema>(
     user: &alibi_core::AdapterRecord<S::User>,
     is_register: bool,
@@ -412,7 +413,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
         let created_account = ctx
             .database
             .create_account_record(CreateAccount {
-                additional_fields: Default::default(),
+                additional_fields: FieldValues::default(),
                 user_id: linked_user.id().to_string(),
                 account_id: user_info.id.clone(),
                 provider_id: provider_name.to_owned(),
@@ -532,7 +533,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
         create_user.additional_fields = provider_fields(user_info, true, ctx)?;
 
         let mut create_account = CreateAccount {
-            additional_fields: Default::default(),
+            additional_fields: FieldValues::default(),
             user_id: String::new(),
             account_id: user_info.id.clone(),
             provider_id: provider_name.to_owned(),

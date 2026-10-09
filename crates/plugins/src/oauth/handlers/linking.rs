@@ -9,6 +9,7 @@ use super::{
 };
 use alibi_core::AuthAccount;
 use alibi_core::AuthUser;
+use alibi_core::field_policy::FieldValues;
 pub(crate) async fn complete_link_social(
     provider_name: &str,
     user_info: &OAuthUserInfo,
@@ -121,7 +122,7 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
     drop(
         ctx.database
             .create_account_record(CreateAccount {
-                additional_fields: Default::default(),
+                additional_fields: FieldValues::default(),
                 user_id: link.user_id.clone(),
                 account_id: user_info.id.clone(),
                 provider_id: provider_name.to_owned(),
@@ -417,7 +418,7 @@ pub(in crate::oauth::handlers) async fn link_with_id_token_core(
     drop(
         ctx.database
             .create_account_record(CreateAccount {
-                additional_fields: Default::default(),
+                additional_fields: FieldValues::default(),
                 user_id: session.user_id().to_string(),
                 provider_id: body.provider.clone(),
                 account_id: response.user.id,

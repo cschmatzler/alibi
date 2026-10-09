@@ -4,6 +4,7 @@ use super::{
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use async_trait::async_trait;
+use serde_json::Map;
 use serde_json::Value;
 
 /// Application-owned Naver configuration. Generic signup and asynchronous
@@ -169,7 +170,7 @@ impl OAuthUserInfoHandler for NaverUserInfo {
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id: scalar(account.and_then(|value| value.get("id")))?.unwrap_or_default(),
                 name: Some(
                     scalar(

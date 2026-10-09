@@ -1,4 +1,5 @@
 use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfo, Value};
+use serde_json::Map;
 impl OAuthProvider {
     /// GitLab.com social login with the published `read_user` scope and PKCE.
     #[must_use]
@@ -88,7 +89,7 @@ pub(in crate::oauth::providers) fn gitlab_user_info(
         _ => return Err("Missing GitLab account ID".into()),
     };
     Ok(OAuthUserInfo {
-        additional_fields: Default::default(),
+        additional_fields: Map::default(),
         id,
         email: profile
             .get("email")

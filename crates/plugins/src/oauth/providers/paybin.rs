@@ -5,6 +5,7 @@ use super::{
 };
 use async_trait::async_trait;
 use base64::Engine;
+use serde_json::Map;
 use serde_json::Value;
 
 /// Application-owned Paybin configuration. Generic signup and asynchronous
@@ -199,7 +200,7 @@ impl OAuthUserInfoHandler for PaybinUserInfo {
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id: profile
                     .get("sub")
                     .map(super::remaining_profile::js_string)

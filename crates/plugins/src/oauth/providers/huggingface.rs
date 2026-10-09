@@ -4,6 +4,7 @@ use super::{
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use async_trait::async_trait;
+use serde_json::Map;
 use serde_json::Value;
 
 /// Application-owned HuggingFace configuration. Generic signup and asynchronous
@@ -143,7 +144,7 @@ impl OAuthUserInfoHandler for HuggingFaceUserInfo {
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id: scalar(profile.get("sub"))?.unwrap_or_default(),
                 name: Some(
                     scalar(
