@@ -26,7 +26,7 @@ pub trait AccountStore<S: AuthSchema>: Send + Sync {
         &self,
         create_account: CreateAccount,
     ) -> AuthResult<AdapterRecord<S::Account>> {
-        crate::AdapterRecord::physical(self.create_account(create_account).await?)
+        AdapterRecord::physical(self.create_account(create_account).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -38,7 +38,7 @@ pub trait AccountStore<S: AuthSchema>: Send + Sync {
     ) -> AuthResult<Option<AdapterRecord<S::Account>>> {
         self.get_account(provider, provider_account_id)
             .await?
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .transpose()
     }
 
@@ -56,7 +56,7 @@ pub trait AccountStore<S: AuthSchema>: Send + Sync {
             .find(|account| {
                 account.provider_id() == "credential" && account.account_id() == user_id
             })
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .transpose()
     }
 
@@ -67,7 +67,7 @@ pub trait AccountStore<S: AuthSchema>: Send + Sync {
         self.get_user_accounts(user_id)
             .await?
             .into_iter()
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .collect()
     }
 
@@ -78,7 +78,7 @@ pub trait AccountStore<S: AuthSchema>: Send + Sync {
         id: &str,
         update: UpdateAccount,
     ) -> AuthResult<AdapterRecord<S::Account>> {
-        crate::AdapterRecord::physical(self.update_account(id, update).await?)
+        AdapterRecord::physical(self.update_account(id, update).await?)
     }
 
     async fn create_account(&self, create_account: CreateAccount) -> AuthResult<S::Account>;

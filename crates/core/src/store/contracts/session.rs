@@ -70,7 +70,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
     ) -> AuthResult<Option<AdapterRecord<S::User>>> {
         self.get_session_user(token)
             .await?
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .transpose()
     }
 
@@ -80,7 +80,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         &self,
         create_session: CreateSession,
     ) -> AuthResult<AdapterRecord<S::Session>> {
-        crate::AdapterRecord::physical(self.create_session(create_session).await?)
+        AdapterRecord::physical(self.create_session(create_session).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -91,7 +91,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
     ) -> AuthResult<Option<AdapterRecord<S::Session>>> {
         self.get_session(token)
             .await?
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .transpose()
     }
 
@@ -104,7 +104,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         self.get_sessions_by_tokens(tokens)
             .await?
             .into_iter()
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .collect()
     }
 
@@ -117,7 +117,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         self.get_user_sessions(user_id)
             .await?
             .into_iter()
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .collect()
     }
 
@@ -132,7 +132,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
             .await?
             .into_iter()
             .filter(|session| session.expires_at() > now && session.active())
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .collect()
     }
 
@@ -145,7 +145,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
     ) -> AuthResult<Option<AdapterRecord<S::Session>>> {
         self.refresh_session(token, expires_at)
             .await?
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .transpose()
     }
 
@@ -158,7 +158,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
     ) -> AuthResult<Option<AdapterRecord<S::Session>>> {
         self.update_session_fields(token, fields)
             .await?
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .transpose()
     }
 
@@ -169,7 +169,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         token: &str,
         organization_id: Option<&str>,
     ) -> AuthResult<AdapterRecord<S::Session>> {
-        crate::AdapterRecord::physical(
+        AdapterRecord::physical(
             self.update_session_active_organization(token, organization_id)
                 .await?,
         )
@@ -182,7 +182,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         token: &str,
         team_id: Option<&str>,
     ) -> AuthResult<AdapterRecord<S::Session>> {
-        crate::AdapterRecord::physical(self.update_session_active_team(token, team_id).await?)
+        AdapterRecord::physical(self.update_session_active_team(token, team_id).await?)
     }
 
     /// Persist already authorized fields for the currently authenticated token.

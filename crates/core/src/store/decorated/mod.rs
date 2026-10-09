@@ -179,7 +179,7 @@ impl<S: AuthSchema> PluginStore<S> {
             .adapter_fields
             .record_output(public, additional, physical)
             .await?;
-        Ok(crate::AdapterRecord::with_output(session, output))
+        Ok(AdapterRecord::with_output(session, output))
     }
 
     pub(in crate::store) async fn session_records(
@@ -257,7 +257,7 @@ impl<S: AuthSchema> PluginStore<S> {
                 serde_json::Value::Object(canonical),
             )
             .await?;
-        Ok(crate::AdapterRecord::with_output(account, output))
+        Ok(AdapterRecord::with_output(account, output))
     }
 
     pub(in crate::store) async fn observe(&self, event: AdapterEvent<S>) -> AuthResult<()> {

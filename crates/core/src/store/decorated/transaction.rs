@@ -1,9 +1,11 @@
+use crate::field_policy::FieldValues;
 use crate::store::{
     AdapterEvent, BoxedTransactionValue, PluginStore, TransactionStore, TransactionWork,
     UserCreateTransform, UserCreationDefaults, create_data,
 };
 use crate::types::AddTeamMemberResult;
 use crate::user_validation::{PreparedUserCreation, UserValidationSource, prepare_creation};
+use crate::utils::json::JsValue;
 use crate::verification::{VerificationCreation, VerificationPublication, VerificationSnapshot};
 use crate::{AdapterRecord, AuthUser};
 use crate::{
@@ -38,7 +40,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
     pub(in crate::store) async fn update_ephemeral_scope(
         &self,
         token: &str,
-        mut fields: crate::field_policy::FieldValues,
+        mut fields: FieldValues,
     ) -> AuthResult<S::Session> {
         self.adapter_fields.attach(&mut fields, false);
         let staged = self
@@ -76,7 +78,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
     pub(in crate::store) async fn update_secondary_scope(
         &self,
         token: &str,
-        mut fields: crate::field_policy::FieldValues,
+        mut fields: FieldValues,
     ) -> AuthResult<S::Session> {
         self.adapter_fields.attach(&mut fields, false);
         let (session, user) = self
@@ -247,12 +249,10 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         team_id: Option<&str>,
     ) -> AuthResult<S::Session> {
         if self.config.session.stateless {
-            let mut fields = crate::field_policy::FieldValues::new();
+            let mut fields = FieldValues::new();
             _ = fields.insert(
                 "activeTeamId".into(),
-                team_id.map_or(crate::utils::json::JsValue::Null, |value| {
-                    crate::utils::json::JsValue::String(value.to_owned())
-                }),
+                team_id.map_or(JsValue::Null, |value| JsValue::String(value.to_owned())),
             );
             return self.update_ephemeral_scope(token, fields).await;
         }
@@ -260,12 +260,10 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             && (!self.record_store.session_uses_database()
                 || self.record_store.cached_session(token).await?.is_some())
         {
-            let mut fields = crate::field_policy::FieldValues::new();
+            let mut fields = FieldValues::new();
             _ = fields.insert(
                 "activeTeamId".into(),
-                team_id.map_or(crate::utils::json::JsValue::Null, |value| {
-                    crate::utils::json::JsValue::String(value.to_owned())
-                }),
+                team_id.map_or(JsValue::Null, |value| JsValue::String(value.to_owned())),
             );
             return self.update_secondary_scope(token, fields).await;
         }
@@ -278,12 +276,10 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         organization_id: Option<&str>,
     ) -> AuthResult<S::Session> {
         if self.config.session.stateless {
-            let mut fields = crate::field_policy::FieldValues::new();
+            let mut fields = FieldValues::new();
             _ = fields.insert(
                 "activeOrganizationId".into(),
-                organization_id.map_or(crate::utils::json::JsValue::Null, |value| {
-                    crate::utils::json::JsValue::String(value.to_owned())
-                }),
+                organization_id.map_or(JsValue::Null, |value| JsValue::String(value.to_owned())),
             );
             return self.update_ephemeral_scope(token, fields).await;
         }
@@ -291,12 +287,10 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             && (!self.record_store.session_uses_database()
                 || self.record_store.cached_session(token).await?.is_some())
         {
-            let mut fields = crate::field_policy::FieldValues::new();
+            let mut fields = FieldValues::new();
             _ = fields.insert(
                 "activeOrganizationId".into(),
-                organization_id.map_or(crate::utils::json::JsValue::Null, |value| {
-                    crate::utils::json::JsValue::String(value.to_owned())
-                }),
+                organization_id.map_or(JsValue::Null, |value| JsValue::String(value.to_owned())),
             );
             return self.update_secondary_scope(token, fields).await;
         }

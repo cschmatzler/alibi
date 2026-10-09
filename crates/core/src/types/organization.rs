@@ -1,4 +1,5 @@
 use crate::entity::{AuthInvitation, AuthMember, AuthOrganization};
+use crate::field_policy::FieldValues;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
@@ -119,7 +120,7 @@ impl Invitation {
 /// Organization creation data
 #[derive(Debug, Clone)]
 pub struct CreateOrganization {
-    pub additional_fields: crate::field_policy::FieldValues,
+    pub additional_fields: FieldValues,
     pub id: Option<String>,
     pub name: String,
     pub slug: String,
@@ -132,7 +133,7 @@ impl CreateOrganization {
     pub fn new(name: impl Into<String>, slug: impl Into<String>) -> Self {
         Self {
             id: None,
-            additional_fields: crate::field_policy::FieldValues::default(),
+            additional_fields: FieldValues::default(),
             name: name.into(),
             slug: slug.into(),
             logo: None,
@@ -156,7 +157,7 @@ impl CreateOrganization {
 /// Organization update data
 #[derive(Debug, Clone, Default)]
 pub struct UpdateOrganization {
-    pub additional_fields: crate::field_policy::FieldValues,
+    pub additional_fields: FieldValues,
     pub name: Option<String>,
     pub slug: Option<String>,
     /// None retains the stored logo; Some(None) clears it; Some(Some) sets it.

@@ -2,6 +2,7 @@
 
 use crate::AuthContext;
 use crate::types::RequestExtensions;
+use crate::utils::json::JsValue;
 use crate::{AuthRequest, AuthSchema, HttpMethod, SessionView, UserView};
 use std::collections::HashMap;
 
@@ -68,13 +69,11 @@ impl SessionRequest for crate::endpoint::EndpointCall {
         self.query()
             .and_then(|query| query.get(name))
             .is_some_and(|value| match value {
-                crate::utils::json::JsValue::Null => false,
-                crate::utils::json::JsValue::Bool(value) => *value,
-                crate::utils::json::JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
-                crate::utils::json::JsValue::String(value) => !value.is_empty(),
-                crate::utils::json::JsValue::Array(_) | crate::utils::json::JsValue::Object(_) => {
-                    true
-                }
+                JsValue::Null => false,
+                JsValue::Bool(value) => *value,
+                JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
+                JsValue::String(value) => !value.is_empty(),
+                JsValue::Array(_) | JsValue::Object(_) => true,
             })
     }
     fn extensions(&self) -> &RequestExtensions {

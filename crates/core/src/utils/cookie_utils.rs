@@ -1,8 +1,8 @@
 //! Shared cookie utilities for building `Set-Cookie` headers.
 
-use crate::AuthResult;
 use crate::config::{AuthConfig, CookieAttributes, SameSite};
 use crate::utils::javascript::number_from_i64;
+use crate::{AuthError, AuthResult};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
@@ -358,11 +358,9 @@ fn render_encoded_cookie(
     let mut header = format!("{name}={value}");
     if let Some(age) = attributes.max_age.filter(|age| *age >= 0.0) {
         if age > 34_560_000.0 {
-            return Err(crate::AuthError::CallbackFailure(Box::new(
-                crate::AuthError::internal(
-                    "Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration.",
-                ),
-            )));
+            return Err(AuthError::CallbackFailure(Box::new(AuthError::internal(
+                "Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration.",
+            ))));
         }
         // JavaScript renders Math.floor(-0) as "0".
         let age = if age == 0.0 { 0.0 } else { age.floor() };
@@ -390,11 +388,9 @@ fn render_encoded_cookie(
             .num_milliseconds()
             > 34_560_000_000
         {
-            return Err(crate::AuthError::CallbackFailure(Box::new(
-                crate::AuthError::internal(
-                    "Cookies Expires SHOULD NOT be greater than 400 days (34560000 seconds) in the future.",
-                ),
-            )));
+            return Err(AuthError::CallbackFailure(Box::new(AuthError::internal(
+                "Cookies Expires SHOULD NOT be greater than 400 days (34560000 seconds) in the future.",
+            ))));
         }
         _ = write!(
             header,

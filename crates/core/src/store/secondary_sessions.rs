@@ -4,18 +4,27 @@ use crate::field_policy::FieldValues;
 use crate::{AuthError, AuthResult, AuthSchema, AuthSession, AuthUser};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 #[derive(Serialize, Deserialize)]
 struct CachedSession {
     session: serde_json::Value,
     user: serde_json::Value,
-    absent_fields: std::collections::BTreeSet<String>,
+    absent_fields: BTreeSet<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 struct Reference {
     token: String,
     expires_at: DateTime<Utc>,
+}
+
+impl CachedSession {
+    fn absent_fields(raw: &str) -> BTreeSet<String> {
+        serde_json::from_str::<Self>(raw)
+            .map(|cached| cached.absent_fields)
+            .unwrap_or_default()
+    }
 }
 
 impl<S: AuthSchema> PluginStore<S> {
@@ -44,7 +53,7 @@ impl<S: AuthSchema> PluginStore<S> {
         field: &str,
         value: Option<&str>,
     ) -> AuthResult<S::Session> {
-        let mut fields = crate::field_policy::FieldValues::new();
+        let mut fields = FieldValues::new();
         _ = fields.insert(
             field.into(),
             value.map_or(crate::utils::json::JsValue::Null, |value| {
@@ -189,11 +198,9 @@ impl<S: AuthSchema> PluginStore<S> {
         let ttl = Duration::seconds((session.expires_at() - now).num_seconds());
         if ttl > Duration::zero() {
             let mut absent_fields = if let Some(raw) = cache.get(session.token()).await? {
-                serde_json::from_str::<CachedSession>(&raw)
-                    .map(|cached| cached.absent_fields)
-                    .unwrap_or_default()
+                CachedSession::absent_fields(&raw)
             } else if !self.config.session.store_in_database {
-                let mut absent = std::collections::BTreeSet::new();
+                let mut absent = BTreeSet::new();
                 for (name, value) in [
                     ("impersonatedBy", session.impersonated_by()),
                     ("activeOrganizationId", session.active_organization_id()),
@@ -217,7 +224,7 @@ impl<S: AuthSchema> PluginStore<S> {
                 }
                 absent
             } else {
-                std::collections::BTreeSet::new()
+                BTreeSet::new()
             };
             if let Some(fields) = updated_fields {
                 for name in fields.keys() {
@@ -243,16 +250,14 @@ impl<S: AuthSchema> PluginStore<S> {
     pub(super) async fn secondary_absent_fields(
         &self,
         token: &str,
-    ) -> AuthResult<std::collections::BTreeSet<String>> {
+    ) -> AuthResult<BTreeSet<String>> {
         let Some(cache) = self.secondary() else {
-            return Ok(std::collections::BTreeSet::new());
+            return Ok(BTreeSet::new());
         };
         let Some(raw) = cache.get(token).await? else {
-            return Ok(std::collections::BTreeSet::new());
+            return Ok(BTreeSet::new());
         };
-        Ok(serde_json::from_str::<CachedSession>(&raw)
-            .map(|cached| cached.absent_fields)
-            .unwrap_or_default())
+        Ok(CachedSession::absent_fields(&raw))
     }
 
     pub(super) async fn mirror_created_session(&self, session: &S::Session) -> AuthResult<()> {
@@ -270,7 +275,7 @@ impl<S: AuthSchema> PluginStore<S> {
     pub(super) async fn cached_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>> {
         let now = Utc::now();
         let mut sessions = Vec::new();
-        let mut seen = std::collections::BTreeSet::new();
+        let mut seen = BTreeSet::new();
         for reference in self.references(user_id).await? {
             if reference.expires_at <= now || !seen.insert(reference.token.clone()) {
                 continue;
@@ -310,7 +315,7 @@ impl<S: AuthSchema> PluginStore<S> {
             }
         }
         let mut current = self.references(user_id).await?;
-        let removed = std::collections::BTreeSet::from_iter(tokens);
+        let removed = BTreeSet::from_iter(tokens);
         current.retain(|reference| !removed.contains(&reference.token));
         self.write_references(user_id, current).await
     }

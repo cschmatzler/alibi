@@ -1,4 +1,5 @@
 //! Application and plugin field policies at the session input boundary.
+use crate::AdapterOutput;
 use crate::utils::json::JsValue;
 use crate::{AuthError, AuthResult};
 use indexmap::{IndexMap, IndexSet};
@@ -572,7 +573,7 @@ impl SessionAdapterFields {
         canonical: Value,
         mut additional: FieldOutput,
         base: Value,
-    ) -> AuthResult<crate::AdapterOutput> {
+    ) -> AuthResult<AdapterOutput> {
         let (Value::Object(canonical), Value::Object(mut base)) = (canonical, base) else {
             return Err(AuthError::internal("Adapter output must be an object"));
         };
@@ -588,14 +589,14 @@ impl SessionAdapterFields {
             }
             _ = base.remove(name);
         }
-        let mut output = crate::AdapterOutput::from_values(base);
+        let mut output = AdapterOutput::from_values(base);
         output.extend(self.output(additional).await?);
         Ok(output)
     }
 
     /// Transform only declared additional fields, retaining their omission.
-    pub(crate) async fn output(&self, values: FieldOutput) -> AuthResult<crate::AdapterOutput> {
-        let mut output = crate::AdapterOutput::default();
+    pub(crate) async fn output(&self, values: FieldOutput) -> AuthResult<AdapterOutput> {
+        let mut output = AdapterOutput::default();
         for (name, field) in &*self.0 {
             let value = values
                 .get(name)

@@ -3,8 +3,8 @@
 //! The codec authenticates data; storage bypass and authoritative-read policy
 //! belong to the session resolver. No database model is reconstructed here.
 
-use crate::AdapterOutput;
 use crate::utils::json::JsValue;
+use crate::{AdapterOutput, AdapterRecord};
 pub(crate) mod date;
 
 pub mod jwt;
@@ -142,8 +142,8 @@ impl CacheVersionContext {
         let original = &self.originals.as_ref()?.0;
         original.downcast_ref().or_else(|| {
             original
-                .downcast_ref::<crate::AdapterRecord<T>>()
-                .map(crate::AdapterRecord::stored)
+                .downcast_ref::<AdapterRecord<T>>()
+                .map(AdapterRecord::stored)
         })
     }
     #[must_use]
@@ -151,8 +151,8 @@ impl CacheVersionContext {
         let original = &self.originals.as_ref()?.1;
         original.downcast_ref().or_else(|| {
             original
-                .downcast_ref::<crate::AdapterRecord<T>>()
-                .map(crate::AdapterRecord::stored)
+                .downcast_ref::<AdapterRecord<T>>()
+                .map(AdapterRecord::stored)
         })
     }
 }
@@ -337,10 +337,7 @@ fn authenticate_compact(
     let mut normalized = original_payload.clone();
     date::revive(&mut normalized);
     let mut signed = normalized.as_object()?.clone();
-    _ = signed.insert(
-        "expiresAt".into(),
-        crate::utils::json::JsValue::Number(expires_at),
-    );
+    _ = signed.insert("expiresAt".into(), JsValue::Number(expires_at));
     let message = crate::utils::json::to_string(&signed).ok()?;
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).ok()?;
     mac.update(message.as_bytes());
@@ -373,7 +370,7 @@ pub(crate) fn parse_payload(original_payload: &JsValue, expires_at: f64) -> Opti
         for field in optional {
             if object
                 .get(*field)
-                .and_then(crate::utils::json::JsValue::as_str)
+                .and_then(JsValue::as_str)
                 .is_some_and(|text| date::parse(text).is_some())
             {
                 return None;
@@ -393,7 +390,7 @@ pub(crate) fn parse_payload(original_payload: &JsValue, expires_at: f64) -> Opti
     )?;
     if original_payload
         .get("version")
-        .and_then(crate::utils::json::JsValue::as_str)
+        .and_then(JsValue::as_str)
         .is_some_and(|text| date::parse(text).is_some())
     {
         return None;

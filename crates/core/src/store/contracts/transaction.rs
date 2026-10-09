@@ -69,19 +69,19 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
 
     /// Read the managed signing keyring on this transaction's connection.
     async fn list_jwks(&self) -> AuthResult<Vec<Jwk>> {
-        Err(crate::AuthError::config(
+        Err(AuthError::config(
             "Transactional JWKS reads are unsupported by this store",
         ))
     }
     /// Find a managed signing key on this transaction's connection.
     async fn get_jwk_by_id(&self, _id: &str) -> AuthResult<Option<Jwk>> {
-        Err(crate::AuthError::config(
+        Err(AuthError::config(
             "Transactional JWKS reads are unsupported by this store",
         ))
     }
     /// Persist a newly generated managed signing key in this transaction.
     async fn create_jwk(&self, _data: CreateJwk) -> AuthResult<Jwk> {
-        Err(crate::AuthError::config(
+        Err(AuthError::config(
             "Transactional JWKS writes are unsupported by this store",
         ))
     }
@@ -92,7 +92,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         create_user: CreateUser,
     ) -> AuthResult<AdapterRecord<S::User>> {
-        crate::AdapterRecord::physical(self.create_user(create_user).await?)
+        AdapterRecord::physical(self.create_user(create_user).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -102,7 +102,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         create_user: CreateUser,
         source: UserValidationSource,
     ) -> AuthResult<AdapterRecord<S::User>> {
-        crate::AdapterRecord::physical(self.create_user_with_source(create_user, source).await?)
+        AdapterRecord::physical(self.create_user_with_source(create_user, source).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -111,7 +111,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         prepared: PreparedUserCreation,
     ) -> AuthResult<AdapterRecord<S::User>> {
-        crate::AdapterRecord::physical(self.create_user_prepared(prepared).await?)
+        AdapterRecord::physical(self.create_user_prepared(prepared).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -119,7 +119,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     async fn get_user_by_id_record(&self, id: &str) -> AuthResult<Option<AdapterRecord<S::User>>> {
         self.get_user_by_id(id)
             .await?
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .transpose()
     }
 
@@ -129,7 +129,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         create_account: CreateAccount,
     ) -> AuthResult<AdapterRecord<S::Account>> {
-        crate::AdapterRecord::physical(self.create_account(create_account).await?)
+        AdapterRecord::physical(self.create_account(create_account).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -138,7 +138,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         create_session: CreateSession,
     ) -> AuthResult<AdapterRecord<S::Session>> {
-        crate::AdapterRecord::physical(self.create_session(create_session).await?)
+        AdapterRecord::physical(self.create_session(create_session).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -148,7 +148,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         token: &str,
         organization_id: Option<&str>,
     ) -> AuthResult<AdapterRecord<S::Session>> {
-        crate::AdapterRecord::physical(
+        AdapterRecord::physical(
             self.update_session_active_organization(token, organization_id)
                 .await?,
         )
@@ -161,7 +161,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         token: &str,
         team_id: Option<&str>,
     ) -> AuthResult<AdapterRecord<S::Session>> {
-        crate::AdapterRecord::physical(self.update_session_active_team(token, team_id).await?)
+        AdapterRecord::physical(self.update_session_active_team(token, team_id).await?)
     }
 
     /// Create through before hooks, optional physical persistence, secondary

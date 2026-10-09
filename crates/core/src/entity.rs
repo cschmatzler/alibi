@@ -8,6 +8,7 @@
 //! Implement these traits manually for any custom types used inside the auth
 //! runtime.
 
+use crate::AuthError;
 use crate::types::InvitationStatus;
 use crate::{AdapterOutput, AuthResult};
 use chrono::{DateTime, Utc};
@@ -68,13 +69,13 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
     /// Encode the complete typed model for a trusted secondary backend.
     /// Custom entities can opt in without adding a Deserialize bound to all schemas.
     fn secondary_snapshot(&self) -> AuthResult<serde_json::Value> {
-        Err(crate::AuthError::NotImplemented(
+        Err(AuthError::NotImplemented(
             "Secondary model encoding is unsupported".into(),
         ))
     }
     /// Restore a model from a trusted secondary backend, before public projection.
     fn from_secondary_snapshot(_snapshot: serde_json::Value) -> AuthResult<Self> {
-        Err(crate::AuthError::NotImplemented(
+        Err(AuthError::NotImplemented(
             "Secondary model decoding is unsupported".into(),
         ))
     }
@@ -134,13 +135,13 @@ pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
     /// Encode the complete typed model for a trusted secondary backend.
     /// Custom entities can opt in without adding a Deserialize bound to all schemas.
     fn secondary_snapshot(&self) -> AuthResult<serde_json::Value> {
-        Err(crate::AuthError::NotImplemented(
+        Err(AuthError::NotImplemented(
             "Secondary model encoding is unsupported".into(),
         ))
     }
     /// Restore a model from a trusted secondary backend, before public projection.
     fn from_secondary_snapshot(_snapshot: serde_json::Value) -> AuthResult<Self> {
-        Err(crate::AuthError::NotImplemented(
+        Err(AuthError::NotImplemented(
             "Secondary model decoding is unsupported".into(),
         ))
     }
