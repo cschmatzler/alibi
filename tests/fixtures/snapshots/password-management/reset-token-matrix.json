@@ -1,0 +1,688 @@
+[
+  {
+    "revoke=false: []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: invalid length 0, expected struct <v1> with 2 elements"
+      }
+    }
+  },
+  {
+    "revoke=false: null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: invalid type: null, expected struct <v1>"
+      }
+    }
+  },
+  {
+    "revoke=false: {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: missing field `email`"
+      }
+    }
+  },
+  {
+    "revoke=false: {\"email\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: invalid type: floating point `5.0`, expected a string"
+      }
+    }
+  },
+  {
+    "revoke=false: {\"email\":\"nope\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid email address"
+      }
+    }
+  },
+  {
+    "revoke=false: {\"email\":\"ghost@example.test\",\"redirectTo\":\"/reset\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true,
+        "message": "If this email exists in our system, check your email for the reset link"
+      }
+    }
+  },
+  {
+    "revoke=false: {\"email\":\"owner@example.test\",\"redirectTo\":\"/reset?a=1&b=2\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true,
+        "message": "If this email exists in our system, check your email for the reset link"
+      }
+    }
+  },
+  {
+    "delivered url": "http://localhost:43219/api/auth/reset-password/<token>?callbackURL=%2Freset%3Fa%3D1%26b%3D2"
+  },
+  {
+    "revoke=false: no token segment": {
+      "status": 404,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "revoke=false: no callback": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/error?error=INVALID_TOKEN"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "revoke=false: untrusted callback": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_CALLBACK_URL",
+        "message": "Invalid callbackURL"
+      }
+    }
+  },
+  {
+    "revoke=false: unknown token": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/reset?error=INVALID_TOKEN"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "revoke=false: valid token": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/reset?token=<v2>"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "revoke=false: valid token with query": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/reset?token=<v2>&x=1"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "revoke=false: absolute callback": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/reset?token=<v2>#frag"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "revoke=false: []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "revoke=false: {\"newPassword\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v3>] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "revoke=false: {\"newPassword\":\"a-brand-new-password\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "revoke=false: {\"newPassword\":\"short\",\"token\":\"x\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_SHORT",
+        "message": "Password too short"
+      }
+    }
+  },
+  {
+    "revoke=false: {\"newPassword\":\"a-brand-new-password\",\"token\":\"unknown\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "revoke=false: request second token": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true,
+        "message": "If this email exists in our system, check your email for the reset link"
+      }
+    }
+  },
+  {
+    "revoke=false: hook refuses": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "reset observed"
+      }
+    }
+  },
+  {
+    "revoke=false: token from query": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "revoke=false: token already consumed": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "revoke=false: request for credentialless user": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true,
+        "message": "If this email exists in our system, check your email for the reset link"
+      }
+    }
+  },
+  {
+    "revoke=false: owner missing": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_NOT_FOUND",
+        "message": "User not found"
+      }
+    }
+  },
+  {
+    "owner session kept": true
+  },
+  {
+    "revoke=true: []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: invalid length 0, expected struct <v1> with 2 elements"
+      }
+    }
+  },
+  {
+    "revoke=true: null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: invalid type: null, expected struct <v1>"
+      }
+    }
+  },
+  {
+    "revoke=true: {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: missing field `email`"
+      }
+    }
+  },
+  {
+    "revoke=true: {\"email\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: invalid type: floating point `5.0`, expected a string"
+      }
+    }
+  },
+  {
+    "revoke=true: {\"email\":\"nope\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid email address"
+      }
+    }
+  },
+  {
+    "revoke=true: {\"email\":\"ghost@example.test\",\"redirectTo\":\"/reset\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true,
+        "message": "If this email exists in our system, check your email for the reset link"
+      }
+    }
+  },
+  {
+    "revoke=true: {\"email\":\"owner@example.test\",\"redirectTo\":\"/reset?a=1&b=2\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true,
+        "message": "If this email exists in our system, check your email for the reset link"
+      }
+    }
+  },
+  {
+    "delivered url": "http://localhost:43219/api/auth/reset-password/<token>?callbackURL=%2Freset%3Fa%3D1%26b%3D2"
+  },
+  {
+    "revoke=true: no token segment": {
+      "status": 404,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "revoke=true: no callback": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/error?error=INVALID_TOKEN"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "revoke=true: untrusted callback": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_CALLBACK_URL",
+        "message": "Invalid callbackURL"
+      }
+    }
+  },
+  {
+    "revoke=true: unknown token": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/reset?error=INVALID_TOKEN"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "revoke=true: valid token": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/reset?token=<v4>"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "revoke=true: valid token with query": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/reset?token=<v4>&x=1"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "revoke=true: absolute callback": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/reset?token=<v4>#frag"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "revoke=true: []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "revoke=true: {\"newPassword\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v3>] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "revoke=true: {\"newPassword\":\"a-brand-new-password\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "revoke=true: {\"newPassword\":\"short\",\"token\":\"x\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_SHORT",
+        "message": "Password too short"
+      }
+    }
+  },
+  {
+    "revoke=true: {\"newPassword\":\"a-brand-new-password\",\"token\":\"unknown\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "revoke=true: request second token": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true,
+        "message": "If this email exists in our system, check your email for the reset link"
+      }
+    }
+  },
+  {
+    "revoke=true: hook refuses": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "reset observed"
+      }
+    }
+  },
+  {
+    "revoke=true: token from query": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "revoke=true: token already consumed": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "revoke=true: request for credentialless user": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true,
+        "message": "If this email exists in our system, check your email for the reset link"
+      }
+    }
+  },
+  {
+    "revoke=true: owner missing": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_NOT_FOUND",
+        "message": "User not found"
+      }
+    }
+  },
+  {
+    "owner session kept": false
+  }
+]

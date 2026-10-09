@@ -1,0 +1,229 @@
+[
+  {
+    "garbage": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "garbage with callback": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "/done?x=1&error=INVALID_TOKEN"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "garbage with absolute callback": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/done?x=1&error=INVALID_TOKEN"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "owner deleted": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_NOT_FOUND",
+        "message": "User not found"
+      }
+    }
+  },
+  {
+    "owner deleted with callback": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "/done?error=USER_NOT_FOUND"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "expired": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "TOKEN_EXPIRED",
+        "message": "Token expired"
+      }
+    }
+  },
+  {
+    "expired with callback": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "/done?error=TOKEN_EXPIRED"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "not yet valid": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "text expiry": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "numeric update target": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "numeric request type": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "invalid email claim": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "missing email claim": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "wrong signature": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "untrusted callback": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_CALLBACK_URL",
+        "message": "Invalid callbackURL"
+      }
+    }
+  },
+  {
+    "verifies with callback": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "/done?x=1"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "already verified with callback": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "/done"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "already verified": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true,
+        "user": null
+      }
+    }
+  },
+  {
+    "verified": 1
+  }
+]

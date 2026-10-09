@@ -208,3 +208,58 @@ pub(in crate::plugins) fn decrypt(stored: &str, secret: &str) -> AuthResult<Stri
     String::from_utf8(plain)
         .map_err(|_error| AuthError::Encryption("Invalid encrypted token".into()))
 }
+
+// LCOV_EXCL_START
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alibi_core::{AuthConfig, ManagedSecrets};
+
+    const OLD: &str = "old-managed-secret-at-least-32-characters";
+    const NEW: &str = "new-managed-secret-at-least-32-characters";
+
+    fn managed(keys: ManagedSecrets) -> AuthConfig {
+        AuthConfig::new(NEW).managed_secrets(keys)
+    }
+
+    #[test]
+    fn purpose_ciphertext_carries_the_managed_key_version() {
+        let config = managed(ManagedSecrets::new(2, NEW).retain(1, OLD));
+        let stored =
+            encrypt_with_config_for_purpose("state", &config, EncryptionPurpose::ProxyState)
+                .unwrap();
+        assert!(stored.starts_with("$ba$2$"));
+        assert_eq!(
+            decrypt_with_config_for_purpose(&stored, &config, EncryptionPurpose::ProxyState)
+                .unwrap(),
+            "state"
+        );
+        let legacy = encrypt_for_purpose("state", OLD, EncryptionPurpose::ProxyState).unwrap();
+        let config = managed(ManagedSecrets::new(2, NEW).legacy(OLD));
+        assert_eq!(
+            decrypt_with_config_for_purpose(&legacy, &config, EncryptionPurpose::ProxyState)
+                .unwrap(),
+            "state"
+        );
+    }
+
+    #[test]
+    fn retired_versions_and_malformed_ciphertext_are_rejected() {
+        let config = managed(ManagedSecrets::new(2, NEW).retain(1, OLD));
+        let stored = encrypt_with_config("secret", &managed(ManagedSecrets::new(1, OLD))).unwrap();
+        assert!(stored.starts_with("$ba$1$"));
+        assert_eq!(decrypt_with_config(&stored, &config).unwrap(), "secret");
+        let retired = managed(ManagedSecrets::new(2, NEW).retire(1));
+        assert!(matches!(
+            decrypt_with_config(&stored, &retired),
+            Err(AuthError::Encryption(message)) if message.contains("retired")
+        ));
+        assert!(matches!(
+            decrypt_with_config("abc", &AuthConfig::new(NEW)),
+            Err(AuthError::Encryption(_))
+        ));
+        assert_eq!(parse_envelope("$ba$+7$cipher"), Some((7, "cipher")));
+        assert_eq!(parse_envelope("$ba$-1$cipher"), None);
+    }
+}
+// LCOV_EXCL_STOP

@@ -1,0 +1,1420 @@
+[
+  {
+    "default {\"10\":\"ten\",\"2\":\"two\",\"custom\":{\"nested\":[null,false,\"literal\"]}}": {
+      "ownKeys": [
+        "2",
+        "10",
+        "custom",
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "2": "two",
+        "10": "ten",
+        "custom": {
+          "nested": [
+            null,
+            false,
+            "literal"
+          ]
+        },
+        "iat": "<undefined>",
+        "exp": "now+900",
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "default {\"exp\":1e400,\"iat\":-0,\"nbf\":false,\"sub\":0,\"jti\":false}": {
+      "ownKeys": [
+        "exp",
+        "iat",
+        "nbf",
+        "sub",
+        "jti",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "exp": {
+          "$number": "inf"
+        },
+        "iat": 0,
+        "nbf": false,
+        "sub": 0,
+        "jti": false,
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "default {\"iat\":1e400,\"nbf\":1e400}": {
+      "ownKeys": [
+        "iat",
+        "nbf",
+        "exp",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": {
+          "$number": "inf"
+        },
+        "nbf": {
+          "$number": "inf"
+        },
+        "exp": {
+          "$number": "inf"
+        },
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "default {\"iat\":100}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": 100,
+        "exp": 1000,
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "default {\"iat\":1.5}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": 1.5,
+        "exp": 901.5,
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "default {\"iat\":true}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": true,
+        "exp": 901,
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "default {\"iat\":false}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": false,
+        "exp": 900,
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "default {\"iat\":null,\"exp\":null,\"iss\":null,\"aud\":null}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "iss",
+        "aud",
+        "nbf"
+      ],
+      "payload": {
+        "iat": null,
+        "exp": "now+900",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219",
+        "nbf": "<undefined>"
+      }
+    }
+  },
+  {
+    "default {\"iat\":\"100\"}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": "100",
+        "exp": "100900",
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "default {\"iat\":\"1e3\",\"exp\":\"1 hour\",\"nbf\":\"-5 seconds\",\"aud\":[\"a\",\"b\"]}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "aud",
+        "iss"
+      ],
+      "payload": {
+        "iat": "1e3",
+        "exp": "1 hour",
+        "nbf": "-5 seconds",
+        "aud": [
+          "a",
+          "b"
+        ],
+        "iss": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "default {\"iat\":[\"7\",null,false],\"nbf\":[],\"sub\":[],\"jti\":{}}": {
+      "ownKeys": [
+        "iat",
+        "nbf",
+        "sub",
+        "jti",
+        "exp",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": [
+          "7",
+          null,
+          false
+        ],
+        "nbf": [],
+        "sub": [],
+        "jti": {},
+        "exp": "7,,false900",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "default {\"iat\":{\"custom\":true}}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": {
+          "custom": true
+        },
+        "exp": "[object Object]900",
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "default {\"iat\":-1e400,\"nbf\":-1e400}": {
+      "ownKeys": [
+        "iat",
+        "nbf",
+        "exp",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": {
+          "$number": "-inf"
+        },
+        "nbf": {
+          "$number": "-inf"
+        },
+        "exp": {
+          "$number": "-inf"
+        },
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "seconds {\"10\":\"ten\",\"2\":\"two\",\"custom\":{\"nested\":[null,false,\"literal\"]}}": {
+      "ownKeys": [
+        "2",
+        "10",
+        "custom",
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "2": "two",
+        "10": "ten",
+        "custom": {
+          "nested": [
+            null,
+            false,
+            "literal"
+          ]
+        },
+        "iat": "<undefined>",
+        "exp": "now+60",
+        "nbf": "<undefined>",
+        "iss": "issuer",
+        "aud": [
+          "one",
+          "two"
+        ]
+      }
+    }
+  },
+  {
+    "seconds {\"exp\":1e400,\"iat\":-0,\"nbf\":false,\"sub\":0,\"jti\":false}": {
+      "ownKeys": [
+        "exp",
+        "iat",
+        "nbf",
+        "sub",
+        "jti",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "exp": {
+          "$number": "inf"
+        },
+        "iat": 0,
+        "nbf": false,
+        "sub": 0,
+        "jti": false,
+        "iss": "issuer",
+        "aud": [
+          "one",
+          "two"
+        ]
+      }
+    }
+  },
+  {
+    "seconds {\"iat\":1e400,\"nbf\":1e400}": {
+      "ownKeys": [
+        "iat",
+        "nbf",
+        "exp",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": {
+          "$number": "inf"
+        },
+        "nbf": {
+          "$number": "inf"
+        },
+        "exp": {
+          "$number": "inf"
+        },
+        "iss": "issuer",
+        "aud": [
+          "one",
+          "two"
+        ]
+      }
+    }
+  },
+  {
+    "seconds {\"iat\":100}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": 100,
+        "exp": 160,
+        "nbf": "<undefined>",
+        "iss": "issuer",
+        "aud": [
+          "one",
+          "two"
+        ]
+      }
+    }
+  },
+  {
+    "seconds {\"iat\":1.5}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": 1.5,
+        "exp": 61.5,
+        "nbf": "<undefined>",
+        "iss": "issuer",
+        "aud": [
+          "one",
+          "two"
+        ]
+      }
+    }
+  },
+  {
+    "seconds {\"iat\":true}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": true,
+        "exp": 61,
+        "nbf": "<undefined>",
+        "iss": "issuer",
+        "aud": [
+          "one",
+          "two"
+        ]
+      }
+    }
+  },
+  {
+    "seconds {\"iat\":false}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": false,
+        "exp": 60,
+        "nbf": "<undefined>",
+        "iss": "issuer",
+        "aud": [
+          "one",
+          "two"
+        ]
+      }
+    }
+  },
+  {
+    "seconds {\"iat\":null,\"exp\":null,\"iss\":null,\"aud\":null}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "iss",
+        "aud",
+        "nbf"
+      ],
+      "payload": {
+        "iat": null,
+        "exp": "now+60",
+        "iss": "issuer",
+        "aud": [
+          "one",
+          "two"
+        ],
+        "nbf": "<undefined>"
+      }
+    }
+  },
+  {
+    "seconds {\"iat\":\"100\"}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": "100",
+        "exp": "10060",
+        "nbf": "<undefined>",
+        "iss": "issuer",
+        "aud": [
+          "one",
+          "two"
+        ]
+      }
+    }
+  },
+  {
+    "seconds {\"iat\":\"1e3\",\"exp\":\"1 hour\",\"nbf\":\"-5 seconds\",\"aud\":[\"a\",\"b\"]}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "aud",
+        "iss"
+      ],
+      "payload": {
+        "iat": "1e3",
+        "exp": "1 hour",
+        "nbf": "-5 seconds",
+        "aud": [
+          "a",
+          "b"
+        ],
+        "iss": "issuer"
+      }
+    }
+  },
+  {
+    "seconds {\"iat\":[\"7\",null,false],\"nbf\":[],\"sub\":[],\"jti\":{}}": {
+      "ownKeys": [
+        "iat",
+        "nbf",
+        "sub",
+        "jti",
+        "exp",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": [
+          "7",
+          null,
+          false
+        ],
+        "nbf": [],
+        "sub": [],
+        "jti": {},
+        "exp": "7,,false60",
+        "iss": "issuer",
+        "aud": [
+          "one",
+          "two"
+        ]
+      }
+    }
+  },
+  {
+    "seconds {\"iat\":{\"custom\":true}}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": {
+          "custom": true
+        },
+        "exp": "[object Object]60",
+        "nbf": "<undefined>",
+        "iss": "issuer",
+        "aud": [
+          "one",
+          "two"
+        ]
+      }
+    }
+  },
+  {
+    "seconds {\"iat\":-1e400,\"nbf\":-1e400}": {
+      "ownKeys": [
+        "iat",
+        "nbf",
+        "exp",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": {
+          "$number": "-inf"
+        },
+        "nbf": {
+          "$number": "-inf"
+        },
+        "exp": {
+          "$number": "-inf"
+        },
+        "iss": "issuer",
+        "aud": [
+          "one",
+          "two"
+        ]
+      }
+    }
+  },
+  {
+    "fractional {\"10\":\"ten\",\"2\":\"two\",\"custom\":{\"nested\":[null,false,\"literal\"]}}": {
+      "ownKeys": [
+        "2",
+        "10",
+        "custom",
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "2": "two",
+        "10": "ten",
+        "custom": {
+          "nested": [
+            null,
+            false,
+            "literal"
+          ]
+        },
+        "iat": "<undefined>",
+        "exp": "now+1.5",
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "fractional {\"exp\":1e400,\"iat\":-0,\"nbf\":false,\"sub\":0,\"jti\":false}": {
+      "ownKeys": [
+        "exp",
+        "iat",
+        "nbf",
+        "sub",
+        "jti",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "exp": {
+          "$number": "inf"
+        },
+        "iat": 0,
+        "nbf": false,
+        "sub": 0,
+        "jti": false,
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "fractional {\"iat\":1e400,\"nbf\":1e400}": {
+      "ownKeys": [
+        "iat",
+        "nbf",
+        "exp",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": {
+          "$number": "inf"
+        },
+        "nbf": {
+          "$number": "inf"
+        },
+        "exp": {
+          "$number": "inf"
+        },
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "fractional {\"iat\":100}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": 100,
+        "exp": 101.5,
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "fractional {\"iat\":1.5}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": 1.5,
+        "exp": 3,
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "fractional {\"iat\":true}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": true,
+        "exp": 2.5,
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "fractional {\"iat\":false}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": false,
+        "exp": 1.5,
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "fractional {\"iat\":null,\"exp\":null,\"iss\":null,\"aud\":null}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "iss",
+        "aud",
+        "nbf"
+      ],
+      "payload": {
+        "iat": null,
+        "exp": "now+1.5",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219",
+        "nbf": "<undefined>"
+      }
+    }
+  },
+  {
+    "fractional {\"iat\":\"100\"}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": "100",
+        "exp": "1001.5",
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "fractional {\"iat\":\"1e3\",\"exp\":\"1 hour\",\"nbf\":\"-5 seconds\",\"aud\":[\"a\",\"b\"]}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "aud",
+        "iss"
+      ],
+      "payload": {
+        "iat": "1e3",
+        "exp": "1 hour",
+        "nbf": "-5 seconds",
+        "aud": [
+          "a",
+          "b"
+        ],
+        "iss": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "fractional {\"iat\":[\"7\",null,false],\"nbf\":[],\"sub\":[],\"jti\":{}}": {
+      "ownKeys": [
+        "iat",
+        "nbf",
+        "sub",
+        "jti",
+        "exp",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": [
+          "7",
+          null,
+          false
+        ],
+        "nbf": [],
+        "sub": [],
+        "jti": {},
+        "exp": "7,,false1.5",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "fractional {\"iat\":{\"custom\":true}}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": {
+          "custom": true
+        },
+        "exp": "[object Object]1.5",
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "fractional {\"iat\":-1e400,\"nbf\":-1e400}": {
+      "ownKeys": [
+        "iat",
+        "nbf",
+        "exp",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": {
+          "$number": "-inf"
+        },
+        "nbf": {
+          "$number": "-inf"
+        },
+        "exp": {
+          "$number": "-inf"
+        },
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "absolute {\"10\":\"ten\",\"2\":\"two\",\"custom\":{\"nested\":[null,false,\"literal\"]}}": {
+      "ownKeys": [
+        "2",
+        "10",
+        "custom",
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "2": "two",
+        "10": "ten",
+        "custom": {
+          "nested": [
+            null,
+            false,
+            "literal"
+          ]
+        },
+        "iat": "<undefined>",
+        "exp": "<time>",
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "absolute {\"exp\":1e400,\"iat\":-0,\"nbf\":false,\"sub\":0,\"jti\":false}": {
+      "ownKeys": [
+        "exp",
+        "iat",
+        "nbf",
+        "sub",
+        "jti",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "exp": {
+          "$number": "inf"
+        },
+        "iat": 0,
+        "nbf": false,
+        "sub": 0,
+        "jti": false,
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "absolute {\"iat\":1e400,\"nbf\":1e400}": {
+      "ownKeys": [
+        "iat",
+        "nbf",
+        "exp",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": {
+          "$number": "inf"
+        },
+        "nbf": {
+          "$number": "inf"
+        },
+        "exp": "<time>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "absolute {\"iat\":100}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": 100,
+        "exp": "<time>",
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "absolute {\"iat\":1.5}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": 1.5,
+        "exp": "<time>",
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "absolute {\"iat\":true}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": true,
+        "exp": "<time>",
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "absolute {\"iat\":false}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": false,
+        "exp": "<time>",
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "absolute {\"iat\":null,\"exp\":null,\"iss\":null,\"aud\":null}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "iss",
+        "aud",
+        "nbf"
+      ],
+      "payload": {
+        "iat": null,
+        "exp": "<time>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219",
+        "nbf": "<undefined>"
+      }
+    }
+  },
+  {
+    "absolute {\"iat\":\"100\"}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": "100",
+        "exp": "<time>",
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "absolute {\"iat\":\"1e3\",\"exp\":\"1 hour\",\"nbf\":\"-5 seconds\",\"aud\":[\"a\",\"b\"]}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "aud",
+        "iss"
+      ],
+      "payload": {
+        "iat": "1e3",
+        "exp": "1 hour",
+        "nbf": "-5 seconds",
+        "aud": [
+          "a",
+          "b"
+        ],
+        "iss": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "absolute {\"iat\":[\"7\",null,false],\"nbf\":[],\"sub\":[],\"jti\":{}}": {
+      "ownKeys": [
+        "iat",
+        "nbf",
+        "sub",
+        "jti",
+        "exp",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": [
+          "7",
+          null,
+          false
+        ],
+        "nbf": [],
+        "sub": [],
+        "jti": {},
+        "exp": "<time>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "absolute {\"iat\":{\"custom\":true}}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": {
+          "custom": true
+        },
+        "exp": "<time>",
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "absolute {\"iat\":-1e400,\"nbf\":-1e400}": {
+      "ownKeys": [
+        "iat",
+        "nbf",
+        "exp",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": {
+          "$number": "-inf"
+        },
+        "nbf": {
+          "$number": "-inf"
+        },
+        "exp": "<time>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "numeric {\"10\":\"ten\",\"2\":\"two\",\"custom\":{\"nested\":[null,false,\"literal\"]}}": {
+      "ownKeys": [
+        "2",
+        "10",
+        "custom",
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "2": "two",
+        "10": "ten",
+        "custom": {
+          "nested": [
+            null,
+            false,
+            "literal"
+          ]
+        },
+        "iat": "<undefined>",
+        "exp": 7,
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "numeric {\"exp\":1e400,\"iat\":-0,\"nbf\":false,\"sub\":0,\"jti\":false}": {
+      "ownKeys": [
+        "exp",
+        "iat",
+        "nbf",
+        "sub",
+        "jti",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "exp": {
+          "$number": "inf"
+        },
+        "iat": 0,
+        "nbf": false,
+        "sub": 0,
+        "jti": false,
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "numeric {\"iat\":1e400,\"nbf\":1e400}": {
+      "ownKeys": [
+        "iat",
+        "nbf",
+        "exp",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": {
+          "$number": "inf"
+        },
+        "nbf": {
+          "$number": "inf"
+        },
+        "exp": 7,
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "numeric {\"iat\":100}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": 100,
+        "exp": 7,
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "numeric {\"iat\":1.5}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": 1.5,
+        "exp": 7,
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "numeric {\"iat\":true}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": true,
+        "exp": 7,
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "numeric {\"iat\":false}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": false,
+        "exp": 7,
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "numeric {\"iat\":null,\"exp\":null,\"iss\":null,\"aud\":null}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "iss",
+        "aud",
+        "nbf"
+      ],
+      "payload": {
+        "iat": null,
+        "exp": 7,
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219",
+        "nbf": "<undefined>"
+      }
+    }
+  },
+  {
+    "numeric {\"iat\":\"100\"}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": "100",
+        "exp": 7,
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "numeric {\"iat\":\"1e3\",\"exp\":\"1 hour\",\"nbf\":\"-5 seconds\",\"aud\":[\"a\",\"b\"]}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "aud",
+        "iss"
+      ],
+      "payload": {
+        "iat": "1e3",
+        "exp": "1 hour",
+        "nbf": "-5 seconds",
+        "aud": [
+          "a",
+          "b"
+        ],
+        "iss": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "numeric {\"iat\":[\"7\",null,false],\"nbf\":[],\"sub\":[],\"jti\":{}}": {
+      "ownKeys": [
+        "iat",
+        "nbf",
+        "sub",
+        "jti",
+        "exp",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": [
+          "7",
+          null,
+          false
+        ],
+        "nbf": [],
+        "sub": [],
+        "jti": {},
+        "exp": 7,
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "numeric {\"iat\":{\"custom\":true}}": {
+      "ownKeys": [
+        "iat",
+        "exp",
+        "nbf",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": {
+          "custom": true
+        },
+        "exp": 7,
+        "nbf": "<undefined>",
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "numeric {\"iat\":-1e400,\"nbf\":-1e400}": {
+      "ownKeys": [
+        "iat",
+        "nbf",
+        "exp",
+        "iss",
+        "aud"
+      ],
+      "payload": {
+        "iat": {
+          "$number": "-inf"
+        },
+        "nbf": {
+          "$number": "-inf"
+        },
+        "exp": 7,
+        "iss": "http://localhost:43219",
+        "aud": "http://localhost:43219"
+      }
+    }
+  },
+  {
+    "nan iat": {
+      "$number": "NaN"
+    }
+  }
+]

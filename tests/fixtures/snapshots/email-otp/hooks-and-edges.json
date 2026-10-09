@@ -1,0 +1,86 @@
+[
+  {
+    "passes: verify email": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true,
+        "token": null,
+        "user": {
+          "id": "<v1>",
+          "name": "Native owner",
+          "email": "owner@example.test",
+          "emailVerified": true,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "passes: change email": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "passes: email": "moved@example.test"
+  },
+  {
+    "api error: verify email": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "hook says no"
+      }
+    }
+  },
+  {
+    "api error: change email": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "api error: email": "owner@example.test"
+  },
+  {
+    "internal: verify email": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "internal: change email": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "internal: email": "owner@example.test"
+  }
+]

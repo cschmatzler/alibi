@@ -1,0 +1,381 @@
+[
+  {
+    "nonce []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body] Invalid input: expected object, received array",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "nonce null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body] Invalid input: expected object, received null",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "nonce 7": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body] Invalid input: expected object, received number",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "nonce {": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "BAD_REQUEST",
+        "message": "Invalid JSON in request body"
+      }
+    }
+  },
+  {
+    "nonce {\"unexpected\":1}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body] Unrecognized key: \"unexpected\"",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "nonce {\"b\":1,\"2\":1,\"1\":1}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body] Unrecognized keys: \"1\", \"2\", \"b\"",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "/siwe/nonce as \"\"": {
+      "status": 415,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNSUPPORTED_MEDIA_TYPE",
+        "message": "Content-Type is required. Allowed types: application/json"
+      }
+    }
+  },
+  {
+    "/siwe/verify as \"\"": {
+      "status": 415,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNSUPPORTED_MEDIA_TYPE",
+        "message": "Content-Type is required. Allowed types: application/json"
+      }
+    }
+  },
+  {
+    "/siwe/nonce as \"text/plain\"": {
+      "status": 415,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNSUPPORTED_MEDIA_TYPE",
+        "message": "Content-Type \"text/plain\" is not allowed. Allowed types: application/json"
+      }
+    }
+  },
+  {
+    "/siwe/verify as \"text/plain\"": {
+      "status": 415,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNSUPPORTED_MEDIA_TYPE",
+        "message": "Content-Type \"text/plain\" is not allowed. Allowed types: application/json"
+      }
+    }
+  },
+  {
+    "/siwe/nonce as \"application/json; charset=utf-8\"": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body] Unrecognized keys: \"message\", \"signature\"",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "/siwe/verify as \"application/json; charset=utf-8\"": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Unauthorized: SIWE message does not match the expected nonce, domain, address, or chain ID",
+        "status": 401,
+        "code": "UNAUTHORIZED_SIWE_MESSAGE_MISMATCH"
+      }
+    }
+  },
+  {
+    "/siwe/nonce as \"x-application/json\"": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body] Invalid input: expected object, received ReadableStream",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "/siwe/verify as \"x-application/json\"": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body] Invalid input: expected object, received ReadableStream",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "/siwe/nonce as \"x-application/json image/png\"": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body] Invalid input: expected object, received Blob",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "/siwe/verify as \"x-application/json image/png\"": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body] Invalid input: expected object, received Blob",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "/siwe/nonce as \"x-application/json application/octet-stream\"": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "nonce": "GoldenNonce0001"
+      }
+    }
+  },
+  {
+    "/siwe/verify as \"x-application/json application/octet-stream\"": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body.message] Invalid input: expected string, received undefined; [body.signature] Invalid input: expected string, received undefined",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "verify []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body] Invalid input: expected object, received array",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "verify null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body] Invalid input: expected object, received null",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "verify {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body.message] Invalid input: expected string, received undefined; [body.signature] Invalid input: expected string, received undefined",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "verify {\"message\":5,\"signature\":5,\"email\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body.message] Invalid input: expected string, received number; [body.signature] Invalid input: expected string, received number; [body.email] Invalid input: expected string, received number",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "verify {\"message\":\"\",\"signature\":\"\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body.message] Too small: expected string to have >=1 characters; [body.signature] Too small: expected string to have >=1 characters",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "verify {\"message\":\"m\",\"signature\":\"s\",\"email\":\"nope\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body.email] Invalid email address",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "verify {\"message\":\"m\",\"signature\":\"s\",\"extra\":1,\"10\":2,\"9\":3}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body] Unrecognized keys: \"9\", \"10\", \"extra\"",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "verify {\"message\":\"m\",\"signature\":\"s\",\"extra\":1}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body] Unrecognized key: \"extra\"",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "verify {\"message\":\"m\",\"signature\":\"s\"}": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Unauthorized: SIWE message does not match the expected nonce, domain, address, or chain ID",
+        "status": 401,
+        "code": "UNAUTHORIZED_SIWE_MESSAGE_MISMATCH"
+      }
+    }
+  }
+]

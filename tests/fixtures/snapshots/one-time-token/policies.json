@@ -1,0 +1,1063 @@
+[
+  {
+    "default: generate": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": "<g1>"
+      }
+    }
+  },
+  {
+    "default: []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "default: null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "default: {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "default: {\"token\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "default: {\"token\":\"unknown\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "default: redeem": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "session": {
+          "id": "<v2>",
+          "expiresAt": "<date>",
+          "token": "<g3>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<v4>"
+        },
+        "user": {
+          "id": "<v4>",
+          "name": "Native owner",
+          "email": "owner@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "sessions": 1
+  },
+  {
+    "generator vetoes: generate": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "generator vetoes: []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "generator vetoes: null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "generator vetoes: {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "generator vetoes: {\"token\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "generator vetoes: {\"token\":\"unknown\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "generator fails: generate": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "generator fails: []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "generator fails: null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "generator fails: {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "generator fails: {\"token\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "generator fails: {\"token\":\"unknown\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "custom generator: generate": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": "<g5>"
+      }
+    }
+  },
+  {
+    "custom generator: []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "custom generator: null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "custom generator: {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "custom generator: {\"token\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "custom generator: {\"token\":\"unknown\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "custom generator: redeem": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "session": {
+          "id": "<v6>",
+          "expiresAt": "<date>",
+          "token": "<g7>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<v8>"
+        },
+        "user": {
+          "id": "<v8>",
+          "name": "Native owner",
+          "email": "owner@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "sessions": 1
+  },
+  {
+    "hasher vetoes: generate": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "hasher vetoes: []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "hasher vetoes: null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "hasher vetoes: {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "hasher vetoes: {\"token\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "hasher vetoes: {\"token\":\"unknown\"}": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "hasher fails: generate": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "hasher fails: []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "hasher fails: null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "hasher fails: {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "hasher fails: {\"token\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "hasher fails: {\"token\":\"unknown\"}": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "hashed: generate": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": "<g9>"
+      }
+    }
+  },
+  {
+    "hashed: []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "hashed: null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "hashed: {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "hashed: {\"token\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "hashed: {\"token\":\"unknown\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "hashed: redeem": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "session": {
+          "id": "<v10>",
+          "expiresAt": "<date>",
+          "token": "<g11>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<v12>"
+        },
+        "user": {
+          "id": "<v12>",
+          "name": "Native owner",
+          "email": "owner@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "sessions": 1
+  },
+  {
+    "client requests disabled: generate": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Client requests are disabled"
+      }
+    }
+  },
+  {
+    "client requests disabled: []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "client requests disabled: null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "client requests disabled: {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "client requests disabled: {\"token\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "client requests disabled: {\"token\":\"unknown\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "cookie disabled: generate": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": "<g13>"
+      }
+    }
+  },
+  {
+    "cookie disabled: []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "cookie disabled: null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "cookie disabled: {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "cookie disabled: {\"token\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "cookie disabled: {\"token\":\"unknown\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "cookie disabled: redeem": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "session": {
+          "id": "<v14>",
+          "expiresAt": "<date>",
+          "token": "<g15>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<v16>"
+        },
+        "user": {
+          "id": "<v16>",
+          "name": "Native owner",
+          "email": "owner@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "sessions": 1
+  },
+  {
+    "short lived: generate": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": "<g17>"
+      }
+    }
+  },
+  {
+    "short lived: []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "short lived: null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "short lived: {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "short lived: {\"token\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "short lived: {\"token\":\"unknown\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "short lived: redeem": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "sessions": 1
+  },
+  {
+    "session removed: generate": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": "<g18>"
+      }
+    }
+  },
+  {
+    "session removed: redeem": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Session not found"
+      }
+    }
+  },
+  {
+    "session expired: generate": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": "<g19>"
+      }
+    }
+  },
+  {
+    "session expired: redeem": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "message": "Session expired"
+      }
+    }
+  },
+  {
+    "dont remember: generate": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": "<g20>"
+      }
+    }
+  },
+  {
+    "dont remember: redeem": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "session": {
+          "id": "<v21>",
+          "expiresAt": "<date>",
+          "token": "<g22>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<v23>"
+        },
+        "user": {
+          "id": "<v23>",
+          "name": "Native owner",
+          "email": "owner@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  }
+]

@@ -1,0 +1,197 @@
+[
+  {
+    "plain": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g1>",
+        "user": {
+          "id": "<v2>",
+          "name": "",
+          "email": "plain@example.test",
+          "emailVerified": true,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "twoFactorEnabled": false,
+          "role": "user",
+          "banned": false,
+          "isAnonymous": false,
+          "banExpires": null,
+          "banReason": null,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "with username": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g3>",
+        "user": {
+          "id": "<v4>",
+          "name": "Named",
+          "email": "named@example.test",
+          "emailVerified": true,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": "named_user",
+          "displayUsername": "Named User",
+          "twoFactorEnabled": false,
+          "role": "user",
+          "banned": false,
+          "isAnonymous": false,
+          "banExpires": null,
+          "banReason": null
+        }
+      }
+    }
+  },
+  {
+    "username taken": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USERNAME_IS_ALREADY_TAKEN",
+        "message": "Username is already taken. Please try another."
+      }
+    }
+  },
+  {
+    "username too short": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USERNAME_TOO_SHORT",
+        "message": "Username is too short"
+      }
+    }
+  },
+  {
+    "username invalid": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME",
+        "message": "Username is invalid"
+      }
+    }
+  },
+  {
+    "empty username": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g5>",
+        "user": {
+          "id": "<v6>",
+          "name": "",
+          "email": "empty@example.test",
+          "emailVerified": true,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": "",
+          "displayUsername": "",
+          "twoFactorEnabled": false,
+          "role": "user",
+          "banned": false,
+          "isAnonymous": false,
+          "banExpires": null,
+          "banReason": null
+        }
+      }
+    }
+  },
+  {
+    "display only": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g7>",
+        "user": {
+          "id": "<v8>",
+          "name": "",
+          "email": "display@example.test",
+          "emailVerified": true,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": "Only Display",
+          "twoFactorEnabled": false,
+          "role": "user",
+          "banned": false,
+          "isAnonymous": false,
+          "banExpires": null,
+          "banReason": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "numeric username": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input"
+      }
+    }
+  },
+  {
+    "rows": {
+      "users": 4,
+      "defaults": 4,
+      "usernames": "named_user"
+    }
+  }
+]

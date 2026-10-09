@@ -1,0 +1,735 @@
+[
+  {
+    "/two-factor/enable []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/two-factor/enable null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/two-factor/enable {\"password\":5,\"code\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.password] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/two-factor/enable {\"password\":\"wrong-password\",\"code\":\"1\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_PASSWORD",
+        "message": "Invalid password"
+      }
+    }
+  },
+  {
+    "/two-factor/enable {": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "BAD_REQUEST",
+        "message": "Invalid JSON in request body"
+      }
+    }
+  },
+  {
+    "/two-factor/enable anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "/two-factor/disable []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/two-factor/disable null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/two-factor/disable {\"password\":5,\"code\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.password] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/two-factor/disable {\"password\":\"wrong-password\",\"code\":\"1\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_PASSWORD",
+        "message": "Invalid password"
+      }
+    }
+  },
+  {
+    "/two-factor/disable {": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "BAD_REQUEST",
+        "message": "Invalid JSON in request body"
+      }
+    }
+  },
+  {
+    "/two-factor/disable anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "/two-factor/get-totp-uri []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/two-factor/get-totp-uri null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/two-factor/get-totp-uri {\"password\":5,\"code\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.password] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/two-factor/get-totp-uri {\"password\":\"wrong-password\",\"code\":\"1\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "TOTP_NOT_ENABLED",
+        "message": "TOTP not enabled"
+      }
+    }
+  },
+  {
+    "/two-factor/get-totp-uri {": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "BAD_REQUEST",
+        "message": "Invalid JSON in request body"
+      }
+    }
+  },
+  {
+    "/two-factor/get-totp-uri anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "/two-factor/generate-backup-codes []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/two-factor/generate-backup-codes null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/two-factor/generate-backup-codes {\"password\":5,\"code\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.password] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/two-factor/generate-backup-codes {\"password\":\"wrong-password\",\"code\":\"1\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "TWO_FACTOR_NOT_ENABLED",
+        "message": "Two factor isn't enabled"
+      }
+    }
+  },
+  {
+    "/two-factor/generate-backup-codes {": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "BAD_REQUEST",
+        "message": "Invalid JSON in request body"
+      }
+    }
+  },
+  {
+    "/two-factor/generate-backup-codes anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-totp []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: invalid length 0, expected struct <v1> with 2 elements"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-totp null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: invalid type: null, expected struct <v1>"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-totp {\"password\":5,\"code\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: invalid type: floating point `5.0`, expected a string"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-totp {\"password\":\"wrong-password\",\"code\":\"1\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "TOTP_NOT_ENABLED",
+        "message": "TOTP not enabled"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-totp {": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "BAD_REQUEST",
+        "message": "Invalid JSON in request body"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-totp anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TWO_FACTOR_COOKIE",
+        "message": "Invalid two factor cookie"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-otp []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: invalid length 0, expected struct <v2> with 2 elements"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-otp null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: invalid type: null, expected struct <v2>"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-otp {\"password\":5,\"code\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: invalid type: floating point `5.0`, expected a string"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-otp {\"password\":\"wrong-password\",\"code\":\"1\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_HAS_EXPIRED",
+        "message": "OTP has expired"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-otp {": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "BAD_REQUEST",
+        "message": "Invalid JSON in request body"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-otp anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TWO_FACTOR_COOKIE",
+        "message": "Invalid two factor cookie"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-backup-code []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: invalid length 0, expected struct <v3> with 3 elements"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-backup-code null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: invalid type: null, expected struct <v3>"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-backup-code {\"password\":5,\"code\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: invalid type: floating point `5.0`, expected a string"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-backup-code {\"password\":\"wrong-password\",\"code\":\"1\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "BACKUP_CODES_NOT_ENABLED",
+        "message": "Backup codes aren't enabled"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-backup-code {": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "BAD_REQUEST",
+        "message": "Invalid JSON in request body"
+      }
+    }
+  },
+  {
+    "/two-factor/verify-backup-code anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TWO_FACTOR_COOKIE",
+        "message": "Invalid two factor cookie"
+      }
+    }
+  },
+  {
+    "/two-factor/send-otp []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/two-factor/send-otp null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/two-factor/send-otp {\"password\":5,\"code\":5}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "/two-factor/send-otp {\"password\":\"wrong-password\",\"code\":\"1\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "/two-factor/send-otp {": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "BAD_REQUEST",
+        "message": "Invalid JSON in request body"
+      }
+    }
+  },
+  {
+    "/two-factor/send-otp anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TWO_FACTOR_COOKIE",
+        "message": "Invalid two factor cookie"
+      }
+    }
+  },
+  {
+    "backup codes before enrollment": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "TWO_FACTOR_NOT_ENABLED",
+        "message": "Two factor isn't enabled"
+      }
+    }
+  },
+  {
+    "otp enrollment": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "method": "otp"
+      }
+    }
+  },
+  {
+    "stale authenticator": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_CODE",
+        "message": "Invalid code"
+      }
+    }
+  },
+  {
+    "enroll after activation": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "TOTP_ALREADY_ENABLED",
+        "message": "TOTP is already enabled"
+      }
+    }
+  },
+  {
+    "pending verify without proof": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TWO_FACTOR_COOKIE",
+        "message": "Invalid two factor cookie"
+      }
+    }
+  }
+]

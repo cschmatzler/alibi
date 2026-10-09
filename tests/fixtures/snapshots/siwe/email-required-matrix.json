@@ -1,0 +1,44 @@
+[
+  {
+    "email required {\"message\":\"m\",\"signature\":\"s\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body.email] Email is required when the anonymous plugin option is disabled.",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "email required {\"message\":\"m\",\"signature\":\"s\",\"email\":\"\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body.email] Invalid email address; [body.email] Email is required when the anonymous plugin option is disabled.",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  },
+  {
+    "email required {\"message\":\"m\",\"signature\":\"s\",\"email\":\"w@example.test\",\"extra\":1}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "[body] Unrecognized key: \"extra\"",
+        "code": "VALIDATION_ERROR"
+      }
+    }
+  }
+]

@@ -1,0 +1,551 @@
+[
+  {
+    "disabled: sign up": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_PASSWORD_SIGN_UP_DISABLED",
+        "message": "Email and password sign up is not enabled"
+      }
+    }
+  },
+  {
+    "disabled: sign up remember me false": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_PASSWORD_SIGN_UP_DISABLED",
+        "message": "Email and password sign up is not enabled"
+      }
+    }
+  },
+  {
+    "disabled: sign up form": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_PASSWORD_SIGN_UP_DISABLED",
+        "message": "Email and password sign up is not enabled"
+      }
+    }
+  },
+  {
+    "disabled: invalid email": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_PASSWORD_DISABLED",
+        "message": "Email and password is not enabled"
+      }
+    }
+  },
+  {
+    "disabled: long password": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_PASSWORD_DISABLED",
+        "message": "Email and password is not enabled"
+      }
+    }
+  },
+  {
+    "disabled: unknown user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_PASSWORD_DISABLED",
+        "message": "Email and password is not enabled"
+      }
+    }
+  },
+  {
+    "disabled: wrong password": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_PASSWORD_DISABLED",
+        "message": "Email and password is not enabled"
+      }
+    }
+  },
+  {
+    "disabled: remember me false with callback": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_PASSWORD_DISABLED",
+        "message": "Email and password is not enabled"
+      }
+    }
+  },
+  {
+    "no signup: sign up": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_PASSWORD_SIGN_UP_DISABLED",
+        "message": "Email and password sign up is not enabled"
+      }
+    }
+  },
+  {
+    "no signup: sign up remember me false": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_PASSWORD_SIGN_UP_DISABLED",
+        "message": "Email and password sign up is not enabled"
+      }
+    }
+  },
+  {
+    "no signup: sign up form": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_PASSWORD_SIGN_UP_DISABLED",
+        "message": "Email and password sign up is not enabled"
+      }
+    }
+  },
+  {
+    "no signup: invalid email": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "no signup: long password": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_LONG",
+        "message": "Password too long"
+      }
+    }
+  },
+  {
+    "no signup: unknown user": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "no signup: wrong password": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "no signup: remember me false with callback": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "short limits: sign up": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_LONG",
+        "message": "Password too long"
+      }
+    }
+  },
+  {
+    "short limits: sign up remember me false": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_LONG",
+        "message": "Password too long"
+      }
+    }
+  },
+  {
+    "short limits: sign up form": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_LONG",
+        "message": "Password too long"
+      }
+    }
+  },
+  {
+    "short limits: invalid email": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "short limits: long password": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_LONG",
+        "message": "Password too long"
+      }
+    }
+  },
+  {
+    "short limits: unknown user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_LONG",
+        "message": "Password too long"
+      }
+    }
+  },
+  {
+    "short limits: wrong password": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "short limits: remember me false with callback": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_LONG",
+        "message": "Password too long"
+      }
+    }
+  },
+  {
+    "default: sign up": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g1>",
+        "user": {
+          "id": "<v2>",
+          "name": "Guard",
+          "email": "guard@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "default: sign up remember me false": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g3>",
+        "user": {
+          "id": "<v4>",
+          "name": "L",
+          "email": "later@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "default: sign up form": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g5>",
+        "user": {
+          "id": "<v6>",
+          "name": "Form",
+          "email": "form@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "default: invalid email": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "default: long password": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_LONG",
+        "message": "Password too long"
+      }
+    }
+  },
+  {
+    "default: unknown user": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "default: wrong password": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "default: remember me false with callback": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ],
+        "location": [
+          "/home"
+        ]
+      },
+      "body": {
+        "redirect": true,
+        "token": "<g7>",
+        "url": "/home",
+        "user": {
+          "id": "<v2>",
+          "name": "Guard",
+          "email": "guard@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "default: credential-less user": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "redirect": false,
+        "token": "<g8>",
+        "user": {
+          "id": "<v2>",
+          "name": "Guard",
+          "email": "guard@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "default: after credential removal": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  }
+]

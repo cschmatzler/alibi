@@ -1,0 +1,471 @@
+[
+  {
+    "no sender: send": {
+      "status": 501,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "SEND_OTP_NOT_IMPLEMENTED",
+        "message": "sendOTP not implemented"
+      }
+    }
+  },
+  {
+    "no sender: verify issued": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_NOT_FOUND",
+        "message": "OTP not found"
+      }
+    }
+  },
+  {
+    "no sender: verify provider": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_NOT_FOUND",
+        "message": "OTP not found"
+      }
+    }
+  },
+  {
+    "no sender: verify wrong": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_NOT_FOUND",
+        "message": "OTP not found"
+      }
+    }
+  },
+  {
+    "no sender: users": 0
+  },
+  {
+    "internal sender: send": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "internal sender: verify issued": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "status": true,
+        "token": "<g1>",
+        "user": {
+          "id": "<v2>",
+          "name": "Phone +15550000002",
+          "email": "15550000002@phone.example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "phoneNumber": "+15550000002",
+          "phoneNumberVerified": true,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "internal sender: verify provider": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_NOT_FOUND",
+        "message": "OTP not found"
+      }
+    }
+  },
+  {
+    "internal sender: verify wrong": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_NOT_FOUND",
+        "message": "OTP not found"
+      }
+    }
+  },
+  {
+    "internal sender: users": 1
+  },
+  {
+    "api sender: send": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "api sender: verify issued": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "status": true,
+        "token": "<g3>",
+        "user": {
+          "id": "<v4>",
+          "name": "Phone +15550000002",
+          "email": "15550000002@phone.example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "phoneNumber": "+15550000002",
+          "phoneNumberVerified": true,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "api sender: verify provider": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_NOT_FOUND",
+        "message": "OTP not found"
+      }
+    }
+  },
+  {
+    "api sender: verify wrong": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_NOT_FOUND",
+        "message": "OTP not found"
+      }
+    }
+  },
+  {
+    "api sender: users": 1
+  },
+  {
+    "provider accepts: send": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "code sent"
+      }
+    }
+  },
+  {
+    "provider accepts: verify issued": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "status": true,
+        "token": "<g5>",
+        "user": {
+          "id": "<v6>",
+          "name": "Phone +15550000002",
+          "email": "15550000002@phone.example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "phoneNumber": "+15550000002",
+          "phoneNumberVerified": true,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "provider accepts: verify provider": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "status": true,
+        "token": "<g7>",
+        "user": {
+          "id": "<v6>",
+          "name": "Phone +15550000002",
+          "email": "15550000002@phone.example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "phoneNumber": "+15550000002",
+          "phoneNumberVerified": true,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "provider accepts: verify wrong": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "provider accepts: users": 1
+  },
+  {
+    "provider api error: send": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "code sent"
+      }
+    }
+  },
+  {
+    "provider api error: verify issued": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "provider api error: verify provider": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "provider api error: verify wrong": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "provider api error: users": 0
+  },
+  {
+    "provider internal error: send": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "code sent"
+      }
+    }
+  },
+  {
+    "provider internal error: verify issued": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "provider internal error: verify provider": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "provider internal error: verify wrong": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "provider internal error: users": 0
+  },
+  {
+    "invalid expiry: send": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "invalid expiry: verify issued": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_NOT_FOUND",
+        "message": "OTP not found"
+      }
+    }
+  },
+  {
+    "invalid expiry: verify provider": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_NOT_FOUND",
+        "message": "OTP not found"
+      }
+    }
+  },
+  {
+    "invalid expiry: verify wrong": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_NOT_FOUND",
+        "message": "OTP not found"
+      }
+    }
+  },
+  {
+    "invalid expiry: users": 0
+  },
+  {
+    "sign-up unavailable: send": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "code sent"
+      }
+    }
+  },
+  {
+    "sign-up unavailable: verify issued": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_UPDATE_USER",
+        "message": "Failed to update user"
+      }
+    }
+  },
+  {
+    "sign-up unavailable: verify provider": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_NOT_FOUND",
+        "message": "OTP not found"
+      }
+    }
+  },
+  {
+    "sign-up unavailable: verify wrong": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_NOT_FOUND",
+        "message": "OTP not found"
+      }
+    }
+  },
+  {
+    "sign-up unavailable: users": 0
+  }
+]

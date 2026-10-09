@@ -1,0 +1,91 @@
+[
+  {
+    "none": {
+      "iss": "http://localhost:43219",
+      "aud": "http://localhost:43219",
+      "lifetime": 900.0
+    }
+  },
+  {
+    "claims": {
+      "iss": "i",
+      "aud": "a",
+      "lifetime": 3600.0
+    }
+  },
+  {
+    "audience list": {
+      "iss": "http://localhost:43219",
+      "aud": [
+        "a",
+        "b"
+      ],
+      "lifetime": "<time>"
+    }
+  },
+  {
+    "issuer type": "Internal server error: JWT issuer must be a string"
+  },
+  {
+    "expiration type": "Internal server error: Invalid JWT expiration time"
+  },
+  {
+    "expiration text": "Internal server error: Invalid time string format: \"soon\". Use formats like \"7d\", \"30m\", \"1 hour\", etc."
+  },
+  {
+    "expiration ago": {
+      "iss": "http://localhost:43219",
+      "aud": "http://localhost:43219",
+      "lifetime": -172800.0
+    }
+  },
+  {
+    "signed expiration ago": "Internal server error: Invalid time string format: \"-2 days ago\". Use formats like \"7d\", \"30m\", \"1 hour\", etc."
+  },
+  {
+    "expiration units": {
+      "iss": "http://localhost:43219",
+      "aud": "http://localhost:43219",
+      "lifetime": 907200.0
+    }
+  },
+  {
+    "expiration decimal": "Internal server error: Invalid time string format: \"1.s\". Use formats like \"7d\", \"30m\", \"1 hour\", etc."
+  },
+  {
+    "expiration unit": "Internal server error: Invalid time string format: \"3 fortnights\". Use formats like \"7d\", \"30m\", \"1 hour\", etc."
+  },
+  {
+    "expiration from now": {
+      "iss": "http://localhost:43219",
+      "aud": "http://localhost:43219",
+      "lifetime": 300.0
+    }
+  },
+  {
+    "keys": "Configuration error: Invalid JWK metadata for signing algorithm"
+  },
+  {
+    "rotation": {
+      "iss": "http://localhost:43219",
+      "aud": "http://localhost:43219",
+      "lifetime": 900.0
+    }
+  },
+  {
+    "bad algorithm": "Configuration error: Unsupported JWT algorithm: HS256"
+  },
+  {
+    "bad modulus": "Internal server error: invalid digit found in string"
+  },
+  {
+    "bad grace": "Internal server error: number too large to fit in target type"
+  },
+  {
+    "adapter": {
+      "iss": "http://localhost:43219",
+      "aud": "http://localhost:43219",
+      "lifetime": 900.0
+    }
+  }
+]

@@ -1,0 +1,466 @@
+[
+  {
+    "disabled: callback without token": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "NOT_FOUND",
+        "message": "Not found"
+      }
+    }
+  },
+  {
+    "disabled: callback anonymous": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "NOT_FOUND",
+        "message": "Not found"
+      }
+    }
+  },
+  {
+    "disabled: password too long": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "disabled: unknown token": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "disabled: delete": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "disabled: users": 1
+  },
+  {
+    "hooks-deny: callback without token": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Verification token is required"
+      }
+    }
+  },
+  {
+    "hooks-deny: callback anonymous": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_GET_USER_INFO",
+        "message": "Failed to get user info"
+      }
+    }
+  },
+  {
+    "hooks-deny: password too long": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_LONG",
+        "message": "Password too long"
+      }
+    }
+  },
+  {
+    "hooks-deny: unknown token": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "hooks-deny: delete": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "deletion blocked"
+      }
+    }
+  },
+  {
+    "hooks-deny: users": 1
+  },
+  {
+    "after-hook: callback without token": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Verification token is required"
+      }
+    }
+  },
+  {
+    "after-hook: callback anonymous": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_GET_USER_INFO",
+        "message": "Failed to get user info"
+      }
+    }
+  },
+  {
+    "after-hook: password too long": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_LONG",
+        "message": "Password too long"
+      }
+    }
+  },
+  {
+    "after-hook: unknown token": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "after-hook: delete": {
+      "status": 403,
+      "headers": {
+        "set-cookie": [
+          "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "after hook failed"
+      }
+    }
+  },
+  {
+    "after-hook: users": 0
+  },
+  {
+    "after-hook: callback unknown": {
+      "status": 404,
+      "headers": {
+        "set-cookie": [
+          "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_GET_USER_INFO",
+        "message": "Failed to get user info"
+      }
+    }
+  },
+  {
+    "after-hook: after hook failure": {
+      "status": 403,
+      "headers": {
+        "set-cookie": [
+          "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "after hook failed"
+      }
+    }
+  },
+  {
+    "stale-session: callback without token": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Verification token is required"
+      }
+    }
+  },
+  {
+    "stale-session: callback anonymous": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_GET_USER_INFO",
+        "message": "Failed to get user info"
+      }
+    }
+  },
+  {
+    "stale-session: password too long": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_LONG",
+        "message": "Password too long"
+      }
+    }
+  },
+  {
+    "stale-session: unknown token": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "stale-session: delete": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "SESSION_EXPIRED",
+        "message": "Session expired. Re-authenticate to perform this action."
+      }
+    }
+  },
+  {
+    "stale-session: users": 1
+  },
+  {
+    "zero-expiry: callback without token": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Verification token is required"
+      }
+    }
+  },
+  {
+    "zero-expiry: callback anonymous": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_GET_USER_INFO",
+        "message": "Failed to get user info"
+      }
+    }
+  },
+  {
+    "zero-expiry: password too long": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_LONG",
+        "message": "Password too long"
+      }
+    }
+  },
+  {
+    "zero-expiry: unknown token": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "zero-expiry: delete": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true,
+        "message": "Verification email sent"
+      }
+    }
+  },
+  {
+    "zero-expiry: users": 1
+  },
+  {
+    "no-sender: callback without token": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Verification token is required"
+      }
+    }
+  },
+  {
+    "no-sender: callback anonymous": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_GET_USER_INFO",
+        "message": "Failed to get user info"
+      }
+    }
+  },
+  {
+    "no-sender: password too long": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_LONG",
+        "message": "Password too long"
+      }
+    }
+  },
+  {
+    "no-sender: unknown token": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "no-sender: delete": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true,
+        "message": "Verification email sent"
+      }
+    }
+  },
+  {
+    "no-sender: users": 1
+  }
+]

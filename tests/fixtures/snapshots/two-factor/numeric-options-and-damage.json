@@ -1,0 +1,169 @@
+[
+  {
+    "defaults": "6 digits"
+  },
+  {
+    "nan period": "6 digits"
+  },
+  {
+    "negative period": "4 digits"
+  },
+  {
+    "infinite period": "8 digits"
+  },
+  {
+    "too many digits": "Internal server error: Invalid TOTP HMAC input"
+  },
+  {
+    "empty secret": "Internal server error: Invalid TOTP HMAC input"
+  },
+  {
+    "unbounded backup codes: enable": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "invalid otp digits: enable": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "method": "totp",
+        "totpURI": "otpauth://totp/Better%20Auth:numeric%40example.test?secret=<v1>&issuer=Better+Auth&digits=6&period=30",
+        "backupCodes": [
+          "HiKIH-8RQSP",
+          "ypqjM-YwKAk",
+          "yAkLL-EhaNS",
+          "WBgY5-bIMD5",
+          "MiOXI-O5J9j",
+          "u7Ad6-LoKlx",
+          "oTYNS-htA4X",
+          "iXxQ0-nF0U1",
+          "NSJ2H-aVTVm",
+          "8qupv-TQbht"
+        ]
+      }
+    }
+  },
+  {
+    "invalid otp digits: /two-factor/send-otp": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "invalid otp digits: /two-factor/verify-otp": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_HAS_EXPIRED",
+        "message": "OTP has expired"
+      }
+    }
+  },
+  {
+    "invalid otp digits: /two-factor/verify-totp": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "TOTP_NOT_ENABLED",
+        "message": "TOTP not enabled"
+      }
+    }
+  },
+  {
+    "invalid otp digits: damaged secret": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "default otp window and budget: enable": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "method": "totp",
+        "totpURI": "otpauth://totp/Better%20Auth:numeric%40example.test?secret=<v2>&issuer=Better+Auth&digits=6&period=30",
+        "backupCodes": [
+          "NVHGD-zcXX0",
+          "UVG3d-MdWH5",
+          "BmoMr-4BBsJ",
+          "en33j-P3TIU",
+          "v6WDN-eSO26",
+          "9qQZ4-Te9yL",
+          "VEcuJ-2nbhV",
+          "OhGt7-o7tGC",
+          "CE6OI-LKYLo",
+          "1SxyK-YsR1F"
+        ]
+      }
+    }
+  },
+  {
+    "default otp window and budget: /two-factor/send-otp": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "default otp window and budget: /two-factor/verify-otp": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_CODE",
+        "message": "Invalid code"
+      }
+    }
+  },
+  {
+    "default otp window and budget: /two-factor/verify-totp": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "TOTP_NOT_ENABLED",
+        "message": "TOTP not enabled"
+      }
+    }
+  },
+  {
+    "default otp window and budget: damaged secret": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  }
+]

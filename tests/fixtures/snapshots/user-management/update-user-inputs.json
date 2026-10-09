@@ -1,0 +1,257 @@
+[
+  {
+    "[]": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected record, received array"
+      }
+    }
+  },
+  {
+    "null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected record, received null"
+      }
+    }
+  },
+  {
+    "7": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected record, received number"
+      }
+    }
+  },
+  {
+    "\"text\"": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected record, received string"
+      }
+    }
+  },
+  {
+    "true": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected record, received boolean"
+      }
+    }
+  },
+  {
+    "{}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "No fields to update"
+      }
+    }
+  },
+  {
+    "{\"email\":\"x@example.test\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_CAN_NOT_BE_UPDATED",
+        "message": "Email can not be updated"
+      }
+    }
+  },
+  {
+    "{\"email\":0}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "No fields to update"
+      }
+    }
+  },
+  {
+    "{\"email\":false}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "No fields to update"
+      }
+    }
+  },
+  {
+    "{\"email\":\"\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "No fields to update"
+      }
+    }
+  },
+  {
+    "{\"email\":null,\"name\":\"Null email\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "{\"email\":[],\"name\":\"x\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_CAN_NOT_BE_UPDATED",
+        "message": "Email can not be updated"
+      }
+    }
+  },
+  {
+    "{\"email\":{},\"name\":\"x\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_CAN_NOT_BE_UPDATED",
+        "message": "Email can not be updated"
+      }
+    }
+  },
+  {
+    "{\"role\":\"admin\",\"name\":\"x\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FIELD_NOT_ALLOWED",
+        "message": "role is not allowed to be set"
+      }
+    }
+  },
+  {
+    "{\"username\":\"ignored\",\"displayUsername\":\"Ignored\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "{\"phoneNumber\":null}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "No fields to update"
+      }
+    }
+  },
+  {
+    "{\"name\":\"Renamed\",\"image\":null}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "{\"name\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid JSON: invalid type: integer `5`, expected a string"
+      }
+    }
+  },
+  {
+    "name": "Renamed"
+  }
+]

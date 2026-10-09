@@ -1,0 +1,238 @@
+[
+  {
+    "no sender: request": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "stored": "<undelivered>"
+  },
+  {
+    "internal sender failure: request": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "stored": "magic-link:<token>"
+  },
+  {
+    "redeem": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/"
+        ],
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "api sender failure: request": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "stored": "magic-link:<token>"
+  },
+  {
+    "redeem": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/"
+        ],
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "generator failure: request": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "stored": null
+  },
+  {
+    "custom generator: request": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "stored": "magic-link:<token>"
+  },
+  {
+    "redeem": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/"
+        ],
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "hashed: request": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "stored": "magic-link:<v1>"
+  },
+  {
+    "redeem": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/"
+        ],
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "custom hasher: request": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "stored": "magic-link:hashed-<token>"
+  },
+  {
+    "redeem": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/"
+        ],
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "hasher internal failure: request": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "stored": null
+  },
+  {
+    "hasher api failure: request": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "stored": null
+  },
+  {
+    "invalid expiry: request": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "stored": null
+  },
+  {
+    "zero expiry: request": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "stored": "magic-link:<token>"
+  },
+  {
+    "redeem": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/"
+        ],
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  }
+]

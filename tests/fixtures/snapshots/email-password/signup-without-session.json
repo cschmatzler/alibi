@@ -1,0 +1,222 @@
+[
+  {
+    "no auto sign-in: new": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": null,
+        "user": {
+          "id": "<v1>",
+          "name": "Hidden",
+          "email": "fresh@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "no auto sign-in: duplicate": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": null,
+        "user": {
+          "id": "<v2>",
+          "name": "Hidden",
+          "email": "fresh@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": null,
+          "displayUsername": null
+        }
+      }
+    }
+  },
+  {
+    "no auto sign-in: denied": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": null,
+        "user": {
+          "id": "<v3>",
+          "name": "Hidden",
+          "email": "denied@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": null,
+          "displayUsername": null
+        }
+      }
+    }
+  },
+  {
+    "no auto sign-in: rows": [
+      1,
+      1,
+      0
+    ]
+  },
+  {
+    "verification required: new": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": null,
+        "user": {
+          "id": "<v4>",
+          "name": "Hidden",
+          "email": "fresh@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "verification required: duplicate": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": null,
+        "user": {
+          "id": "<v5>",
+          "name": "Hidden",
+          "email": "fresh@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": null,
+          "displayUsername": null
+        }
+      }
+    }
+  },
+  {
+    "verification required: denied": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": null,
+        "user": {
+          "id": "<v6>",
+          "name": "Hidden",
+          "email": "denied@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": null,
+          "displayUsername": null
+        }
+      }
+    }
+  },
+  {
+    "verification required: rows": [
+      1,
+      1,
+      0
+    ]
+  },
+  {
+    "auto sign-in: new": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g7>",
+        "user": {
+          "id": "<v8>",
+          "name": "Hidden",
+          "email": "fresh@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "auto sign-in: duplicate": {
+      "status": 422,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL",
+        "message": "User already exists. Use another email."
+      }
+    }
+  },
+  {
+    "auto sign-in: denied": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "DENIED",
+        "message": "DENIED"
+      }
+    }
+  },
+  {
+    "auto sign-in: rows": [
+      1,
+      1,
+      1
+    ]
+  }
+]

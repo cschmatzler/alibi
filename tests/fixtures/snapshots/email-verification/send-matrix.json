@@ -1,0 +1,142 @@
+[
+  {
+    "[]": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "{}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "{\"email\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "{\"email\":\"nope\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid email address"
+      }
+    }
+  },
+  {
+    "{\"email\":\"owner@example.test\",\"callbackURL\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid callbackURL: expected a string"
+      }
+    }
+  },
+  {
+    "session mismatch": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_MISMATCH",
+        "message": "Email mismatch"
+      }
+    }
+  },
+  {
+    "session match": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "anonymous unknown": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "session already verified": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_ALREADY_VERIFIED",
+        "message": "Email is already verified"
+      }
+    }
+  },
+  {
+    "deliveries": 1
+  }
+]

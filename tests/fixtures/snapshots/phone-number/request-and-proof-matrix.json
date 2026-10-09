@@ -1,0 +1,740 @@
+[
+  {
+    "/sign-in/phone-number []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/sign-in/phone-number null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/sign-in/phone-number {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v1>] Invalid input: expected string, received undefined; [body.password] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/sign-in/phone-number {\"phoneNumber\":5,\"password\":5,\"code\":5,\"otp\":5,\"newPassword\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v1>] Invalid input: expected string, received number; [body.password] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/sign-in/phone-number {\"phoneNumber\":\"+000\",\"password\":\"a-native-password-123\",\"code\":\"1\",\"otp\":\"1\",\"newPassword\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_PHONE_NUMBER",
+        "message": "Invalid phone number"
+      }
+    }
+  },
+  {
+    "/sign-in/phone-number {\"phoneNumber\":\"+err\",\"password\":\"a-native-password-123\",\"code\":\"1\"}": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "/phone-number/send-otp []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/phone-number/send-otp null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/phone-number/send-otp {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v1>] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/phone-number/send-otp {\"phoneNumber\":5,\"password\":5,\"code\":5,\"otp\":5,\"newPassword\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v1>] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/phone-number/send-otp {\"phoneNumber\":\"+000\",\"password\":\"a-native-password-123\",\"code\":\"1\",\"otp\":\"1\",\"newPassword\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_PHONE_NUMBER",
+        "message": "Invalid phone number"
+      }
+    }
+  },
+  {
+    "/phone-number/send-otp {\"phoneNumber\":\"+err\",\"password\":\"a-native-password-123\",\"code\":\"1\"}": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "/phone-number/verify []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/phone-number/verify null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/phone-number/verify {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v1>] Invalid input: expected string, received undefined; [body.code] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/phone-number/verify {\"phoneNumber\":5,\"password\":5,\"code\":5,\"otp\":5,\"newPassword\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v1>] Invalid input: expected string, received number; [body.code] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/phone-number/verify {\"phoneNumber\":\"+000\",\"password\":\"a-native-password-123\",\"code\":\"1\",\"otp\":\"1\",\"newPassword\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_NOT_FOUND",
+        "message": "OTP not found"
+      }
+    }
+  },
+  {
+    "/phone-number/verify {\"phoneNumber\":\"+err\",\"password\":\"a-native-password-123\",\"code\":\"1\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_NOT_FOUND",
+        "message": "OTP not found"
+      }
+    }
+  },
+  {
+    "/phone-number/request-password-reset []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/phone-number/request-password-reset null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/phone-number/request-password-reset {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v1>] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/phone-number/request-password-reset {\"phoneNumber\":5,\"password\":5,\"code\":5,\"otp\":5,\"newPassword\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v1>] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/phone-number/request-password-reset {\"phoneNumber\":\"+000\",\"password\":\"a-native-password-123\",\"code\":\"1\",\"otp\":\"1\",\"newPassword\":\"a-native-password-123\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "/phone-number/request-password-reset {\"phoneNumber\":\"+err\",\"password\":\"a-native-password-123\",\"code\":\"1\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "/phone-number/reset-password []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/phone-number/reset-password null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/phone-number/reset-password {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.otp] Invalid input: expected string, received undefined; [<v1>] Invalid input: expected string, received undefined; [<v2>] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/phone-number/reset-password {\"phoneNumber\":5,\"password\":5,\"code\":5,\"otp\":5,\"newPassword\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.otp] Invalid input: expected string, received number; [<v1>] Invalid input: expected string, received number; [<v2>] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/phone-number/reset-password {\"phoneNumber\":\"+000\",\"password\":\"a-native-password-123\",\"code\":\"1\",\"otp\":\"1\",\"newPassword\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/phone-number/reset-password {\"phoneNumber\":\"+err\",\"password\":\"a-native-password-123\",\"code\":\"1\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.otp] Invalid input: expected string, received undefined; [<v2>] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "verify before send": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_NOT_FOUND",
+        "message": "OTP not found"
+      }
+    }
+  },
+  {
+    "send +15550000001": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "code sent"
+      }
+    }
+  },
+  {
+    "wrong-1": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "wrong-2": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "wrong-3": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "TOO_MANY_ATTEMPTS",
+        "message": "Too many attempts"
+      }
+    }
+  },
+  {
+    "send +15550000001": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "code sent"
+      }
+    }
+  },
+  {
+    "verified input rejected": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FIELD_NOT_ALLOWED",
+        "message": "<v3> is not allowed to be set"
+      }
+    }
+  },
+  {
+    "send +15550000001": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "code sent"
+      }
+    }
+  },
+  {
+    "expired": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OTP_EXPIRED",
+        "message": "OTP expired"
+      }
+    }
+  },
+  {
+    "send +15550000001": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "code sent"
+      }
+    }
+  },
+  {
+    "creates user without session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true,
+        "token": null,
+        "user": {
+          "id": "<v4>",
+          "name": "Phone +15550000001",
+          "email": "15550000001@phone.example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "phoneNumber": "+15550000001",
+          "phoneNumberVerified": true,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "send +15550000001": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "code sent"
+      }
+    }
+  },
+  {
+    "existing user": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "status": true,
+        "token": "<g5>",
+        "user": {
+          "id": "<v4>",
+          "name": "Phone +15550000001",
+          "email": "15550000001@phone.example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "phoneNumber": "+15550000001",
+          "phoneNumberVerified": true,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "send +15550000009": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "code sent"
+      }
+    }
+  },
+  {
+    "callback rejects": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "hook rejected"
+      }
+    }
+  },
+  {
+    "send +15550000003": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "code sent"
+      }
+    }
+  },
+  {
+    "nameless signup": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "status": true,
+        "token": "<g6>",
+        "user": {
+          "id": "<v7>",
+          "name": "+15550000003",
+          "email": "15550000003@phone.example.test",
+          "emailVerified": false,
+          "image": "https://img.example.test/a.png",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": "ignored",
+          "displayUsername": "ignored",
+          "phoneNumber": "+15550000003",
+          "phoneNumberVerified": true
+        }
+      }
+    }
+  },
+  {
+    "sign in unknown phone": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_PHONE_NUMBER_OR_PASSWORD",
+        "message": "Invalid phone number or password"
+      }
+    }
+  },
+  {
+    "sign in long password": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_LONG",
+        "message": "Password too long"
+      }
+    }
+  },
+  {
+    "sign in unverified phone": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_PHONE_NUMBER_OR_PASSWORD",
+        "message": "Invalid phone number or password"
+      }
+    }
+  },
+  {
+    "sign in without credential": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PHONE_NUMBER_NOT_VERIFIED",
+        "message": "Phone number not verified"
+      }
+    }
+  },
+  {
+    "deliveries": 8
+  }
+]

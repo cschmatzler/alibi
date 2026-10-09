@@ -1,0 +1,396 @@
+[
+  {
+    "plain hit": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_COMPROMISED",
+        "message": "Pick another password"
+      }
+    }
+  },
+  {
+    "json string hit": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_COMPROMISED",
+        "message": "Pick another password"
+      }
+    }
+  },
+  {
+    "escaped surrogate lines": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_COMPROMISED",
+        "message": "Pick another password"
+      }
+    }
+  },
+  {
+    "lone surrogate array": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Failed to check password. Please try again later."
+      }
+    }
+  },
+  {
+    "lone surrogate object": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Failed to check password. Please try again later."
+      }
+    }
+  },
+  {
+    "json number": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Failed to check password. Please try again later."
+      }
+    }
+  },
+  {
+    "vendor json": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_COMPROMISED",
+        "message": "Pick another password"
+      }
+    }
+  },
+  {
+    "mixed case json": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_COMPROMISED",
+        "message": "Pick another password"
+      }
+    }
+  },
+  {
+    "svg media": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_COMPROMISED",
+        "message": "Pick another password"
+      }
+    }
+  },
+  {
+    "binary media": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Failed to check password. Please try again later."
+      }
+    }
+  },
+  {
+    "invalid vendor suffix": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Failed to check password. Please try again later."
+      }
+    }
+  },
+  {
+    "other lines first": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g1>",
+        "user": {
+          "id": "<v2>",
+          "name": "Owner",
+          "email": "pwned11@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "lowercase suffix": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_COMPROMISED",
+        "message": "Pick another password"
+      }
+    }
+  },
+  {
+    "bare newline terminator": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_COMPROMISED",
+        "message": "Pick another password"
+      }
+    }
+  },
+  {
+    "zero count": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g3>",
+        "user": {
+          "id": "<v4>",
+          "name": "Owner",
+          "email": "pwned14@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "absent suffix": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g5>",
+        "user": {
+          "id": "<v6>",
+          "name": "Owner",
+          "email": "pwned15@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "empty count": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Failed to check password. Please try again later."
+      }
+    }
+  },
+  {
+    "non digit count": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Failed to check password. Please try again later."
+      }
+    }
+  },
+  {
+    "leading zero count": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Failed to check password. Please try again later."
+      }
+    }
+  },
+  {
+    "count above safe integer": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Failed to check password. Please try again later."
+      }
+    }
+  },
+  {
+    "count above u64": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Failed to check password. Please try again later."
+      }
+    }
+  },
+  {
+    "users": 3
+  },
+  {
+    "custom path included": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_COMPROMISED",
+        "message": "The password you entered has been compromised. Please choose a different password."
+      }
+    }
+  },
+  {
+    "custom path excluded": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g7>",
+        "user": {
+          "id": "<v8>",
+          "name": "Owner",
+          "email": "scoped@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "disabled": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g9>",
+        "user": {
+          "id": "<v10>",
+          "name": "Owner",
+          "email": "scoped@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  }
+]

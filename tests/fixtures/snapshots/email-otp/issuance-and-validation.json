@@ -1,0 +1,2023 @@
+[
+  {
+    "/email-otp/send-verification-otp anonymous []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/email-otp/send-verification-otp owner []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/email-otp/send-verification-otp anonymous null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/email-otp/send-verification-otp owner null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/email-otp/send-verification-otp anonymous {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received undefined; [body.type] Invalid option: expected one of \"email-verification\"|\"sign-in\"|\"forget-password\"|\"change-email\""
+      }
+    }
+  },
+  {
+    "/email-otp/send-verification-otp owner {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received undefined; [body.type] Invalid option: expected one of \"email-verification\"|\"sign-in\"|\"forget-password\"|\"change-email\""
+      }
+    }
+  },
+  {
+    "/email-otp/send-verification-otp anonymous {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received number; [body.type] Invalid option: expected one of \"email-verification\"|\"sign-in\"|\"forget-password\"|\"change-email\""
+      }
+    }
+  },
+  {
+    "/email-otp/send-verification-otp owner {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received number; [body.type] Invalid option: expected one of \"email-verification\"|\"sign-in\"|\"forget-password\"|\"change-email\""
+      }
+    }
+  },
+  {
+    "/email-otp/send-verification-otp anonymous {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "/email-otp/send-verification-otp owner {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "/email-otp/send-verification-otp anonymous {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "/email-otp/send-verification-otp owner {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "/email-otp/send-verification-otp anonymous {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid OTP type"
+      }
+    }
+  },
+  {
+    "/email-otp/send-verification-otp owner {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid OTP type"
+      }
+    }
+  },
+  {
+    "/email-otp/check-verification-otp anonymous []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/email-otp/check-verification-otp owner []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/email-otp/check-verification-otp anonymous null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/email-otp/check-verification-otp owner null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/email-otp/check-verification-otp anonymous {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received undefined; [body.type] Invalid option: expected one of \"email-verification\"|\"sign-in\"|\"forget-password\"|\"change-email\"; [body.otp] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/email-otp/check-verification-otp owner {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received undefined; [body.type] Invalid option: expected one of \"email-verification\"|\"sign-in\"|\"forget-password\"|\"change-email\"; [body.otp] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/email-otp/check-verification-otp anonymous {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received number; [body.type] Invalid option: expected one of \"email-verification\"|\"sign-in\"|\"forget-password\"|\"change-email\"; [body.otp] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/email-otp/check-verification-otp owner {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received number; [body.type] Invalid option: expected one of \"email-verification\"|\"sign-in\"|\"forget-password\"|\"change-email\"; [body.otp] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/email-otp/check-verification-otp anonymous {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "/email-otp/check-verification-otp owner {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "/email-otp/check-verification-otp anonymous {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/email-otp/check-verification-otp owner {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/email-otp/check-verification-otp anonymous {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/email-otp/check-verification-otp owner {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/email-otp/verify-email anonymous []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/email-otp/verify-email owner []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/email-otp/verify-email anonymous null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/email-otp/verify-email owner null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/email-otp/verify-email anonymous {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received undefined; [body.otp] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/email-otp/verify-email owner {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received undefined; [body.otp] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/email-otp/verify-email anonymous {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received number; [body.otp] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/email-otp/verify-email owner {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received number; [body.otp] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/email-otp/verify-email anonymous {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "/email-otp/verify-email owner {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "/email-otp/verify-email anonymous {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/email-otp/verify-email owner {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/email-otp/verify-email anonymous {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/email-otp/verify-email owner {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/sign-in/email-otp anonymous []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/sign-in/email-otp owner []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/sign-in/email-otp anonymous null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/sign-in/email-otp owner null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/sign-in/email-otp anonymous {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received undefined; [body.otp] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/sign-in/email-otp owner {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received undefined; [body.otp] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/sign-in/email-otp anonymous {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received number; [body.otp] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/sign-in/email-otp owner {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received number; [body.otp] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/sign-in/email-otp anonymous {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/sign-in/email-otp owner {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/sign-in/email-otp anonymous {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/sign-in/email-otp owner {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "TOO_MANY_ATTEMPTS",
+        "message": "Too many attempts"
+      }
+    }
+  },
+  {
+    "/sign-in/email-otp anonymous {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/sign-in/email-otp owner {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/email-otp/request-password-reset anonymous []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/email-otp/request-password-reset owner []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/email-otp/request-password-reset anonymous null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/email-otp/request-password-reset owner null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/email-otp/request-password-reset anonymous {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/email-otp/request-password-reset owner {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/email-otp/request-password-reset anonymous {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/email-otp/request-password-reset owner {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/email-otp/request-password-reset anonymous {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "/email-otp/request-password-reset owner {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "/email-otp/request-password-reset anonymous {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "/email-otp/request-password-reset owner {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "/email-otp/request-password-reset anonymous {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "/email-otp/request-password-reset owner {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "/forget-password/email-otp anonymous []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/forget-password/email-otp owner []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/forget-password/email-otp anonymous null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/forget-password/email-otp owner null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/forget-password/email-otp anonymous {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/forget-password/email-otp owner {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/forget-password/email-otp anonymous {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/forget-password/email-otp owner {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/forget-password/email-otp anonymous {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "/forget-password/email-otp owner {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "/forget-password/email-otp anonymous {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "/forget-password/email-otp owner {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "/forget-password/email-otp anonymous {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "/forget-password/email-otp owner {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "/email-otp/reset-password anonymous []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/email-otp/reset-password owner []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/email-otp/reset-password anonymous null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/email-otp/reset-password owner null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/email-otp/reset-password anonymous {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received undefined; [body.otp] Invalid input: expected string, received undefined; [body.password] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/email-otp/reset-password owner {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received undefined; [body.otp] Invalid input: expected string, received undefined; [body.password] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/email-otp/reset-password anonymous {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received number; [body.otp] Invalid input: expected string, received number; [body.password] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/email-otp/reset-password owner {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received number; [body.otp] Invalid input: expected string, received number; [body.password] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/email-otp/reset-password anonymous {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/email-otp/reset-password owner {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/email-otp/reset-password anonymous {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/email-otp/reset-password owner {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/email-otp/reset-password anonymous {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_SHORT",
+        "message": "Password too short"
+      }
+    }
+  },
+  {
+    "/email-otp/reset-password owner {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_SHORT",
+        "message": "Password too short"
+      }
+    }
+  },
+  {
+    "/email-otp/request-email-change anonymous []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/email-otp/request-email-change owner []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/email-otp/request-email-change anonymous null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/email-otp/request-email-change owner null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/email-otp/request-email-change anonymous {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.newEmail] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/email-otp/request-email-change owner {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.newEmail] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/email-otp/request-email-change anonymous {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.newEmail] Invalid input: expected string, received number; [body.otp] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/email-otp/request-email-change owner {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.newEmail] Invalid input: expected string, received number; [body.otp] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/email-otp/request-email-change anonymous {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "/email-otp/request-email-change owner {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "/email-otp/request-email-change anonymous {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "/email-otp/request-email-change owner {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "/email-otp/request-email-change anonymous {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "/email-otp/request-email-change owner {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Email is the same"
+      }
+    }
+  },
+  {
+    "/email-otp/change-email anonymous []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/email-otp/change-email owner []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/email-otp/change-email anonymous null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/email-otp/change-email owner null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "/email-otp/change-email anonymous {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.newEmail] Invalid input: expected string, received undefined; [body.otp] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/email-otp/change-email owner {}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.newEmail] Invalid input: expected string, received undefined; [body.otp] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/email-otp/change-email anonymous {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.newEmail] Invalid input: expected string, received number; [body.otp] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/email-otp/change-email owner {\"email\":5,\"otp\":5,\"type\":5,\"newEmail\":5,\"password\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.newEmail] Invalid input: expected string, received number; [body.otp] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/email-otp/change-email anonymous {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "/email-otp/change-email owner {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "/email-otp/change-email anonymous {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "/email-otp/change-email owner {\"email\":\"nobody@example.test\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"other@example.test\",\"password\":\"a-native-password-123\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "/email-otp/change-email anonymous {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "/email-otp/change-email owner {\"email\":\"owner@example.test\",\"otp\":\"123456\",\"type\":\"change-email\",\"newEmail\":\"owner@example.test\",\"password\":\"short\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Email is the same"
+      }
+    }
+  },
+  {
+    "reuse: send first": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "reuse: send second": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "reuse: deliveries": 2
+  },
+  {
+    "reuse: verifications": 1
+  },
+  {
+    "reuse: sign in wrong-1": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "reuse: sign in wrong-2": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "reuse: sign in wrong-3": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "reuse: sign in wrong-4": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "TOO_MANY_ATTEMPTS",
+        "message": "Too many attempts"
+      }
+    }
+  },
+  {
+    "reuse: sign in after budget": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "invalid expiry: send first": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "invalid expiry: send second": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "invalid expiry: deliveries": 0
+  },
+  {
+    "invalid expiry: verifications": 0
+  },
+  {
+    "nonpositive length: send first": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "nonpositive length: send second": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "nonpositive length: deliveries": 0
+  },
+  {
+    "nonpositive length: verifications": 0
+  },
+  {
+    "zero attempts: send first": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "zero attempts: send second": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "zero attempts: deliveries": 2
+  },
+  {
+    "zero attempts: verifications": 2
+  },
+  {
+    "zero attempts: sign in wrong-1": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "zero attempts: sign in wrong-2": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "zero attempts: sign in wrong-3": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "zero attempts: sign in wrong-4": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "TOO_MANY_ATTEMPTS",
+        "message": "Too many attempts"
+      }
+    }
+  },
+  {
+    "zero attempts: sign in after budget": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "sign-up disabled: send first": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "sign-up disabled: send second": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "sign-up disabled: deliveries": 0
+  },
+  {
+    "sign-up disabled: verifications": 0
+  }
+]

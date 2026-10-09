@@ -1,0 +1,303 @@
+[
+  {
+    "issue fresh@example.test": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "new user": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/welcome"
+        ],
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "issue fresh@example.test": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "returning user": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/home"
+        ],
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "issue fresh@example.test": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "no callback returns session json": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g1>",
+        "user": {
+          "id": "<v2>",
+          "name": "Link User",
+          "email": "fresh@example.test",
+          "emailVerified": true,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        },
+        "session": {
+          "id": "<v3>",
+          "expiresAt": "<date>",
+          "token": "<g1>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<v2>"
+        }
+      }
+    }
+  },
+  {
+    "issue denied@example.test": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "denied by policy": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/oops?error=DENIED&error_description=Closed+community"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "issue unverified@example.test": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "unverified owner": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/home"
+        ],
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "issue bad@example.test": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "missing token": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/oops?error=INVALID_TOKEN"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "untrusted callback": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_CALLBACK_URL",
+        "message": "Invalid callbackURL"
+      }
+    }
+  },
+  {
+    "untrusted new user callback": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_CALLBACK_URL",
+        "message": "Invalid callbackURL"
+      }
+    }
+  },
+  {
+    "untrusted error callback": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_CALLBACK_URL",
+        "message": "Invalid callbackURL"
+      }
+    }
+  },
+  {
+    "malformed escape": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "malformed escape pair": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "encoded callback": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/welcome"
+        ],
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "unknown token": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/oops?error=INVALID_TOKEN"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "query without token": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[query.token] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "rows": [
+      3,
+      5
+    ]
+  }
+]
