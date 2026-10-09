@@ -60,7 +60,6 @@
 //! need retained adapter output, use [`issue_user_session_with_fields_record`].
 
 pub use alibi_core::session::*;
-pub use alibi_core::session::{SessionRefreshSuppressed, cookie_cache};
 pub use alibi_core::utils::cookie_utils::create_session_cookie;
 pub use alibi_plugins::helpers::{
     IssuedSession, IssuedSessionRecord, SessionIssueError, SessionOverrides, issue_user_session,

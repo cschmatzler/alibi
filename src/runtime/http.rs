@@ -69,10 +69,7 @@ impl<S: AuthSchema> BetterAuth<S> {
                         if context.config.throw_api_errors
                             && !alibi_core::endpoint::is_endpoint_api_error(&err)
                         {
-                            return Err(match err {
-                                AuthError::CallbackFailure(cause) => *cause,
-                                error => error,
-                            });
+                            return Err(unwrap_callback_failure(err));
                         }
                         if matches!(err, AuthError::CallbackFailure(_)) {
                             run_after_hooks = false;
@@ -101,20 +98,14 @@ impl<S: AuthSchema> BetterAuth<S> {
                     response = AuthResponse::new(500);
                     // Ordinary exceptions escape upstream dispatch before its header
                     // accumulator is published. Committed writes remain untouched.
-                    drop(req.take_response_headers());
+                    _ = req.take_response_headers();
                     cache_headers.clear();
                 }
                 if alibi_plugins::oauth_proxy::take_unhandled_error(&req) {
                     run_after_hooks = false;
                 }
                 let mut nested_headers = req.take_response_headers();
-                for (name, value) in response.headers {
-                    if name.eq_ignore_ascii_case("set-cookie") {
-                        nested_headers.append(name, value);
-                    } else {
-                        drop(nested_headers.insert(name, value));
-                    }
-                }
+                merge_response_headers(&mut nested_headers, response.headers);
                 for header in cache_headers {
                     nested_headers.append("Set-Cookie", header);
                 }
@@ -149,13 +140,10 @@ impl<S: AuthSchema> BetterAuth<S> {
                             if context.config.throw_api_errors
                                 && !alibi_core::endpoint::is_endpoint_api_error(&error)
                             {
-                                return Err(match error {
-                                    AuthError::CallbackFailure(cause) => *cause,
-                                    error => error,
-                                });
+                                return Err(unwrap_callback_failure(error));
                             }
                             run_after_hooks = false;
-                            drop(req.take_response_headers());
+                            _ = req.take_response_headers();
                             error.to_auth_response()
                         }
                     };
@@ -169,10 +157,7 @@ impl<S: AuthSchema> BetterAuth<S> {
                         Ok(response) => response,
                         Err(error @ AuthError::CallbackFailure(_)) => {
                             if context.config.throw_api_errors {
-                                return Err(match error {
-                                    AuthError::CallbackFailure(cause) => *cause,
-                                    error => error,
-                                });
+                                return Err(unwrap_callback_failure(error));
                             }
                             // An ordinary application exception aborts completed hooks.
                             // Source drops accumulated headers, including already-issued
@@ -181,24 +166,18 @@ impl<S: AuthSchema> BetterAuth<S> {
                             break;
                         }
                         Err(error) => {
-                            let mut response_2 = error.to_auth_response();
+                            let mut rejected = error.to_auth_response();
                             for (name, value) in accumulated_headers {
                                 if name.eq_ignore_ascii_case("set-cookie") {
-                                    response_2.headers.append(name, value);
-                                } else if !response_2.headers.contains_key(&name) {
-                                    drop(response_2.headers.insert(name, value));
+                                    rejected.headers.append(name, value);
+                                } else if !rejected.headers.contains_key(&name) {
+                                    _ = rejected.headers.insert(name, value);
                                 }
                             }
-                            response_2
+                            rejected
                         }
                     };
-                    for (name, value) in req.take_response_headers() {
-                        if name.eq_ignore_ascii_case("set-cookie") {
-                            response.headers.append(name, value);
-                        } else {
-                            drop(response.headers.insert(name, value));
-                        }
-                    }
+                    merge_response_headers(&mut response.headers, req.take_response_headers());
                 }
                 let mut response = middleware::run_after(&self.middlewares, &req, response).await?;
                 for plugin in &self.plugins {
@@ -235,7 +214,6 @@ impl<S: AuthSchema> BetterAuth<S> {
             return Ok(Some(response));
         }
 
-        // Run before-request middleware chain
         if let Some(response) = middleware::run_before(&self.transport_middlewares, req).await? {
             return Ok(Some(response));
         }
@@ -256,7 +234,6 @@ impl<S: AuthSchema> BetterAuth<S> {
         Ok(None)
     }
 
-    /// Inner request handler that may return errors.
     pub(in crate::runtime) async fn handle_request_inner(
         &self,
         req: &mut AuthRequest,
@@ -270,11 +247,9 @@ impl<S: AuthSchema> BetterAuth<S> {
             return Ok(response);
         }
 
-        // Strip base_path prefix from the request path for internal routing.
-        // This happens BEFORE plugin hooks so that `before_request` sees the
-        // same normalised path that `on_request` / core handlers use.
-        // External callers send e.g. "/api/auth/sign-in/email"; internally
-        // handlers match against "/sign-in/email".
+        // Internal routing strips the base path ("/api/auth/sign-in/email" becomes
+        // "/sign-in/email") before plugin hooks, so `before_request` and
+        // `on_request` see the same path.
         let base_path = &self.config.base_path;
         let stripped_path = if !base_path.is_empty() && base_path != "/" {
             req.path()
@@ -285,7 +260,6 @@ impl<S: AuthSchema> BetterAuth<S> {
             req.path()
         };
 
-        // Build a request with the stripped path for all subsequent dispatch
         let mut internal_req = if stripped_path == req.path() {
             req.clone()
         } else {
@@ -380,8 +354,7 @@ impl<S: AuthSchema> BetterAuth<S> {
             req.extensions().insert((*frame).clone());
         }
 
-        // Run plugin before_request hooks (e.g. API-key → session emulation)
-        // Plugins now see the normalised (base_path-stripped) path.
+        // Plugins see the base-path-stripped path (e.g. API-key → session emulation).
         for plugin in &self.plugins {
             if let Some(action) = plugin.before_request(&internal_req, context).await? {
                 match action {
@@ -453,17 +426,17 @@ impl<S: AuthSchema> BetterAuth<S> {
                     HttpEndpointResponse::Raw(response) => {
                         *run_after_hooks = false;
                         // A raw endpoint response bypasses the dispatch accumulator.
-                        drop(internal_req.take_response_headers());
-                        drop(alibi_core::session::cookie_cache::runtime::take_issuance(
+                        _ = internal_req.take_response_headers();
+                        _ = alibi_core::session::cookie_cache::runtime::take_issuance(
                             internal_req.extensions(),
-                        ));
+                        );
                         if let Some(frame) = internal_req
                             .extensions()
                             .get::<super::http_hooks::HttpEndpointFrame>()
                         {
-                            drop(alibi_core::session::cookie_cache::runtime::take_issuance(
+                            _ = alibi_core::session::cookie_cache::runtime::take_issuance(
                                 frame.call.extensions(),
-                            ));
+                            );
                         }
                         Ok(response)
                     }
@@ -492,6 +465,28 @@ impl<S: AuthSchema> BetterAuth<S> {
             result
         } else {
             handler.await
+        }
+    }
+}
+
+/// A callback failure's cause, for hosts that rethrow application errors.
+fn unwrap_callback_failure(error: AuthError) -> AuthError {
+    match error {
+        AuthError::CallbackFailure(cause) => *cause,
+        error => error,
+    }
+}
+
+/// Fold `source` into `target`: cookies accumulate, other headers replace.
+fn merge_response_headers(
+    target: &mut alibi_core::Headers,
+    source: impl IntoIterator<Item = (String, String)>,
+) {
+    for (name, value) in source {
+        if name.eq_ignore_ascii_case("set-cookie") {
+            target.append(name, value);
+        } else {
+            _ = target.insert(name, value);
         }
     }
 }

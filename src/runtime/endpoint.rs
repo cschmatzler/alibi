@@ -180,7 +180,7 @@ pub(super) fn merge_headers(target: &mut Headers, headers: Headers) {
         if name.eq_ignore_ascii_case("set-cookie") {
             target.append(name, value);
         } else {
-            drop(target.insert(name, value));
+            _ = target.insert(name, value);
         }
     }
 }

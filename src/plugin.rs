@@ -5,6 +5,3 @@ pub use alibi_core::openapi::{
     PluginOpenApiMetadata,
 };
 pub use alibi_core::plugin::*;
-pub use alibi_core::plugin::{
-    AuthContext, AuthInitContext, AuthPlugin, AuthRoute, BeforeRequestAction,
-};

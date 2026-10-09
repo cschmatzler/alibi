@@ -93,23 +93,23 @@ pub(in crate::runtime) async fn parse_dispatch_body(
                 AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
             })?;
             let value = if let Some(filename) = filename {
-                drop(files.0.insert(
+                _ = files.0.insert(
                     name.clone(),
                     alibi_core::types::MultipartFile {
                         filename,
                         content_type,
                         bytes: bytes.to_vec(),
                     },
-                ));
+                );
                 empty_object()
             } else {
-                drop(files.0.remove(&name));
+                _ = files.0.remove(&name);
                 alibi_core::utils::json::JsValue::String(
                     String::from_utf8_lossy(&bytes).into_owned(),
                 )
             };
             if let alibi_core::utils::json::JsValue::Object(object) = &mut fields {
-                drop(object.insert(name, value));
+                _ = object.insert(name, value);
             }
         }
         req.extensions().insert(files);
