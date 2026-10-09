@@ -1,18 +1,48 @@
-use super::{
-    AuthContext, AuthError, AuthResult, AuthUser, CreateVerification, DiscoverableKey, Duration,
-    PasskeyConfig, PasskeyHandlerOutcome, PasskeyHandlerResult, PublicKeyCredential,
-    SessionIssueError, SessionResponse, StoredAuthenticationState, StoredRegistrationState,
-    UpdatePasskeyAuthentication, UserVerificationPolicy, Utc, Uuid, Value,
-    VerifyAuthenticationRequest, WebauthnError, authentication_options_json,
-    build_verification_core, build_webauthn, challenge_cookie_name, challenge_not_found,
-    create_challenge_cookie, credential_id_from_authentication, decode_challenge_cookie,
-    decode_credential_id, finish_core_authentication, generation_origin, get_cookie_value,
-    issue_user_session_record, json, parse_transports_csv, passkey_authentication_failure,
-    passkey_not_found, response_code, response_message, snapshot_passkey,
-};
+use super::PasskeyHandlerOutcome;
+use super::PasskeyHandlerResult;
+use super::challenge_not_found;
+use super::generation_origin;
+use super::passkey_authentication_failure;
+use super::passkey_not_found;
+use super::response_code;
+use super::response_message;
+use crate::helpers::SessionIssueError;
+use crate::helpers::issue_user_session_record;
+use crate::passkey::PasskeyConfig;
+use crate::passkey::types::SessionResponse;
+use crate::passkey::types::VerifyAuthenticationRequest;
+use crate::passkey::webauthn::StoredAuthenticationState;
+use crate::passkey::webauthn::StoredRegistrationState;
+use crate::passkey::webauthn::authentication_options_json;
+use crate::passkey::webauthn::build_verification_core;
+use crate::passkey::webauthn::build_webauthn;
+use crate::passkey::webauthn::challenge_cookie_name;
+use crate::passkey::webauthn::create_challenge_cookie;
+use crate::passkey::webauthn::credential_id_from_authentication;
+use crate::passkey::webauthn::decode_challenge_cookie;
+use crate::passkey::webauthn::decode_credential_id;
+use crate::passkey::webauthn::finish_core_authentication;
+use crate::passkey::webauthn::get_cookie_value;
+use crate::passkey::webauthn::parse_transports_csv;
+use crate::passkey::webauthn::snapshot_passkey;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
 use alibi_core::AuthPasskey;
+use alibi_core::AuthResult;
 use alibi_core::AuthSession;
+use alibi_core::CreateVerification;
+use alibi_core::entity::AuthUser;
+use alibi_core::types::UpdatePasskeyAuthentication;
 use base64::Engine;
+use chrono::Duration;
+use chrono::Utc;
+use serde_json::Value;
+use serde_json::json;
+use uuid::Uuid;
+use webauthn_rs::prelude::DiscoverableKey;
+use webauthn_rs::prelude::PublicKeyCredential;
+use webauthn_rs_core::error::WebauthnError;
+use webauthn_rs_core::proto::UserVerificationPolicy;
 pub(in crate::passkey) async fn generate_authenticate_options_core<U: AuthUser>(
     maybe_user: Option<&U>,
     extensions: Option<Value>,

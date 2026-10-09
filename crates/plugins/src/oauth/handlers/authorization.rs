@@ -9,17 +9,34 @@ const RESERVED_AUTHORIZATION_PARAMS: [&str; 8] = [
     "scope",
 ];
 
-use super::{
-    AuthContext, AuthError, AuthResult, AuthSession, CreateVerification, Duration,
-    FlowStartRequest, InitiatedOAuthFlow, LinkSocialRequest, OAuthConfig, OAuthProvider,
-    OAuthScopeOrder, OAuthStateLink, OAuthStatePayload, Sha256, SocialSignInRequest,
-    SocialSignInResponse, Utc, auth_base_url, capture_server_context, filter_additional_state_data,
-    oauth_callback_path, state_verification_identifier, validate_redirect_target,
-};
+use super::FlowStartRequest;
+use super::InitiatedOAuthFlow;
+use super::oauth_callback_path;
+use super::redirects::auth_base_url;
+use super::redirects::validate_redirect_target;
+use crate::oauth::providers::OAuthConfig;
+use crate::oauth::providers::OAuthProvider;
+use crate::oauth::providers::OAuthScopeOrder;
+use crate::oauth::state::OAuthStateLink;
+use crate::oauth::state::OAuthStatePayload;
+use crate::oauth::state::capture_server_context;
+use crate::oauth::state::filter_additional_state_data;
+use crate::oauth::state::state_verification_identifier;
+use crate::oauth::types::LinkSocialRequest;
+use crate::oauth::types::SocialSignInRequest;
+use crate::oauth::types::SocialSignInResponse;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
+use alibi_core::AuthResult;
 use alibi_core::AuthUser;
+use alibi_core::CreateVerification;
+use alibi_core::entity::AuthSession;
 use base64::Engine;
+use chrono::Duration;
+use chrono::Utc;
 use rand::RngExt;
 use sha2::Digest;
+use sha2::Sha256;
 pub(in crate::oauth::handlers) fn generate_pkce() -> (String, String) {
     const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
     let mut random = rand::rng();

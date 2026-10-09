@@ -1,9 +1,18 @@
-use super::{
-    AuthContext, AuthError, AuthResult, AuthUser, DeletePasskeyRequest, PasskeyHandlerOutcome,
-    PasskeyHandlerResult, PasskeyResponse, PasskeyView, StatusResponse, UpdatePasskeyRequest,
-    Value, json, registration_value,
-};
+use super::PasskeyHandlerOutcome;
+use super::PasskeyHandlerResult;
+use super::registration_value;
+use crate::StatusResponse;
+use crate::passkey::types::DeletePasskeyRequest;
+use crate::passkey::types::PasskeyResponse;
+use crate::passkey::types::UpdatePasskeyRequest;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
 use alibi_core::AuthPasskey;
+use alibi_core::AuthResult;
+use alibi_core::entity::AuthUser;
+use alibi_core::wire::PasskeyView;
+use serde_json::Value;
+use serde_json::json;
 pub(in crate::passkey) async fn list_user_passkeys_core(
     user: &impl AuthUser,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,

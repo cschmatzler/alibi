@@ -1,19 +1,51 @@
-use super::{
-    AttestationConveyancePreference, AuthContext, AuthError, AuthResult, COSEAlgorithm,
-    CreatePasskey, CreateVerification, Duration, PasskeyConfig, PasskeyHandlerOutcome,
-    PasskeyHandlerResult, PasskeyRegistrationUser, RegisterPublicKeyCredential,
-    RequestRegistrationExtensions, StoredAuthenticationState, StoredCoreRegistrationState,
-    StoredRegistrationState, StoredRegistrationVerifier, UserVerificationPolicy, Utc, Uuid, Value,
-    VerifyRegistrationRequest, WebauthnError, build_verification_core, build_webauthn,
-    challenge_cookie_name, challenge_not_found, create_challenge_cookie, decode_challenge_cookie,
-    decode_credential_id, extract_registration_metadata, finish_core_registration,
-    generate_ts_user_handle, generation_origin, get_cookie_value, json, parse_transports_csv,
-    passkey_registration_failure, registration_options_json, registration_value, response_code,
-    response_null, snapshot_passkey, transports_to_csv,
-};
+use super::PasskeyHandlerOutcome;
+use super::PasskeyHandlerResult;
+use super::challenge_not_found;
+use super::generation_origin;
+use super::passkey_registration_failure;
+use super::registration_value;
+use super::response_code;
+use super::response_null;
+use crate::passkey::PasskeyConfig;
+use crate::passkey::PasskeyRegistrationUser;
+use crate::passkey::types::VerifyRegistrationRequest;
+use crate::passkey::webauthn::StoredAuthenticationState;
+use crate::passkey::webauthn::StoredCoreRegistrationState;
+use crate::passkey::webauthn::StoredRegistrationState;
+use crate::passkey::webauthn::StoredRegistrationVerifier;
+use crate::passkey::webauthn::build_verification_core;
+use crate::passkey::webauthn::build_webauthn;
+use crate::passkey::webauthn::challenge_cookie_name;
+use crate::passkey::webauthn::create_challenge_cookie;
+use crate::passkey::webauthn::decode_challenge_cookie;
+use crate::passkey::webauthn::decode_credential_id;
+use crate::passkey::webauthn::extract_registration_metadata;
+use crate::passkey::webauthn::finish_core_registration;
+use crate::passkey::webauthn::generate_ts_user_handle;
+use crate::passkey::webauthn::get_cookie_value;
+use crate::passkey::webauthn::parse_transports_csv;
+use crate::passkey::webauthn::registration_options_json;
+use crate::passkey::webauthn::snapshot_passkey;
+use crate::passkey::webauthn::transports_to_csv;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
 use alibi_core::AuthPasskey;
+use alibi_core::AuthResult;
 use alibi_core::AuthUser;
+use alibi_core::CreatePasskey;
+use alibi_core::CreateVerification;
 use base64::Engine;
+use chrono::Duration;
+use chrono::Utc;
+use serde_json::Value;
+use serde_json::json;
+use uuid::Uuid;
+use webauthn_rs::prelude::RegisterPublicKeyCredential;
+use webauthn_rs_core::error::WebauthnError;
+use webauthn_rs_core::proto::AttestationConveyancePreference;
+use webauthn_rs_core::proto::COSEAlgorithm;
+use webauthn_rs_core::proto::RequestRegistrationExtensions;
+use webauthn_rs_core::proto::UserVerificationPolicy;
 pub(in crate::passkey) async fn generate_register_options_core(
     user: &PasskeyRegistrationUser,
     requested_context: Option<&str>,

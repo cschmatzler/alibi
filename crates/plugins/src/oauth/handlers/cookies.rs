@@ -1,8 +1,15 @@
-use super::{
-    AccountCookiePayload, AuthRequest, AuthResponse, AuthResult, Duration, OAuthStatePayload,
-    account_cookie_name, create_account_cookie_value, create_cookie_state_value,
-    create_database_state_cookie_value, decode_account_cookie_value, state_cookie_name,
-};
+use crate::oauth::state::AccountCookiePayload;
+use crate::oauth::state::OAuthStatePayload;
+use crate::oauth::state::account_cookie_name;
+use crate::oauth::state::create_account_cookie_value;
+use crate::oauth::state::create_cookie_state_value;
+use crate::oauth::state::create_database_state_cookie_value;
+use crate::oauth::state::decode_account_cookie_value;
+use crate::oauth::state::state_cookie_name;
+use alibi_core::AuthRequest;
+use alibi_core::AuthResponse;
+use alibi_core::AuthResult;
+use chrono::Duration;
 pub(in crate::oauth::handlers) fn account_cookie_max_age(config: &alibi_core::AuthConfig) -> f64 {
     if let Some(age) = config.account.cookie_max_age {
         return age;

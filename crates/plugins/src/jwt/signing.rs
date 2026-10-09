@@ -1,9 +1,23 @@
-use super::{
-    AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, JwtAudience, JwtClaimsConfig,
-    JwtPlugin, JwtSignOptions, Map, RemoteJwtPayload, ResolvedJwtSigningKey, URL_SAFE_NO_PAD,
-    Value, crypto, json, normalize_signing_claims, validate_critical_header, validate_numeric_date,
-};
+use super::JwtAudience;
+use super::JwtClaimsConfig;
+use super::JwtPlugin;
+use super::JwtSignOptions;
+use super::RemoteJwtPayload;
+use super::ResolvedJwtSigningKey;
+use super::claims::normalize_signing_claims;
+use super::claims::validate_critical_header;
+use super::claims::validate_numeric_date;
+use super::crypto;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
+use alibi_core::AuthRequest;
+use alibi_core::AuthResult;
+use alibi_core::AuthSchema;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use serde_json::Map;
+use serde_json::Value;
+use serde_json::json;
 impl JwtPlugin {
     /// Sign an application-owned payload through the trusted server API.
     pub async fn sign_jwt(

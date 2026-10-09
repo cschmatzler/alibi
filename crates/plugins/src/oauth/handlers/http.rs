@@ -1,19 +1,51 @@
-use super::{
-    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, HashMap, LinkSocialOutcome,
-    LinkSocialRequest, OAuthConfig, OAuthIdentity, OAuthProcessPolicy, OAuthSignInError,
-    OAuthStatePayload, OAuthUserInfoRequest, RecoveredOAuthServerContext, SocialSignInRequest,
-    ambiguous_account_sign_in_response, attach_cookie_state_payload, attach_state_cookie,
-    auth_base_url, build_default_error_url, build_redirect_url, callback_failure_location,
-    callback_failure_redirect, complete_link_social_with_raw_email, create_account_cookie_headers,
-    decode_cookie_state_value, decode_database_state_cookie_value, fetch_user_info_from_provider,
-    get_cookie, link_social_core, link_with_id_token_core, oauth_callback_path,
-    oauth_disable_sign_up_option, parse_callback_user_payload, process_oauth_sign_in_with_output,
-    raw_truthy, redirect_response, require_session, resolve_oauth_account_key,
-    sign_in_with_id_token_core, social_sign_in_core, state_cookie_name,
-    state_verification_identifier, validate_authorization_code_via_provider,
-    validate_authorization_params, verified_server_context,
-};
+use super::LinkSocialOutcome;
+use super::OAuthIdentity;
+use super::OAuthProcessPolicy;
+use super::OAuthSignInError;
+use super::ambiguous_account_sign_in_response;
+use super::authorization::link_social_core;
+use super::authorization::social_sign_in_core;
+use super::authorization::validate_authorization_params;
+use super::cookies::attach_cookie_state_payload;
+use super::cookies::attach_state_cookie;
+use super::create_account_cookie_headers;
+use super::fetch_user_info_from_provider;
+use super::linking::complete_link_social_with_raw_email;
+use super::linking::link_with_id_token_core;
+use super::linking::sign_in_with_id_token_core;
+use super::oauth_callback_path;
+use super::oauth_disable_sign_up_option;
+use super::parse_callback_user_payload;
+use super::process_oauth_sign_in_with_output;
+use super::raw_truthy;
+use super::redirects::auth_base_url;
+use super::redirects::build_default_error_url;
+use super::redirects::build_redirect_url;
+use super::redirects::callback_failure_location;
+use super::redirects::callback_failure_redirect;
+use super::redirects::redirect_response;
+use super::require_session;
+use super::resolve_oauth_account_key;
+use super::validate_authorization_code_via_provider;
+use crate::oauth::providers::OAuthConfig;
+use crate::oauth::providers::OAuthUserInfoRequest;
+use crate::oauth::state::OAuthStatePayload;
+use crate::oauth::state::RecoveredOAuthServerContext;
+use crate::oauth::state::decode_cookie_state_value;
+use crate::oauth::state::decode_database_state_cookie_value;
+use crate::oauth::state::get_cookie;
+use crate::oauth::state::state_cookie_name;
+use crate::oauth::state::state_verification_identifier;
+use crate::oauth::state::verified_server_context;
+use crate::oauth::types::LinkSocialRequest;
+use crate::oauth::types::SocialSignInRequest;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
+use alibi_core::AuthRequest;
+use alibi_core::AuthResponse;
+use alibi_core::AuthResult;
 use alibi_core::AuthSession;
+use std::collections::HashMap;
 
 pub(crate) async fn handle_social_sign_in(
     config: &OAuthConfig,

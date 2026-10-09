@@ -1,15 +1,39 @@
-use super::{
-    AuthContext, AuthError, AuthResult, AuthSession, CreateAccount, LinkSocialOutcome,
-    LinkSocialRequest, OAuthIdTokenRequest, OAuthIdentity, OAuthProcessPolicy, OAuthProvider,
-    OAuthSignInError, OAuthStateLink, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoRequest,
-    SocialSignInRequest, SocialSignInResponse, UpdateAccount, UpdateUser, UserValidationAction,
-    UserValidationData, UserValidationSource, Utc, encrypt_provider_token_set, encrypt_token_set,
-    fetch_user_info_from_provider, oauth_disable_sign_up_option, process_oauth_sign_in,
-    provider_candidate, provider_token_nulls, resolve_oauth_account_key, validate_user_info,
-};
+use super::LinkSocialOutcome;
+use super::OAuthIdentity;
+use super::OAuthProcessPolicy;
+use super::OAuthSignInError;
+use super::fetch_user_info_from_provider;
+use super::identity::provider_candidate;
+use super::oauth_disable_sign_up_option;
+use super::process_oauth_sign_in;
+use super::resolve_oauth_account_key;
+use crate::oauth::encryption::encrypt_provider_token_set;
+use crate::oauth::encryption::encrypt_token_set;
+use crate::oauth::encryption::provider_token_nulls;
+use crate::oauth::providers::OAuthProvider;
+use crate::oauth::providers::OAuthTokenSet;
+use crate::oauth::providers::OAuthUserInfo;
+use crate::oauth::providers::OAuthUserInfoRequest;
+use crate::oauth::state::OAuthStateLink;
+use crate::oauth::types::LinkSocialRequest;
+use crate::oauth::types::OAuthIdTokenRequest;
+use crate::oauth::types::SocialSignInRequest;
+use crate::oauth::types::SocialSignInResponse;
 use alibi_core::AuthAccount;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
+use alibi_core::AuthResult;
 use alibi_core::AuthUser;
+use alibi_core::CreateAccount;
+use alibi_core::UpdateAccount;
+use alibi_core::UpdateUser;
+use alibi_core::entity::AuthSession;
 use alibi_core::field_policy::FieldValues;
+use alibi_core::user_validation::UserValidationAction;
+use alibi_core::user_validation::UserValidationData;
+use alibi_core::user_validation::UserValidationSource;
+use alibi_core::user_validation::validate_user_info;
+use chrono::Utc;
 pub(crate) async fn complete_link_social(
     provider_name: &str,
     user_info: &OAuthUserInfo,

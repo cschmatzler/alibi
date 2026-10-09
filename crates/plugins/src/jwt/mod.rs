@@ -12,13 +12,6 @@ pub use callbacks::RemoteJwtClaim;
 pub use callbacks::RemoteJwtPayload;
 pub use callbacks::SignRemoteJwt;
 use claims::decode_compact_json;
-use claims::decode_compact_part;
-use claims::js_primitive_string;
-use claims::js_raw_primitive_string;
-use claims::js_truthy;
-use claims::normalize_signing_claims;
-use claims::validate_critical_header;
-use claims::validate_numeric_date;
 pub use config::JwtAlgorithm;
 pub use config::JwtAudience;
 pub use config::JwtClaimsConfig;
@@ -33,19 +26,14 @@ mod verification;
 
 mod crypto;
 mod endpoint;
-use super::token_crypto::{decrypt_with_config, encrypt_with_config};
-use alibi_core::wire::{SessionView, UserView};
 use alibi_core::{
     AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,
-    AuthRoute, AuthSchema, CreateJwk, HttpMethod, Jwk,
+    AuthRoute, AuthSchema, HttpMethod,
 };
 use async_trait::async_trait;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use chrono::{DateTime, Duration, Utc};
 pub use endpoint::{JwtTokenOutput, JwtVerifyOutput};
-use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
-use std::{str::FromStr, sync::Arc};
+use serde_json::{Value, json};
+use std::sync::Arc;
 
 /// A selected server signing key. Private material stays inside the plugin.
 #[expect(
@@ -372,7 +360,12 @@ mod tests {
     use crate::test_helpers;
     use crate::token_crypto::{decrypt, encrypt};
     use alibi_core::CreateUser;
+    use alibi_core::{CreateJwk, Jwk};
     use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use chrono::Duration;
+    use chrono::Utc;
+    use serde_json::Map;
 
     type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 

@@ -1,13 +1,30 @@
-use super::{
-    AccountCookiePayload, AuthContext, AuthError, AuthUser, CreateAccount, CreateUser,
-    OAuthIdentity, OAuthProcessPolicy, OAuthSignInError, OAuthTokenSet, OAuthUserInfo,
-    ProcessOAuthUserResult, UpdateAccount, UpdateUser, UserValidationAction, UserValidationData,
-    UserValidationSource, account_cookie_max_age, account_cookie_name, apply_default_role,
-    encrypt_provider_token_set, issue_selected_user_session_record, provider_token_nulls,
-    raw_truthy, validate_user_info,
-};
+use super::OAuthIdentity;
+use super::OAuthProcessPolicy;
+use super::OAuthSignInError;
+use super::ProcessOAuthUserResult;
+use super::cookies::account_cookie_max_age;
+use super::raw_truthy;
+use crate::helpers::apply_default_role;
+use crate::helpers::issue_selected_user_session_record;
+use crate::oauth::encryption::encrypt_provider_token_set;
+use crate::oauth::encryption::provider_token_nulls;
+use crate::oauth::providers::OAuthTokenSet;
+use crate::oauth::providers::OAuthUserInfo;
+use crate::oauth::state::AccountCookiePayload;
+use crate::oauth::state::account_cookie_name;
 use alibi_core::AuthAccount;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
+use alibi_core::CreateAccount;
+use alibi_core::CreateUser;
+use alibi_core::UpdateAccount;
+use alibi_core::UpdateUser;
+use alibi_core::entity::AuthUser;
 use alibi_core::field_policy::FieldValues;
+use alibi_core::user_validation::UserValidationAction;
+use alibi_core::user_validation::UserValidationData;
+use alibi_core::user_validation::UserValidationSource;
+use alibi_core::user_validation::validate_user_info;
 pub(in crate::oauth::handlers) async fn finish_oauth_session<S: alibi_core::AuthSchema>(
     user: &alibi_core::AdapterRecord<S::User>,
     is_register: bool,
