@@ -55,10 +55,6 @@ impl JwtPlugin {
     }
 
     /// Provision a private signing key and its public JWK in persistent storage.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if key generation, key serialization, or JWK storage fails.
     pub async fn create_jwk<S: AuthSchema>(
         &self,
         config: Option<&JwtKeyPairConfig>,
@@ -123,10 +119,6 @@ impl JwtPlugin {
     }
 
     /// Select a live key, with explicit key or algorithm pinning when requested.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if a usable signing key cannot be loaded or generated.
     pub async fn resolve_signing_key<S: AuthSchema>(
         &self,
         options: &JwtSignOptions,

@@ -564,8 +564,6 @@ pub(super) async fn handle_account_info(
 /// first, and cannot select a principal with a `userId` body/query field.
 pub struct OAuthAccountApi;
 impl OAuthAccountApi {
-    /// # Errors
-    /// Returns storage, provider, selection, or token errors.
     pub async fn get_access_token(
         user_id: &str,
         selection: OAuthAccountSelection,
@@ -574,8 +572,6 @@ impl OAuthAccountApi {
         let (config, req) = server_request(user_id, selection, "/get-access-token", ctx)?;
         handle_get_access_token_for_user(&config, &req, ctx, Some(user_id)).await
     }
-    /// # Errors
-    /// Returns storage, provider, selection, or refresh errors.
     pub async fn refresh_token(
         user_id: &str,
         selection: OAuthAccountSelection,
@@ -584,8 +580,6 @@ impl OAuthAccountApi {
         let (config, req) = server_request(user_id, selection, "/refresh-token", ctx)?;
         handle_refresh_token_for_user(&config, &req, ctx, Some(user_id)).await
     }
-    /// # Errors
-    /// Returns storage, provider, selection, or profile errors.
     pub async fn account_info(
         user_id: &str,
         selection: OAuthAccountSelection,

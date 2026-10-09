@@ -24,9 +24,6 @@ pub(in crate::oauth::handlers) fn account_cookie_max_age(config: &alibi_core::Au
 }
 
 /// Emit the encrypted account snapshot and clear stale incoming chunks.
-///
-/// # Errors
-/// Propagates encryption or cookie attribute errors.
 pub(crate) fn create_account_cookie_headers(
     config: &alibi_core::AuthConfig,
     payload: &AccountCookiePayload,

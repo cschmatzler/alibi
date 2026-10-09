@@ -6,10 +6,6 @@ use super::{
 use base64::Engine;
 impl JwtPlugin {
     /// Sign an application-owned payload through the trusted server API.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if signing-key resolution or JWT encoding fails.
     pub async fn sign_jwt(
         &self,
         payload: Map<String, Value>,
@@ -33,10 +29,6 @@ impl JwtPlugin {
     /// the raw values and own-property metadata without JOSE claim validation.
     /// Local ordinary claims follow JSON.stringify, including rounding and
     /// null for nonfinite values.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if signing-key resolution, payload serialization, or JWT encoding fails.
     pub async fn sign_jwt_json(
         &self,
         payload: &alibi_core::utils::json::JsValue,

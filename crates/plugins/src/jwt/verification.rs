@@ -7,10 +7,6 @@ use std::str::FromStr;
 impl JwtPlugin {
     /// Verify a token against the persisted keyring and configured claims.
     /// Invalid signatures, malformed tokens and claim failures return `None`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if key loading, signature verification, or claim validation fails.
     pub async fn verify_jwt(
         &self,
         token: &str,
