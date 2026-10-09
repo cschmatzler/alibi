@@ -6,7 +6,10 @@ use super::entities::{
 };
 use sea_orm::EntityName;
 use sea_orm::sea_query::IntoIden;
-use sea_orm_migration::prelude::*;
+use sea_orm_migration::prelude::{
+    Alias, ColumnDef, DbErr, DynIden, ForeignKey, ForeignKeyAction, ForeignKeyCreateStatement,
+    Index, IntoTableRef, MigrationName, MigrationTrait, MigratorTrait, SchemaManager, Table,
+};
 
 /// Bundled authentication schema migrations, recorded in `better_auth_migrations`.
 #[derive(Debug)]
@@ -778,6 +781,7 @@ async fn create_wallet_addresses(manager: &SchemaManager<'_>) -> Result<(), DbEr
 mod tests {
     use super::*;
     use sea_orm::Database;
+    use sea_orm_migration::prelude::{DeriveIden, DeriveMigrationName};
 
     #[derive(DeriveIden)]
     enum Todo {
