@@ -20,7 +20,14 @@ use std::{
     collections::BTreeMap,
     time::{SystemTime, UNIX_EPOCH},
 };
-use webauthn_rs_core::{crypto::compute_sha256, error::WebauthnError, proto::*};
+use webauthn_rs_core::{
+    crypto::compute_sha256,
+    error::WebauthnError,
+    proto::{
+        AttestationMetadata, AttestedCredentialData, COSEAlgorithm, CollectedClientData,
+        ParsedAttestationData, Registration,
+    },
+};
 
 /// Per-format trust anchors, equivalent to `SimpleWebAuthn`'s `SettingsService`.
 #[derive(Clone, Debug)]
@@ -530,7 +537,8 @@ where
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| malformed())?
-        .as_secs() as i64;
+        .as_secs();
+    let now = i64::try_from(now).map_err(|_| malformed())?;
     if let Some(key) = &key {
         let cached = cache.lock().map_err(|_| malformed())?.get(key).cloned();
         if let Some(cached) = cached.filter(|list| list.next_update.is_none_or(|next| next > now)) {

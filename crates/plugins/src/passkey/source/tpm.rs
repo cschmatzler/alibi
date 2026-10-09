@@ -11,7 +11,10 @@ use webauthn_rs_core::{
     attestation::{FidoGenCeAaguid, validate_extension},
     error::WebauthnError,
     internals::{Tpm2bName, TpmSt, TpmsAttest, TpmtSignature, TpmuAttest},
-    proto::*,
+    proto::{
+        AttestationMetadata, AttestedCredentialData, COSEAlgorithm, ECDSACurve,
+        ParsedAttestationData, Registration,
+    },
 };
 
 fn malformed() -> WebauthnError {

@@ -2,7 +2,13 @@
 //! MPL-2.0; see LICENSE.md. Registry fields are reused except for the extended key.
 use super::crypto::COSEKey;
 use serde::{Deserialize, Serialize};
-use webauthn_rs_core::{error::WebauthnError, proto::*};
+use webauthn_rs_core::{
+    error::WebauthnError,
+    proto::{
+        AttestationFormat, AuthenticationResult, AuthenticatorTransport, Counter, CredentialID,
+        ParsedAttestation, RegisteredExtensions, UserVerificationPolicy,
+    },
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(in crate::passkey) struct Credential {

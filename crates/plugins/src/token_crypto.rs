@@ -29,6 +29,13 @@ impl EncryptionPurpose {
     }
 }
 
+pub(crate) fn hex_lower(bytes: &[u8]) -> String {
+    bytes.iter().fold(String::new(), |mut output, byte| {
+        _ = write!(output, "{byte:02x}");
+        output
+    })
+}
+
 fn purpose_secret(secret: &str, purpose: EncryptionPurpose) -> AuthResult<String> {
     let mut key = [0u8; 32];
     hkdf::Hkdf::<Sha256>::new(Some(b"better-auth:oauth-encryption:v1"), secret.as_bytes())
@@ -39,10 +46,7 @@ fn purpose_secret(secret: &str, purpose: EncryptionPurpose) -> AuthResult<String
         .map_err(|_| AuthError::Encryption("OAuth key derivation failed".into()))?;
     // Source passes the lowercase hexadecimal string to symmetricEncrypt,
     // whose separate SHA256 step hashes these UTF-8 bytes.
-    Ok(key.iter().fold(String::new(), |mut output, byte| {
-        _ = write!(output, "{byte:02x}");
-        output
-    }))
+    Ok(hex_lower(&key))
 }
 
 pub(crate) fn encrypt_for_purpose(
@@ -165,11 +169,7 @@ pub(crate) fn encrypt(plain: &str, secret: &str) -> AuthResult<String> {
     let ciphertext = cipher
         .encrypt(&nonce, plain.as_bytes())
         .map_err(|_error| AuthError::Encryption("token encryption failed".into()))?;
-    let bytes = nonce.iter().copied().chain(ciphertext);
-    Ok(bytes.fold(String::new(), |mut output, byte| {
-        _ = write!(output, "{byte:02x}");
-        output
-    }))
+    Ok(hex_lower(&[nonce.as_slice(), &ciphertext].concat()))
 }
 
 pub(crate) fn decrypt(stored: &str, secret: &str) -> AuthResult<String> {

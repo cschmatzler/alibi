@@ -82,7 +82,7 @@ pub(crate) enum OAuthSignInError {
 }
 
 impl OAuthSignInError {
-    fn from_identity_denial(error: AuthError) -> Self {
+    fn from_identity_denial(error: &AuthError) -> Self {
         let (_, code, message) = error.error_payload();
         Self::IdentityDenied {
             code: code.unwrap_or_else(|| "validation_failed".into()),

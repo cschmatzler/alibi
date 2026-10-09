@@ -316,7 +316,7 @@ pub(super) fn finish_core_registration(
 pub(super) fn finish_core_authentication(
     core: &Verifier,
     authentication: &PublicKeyCredential,
-    state: AuthenticationState,
+    state: &AuthenticationState,
     stored_passkey: &WebauthnPasskey,
     current_counter: u32,
     origin: &str,
@@ -355,7 +355,7 @@ pub(super) fn finish_core_authentication(
     credential.backup_eligible = data.backup_eligible;
     credential.counter = current_counter;
     // Verify the original signed bytes once. Parsing flags never grants authority.
-    core.authenticate_credential(authentication, &state, &credential)
+    core.authenticate_credential(authentication, state, &credential)
 }
 
 pub(super) fn build_webauthn(

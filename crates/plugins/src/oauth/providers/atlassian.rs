@@ -134,6 +134,10 @@ fn subject(profile: &Value) -> Result<String, String> {
     }
     Ok(value)
 }
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "signature fixed by the map_user_info callback type"
+)]
 fn atlassian_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
     let name = match profile.get("name") {
         Some(Value::Bool(false)) => String::new(),

@@ -123,6 +123,11 @@ pub(in crate::oauth) fn js_number(value: &Value) -> Option<f64> {
     }
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    reason = "Date arithmetic is JavaScript f64 milliseconds"
+)]
 pub(in crate::oauth) fn grant_expiry(
     value: &Value,
     require_truthy: bool,

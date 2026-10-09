@@ -293,10 +293,9 @@ pub(crate) async fn verify_jwks_token(
                     if claim != nonce
                         && (!matches!(config.nonce_comparison, OAuthNonceComparison::ExactOrSha256)
                             || claim
-                                != Sha256::digest(nonce.as_bytes())
-                                    .iter()
-                                    .map(|byte| format!("{byte:02x}"))
-                                    .collect::<String>())
+                                != crate::token_crypto::hex_lower(&Sha256::digest(
+                                    nonce.as_bytes(),
+                                )))
                     {
                         return None;
                     }

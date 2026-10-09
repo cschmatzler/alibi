@@ -1,4 +1,7 @@
 //! One-time discovery from trusted application configuration, matching genericOAuth.
+use super::OAuthTokenEndpointAuth::{
+    ClientSecretBasic, ClientSecretPost, None as Public, PrivateKeyJwt,
+};
 use super::{
     OAuthAuthorizationPolicy, OAuthIdTokenVerifier, OAuthProfileMapper, OAuthProvider,
     OAuthScopeOrder, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
@@ -195,9 +198,6 @@ impl GenericOAuthConfig {
                 Err(GenericOAuthError::RequiredVerificationUnavailable)
             };
         }
-        use super::OAuthTokenEndpointAuth::{
-            ClientSecretBasic, ClientSecretPost, None as Public, PrivateKeyJwt,
-        };
         if matches!(policy.token_endpoint_auth, Some(Public | PrivateKeyJwt))
             && !self.provider.client_secret.is_empty()
             || matches!(

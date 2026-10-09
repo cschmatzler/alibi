@@ -227,7 +227,7 @@ fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
             .map(Some)
             .map_err(|error| error.to_string()),
         Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        None | Some(Value::Null) | Some(Value::Array(_) | Value::Object(_)) => Ok(None),
+        None | Some(Value::Null | Value::Array(_) | Value::Object(_)) => Ok(None),
     }
 }
 fn subject(profile: &Value) -> Result<String, String> {

@@ -28,7 +28,7 @@ struct Marker {
     popup_nonce: String,
 }
 
-fn completion(origin: &str, message: Value) -> AuthResult<AuthResponse> {
+fn completion(origin: &str, message: &Value) -> AuthResult<AuthResponse> {
     let mut payload = json!({"type":"better-auth:oauth-popup", "targetOrigin":origin});
     if let (Some(payload), Some(message)) = (payload.as_object_mut(), message.as_object()) {
         payload.extend(message.clone());
@@ -72,7 +72,7 @@ impl OAuthPopupPlugin {
         let fail = |code: &str, description: String| {
             completion(
                 origin,
-                json!({"nonce":nonce,"error":{"code":code,"description":description}}),
+                &json!({"nonce":nonce,"error":{"code":code,"description":description}}),
             )
         };
         for (key, code) in [
@@ -304,7 +304,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthPopupPlugin {
             }
             json!({"nonce":marker.popup_nonce,"error":error_data})
         };
-        let html = completion(&marker.popup_origin, message)?;
+        let html = completion(&marker.popup_origin, &message)?;
         response.status = html.status;
         response.body = html.body;
         for (name, value) in html.headers.iter() {

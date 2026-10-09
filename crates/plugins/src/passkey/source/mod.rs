@@ -21,7 +21,18 @@ use policy::SourcePolicy;
 use serde::Deserialize;
 use std::ops::Deref;
 use url::Url;
-use webauthn_rs_core::{WebauthnCore, crypto::compute_sha256, error::WebauthnError, proto::*};
+use webauthn_rs_core::{
+    WebauthnCore,
+    crypto::compute_sha256,
+    error::WebauthnError,
+    proto::{
+        AttestationFormat, AttestationMetadata, Authentication, AuthenticationResult,
+        AuthenticationState, COSEAlgorithm, CredentialID, ExtnState, ParsedAttestation,
+        ParsedAttestationData, PublicKeyCredential, RegisterPublicKeyCredential,
+        RegisteredExtensions, Registration, RegistrationState, RequestRegistrationExtensions,
+        UserVerificationPolicy,
+    },
+};
 
 pub(super) struct Verifier {
     core: WebauthnCore,

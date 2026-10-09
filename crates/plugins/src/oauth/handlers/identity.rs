@@ -117,7 +117,7 @@ pub(in crate::oauth::handlers) fn provider_fields(
         }
         alibi_core::field_policy::FieldInputError::Transform(error) => match error {
             AuthError::Api { .. } | AuthError::Upstream { .. } => {
-                OAuthSignInError::from_identity_denial(error)
+                OAuthSignInError::from_identity_denial(&error)
             }
             _ if creation => OAuthSignInError::Generic("unable to create user".into()),
             _ => OAuthSignInError::Generic(error.to_string()),
@@ -155,7 +155,7 @@ pub(in crate::oauth::handlers) async fn validate_provider_identity(
     data.user.name = Some(user.name.as_deref().unwrap_or_default().to_owned());
     validate_user_info(&ctx.config, &mut data)
         .await
-        .map_err(OAuthSignInError::from_identity_denial)
+        .map_err(|error| OAuthSignInError::from_identity_denial(&error))
 }
 
 pub(in crate::oauth::handlers) fn verification_override(
@@ -564,7 +564,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
             .await
             .map_err(|error| {
                 if error.status_code() == 403 {
-                    OAuthSignInError::from_identity_denial(error)
+                    OAuthSignInError::from_identity_denial(&error)
                 } else {
                     OAuthSignInError::Generic("unable to create user".to_owned())
                 }

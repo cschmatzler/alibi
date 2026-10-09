@@ -4,7 +4,10 @@ use serde_cbor_2::Value as Cbor;
 use webauthn_rs_core::{
     attestation::{FidoGenCeAaguid, assert_packed_attest_req, validate_extension},
     error::WebauthnError,
-    proto::*,
+    proto::{
+        AttestationMetadata, AttestedCredentialData, COSEAlgorithm, ParsedAttestationData,
+        Registration,
+    },
 };
 
 pub(super) fn packed(

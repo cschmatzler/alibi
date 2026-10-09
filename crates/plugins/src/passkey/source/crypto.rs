@@ -4,7 +4,10 @@ use base64urlsafedata::HumanBinaryData;
 use openssl::{bn::BigNum, hash, pkey, rsa, sign, x509};
 use serde::{Deserialize, Serialize};
 use serde_cbor_2::Value as Cbor;
-use webauthn_rs_core::{error::WebauthnError, proto::*};
+use webauthn_rs_core::{
+    error::WebauthnError,
+    proto::{COSEAlgorithm, COSEEC2Key, COSEOKPKey, ECDSACurve},
+};
 
 // Keep the historical persisted shape, including arbitrary RSA exponent bytes.
 // Registry COSERSAKey uses [u8; 3] and cannot read all credentials we have issued.

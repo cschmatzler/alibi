@@ -10,6 +10,7 @@ use base64::{
 use rsa::{
     pkcs8::DecodePrivateKey,
     signature::{RandomizedSigner, SignatureEncoding, Signer},
+    traits::PublicKeyParts,
 };
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -125,7 +126,6 @@ impl OAuthPrivateKeyJwtOptions {
             } else {
                 rsa::RsaPrivateKey::from_pkcs8_pem(pem).map_err(key_error)?
             };
-            use rsa::traits::PublicKeyParts;
             if key.n().bits() < 2048 {
                 return Err("RSA modulus length must be at least 2048 bits".into());
             }
@@ -217,6 +217,7 @@ impl OAuthClientAssertionGetter for OAuthPrivateKeyJwtOptions {
             drop(object.insert("kid".into(), Value::String(kid)));
         }
         let now = chrono::Utc::now().timestamp();
+        #[expect(clippy::cast_precision_loss, reason = "JavaScript number arithmetic")]
         let exp = now as f64 + self.expires_in.unwrap_or(120.0);
         if !exp.is_finite() {
             return Err("Invalid client assertion expiration time".into());

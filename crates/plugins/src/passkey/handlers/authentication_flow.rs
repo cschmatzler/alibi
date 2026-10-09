@@ -222,7 +222,7 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
                     finish_core_authentication(
                         &core,
                         &authentication,
-                        state,
+                        &state,
                         stored_passkey,
                         counter,
                         &origin,

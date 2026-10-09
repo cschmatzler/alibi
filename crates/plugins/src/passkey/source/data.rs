@@ -1,7 +1,10 @@
 //! Parse policy fields without changing the bytes authenticated by signatures.
 use serde::Deserialize;
 use std::marker::PhantomData;
-use webauthn_rs_core::{error::WebauthnError, proto::*};
+use webauthn_rs_core::{
+    error::WebauthnError,
+    proto::{AttestedCredentialData, Ceremony},
+};
 
 #[derive(Debug)]
 pub(in crate::passkey) struct AuthenticatorData<T: Ceremony> {

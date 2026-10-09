@@ -59,7 +59,7 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
         },
     )
     .await
-    .map_err(OAuthSignInError::from_identity_denial)?;
+    .map_err(|error| OAuthSignInError::from_identity_denial(&error))?;
     let linking = &ctx.config.account.account_linking;
     let trusted_provider = linking
         .trusted_providers
