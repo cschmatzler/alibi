@@ -1,0 +1,91 @@
+[
+  {
+    "rename": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true,
+        "roleData": {
+          "id": "<m2>",
+          "organizationId": "<m1>",
+          "role": "renamed",
+          "permission": {
+            "team": [
+              "create"
+            ]
+          },
+          "createdAt": "<date>",
+          "updatedAt": null
+        }
+      }
+    }
+  },
+  {
+    "rename an empty permission": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "rename a false permission": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid permissions for role renamed"
+      }
+    }
+  },
+  {
+    "rename a zero permission": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid permissions for role renamed"
+      }
+    }
+  },
+  {
+    "stored role": "renamed"
+  },
+  {
+    "without an access control instance /organization/create-role": {
+      "status": 501,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "MISSING_AC_INSTANCE",
+        "message": "Dynamic Access Control requires a pre-defined ac instance on the server auth plugin. Read server logs for more information"
+      }
+    }
+  },
+  {
+    "without an access control instance /organization/update-role": {
+      "status": 501,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "MISSING_AC_INSTANCE",
+        "message": "Dynamic Access Control requires a pre-defined ac instance on the server auth plugin. Read server logs for more information"
+      }
+    }
+  }
+]

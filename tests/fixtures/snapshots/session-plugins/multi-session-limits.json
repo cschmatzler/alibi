@@ -1,0 +1,208 @@
+[
+  {
+    "device cookies after first": 1
+  },
+  {
+    "device cookies after second": 2
+  },
+  {
+    "device cookies after third": 2
+  },
+  {
+    "/multi-session/set-active array body": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/multi-session/revoke array body": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/multi-session/set-active missing token": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v1>] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/multi-session/revoke missing token": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v1>] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "/multi-session/set-active numeric token": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v1>] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/multi-session/revoke numeric token": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v1>] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/multi-session/set-active unknown device": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_SESSION_TOKEN",
+        "message": "Invalid session token"
+      }
+    }
+  },
+  {
+    "/multi-session/revoke unknown device": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_SESSION_TOKEN",
+        "message": "Invalid session token"
+      }
+    }
+  },
+  {
+    "select with remember-me proof": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "session": {
+          "id": "<v2>",
+          "expiresAt": "<date>",
+          "token": "<g3>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<v4>"
+        },
+        "user": {
+          "id": "<v4>",
+          "name": "first",
+          "email": "device-first@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "revoke the active device": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "<v5>=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "revoke the last active device": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "<v6>=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "list after revocation": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": []
+    }
+  }
+]

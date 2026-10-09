@@ -304,3 +304,152 @@ pub(super) fn sort(keys: &mut [ApiKey], direction: Option<&str>) -> AuthResult<(
     }
     Ok(())
 }
+
+// LCOV_EXCL_START
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(index: usize, metadata: Option<String>) -> ApiKey {
+        serde_json::from_value(serde_json::json!({
+            "id": index.to_string(),
+            "key": index.to_string(),
+            "referenceId": "user",
+            "configId": "default",
+            "enabled": true,
+            "rateLimitEnabled": false,
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "metadata": metadata,
+        }))
+        .unwrap()
+    }
+
+    fn patterns(length: usize) -> Vec<(&'static str, Vec<Option<String>>)> {
+        let mut state = 0x2545_f491_4f6c_dd1d_u64;
+        let mut random = move |modulus: u64| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 33) % modulus
+        };
+        let shaped = |shape: &dyn Fn(usize) -> Option<u64>| {
+            (0..length)
+                .map(|index| shape(index).map(|value| value.to_string()))
+                .collect::<Vec<_>>()
+        };
+        let random_values = |modulus: u64, random: &mut dyn FnMut(u64) -> u64| {
+            (0..length)
+                .map(|_| Some(random(modulus).to_string()))
+                .collect::<Vec<_>>()
+        };
+        let wide = random_values(1000, &mut random);
+        let ties = random_values(3, &mut random);
+        let sparse = (0..length)
+            .map(|_| (random(4) == 0).then(|| random(5).to_string()))
+            .collect();
+        let mixed = (0..length)
+            .map(|index| match index % 5 {
+                0 => None,
+                1 => Some(r#"{"a":1}"#.to_owned()),
+                2 => Some(r#""text""#.to_owned()),
+                3 => Some(random(10).to_string()),
+                _ => Some("[1,2]".to_owned()),
+            })
+            .collect();
+        vec![
+            ("random", wide),
+            ("ties", ties),
+            ("sparse", sparse),
+            ("ascending", shaped(&|index| Some(index as u64))),
+            ("descending", shaped(&|index| Some((length - index) as u64))),
+            (
+                "blocks",
+                shaped(&|index| ((index / 25) % 2 == 0).then_some(1)),
+            ),
+            (
+                "interleaved runs",
+                shaped(&|index| Some(((index % 50) * 2 + index / 50 % 2) as u64)),
+            ),
+            (
+                "long left wins",
+                shaped(&|index| {
+                    Some(if index < length / 2 {
+                        (index * 3) as u64
+                    } else {
+                        (index - length / 2) as u64 * 3 + 1
+                    })
+                }),
+            ),
+            (
+                "organ pipe",
+                shaped(&|index| Some(index.min(length - index) as u64)),
+            ),
+            ("mixed", mixed),
+        ]
+    }
+
+    fn ids(keys: &[ApiKey]) -> Vec<String> {
+        keys.iter().map(|key| key.id.clone()).collect()
+    }
+
+    #[test]
+    fn matches_a_stable_sort_for_consistent_orderings() {
+        for length in [0, 1, 7, 8, 9, 63, 64, 65, 100, 129, 200, 513] {
+            for (name, metadata) in patterns(length) {
+                if name == "mixed" {
+                    continue;
+                }
+                for direction in [None, Some("asc"), Some("desc")] {
+                    let keys = metadata
+                        .iter()
+                        .enumerate()
+                        .map(|(index, metadata)| key(index, metadata.clone()))
+                        .collect::<Vec<_>>();
+                    let mut expected = keys.clone();
+                    expected.sort_by(|left, right| {
+                        let order = super::super::compare_metadata(
+                            left.metadata.as_deref(),
+                            right.metadata.as_deref(),
+                        )
+                        .unwrap();
+                        if direction == Some("desc") {
+                            order.reverse()
+                        } else {
+                            order
+                        }
+                    });
+                    let mut sorted = keys;
+                    sort(&mut sorted, direction).unwrap();
+                    assert_eq!(
+                        ids(&sorted),
+                        ids(&expected),
+                        "{name} {length} {direction:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn mixed_types_keep_every_key() {
+        let metadata = patterns(200)
+            .into_iter()
+            .find(|(name, _)| *name == "mixed")
+            .unwrap()
+            .1;
+        let mut keys = metadata
+            .into_iter()
+            .enumerate()
+            .map(|(index, metadata)| key(index, metadata))
+            .collect::<Vec<_>>();
+        sort(&mut keys, Some("desc")).unwrap();
+        let mut sorted = ids(&keys);
+        sorted.sort_by_key(|id| id.parse::<usize>().unwrap());
+        assert_eq!(
+            sorted,
+            (0..200).map(|index| index.to_string()).collect::<Vec<_>>()
+        );
+    }
+}
+// LCOV_EXCL_STOP

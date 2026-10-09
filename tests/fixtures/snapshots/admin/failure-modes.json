@@ -1,0 +1,76 @@
+[
+  {
+    "ban an unknown user": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_NOT_FOUND",
+        "message": "User not found"
+      }
+    }
+  },
+  {
+    "ban yourself": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_CANNOT_BAN_YOURSELF",
+        "message": "You cannot ban yourself"
+      }
+    }
+  },
+  {
+    "unban without permission": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_ARE_NOT_ALLOWED_TO_BAN_USERS",
+        "message": "You are not allowed to ban users"
+      }
+    }
+  },
+  {
+    "unban an unknown user": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_NOT_FOUND",
+        "message": "User not found"
+      }
+    }
+  },
+  {
+    "stop impersonating anonymously": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "impersonate with a session storage failure": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  }
+]

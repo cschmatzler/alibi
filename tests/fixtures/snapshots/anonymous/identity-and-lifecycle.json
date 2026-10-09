@@ -1,0 +1,138 @@
+[
+  {
+    "malformed generated email": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_FORMAT",
+        "message": "Email was not generated in a valid format"
+      }
+    }
+  },
+  {
+    "malformed generated email user": null
+  },
+  {
+    "generated email": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g1>",
+        "user": {
+          "id": "<v2>",
+          "name": "Anonymous",
+          "email": "generated-anonymous@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "isAnonymous": true,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "generated email user": "example.test"
+  },
+  {
+    "generated email: second anonymous sign-in": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "ANONYMOUS_USERS_CANNOT_SIGN_IN_AGAIN_ANONYMOUSLY",
+        "message": "Anonymous users cannot sign in again anonymously"
+      }
+    }
+  },
+  {
+    "default email": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g3>",
+        "user": {
+          "id": "<v4>",
+          "name": "Anonymous",
+          "email": "<v5>@anonymous.placeholder.invalid",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "isAnonymous": true,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "default email user": "anonymous.placeholder.invalid"
+  },
+  {
+    "default email: second anonymous sign-in": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "ANONYMOUS_USERS_CANNOT_SIGN_IN_AGAIN_ANONYMOUSLY",
+        "message": "Anonymous users cannot sign in again anonymously"
+      }
+    }
+  },
+  {
+    "anonymous from a remember-me browser": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g6>",
+        "user": {
+          "id": "<v7>",
+          "name": "Anonymous",
+          "email": "<v8>@anonymous.placeholder.invalid",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "isAnonymous": true,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  }
+]

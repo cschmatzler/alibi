@@ -1,0 +1,22 @@
+[
+  {
+    "admit with the active organization and a team": {
+      "role": "admin"
+    }
+  },
+  {
+    "admit without an organization": {
+      "error": "No active organization"
+    }
+  },
+  {
+    "trusted creation with invalid input": {
+      "error": "[body.name] Too small: expected string to have >=1 characters; [body.slug] Too small: expected string to have >=1 characters; [body.metadata] Invalid input: expected record, received number"
+    }
+  },
+  {
+    "deletion without an organization": {
+      "error": "Organization not found"
+    }
+  }
+]

@@ -1,0 +1,372 @@
+[
+  {
+    "get-active-member-role role of a member": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "role": "member"
+      }
+    }
+  },
+  {
+    "get-active-member-role role of a stranger": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
+        "message": "You are not a member of this organization"
+      }
+    }
+  },
+  {
+    "get-active-member-role own role by slug": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "role": "owner"
+      }
+    }
+  },
+  {
+    "get-active-member-role role as outsider": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
+        "message": "You are not a member of this organization"
+      }
+    }
+  },
+  {
+    "remove a member of another organization": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "MEMBER_NOT_FOUND",
+        "message": "Member not found"
+      }
+    }
+  },
+  {
+    "demote the only owner": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_CANNOT_LEAVE_THE_ORGANIZATION_WITHOUT_AN_OWNER",
+        "message": "You cannot leave the organization without an owner"
+      }
+    }
+  },
+  {
+    "owner leaves as the only owner": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER",
+        "message": "You cannot leave the organization as the only owner"
+      }
+    }
+  },
+  {
+    "anonymous role update": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "anonymous removal": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "/organization/remove-member []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/organization/remove-member {\"memberIdOrEmail\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v10>] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/organization/update-member-role []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/organization/update-member-role {\"memberId\":\"x\",\"role\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.role] Invalid input"
+      }
+    }
+  },
+  {
+    "/organization/update-member-role {\"memberId\":\"x\",\"role\":[1]}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.role] Invalid input"
+      }
+    }
+  },
+  {
+    "/organization/update []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/organization/delete []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/organization/set-active []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/organization/set-active {\"organizationId\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v11>] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "delete an organization of someone else": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
+        "message": "User is not a member of the organization"
+      }
+    }
+  },
+  {
+    "member selects an organization": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "id": "<m5>",
+        "name": "authority",
+        "slug": "authority",
+        "logo": null,
+        "createdAt": "<date>",
+        "metadata": null
+      }
+    }
+  },
+  {
+    "select with remember-me": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "id": "<m5>",
+        "name": "authority",
+        "slug": "authority",
+        "logo": null,
+        "createdAt": "<date>",
+        "metadata": null
+      }
+    }
+  },
+  {
+    "keep the active selection": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "id": "<m5>",
+        "name": "authority",
+        "slug": "authority",
+        "logo": null,
+        "createdAt": "<date>",
+        "metadata": null
+      }
+    }
+  },
+  {
+    "empty selection without an active organization": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": null
+    }
+  },
+  {
+    "member leaves the active organization": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<m7>",
+        "organizationId": "<m5>",
+        "userId": "<m3>",
+        "role": "member",
+        "createdAt": "<date>",
+        "user": {
+          "id": "<m3>",
+          "email": "authority-member@example.com",
+          "name": "Native owner",
+          "image": null
+        }
+      }
+    }
+  },
+  {
+    "remove with storage failure": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  }
+]

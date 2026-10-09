@@ -1,0 +1,240 @@
+[
+  {
+    "registration missing response": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.response] Invalid input: expected nonoptional, received undefined"
+      }
+    }
+  },
+  {
+    "registration session flag null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v1>] Invalid input: expected boolean, received null"
+      }
+    }
+  },
+  {
+    "registration session flag array": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v1>] Invalid input: expected boolean, received array"
+      }
+    }
+  },
+  {
+    "registration session flag object": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v1>] Invalid input: expected boolean, received object"
+      }
+    }
+  },
+  {
+    "registration session flag string": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v1>] Invalid input: expected boolean, received string"
+      }
+    }
+  },
+  {
+    "registration session flag number": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v1>] Invalid input: expected boolean, received number"
+      }
+    }
+  },
+  {
+    "registration name number": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "registration name boolean": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received boolean"
+      }
+    }
+  },
+  {
+    "registration name object": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received object"
+      }
+    }
+  },
+  {
+    "registration name array": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received array"
+      }
+    }
+  },
+  {
+    "registration name null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received null"
+      }
+    }
+  },
+  {
+    "authentication response missing": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.response] Invalid input: expected record, received undefined"
+      }
+    }
+  },
+  {
+    "authentication response null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.response] Invalid input: expected record, received null"
+      }
+    }
+  },
+  {
+    "authentication response array": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.response] Invalid input: expected record, received array"
+      }
+    }
+  },
+  {
+    "authentication response string": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.response] Invalid input: expected record, received string"
+      }
+    }
+  },
+  {
+    "authentication response number": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.response] Invalid input: expected record, received number"
+      }
+    }
+  },
+  {
+    "authentication response boolean": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.response] Invalid input: expected record, received boolean"
+      }
+    }
+  }
+]

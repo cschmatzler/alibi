@@ -1,0 +1,30 @@
+[
+  {
+    "creator role": "owner"
+  },
+  {
+    "trusted creation invalid": {
+      "error": "[body.name] Too small: expected string to have >=1 characters; [body.slug] Too small: expected string to have >=1 characters; [body.metadata] Invalid input: expected record, received number"
+    }
+  },
+  {
+    "trusted creation empty name only": {
+      "error": "[body.name] Too small: expected string to have >=1 characters"
+    }
+  },
+  {
+    "trusted creation valid": {
+      "role": "owner"
+    }
+  },
+  {
+    "deletion with headers": {
+      "error": "Organization deletion is disabled"
+    }
+  },
+  {
+    "removal with headers": {
+      "error": "Member not found"
+    }
+  }
+]

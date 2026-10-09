@@ -1,0 +1,249 @@
+[
+  {
+    "session accept": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "user": {
+          "id": "<m1>",
+          "name": "Native owner",
+          "email": "callbacks@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        },
+        "session": {
+          "id": "<m2>",
+          "expiresAt": "<date>",
+          "token": "<g3>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": null,
+          "userAgent": null,
+          "userId": "<m1>"
+        }
+      }
+    }
+  },
+  {
+    "unscoped verification accept": {
+      "valid": true
+    }
+  },
+  {
+    "server verification accept": {
+      "valid": true
+    }
+  },
+  {
+    "session reject": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_API_KEY",
+        "message": "Invalid API key."
+      }
+    }
+  },
+  {
+    "unscoped verification reject": "KeyNotFound"
+  },
+  {
+    "server verification reject": "KeyNotFound"
+  },
+  {
+    "session validator-fails": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "unscoped verification validator-fails": {
+      "internal": 500
+    }
+  },
+  {
+    "server verification validator-fails": {
+      "validator": 500
+    }
+  },
+  {
+    "session validator-denies": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "validator denied"
+      }
+    }
+  },
+  {
+    "unscoped verification validator-denies": {
+      "internal": 403
+    }
+  },
+  {
+    "server verification validator-denies": {
+      "validator": 403
+    }
+  },
+  {
+    "session getter-fails": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "An error occurred during hook matcher execution. Check the logs for more details."
+      }
+    }
+  },
+  {
+    "unscoped verification getter-fails": {
+      "valid": true
+    }
+  },
+  {
+    "server verification getter-fails": {
+      "valid": true
+    }
+  },
+  {
+    "session getter-fails-late": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "unscoped verification getter-fails-late": {
+      "valid": true
+    }
+  },
+  {
+    "server verification getter-fails-late": {
+      "valid": true
+    }
+  },
+  {
+    "session background-fails": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "unscoped verification background-fails": {
+      "internal": 500
+    }
+  },
+  {
+    "server verification background-fails": {
+      "internal": 500
+    }
+  },
+  {
+    "session background-denies": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "background denied"
+      }
+    }
+  },
+  {
+    "unscoped verification background-denies": {
+      "internal": 403
+    }
+  },
+  {
+    "server verification background-denies": {
+      "internal": 403
+    }
+  },
+  {
+    "permissions required of a key without any": true
+  },
+  {
+    "session from an expiring key": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "user": {
+          "id": "<m1>",
+          "name": "Native owner",
+          "email": "callbacks@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        },
+        "session": {
+          "id": "<m4>",
+          "expiresAt": "<date>",
+          "token": "<g5>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": null,
+          "userAgent": null,
+          "userId": "<m1>"
+        }
+      }
+    }
+  },
+  {
+    "expired key with a failing deferred deletion": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "KEY_EXPIRED",
+        "message": "API Key has expired"
+      }
+    }
+  },
+  {
+    "session with unavailable storage": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "session with corrupt expiry": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  }
+]

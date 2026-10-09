@@ -1,0 +1,980 @@
+[
+  {
+    "list-user-sessions []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "list-user-sessions null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "list-user-sessions {\"newPassword\":5,\"sessionToken\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.userId] Invalid input: expected nonoptional, received undefined"
+      }
+    }
+  },
+  {
+    "list-user-sessions {\"userId\":null,\"newPassword\":\"x\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "sessions": []
+      }
+    }
+  },
+  {
+    "list-user-sessions {\"userId\":true,\"newPassword\":\"x\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "sessions": []
+      }
+    }
+  },
+  {
+    "list-user-sessions {\"userId\":[1,null,\"a\"],\"newPassword\":\"x\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "sessions": []
+      }
+    }
+  },
+  {
+    "list-user-sessions {\"userId\":{},\"newPassword\":\"x\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "sessions": []
+      }
+    }
+  },
+  {
+    "list-user-sessions {\"userId\":{\"toString\":1},\"newPassword\":\"x\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.userId] Invalid input: expected string, received object"
+      }
+    }
+  },
+  {
+    "list-user-sessions {\"userId\":[{\"toString\":1}],\"newPassword\":\"x\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.userId] Invalid input: expected string, received array"
+      }
+    }
+  },
+  {
+    "list-user-sessions {\"userId\":1.5,\"newPassword\":\"\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "sessions": []
+      }
+    }
+  },
+  {
+    "list-user-sessions {\"userId\":\"\",\"newPassword\":\"\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "sessions": []
+      }
+    }
+  },
+  {
+    "ban-user []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "ban-user null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "ban-user {\"newPassword\":5,\"sessionToken\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.userId] Invalid input: expected nonoptional, received undefined"
+      }
+    }
+  },
+  {
+    "unban-user []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "unban-user null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "unban-user {\"newPassword\":5,\"sessionToken\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.userId] Invalid input: expected nonoptional, received undefined"
+      }
+    }
+  },
+  {
+    "impersonate-user []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "impersonate-user null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "impersonate-user {\"newPassword\":5,\"sessionToken\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.userId] Invalid input: expected nonoptional, received undefined"
+      }
+    }
+  },
+  {
+    "revoke-user-sessions []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "revoke-user-sessions null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "revoke-user-sessions {\"newPassword\":5,\"sessionToken\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.userId] Invalid input: expected nonoptional, received undefined"
+      }
+    }
+  },
+  {
+    "remove-user []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "remove-user null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "remove-user {\"newPassword\":5,\"sessionToken\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.userId] Invalid input: expected nonoptional, received undefined"
+      }
+    }
+  },
+  {
+    "set-user-password []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "set-user-password null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "set-user-password {\"newPassword\":5,\"sessionToken\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v3>] Invalid input: expected string, received number; [body.userId] Invalid input: expected nonoptional, received undefined"
+      }
+    }
+  },
+  {
+    "set-user-password {\"userId\":null,\"newPassword\":\"x\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_SHORT",
+        "message": "Password too short"
+      }
+    }
+  },
+  {
+    "set-user-password {\"userId\":true,\"newPassword\":\"x\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_SHORT",
+        "message": "Password too short"
+      }
+    }
+  },
+  {
+    "set-user-password {\"userId\":[1,null,\"a\"],\"newPassword\":\"x\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_SHORT",
+        "message": "Password too short"
+      }
+    }
+  },
+  {
+    "set-user-password {\"userId\":{},\"newPassword\":\"x\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_SHORT",
+        "message": "Password too short"
+      }
+    }
+  },
+  {
+    "set-user-password {\"userId\":{\"toString\":1},\"newPassword\":\"x\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.userId] Invalid input: expected string, received object"
+      }
+    }
+  },
+  {
+    "set-user-password {\"userId\":[{\"toString\":1}],\"newPassword\":\"x\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.userId] Invalid input: expected string, received array"
+      }
+    }
+  },
+  {
+    "set-user-password {\"userId\":1.5,\"newPassword\":\"\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v3>] newPassword cannot be empty"
+      }
+    }
+  },
+  {
+    "set-user-password {\"userId\":\"\",\"newPassword\":\"\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v3>] newPassword cannot be empty; [body.userId] userId cannot be empty"
+      }
+    }
+  },
+  {
+    "revoke-user-session []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "revoke-user-session null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "revoke-user-session {\"newPassword\":5,\"sessionToken\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v4>] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "update-user []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "update-user null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "update-user {\"newPassword\":5,\"sessionToken\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.userId] Invalid input: expected nonoptional, received undefined; [body.data] Invalid input: expected record, received undefined"
+      }
+    }
+  },
+  {
+    "has-permission []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array; [body] Invalid input"
+      }
+    }
+  },
+  {
+    "has-permission null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null; [body] Invalid input"
+      }
+    }
+  },
+  {
+    "has-permission {\"newPassword\":5,\"sessionToken\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input"
+      }
+    }
+  },
+  {
+    "list-user-sessions anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "ban-user anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "unban-user anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "impersonate-user anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "revoke-user-sessions anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "remove-user anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "set-user-password anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "revoke-user-session anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "update-user anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "has-permission anonymous": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input"
+      }
+    }
+  },
+  {
+    "create plain": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "create @example.com": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "create a@b.c": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "create a@com": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "create a@-x.com": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "create a@x..com": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "create .a@example.com": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "create a..b@example.com": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "create a.@example.com": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "create a b@example.com": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "create a@exam_ple.com": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "create a@example.c0m": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "ban overflow": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "impersonation overflow": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "list [(\"filterField\", \"role\"), (\"filterValue\", \"user\"), (\"filterValue\", \"admin\")]": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "users": [],
+        "total": 0
+      }
+    }
+  },
+  {
+    "list [(\"filterField\", \"role\"), (\"filterValue\", \"user\")]": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "users": [
+          {
+            "id": "<m2>",
+            "name": "Native owner",
+            "email": "policy-member@example.com",
+            "emailVerified": false,
+            "image": null,
+            "createdAt": "<date>",
+            "updatedAt": "<date>",
+            "banExpires": null,
+            "username": null,
+            "twoFactorEnabled": false,
+            "role": "user",
+            "banned": false,
+            "banReason": null,
+            "displayUsername": null
+          }
+        ],
+        "total": 1
+      }
+    }
+  }
+]

@@ -1,0 +1,355 @@
+[
+  {
+    "someone else finishes the challenge": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY",
+        "message": "You are not allowed to register this passkey"
+      }
+    }
+  },
+  {
+    "resolved user": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v3>",
+        "credentialID": "aG9vay1rZXktNzE",
+        "userId": "<m2>",
+        "publicKey": "<v4>+<v5>",
+        "counter": 1,
+        "deviceType": "multiDevice",
+        "backedUp": false,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v6>",
+        "name": null
+      }
+    }
+  },
+  {
+    "replayed challenge": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "CHALLENGE_NOT_FOUND",
+        "message": "Challenge not found"
+      }
+    }
+  },
+  {
+    "missing challenge cookie": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": null
+    }
+  },
+  {
+    "authentication challenge": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "CHALLENGE_NOT_FOUND",
+        "message": "Challenge not found"
+      }
+    }
+  },
+  {
+    "registration challenge for authentication": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "CHALLENGE_NOT_FOUND",
+        "message": "Challenge not found"
+      }
+    }
+  },
+  {
+    "anonymous hook other": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v7>",
+        "name": "Override name",
+        "credentialID": "aG9vay1rZXktODA",
+        "userId": "<m1>",
+        "publicKey": "<v8>/G/G1JGhJUjnjfau+y18LBkMP3jO8/UL",
+        "counter": 1,
+        "deviceType": "multiDevice",
+        "backedUp": false,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v6>"
+      }
+    }
+  },
+  {
+    "session hook other": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY",
+        "message": "You are not allowed to register this passkey"
+      }
+    }
+  },
+  {
+    "anonymous hook empty": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v9>",
+        "credentialID": "aG9vay1rZXktODI",
+        "userId": "<m2>",
+        "publicKey": "<v10>+BIbVV+jGYUHtiSAXfX63",
+        "counter": 1,
+        "deviceType": "multiDevice",
+        "backedUp": false,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v6>",
+        "name": null
+      }
+    }
+  },
+  {
+    "session hook empty": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v11>",
+        "name": "Given",
+        "credentialID": "aG9vay1rZXktODM",
+        "userId": "<m1>",
+        "publicKey": "<v12>+ZoxCuQgfgMG+gI2EQsGgnu7jQ",
+        "counter": 1,
+        "deviceType": "multiDevice",
+        "backedUp": false,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v6>"
+      }
+    }
+  },
+  {
+    "anonymous hook api": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "registration denied"
+      }
+    }
+  },
+  {
+    "session hook api": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "registration denied"
+      }
+    }
+  },
+  {
+    "anonymous hook internal": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "session hook internal": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "override with session creation": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "id": "<v13>",
+        "name": "Override name",
+        "credentialID": "aG9vay1rZXktOTA",
+        "userId": "<m2>",
+        "publicKey": "<v14>",
+        "counter": 1,
+        "deviceType": "multiDevice",
+        "backedUp": false,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v6>",
+        "user": {
+          "id": "<m2>",
+          "name": "Native owner",
+          "email": "passkey-second@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        },
+        "session": {
+          "id": "<v15>",
+          "expiresAt": "<date>",
+          "token": "<g16>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<m2>"
+        }
+      }
+    }
+  },
+  {
+    "session creation storage failure": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "core packed corrupt signature": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "core packed algorithm mismatch": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "core packed on another curve": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "core packed valid": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v17>",
+        "credentialID": "cGFja2VkLTM",
+        "userId": "<m2>",
+        "publicKey": "<v18>+Wx0FfL4AzSPLwF+BbnqHa",
+        "counter": 1,
+        "deviceType": "multiDevice",
+        "backedUp": false,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v6>",
+        "name": null
+      }
+    }
+  }
+]

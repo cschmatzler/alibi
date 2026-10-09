@@ -1,0 +1,452 @@
+[
+  {
+    "resolver: none": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.last_used_login_method=<cookie>; SameSite=Lax; Path=/; Max-Age=2592000"
+        ]
+      },
+      "body": {
+        "token": "<g1>",
+        "user": {
+          "id": "<v2>",
+          "name": "Policy",
+          "email": "policy-0-none@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "lastLoginMethod": "email",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "resolver: none cookie": "better-auth.last_used_login_method=email"
+  },
+  {
+    "resolver: custom": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.last_used_login_method=<cookie>; SameSite=Lax; Path=/; Max-Age=2592000"
+        ]
+      },
+      "body": {
+        "token": "<g3>",
+        "user": {
+          "id": "<v4>",
+          "name": "Policy",
+          "email": "policy-0-custom@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "lastLoginMethod": "custom method!(*)'",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "resolver: custom cookie": "better-auth.last_used_login_method=custom%20method!(*)'"
+  },
+  {
+    "resolver: empty": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g5>",
+        "user": {
+          "id": "<v6>",
+          "name": "Policy",
+          "email": "policy-0-empty@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "lastLoginMethod": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "resolver: empty cookie": null
+  },
+  {
+    "resolver: internal": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "resolver: internal cookie": null
+  },
+  {
+    "resolver: api": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "resolver denied"
+      }
+    }
+  },
+  {
+    "resolver: api cookie": null
+  },
+  {
+    "resolver cookie only: none": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.last_used_login_method=<cookie>; SameSite=Lax; Path=/; Max-Age=2592000"
+        ]
+      },
+      "body": {
+        "token": "<g7>",
+        "user": {
+          "id": "<v8>",
+          "name": "Policy",
+          "email": "policy-1-none@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "resolver cookie only: none cookie": "better-auth.last_used_login_method=email"
+  },
+  {
+    "resolver cookie only: custom": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.last_used_login_method=<cookie>; SameSite=Lax; Path=/; Max-Age=2592000"
+        ]
+      },
+      "body": {
+        "token": "<g9>",
+        "user": {
+          "id": "<v10>",
+          "name": "Policy",
+          "email": "policy-1-custom@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "resolver cookie only: custom cookie": "better-auth.last_used_login_method=custom%20method!(*)'"
+  },
+  {
+    "resolver cookie only: empty": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g11>",
+        "user": {
+          "id": "<v12>",
+          "name": "Policy",
+          "email": "policy-1-empty@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "resolver cookie only: empty cookie": null
+  },
+  {
+    "resolver cookie only: internal": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "resolver cookie only: internal cookie": null
+  },
+  {
+    "resolver cookie only: api": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "message": "resolver denied"
+      }
+    }
+  },
+  {
+    "resolver cookie only: api cookie": null
+  },
+  {
+    "lifetime too long: none": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "lifetime too long: none cookie": null
+  },
+  {
+    "lifetime too long: custom": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "lifetime too long: custom cookie": null
+  },
+  {
+    "lifetime too long: empty": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "lifetime too long: empty cookie": null
+  },
+  {
+    "lifetime too long: internal": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "lifetime too long: internal cookie": null
+  },
+  {
+    "lifetime too long: api": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "lifetime too long: api cookie": null
+  },
+  {
+    "strict and cross-subdomain: none": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Domain=example.test; Path=/; HttpOnly; SameSite=Strict",
+          "better-auth.last_used_login_method=<cookie>; SameSite=Strict; Path=/; Domain=example.test"
+        ]
+      },
+      "body": {
+        "token": "<g13>",
+        "user": {
+          "id": "<v14>",
+          "name": "Policy",
+          "email": "policy-3-none@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "strict and cross-subdomain: none cookie": "better-auth.last_used_login_method=email"
+  },
+  {
+    "strict and cross-subdomain: custom": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Domain=example.test; Path=/; HttpOnly; SameSite=Strict",
+          "better-auth.last_used_login_method=<cookie>; SameSite=Strict; Path=/; Domain=example.test"
+        ]
+      },
+      "body": {
+        "token": "<g15>",
+        "user": {
+          "id": "<v16>",
+          "name": "Policy",
+          "email": "policy-3-custom@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "strict and cross-subdomain: custom cookie": "better-auth.last_used_login_method=email"
+  },
+  {
+    "strict and cross-subdomain: empty": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Domain=example.test; Path=/; HttpOnly; SameSite=Strict",
+          "better-auth.last_used_login_method=<cookie>; SameSite=Strict; Path=/; Domain=example.test"
+        ]
+      },
+      "body": {
+        "token": "<g17>",
+        "user": {
+          "id": "<v18>",
+          "name": "Policy",
+          "email": "policy-3-empty@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "strict and cross-subdomain: empty cookie": "better-auth.last_used_login_method=email"
+  },
+  {
+    "strict and cross-subdomain: internal": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Domain=example.test; Path=/; HttpOnly; SameSite=Strict",
+          "better-auth.last_used_login_method=<cookie>; SameSite=Strict; Path=/; Domain=example.test"
+        ]
+      },
+      "body": {
+        "token": "<g19>",
+        "user": {
+          "id": "<v20>",
+          "name": "Policy",
+          "email": "<v21>@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "strict and cross-subdomain: internal cookie": "better-auth.last_used_login_method=email"
+  },
+  {
+    "strict and cross-subdomain: api": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Domain=example.test; Path=/; HttpOnly; SameSite=Strict",
+          "better-auth.last_used_login_method=<cookie>; SameSite=Strict; Path=/; Domain=example.test"
+        ]
+      },
+      "body": {
+        "token": "<g22>",
+        "user": {
+          "id": "<v23>",
+          "name": "Policy",
+          "email": "policy-3-api@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "strict and cross-subdomain: api cookie": "better-auth.last_used_login_method=email"
+  },
+  {
+    "stored methods": "policy-0-custom@example.test=custom method!(*)',policy-0-empty@example.test=none,policy-0-none@example.test=email,policy-1-api@example.test=none,policy-1-custom@example.test=none,policy-1-empty@example.test=none,<v24>@example.test=none,policy-1-none@example.test=none,policy-2-api@example.test=none,policy-2-custom@example.test=none,policy-2-empty@example.test=none,<v25>@example.test=none,policy-2-none@example.test=none,policy-3-api@example.test=none,policy-3-custom@example.test=none,policy-3-empty@example.test=none,<v21>@example.test=none,policy-3-none@example.test=none"
+  }
+]

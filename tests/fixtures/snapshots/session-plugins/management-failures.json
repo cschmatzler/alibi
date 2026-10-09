@@ -1,0 +1,257 @@
+[
+  {
+    "update-session array": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected record, received array"
+      }
+    }
+  },
+  {
+    "update-session string": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected record, received string"
+      }
+    }
+  },
+  {
+    "update-session number": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected record, received number"
+      }
+    }
+  },
+  {
+    "update-session null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected record, received null"
+      }
+    }
+  },
+  {
+    "update-session invalid JSON": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "BAD_REQUEST",
+        "message": "Invalid JSON in request body"
+      }
+    }
+  },
+  {
+    "update-session wrong media type": {
+      "status": 415,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNSUPPORTED_MEDIA_TYPE",
+        "message": "Content-Type \"text/plain\" is not allowed. Allowed types: application/json"
+      }
+    }
+  },
+  {
+    "/sign-out 5": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received number"
+      }
+    }
+  },
+  {
+    "/revoke-session []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/revoke-session {\"token\": 5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.token] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/revoke-other-sessions storage failure": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "/revoke-sessions storage failure": {
+      "status": 500,
+      "headers": {
+        "set-cookie": [
+          "better-auth.session_data=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INTERNAL_SERVER_ERROR",
+        "message": "Internal Server Error"
+      }
+    }
+  },
+  {
+    "/revoke-session storage failure": {
+      "status": 500,
+      "headers": {
+        "set-cookie": [
+          "better-auth.session_data=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INTERNAL_SERVER_ERROR",
+        "message": "Internal Server Error"
+      }
+    }
+  },
+  {
+    "list-sessions storage failure": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "list-sessions stale": {
+      "status": 403,
+      "headers": {
+        "set-cookie": [
+          "better-auth.session_data=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "SESSION_NOT_FRESH",
+        "message": "Session is not fresh"
+      }
+    }
+  },
+  {
+    "list-sessions fresh": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": [
+        {
+          "id": "<v1>",
+          "expiresAt": "<date>",
+          "token": "<g2>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<v3>"
+        },
+        {
+          "id": "<v4>",
+          "expiresAt": "<date>",
+          "token": "<g5>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<v3>"
+        },
+        {
+          "id": "<v6>",
+          "expiresAt": "<date>",
+          "token": "<g7>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<v3>"
+        }
+      ]
+    }
+  },
+  {
+    "sign-out of a vanished session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  }
+]

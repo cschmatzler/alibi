@@ -1,0 +1,89 @@
+[
+  {
+    "device sessions ok": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": [
+        {
+          "email": "projection-one@example.com",
+          "projected": true
+        },
+        {
+          "email": "projection-two@example.com",
+          "projected": true
+        }
+      ]
+    }
+  },
+  {
+    "session ok": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "email": "projection-two@example.com",
+        "projected": true
+      }
+    }
+  },
+  {
+    "device sessions api": {
+      "status": 418,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PROJECTION_DENIED",
+        "message": "projection denied"
+      }
+    }
+  },
+  {
+    "session api": {
+      "status": 418,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PROJECTION_DENIED",
+        "message": "projection denied"
+      }
+    }
+  },
+  {
+    "device sessions internal": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "session internal": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "device sessions without a browser": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": []
+    }
+  }
+]

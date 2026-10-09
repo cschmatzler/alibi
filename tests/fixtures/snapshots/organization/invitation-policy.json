@@ -1,0 +1,204 @@
+[
+  {
+    "invite without permission": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_ARE_NOT_ALLOWED_TO_INVITE_USERS_TO_THIS_ORGANIZATION",
+        "message": "You are not allowed to invite users to this organization"
+      }
+    }
+  },
+  {
+    "invite with team": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v5>",
+        "organizationId": "<m2>",
+        "email": "invitee-one@example.com",
+        "role": "member",
+        "status": "pending",
+        "inviterId": "<v6>",
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "teamId": "<m3>"
+      }
+    }
+  },
+  {
+    "invite again": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_IS_ALREADY_INVITED_TO_THIS_ORGANIZATION",
+        "message": "User is already invited to this organization"
+      }
+    }
+  },
+  {
+    "resend": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v5>",
+        "organizationId": "<m2>",
+        "email": "invitee-one@example.com",
+        "role": "member",
+        "status": "pending",
+        "inviterId": "<v6>",
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "teamId": "<m3>"
+      }
+    }
+  },
+  {
+    "team quota on invitation": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "TEAM_MEMBER_LIMIT_REACHED",
+        "message": "Team member limit reached"
+      }
+    }
+  },
+  {
+    "invite for a team that will vanish": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v7>",
+        "organizationId": "<m2>",
+        "email": "invitee-two@example.com",
+        "role": "member",
+        "status": "pending",
+        "inviterId": "<v6>",
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "teamId": "<m4>"
+      }
+    }
+  },
+  {
+    "accept with a missing team": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "TEAM_NOT_FOUND",
+        "message": "Team not found"
+      }
+    }
+  },
+  {
+    "accept as someone else": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION",
+        "message": "You are not the recipient of the invitation"
+      }
+    }
+  },
+  {
+    "accept with team and remember-me": {
+      "status": 200,
+      "headers": {
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "invitation": {
+          "id": "<v5>",
+          "organizationId": "<m2>",
+          "email": "invitee-one@example.com",
+          "role": "member",
+          "status": "accepted",
+          "inviterId": "<v6>",
+          "expiresAt": "<date>",
+          "createdAt": "<date>",
+          "teamId": "<m3>"
+        },
+        "member": {
+          "id": "<v8>",
+          "userId": "<v9>",
+          "organizationId": "<m2>",
+          "role": "member",
+          "createdAt": "<date>"
+        }
+      }
+    }
+  },
+  {
+    "invite beyond the membership limit": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v10>",
+        "organizationId": "<m2>",
+        "email": "invitee-three@example.com",
+        "role": "member",
+        "status": "pending",
+        "inviterId": "<v6>",
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "teamId": null
+      }
+    }
+  },
+  {
+    "accept at the membership limit": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED",
+        "message": "Organization membership limit reached"
+      }
+    }
+  }
+]

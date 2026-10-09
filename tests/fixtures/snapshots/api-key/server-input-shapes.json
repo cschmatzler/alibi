@@ -1,0 +1,149 @@
+[
+  {
+    "create array": {
+      "status": 400,
+      "message": "[body] Invalid input: expected object, received array"
+    }
+  },
+  {
+    "update array": {
+      "status": 400,
+      "message": "[body] Invalid input: expected object, received array"
+    }
+  },
+  {
+    "verify array": {
+      "status": 400,
+      "message": "[body] Invalid input: expected object, received array"
+    }
+  },
+  {
+    "create null": {
+      "status": 400,
+      "message": "[body] Invalid input: expected object, received null"
+    }
+  },
+  {
+    "update null": {
+      "status": 400,
+      "message": "[body] Invalid input: expected object, received null"
+    }
+  },
+  {
+    "create wrong types": {
+      "status": 400,
+      "message": "[body.name] Invalid input: expected string, received number; [body.expiresIn] Invalid input: expected number, received string; [body.prefix] Invalid input: expected string, received number; [body.remaining] Too small: expected number to be >=0; [<v3>] Too small: expected number to be >=1; [<v4>] Invalid input: expected number, received string; [<v5>] Invalid input: expected number, received boolean; [<v6>] Invalid input: expected boolean, received string; [body.permissions] Invalid input: expected record, received number; [<v7>] Invalid input: expected string, received array"
+    }
+  },
+  {
+    "update wrong types": {
+      "status": 400,
+      "message": "[body.keyId] Invalid input: expected string, received undefined; [body.name] Invalid input: expected string, received number; [body.remaining] Too small: expected number to be >=1; [<v4>] Invalid input: expected number, received string; [body.expiresIn] Invalid input: expected number, received string; [<v6>] Invalid input: expected boolean, received string; [<v5>] Invalid input: expected number, received boolean; [body.permissions] Invalid input: expected record, received number"
+    }
+  },
+  {
+    "create nested permissions": {
+      "status": 400,
+      "message": "[body.prefix] Invalid prefix format, must be alphanumeric and contain only underscores and hyphens.; [body.permissions.a] Invalid input: expected array, received string; [<v8>] Invalid input: expected string, received number"
+    }
+  },
+  {
+    "update nested permissions": {
+      "status": 400,
+      "message": "[body.keyId] Invalid input: expected string, received undefined; [body.permissions.a] Invalid input: expected array, received string; [<v8>] Invalid input: expected string, received number"
+    }
+  },
+  {
+    "create infinite numbers": {
+      "status": 400,
+      "message": "[body.expiresIn] Invalid input: expected number, received Infinity; [body.remaining] Invalid input: expected number, received Infinity; [<v5>] Invalid input: expected number, received -Infinity"
+    }
+  },
+  {
+    "update infinite numbers": {
+      "status": 400,
+      "message": "[body.keyId] Invalid input: expected string, received undefined; [body.remaining] Invalid input: expected number, received Infinity; [body.expiresIn] Invalid input: expected number, received Infinity; [<v5>] Invalid input: expected number, received -Infinity"
+    }
+  },
+  {
+    "create null owner": {
+      "ok": null
+    }
+  },
+  {
+    "update null owner": {
+      "status": 400,
+      "message": "[body.keyId] Invalid input: expected string, received undefined"
+    }
+  },
+  {
+    "create coerced owner": {
+      "ok": null
+    }
+  },
+  {
+    "update coerced owner": {
+      "status": 400,
+      "message": "[body.keyId] Invalid input: expected string, received undefined"
+    }
+  },
+  {
+    "create empty prefix": {
+      "status": 400,
+      "message": "[body.prefix] Invalid prefix format, must be alphanumeric and contain only underscores and hyphens."
+    }
+  },
+  {
+    "update empty prefix": {
+      "status": 400,
+      "message": "[body.keyId] Invalid input: expected string, received undefined"
+    }
+  },
+  {
+    "create wrong update types": {
+      "status": 400,
+      "message": "[body.name] Invalid input: expected string, received number; [body.expiresIn] Too small: expected number to be >=1; [body.permissions] Invalid input: expected record, received array; [body.userId] Invalid input: expected string, received object"
+    }
+  },
+  {
+    "update wrong update types": {
+      "status": 400,
+      "message": "[body.keyId] Invalid input: expected string, received number; [body.userId] Invalid input: expected string, received object; [body.name] Invalid input: expected string, received number; [body.enabled] Invalid input: expected boolean, received string; [body.remaining] Too small: expected number to be >=1; [body.expiresIn] Too small: expected number to be >=1; [body.permissions] Invalid input: expected record, received array"
+    }
+  },
+  {
+    "create update without key": {
+      "status": 401,
+      "message": "Unauthorized or invalid session"
+    }
+  },
+  {
+    "update update without key": {
+      "status": 400,
+      "message": "[body.keyId] Invalid input: expected string, received undefined"
+    }
+  },
+  {
+    "create update ok": {
+      "status": 400,
+      "message": "[body.permissions] Invalid input: expected record, received null"
+    }
+  },
+  {
+    "update update ok": {
+      "ok": null
+    }
+  },
+  {
+    "verify verify wrong types": {
+      "status": 400,
+      "message": "[body.configId] Invalid input: expected string, received number; [body.key] Invalid input: expected string, received number; [body.permissions] Invalid input: expected record, received array"
+    }
+  },
+  {
+    "verify verify nested permissions": {
+      "status": 400,
+      "message": "[<v9>] Invalid input: expected string, received number"
+    }
+  }
+]

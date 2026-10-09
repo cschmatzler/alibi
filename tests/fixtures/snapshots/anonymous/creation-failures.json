@@ -1,0 +1,47 @@
+[
+  {
+    "user creation cancelled": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_CREATE_USER",
+        "message": "Failed to create user"
+      }
+    }
+  },
+  {
+    "session creation cancelled": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "COULD_NOT_CREATE_SESSION",
+        "message": "Could not create session"
+      }
+    }
+  },
+  {
+    "user storage failure": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "session storage failure": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "users left": 2
+  }
+]

@@ -1,0 +1,48 @@
+[
+  {
+    "email sign-up": "better-auth.last_used_login_method=email"
+  },
+  {
+    "passkey": "better-auth.last_used_login_method=passkey"
+  },
+  {
+    "magic link": "better-auth.last_used_login_method=magic-link"
+  },
+  {
+    "email otp": "better-auth.last_used_login_method=email-otp"
+  },
+  {
+    "anonymous": null
+  },
+  {
+    "forged method on sign-up": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FIELD_NOT_ALLOWED",
+        "message": "lastLoginMethod is not allowed to be set"
+      }
+    }
+  },
+  {
+    "forged method on update": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FIELD_NOT_ALLOWED",
+        "message": "lastLoginMethod is not allowed to be set"
+      }
+    }
+  },
+  {
+    "stored methods": "anonymous-last-login@example.test=none,last-login-magic@example.test=magic-link,last-login-otp@example.test=email-otp,last-login-passkey@example.test=passkey"
+  }
+]

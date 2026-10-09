@@ -14,26 +14,26 @@ use std::collections::BTreeMap;
 
 backend_tests!(passkey_ceremony_matrix);
 
-const USER_PRESENT: u8 = 0x01;
-const USER_VERIFIED: u8 = 0x04;
-const BACKUP_ELIGIBLE: u8 = 0x08;
-const BACKUP_STATE: u8 = 0x10;
-const ATTESTED: u8 = 0x40;
+pub(super) const USER_PRESENT: u8 = 0x01;
+pub(super) const USER_VERIFIED: u8 = 0x04;
+pub(super) const BACKUP_ELIGIBLE: u8 = 0x08;
+pub(super) const BACKUP_STATE: u8 = 0x10;
+pub(super) const ATTESTED: u8 = 0x40;
 
-struct Authenticator {
-    signing: ed25519_dalek::SigningKey,
-    id: Vec<u8>,
+pub(super) struct Authenticator {
+    pub(super) signing: ed25519_dalek::SigningKey,
+    pub(super) id: Vec<u8>,
 }
 
 impl Authenticator {
-    fn new(seed: u8, id: &str) -> Self {
+    pub(super) fn new(seed: u8, id: &str) -> Self {
         Self {
             signing: ed25519_dalek::SigningKey::from_bytes(&[seed; 32]),
             id: id.as_bytes().to_vec(),
         }
     }
 
-    fn cose_key(&self, curve: i128) -> Vec<u8> {
+    pub(super) fn cose_key(&self, curve: i128) -> Vec<u8> {
         serde_cbor_2::to_vec(&Cbor::Map(BTreeMap::from([
             (Cbor::Integer(1), Cbor::Integer(1)),
             (Cbor::Integer(3), Cbor::Integer(-8)),
@@ -62,7 +62,7 @@ impl Authenticator {
         .unwrap()
     }
 
-    fn registration(&self, client: &Value, attestation: &[u8], padded: bool) -> Value {
+    pub(super) fn registration(&self, client: &Value, attestation: &[u8], padded: bool) -> Value {
         let client = serde_json::to_vec(client).unwrap();
         let client = if padded {
             URL_SAFE.encode(client)
@@ -82,7 +82,7 @@ impl Authenticator {
         })
     }
 
-    fn assertion(&self, client: &Value, rp_id: &str, flags: u8, counter: u32) -> Value {
+    pub(super) fn assertion(&self, client: &Value, rp_id: &str, flags: u8, counter: u32) -> Value {
         let client = serde_json::to_vec(client).unwrap();
         let mut data = Sha256::digest(rp_id.as_bytes()).to_vec();
         data.push(flags);
