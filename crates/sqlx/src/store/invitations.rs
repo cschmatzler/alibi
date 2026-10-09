@@ -3,21 +3,22 @@ use super::entities::team;
 use super::{SqlxStore, lock_exclusive};
 use crate::error::record_not_updated;
 use crate::model::{self, ActiveRow, SqlxModel};
+use crate::organization_models::Row;
 use crate::pool::Exec;
 use crate::schema::{AuthSchema, SqlxSessionModel, SqlxUserModel};
 use crate::sql::Sql;
 use alibi_core::entity::AuthUser;
 use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::InvitationCreateOptions;
 use alibi_core::store::InvitationStore;
+use alibi_core::types::AddTeamMemberResult;
+use alibi_core::types::Member;
 use alibi_core::{CreateInvitation, Invitation, InvitationStatus};
 use async_trait::async_trait;
 use chrono::Utc;
 
 impl<S: AuthSchema> SqlxStore<S> {
-    async fn find_invitation(
-        &self,
-        id: &str,
-    ) -> AuthResult<Option<crate::organization_models::Row<Model>>> {
+    async fn find_invitation(&self, id: &str) -> AuthResult<Option<Row<Model>>> {
         let mut sql = self.organization_models.invitation.by_id(self.exec(), id)?;
         model::limit_one(&mut sql);
         self.organization_models
@@ -52,7 +53,7 @@ where
     async fn create_invitation_with_options(
         &self,
         invitation: CreateInvitation,
-        options: alibi_core::store::InvitationCreateOptions,
+        options: InvitationCreateOptions,
     ) -> AuthResult<Invitation> {
         let mut active = ActiveRow::new();
         active.set(
@@ -127,7 +128,7 @@ where
         session_token: &str,
         team_limits: &[(String, Option<f64>)],
         membership_limit: Option<usize>,
-    ) -> AuthResult<Option<(Invitation, alibi_core::types::Member)>> {
+    ) -> AuthResult<Option<(Invitation, Member)>> {
         let transaction = self.begin(true).await?;
         let outcome = async {
             let tx = &transaction;
@@ -244,7 +245,7 @@ where
                 if matches!(
                     self.add_team_member_in_tx(tx, team_id, user_id, maximum)
                         .await?,
-                    alibi_core::types::AddTeamMemberResult::LimitReached
+                    AddTeamMemberResult::LimitReached
                 ) {
                     return Err(AuthError::Upstream {
                         status: 403,

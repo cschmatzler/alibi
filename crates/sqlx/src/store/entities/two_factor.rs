@@ -1,6 +1,8 @@
+use crate::SqlxModel;
+use alibi_core::TwoFactor;
 use chrono::{DateTime, Utc};
 
-#[derive(Clone, Debug, PartialEq, sqlx::FromRow, crate::SqlxModel)]
+#[derive(Clone, Debug, PartialEq, sqlx::FromRow, SqlxModel)]
 #[auth(table = "two_factor")]
 pub struct Model {
     pub id: String,
@@ -14,7 +16,7 @@ pub struct Model {
     pub updated_at: DateTime<Utc>,
 }
 
-impl From<&Model> for alibi_core::TwoFactor {
+impl From<&Model> for TwoFactor {
     fn from(model: &Model) -> Self {
         Self {
             id: model.id.clone(),

@@ -1,4 +1,6 @@
+use crate::SqlxModel;
 use crate::value::{ColumnKind, SqlValue, SqlxValue, ValueTypeError};
+use alibi_core::WalletAddress;
 use chrono::{DateTime, Utc};
 use sqlx::error::BoxDynError;
 #[cfg(feature = "postgres")]
@@ -117,7 +119,7 @@ impl<'r> Decode<'r, Postgres> for WalletChainId {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, sqlx::FromRow, crate::SqlxModel)]
+#[derive(Clone, Debug, PartialEq, sqlx::FromRow, SqlxModel)]
 #[auth(table = "wallet_address")]
 pub struct Model {
     pub id: String,
@@ -128,7 +130,7 @@ pub struct Model {
     pub created_at: DateTime<Utc>,
 }
 
-impl From<Model> for alibi_core::WalletAddress {
+impl From<Model> for WalletAddress {
     fn from(row: Model) -> Self {
         Self {
             id: row.id,

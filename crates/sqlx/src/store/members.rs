@@ -2,6 +2,8 @@ use super::entities::member::Model;
 use super::entities::team;
 use super::{SqlxStore, lock_exclusive};
 use crate::model::{self, ActiveRow, SqlxModel};
+use crate::organization_models::Binding;
+use crate::organization_models::Row;
 use crate::pool::Exec;
 use crate::schema::AuthSchema;
 use crate::sql::Sql;
@@ -46,10 +48,7 @@ impl<S: AuthSchema> SqlxStore<S> {
             .map(|model| Member::from(&model))
     }
 
-    async fn find_member_by_id(
-        &self,
-        id: &str,
-    ) -> AuthResult<Option<crate::organization_models::Row<Model>>> {
+    async fn find_member_by_id(&self, id: &str) -> AuthResult<Option<Row<Model>>> {
         let mut sql = self.organization_models.member.by_id(self.exec(), id)?;
         model::limit_one(&mut sql);
         self.organization_models
@@ -127,7 +126,7 @@ fn member_filter(params: &ListOrganizationMembersParams) -> Option<Filter> {
 }
 
 fn member_where(
-    binding: &crate::organization_models::Binding<Model>,
+    binding: &Binding<Model>,
     sql: &mut Sql,
     organization_id: &str,
     filter: Option<&Filter>,
@@ -142,7 +141,7 @@ fn member_where(
 }
 
 fn member_sort(
-    binding: &crate::organization_models::Binding<Model>,
+    binding: &Binding<Model>,
     sql: &mut Sql,
     params: &ListOrganizationMembersParams,
 ) -> AuthResult<()> {

@@ -8,9 +8,11 @@ use crate::value::{ColumnKind, SqlValue};
 use alibi_core::AuthUser;
 use alibi_core::UserFilterValue;
 use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::UserCreationDefaults;
 use alibi_core::store::adapter::cancelled_by_hook;
 use alibi_core::store::{NumericTextInput, UserStore};
 use alibi_core::types::{CreateUser, ListUsersParams, UpdateUser};
+use alibi_core::user_validation::PreparedUserCreation;
 use async_trait::async_trait;
 use chrono::Utc;
 
@@ -153,7 +155,7 @@ where
         exec: Exec<'_>,
         tx: Option<&SqlxTransaction>,
         mut create_user: CreateUser,
-        defaults: alibi_core::store::UserCreationDefaults,
+        defaults: UserCreationDefaults,
     ) -> AuthResult<S::User> {
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
@@ -232,7 +234,7 @@ where
     pub(crate) async fn create_user_prepared_in_tx(
         &self,
         tx: &SqlxTransaction,
-        prepared: alibi_core::user_validation::PreparedUserCreation,
+        prepared: PreparedUserCreation,
     ) -> AuthResult<S::User> {
         let (data, defaults) = prepared.into_parts();
         self.create_user_with_connection(Exec::tx(tx), Some(tx), data, defaults)
@@ -404,10 +406,7 @@ where
         .await
     }
 
-    async fn create_user_prepared(
-        &self,
-        prepared: alibi_core::user_validation::PreparedUserCreation,
-    ) -> AuthResult<S::User> {
+    async fn create_user_prepared(&self, prepared: PreparedUserCreation) -> AuthResult<S::User> {
         let (data, defaults) = prepared.into_parts();
         self.create_user_with_connection(self.exec(), None, data, defaults)
             .await

@@ -2,6 +2,7 @@
 
 use crate::error::map_sqlx_err;
 use crate::sql::Sql;
+use alibi_core::config::AuthConfig;
 use alibi_core::error::{AuthError, AuthResult};
 #[cfg(feature = "postgres")]
 use sqlx::postgres::{PgPool, PgRow, Postgres};
@@ -164,7 +165,7 @@ pub(crate) enum TransactionKind {
 #[derive(Debug)]
 pub struct SqlxTransaction {
     engine: Engine,
-    pub(crate) config: Option<std::sync::Arc<alibi_core::config::AuthConfig>>,
+    pub(crate) config: Option<std::sync::Arc<AuthConfig>>,
     inner: tokio::sync::Mutex<Option<TransactionKind>>,
 }
 
@@ -270,7 +271,7 @@ enum ExecConnection<'a> {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Exec<'a> {
     connection: ExecConnection<'a>,
-    config: Option<&'a alibi_core::config::AuthConfig>,
+    config: Option<&'a AuthConfig>,
 }
 impl<'a> Exec<'a> {
     pub(crate) const fn pool(pool: &'a SqlxPool) -> Self {
@@ -285,7 +286,7 @@ impl<'a> Exec<'a> {
             config: tx.config.as_deref(),
         }
     }
-    pub(crate) const fn with_config(mut self, config: &'a alibi_core::config::AuthConfig) -> Self {
+    pub(crate) const fn with_config(mut self, config: &'a AuthConfig) -> Self {
         self.config = Some(config);
         self
     }

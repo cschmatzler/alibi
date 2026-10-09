@@ -1,7 +1,8 @@
+use crate::AuthEntity;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-#[derive(crate::AuthEntity, Clone, Debug, PartialEq, Eq, Serialize, sqlx::FromRow)]
+#[derive(AuthEntity, Clone, Debug, PartialEq, Eq, Serialize, sqlx::FromRow)]
 #[auth(role = "account", table = "accounts")]
 pub struct Model {
     pub id: String,

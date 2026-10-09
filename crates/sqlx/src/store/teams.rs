@@ -2,6 +2,7 @@ use super::entities::{team, team_member};
 use super::{SqlxStore, lock_exclusive};
 use crate::error::record_not_updated;
 use crate::model::{self, ActiveRow, SqlxModel};
+use crate::pool::Engine;
 use crate::pool::{Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxUserModel};
 use crate::sql::Sql;
@@ -95,7 +96,7 @@ where
             seat.push(" WHERE ");
             seat.compare(team::Model::TABLE, "id", " = ", team_id);
             seat.push(" AND ");
-            if exec.engine() == crate::pool::Engine::Postgres {
+            if exec.engine() == Engine::Postgres {
                 // Source's text Number parameter is parsed as the physical
                 // bigint counter, rather than promoting that counter to float8.
                 seat.column(team::Model::TABLE, "member_count");

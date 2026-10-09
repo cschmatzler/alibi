@@ -3,8 +3,10 @@
 use crate::model::{ActiveRow, SqlxModel};
 use crate::pool::Engine;
 use crate::value::SqlValue;
+use alibi_core::AuthError;
 use alibi_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
 use alibi_core::error::AuthResult;
+use alibi_core::field_policy::FieldValues;
 pub use alibi_core::schema::AuthSchema;
 use alibi_core::types::{
     CreateAccount, CreateSession, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
@@ -18,7 +20,7 @@ pub trait SqlxUserModel: AuthUser + SqlxModel {
     ///
     /// Returns an error if configured additional fields cannot be bound to model columns.
     fn additional_field_bindings(
-        fields: &alibi_core::field_policy::FieldValues,
+        fields: &FieldValues,
         _backend: Engine,
     ) -> AuthResult<Vec<(&'static str, SqlValue)>> {
         if fields.is_empty() {
@@ -105,7 +107,7 @@ pub trait SqlxSessionModel: AuthSession + SqlxModel {
     ///
     /// Returns `NotImplemented` unless the schema supports secondary sessions.
     fn materialize_secondary(_active: ActiveRow) -> AuthResult<Self> {
-        Err(alibi_core::AuthError::NotImplemented(
+        Err(AuthError::NotImplemented(
             "Secondary session materialization is unsupported".into(),
         ))
     }
@@ -116,7 +118,7 @@ pub trait SqlxSessionModel: AuthSession + SqlxModel {
     ///
     /// Returns an error if configured additional fields cannot be bound to model columns.
     fn additional_field_bindings(
-        fields: &alibi_core::field_policy::FieldValues,
+        fields: &FieldValues,
         _backend: Engine,
     ) -> AuthResult<Vec<(&'static str, SqlValue)>> {
         if fields.is_empty() {
@@ -193,7 +195,7 @@ pub trait SqlxAccountModel: AuthAccount + SqlxModel {
     ///
     /// Returns an error if configured additional fields cannot be bound to model columns.
     fn additional_field_bindings(
-        fields: &alibi_core::field_policy::FieldValues,
+        fields: &FieldValues,
         _backend: Engine,
     ) -> AuthResult<Vec<(&'static str, SqlValue)>> {
         if fields.is_empty() {

@@ -4,6 +4,8 @@ use crate::model::{self, SqlxModel};
 use crate::pool::{Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxAccountModel};
 use crate::sql::Sql;
+use alibi_core::AuthError;
+use alibi_core::DatabaseError;
 use alibi_core::error::AuthResult;
 use alibi_core::store::AccountStore;
 use alibi_core::store::adapter::cancelled_by_hook;
@@ -134,11 +136,9 @@ where
         sql.bind(2_i64);
         let mut accounts: Vec<S::Account> = self.exec().fetch_all(sql).await?;
         if accounts.len() > 1 {
-            return Err(alibi_core::AuthError::Database(
-                alibi_core::DatabaseError::AmbiguousAccount {
-                    provider: provider.to_owned(),
-                },
-            ));
+            return Err(AuthError::Database(DatabaseError::AmbiguousAccount {
+                provider: provider.to_owned(),
+            }));
         }
         Ok(accounts.pop())
     }

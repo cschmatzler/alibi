@@ -8,6 +8,7 @@ use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::field_policy::FieldValues;
 use alibi_core::store::SessionStore;
 use alibi_core::types::CreateSession;
+use alibi_core::utils::json::JsValue;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
@@ -72,10 +73,7 @@ where
         ];
         for (name, destination) in &mut typed_fields {
             if let Some(value) = destination.as_ref() {
-                fields.preserve_creation_value(
-                    name,
-                    alibi_core::utils::json::JsValue::String(value.clone()),
-                );
+                fields.preserve_creation_value(name, JsValue::String(value.clone()));
             }
             // Configured values now belong to the adapter input. A transform
             // that omits one must also omit its original typed creation value.

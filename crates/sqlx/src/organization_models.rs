@@ -6,6 +6,10 @@ use crate::pool::Exec;
 use crate::sql::Sql;
 use crate::store::entities::{invitation, member, organization};
 use crate::value::{ColumnKind, SqlValue};
+use alibi_core::Invitation;
+use alibi_core::Member;
+use alibi_core::Organization;
+use alibi_core::field_policy::FieldValues;
 use alibi_core::{AuthError, AuthResult};
 use async_trait::async_trait;
 use std::{marker::PhantomData, sync::Arc};
@@ -133,7 +137,7 @@ impl<T: SqlxModel> Binding<T> {
         &self,
         exec: Exec<'_>,
         active: &mut ActiveRow,
-        fields: &mut alibi_core::field_policy::FieldValues,
+        fields: &mut FieldValues,
     ) -> AuthResult<()> {
         fields.apply_adapter_transforms_async().await?;
         for (name, value) in &*fields {
@@ -373,7 +377,7 @@ impl<T: SqlxModel> Binding<T> {
     }
 }
 
-impl From<&Row<organization::Model>> for alibi_core::Organization {
+impl From<&Row<organization::Model>> for Organization {
     fn from(row: &Row<organization::Model>) -> Self {
         let mut organization = Self::from(&row.value);
         for (field, value) in row.active.present() {
@@ -389,12 +393,12 @@ impl From<&Row<organization::Model>> for alibi_core::Organization {
         organization
     }
 }
-impl From<&Row<member::Model>> for alibi_core::Member {
+impl From<&Row<member::Model>> for Member {
     fn from(row: &Row<member::Model>) -> Self {
         Self::from(&row.value)
     }
 }
-impl From<&Row<invitation::Model>> for alibi_core::Invitation {
+impl From<&Row<invitation::Model>> for Invitation {
     fn from(row: &Row<invitation::Model>) -> Self {
         let mut invitation = Self::from(&row.value);
         if row

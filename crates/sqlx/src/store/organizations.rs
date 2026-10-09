@@ -1,7 +1,9 @@
 use super::SqlxStore;
 use super::entities::organization::{JsonMetadata, Model};
+use crate::SqlValue;
 use crate::error::record_not_updated;
 use crate::model::{self, ActiveRow};
+use crate::organization_models::Row;
 use crate::pool::{Engine, Exec};
 use crate::schema::AuthSchema;
 use crate::sql::Sql;
@@ -159,7 +161,7 @@ where
         mut update: UpdateOrganization,
     ) -> AuthResult<Option<Organization>> {
         let backend = self.exec().engine();
-        let mut assignments: Vec<(&str, crate::SqlValue)> = Vec::new();
+        let mut assignments: Vec<(&str, SqlValue)> = Vec::new();
         if let Some(name) = update.name {
             assignments.push(("name", name.into()));
         }
@@ -319,7 +321,7 @@ where
 }
 
 fn apply_organization_update(
-    model: crate::organization_models::Row<Model>,
+    model: Row<Model>,
     update: UpdateOrganization,
     backend: Engine,
 ) -> AuthResult<ActiveRow> {

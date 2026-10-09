@@ -1,4 +1,5 @@
 use super::SqlxStore;
+use crate::pool::Engine;
 use crate::{
     model::SqlxModel,
     pool::Exec,
@@ -92,7 +93,7 @@ where
 
 fn exact_collation(sql: &mut Sql) {
     match sql.engine() {
-        crate::pool::Engine::Sqlite => sql.push(" COLLATE BINARY"),
-        crate::pool::Engine::Postgres => sql.push(" COLLATE \"C\""),
+        Engine::Sqlite => sql.push(" COLLATE BINARY"),
+        Engine::Postgres => sql.push(" COLLATE \"C\""),
     }
 }

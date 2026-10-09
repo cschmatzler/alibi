@@ -1,7 +1,9 @@
+use crate::AuthEntity;
+use crate::JsonMetadata;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-#[derive(crate::AuthEntity, Clone, Debug, PartialEq, Serialize, sqlx::FromRow)]
+#[derive(AuthEntity, Clone, Debug, PartialEq, Serialize, sqlx::FromRow)]
 #[auth(role = "user", table = "users", secondary_storage)]
 pub struct Model {
     pub id: String,
@@ -16,7 +18,7 @@ pub struct Model {
     pub banned: Option<bool>,
     pub ban_reason: Option<String>,
     pub ban_expires: Option<DateTime<Utc>>,
-    pub metadata: crate::JsonMetadata,
+    pub metadata: JsonMetadata,
     pub is_anonymous: Option<bool>,
     pub phone_number: Option<String>,
     pub phone_number_verified: Option<bool>,

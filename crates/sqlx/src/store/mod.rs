@@ -32,19 +32,37 @@ pub mod __private_test_support {
     }
 }
 
+use crate::OrganizationModels;
 use crate::hooks::{DatabaseHooks, SqlxBackend, SqlxHookContext, current_request_hook_context};
 use crate::pool::{Engine, Exec, SqlxPool, SqlxTransaction};
 use crate::schema::{
     AuthSchema, SqlxAccountModel, SqlxSessionModel, SqlxUserModel, SqlxVerificationModel,
 };
 use crate::sql::Sql;
+use alibi_core::CreateAccount;
+use alibi_core::CreateMember;
+use alibi_core::CreatePasskey;
+use alibi_core::CreateSession;
+use alibi_core::CreateUser;
+use alibi_core::CreateVerification;
+use alibi_core::Passkey;
 use alibi_core::config::AuthConfig;
 use alibi_core::error::AuthResult;
+use alibi_core::field_policy::FieldValues;
 use alibi_core::store::SchemaMigrator;
 use alibi_core::store::adapter::{AfterHook, AfterHookQueue};
 use alibi_core::store::{
     AuthTransaction, BoxedTransactionValue, TransactionStore, TransactionWork,
 };
+use alibi_core::types::AddTeamMemberResult;
+use alibi_core::types::CreateJwk;
+use alibi_core::types::Jwk;
+use alibi_core::types::Member;
+use alibi_core::types::Team;
+use alibi_core::user_validation::PreparedUserCreation;
+use alibi_core::verification::VerificationCreation;
+use alibi_core::verification::VerificationPublication;
+use alibi_core::verification::VerificationSnapshot;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::marker::PhantomData;
@@ -55,7 +73,7 @@ pub struct SqlxStore<S: AuthSchema> {
     config: Arc<AuthConfig>,
     pool: SqlxPool,
     hooks: Vec<Arc<dyn DatabaseHooks<S, SqlxBackend>>>,
-    organization_models: crate::OrganizationModels,
+    organization_models: OrganizationModels,
     _schema: PhantomData<S>,
 }
 
@@ -79,7 +97,7 @@ impl<S: AuthSchema> SqlxStore<S> {
 
     /// Bind the organization plugin to application-owned tables.
     #[must_use]
-    pub fn with_organization_models(mut self, models: crate::OrganizationModels) -> Self {
+    pub fn with_organization_models(mut self, models: OrganizationModels) -> Self {
         self.organization_models = models;
         self
     }
@@ -218,24 +236,17 @@ where
     S::Session: SqlxSessionModel,
     S::Verification: SqlxVerificationModel,
 {
-    async fn list_jwks(&self) -> AuthResult<Vec<alibi_core::types::Jwk>> {
+    async fn list_jwks(&self) -> AuthResult<Vec<Jwk>> {
         self.store.list_jwks_with(Exec::tx(self.tx)).await
     }
-    async fn get_jwk_by_id(&self, id: &str) -> AuthResult<Option<alibi_core::types::Jwk>> {
+    async fn get_jwk_by_id(&self, id: &str) -> AuthResult<Option<Jwk>> {
         self.store.get_jwk_with(Exec::tx(self.tx), id).await
     }
-    async fn create_jwk(
-        &self,
-        data: alibi_core::types::CreateJwk,
-    ) -> AuthResult<alibi_core::types::Jwk> {
+    async fn create_jwk(&self, data: CreateJwk) -> AuthResult<Jwk> {
         self.store.create_jwk_with(Exec::tx(self.tx), data).await
     }
 
-    async fn get_team(
-        &self,
-        organization_id: &str,
-        team_id: &str,
-    ) -> AuthResult<Option<alibi_core::types::Team>> {
+    async fn get_team(&self, organization_id: &str, team_id: &str) -> AuthResult<Option<Team>> {
         self.store
             .get_team_with_connection(Exec::tx(self.tx), Some(organization_id), team_id)
             .await
@@ -245,15 +256,12 @@ where
         team_id: &str,
         user_id: &str,
         maximum: Option<f64>,
-    ) -> AuthResult<alibi_core::types::AddTeamMemberResult> {
+    ) -> AuthResult<AddTeamMemberResult> {
         self.store
             .add_team_member_in_tx(self.tx, team_id, user_id, maximum)
             .await
     }
-    async fn create_member(
-        &self,
-        member: alibi_core::CreateMember,
-    ) -> AuthResult<alibi_core::types::Member> {
+    async fn create_member(&self, member: CreateMember) -> AuthResult<Member> {
         self.store
             .create_member_with_connection(Exec::tx(self.tx), member)
             .await
@@ -293,15 +301,12 @@ where
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>> {
         users::find_user_by_id::<S::User>(Exec::tx(self.tx), id, users::Lock::None).await
     }
-    async fn create_passkey(
-        &self,
-        data: alibi_core::CreatePasskey,
-    ) -> AuthResult<alibi_core::Passkey> {
+    async fn create_passkey(&self, data: CreatePasskey) -> AuthResult<Passkey> {
         self.store
             .create_passkey_with_connection(Exec::tx(self.tx), data)
             .await
     }
-    async fn create_user(&self, create_user: alibi_core::CreateUser) -> AuthResult<S::User> {
+    async fn create_user(&self, create_user: CreateUser) -> AuthResult<S::User> {
         let user = self.store.create_user_in_tx(self.tx, create_user).await?;
         self.pending_after
             .push(AfterHook::UserCreated(user.clone()))
@@ -309,10 +314,7 @@ where
         Ok(user)
     }
 
-    async fn create_user_prepared(
-        &self,
-        prepared: alibi_core::user_validation::PreparedUserCreation,
-    ) -> AuthResult<S::User> {
+    async fn create_user_prepared(&self, prepared: PreparedUserCreation) -> AuthResult<S::User> {
         let user = self
             .store
             .create_user_prepared_in_tx(self.tx, prepared)
@@ -323,10 +325,7 @@ where
         Ok(user)
     }
 
-    async fn create_account(
-        &self,
-        create_account: alibi_core::CreateAccount,
-    ) -> AuthResult<S::Account> {
+    async fn create_account(&self, create_account: CreateAccount) -> AuthResult<S::Account> {
         let account = self
             .store
             .create_account_in_tx(self.tx, create_account)
@@ -341,8 +340,8 @@ where
         &self,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        fields: alibi_core::field_policy::FieldValues,
-    ) -> AuthResult<Option<(S::Session, alibi_core::field_policy::FieldValues)>> {
+        fields: FieldValues,
+    ) -> AuthResult<Option<(S::Session, FieldValues)>> {
         self.store
             .prepare_secondary_update_with_connection(
                 Exec::tx(self.tx),
@@ -357,7 +356,7 @@ where
         &self,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        fields: alibi_core::field_policy::FieldValues,
+        fields: FieldValues,
         persist: bool,
     ) -> AuthResult<Option<S::Session>> {
         use alibi_core::AuthSession;
@@ -382,7 +381,7 @@ where
     }
     async fn prepare_secondary_session_creation(
         &self,
-        input: alibi_core::CreateSession,
+        input: CreateSession,
         persist: bool,
     ) -> AuthResult<S::Session> {
         let session = self
@@ -394,10 +393,7 @@ where
             .await;
         Ok(session)
     }
-    async fn create_session(
-        &self,
-        create_session: alibi_core::CreateSession,
-    ) -> AuthResult<S::Session> {
+    async fn create_session(&self, create_session: CreateSession) -> AuthResult<S::Session> {
         let session = self
             .store
             .create_session_in_tx(self.tx, create_session)
@@ -409,9 +405,9 @@ where
     }
     async fn create_verification_record(
         &self,
-        data: alibi_core::verification::VerificationCreation,
-        publication: alibi_core::verification::VerificationPublication,
-    ) -> AuthResult<Option<alibi_core::verification::VerificationSnapshot>> {
+        data: VerificationCreation,
+        publication: VerificationPublication,
+    ) -> AuthResult<Option<VerificationSnapshot>> {
         let snapshot = self
             .store
             .create_verification_record_with_connection(
@@ -431,7 +427,7 @@ where
 
     async fn create_verification(
         &self,
-        verification: alibi_core::CreateVerification,
+        verification: CreateVerification,
     ) -> AuthResult<S::Verification> {
         let verification = self
             .store

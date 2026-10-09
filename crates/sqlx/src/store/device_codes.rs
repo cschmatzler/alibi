@@ -2,6 +2,8 @@ use super::SqlxStore;
 use super::entities::device_code::Model;
 use crate::error::record_not_updated;
 use crate::model::{self, ActiveRow, SqlxModel};
+use crate::pool::Engine;
+use crate::pool::Exec;
 use crate::schema::AuthSchema;
 use crate::sql::Sql;
 use crate::value::SqlValue;
@@ -14,7 +16,7 @@ use uuid::Uuid;
 impl<S: AuthSchema + Send + Sync> SqlxStore<S> {
     async fn create_device_code_with_connection(
         &self,
-        exec: crate::pool::Exec<'_>,
+        exec: Exec<'_>,
         input: CreateDeviceCode,
     ) -> AuthResult<DeviceCode> {
         let mut active = ActiveRow::new();
@@ -141,7 +143,7 @@ where
         sql.bind(status);
         for (field, value) in ownership {
             sql.push(" AND EXISTS (SELECT 1 FROM device_code_fields WHERE device_code_id = device_code.id AND ");
-            if self.exec().engine() == crate::pool::Engine::Postgres {
+            if self.exec().engine() == Engine::Postgres {
                 sql.push("CAST(fields AS JSONB) -> ");
                 sql.bind(field);
                 sql.push(" = CAST(");
