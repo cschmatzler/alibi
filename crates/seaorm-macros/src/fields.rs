@@ -1,4 +1,4 @@
-use super::*;
+use super::{FieldsNamed, Ident, LitStr, codegen};
 /// One model field with its `Column` variant and explicitly renamed column.
 pub(crate) struct Field {
     pub(crate) ident: Ident,

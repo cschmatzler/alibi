@@ -1,4 +1,4 @@
-use super::*;
+use super::{Column, EntityRole, Ident, Roots, TokenStream, codegen, physical, quote};
 pub(crate) fn model_impl(
     ident: &Ident,
     table: &str,

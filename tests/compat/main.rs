@@ -8,6 +8,10 @@
 //! - `upstream_pin`: every manifest, lockfile and fixture names one release.
 //! - `openapi_contract`: in-process response shapes against upstream's
 //!   generated `OpenAPI` document; fast drift detection, not parity.
+#![allow(
+    clippy::pedantic,
+    reason = "test code favors explicit, linear scenarios over pedantic style"
+)]
 #![expect(
     unused_crate_dependencies,
     reason = "Cargo shares package dependencies across its library, binaries, and integration tests"

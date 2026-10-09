@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    EntityField, EntityRole, FieldsNamed, Ident, Span, TokenStream, additional_output, has_field,
+    optional_field, quote, secondary_codec,
+};
 /// `impl AuthUser`: absent plugin fields return their defaults.
 #[expect(
     clippy::too_many_lines,

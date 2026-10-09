@@ -1,4 +1,8 @@
 //! Native HTTP journeys: real Axum, SQLite, hashing and client cookie handling.
+#![allow(
+    clippy::pedantic,
+    reason = "test code favors explicit, linear scenarios over pedantic style"
+)]
 #![expect(
     unused_crate_dependencies,
     reason = "integration targets share the package dependency list"

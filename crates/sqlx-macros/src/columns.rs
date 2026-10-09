@@ -1,4 +1,4 @@
-use super::*;
+use super::{DeriveInput, FieldsNamed, Ident, LitStr, Span, codegen};
 /// One model field with its physical column.
 pub(crate) struct Column {
     pub(crate) ident: Ident,

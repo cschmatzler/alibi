@@ -1,4 +1,9 @@
-use super::*;
+use super::{
+    Arc, AuthBuilder, AuthConfig, AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthResult,
+    AuthSchema, AuthStore, BetterAuth, BodyLimitMiddleware, CorsConfig, CorsMiddleware,
+    CsrfMiddleware, EmailProvider, Middleware, OpenApiRegistry, RateLimitConfig,
+    RateLimitMiddleware, SessionManager,
+};
 impl<S: AuthSchema> AuthBuilder<S> {
     /// Create an instance builder with the core API installed at build time.
     /// Email/password and username authentication remain disabled until an
@@ -127,12 +132,12 @@ impl<S: AuthSchema> AuthBuilder<S> {
         if let Some(name) = self.config.session.cookie_name.strip_prefix("__Secure-") {
             self.config.session.cookie_name = name.to_owned();
         }
-        if !self
+        if self
             .config
             .advanced
             .cookie_prefix
             .as_ref()
-            .is_some_and(|p| !p.is_empty())
+            .is_none_or(|p| p.is_empty())
         {
             if !self.config.advanced.cookies.contains_key("session_token")
                 && let Some(prefix) = self
@@ -150,7 +155,11 @@ impl<S: AuthSchema> AuthBuilder<S> {
                 .cookies
                 .entry("session_token".into())
                 .or_default();
-            if entry.name.as_ref().is_none_or(|name| name.is_empty()) {
+            if entry
+                .name
+                .as_ref()
+                .is_none_or(std::string::String::is_empty)
+            {
                 entry.name = Some(self.config.session.cookie_name.clone());
             }
         }

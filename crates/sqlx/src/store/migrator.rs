@@ -132,7 +132,7 @@ pub(crate) async fn has_table(exec: Exec<'_>, table: &str) -> AuthResult<bool> {
             if let Some(schema) = exec.schema_name() { sql.bind(schema); } else {sql.push("CURRENT_SCHEMA()");}
             sql.push(" AND table_type = 'BASE TABLE' AND table_name = ");
         },
-    };
+    }
     sql.bind(table);
     Ok(exec.fetch_scalar::<i64>(sql).await?.unwrap_or_default() > 0)
 }

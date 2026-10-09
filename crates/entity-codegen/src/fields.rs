@@ -1,4 +1,4 @@
-use super::*;
+use super::{EntityRole, FieldsNamed, Ident, TokenStream, Type, quote, registry};
 #[must_use]
 pub fn has_field(fields: &FieldsNamed, name: &str) -> bool {
     fields

@@ -5,6 +5,10 @@
 //! Modules mirror the SDK scenario tree under `tests/compat/client-tests/tests`:
 //! `core/<area>` for upstream's core API and `plugins/<plugin>` per plugin.
 //! Parity with upstream is established by the `compat` target, not here.
+#![allow(
+    clippy::pedantic,
+    reason = "test code favors explicit, linear scenarios over pedantic style"
+)]
 #![expect(
     unused_crate_dependencies,
     reason = "Cargo shares package dependencies across its library, binaries, and integration tests"

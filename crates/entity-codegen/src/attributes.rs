@@ -1,4 +1,4 @@
-use super::*;
+use super::{Data, DeriveInput, EntityRole, Fields, FieldsNamed, LitStr, has_field, registry};
 /// Parsed `#[auth(...)]` container attributes.
 #[derive(Clone, Debug)]
 pub struct AuthAttributes {
@@ -10,7 +10,7 @@ pub struct AuthAttributes {
 }
 
 /// Parse the role, optional ID factory and secondary-storage configuration.
-/// SQLx also permits an explicit table name.
+/// `SQLx` also permits an explicit table name.
 ///
 /// # Errors
 ///

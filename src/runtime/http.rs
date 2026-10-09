@@ -1,4 +1,9 @@
-use super::*;
+use super::{
+    Arc, AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
+    AuthSchema, AuthStore, BeforeRequestAction, BetterAuth, EmailProvider, HttpEndpointResponse,
+    HttpMethod, HttpRequestAction, Middleware, RequestHookContext, core_paths, middleware,
+    parse_dispatch_body, route_path_matches, with_request_hook_context_value,
+};
 impl<S: AuthSchema> BetterAuth<S> {
     /// Handle an authentication request.
     ///
@@ -324,8 +329,10 @@ impl<S: AuthSchema> BetterAuth<S> {
 
         let context_path = plugin_route
             .as_ref()
-            .map(|(_, route)| route.context_path.as_deref().unwrap_or(&route.path))
-            .unwrap_or_else(|| internal_req.path())
+            .map_or_else(
+                || internal_req.path(),
+                |(_, route)| route.context_path.as_deref().unwrap_or(&route.path),
+            )
             .to_owned();
         let params = context_path
             .split('/')
@@ -345,10 +352,8 @@ impl<S: AuthSchema> BetterAuth<S> {
                 params,
             });
 
-        let global_route = plugin_route
-            .as_ref()
-            .map(|(_, route)| route.clone())
-            .unwrap_or_else(|| {
+        let global_route = plugin_route.as_ref().map_or_else(
+            || {
                 AuthRoute::new(
                     internal_req.method.clone(),
                     internal_req.path.clone(),
@@ -358,7 +363,9 @@ impl<S: AuthSchema> BetterAuth<S> {
                         _ => "updateUser",
                     },
                 )
-            });
+            },
+            |(_, route)| route.clone(),
+        );
         if let Some(response) = self
             .before_http_endpoint(&mut internal_req, &global_route, context)
             .await?

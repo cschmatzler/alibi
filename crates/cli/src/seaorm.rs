@@ -1,4 +1,6 @@
-use super::*;
+use super::{
+    EntityRole, ExtraEntitySchema, FieldDef, Selection, TokenStream, format_ident, quote, registry,
+};
 pub(crate) fn seaorm_schema(selection: &Selection) -> TokenStream {
     let extra_user = &selection.user;
     let extra_session = &selection.session;

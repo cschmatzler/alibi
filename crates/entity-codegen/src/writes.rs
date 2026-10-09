@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    AuthAttributes, EntityRole, FieldsNamed, Ident, Span, TokenStream, has_field, optional_field,
+    quote,
+};
 /// What a fresh row stores in one declared field.
 #[derive(Clone)]
 pub enum Insert {

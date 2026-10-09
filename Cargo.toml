@@ -169,6 +169,24 @@ name = "e2e"
 path = "tests/e2e/main.rs"
 required-features = ["axum"]
 [workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Pedantic lints whose findings are not improvements for this codebase.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+module_name_repetitions = "allow"
+too_many_lines = "allow"
+struct_excessive_bools = "allow"
+fn_params_excessive_bools = "allow"
+similar_names = "allow"
+large_futures = "allow"
+# Selected nursery lints.
+use_self = "warn"
+redundant_clone = "warn"
+or_fun_call = "warn"
+needless_collect = "warn"
+useless_let_if_seq = "warn"
+equatable_if_let = "warn"
 allow_attributes = "warn"
 allow_attributes_without_reason = "warn"
 unwrap_used = "warn"

@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    Column, EntityRole, FieldsNamed, Ident, Insert, Roots, Span, TokenStream, additional_fields,
+    codegen, column_of, physical, quote,
+};
 /// `active.set(column, value)` with `value` converted into the declared field
 /// type, so the staged `SqlValue` variant always matches the column.
 pub(crate) fn set_field(

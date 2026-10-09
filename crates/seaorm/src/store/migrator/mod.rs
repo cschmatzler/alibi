@@ -115,7 +115,7 @@ async fn create_index<T: IntoTableRef>(
     if unique {
         let _ignored_unique = index.unique();
     }
-    manager.create_index(index.to_owned()).await
+    manager.create_index(index.clone()).await
 }
 
 fn cascade_to_user<F: IntoTableRef, C: IntoIden>(

@@ -1,4 +1,4 @@
-use super::*;
+use super::{EntityRole, ExtraEntitySchema, FieldDef, registry};
 pub(crate) fn list_plugins() -> Vec<&'static str> {
     registry::plugin_schemas().iter().map(|p| p.name).collect()
 }

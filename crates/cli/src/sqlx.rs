@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    CORE_ENTITIES, EntityRole, FieldDef, Selection, TokenStream, entity_fields, format_ident,
+    parse_type, quote, role_name,
+};
 pub(crate) fn sqlx_schema(selection: &Selection) -> TokenStream {
     let entities = CORE_ENTITIES.iter().map(|(module, table, role)| {
         sqlx_entity(module, table, Some(*role), &entity_fields(selection, *role))
