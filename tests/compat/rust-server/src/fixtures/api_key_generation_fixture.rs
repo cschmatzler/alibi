@@ -8,8 +8,8 @@ use alibi::plugins::api_key::{
     KeyExpirationConfig, RateLimitDefaults, UpdateKeyRequest, VerifyApiKey,
 };
 use alibi::plugins::{ApiKeyPlugin, EmailPasswordPlugin, SessionManagementPlugin};
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use alibi::seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use axum::{
     Json, Router,
     response::IntoResponse,

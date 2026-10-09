@@ -3,12 +3,12 @@ use crate::TestSchema;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::{DeviceAuthorizationPlugin, EmailPasswordPlugin, SessionManagementPlugin};
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr},
     store::entities::device_code,
 };
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use axum::{
     Json, Router,
     extract::Query,

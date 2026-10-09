@@ -10,14 +10,12 @@ use alibi::plugins::email_otp::{
 use alibi::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin, SessionManagementPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi::{
-    AuthRequest, CreateVerification, DatabaseError, HttpMethod, wire::VerificationView,
-};
 use alibi::seaorm::{
     sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder},
     store::entities::verification,
 };
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{AuthRequest, CreateVerification, DatabaseError, HttpMethod, wire::VerificationView};
 use async_trait::async_trait;
 use axum::{
     Json, Router,

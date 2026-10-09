@@ -7,11 +7,11 @@ use alibi::plugins::{
     AdminConfig, AdminPlugin, EmailPasswordPlugin, RolePermissions, SessionManagementPlugin,
     TwoFactorPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
 };
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use axum::{
     Json, Router,
     extract::{Query, State},

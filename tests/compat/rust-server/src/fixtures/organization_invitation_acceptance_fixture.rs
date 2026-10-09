@@ -6,13 +6,13 @@ use alibi::plugins::organization::{
     extensions::{OrganizationLimitResolver, TeamLimitContext},
 };
 use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
-use alibi::{
-    AuthBuilder, AuthConfig, AuthError, AuthResult, integrations::axum::AxumIntegration,
-    middleware::RateLimitConfig,
-};
 use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
+use alibi::{
+    AuthBuilder, AuthConfig, AuthError, AuthResult, integrations::axum::AxumIntegration,
+    middleware::RateLimitConfig,
 };
 use async_trait::async_trait;
 use axum::{

@@ -13,14 +13,14 @@ use alibi::plugins::{
     AccountManagementPlugin, EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin,
     OpenApiPlugin, PasswordManagementPlugin, SessionManagementPlugin, UserManagementPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi::seaorm::sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
+use alibi::seaorm::{DatabaseHooks, HookControl};
 use alibi::{
     AuthAccount, AuthInitContext, AuthPlugin, AuthRoute, AuthSession, AuthUser,
     store::{AdapterAfterHook, AdapterEvent, AuthStore},
     utils::json::JsValue,
 };
-use alibi::seaorm::sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
-use alibi::seaorm::{DatabaseHooks, HookControl};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use axum::{
     Json, Router,
     extract::Query,

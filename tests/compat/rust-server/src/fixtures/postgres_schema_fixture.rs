@@ -1,11 +1,11 @@
 //! A configured PostgreSQL namespace with an unchanged runtime search path.
 use crate::TestSchema;
+use alibi::seaorm::sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
 use alibi::{
     AuthBuilder, AuthConfig, AuthResult,
     integrations::axum::AxumIntegration,
     plugins::{EmailPasswordPlugin, SessionManagementPlugin, UserManagementPlugin},
 };
-use alibi::seaorm::sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
 use axum::{Json, Router, routing::get};
 use serde_json::json;
 use std::sync::Arc;

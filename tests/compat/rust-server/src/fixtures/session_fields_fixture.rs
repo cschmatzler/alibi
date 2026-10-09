@@ -9,10 +9,10 @@ use alibi::plugins::{
     OAuthPlugin, OpenApiPlugin, OrganizationPlugin, PasswordManagementPlugin,
     SessionManagementPlugin, UserManagementPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use alibi::seaorm::sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Statement};
 use alibi::seaorm::store::entities::user;
 use alibi::seaorm::{DatabaseConnection, DatabaseHooks, HookControl};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use axum::{Json, Router, extract::Query, routing::get};
 use serde::Deserialize;
 use serde_json::{Value, json};

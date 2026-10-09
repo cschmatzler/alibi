@@ -170,8 +170,7 @@ mod tests {
             ))
             .fetch_one(pool)
             .await;
-            let found =
-                alibi::store::UserStore::get_user_by_id(&store, issued.id().as_ref()).await;
+            let found = alibi::store::UserStore::get_user_by_id(&store, issued.id().as_ref()).await;
             eprintln!(
                 "{label}: tables={tables_before}->{tables_after}; connection={before}->{connection:?}; user={found:?}"
             );

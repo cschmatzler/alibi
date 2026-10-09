@@ -9,9 +9,9 @@ use alibi::plugins::api_key::{
 use alibi::plugins::{
     ApiKeyPlugin, EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin,
 };
+use alibi::seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use alibi::{BackgroundTaskCompletion, BackgroundTaskHandler, store::CacheAdapter};
-use alibi::seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use axum::{
     Json, Router,
     extract::Query,

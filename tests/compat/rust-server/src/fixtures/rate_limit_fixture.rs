@@ -3,10 +3,10 @@ use crate::{TestSchema, otp_profiles};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::{EndpointRateLimit, RateLimitConfig, RateLimitResolver, RateLimitRule};
 use alibi::plugins::EmailPasswordPlugin;
-use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
-use alibi::store::SchemaMigrator;
 use alibi::seaorm::DatabaseConnection;
 use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+use alibi::store::SchemaMigrator;
+use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
 use axum::Router;
 use axum::{
     Json,
@@ -264,9 +264,7 @@ pub(crate) async fn router(
                     .endpoint("/get-session", Duration::from_secs(1), 2);
         }
         if name.contains("secondary") {
-            limits = limits.storage(Arc::new(alibi::CacheRateLimitStorage::new(
-                cache.clone(),
-            )));
+            limits = limits.storage(Arc::new(alibi::CacheRateLimitStorage::new(cache.clone())));
             if !name.starts_with("concurrent-") {
                 limits = limits
                     .endpoint("/get-session", Duration::from_secs(1), 2)

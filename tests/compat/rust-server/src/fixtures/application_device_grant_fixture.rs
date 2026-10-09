@@ -1,13 +1,13 @@
 //! Actual application grant callbacks, durable receipts, and trusted database controls.
 use crate::TestSchema;
 use alibi::plugins::device_authorization::*;
-use alibi::{AuthError, AuthResult};
-use alibi::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, AuthUser};
 use alibi::seaorm::store::entities::device_code;
 use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Statement, sea_query::Expr},
 };
+use alibi::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, AuthUser};
+use alibi::{AuthError, AuthResult};
 use axum::{Json, Router, extract::Query, routing::get};
 use serde_json::{Map, Value, json};
 use std::sync::Arc;

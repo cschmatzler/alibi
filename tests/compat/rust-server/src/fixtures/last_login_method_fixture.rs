@@ -3,6 +3,10 @@ use crate::{OAuthRefreshMode, SocialProfile, TestSchema};
 use alibi::plugins::siwe::{
     Eip191Verifier, SiweCallbackResult, SiweConfig, SiweNonceProvider, SiwePlugin,
 };
+use alibi::seaorm::{
+    DatabaseConnection, DatabaseHooks, HookControl,
+    sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult,
     integrations::axum::AxumIntegration,
@@ -17,10 +21,6 @@ use alibi::{
     },
 };
 use alibi::{AuthRequest, HttpMethod};
-use alibi::seaorm::{
-    DatabaseConnection, DatabaseHooks, HookControl,
-    sea_orm::{ConnectionTrait, DbBackend, Statement},
-};
 use axum::{Json, Router, routing::get};
 use serde_json::{Value, json};
 use std::{

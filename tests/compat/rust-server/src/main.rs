@@ -95,13 +95,13 @@ use alibi::plugins::{
     user_management::SendChangeEmailConfirmation,
 };
 use alibi::prelude::{AuthAccount, AuthUser, CreateAccount, CreateVerification, UpdateAccount};
-use alibi::wire::UserView;
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use alibi::seaorm::sea_orm::{DatabaseConnection, DbErr, EntityTrait};
 use alibi::seaorm::store::entities::{
     account, api_key, device_code, invitation, member, organization, passkey, session, two_factor,
     user, verification, wallet_address,
 };
+use alibi::wire::UserView;
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use axum::{
     Json, Router,
     extract::Query,

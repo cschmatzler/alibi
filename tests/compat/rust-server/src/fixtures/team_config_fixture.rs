@@ -3,13 +3,13 @@ use alibi::plugins::organization::{
     OrganizationConfig, OrganizationTeamHooks,
     extensions::{DefaultTeamContext, DefaultTeamFactory, TeamHookContext},
 };
-use alibi::{AuthError, AuthResult};
-use alibi::{
-    CreateTeam, Organization, Team, TeamMember, UpdateTeam, store::TeamStore, wire::UserView,
-};
 use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
+use alibi::{AuthError, AuthResult};
+use alibi::{
+    CreateTeam, Organization, Team, TeamMember, UpdateTeam, store::TeamStore, wire::UserView,
 };
 use serde_json::{Map, Value, json};
 use std::{

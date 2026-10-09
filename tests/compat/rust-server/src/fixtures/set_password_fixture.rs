@@ -6,9 +6,6 @@ use alibi::plugins::password_management::set_password;
 use alibi::plugins::{
     EmailPasswordConfig, EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi::utils::password::{PasswordHasher, ScryptHasher};
-use alibi::{AuthRequest, CookieCacheConfig, HttpMethod};
 use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{
@@ -17,6 +14,9 @@ use alibi::seaorm::{
     },
     store::entities::{account, session, user},
 };
+use alibi::utils::password::{PasswordHasher, ScryptHasher};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{AuthRequest, CookieCacheConfig, HttpMethod};
 use async_trait::async_trait;
 use axum::{
     Json, Router,

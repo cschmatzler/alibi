@@ -5,9 +5,9 @@ use alibi::middleware::RateLimitConfig;
 use alibi::plugins::{
     EmailPasswordPlugin, MultiSessionConfig, MultiSessionPlugin, SessionManagementPlugin,
 };
+use alibi::seaorm::sea_orm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthResult, prelude::CreateSession};
 use alibi::{CookieAttributes, CookieOverride, SameSite};
-use alibi::seaorm::sea_orm::DatabaseConnection;
 use axum::Router;
 use std::sync::{
     Arc,
@@ -94,16 +94,15 @@ pub(crate) async fn router(
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
     let path = "/__test/profiles/multi-session-stateless/api/auth";
-    let config =
-        config
-            .clone()
-            .base_path(path)
-            .session_cookie_cache(alibi::CookieCacheConfig {
-                enabled: true,
-                strategy: alibi::CookieCacheStrategy::Jwe,
-                max_age: 300.0,
-                ..Default::default()
-            });
+    let config = config
+        .clone()
+        .base_path(path)
+        .session_cookie_cache(alibi::CookieCacheConfig {
+            enabled: true,
+            strategy: alibi::CookieCacheStrategy::Jwe,
+            max_age: 300.0,
+            ..Default::default()
+        });
     let auth = Arc::new(
         AuthBuilder::without_database(config)
             .rate_limit(RateLimitConfig::new().enabled(false))

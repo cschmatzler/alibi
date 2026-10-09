@@ -8,9 +8,9 @@ use alibi::plugins::{
     AdminPlugin, EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, OrganizationPlugin,
     SessionManagementPlugin, TwoFactorPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use alibi::seaorm::sea_orm::{DatabaseConnection, EntityTrait};
 use alibi::seaorm::store::entities::{account, session, user};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use async_trait::async_trait;
 use axum::{Json, Router, routing::get};
 use serde_json::{Value, json};

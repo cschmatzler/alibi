@@ -19,6 +19,7 @@ use alibi::plugins::{
     PasswordManagementPlugin, SendTwoFactorOtp, SessionManagementPlugin, TwoFactorPlugin,
     UserManagementPlugin,
 };
+use alibi::seaorm::DatabaseConnection;
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
@@ -27,7 +28,6 @@ use alibi::{
     AuthRequest, CacheVersionContext, CookieCacheConfig, CookieCacheVersion,
     CookieCacheVersionResolver, UpdateUser,
 };
-use alibi::seaorm::DatabaseConnection;
 use async_trait::async_trait;
 use axum::{Json, Router, routing::post};
 use serde::Deserialize;
@@ -283,10 +283,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             let keys = if mode == "jwe-old" {
                 alibi::ManagedSecrets::new(1, base.current_secret())
             } else {
-                alibi::ManagedSecrets::new(
-                    2,
-                    "cache-managed-new-secret-at-least-32-characters",
-                )
+                alibi::ManagedSecrets::new(2, "cache-managed-new-secret-at-least-32-characters")
             };
             let keys = if mode == "jwe-retained" {
                 keys.retain(1, base.current_secret())

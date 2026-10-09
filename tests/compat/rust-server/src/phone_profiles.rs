@@ -8,9 +8,9 @@ use alibi::plugins::phone_number::{
 use alibi::plugins::{
     EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
+use alibi::seaorm::sea_orm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
 use alibi::{integrations::axum::AxumIntegration, middleware::RateLimitConfig};
-use alibi::seaorm::sea_orm::DatabaseConnection;
 use async_trait::async_trait;
 use axum::{
     Json, Router,

@@ -10,8 +10,8 @@ use alibi::plugins::magic_link::{
 use alibi::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin, SessionManagementPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use alibi::seaorm::sea_orm::DatabaseConnection;
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use async_trait::async_trait;
 use axum::{
     Json, Router,

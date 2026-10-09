@@ -8,10 +8,10 @@ use alibi::plugins::{
     AdminBannedUserMessage, AdminConfig, AdminPlugin, AnonymousPlugin, EmailPasswordPlugin,
     SessionManagementPlugin, TwoFactorPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi::store::UserStore;
-use alibi::{AuthUser, CreateUser};
 use alibi::seaorm::DatabaseConnection;
+use alibi::store::UserStore;
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi::{AuthUser, CreateUser};
 use axum::{
     Json, Router,
     extract::{Query, State},

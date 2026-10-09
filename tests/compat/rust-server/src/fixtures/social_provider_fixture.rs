@@ -7,16 +7,16 @@ use alibi::plugins::{
     AccountManagementPlugin, EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin,
     UserManagementPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi::{
-    CreateAccount,
-    store::{AccountStore, UserStore},
-};
 use alibi::seaorm::DatabaseConnection;
 use alibi::seaorm::sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set,
 };
 use alibi::seaorm::store::entities::{account, session, user};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi::{
+    CreateAccount,
+    store::{AccountStore, UserStore},
+};
 use axum::{
     Json, Router,
     extract::State,

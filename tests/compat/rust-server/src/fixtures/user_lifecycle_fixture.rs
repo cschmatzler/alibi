@@ -1,5 +1,6 @@
 //! Real application callbacks and persisted observations for mailbox lifecycles.
 use crate::TestSchema;
+use alibi::hooks::current_request_hook_context;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::email_verification::SendVerificationEmail;
@@ -11,17 +12,16 @@ use alibi::plugins::{
     EmailPasswordConfig, EmailPasswordPlugin, EmailVerificationPlugin, SessionManagementPlugin,
     UserManagementPlugin,
 };
-use alibi::wire::UserView;
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi::hooks::current_request_hook_context;
-use alibi::utils::password::{PasswordHasher, ScryptHasher};
-use alibi::{
-    CacheVersionContext, CookieCacheConfig, CookieCacheVersion, CookieCacheVersionResolver,
-};
 use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr},
     store::entities::{account, session, user, verification},
+};
+use alibi::utils::password::{PasswordHasher, ScryptHasher};
+use alibi::wire::UserView;
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi::{
+    CacheVersionContext, CookieCacheConfig, CookieCacheVersion, CookieCacheVersionResolver,
 };
 use async_trait::async_trait;
 use axum::{Json, Router, routing::post};

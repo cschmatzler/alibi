@@ -1,13 +1,13 @@
 use crate::TestSchema;
 use alibi::plugins::two_factor::TwoFactorConfig;
+use alibi::seaorm::DatabaseConnection;
+use alibi::utils::json::{self, JsValue};
 use alibi::{
     AuthBuilder, AuthConfig, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin},
 };
-use alibi::utils::json::{self, JsValue};
-use alibi::seaorm::DatabaseConnection;
 use axum::{Json, Router, body::Bytes, http::StatusCode, response::IntoResponse, routing::post};
 use serde_json::json;
 use std::{collections::HashMap, sync::Arc};

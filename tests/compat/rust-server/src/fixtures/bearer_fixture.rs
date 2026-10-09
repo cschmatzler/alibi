@@ -6,8 +6,8 @@ use alibi::plugins::{
     ApiKeyConfig, ApiKeyPlugin, BearerConfig, BearerPlugin, EmailPasswordPlugin,
     MultiSessionPlugin, SessionManagementPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthResult, prelude::CreateSession};
 use alibi::seaorm::sea_orm::DatabaseConnection;
+use alibi::{AuthBuilder, AuthConfig, AuthResult, prelude::CreateSession};
 use axum::Router;
 use std::sync::{
     Arc,

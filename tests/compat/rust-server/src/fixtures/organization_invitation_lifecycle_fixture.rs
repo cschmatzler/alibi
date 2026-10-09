@@ -8,12 +8,12 @@ use alibi::plugins::organization::{
     OrganizationInvitationLimitContext, OrganizationInvitationLimitResolver, TeamsConfig,
 };
 use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
+use alibi::seaorm::DatabaseConnection;
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BackgroundTaskCompletion,
     BackgroundTaskHandler, CallbackContext, integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
 };
-use alibi::seaorm::DatabaseConnection;
 use async_trait::async_trait;
 use axum::{
     Json, Router,

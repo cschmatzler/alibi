@@ -1,5 +1,10 @@
 //! Trusted application identity policy at the real HTTP/store boundary.
 use crate::TestSchema;
+use alibi::seaorm::{
+    DatabaseConnection, DatabaseHooks, HookControl,
+    sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr},
+    store::entities::{account, session, user, verification, wallet_address},
+};
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
@@ -26,11 +31,6 @@ use alibi::{
         UserInfoValidator, UserValidationData, UserValidationRejection, UserValidationSource,
     },
     wire::{AccountView, VerificationView},
-};
-use alibi::seaorm::{
-    DatabaseConnection, DatabaseHooks, HookControl,
-    sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr},
-    store::entities::{account, session, user, verification, wallet_address},
 };
 use async_trait::async_trait;
 use axum::{

@@ -6,10 +6,10 @@ use alibi::plugins::{
     DeviceAuthorizationPlugin, EmailPasswordPlugin, PasswordManagementPlugin,
     SessionManagementPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, AuthSchema};
+use alibi::seaorm::DatabaseConnection;
 use alibi::store::*;
 use alibi::types::*;
-use alibi::seaorm::DatabaseConnection;
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, AuthSchema};
 use axum::{Json, Router, routing::post};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};

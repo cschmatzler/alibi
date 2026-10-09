@@ -3,8 +3,8 @@ use crate::TestSchema;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::{EmailPasswordPlugin, PasskeyPlugin};
-use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use alibi::seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use axum::{
     Json, Router,
     extract::Query,

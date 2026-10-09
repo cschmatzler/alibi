@@ -20,11 +20,11 @@ use alibi::plugins::two_factor::TwoFactorConfig;
 use alibi::plugins::{
     ApiKeyPlugin, EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi::seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use alibi::utils::json::{self, JsValue};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use alibi::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, HttpMethod};
 use alibi::{PasswordHasher, ScryptHasher};
-use alibi::seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use axum::{
     Json, Router,
     body::to_bytes,
@@ -408,21 +408,19 @@ pub(crate) async fn router(
     let path = format!("/__test/profiles/{profile}/api/auth");
     let control_path = format!("/__test/{profile}");
     let app = Application::default();
-    let configured =
-        base.clone()
-            .base_path(&path)
-            .session_cookie_cache(alibi::CookieCacheConfig {
-                enabled: compact,
-                max_age: 300.0,
-                version: if profile == "server-dispatch-cache-version" {
-                    Some(alibi::CookieCacheVersion::Resolver(Arc::new(
-                        app.clone(),
-                    )))
-                } else {
-                    None
-                },
-                ..Default::default()
-            });
+    let configured = base
+        .clone()
+        .base_path(&path)
+        .session_cookie_cache(alibi::CookieCacheConfig {
+            enabled: compact,
+            max_age: 300.0,
+            version: if profile == "server-dispatch-cache-version" {
+                Some(alibi::CookieCacheVersion::Resolver(Arc::new(app.clone())))
+            } else {
+                None
+            },
+            ..Default::default()
+        });
     let range_app = app.clone();
     let range=Router::new().fallback(move|request:Request|{
         let app=range_app.clone();async move{

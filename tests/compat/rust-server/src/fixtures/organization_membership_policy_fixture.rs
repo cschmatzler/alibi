@@ -6,6 +6,10 @@ use alibi::plugins::organization::{
     extensions::TeamLimitContext,
     types::{AddOrganizationMemberRequest, OrganizationResponse},
 };
+use alibi::seaorm::{
+    DatabaseConnection,
+    sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
 use alibi::wire::UserView;
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
@@ -14,10 +18,6 @@ use alibi::{
     plugins::{
         EmailPasswordPlugin, EmailVerificationPlugin, OrganizationPlugin, SessionManagementPlugin,
     },
-};
-use alibi::seaorm::{
-    DatabaseConnection,
-    sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use async_trait::async_trait;
 use axum::{

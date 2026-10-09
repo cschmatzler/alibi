@@ -3,11 +3,9 @@ use crate::TestSchema;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
-use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi::{
-    AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, BeforeRequestAction,
-};
 use alibi::seaorm::DatabaseConnection;
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, BeforeRequestAction};
 use axum::{Json, Router, routing::get};
 use serde_json::{Value, json};
 use std::sync::Arc;

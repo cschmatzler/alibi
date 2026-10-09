@@ -5,12 +5,12 @@ use alibi::plugins::jwt::{
     JwtPluginConfig, JwtSession, JwtSignOptions, RemoteJwtClaim, RemoteJwtPayload, SignRemoteJwt,
 };
 use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::seaorm::DatabaseConnection;
+use alibi::utils::json::JsValue;
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
 };
-use alibi::utils::json::JsValue;
-use alibi::seaorm::DatabaseConnection;
 use axum::{Json, Router, body::Bytes, http::StatusCode, response::IntoResponse, routing::get};
 use base64::{
     Engine,

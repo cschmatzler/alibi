@@ -8,13 +8,13 @@ use alibi::plugins::organization::{
     OrganizationMemberRolePatch, OrganizationMemberRoleUpdatedContext,
 };
 use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
+use alibi::seaorm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use alibi::{
     Member, UpdateUser,
     store::{MemberStore, UserStore},
     wire::UserView,
 };
-use alibi::seaorm::DatabaseConnection;
 use axum::{
     Json, Router,
     extract::Query,

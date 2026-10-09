@@ -14,9 +14,9 @@ use alibi::plugins::{
     UserManagementPlugin,
 };
 use alibi::prelude::{AuthRequest, HttpMethod};
+use alibi::seaorm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use alibi::{AuthContext, AuthPlugin, AuthResponse, AuthRoute};
-use alibi::seaorm::DatabaseConnection;
 use axum::{
     Json, Router,
     http::{HeaderMap, StatusCode},

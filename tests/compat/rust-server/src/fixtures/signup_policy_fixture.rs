@@ -12,15 +12,15 @@ use alibi::plugins::{
     EmailPasswordConfig, EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin,
     SessionManagementPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi::{
-    AuthRequest, BackgroundTaskCompletion, BackgroundTaskHandler, PasswordHasher, ScryptHasher,
-    wire::{AccountView, UserView, VerificationView},
-};
 use alibi::seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, QueryOrder, Set},
     store::entities::{account, session, user, verification},
+};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{
+    AuthRequest, BackgroundTaskCompletion, BackgroundTaskHandler, PasswordHasher, ScryptHasher,
+    wire::{AccountView, UserView, VerificationView},
 };
 use async_trait::async_trait;
 use axum::{

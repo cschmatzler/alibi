@@ -7,10 +7,10 @@ use alibi::plugins::api_key::{
     ApiKeyVerificationError, RateLimitDefaults, VerifyApiKey,
 };
 use alibi::plugins::{ApiKeyPlugin, EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BackgroundTaskCompletion, BackgroundTaskHandler,
 };
-use alibi::seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use axum::{
     Json, Router,
     extract::Query,

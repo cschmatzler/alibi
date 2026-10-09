@@ -8,6 +8,11 @@ use alibi::plugins::{
     PasskeyRegistrationUser, PasskeyUserResolver, SessionManagementPlugin,
     VerifiedPasskeyRegistration,
 };
+use alibi::seaorm::{
+    DatabaseConnection,
+    hooks::{DatabaseHooks, HookControl},
+    sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use alibi::{
     AuthRequest, AuthUser, CreateSession, HttpMethod,
@@ -15,11 +20,6 @@ use alibi::{
         cookie_utils::{sign_cookie_value, verify_cookie_value},
         json::JsValue,
     },
-};
-use alibi::seaorm::{
-    DatabaseConnection,
-    hooks::{DatabaseHooks, HookControl},
-    sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use async_trait::async_trait;
 use axum::{

@@ -6,13 +6,13 @@ use alibi::plugins::jwt::{
     JwtSignOptions,
 };
 use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::seaorm::DatabaseConnection;
+use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, QueryResult, Statement};
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
 };
 use alibi::{AuthRequest, CookieCacheConfig, CreateJwk, HttpMethod, Jwk};
-use alibi::seaorm::DatabaseConnection;
-use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, QueryResult, Statement};
 use axum::{
     Json, Router,
     body::Bytes,

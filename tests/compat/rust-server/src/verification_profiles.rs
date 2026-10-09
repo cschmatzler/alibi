@@ -6,9 +6,9 @@ use alibi::middleware::RateLimitConfig;
 use alibi::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, SendVerificationEmail, SessionManagementPlugin,
 };
+use alibi::seaorm::sea_orm::DatabaseConnection;
 use alibi::wire::UserView;
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi::seaorm::sea_orm::DatabaseConnection;
 use async_trait::async_trait;
 use axum::{Json, Router, routing::get};
 use chrono::Duration;

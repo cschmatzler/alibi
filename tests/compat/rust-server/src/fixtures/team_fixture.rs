@@ -1,6 +1,7 @@
 //! Private fixture configuration and server-side organization team operations.
 
 use crate::TestSchema;
+use alibi::AuthUser;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::organization::{
@@ -11,17 +12,16 @@ use alibi::plugins::{
     AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, EmailPasswordPlugin,
     EmailVerificationPlugin, OrganizationPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi::AuthUser;
-use alibi::types::{
-    CreateMember, CreateOrganizationRole, CreateTeam, CreateUser, OrganizationPermissions,
-};
 use alibi::seaorm::sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
 };
 use alibi::seaorm::store::entities::{
     invitation, member, organization, organization_role, team, team_member,
 };
+use alibi::types::{
+    CreateMember, CreateOrganizationRole, CreateTeam, CreateUser, OrganizationPermissions,
+};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use axum::{
     Json, Router,
     extract::Query,

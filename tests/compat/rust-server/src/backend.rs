@@ -3,9 +3,9 @@
 //! Fixture scaffolding (seeding, inspection, resets) uses the SeaORM connection
 //! in both builds; it is test setup, not the store being compared.
 
-use alibi::{AuthConfig, AuthSchema};
 use alibi::seaorm::DatabaseConnection;
 use alibi::seaorm::sea_orm::DbErr;
+use alibi::{AuthConfig, AuthSchema};
 use std::sync::Arc;
 
 #[cfg(feature = "seaorm")]

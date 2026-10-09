@@ -1,5 +1,9 @@
 //! An application-owned factor table exercised through configured stores.
 use crate::TestSchema;
+use alibi::seaorm::{
+    DatabaseConnection,
+    sea_orm::{ConnectionTrait, Statement},
+};
 use alibi::{
     AuthBuilder, AuthConfig, AuthResult,
     integrations::axum::AxumIntegration,
@@ -8,10 +12,6 @@ use alibi::{
         two_factor::{SendTwoFactorOtp, TwoFactorConfig},
     },
     wire::UserView,
-};
-use alibi::seaorm::{
-    DatabaseConnection,
-    sea_orm::{ConnectionTrait, Statement},
 };
 use axum::{Json, Router, extract::Query, routing::get};
 use serde_json::json;

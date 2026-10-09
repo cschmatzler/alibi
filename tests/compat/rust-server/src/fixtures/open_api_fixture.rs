@@ -9,8 +9,8 @@ use alibi::plugins::{
     OpenApiPlugin, OrganizationPlugin, PasskeyPlugin, PasswordManagementPlugin, PhoneNumberPlugin,
     SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthResult, AuthSchema};
 use alibi::seaorm::sea_orm::DatabaseConnection;
+use alibi::{AuthBuilder, AuthConfig, AuthResult, AuthSchema};
 use axum::Router;
 use std::sync::Arc;
 

@@ -7,12 +7,12 @@ use alibi::plugins::{
     PasskeyAuthenticationContext, PasskeyPlugin, SessionManagementPlugin,
     VerifiedPasskeyAuthentication,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi::{AuthPasskey, store::PasskeyStore, utils::json::JsValue, wire::PasskeyView};
 use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi::{AuthPasskey, store::PasskeyStore, utils::json::JsValue, wire::PasskeyView};
 use async_trait::async_trait;
 use axum::{Json, Router, routing::get};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};

@@ -1,4 +1,8 @@
 use crate::TestSchema;
+use alibi::seaorm::{
+    DatabaseConnection,
+    sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
+};
 use alibi::{
     AuthBuilder, AuthConfig, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
@@ -15,10 +19,6 @@ use alibi::{
 use alibi::{
     store::TwoFactorStore,
     utils::json::{self, JsValue},
-};
-use alibi::seaorm::{
-    DatabaseConnection,
-    sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
 };
 use axum::{Json, Router, body::Bytes, http::StatusCode, response::IntoResponse, routing::post};
 use chrono::{Duration, Utc};

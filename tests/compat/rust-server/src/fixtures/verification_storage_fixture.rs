@@ -14,6 +14,10 @@ use alibi::plugins::one_time_token::{
 use alibi::plugins::password_management::{PasswordManagementConfig, SendResetPassword};
 use alibi::plugins::two_factor::{SendTwoFactorOtp, TwoFactorPlugin};
 use alibi::plugins::{EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin};
+use alibi::seaorm::{
+    DatabaseConnection, DatabaseHooks, HookControl,
+    sea_orm::{ActiveModelTrait, Set},
+};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use alibi::{
     AuthRequest, UpdateVerification,
@@ -23,10 +27,6 @@ use alibi::{
         VerificationSnapshot,
     },
     wire::{AccountView, UserView, VerificationView},
-};
-use alibi::seaorm::{
-    DatabaseConnection, DatabaseHooks, HookControl,
-    sea_orm::{ActiveModelTrait, Set},
 };
 use async_trait::async_trait;
 use axum::{

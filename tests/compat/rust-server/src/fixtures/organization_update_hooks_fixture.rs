@@ -7,15 +7,15 @@ use alibi::plugins::organization::{
     OrganizationUpdatePatch, OrganizationUpdatedContext,
 };
 use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
+use alibi::seaorm::{
+    DatabaseConnection,
+    sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use alibi::{
     Member, UpdateUser,
     store::{MemberStore, OrganizationStore, UserStore},
     wire::UserView,
-};
-use alibi::seaorm::{
-    DatabaseConnection,
-    sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use axum::{
     Json, Router,

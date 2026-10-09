@@ -1,14 +1,14 @@
 //! Actual database deletion hooks and an application-owned durable receipt.
 use crate::TestSchema;
+use alibi::seaorm::{
+    DatabaseConnection, DatabaseHooks, HookControl,
+    sea_orm::{ConnectionTrait, Statement},
+};
+use alibi::{AuthAccount, AuthSchema, AuthSession, AuthUser};
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult,
     integrations::axum::AxumIntegration,
     plugins::{AdminPlugin, EmailPasswordPlugin, SessionManagementPlugin, UserManagementPlugin},
-};
-use alibi::{AuthAccount, AuthSchema, AuthSession, AuthUser};
-use alibi::seaorm::{
-    DatabaseConnection, DatabaseHooks, HookControl,
-    sea_orm::{ConnectionTrait, Statement},
 };
 use axum::{Json, Router, routing::get};
 use serde_json::{Value, json};

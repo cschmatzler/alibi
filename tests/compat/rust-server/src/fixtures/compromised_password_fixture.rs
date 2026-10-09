@@ -10,15 +10,15 @@ use alibi::plugins::{
     password_management::{PasswordManagementConfig, SendResetPassword, set_password},
     phone_number::{PhoneNumberConfig, PhoneNumberPlugin, PhoneOtpDelivery, SendPhoneOtp},
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi::{
-    AuthRequest, HttpMethod, PasswordHasher, ScryptHasher,
-    wire::{AccountView, VerificationView},
-};
 use alibi::seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, QueryOrder, Set},
     store::entities::{account, session, user, verification},
+};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{
+    AuthRequest, HttpMethod, PasswordHasher, ScryptHasher,
+    wire::{AccountView, VerificationView},
 };
 use async_trait::async_trait;
 use axum::{

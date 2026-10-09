@@ -6,9 +6,9 @@ use alibi::plugins::jwt::JwtPlugin;
 use alibi::plugins::{
     CustomSessionPlugin, EmailPasswordPlugin, MultiSessionPlugin, SessionTransform,
 };
+use alibi::seaorm::sea_orm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use alibi::{AuthContext, AuthRequest};
-use alibi::seaorm::sea_orm::DatabaseConnection;
 use async_trait::async_trait;
 use axum::Router;
 use serde_json::{Value, json};
@@ -87,10 +87,9 @@ impl DeviceListApplication {
         if token == held {
             wait_projection(&self.release).await?;
             if mode != "success" {
-                let retained =
-                    alibi::hooks::current_request_hook_context().ok_or_else(|| {
-                        AuthError::internal("Original device list request context was lost")
-                    })?;
+                let retained = alibi::hooks::current_request_hook_context().ok_or_else(|| {
+                    AuthError::internal("Original device list request context was lost")
+                })?;
                 let endpoint = alibi::endpoint::current_endpoint_call_context()
                     .and_then(|context| context.path().map(str::to_owned))
                     .unwrap_or_else(|| retained.path.clone());

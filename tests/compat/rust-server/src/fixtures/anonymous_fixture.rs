@@ -1,5 +1,10 @@
 //! Application-owned anonymous identity/link handlers and actual stored-state observer.
 use crate::anonymous_user_model::{ApplicationSchema as TestSchema, Model as ApplicationUser};
+use alibi::seaorm::{
+    DatabaseConnection, DatabaseHooks, HookControl,
+    sea_orm::{EntityTrait, QueryOrder},
+    store::entities::{account, session},
+};
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult,
     integrations::axum::AxumIntegration,
@@ -20,11 +25,6 @@ use alibi::{
     },
 };
 use alibi::{AuthRequest, AuthSession, CreateSession, CreateUser};
-use alibi::seaorm::{
-    DatabaseConnection, DatabaseHooks, HookControl,
-    sea_orm::{EntityTrait, QueryOrder},
-    store::entities::{account, session},
-};
 use async_trait::async_trait;
 use axum::{
     Json, Router,
@@ -119,12 +119,7 @@ impl PhoneSignupIdentity for Application {
 }
 #[async_trait]
 impl SendVerificationEmail for Application {
-    async fn send(
-        &self,
-        user: &alibi::wire::UserView,
-        url: &str,
-        token: &str,
-    ) -> AuthResult<()> {
+    async fn send(&self, user: &alibi::wire::UserView, url: &str, token: &str) -> AuthResult<()> {
         if let Some(email) = user.email.as_ref() {
             self.deliver(
                 format!("verification:{email}"),
