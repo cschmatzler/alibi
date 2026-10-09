@@ -195,7 +195,8 @@ impl Trace {
         }
     }
 
-    /// Replace timestamps and every run of 16 or more token characters.
+    /// Replace timestamps and generated runs of token characters: 16 or more
+    /// with a digit or mixed case, or 24 or more plain alphanumerics.
     fn normalize_text(&mut self, text: &str) -> String {
         if chrono::DateTime::parse_from_rfc3339(text).is_ok()
             || chrono::DateTime::parse_from_rfc2822(text).is_ok()
@@ -213,7 +214,8 @@ impl Trace {
             } else if run.len() >= 16
                 && (run.bytes().any(|byte| byte.is_ascii_digit())
                     || (run.bytes().any(|byte| byte.is_ascii_uppercase())
-                        && run.bytes().any(|byte| byte.is_ascii_lowercase())))
+                        && run.bytes().any(|byte| byte.is_ascii_lowercase()))
+                    || (run.len() >= 24 && run.bytes().all(|byte| byte.is_ascii_alphanumeric())))
             {
                 normalized.push_str(&trace.placeholder("v", run));
             } else {
