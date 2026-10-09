@@ -105,17 +105,14 @@ impl OneTimeTokenPlugin {
                 token: String,
             }
             let body: Body = call.body_as()?;
-            let (user, stored_session) = match self.consume_stored_session(&body.token, ctx).await?
-            {
-                super::TokenSessionLookup::Found { user, session } => (user, session),
-                super::TokenSessionLookup::Missing(absence) => {
-                    return Err(AuthError::Api {
-                        status: 400,
-                        code: None,
-                        message: absence.message().into(),
-                    });
-                }
-            };
+            let (user, stored_session) = self
+                .consume_stored_session(&body.token, ctx)
+                .await?
+                .map_err(|message| AuthError::Api {
+                    status: 400,
+                    code: None,
+                    message: message.into(),
+                })?;
             let session = OneTimeTokenSession {
                 user: ctx.user_view(&user),
                 session: ctx.session_view(&stored_session),

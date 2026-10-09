@@ -1,4 +1,5 @@
 use alibi_core::entity::AuthUser;
+use alibi_core::utils::json::JsValue;
 use alibi_core::utils::username::UsernameConfig;
 use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, ErrorCodeMessageResponse,
@@ -59,14 +60,14 @@ pub async fn handle_update_user<S: alibi_core::AuthSchema>(
         });
     }
 
-    let raw_body: alibi_core::utils::json::JsValue = req.body_as_json()?;
+    let raw_body: JsValue = req.body_as_json()?;
     crate::last_login_method::reject_last_login_method_input(
         context,
         raw_body.get("lastLoginMethod"),
     )?;
 
     let mut writable_body = body.clone();
-    let _ = writable_body.remove("email");
+    _ = writable_body.remove("email");
     let update_req: UpdateUserRequest =
         serde_json::from_value(serde_json::Value::Object(writable_body))
             .map_err(|e| AuthError::bad_request(format!("Invalid JSON: {e}")))?;
@@ -116,23 +117,14 @@ pub async fn handle_update_user<S: alibi_core::AuthSchema>(
     }
     let additional_fields = context
         .parse_user_fields(&input_fields, false)
-        .map_err(|error| match error {
-            alibi_core::field_policy::FieldInputError::Validation { code, message } => {
-                AuthError::Api {
-                    status: 400,
-                    code: Some(code.into()),
-                    message,
-                }
-            }
-            alibi_core::field_policy::FieldInputError::Transform(error) => error,
-        })?;
+        .map_err(crate::authentication_helpers::field_input_error)?;
     let username = additional_fields
         .get("username")
-        .and_then(alibi_core::utils::json::JsValue::as_str)
+        .and_then(JsValue::as_str)
         .map(str::to_owned);
     let display_username = additional_fields
         .get("displayUsername")
-        .and_then(alibi_core::utils::json::JsValue::as_str)
+        .and_then(JsValue::as_str)
         .map(str::to_owned);
 
     let clear_phone = context
@@ -152,26 +144,14 @@ pub async fn handle_update_user<S: alibi_core::AuthSchema>(
     }
 
     let update_user = UpdateUser {
-        provider_email_verified: None,
-        provider_name: None,
-        provider_image: None,
         additional_fields,
-        is_anonymous: None,
         phone_number: clear_phone.then_some(None),
-        phone_number_verified: None,
-        last_login_method: None,
-        email: None,
         name: update_req.name,
         image: update_req.image,
-        email_verified: None,
         username,
         display_username,
-        role: None,
-        banned: None,
-        ban_reason: None,
-        ban_expires: None,
-        two_factor_enabled: None,
         metadata: update_req.metadata,
+        ..Default::default()
     };
 
     let publication = match context

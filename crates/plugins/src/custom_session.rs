@@ -179,39 +179,26 @@ impl<S: AuthSchema> CustomSessionPlugin<S> {
             metadata: context.metadata.clone(),
             extensions: context.extensions.clone(),
         };
-        let endpoint = alibi_core::endpoint::current_endpoint_call_context();
-        let hook = alibi_core::hooks::current_request_hook_context();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         // Launched callbacks retain ownership after the aggregate rejects,
         // matching the independent application work of a device-session list.
-        _ = tokio::spawn(async move {
-            let project = async {
-                _ = futures_util::future::join_all(sessions.into_iter().enumerate().map(
-                    |(index, session)| {
-                        let transform = &transform;
-                        let request = &request;
-                        let context = &context;
-                        let sender = &sender;
-                        async move {
-                            let result = transform
-                                .transform(session, request, context)
-                                .await
-                                .map_err(crate::helpers::callback_failure);
-                            let _closed = sender.send((index, result));
-                        }
-                    },
-                ))
-                .await;
-            };
-            if let Some(endpoint) = endpoint {
-                alibi_core::endpoint::with_endpoint_call_context(
-                    endpoint,
-                    alibi_core::hooks::with_optional_request_hook_context(hook, project),
-                )
-                .await;
-            } else {
-                alibi_core::hooks::with_optional_request_hook_context(hook, project).await;
-            }
+        crate::helpers::spawn_in_request_context(async move {
+            _ = futures_util::future::join_all(sessions.into_iter().enumerate().map(
+                |(index, session)| {
+                    let transform = &transform;
+                    let request = &request;
+                    let context = &context;
+                    let sender = &sender;
+                    async move {
+                        let result = transform
+                            .transform(session, request, context)
+                            .await
+                            .map_err(crate::helpers::callback_failure);
+                        _ = sender.send((index, result));
+                    }
+                },
+            ))
+            .await;
         });
         for _ in 0..results.len() {
             let (index, value) = receiver

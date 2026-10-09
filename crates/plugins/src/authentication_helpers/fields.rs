@@ -1,3 +1,4 @@
+use alibi_core::field_policy::FieldInputError;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, CreateUser};
 use serde_json::Value;
 
@@ -40,16 +41,7 @@ pub(crate) async fn prepare_additional_user_fields(
     }
     data.additional_fields = ctx
         .parse_user_fields(&input, true)
-        .map_err(|error| match error {
-            alibi_core::field_policy::FieldInputError::Validation { code, message } => {
-                AuthError::Api {
-                    status: 400,
-                    code: Some(code.into()),
-                    message,
-                }
-            }
-            alibi_core::field_policy::FieldInputError::Transform(error) => error,
-        })?;
+        .map_err(field_input_error)?;
     data.username = data
         .additional_fields
         .get("username")
@@ -114,5 +106,17 @@ pub(crate) fn apply_creation_input_defaults(
     }
     if enabled("two_factor.enabled") {
         _ = data.two_factor_enabled.get_or_insert(false);
+    }
+}
+
+/// Surface a rejected additional-field input as the published 400 response.
+pub(crate) fn field_input_error(error: FieldInputError) -> AuthError {
+    match error {
+        FieldInputError::Validation { code, message } => AuthError::Api {
+            status: 400,
+            code: Some(code.into()),
+            message,
+        },
+        FieldInputError::Transform(error) => error,
     }
 }

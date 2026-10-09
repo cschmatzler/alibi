@@ -164,24 +164,10 @@ impl CaptchaPlugin {
         self
     }
 
-    async fn verify(&self, request: &AuthRequest) -> Result<bool, ()> {
+    /// The verdict once verification completed, or `None` when it could not.
+    async fn verify(&self, request: &AuthRequest) -> Option<bool> {
         if let CaptchaProvider::VercelBotId(options) = &self.config.provider {
-            let options = options.clone();
-            let request = request.clone();
-            // Source races the promise without cancelling it. A detached task
-            // allows a trusted application callback to finish after the deadline.
-            let task = tokio::spawn(async move {
-                let verification = options.check_bot_id.check().await?;
-                match options.validate_request {
-                    Some(callback) => callback.validate(&request, &verification).await,
-                    None => Ok(!verification.is_bot),
-                }
-            });
-            return tokio::time::timeout(VERIFY_TIMEOUT, task)
-                .await
-                .map_err(|_| ())?
-                .map_err(|_| ())?
-                .map_err(|_| ());
+            return verify_bot_id(options.clone(), request.clone()).await;
         }
         let (http, endpoint) = match &self.config.provider {
             CaptchaProvider::CloudflareTurnstile(options) => (
@@ -198,9 +184,9 @@ impl CaptchaPlugin {
             CaptchaProvider::CaptchaFox(options) => {
                 (&options.http, "https://api.captchafox.com/siteverify")
             }
-            CaptchaProvider::VercelBotId(_) => return Err(()),
+            CaptchaProvider::VercelBotId(_) => return None,
         };
-        let token = request.header("x-captcha-response").ok_or(())?;
+        let token = request.header("x-captcha-response")?;
         let policy = request
             .extensions()
             .get::<alibi_core::config::IpAddressConfig>();
@@ -251,16 +237,16 @@ impl CaptchaPlugin {
                 }
                 builder.form(&fields)
             }
-            CaptchaProvider::VercelBotId(_) => return Err(()),
+            CaptchaProvider::VercelBotId(_) => return None,
         };
         // betterFetch's abort deadline ends when response headers arrive;
         // body decoding follows independently of that timer.
         let response = tokio::time::timeout(VERIFY_TIMEOUT, builder.send())
             .await
-            .map_err(|_| ())?
-            .map_err(|_| ())?;
+            .ok()?
+            .ok()?;
         if !response.status().is_success() {
-            return Err(());
+            return None;
         }
         let content_type = response
             .headers()
@@ -291,17 +277,17 @@ impl CaptchaPlugin {
         if content_type.is_some() && !json && !text_media {
             // betterFetch returns a Blob for binary media; it cannot supply a
             // verification success field even if its bytes happen to be JSON.
-            return Ok(false);
+            return Some(false);
         }
-        let text = response.text().await.map_err(|_| ())?;
+        let text = response.text().await.ok()?;
         // betterFetch retains invalid JSON as text, so a truthy malformed reply
         // fails verification rather than becoming a transport error.
         let data = parse_value(&text).unwrap_or_else(|_| JsValue::String(text));
         if !truthy(&data) {
-            return Err(());
+            return None;
         }
         if !data.get("success").is_some_and(truthy) {
-            return Ok(false);
+            return Some(false);
         }
         let (action, hostnames) = match &self.config.provider {
             CaptchaProvider::CloudflareTurnstile(options) => {
@@ -313,26 +299,45 @@ impl CaptchaPlugin {
                     .and_then(JsValue::as_f64)
                     .is_some_and(|score| score < options.min_score)
                 {
-                    return Ok(false);
+                    return Some(false);
                 }
                 (&options.expected_action, &options.allowed_hostnames)
             }
-            CaptchaProvider::HCaptcha(_) | CaptchaProvider::CaptchaFox(_) => return Ok(true),
-            CaptchaProvider::VercelBotId(_) => return Err(()),
+            CaptchaProvider::HCaptcha(_) | CaptchaProvider::CaptchaFox(_) => return Some(true),
+            CaptchaProvider::VercelBotId(_) => return None,
         };
         if action
             .as_deref()
             .filter(|action| !action.is_empty())
             .is_some_and(|action| data.get("action").and_then(JsValue::as_str) != Some(action))
         {
-            return Ok(false);
+            return Some(false);
         }
-        Ok(hostnames.is_empty()
-            || data
-                .get("hostname")
-                .and_then(JsValue::as_str)
-                .is_some_and(|hostname| hostnames.iter().any(|allowed| allowed == hostname)))
+        Some(
+            hostnames.is_empty()
+                || data
+                    .get("hostname")
+                    .and_then(JsValue::as_str)
+                    .is_some_and(|hostname| hostnames.iter().any(|allowed| allowed == hostname)),
+        )
     }
+}
+
+async fn verify_bot_id(options: BotIdConfig, request: AuthRequest) -> Option<bool> {
+    // Source races the promise without cancelling it. A detached task
+    // allows a trusted application callback to finish after the deadline.
+    let task = tokio::spawn(async move {
+        let verification = options.check_bot_id.check().await?;
+        match options.validate_request {
+            Some(callback) => callback.validate(&request, &verification).await,
+            None => Ok(!verification.is_bot),
+        }
+    });
+    tokio::time::timeout(VERIFY_TIMEOUT, task)
+        .await
+        .ok()?
+        .ok()?
+        .ok()
 }
 
 fn truthy(value: &JsValue) -> bool {
@@ -343,6 +348,10 @@ fn truthy(value: &JsValue) -> bool {
         JsValue::String(value) => !value.is_empty(),
         JsValue::Array(_) | JsValue::Object(_) => true,
     }
+}
+
+fn unknown_error() -> AuthResponse {
+    error_response(500, "Something went wrong", "UNKNOWN_ERROR")
 }
 
 fn error_response(status: u16, message: &str, code: &str) -> AuthResponse {
@@ -362,7 +371,7 @@ fn normalized_path(path: &str, base: &str) -> String {
         }
     }
     if result.len() > 1 && result.ends_with('/') {
-        let _ = result.pop();
+        _ = result.pop();
     }
     result
 }
@@ -420,13 +429,7 @@ impl<S: AuthSchema> AuthPlugin<S> for CaptchaPlugin {
                         break;
                     }
                     Ok(false) => {}
-                    Err(_) => {
-                        return Ok(Some(error_response(
-                            500,
-                            "Something went wrong",
-                            "UNKNOWN_ERROR",
-                        )));
-                    }
+                    Err(_) => return Ok(Some(unknown_error())),
                 }
             }
             matched
@@ -443,11 +446,7 @@ impl<S: AuthSchema> AuthPlugin<S> for CaptchaPlugin {
             CaptchaProvider::VercelBotId(_) => None,
         };
         if secret.is_some_and(String::is_empty) {
-            return Ok(Some(error_response(
-                500,
-                "Something went wrong",
-                "UNKNOWN_ERROR",
-            )));
+            return Ok(Some(unknown_error()));
         }
         if secret.is_some()
             && request
@@ -461,13 +460,13 @@ impl<S: AuthSchema> AuthPlugin<S> for CaptchaPlugin {
             )));
         }
         Ok(match self.verify(request).await {
-            Ok(true) => None,
-            Ok(false) => Some(error_response(
+            Some(true) => None,
+            Some(false) => Some(error_response(
                 403,
                 "Captcha verification failed",
                 "VERIFICATION_FAILED",
             )),
-            Err(()) => Some(error_response(500, "Something went wrong", "UNKNOWN_ERROR")),
+            None => Some(unknown_error()),
         })
     }
     async fn on_request(

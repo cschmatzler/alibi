@@ -156,50 +156,7 @@ pub(in crate::authentication_helpers) fn parse_body_with_fields_and_ignored<
         } else {
             json_type(field_value)
         };
-        let issue = match field.kind {
-            JsonFieldKind::String | JsonFieldKind::NonEmptyString | JsonFieldKind::Email
-                if !field_value.is_some_and(JsValue::is_string) =>
-            {
-                Some(format!(
-                    "Invalid input: expected string, received {received_type}"
-                ))
-            }
-            JsonFieldKind::NonEmptyString
-                if field_value
-                    .and_then(JsValue::as_str)
-                    .is_some_and(str::is_empty) =>
-            {
-                Some("Too small: expected string to have >=1 characters".to_owned())
-            }
-            JsonFieldKind::Boolean if !field_value.is_some_and(JsValue::is_boolean) => Some(
-                format!("Invalid input: expected boolean, received {received_type}"),
-            ),
-            JsonFieldKind::Email
-                if !field_value
-                    .and_then(JsValue::as_str)
-                    .is_some_and(is_valid_email) =>
-            {
-                Some("Invalid email address".to_owned())
-            }
-            JsonFieldKind::OneOf(choices)
-                if !field_value
-                    .and_then(JsValue::as_str)
-                    .is_some_and(|value| choices.contains(&value)) =>
-            {
-                Some(format!(
-                    "Invalid option: expected one of {}",
-                    choices
-                        .iter()
-                        .map(|choice| format!("\"{choice}\""))
-                        .collect::<Vec<_>>()
-                        .join("|")
-                ))
-            }
-            JsonFieldKind::Record if !field_value.is_some_and(JsValue::is_object) => Some(format!(
-                "Invalid input: expected record, received {received_type}"
-            )),
-            _ => None,
-        };
+        let issue = field_issue(field.kind, field_value, received_type);
         if let Some(issue) = issue {
             issues.push(format!("[body.{}] {issue}", field.name));
         }
@@ -209,6 +166,52 @@ pub(in crate::authentication_helpers) fn parse_body_with_fields_and_ignored<
     }
     alibi_core::utils::json::from_value(value)
         .map_err(|_error| validation_response("[body] Invalid input"))
+}
+
+/// The schema violation message for one field value, if any.
+pub(crate) fn field_issue(
+    kind: JsonFieldKind,
+    value: Option<&JsValue>,
+    received_type: &str,
+) -> Option<String> {
+    match kind {
+        JsonFieldKind::String | JsonFieldKind::NonEmptyString | JsonFieldKind::Email
+            if !value.is_some_and(JsValue::is_string) =>
+        {
+            Some(format!(
+                "Invalid input: expected string, received {received_type}"
+            ))
+        }
+        JsonFieldKind::NonEmptyString
+            if value.and_then(JsValue::as_str).is_some_and(str::is_empty) =>
+        {
+            Some("Too small: expected string to have >=1 characters".to_owned())
+        }
+        JsonFieldKind::Boolean if !value.is_some_and(JsValue::is_boolean) => Some(format!(
+            "Invalid input: expected boolean, received {received_type}"
+        )),
+        JsonFieldKind::Email if !value.and_then(JsValue::as_str).is_some_and(is_valid_email) => {
+            Some("Invalid email address".to_owned())
+        }
+        JsonFieldKind::OneOf(choices)
+            if !value
+                .and_then(JsValue::as_str)
+                .is_some_and(|value| choices.contains(&value)) =>
+        {
+            Some(format!(
+                "Invalid option: expected one of {}",
+                choices
+                    .iter()
+                    .map(|choice| format!("\"{choice}\""))
+                    .collect::<Vec<_>>()
+                    .join("|")
+            ))
+        }
+        JsonFieldKind::Record if !value.is_some_and(JsValue::is_object) => Some(format!(
+            "Invalid input: expected record, received {received_type}"
+        )),
+        _ => None,
+    }
 }
 
 pub(crate) const fn json_type(value: Option<&JsValue>) -> &'static str {

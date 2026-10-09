@@ -517,31 +517,18 @@ pub(crate) async fn revoke_other_sessions_core(
         .collect();
     let count = tokens.len();
     let database = ctx.database.clone();
-    let endpoint = alibi_core::endpoint::current_endpoint_call_context();
-    let hook = alibi_core::hooks::current_request_hook_context();
     let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
     // Each launched deletion keeps its ownership after the aggregate rejects.
-    _ = tokio::spawn(async move {
-        let revoke = async {
-            _ = futures_util::future::join_all(tokens.into_iter().map(|token| {
-                let database = &database;
-                let sender = &sender;
-                async move {
-                    let result = database.delete_session(&token).await;
-                    let _closed = sender.send(result);
-                }
-            }))
-            .await;
-        };
-        if let Some(endpoint) = endpoint {
-            alibi_core::endpoint::with_endpoint_call_context(
-                endpoint,
-                alibi_core::hooks::with_optional_request_hook_context(hook, revoke),
-            )
-            .await;
-        } else {
-            alibi_core::hooks::with_optional_request_hook_context(hook, revoke).await;
-        }
+    crate::helpers::spawn_in_request_context(async move {
+        _ = futures_util::future::join_all(tokens.into_iter().map(|token| {
+            let database = &database;
+            let sender = &sender;
+            async move {
+                let result = database.delete_session(&token).await;
+                _ = sender.send(result);
+            }
+        }))
+        .await;
     });
     for _ in 0..count {
         receiver

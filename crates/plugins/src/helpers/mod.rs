@@ -42,6 +42,21 @@ pub(crate) fn callback_failure(error: AuthError) -> AuthError {
     }
 }
 
+/// Run detached work that keeps the caller's endpoint and request-hook contexts,
+/// so it can outlive an aggregate that rejects early.
+pub(crate) fn spawn_in_request_context(work: impl Future<Output = ()> + Send + 'static) {
+    let endpoint = alibi_core::endpoint::current_endpoint_call_context();
+    let hook = alibi_core::hooks::current_request_hook_context();
+    _ = tokio::spawn(async move {
+        let work = alibi_core::hooks::with_optional_request_hook_context(hook, work);
+        if let Some(endpoint) = endpoint {
+            alibi_core::endpoint::with_endpoint_call_context(endpoint, work).await;
+        } else {
+            work.await;
+        }
+    });
+}
+
 /// The documented 401 for a request without an authenticated session.
 pub(crate) const fn unauthorized() -> AuthError {
     AuthError::Upstream {

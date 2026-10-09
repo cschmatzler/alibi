@@ -1,7 +1,7 @@
 use super::types::{
     ChangePasswordRequest, ChangePasswordResponse, RequestPasswordResetRequest,
     RequestPasswordResetResponse, ResetPasswordRequest, ResetPasswordTokenQuery,
-    ResetPasswordTokenResult, VerifyPasswordRequest,
+    VerifyPasswordRequest,
 };
 use super::{PasswordManagementConfig, StatusResponse};
 use crate::helpers::{get_credential_account, get_credential_password_hash};
@@ -156,44 +156,39 @@ pub(crate) async fn reset_password_core(
     Ok(StatusResponse { status: true })
 }
 
+/// The redirect URL for `GET /reset-password/{token}`.
 pub(crate) async fn reset_password_token_core(
     token: &str,
     query: &ResetPasswordTokenQuery,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
-) -> AuthResult<ResetPasswordTokenResult> {
+) -> AuthResult<String> {
     if let Some(callback_url) = &query.callback_url {
         validate_redirect_target(callback_url, ctx, "Invalid callbackURL")?;
     }
-
-    if token.is_empty() || query.callback_url.is_none() {
-        return Ok(ResetPasswordTokenResult::Redirect(build_redirect_url(
+    let redirect = |param: (&str, &str)| {
+        build_redirect_url(
             &ctx.config.base_url,
             query.callback_url.as_deref(),
-            &[("error", "INVALID_TOKEN")],
-        )?));
+            &[param],
+        )
+    };
+
+    if token.is_empty() || query.callback_url.is_none() {
+        return redirect(("error", "INVALID_TOKEN"));
     }
 
     let verification = ctx
         .verifications()
         .find(&format!("reset-password:{token}"))
         .await?;
-
     if verification
         .as_ref()
         .is_none_or(alibi_core::verification::VerificationSnapshot::is_expired)
     {
-        return Ok(ResetPasswordTokenResult::Redirect(build_redirect_url(
-            &ctx.config.base_url,
-            query.callback_url.as_deref(),
-            &[("error", "INVALID_TOKEN")],
-        )?));
+        return redirect(("error", "INVALID_TOKEN"));
     }
 
-    Ok(ResetPasswordTokenResult::Redirect(build_redirect_url(
-        &ctx.config.base_url,
-        query.callback_url.as_deref(),
-        &[("token", token)],
-    )?))
+    redirect(("token", token))
 }
 
 /// Change the user's password. Returns the response and an optional new session token.
@@ -360,7 +355,7 @@ fn build_redirect_url(
             pairs.push(((*key).to_owned(), (*value).to_owned()));
         }
     }
-    let _ = url.query_pairs_mut().clear().extend_pairs(pairs);
+    _ = url.query_pairs_mut().clear().extend_pairs(pairs);
 
     Ok(url.to_string())
 }
