@@ -1,16 +1,12 @@
-use super::ScopedTransaction;
 use super::entities::wallet_address;
-use super::{SeaOrmStore, map_db_err};
+use super::{ScopedTransaction, SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmUserModel};
 use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::store::WalletAddressStore;
 use alibi_core::{AuthUser, CreateWalletAddress, WalletAddress};
 use async_trait::async_trait;
 use chrono::Utc;
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QuerySelect, Set,
-    SqliteTransactionMode, TransactionOptions, TransactionTrait,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QuerySelect, Set};
 use uuid::Uuid;
 
 #[async_trait]
@@ -43,14 +39,7 @@ where
         if !data.chain_id.is_finite() {
             return Err(AuthError::bad_request("Wallet chain ID must be finite"));
         }
-        let transaction = self
-            .scoped_connection()
-            .begin_with_options(TransactionOptions {
-                sqlite_transaction_mode: Some(SqliteTransactionMode::Immediate),
-                ..Default::default()
-            })
-            .await
-            .map_err(map_db_err)?;
+        let transaction = self.scoped_connection().begin_immediate().await?;
         let owner_id = S::User::parse_id(&data.user_id)?;
         let owner = super::users::user_query::<S::User>(
             sea_orm::ConnectionTrait::get_database_backend(&transaction),
@@ -91,7 +80,7 @@ pub(super) async fn remove_owned_wallets(
     {
         return Ok(());
     }
-    let _ignored_map_err = wallet_address::Entity::delete_many()
+    _ = wallet_address::Entity::delete_many()
         .filter(wallet_address::Column::UserId.eq(user_id))
         .exec(transaction)
         .await

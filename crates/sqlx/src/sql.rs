@@ -1,5 +1,6 @@
 //! Statement text and its typed arguments, rendered for one engine.
 
+use crate::model::SqlxModel;
 use crate::pool::Engine;
 use crate::value::SqlValue;
 use sqlx::Arguments;
@@ -65,7 +66,7 @@ impl Sql {
     }
 
     /// Compare using the physical column's application-selected binding type.
-    pub(crate) fn compare_model<M: crate::model::SqlxModel>(
+    pub(crate) fn compare_model<M: SqlxModel>(
         &mut self,
         table: &str,
         column: &str,

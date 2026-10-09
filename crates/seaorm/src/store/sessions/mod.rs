@@ -1,9 +1,10 @@
-use super::ScopedTransaction;
-use super::{SeaOrmStore, map_db_err};
+use super::{ScopedTransaction, SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmSessionModel};
 use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::field_policy::FieldValues;
 use alibi_core::store::SessionStore;
 use alibi_core::types::CreateSession;
+use alibi_core::utils::json::JsValue;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sea_orm::{
@@ -63,10 +64,7 @@ where
         ];
         for (name, destination) in &mut typed_fields {
             if let Some(value) = destination.as_ref() {
-                fields.preserve_creation_value(
-                    name,
-                    alibi_core::utils::json::JsValue::String(value.clone()),
-                );
+                fields.preserve_creation_value(name, JsValue::String(value.clone()));
             }
             // Configured values now belong to the adapter input. A transform
             // that omits one must also omit its original typed creation value.
@@ -89,13 +87,10 @@ where
             }
         }
         let generated_id = self
-            .generated_id(
+            .generated_entity_id::<<S::Session as SeaOrmSessionModel>::Entity, _>(
                 db,
                 "session",
-                <<S::Session as SeaOrmSessionModel>::Entity as sea_orm::EntityName>::table_name(
-                    &Default::default(),
-                ),
-                &sea_orm::Iden::to_string(&S::Session::id_column()),
+                S::Session::id_column(),
             )
             .await?;
         let id = generated_id
@@ -104,17 +99,7 @@ where
             .transpose()?;
         let mut active = S::Session::new_active(id, token, create_session, now);
         if !fields.is_empty() {
-            for (column, value) in
-                S::Session::additional_field_bindings(&fields, db.get_database_backend())?
-            {
-                let value = crate::additional_fields::prepare_value(db, &column, value).await?;
-                S::Session::set_additional_field(
-                    &mut active,
-                    column,
-                    value,
-                    db.get_database_backend(),
-                )?;
-            }
+            stage_additional_fields::<S::Session, _>(db, &mut active, &fields).await?;
         }
         let session = if persist {
             active.insert(db).await.map_err(map_db_err)?
@@ -137,8 +122,8 @@ where
         tx: Option<&ScopedTransaction>,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        mut fields: alibi_core::field_policy::FieldValues,
-    ) -> AuthResult<Option<(S::Session, alibi_core::field_policy::FieldValues)>> {
+        mut fields: FieldValues,
+    ) -> AuthResult<Option<(S::Session, FieldValues)>> {
         use alibi_core::AuthSession;
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
@@ -152,11 +137,7 @@ where
         }
         // The cache stores hook output before SQL adapter input transformations.
         let mut active = session.into_active_model();
-        let backend = db.get_database_backend();
-        for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
-            let value = crate::additional_fields::prepare_value(db, &column, value).await?;
-            S::Session::set_additional_field(&mut active, column, value, backend)?;
-        }
+        stage_additional_fields::<S::Session, _>(db, &mut active, &fields).await?;
         if let Some(expiry) = expires_at {
             S::Session::set_expires_at(&mut active, expiry);
         }
@@ -171,7 +152,7 @@ where
         tx: Option<&ScopedTransaction>,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        mut fields: alibi_core::field_policy::FieldValues,
+        mut fields: FieldValues,
         persist: bool,
     ) -> AuthResult<Option<S::Session>> {
         use alibi_core::AuthSession;
@@ -192,11 +173,7 @@ where
                 return Ok(None);
             };
             let mut active = current.into_active_model();
-            let backend = db.get_database_backend();
-            for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
-                let value = crate::additional_fields::prepare_value(db, &column, value).await?;
-                S::Session::set_additional_field(&mut active, column, value, backend)?;
-            }
+            stage_additional_fields::<S::Session, _>(db, &mut active, &fields).await?;
             if let Some(expiry) = expires_at {
                 S::Session::set_expires_at(&mut active, expiry);
             }
@@ -241,6 +218,20 @@ where
     }
 }
 
+/// Stage the configured additional fields on the row, coerced to their columns.
+async fn stage_additional_fields<M: SeaOrmSessionModel, C: ConnectionTrait>(
+    db: &C,
+    active: &mut M::ActiveModel,
+    fields: &FieldValues,
+) -> AuthResult<()> {
+    let backend = db.get_database_backend();
+    for (column, value) in M::additional_field_bindings(fields, backend)? {
+        let value = crate::additional_fields::prepare_value(db, &column, value).await?;
+        M::set_additional_field(active, column, value, backend)?;
+    }
+    Ok(())
+}
+
 pub(super) enum SessionScope<'a> {
     Team(Option<&'a str>),
     Organization(Option<&'a str>),
@@ -255,7 +246,7 @@ where
         &self,
         token: &str,
         expires_at: Option<DateTime<Utc>>,
-        mut fields: alibi_core::field_policy::FieldValues,
+        mut fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         let hook_context = self.hook_context(None);
         for hook in self.hooks() {
@@ -285,17 +276,13 @@ where
             return Ok(None);
         };
         let mut active = model.into_active_model();
-        let backend = self.scoped_connection().get_database_backend();
         if !fields.is_empty() {
-            for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
-                let value = crate::additional_fields::prepare_value(
-                    self.scoped_connection(),
-                    &column,
-                    value,
-                )
-                .await?;
-                S::Session::set_additional_field(&mut active, column, value, backend)?;
-            }
+            stage_additional_fields::<S::Session, _>(
+                self.scoped_connection(),
+                &mut active,
+                &fields,
+            )
+            .await?;
         }
         if let Some(expires_at) = expires_at {
             S::Session::set_expires_at(&mut active, expires_at);
@@ -376,8 +363,8 @@ where
         &self,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        fields: alibi_core::field_policy::FieldValues,
-    ) -> AuthResult<Option<(S::Session, alibi_core::field_policy::FieldValues)>> {
+        fields: FieldValues,
+    ) -> AuthResult<Option<(S::Session, FieldValues)>> {
         self.prepare_secondary_update_with_connection(
             self.scoped_connection(),
             None,
@@ -391,7 +378,7 @@ where
         &self,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        fields: alibi_core::field_policy::FieldValues,
+        fields: FieldValues,
         persist: bool,
     ) -> AuthResult<Option<S::Session>> {
         self.complete_secondary_update_with_connection(
@@ -425,7 +412,7 @@ where
                 return Ok(());
             }
         }
-        let _ended = <S::Session as SeaOrmSessionModel>::Entity::update_many()
+        _ = <S::Session as SeaOrmSessionModel>::Entity::update_many()
             .col_expr(
                 S::Session::expires_at_column(),
                 sea_orm::sea_query::Expr::value(crate::schema::timestamp_value(
@@ -478,7 +465,7 @@ where
                 }
             }
         }
-        let _ended = <S::Session as SeaOrmSessionModel>::Entity::update_many()
+        _ = <S::Session as SeaOrmSessionModel>::Entity::update_many()
             .col_expr(
                 S::Session::expires_at_column(),
                 sea_orm::sea_query::Expr::value(crate::schema::timestamp_value(
@@ -550,7 +537,7 @@ where
     async fn update_session_fields(
         &self,
         token: &str,
-        fields: alibi_core::field_policy::FieldValues,
+        fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         self.update_session_with_fields(token, None, fields).await
     }
@@ -571,7 +558,7 @@ where
         token: &str,
         expires_at: DateTime<Utc>,
     ) -> AuthResult<Option<S::Session>> {
-        self.update_session_with_fields(token, Some(expires_at), Default::default())
+        self.update_session_with_fields(token, Some(expires_at), FieldValues::default())
             .await
     }
 
@@ -579,7 +566,7 @@ where
         &self,
         token: &str,
         expires_at: DateTime<Utc>,
-        fields: alibi_core::field_policy::FieldValues,
+        fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         self.update_session_with_fields(token, Some(expires_at), fields)
             .await
@@ -599,7 +586,7 @@ where
                 }
             }
         }
-        let _ignored_map_err = <S::Session as SeaOrmSessionModel>::Entity::delete_many()
+        _ = <S::Session as SeaOrmSessionModel>::Entity::delete_many()
             .filter(<S::Session as SeaOrmSessionModel>::token_column().eq(token))
             .exec(self.scoped_connection())
             .await

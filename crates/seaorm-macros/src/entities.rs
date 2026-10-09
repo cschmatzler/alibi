@@ -1,6 +1,10 @@
-use super::{
-    EntityRole, Field, FieldsNamed, Ident, Insert, Roots, Span, TokenStream, codegen, quote,
-};
+use crate::fields::Field;
+use crate::roots::Roots;
+use alibi_entity_codegen::{self as codegen, EntityRole, Insert};
+use proc_macro2::{Ident, Span, TokenStream};
+use quote::quote;
+use syn::FieldsNamed;
+
 /// `active.field = Set(value)`, converting the plan's expression into the
 /// declared field type.
 pub(crate) fn set_field(roots: &Roots) -> impl Fn(&Ident, &Insert) -> TokenStream {

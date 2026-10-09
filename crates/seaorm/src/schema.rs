@@ -1,7 +1,9 @@
 //! `SeaORM` model bindings for Alibi schemas.
 
+use alibi_core::AuthError;
 use alibi_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
 use alibi_core::error::AuthResult;
+use alibi_core::field_policy::FieldValues;
 pub use alibi_core::schema::AuthSchema;
 use alibi_core::types::{
     CreateAccount, CreateSession, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
@@ -21,7 +23,7 @@ pub trait SeaOrmUserModel:
     ///
     /// Returns an error if configured additional fields cannot be bound to entity columns.
     fn additional_field_bindings(
-        fields: &alibi_core::field_policy::FieldValues,
+        fields: &FieldValues,
         _backend: sea_orm::DbBackend,
     ) -> AuthResult<Vec<(Self::Column, Value)>> {
         if fields.is_empty() {
@@ -32,7 +34,6 @@ pub trait SeaOrmUserModel:
         ))
     }
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the field value is unsupported by the entity column.
@@ -89,7 +90,6 @@ pub trait SeaOrmUserModel:
         }
     }
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the identifier is invalid for this entity's ID type.
@@ -123,7 +123,7 @@ pub trait SeaOrmSessionModel:
     /// Materialize the application model without a database insert.
     /// Custom schemas opt in to secondary-only sessions by implementing this binding.
     fn materialize_secondary(_active: Self::ActiveModel) -> AuthResult<Self> {
-        Err(alibi_core::AuthError::NotImplemented(
+        Err(AuthError::NotImplemented(
             "Secondary session materialization is unsupported".into(),
         ))
     }
@@ -134,7 +134,7 @@ pub trait SeaOrmSessionModel:
     ///
     /// Returns an error if configured additional fields cannot be bound to entity columns.
     fn additional_field_bindings(
-        fields: &alibi_core::field_policy::FieldValues,
+        fields: &FieldValues,
         _backend: sea_orm::DbBackend,
     ) -> AuthResult<Vec<(Self::Column, Value)>> {
         if fields.is_empty() {
@@ -145,7 +145,6 @@ pub trait SeaOrmSessionModel:
         ))
     }
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the field value is unsupported by the entity column.
@@ -182,13 +181,11 @@ pub trait SeaOrmSessionModel:
 
     fn created_at_column() -> Self::Column;
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the identifier is invalid for this entity's ID type.
     fn parse_id(id: &str) -> AuthResult<Self::Id>;
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the user identifier is invalid for this entity's ID type.
@@ -207,15 +204,13 @@ pub trait SeaOrmSessionModel:
 
     fn set_active_organization_id(active: &mut Self::ActiveModel, organization_id: Option<String>);
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the configured entity does not support an active-team field.
     fn set_active_team_id(
-        active: &mut Self::ActiveModel,
-        team_id: Option<String>,
+        _active: &mut Self::ActiveModel,
+        _team_id: Option<String>,
     ) -> AuthResult<()> {
-        drop((active, team_id));
         Err(alibi_core::AuthError::internal(
             "the session schema has no active-team field",
         ))
@@ -231,7 +226,7 @@ pub trait SeaOrmAccountModel:
     ///
     /// Returns an error if configured additional fields cannot be bound to entity columns.
     fn additional_field_bindings(
-        fields: &alibi_core::field_policy::FieldValues,
+        fields: &FieldValues,
         _backend: sea_orm::DbBackend,
     ) -> AuthResult<Vec<(Self::Column, Value)>> {
         if fields.is_empty() {
@@ -242,7 +237,6 @@ pub trait SeaOrmAccountModel:
         ))
     }
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the field value is unsupported by the entity column.
@@ -274,13 +268,11 @@ pub trait SeaOrmAccountModel:
     fn account_id_column() -> Self::Column;
     fn user_id_column() -> Self::Column;
     fn created_at_column() -> Self::Column;
-    ///
     /// # Errors
     ///
     /// Returns an error if the identifier is invalid for this entity's ID type.
     fn parse_id(id: &str) -> AuthResult<Self::Id>;
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the user identifier is invalid for this entity's ID type.
@@ -317,7 +309,6 @@ pub trait SeaOrmVerificationModel:
     fn updated_at_column() -> Option<Self::Column> {
         None
     }
-    ///
     /// # Errors
     ///
     /// Returns an error if the identifier is invalid for this entity's ID type.

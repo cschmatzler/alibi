@@ -1,6 +1,8 @@
+use crate::SqlxModel;
+use alibi_core::Passkey;
 use chrono::{DateTime, Utc};
 
-#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, crate::SqlxModel)]
+#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, SqlxModel)]
 #[auth(table = "passkeys")]
 pub struct Model {
     pub id: String,
@@ -18,7 +20,7 @@ pub struct Model {
     pub updated_at: DateTime<Utc>,
 }
 
-impl From<&Model> for alibi_core::Passkey {
+impl From<&Model> for Passkey {
     fn from(model: &Model) -> Self {
         Self {
             id: model.id.clone(),

@@ -1,5 +1,4 @@
-use super::ScopedTransaction;
-use super::{SeaOrmStore, map_db_err};
+use super::{ScopedTransaction, SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmVerificationModel};
 use alibi_core::entity::AuthVerification;
 use alibi_core::error::{AuthError, AuthResult};
@@ -13,8 +12,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, SubsecRound, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IdenStatic, Iterable, QueryFilter,
-    QueryOrder, QuerySelect, QueryTrait, SqliteTransactionMode, TransactionOptions,
-    TransactionTrait,
+    QueryOrder, QuerySelect, QueryTrait,
 };
 
 impl<S> SeaOrmStore<S>
@@ -41,7 +39,13 @@ where
         }
         let snapshot = if publication.store_in_database {
             if data.id.is_none() {
-                data.id = self.generated_id(connection, "verification", <<S::Verification as SeaOrmVerificationModel>::Entity as sea_orm::EntityName>::table_name(&Default::default()), &sea_orm::Iden::to_string(&S::Verification::id_column())).await?;
+                data.id = self
+                    .generated_entity_id::<<S::Verification as SeaOrmVerificationModel>::Entity, _>(
+                        connection,
+                        "verification",
+                        S::Verification::id_column(),
+                    )
+                    .await?;
             }
             let id = data
                 .id
@@ -93,7 +97,13 @@ where
                 return Err(cancelled_by_hook("verification creation"));
             }
         }
-        let generated_id = self.generated_id(connection, "verification", <<S::Verification as SeaOrmVerificationModel>::Entity as sea_orm::EntityName>::table_name(&Default::default()), &sea_orm::Iden::to_string(&S::Verification::id_column())).await?;
+        let generated_id = self
+            .generated_entity_id::<<S::Verification as SeaOrmVerificationModel>::Entity, _>(
+                connection,
+                "verification",
+                S::Verification::id_column(),
+            )
+            .await?;
         let id = generated_id
             .as_deref()
             .map(S::Verification::parse_id)
@@ -128,14 +138,7 @@ where
         // cannot all hold read locks and fail when upgrading to a write.
         // PostgreSQL locks the selected row; the affected-row gate still
         // protects against another consumer using a separate store/process.
-        let transaction = self
-            .scoped_connection()
-            .begin_with_options(TransactionOptions {
-                sqlite_transaction_mode: Some(SqliteTransactionMode::Immediate),
-                ..Default::default()
-            })
-            .await
-            .map_err(map_db_err)?;
+        let transaction = self.scoped_connection().begin_immediate().await?;
         let outcome = async {
             let Some(model) = <S::Verification as SeaOrmVerificationModel>::Entity::find()
                 .filter(S::Verification::identifier_column().eq(identifier))
@@ -171,12 +174,11 @@ where
             if deleted.rows_affected != 1 {
                 return Ok(None);
             }
-            let _ignored_map_err =
-                <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
-                    .filter(S::Verification::identifier_column().eq(identifier))
-                    .exec(&transaction)
-                    .await
-                    .map_err(map_db_err)?;
+            _ = <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
+                .filter(S::Verification::identifier_column().eq(identifier))
+                .exec(&transaction)
+                .await
+                .map_err(map_db_err)?;
             Ok(Some(model))
         }
         .await;
@@ -355,12 +357,11 @@ where
                 return Ok(());
             }
         }
-        let _ignored_map_err_2 =
-            <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
-                .filter(S::Verification::identifier_column().eq(identifier))
-                .exec(self.scoped_connection())
-                .await
-                .map_err(map_db_err)?;
+        _ = <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
+            .filter(S::Verification::identifier_column().eq(identifier))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
         for hook in self.hooks() {
             hook.after_delete_verification(&model, &hook_context)
                 .await?;
@@ -427,14 +428,13 @@ where
                 "Atomic verification update snapshots require SQLite or PostgreSQL".to_owned(),
             ));
         }
-        // RETURNING preserves the winning snapshot in the update itself. A
-        // second SELECT can lose the row to consumption or observe a later
-        // mutation, including changes made by application database triggers.
+        // RETURNING captures the winning snapshot; a second SELECT could lose
+        // the row to consumption or observe a later mutation.
         let returning = sea_orm::sea_query::Query::returning().exprs(
             <<S::Verification as SeaOrmVerificationModel>::Entity as EntityTrait>::Column::iter()
                 .map(|column| column.select_as(column.into_returning_expr(backend))),
         );
-        let _ignored_returning = QueryTrait::query(&mut query).returning(returning);
+        _ = QueryTrait::query(&mut query).returning(returning);
         let Some(model) = <S::Verification as SeaOrmVerificationModel>::Entity::find()
             .from_raw_sql(query.build(backend))
             .one(self.scoped_connection())
@@ -550,7 +550,7 @@ where
             <<S::Verification as SeaOrmVerificationModel>::Entity as EntityTrait>::Column::iter()
                 .map(|column| column.select_as(column.into_returning_expr(backend))),
         );
-        let _returning = QueryTrait::query(&mut query).returning(returning);
+        _ = QueryTrait::query(&mut query).returning(returning);
         let model = <S::Verification as SeaOrmVerificationModel>::Entity::find()
             .from_raw_sql(query.build(backend))
             .one(self.scoped_connection())
@@ -586,14 +586,11 @@ where
                 }
             }
         }
-        let _ignored_map_err_3 =
-            <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
-                .filter(
-                    <S::Verification as SeaOrmVerificationModel>::id_column().eq(verification_id),
-                )
-                .exec(self.scoped_connection())
-                .await
-                .map_err(map_db_err)?;
+        _ = <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
+            .filter(<S::Verification as SeaOrmVerificationModel>::id_column().eq(verification_id))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
         if let Some(verification) = &verification {
             for hook in self.hooks() {
                 hook.after_delete_verification(verification, &hook_context)

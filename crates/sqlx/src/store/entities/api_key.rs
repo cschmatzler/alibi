@@ -1,7 +1,9 @@
 use super::api_key_start::ApiKeyStart;
+use crate::SqlxModel;
+use alibi_core::ApiKey;
 use chrono::{DateTime, Utc};
 
-#[derive(Clone, Debug, PartialEq, sqlx::FromRow, crate::SqlxModel)]
+#[derive(Clone, Debug, PartialEq, sqlx::FromRow, SqlxModel)]
 #[auth(table = "api_keys")]
 pub struct Model {
     pub id: String,
@@ -33,7 +35,7 @@ fn to_rfc3339(value: DateTime<Utc>) -> String {
     value.to_rfc3339()
 }
 
-impl From<&Model> for alibi_core::ApiKey {
+impl From<&Model> for ApiKey {
     fn from(model: &Model) -> Self {
         Self {
             id: model.id.clone(),

@@ -3,21 +3,20 @@ use super::entities::team;
 use super::{SqlxStore, lock_exclusive};
 use crate::error::record_not_updated;
 use crate::model::{self, ActiveRow, SqlxModel};
+use crate::organization_models::Row;
 use crate::pool::Exec;
 use crate::schema::{AuthSchema, SqlxSessionModel, SqlxUserModel};
 use crate::sql::Sql;
 use alibi_core::entity::AuthUser;
 use alibi_core::error::{AuthError, AuthResult};
-use alibi_core::store::InvitationStore;
+use alibi_core::store::{InvitationCreateOptions, InvitationStore};
+use alibi_core::types::{AddTeamMemberResult, Member};
 use alibi_core::{CreateInvitation, Invitation, InvitationStatus};
 use async_trait::async_trait;
 use chrono::Utc;
 
 impl<S: AuthSchema> SqlxStore<S> {
-    async fn find_invitation(
-        &self,
-        id: &str,
-    ) -> AuthResult<Option<crate::organization_models::Row<Model>>> {
+    async fn find_invitation(&self, id: &str) -> AuthResult<Option<Row<Model>>> {
         let mut sql = self.organization_models.invitation.by_id(self.exec(), id)?;
         model::limit_one(&mut sql);
         self.organization_models
@@ -52,7 +51,7 @@ where
     async fn create_invitation_with_options(
         &self,
         invitation: CreateInvitation,
-        options: alibi_core::store::InvitationCreateOptions,
+        options: InvitationCreateOptions,
     ) -> AuthResult<Invitation> {
         let mut active = ActiveRow::new();
         active.set(
@@ -112,7 +111,7 @@ where
             .invitation
             .update(self.exec(), &active)
             .await?
-            .map(|row_2| Invitation::from(&row_2))
+            .map(|row| Invitation::from(&row))
             .ok_or_else(record_not_updated)
     }
 
@@ -127,11 +126,11 @@ where
         session_token: &str,
         team_limits: &[(String, Option<f64>)],
         membership_limit: Option<usize>,
-    ) -> AuthResult<Option<(Invitation, alibi_core::types::Member)>> {
+    ) -> AuthResult<Option<(Invitation, Member)>> {
         let transaction = self.begin(true).await?;
         let outcome = async {
             let tx = &transaction;
-            let exec = Exec::Tx(tx);
+            let exec = Exec::tx(tx);
             let mut select = self
                 .organization_models
                 .invitation
@@ -192,13 +191,12 @@ where
                 .by_id(exec, invitation.organization_id.as_str())?;
             model::limit_one(&mut owner);
             lock_exclusive(&mut owner);
-            drop(
-                self.organization_models
-                    .organization
-                    .fetch_optional(exec, owner)
-                    .await?
-                    .ok_or_else(|| AuthError::bad_request("Organization not found"))?,
-            );
+            _ = self
+                .organization_models
+                .organization
+                .fetch_optional(exec, owner)
+                .await?
+                .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
             if let Some(limit) = membership_limit {
                 let mut count = Sql::with(exec.engine(), "SELECT COUNT(*) FROM ");
                 count.ident(self.organization_models.member.table());
@@ -245,7 +243,7 @@ where
                 if matches!(
                     self.add_team_member_in_tx(tx, team_id, user_id, maximum)
                         .await?,
-                    alibi_core::types::AddTeamMemberResult::LimitReached
+                    AddTeamMemberResult::LimitReached
                 ) {
                     return Err(AuthError::Upstream {
                         status: 403,
@@ -277,11 +275,9 @@ where
                 )?;
             }
             S::Session::set_updated_at(&mut active, Utc::now());
-            drop(
-                model::update::<S::Session>(exec, &active)
-                    .await?
-                    .ok_or_else(record_not_updated)?,
-            );
+            _ = model::update::<S::Session>(exec, &active)
+                .await?
+                .ok_or_else(record_not_updated)?;
             let mut changed = Sql::with(exec.engine(), "UPDATE ");
             changed.ident(self.organization_models.invitation.table());
             changed.push(" SET ");
@@ -466,7 +462,7 @@ where
             .invitation
             .update(self.exec(), &active)
             .await?
-            .map(|model_2| Invitation::from(&model_2))
+            .map(|model| Invitation::from(&model))
             .ok_or_else(record_not_updated)
     }
 

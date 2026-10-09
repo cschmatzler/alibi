@@ -1,3 +1,5 @@
+use alibi_core::AuthError;
+use alibi_core::types::OrganizationRole;
 use sea_orm::entity::prelude::*;
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "organization_role")]
@@ -14,8 +16,8 @@ pub struct Model {
 pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}
 
-impl TryFrom<Model> for alibi_core::types::OrganizationRole {
-    type Error = alibi_core::AuthError;
+impl TryFrom<Model> for OrganizationRole {
+    type Error = AuthError;
     fn try_from(model: Model) -> Result<Self, Self::Error> {
         Ok(Self {
             id: model.id,

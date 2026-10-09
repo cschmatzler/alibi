@@ -4,25 +4,15 @@ mod entities;
 mod model;
 mod roots;
 
-use alibi_entity_codegen::{self as codegen, EntityRole, Insert};
-use columns::Column;
-use columns::column_of;
-use columns::columns;
-use columns::physical;
-use columns::table_attribute;
-use entities::account_impl;
-use entities::session_impl;
-use entities::user_impl;
-use entities::verification_impl;
-use model::additional_fields;
+use alibi_entity_codegen::{self as codegen, EntityRole};
+use columns::{columns, table_attribute};
+use entities::{account_impl, session_impl, user_impl, verification_impl};
 use model::model_impl;
 use proc_macro::TokenStream as ProcMacroTokenStream;
-use proc_macro_crate::{FoundCrate, crate_name};
-use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::quote;
-use roots::Roots;
 use roots::resolve_roots;
-use syn::{DeriveInput, FieldsNamed, LitStr, parse_macro_input};
+use syn::{DeriveInput, parse_macro_input};
 
 fn try_generate_model(input: &DeriveInput) -> syn::Result<TokenStream> {
     let roots = resolve_roots();

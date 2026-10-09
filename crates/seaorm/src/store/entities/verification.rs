@@ -1,7 +1,8 @@
+use crate::AuthEntity;
 use sea_orm::entity::prelude::*;
 use serde::Serialize;
 
-#[derive(crate::AuthEntity, Clone, Debug, PartialEq, Eq, Serialize, DeriveEntityModel)]
+#[derive(AuthEntity, Clone, Debug, PartialEq, Eq, Serialize, DeriveEntityModel)]
 #[auth(role = "verification")]
 #[sea_orm(table_name = "verifications")]
 pub struct Model {

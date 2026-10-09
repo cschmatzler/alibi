@@ -1,6 +1,8 @@
+use crate::SqlxModel;
+use alibi_core::DeviceCode;
 use chrono::{DateTime, Utc};
 
-#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, crate::SqlxModel)]
+#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, SqlxModel)]
 #[auth(table = "device_code")]
 pub struct Model {
     pub id: String,
@@ -15,7 +17,7 @@ pub struct Model {
     pub scope: Option<String>,
 }
 
-impl From<&Model> for alibi_core::DeviceCode {
+impl From<&Model> for DeviceCode {
     fn from(model: &Model) -> Self {
         Self {
             id: model.id.clone(),

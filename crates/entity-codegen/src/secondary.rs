@@ -1,4 +1,7 @@
-use super::{FieldsNamed, TokenStream, quote};
+use proc_macro2::TokenStream;
+use quote::quote;
+use syn::FieldsNamed;
+
 /// Generate the secondary-storage snapshot codec over every model field.
 #[must_use]
 pub fn secondary_codec(fields: &FieldsNamed, core_root: &TokenStream) -> TokenStream {
@@ -11,7 +14,7 @@ pub fn secondary_codec(fields: &FieldsNamed, core_root: &TokenStream) -> TokenSt
     quote! {
         fn secondary_snapshot(&self) -> #core_root::AuthResult<::serde_json::Value> {
             let mut snapshot = ::serde_json::Map::new();
-            #(drop(snapshot.insert(#keys.to_owned(), ::serde_json::to_value(&self.#names)?));)*
+            #(_ = snapshot.insert(#keys.to_owned(), ::serde_json::to_value(&self.#names)?);)*
             Ok(::serde_json::Value::Object(snapshot))
         }
         fn from_secondary_snapshot(snapshot: ::serde_json::Value) -> #core_root::AuthResult<Self> {

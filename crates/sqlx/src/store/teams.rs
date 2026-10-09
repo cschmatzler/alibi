@@ -2,7 +2,7 @@ use super::entities::{team, team_member};
 use super::{SqlxStore, lock_exclusive};
 use crate::error::record_not_updated;
 use crate::model::{self, ActiveRow, SqlxModel};
-use crate::pool::{Exec, SqlxTransaction};
+use crate::pool::{Engine, Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxUserModel};
 use crate::sql::Sql;
 use alibi_core::error::{AuthError, AuthResult};
@@ -52,7 +52,7 @@ where
         user_id: &str,
         maximum: Option<f64>,
     ) -> AuthResult<AddTeamMemberResult> {
-        let exec = Exec::Tx(tx);
+        let exec = Exec::tx(tx);
         if super::users::find_user_by_id::<S::User>(exec, user_id, super::users::Lock::Shared)
             .await?
             .is_none()
@@ -86,18 +86,16 @@ where
             .max(room.member_count);
         let mut active = room.into_active();
         active.set("member_count", reserved_count);
-        drop(
-            model::update::<team::Model>(exec, &active)
-                .await?
-                .ok_or_else(record_not_updated)?,
-        );
+        _ = model::update::<team::Model>(exec, &active)
+            .await?
+            .ok_or_else(record_not_updated)?;
         if let Some(maximum) = maximum {
             let mut seat = Sql::with(exec.engine(), "SELECT COUNT(*) FROM ");
             seat.ident(team::Model::TABLE);
             seat.push(" WHERE ");
             seat.compare(team::Model::TABLE, "id", " = ", team_id);
             seat.push(" AND ");
-            if exec.engine() == crate::pool::Engine::Postgres {
+            if exec.engine() == Engine::Postgres {
                 // Source's text Number parameter is parsed as the physical
                 // bigint counter, rather than promoting that counter to float8.
                 seat.column(team::Model::TABLE, "member_count");
@@ -130,11 +128,9 @@ where
                 .checked_add(1)
                 .ok_or_else(|| AuthError::internal("Team membership count overflow"))?,
         );
-        drop(
-            model::update::<team::Model>(exec, &active)
-                .await?
-                .ok_or_else(record_not_updated)?,
-        );
+        _ = model::update::<team::Model>(exec, &active)
+            .await?
+            .ok_or_else(record_not_updated)?;
         Ok(AddTeamMemberResult::Added(member.into()))
     }
 }
@@ -223,7 +219,7 @@ where
     async fn delete_team(&self, organization_id: &str, team_id: &str) -> AuthResult<bool> {
         let (organization_id, team_id) = (organization_id.to_owned(), team_id.to_owned());
         self.in_transaction(true, async move |tx| {
-            let exec = Exec::Tx(tx);
+            let exec = Exec::tx(tx);
             let mut delete = Sql::with(exec.engine(), "DELETE FROM ");
             delete.ident(team::Model::TABLE);
             delete.push(" WHERE ");
@@ -289,13 +285,12 @@ where
                     .join(",");
                 let mut active = invite.into_active();
                 active.set("team_id", (!remaining.is_empty()).then_some(remaining));
-                drop(
-                    self.organization_models
-                        .invitation
-                        .update(exec, &active)
-                        .await?
-                        .ok_or_else(record_not_updated)?,
-                );
+                _ = self
+                    .organization_models
+                    .invitation
+                    .update(exec, &active)
+                    .await?
+                    .ok_or_else(record_not_updated)?;
             }
             Ok(true)
         })
@@ -329,11 +324,11 @@ where
         let (team_id, user_id) = (team_id.to_owned(), user_id.to_owned());
         let removed = self
             .in_transaction(true, async move |tx| {
-                let exec = Exec::Tx(tx);
+                let exec = Exec::tx(tx);
                 let mut room = model::by_id::<team::Model>(exec, team_id.as_str());
                 model::limit_one(&mut room);
                 lock_exclusive(&mut room);
-                drop(exec.fetch_optional::<team::Model>(room).await?);
+                _ = exec.fetch_optional::<team::Model>(room).await?;
                 let mut delete = Sql::with(exec.engine(), "DELETE FROM ");
                 delete.ident(team_member::Model::TABLE);
                 delete.push(" WHERE ");
@@ -431,7 +426,7 @@ pub(super) async fn remove_owned_team_members(
     user_id: &str,
     organization_id: Option<&str>,
 ) -> AuthResult<()> {
-    let exec = Exec::Tx(tx);
+    let exec = Exec::tx(tx);
     if !super::migrator::has_table(exec, "team_member").await? {
         return Ok(());
     }
@@ -454,7 +449,7 @@ pub(super) async fn release_owned_team_members(
     user_id: &str,
     rooms: Vec<team::Model>,
 ) -> AuthResult<()> {
-    let exec = Exec::Tx(tx);
+    let exec = Exec::tx(tx);
     for room in rooms {
         let mut delete = Sql::with(exec.engine(), "DELETE FROM ");
         delete.ident(team_member::Model::TABLE);

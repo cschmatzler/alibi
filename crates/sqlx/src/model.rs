@@ -6,7 +6,7 @@
 //! columns survive. Both return the stored row.
 
 use crate::error::record_not_inserted;
-use crate::pool::{Exec, SqlxRow};
+use crate::pool::{Engine, Exec, SqlxRow};
 use crate::sql::{Sql, select};
 use crate::value::{ColumnKind, SqlValue};
 use alibi_core::error::{AuthError, AuthResult};
@@ -194,8 +194,8 @@ fn projection<M: SqlxModel>(sql: &mut Sql, qualified: bool) {
         if index > 0 {
             sql.push(", ");
         }
-        let raw_verification = sql.engine() == crate::pool::Engine::Sqlite
-            && M::PROVIDER_VERIFICATION_COLUMN == Some(*column);
+        let raw_verification =
+            sql.engine() == Engine::Sqlite && M::PROVIDER_VERIFICATION_COLUMN == Some(*column);
         let emit_column = |sql: &mut Sql| {
             if qualified {
                 sql.column(M::TABLE, column);
@@ -224,7 +224,7 @@ fn projection<M: SqlxModel>(sql: &mut Sql, qualified: bool) {
 }
 
 pub(crate) fn select_model<M: SqlxModel>(exec: Exec<'_>) -> Sql {
-    if exec.engine() != crate::pool::Engine::Sqlite || M::PROVIDER_VERIFICATION_COLUMN.is_none() {
+    if exec.engine() != Engine::Sqlite || M::PROVIDER_VERIFICATION_COLUMN.is_none() {
         return select(exec.engine(), M::TABLE, M::COLUMN_NAMES);
     }
     let mut sql = Sql::new(exec.engine());
@@ -241,7 +241,7 @@ pub(crate) fn returning<M: SqlxModel>(sql: &mut Sql) {
 }
 
 fn bind_model_value<M: SqlxModel>(sql: &mut Sql, column: &str, value: SqlValue) {
-    let cast = sql.engine() == crate::pool::Engine::Postgres
+    let cast = sql.engine() == Engine::Postgres
         && M::PROVIDER_VERIFICATION_COLUMN == Some(column)
         && matches!(&value, SqlValue::Text(_));
     if cast {
@@ -261,8 +261,7 @@ pub(crate) async fn insert<M: SqlxModel>(exec: Exec<'_>, active: &ActiveRow) -> 
     sql.push(" (");
     let present = active.present().collect::<Vec<_>>();
     sql.column_list(&present.iter().map(|(name, _)| *name).collect::<Vec<_>>());
-    sql.push(") VALUES ");
-    sql.push("(");
+    sql.push(") VALUES (");
     for (index, (column, value)) in present.into_iter().enumerate() {
         if index > 0 {
             sql.push(", ");
@@ -289,10 +288,8 @@ pub(crate) async fn update<M: SqlxModel>(
         .ok_or_else(|| AuthError::internal("model update requires its primary key"))?;
     if active.changed().next().is_none() {
         // Nothing to write: return the stored row, as an unchanged model update does.
-        let mut sql = select_model::<M>(exec);
-        sql.push(" WHERE ");
-        sql.compare_model::<M>(M::TABLE, M::PRIMARY_KEY, " = ", key);
-        sql.push(" LIMIT 1");
+        let mut sql = by_id::<M>(exec, key);
+        limit_one(&mut sql);
         return exec.fetch_optional::<M>(sql).await;
     }
     let mut sql = Sql::new(exec.engine());
@@ -313,7 +310,7 @@ pub(crate) async fn update<M: SqlxModel>(
     exec.fetch_optional::<M>(sql).await
 }
 
-/// `SELECT ... WHERE "t"."pk" = ? LIMIT 1`, optionally scoped by one more column.
+/// `SELECT ... WHERE "t"."pk" = ?`.
 pub(crate) fn by_id<M: SqlxModel>(exec: Exec<'_>, id: impl Into<SqlValue>) -> Sql {
     let mut sql = select_model::<M>(exec);
     sql.push(" WHERE ");

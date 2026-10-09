@@ -2,6 +2,7 @@ use super::SqlxStore;
 use super::entities::device_code::Model;
 use crate::error::record_not_updated;
 use crate::model::{self, ActiveRow, SqlxModel};
+use crate::pool::{Engine, Exec};
 use crate::schema::AuthSchema;
 use crate::sql::Sql;
 use crate::value::SqlValue;
@@ -14,7 +15,7 @@ use uuid::Uuid;
 impl<S: AuthSchema + Send + Sync> SqlxStore<S> {
     async fn create_device_code_with_connection(
         &self,
-        exec: crate::pool::Exec<'_>,
+        exec: Exec<'_>,
         input: CreateDeviceCode,
     ) -> AuthResult<DeviceCode> {
         let mut active = ActiveRow::new();
@@ -100,7 +101,7 @@ where
             return self.create_device_code(input).await;
         }
         self.in_transaction(true, async move |tx| {
-            let exec = crate::pool::Exec::Tx(tx);
+            let exec = crate::pool::Exec::tx(tx);
             let create = Sql::with(exec.engine(), "CREATE TABLE IF NOT EXISTS device_code_fields (device_code_id TEXT PRIMARY KEY REFERENCES device_code(id) ON DELETE CASCADE, fields TEXT NOT NULL)");
             _ = exec.execute(create).await?;
             let row = self.create_device_code_with_connection(exec, input).await?;
@@ -141,7 +142,7 @@ where
         sql.bind(status);
         for (field, value) in ownership {
             sql.push(" AND EXISTS (SELECT 1 FROM device_code_fields WHERE device_code_id = device_code.id AND ");
-            if self.exec().engine() == crate::pool::Engine::Postgres {
+            if self.exec().engine() == Engine::Postgres {
                 sql.push("CAST(fields AS JSONB) -> ");
                 sql.bind(field);
                 sql.push(" = CAST(");
@@ -207,7 +208,7 @@ where
 
         model::update::<Model>(self.exec(), &active)
             .await?
-            .map(|model_2| DeviceCode::from(&model_2))
+            .map(|model| DeviceCode::from(&model))
             .ok_or_else(record_not_updated)
     }
 
@@ -255,7 +256,7 @@ where
         self.exec()
             .execute(model::delete_by_id::<Model>(self.exec(), id))
             .await
-            .map(drop)
+            .map(|_| ())
     }
 
     async fn delete_device_code_if_status(&self, id: &str, status: &str) -> AuthResult<bool> {

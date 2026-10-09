@@ -1,4 +1,9 @@
-use super::{Column, EntityRole, Ident, Roots, TokenStream, codegen, physical, quote};
+use crate::columns::{Column, physical};
+use crate::roots::Roots;
+use alibi_entity_codegen::{self as codegen, EntityRole};
+use proc_macro2::{Ident, TokenStream};
+use quote::quote;
+
 pub(crate) fn model_impl(
     ident: &Ident,
     table: &str,

@@ -11,7 +11,10 @@ pub struct ApiKeyStart {
 }
 
 impl ApiKeyStart {
-    pub(crate) fn prepare(value: ApiKeyStartingCharacters, backend: DbBackend) -> AuthResult<Self> {
+    pub(crate) fn prepare(
+        value: &ApiKeyStartingCharacters,
+        backend: DbBackend,
+    ) -> AuthResult<Self> {
         match value.storage_text() {
             ApiKeyStartText::Utf8(text) => Ok(Self {
                 text,

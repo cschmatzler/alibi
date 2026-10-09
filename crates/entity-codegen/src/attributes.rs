@@ -1,4 +1,7 @@
-use super::{Data, DeriveInput, EntityRole, Fields, FieldsNamed, LitStr, has_field, registry};
+use crate::has_field;
+use alibi_schema_registry::{self as registry, EntityRole};
+use syn::{Data, DeriveInput, Fields, FieldsNamed, LitStr};
+
 /// Parsed `#[auth(...)]` container attributes.
 #[derive(Clone, Debug)]
 pub struct AuthAttributes {

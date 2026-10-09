@@ -1,7 +1,10 @@
-use super::{
-    EntityField, EntityRole, FieldsNamed, Ident, Span, TokenStream, additional_output, has_field,
-    optional_field, quote, secondary_codec,
+use crate::{
+    EntityField, EntityRole, additional_output, has_field, optional_field, secondary_codec,
 };
+use proc_macro2::{Ident, Span, TokenStream};
+use quote::quote;
+use syn::FieldsNamed;
+
 /// `impl AuthUser`: absent plugin fields return their defaults.
 #[expect(
     clippy::too_many_lines,
@@ -33,16 +36,8 @@ pub fn auth_user_impl(
     };
     let email_impl = text_getter("email");
     let name_impl = text_getter("name");
-    let username_impl = if has("username") {
-        quote! { fn username(&self) -> Option<&str> { self.username.as_deref() } }
-    } else {
-        quote! { fn username(&self) -> Option<&str> { None } }
-    };
-    let display_username_impl = if has("display_username") {
-        quote! { fn display_username(&self) -> Option<&str> { self.display_username.as_deref() } }
-    } else {
-        quote! { fn display_username(&self) -> Option<&str> { None } }
-    };
+    let username_impl = optional_str_getter(fields, "username");
+    let display_username_impl = optional_str_getter(fields, "display_username");
     let two_factor_impl = if has("two_factor_enabled") {
         if optional("two_factor_enabled") {
             quote! {
@@ -58,11 +53,7 @@ pub fn auth_user_impl(
             fn two_factor_enabled_value(&self) -> Option<bool> { None }
         }
     };
-    let role_impl = if has("role") {
-        quote! { fn role(&self) -> Option<&str> { self.role.as_deref() } }
-    } else {
-        quote! { fn role(&self) -> Option<&str> { None } }
-    };
+    let role_impl = optional_str_getter(fields, "role");
     let banned_impl = if has("banned") {
         if optional("banned") {
             quote! {
@@ -78,11 +69,7 @@ pub fn auth_user_impl(
             fn banned_value(&self) -> Option<bool> { None }
         }
     };
-    let ban_reason_impl = if has("ban_reason") {
-        quote! { fn ban_reason(&self) -> Option<&str> { self.ban_reason.as_deref() } }
-    } else {
-        quote! { fn ban_reason(&self) -> Option<&str> { None } }
-    };
+    let ban_reason_impl = optional_str_getter(fields, "ban_reason");
     let ban_expires_impl = if has("ban_expires") {
         quote! { fn ban_expires(&self) -> Option<::chrono::DateTime<::chrono::Utc>> { #core_root::entity::AuthTimestamp::into_utc(self.ban_expires) } }
     } else {
@@ -151,16 +138,8 @@ pub fn auth_session_impl(
         quote! {}
     };
     let additional_output = additional_output(EntityRole::Session, entity_fields, core_root);
-    let impersonated_by_impl = if has("impersonated_by") {
-        quote! { fn impersonated_by(&self) -> Option<&str> { self.impersonated_by.as_deref() } }
-    } else {
-        quote! { fn impersonated_by(&self) -> Option<&str> { None } }
-    };
-    let active_org_impl = if has("active_organization_id") {
-        quote! { fn active_organization_id(&self) -> Option<&str> { self.active_organization_id.as_deref() } }
-    } else {
-        quote! { fn active_organization_id(&self) -> Option<&str> { None } }
-    };
+    let impersonated_by_impl = optional_str_getter(fields, "impersonated_by");
+    let active_org_impl = optional_str_getter(fields, "active_organization_id");
     let active_team_impl = if has("active_team_id") {
         quote! { fn active_team_id(&self) -> Option<&str> { self.active_team_id.as_deref() } }
     } else {
@@ -226,5 +205,16 @@ pub fn auth_verification_impl(ident: &Ident, core_root: &TokenStream) -> TokenSt
             fn created_at(&self) -> ::chrono::DateTime<::chrono::Utc> { #core_root::entity::AuthTimestamp::into_utc(self.created_at) }
             fn updated_at(&self) -> ::chrono::DateTime<::chrono::Utc> { #core_root::entity::AuthTimestamp::into_utc(self.updated_at) }
         }
+    }
+}
+
+/// `fn name(&self) -> Option<&str>` over an optional text field, or `None` when
+/// the model does not declare the field.
+fn optional_str_getter(fields: &FieldsNamed, name: &str) -> TokenStream {
+    let field = Ident::new(name, Span::call_site());
+    if has_field(fields, name) {
+        quote! { fn #field(&self) -> Option<&str> { self.#field.as_deref() } }
+    } else {
+        quote! { fn #field(&self) -> Option<&str> { None } }
     }
 }

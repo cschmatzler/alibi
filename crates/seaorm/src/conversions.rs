@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 impl From<&entities::organization::Model> for Organization {
     fn from(model: &entities::organization::Model) -> Self {
         Self {
-            additional_fields: Default::default(),
+            additional_fields: std::collections::BTreeMap::default(),
             id: model.id.clone(),
             name: model.name.clone(),
             slug: model.slug.clone(),

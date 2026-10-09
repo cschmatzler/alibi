@@ -1,4 +1,6 @@
-use super::{EntityRole, ExtraEntitySchema, FieldDef, registry};
+use alibi_schema_registry::{self as registry, EntityRole, ExtraEntitySchema, FieldDef};
+use std::collections::HashSet;
+
 pub(crate) fn list_plugins() -> Vec<&'static str> {
     registry::plugin_schemas().iter().map(|p| p.name).collect()
 }
@@ -16,7 +18,7 @@ pub(crate) fn select(plugins: &[String]) -> Selection {
         session: Vec::new(),
         extra: Vec::new(),
     };
-    let mut selected = std::collections::HashSet::new();
+    let mut selected = HashSet::new();
     for plugin_name in plugins {
         if !selected.insert(plugin_name.as_str()) {
             continue;

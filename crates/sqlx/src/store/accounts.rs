@@ -8,6 +8,7 @@ use alibi_core::error::AuthResult;
 use alibi_core::store::AccountStore;
 use alibi_core::store::adapter::cancelled_by_hook;
 use alibi_core::types::{CreateAccount, UpdateAccount};
+use alibi_core::{AuthError, DatabaseError};
 use async_trait::async_trait;
 use chrono::Utc;
 
@@ -72,7 +73,7 @@ where
         tx: &SqlxTransaction,
         create_account: CreateAccount,
     ) -> AuthResult<S::Account> {
-        self.create_account_with_connection(Exec::Tx(tx), Some(tx), create_account)
+        self.create_account_with_connection(Exec::tx(tx), Some(tx), create_account)
             .await
     }
 
@@ -134,11 +135,9 @@ where
         sql.bind(2_i64);
         let mut accounts: Vec<S::Account> = self.exec().fetch_all(sql).await?;
         if accounts.len() > 1 {
-            return Err(alibi_core::AuthError::Database(
-                alibi_core::DatabaseError::AmbiguousAccount {
-                    provider: provider.to_owned(),
-                },
-            ));
+            return Err(AuthError::Database(DatabaseError::AmbiguousAccount {
+                provider: provider.to_owned(),
+            }));
         }
         Ok(accounts.pop())
     }
@@ -157,7 +156,7 @@ where
     }
 
     async fn update_account(&self, id: &str, mut update: UpdateAccount) -> AuthResult<S::Account> {
-        drop(<S::Account as SqlxAccountModel>::parse_id(id)?);
+        _ = <S::Account as SqlxAccountModel>::parse_id(id)?;
         let hook_context = self.hook_context(None);
         for hook in self.hooks() {
             if hook

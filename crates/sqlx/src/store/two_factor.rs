@@ -219,16 +219,15 @@ where
     }
 
     async fn reset_two_factor_failures(&self, id: &str) -> AuthResult<()> {
-        drop(
-            self.apply_factor_update(
+        _ = self
+            .apply_factor_update(
                 vec![
                     Assignment::Value("failed_verification_count", 0.0_f64.into()),
                     Assignment::Value("locked_until", None::<DateTime<Utc>>.into()),
                 ],
                 vec![("id", " = ", id.into())],
             )
-            .await?,
-        );
+            .await?;
         Ok(())
     }
 
@@ -276,6 +275,6 @@ where
         sql.ident(Model::TABLE);
         sql.push(" WHERE ");
         sql.compare(Model::TABLE, "user_id", " = ", user_id);
-        self.exec().execute(sql).await.map(drop)
+        self.exec().execute(sql).await.map(|_| ())
     }
 }

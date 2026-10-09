@@ -56,16 +56,11 @@ pub(crate) async fn prepare_string_value<C: ConnectionTrait>(
     clippy::cast_precision_loss,
     reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
 )]
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep backend-specific JSON and numeric binding decisions together at the adapter boundary"
-)]
 pub(crate) async fn prepare_value<C: ConnectionTrait>(
     db: &C,
     column: &impl ColumnTrait,
     value: Value,
 ) -> AuthResult<Value> {
-    let backend = db.get_database_backend();
     match column.def().get_column_type() {
         ColumnType::Char(_) | ColumnType::String(_) | ColumnType::Text => {
             Ok(Value::String(prepare_string_value(db, value).await?))
@@ -77,168 +72,26 @@ pub(crate) async fn prepare_value<C: ConnectionTrait>(
                 Value::Double(Some(value)) => serde_json::json!(value),
                 Value::String(Some(value)) => serde_json::json!(value),
                 Value::Json(Some(value)) => *value,
-                Value::Bool(_)
-                | Value::TinyInt(_)
-                | Value::SmallInt(_)
-                | Value::Int(_)
-                | Value::BigInt(_)
-                | Value::TinyUnsigned(_)
-                | Value::SmallUnsigned(_)
-                | Value::Unsigned(_)
-                | Value::BigUnsigned(_)
-                | Value::Float(_)
-                | Value::Double(_)
-                | Value::String(_)
-                | Value::Char(_)
-                | Value::Bytes(_)
-                | Value::Json(_)
-                | Value::ChronoDate(_)
-                | Value::ChronoTime(_)
-                | Value::ChronoDateTime(_)
-                | Value::ChronoDateTimeUtc(_)
-                | Value::ChronoDateTimeLocal(_)
-                | Value::ChronoDateTimeWithTimeZone(_)
-                | Value::TimeDate(_)
-                | Value::TimeTime(_)
-                | Value::TimeDateTime(_)
-                | Value::TimeDateTimeWithTimeZone(_)
-                | Value::Uuid(_)
-                | Value::Decimal(_)
-                | Value::Enum(_)
-                | Value::Array(..) => serde_json::Value::Null,
+                _ => serde_json::Value::Null,
             };
+            let backend = db.get_database_backend();
             Ok(crate::JsonMetadata::for_backend(json, backend)?.into())
         }
         ColumnType::Double => Ok(match value {
             Value::BigInt(Some(value)) => Value::Double(Some(value as f64)),
             Value::String(None) => Value::Double(None),
-            other @ (Value::Bool(_)
-            | Value::TinyInt(_)
-            | Value::SmallInt(_)
-            | Value::Int(_)
-            | Value::BigInt(_)
-            | Value::TinyUnsigned(_)
-            | Value::SmallUnsigned(_)
-            | Value::Unsigned(_)
-            | Value::BigUnsigned(_)
-            | Value::Float(_)
-            | Value::Double(_)
-            | Value::String(_)
-            | Value::Char(_)
-            | Value::Bytes(_)
-            | Value::Json(_)
-            | Value::ChronoDate(_)
-            | Value::ChronoTime(_)
-            | Value::ChronoDateTime(_)
-            | Value::ChronoDateTimeUtc(_)
-            | Value::ChronoDateTimeLocal(_)
-            | Value::ChronoDateTimeWithTimeZone(_)
-            | Value::TimeDate(_)
-            | Value::TimeTime(_)
-            | Value::TimeDateTime(_)
-            | Value::TimeDateTimeWithTimeZone(_)
-            | Value::Uuid(_)
-            | Value::Decimal(_)
-            | Value::Enum(_)
-            | Value::Array(..)) => other,
+            other => other,
         }),
         ColumnType::Float => Ok(match value {
             Value::BigInt(Some(value)) => Value::Float(Some(value as f32)),
             Value::Double(Some(value)) => Value::Float(Some(value as f32)),
             Value::String(None) => Value::Float(None),
-            other @ (Value::Bool(_)
-            | Value::TinyInt(_)
-            | Value::SmallInt(_)
-            | Value::Int(_)
-            | Value::BigInt(_)
-            | Value::TinyUnsigned(_)
-            | Value::SmallUnsigned(_)
-            | Value::Unsigned(_)
-            | Value::BigUnsigned(_)
-            | Value::Float(_)
-            | Value::Double(_)
-            | Value::String(_)
-            | Value::Char(_)
-            | Value::Bytes(_)
-            | Value::Json(_)
-            | Value::ChronoDate(_)
-            | Value::ChronoTime(_)
-            | Value::ChronoDateTime(_)
-            | Value::ChronoDateTimeUtc(_)
-            | Value::ChronoDateTimeLocal(_)
-            | Value::ChronoDateTimeWithTimeZone(_)
-            | Value::TimeDate(_)
-            | Value::TimeTime(_)
-            | Value::TimeDateTime(_)
-            | Value::TimeDateTimeWithTimeZone(_)
-            | Value::Uuid(_)
-            | Value::Decimal(_)
-            | Value::Enum(_)
-            | Value::Array(..)) => other,
+            other => other,
         }),
         ColumnType::Boolean => Ok(match value {
             Value::String(None) => Value::Bool(None),
-            other @ (Value::Bool(_)
-            | Value::TinyInt(_)
-            | Value::SmallInt(_)
-            | Value::Int(_)
-            | Value::BigInt(_)
-            | Value::TinyUnsigned(_)
-            | Value::SmallUnsigned(_)
-            | Value::Unsigned(_)
-            | Value::BigUnsigned(_)
-            | Value::Float(_)
-            | Value::Double(_)
-            | Value::String(_)
-            | Value::Char(_)
-            | Value::Bytes(_)
-            | Value::Json(_)
-            | Value::ChronoDate(_)
-            | Value::ChronoTime(_)
-            | Value::ChronoDateTime(_)
-            | Value::ChronoDateTimeUtc(_)
-            | Value::ChronoDateTimeLocal(_)
-            | Value::ChronoDateTimeWithTimeZone(_)
-            | Value::TimeDate(_)
-            | Value::TimeTime(_)
-            | Value::TimeDateTime(_)
-            | Value::TimeDateTimeWithTimeZone(_)
-            | Value::Uuid(_)
-            | Value::Decimal(_)
-            | Value::Enum(_)
-            | Value::Array(..)) => other,
+            other => other,
         }),
-        ColumnType::Blob
-        | ColumnType::TinyInteger
-        | ColumnType::SmallInteger
-        | ColumnType::Integer
-        | ColumnType::BigInteger
-        | ColumnType::TinyUnsigned
-        | ColumnType::SmallUnsigned
-        | ColumnType::Unsigned
-        | ColumnType::BigUnsigned
-        | ColumnType::Decimal(_)
-        | ColumnType::DateTime
-        | ColumnType::Timestamp
-        | ColumnType::TimestampWithTimeZone
-        | ColumnType::Time
-        | ColumnType::Date
-        | ColumnType::Year
-        | ColumnType::Interval(..)
-        | ColumnType::Binary(_)
-        | ColumnType::VarBinary(_)
-        | ColumnType::Bit(_)
-        | ColumnType::VarBit(_)
-        | ColumnType::Money(_)
-        | ColumnType::Uuid
-        | ColumnType::Custom(_)
-        | ColumnType::Enum { .. }
-        | ColumnType::Array(_)
-        | ColumnType::Vector(_)
-        | ColumnType::Cidr
-        | ColumnType::Inet
-        | ColumnType::MacAddr
-        | ColumnType::LTree
-        | _ => Ok(value),
+        _ => Ok(value),
     }
 }

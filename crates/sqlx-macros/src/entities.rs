@@ -1,7 +1,11 @@
-use super::{
-    Column, EntityRole, FieldsNamed, Ident, Insert, Roots, Span, TokenStream, additional_fields,
-    codegen, column_of, physical, quote,
-};
+use crate::columns::{Column, column_of, physical};
+use crate::model::additional_fields;
+use crate::roots::Roots;
+use alibi_entity_codegen::{self as codegen, EntityRole, Insert};
+use proc_macro2::{Ident, Span, TokenStream};
+use quote::quote;
+use syn::FieldsNamed;
+
 /// `active.set(column, value)` with `value` converted into the declared field
 /// type, so the staged `SqlValue` variant always matches the column.
 pub(crate) fn set_field(

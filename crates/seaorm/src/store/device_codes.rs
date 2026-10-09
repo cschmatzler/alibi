@@ -6,7 +6,11 @@ use alibi_core::store::DeviceCodeStore;
 use alibi_core::types::{CreateDeviceCode, DeviceCode, UpdateDeviceCode};
 use async_trait::async_trait;
 use sea_orm::sea_query::Expr;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, Set,
+    Statement, TransactionTrait,
+};
+use std::fmt::Write as _;
 use uuid::Uuid;
 
 #[async_trait]
@@ -26,7 +30,6 @@ where
         if fields.is_empty() {
             return self.create_device_code(input).await;
         }
-        use sea_orm::{ConnectionTrait, Statement, TransactionTrait};
         let transaction = self.scoped_connection().begin().await.map_err(map_db_err)?;
         _ = transaction.execute_unprepared("CREATE TABLE IF NOT EXISTS device_code_fields (device_code_id TEXT PRIMARY KEY REFERENCES device_code(id) ON DELETE CASCADE, fields TEXT NOT NULL)").await.map_err(map_db_err)?;
         let row = self
@@ -64,7 +67,6 @@ where
         {
             return Ok(serde_json::Map::new());
         }
-        use sea_orm::{ConnectionTrait, Statement};
         let backend = self.scoped_connection().get_database_backend();
         let sql = if backend == sea_orm::DbBackend::Postgres {
             "SELECT fields FROM device_code_fields WHERE device_code_id = $1"
@@ -94,7 +96,6 @@ where
         status: &str,
         ownership: &serde_json::Map<String, serde_json::Value>,
     ) -> AuthResult<Option<DeviceCode>> {
-        use sea_orm::Statement;
         let backend = self.scoped_connection().get_database_backend();
         let mut values: Vec<sea_orm::Value> = Vec::new();
         let mut bind = |value: String| {
@@ -113,17 +114,19 @@ where
         for (field, value) in ownership {
             sql.push_str(" AND EXISTS (SELECT 1 FROM device_code_fields WHERE device_code_id = device_code.id AND ");
             if backend == sea_orm::DbBackend::Postgres {
-                sql.push_str(&format!(
+                _ = write!(
+                    sql,
                     "CAST(fields AS JSONB) -> {} = CAST({} AS JSONB)",
                     bind(field.clone()),
                     bind(value.to_string())
-                ));
+                );
             } else {
-                sql.push_str(&format!(
+                _ = write!(
+                    sql,
                     "json_extract(fields, {}) IS json_extract({}, '$')",
                     bind(format!("$.{}", serde_json::to_string(field)?)),
                     bind(value.to_string())
-                ));
+                );
             }
             sql.push(')');
         }
@@ -187,7 +190,7 @@ where
         active
             .update(self.scoped_connection())
             .await
-            .map(|model_2| DeviceCode::from(&model_2))
+            .map(|model| DeviceCode::from(&model))
             .map_err(map_db_err)
     }
 

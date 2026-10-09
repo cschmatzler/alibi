@@ -34,8 +34,8 @@ where
                 ));
             }
         };
-        drop(S::Account::parse_id(&observed.id)?);
-        drop(S::Account::parse_user_id(&observed.user_id)?);
+        _ = S::Account::parse_id(&observed.id)?;
+        _ = S::Account::parse_user_id(&observed.user_id)?;
         let mut query = <S::Account as SeaOrmAccountModel>::Entity::update_many();
         for (column, value) in [
             (S::Account::id_column(), &observed.id),

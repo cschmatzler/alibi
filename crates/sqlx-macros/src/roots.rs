@@ -1,4 +1,7 @@
-use super::{FoundCrate, Ident, Span, TokenStream, crate_name, quote};
+use proc_macro_crate::{FoundCrate, crate_name};
+use proc_macro2::{Ident, Span, TokenStream};
+use quote::quote;
+
 pub(crate) fn found_crate_tokens(package_name: &str) -> Option<TokenStream> {
     match crate_name(package_name).ok()? {
         FoundCrate::Itself => {

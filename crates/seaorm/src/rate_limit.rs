@@ -1,6 +1,7 @@
 //! Atomic rolling rate limits persisted independently of an application's auth schema.
 
 use alibi_core::middleware::rate_limit::bucket::{self, LongestWindow, Step};
+use alibi_core::store::SchemaMigrator;
 use alibi_core::{AuthResult, EndpointRateLimit, RateLimitDecision, RateLimitStorage};
 use async_trait::async_trait;
 use sea_orm::sea_query::{Alias, ColumnDef, DynIden, IntoIden, Table};
@@ -68,7 +69,7 @@ impl SeaOrmRateLimitStorage {
 /// Installs the opt-in rate-limit table using its own migration ledger.
 /// Migration errors are returned without serving requests on missing storage.
 #[async_trait]
-impl alibi_core::store::SchemaMigrator for SeaOrmRateLimitStorage {
+impl SchemaMigrator for SeaOrmRateLimitStorage {
     async fn migrate(&self) -> AuthResult<()> {
         RateLimitMigrator::up(&self.database, None)
             .await
