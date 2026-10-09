@@ -215,7 +215,7 @@ fn subject(profile: &Value) -> Result<String, String> {
 }
 
 // Public factory field selection, including its actual transport whitespace.
-const USER_INFO_QUERY: &str = r#"
+const USER_INFO_QUERY: &str = r"
 							query {
 								viewer {
 									id
@@ -227,4 +227,4 @@ const USER_INFO_QUERY: &str = r#"
 									updatedAt
 								}
 							}
-						"#;
+						";

@@ -1,4 +1,4 @@
-//! LinkedIn's non-PKCE grants and original subject with nullish email verification.
+//! `LinkedIn`'s non-PKCE grants and original subject with nullish email verification.
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use serde_json::Map;
 use serde_json::Value;
 
-/// Application-owned LinkedIn configuration. Generic signup and asynchronous
+/// Application-owned `LinkedIn` configuration. Generic signup and asynchronous
 /// user-info/refresh callbacks remain configurable on the returned provider.
 #[derive(Clone)]
 pub struct LinkedInOptions {
@@ -19,7 +19,7 @@ pub struct LinkedInOptions {
     pub disable_default_scope: bool,
     pub authorization_endpoint: Option<String>,
     pub redirect_uri: Option<String>,
-    /// Trusted transport override retaining LinkedIn's actual GET and mapping.
+    /// Trusted transport override retaining `LinkedIn`'s actual GET and mapping.
     pub user_info_endpoint: Option<String>,
     /// Receives the original profile before its raw account identity is resolved.
     pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,

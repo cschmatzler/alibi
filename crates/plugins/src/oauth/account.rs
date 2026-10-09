@@ -147,21 +147,25 @@ async fn persist_tokens(
         .authorization
         .as_ref()
         .is_some_and(|policy| policy.preserve_raw_profile_scalars);
-    let refresh_incoming = tokens.raw.as_ref().filter(|_| preserve_raw).map_or(
-        tokens
-            .refresh_token
-            .as_ref()
-            .is_some_and(|token| !token.is_empty()),
+    let refresh_incoming = tokens.raw.as_ref().filter(|_| preserve_raw).map_or_else(
+        || {
+            tokens
+                .refresh_token
+                .as_ref()
+                .is_some_and(|token| !token.is_empty())
+        },
         |raw| {
             raw.get("refresh_token")
                 .is_some_and(super::providers::remaining_profile::truthy)
         },
     );
-    let id_incoming = tokens.raw.as_ref().filter(|_| preserve_raw).map_or(
-        tokens
-            .id_token
-            .as_ref()
-            .is_some_and(|token| !token.is_empty()),
+    let id_incoming = tokens.raw.as_ref().filter(|_| preserve_raw).map_or_else(
+        || {
+            tokens
+                .id_token
+                .as_ref()
+                .is_some_and(|token| !token.is_empty())
+        },
         |raw| {
             if raw_policy.is_some_and(|policy| policy.token_response_omits_id_token) {
                 return false;

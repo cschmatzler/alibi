@@ -1,4 +1,4 @@
-//! TikTok's client-key grants, comma-separated scopes and nested profile.
+//! `TikTok`'s client-key grants, comma-separated scopes and nested profile.
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
@@ -128,20 +128,19 @@ impl OAuthUserInfoHandler for TikTokProfile {
             .transpose()
             .map_err(super::remaining_profile::profile_exception)?
             .unwrap_or_else(|| "undefined".into());
-        let email = match data
+        let email = if let Some(email) = data
             .get("email")
             .filter(|value| super::remaining_profile::truthy(value))
         {
-            Some(email) => email.clone(),
-            None => {
-                let email = format!("{raw_id}@tiktok.placeholder.invalid");
-                if !crate::authentication_helpers::is_valid_email(&email) {
-                    return Err(super::remaining_profile::profile_exception(
-                        "Invalid TikTok placeholder email",
-                    ));
-                }
-                Value::String(email)
+            email.clone()
+        } else {
+            let email = format!("{raw_id}@tiktok.placeholder.invalid");
+            if !crate::authentication_helpers::is_valid_email(&email) {
+                return Err(super::remaining_profile::profile_exception(
+                    "Invalid TikTok placeholder email",
+                ));
             }
+            Value::String(email)
         };
         let name = data
             .get("display_name")

@@ -132,8 +132,8 @@ pub(in crate::oauth::handlers) fn provider_candidate(
     let mut candidate = CreateUser::new();
     candidate.id = Some(user_id.to_owned());
     candidate.email = Some(user_info.email.to_lowercase());
-    candidate.name = user_info.name.clone();
-    candidate.image = user_info.image.clone();
+    candidate.name.clone_from(&user_info.name);
+    candidate.image.clone_from(&user_info.image);
     candidate.email_verified = Some(user_info.email_verified);
     candidate
 }

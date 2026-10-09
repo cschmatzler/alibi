@@ -252,7 +252,7 @@ pub fn oauth_disable_sign_up_option(provider: &OAuthProvider) -> Option<bool> {
         .authorization
         .as_ref()
         .and_then(|policy| policy.disable_sign_up_option)
-        .or(provider.disable_sign_up.then_some(true))
+        .or_else(|| provider.disable_sign_up.then_some(true))
 }
 
 pub(crate) fn parse_callback_user_payload(

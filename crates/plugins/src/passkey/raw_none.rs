@@ -461,13 +461,12 @@ pub(super) fn register_raw_key(
     }
     let mismatch = mismatched_ed25519(&key);
     let representable = super::source::crypto::COSEKey::try_from(&key).is_ok();
-    let mut raw_eligible = (none && (curve_eight(&key) || !representable)) || mismatch;
-    if packed
-        && let Some(Cbor::Map(statement)) = text(&object, "attStmt")
-        && statement.contains_key(&Cbor::Text("x5c".into()))
-    {
-        raw_eligible = false;
-    }
+    let has_x5c = packed
+        && matches!(
+            text(&object, "attStmt"),
+            Some(Cbor::Map(statement)) if statement.contains_key(&Cbor::Text("x5c".into()))
+        );
+    let raw_eligible = !has_x5c && ((none && (curve_eight(&key) || !representable)) || mismatch);
     let Some(id) = original.get("id").and_then(JsValue::as_str) else {
         return Err(malformed());
     };
@@ -592,14 +591,15 @@ pub(super) fn raw_credential_id(credential: &RawCredential) -> String {
 /// Source requires exactly one well-formed, canonically-sized extension item.
 pub(super) fn validate_assertion_data(bytes: &[u8]) -> Result<(), WebauthnError> {
     let flags = *bytes.get(32).ok_or_else(malformed)?;
-    let mut end = 37usize;
-    if flags & 0x40 != 0 {
+    let mut end = if flags & 0x40 != 0 {
         let length = bytes.get(53..55).ok_or_else(malformed)?;
         let id_length = u16::from_be_bytes(length.try_into().map_err(|_| malformed())?);
         let start = 55 + usize::from(id_length);
         let (key, _) = decode_first(bytes.get(start..).ok_or_else(malformed)?)?;
-        end = start + source_encoded_length(&key)?;
-    }
+        start + source_encoded_length(&key)?
+    } else {
+        37usize
+    };
     if flags & 0x80 != 0 {
         let (extension, _) = decode_first(bytes.get(end..).ok_or_else(malformed)?)?;
         if !extension_conversion_possible(&extension) {

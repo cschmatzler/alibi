@@ -317,13 +317,12 @@ impl<S: AuthSchema> alibi_core::session::cookie_cache::jwt::CookieCacheSigner<S>
     }
 
     async fn verify(&self, token: &str, ctx: &AuthContext<S>) -> AuthResult<Option<Value>> {
-        let header = match token
+        let Some(header) = token
             .split('.')
             .next()
             .and_then(|header| decode_compact_json(header, false).ok())
-        {
-            Some(header) => header,
-            None => return Ok(None),
+        else {
+            return Ok(None);
         };
         if header.get("typ").and_then(Value::as_str) != Some("better-auth.session-cache+jwt") {
             return Ok(None);

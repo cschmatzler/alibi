@@ -237,13 +237,12 @@ fn truthy(value: &Value) -> bool {
 }
 fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
     match value {
-        None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) => Ok(Some(value.clone())),
         Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
             .map(Some)
             .map_err(|error| error.to_string()),
         Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        Some(Value::Array(_) | Value::Object(_)) => Ok(None),
+        None | Some(Value::Null) | Some(Value::Array(_) | Value::Object(_)) => Ok(None),
     }
 }
 fn subject(profile: &Value) -> Result<String, String> {

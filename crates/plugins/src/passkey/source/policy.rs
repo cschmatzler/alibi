@@ -1,4 +1,4 @@
-//! Opt-in Better Auth 1.7.6 / SimpleWebAuthn 13.3.3 ceremony policy.
+//! Opt-in Better Auth 1.7.6 / `SimpleWebAuthn` 13.3.3 ceremony policy.
 //! This extension is MPL-2.0, like the verifier it extends.
 use super::{crypto::COSEKey, data::AttestationObject};
 use base64::{
@@ -22,7 +22,7 @@ use std::{
 };
 use webauthn_rs_core::{crypto::compute_sha256, error::WebauthnError, proto::*};
 
-/// Per-format trust anchors, equivalent to SimpleWebAuthn's SettingsService.
+/// Per-format trust anchors, equivalent to `SimpleWebAuthn`'s `SettingsService`.
 #[derive(Clone, Debug)]
 pub(in crate::passkey) struct SourcePolicy {
     /// PEM certificates. An empty configured list skips chain validation for
@@ -195,11 +195,11 @@ impl SourcePolicy {
         format: &str,
         attestation: &ParsedAttestationData,
     ) -> Result<(), WebauthnError> {
-        let chain = match attestation {
-            ParsedAttestationData::Basic(chain)
-            | ParsedAttestationData::AttCa(chain)
-            | ParsedAttestationData::AnonCa(chain) => chain,
-            _ => return Ok(()),
+        let (ParsedAttestationData::Basic(chain)
+        | ParsedAttestationData::AttCa(chain)
+        | ParsedAttestationData::AnonCa(chain)) = attestation
+        else {
+            return Ok(());
         };
         if format == "android-key" {
             let (root, certificates) = chain.split_last().ok_or_else(malformed)?;
@@ -386,7 +386,7 @@ impl SourcePolicy {
         let Some(Cbor::Integer(algorithm)) = statement.get(&Cbor::Text("alg".into())) else {
             return Err(malformed());
         };
-        let algorithm = COSEAlgorithm::try_from(*algorithm).map_err(|_| malformed())?;
+        let algorithm = COSEAlgorithm::try_from(*algorithm).map_err(|()| malformed())?;
         let Some(Cbor::Bytes(signature)) = statement.get(&Cbor::Text("sig".into())) else {
             return Err(malformed());
         };
@@ -493,7 +493,7 @@ impl SourcePolicy {
         let algorithm = match statement.get(&Cbor::Text("alg".into())) {
             None | Some(Cbor::Null | Cbor::Bool(false) | Cbor::Integer(0)) => None,
             Some(Cbor::Integer(algorithm)) => {
-                Some(COSEAlgorithm::try_from(*algorithm).map_err(|_| malformed())?)
+                Some(COSEAlgorithm::try_from(*algorithm).map_err(|()| malformed())?)
             }
             _ => return Err(malformed()),
         };

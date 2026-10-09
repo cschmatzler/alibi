@@ -1,4 +1,4 @@
-//! Kick's PKCE grants and first envelope profile bound by original user_id.
+//! Kick's PKCE grants and first envelope profile bound by original `user_id`.
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,

@@ -64,7 +64,7 @@ pub struct PasskeyConfig {
     pub challenge_ttl_secs: i64,
     #[config(default = "better-auth-passkey".to_owned())]
     pub web_authn_challenge_cookie: String,
-    /// Per-format PEM roots, matching the verifier SettingsService.
+    /// Per-format PEM roots, matching the verifier `SettingsService`.
     /// Unspecified formats retain published defaults.
     #[config(default = None)]
     pub attestation_root_certificates: Option<std::collections::BTreeMap<String, Vec<String>>>,

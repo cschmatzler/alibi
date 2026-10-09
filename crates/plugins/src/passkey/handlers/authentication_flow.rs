@@ -173,7 +173,7 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
         };
         match &mut stored {
             super::super::raw_none::StoredCredential::Raw(raw) => {
-                raw.replace_public_key(public_key)
+                raw.replace_public_key(public_key);
             }
             super::super::raw_none::StoredCredential::Core(saved) => {
                 let Ok((key, _)) = super::super::raw_none::decode_first(&public_key) else {

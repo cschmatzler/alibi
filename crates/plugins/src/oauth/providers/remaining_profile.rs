@@ -44,7 +44,6 @@ pub(in crate::oauth) fn truthy(value: &Value) -> bool {
 
 pub(super) fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
     match value {
-        None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) => Ok(Some(value.clone())),
         Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
             .map(Some)
@@ -499,7 +498,7 @@ impl OAuthUserInfoHandler for PublishedProfile {
                     .filter(|value| !value.is_null())
                     .ok_or_else(|| profile_exception("Missing VK user"))?;
                 if !user.get("email").is_some_and(truthy)
-                    && !mapped.as_ref().is_some_and(|user| !user.email.is_empty())
+                    && mapped.as_ref().is_none_or(|user| user.email.is_empty())
                     && !application_output
                         .as_ref()
                         .and_then(|output| output.get("email"))

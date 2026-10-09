@@ -25,8 +25,8 @@ pub(super) fn generate(config: &JwtKeyPairConfig) -> AuthResult<(Value, Value)> 
             ec_pair(
                 "P-256",
                 key.to_bytes().as_slice(),
-                point.x().map(|x| x.as_slice()),
-                point.y().map(|x| x.as_slice()),
+                point.x().map(AsRef::<[u8]>::as_ref),
+                point.y().map(AsRef::<[u8]>::as_ref),
             )
         }
         JwtAlgorithm::Es512 => {
@@ -35,8 +35,8 @@ pub(super) fn generate(config: &JwtKeyPairConfig) -> AuthResult<(Value, Value)> 
             ec_pair(
                 "P-521",
                 key.to_bytes().as_slice(),
-                point.x().map(|x| x.as_slice()),
-                point.y().map(|x| x.as_slice()),
+                point.x().map(AsRef::<[u8]>::as_ref),
+                point.y().map(AsRef::<[u8]>::as_ref),
             )
         }
         JwtAlgorithm::Ps256 | JwtAlgorithm::Rs256 => {

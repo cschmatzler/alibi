@@ -278,7 +278,7 @@ fn finish_profile(
         Some(user) => user,
         None => OAuthUserInfo {
             additional_fields: Map::default(),
-            id: id.clone(),
+            id,
             email: profile
                 .get("email")
                 .and_then(Value::as_str)

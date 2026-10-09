@@ -19,7 +19,7 @@ pub(super) fn packed(
         return Err(WebauthnError::AttestationStatementAlgInvalid);
     };
     let algorithm =
-        COSEAlgorithm::try_from(*algorithm).map_err(|_| WebauthnError::COSEKeyInvalidAlgorithm)?;
+        COSEAlgorithm::try_from(*algorithm).map_err(|()| WebauthnError::COSEKeyInvalidAlgorithm)?;
     let Some(Cbor::Bytes(signature)) = statement.get(&Cbor::Text("sig".into())) else {
         return Err(WebauthnError::AttestationStatementSigMissing);
     };

@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use serde_json::Map;
 use serde_json::Value;
 
-/// Application-owned HuggingFace configuration. Generic signup and asynchronous
+/// Application-owned `HuggingFace` configuration. Generic signup and asynchronous
 /// user-info/refresh callbacks remain configurable on the returned provider.
 #[derive(Clone)]
 pub struct HuggingFaceOptions {

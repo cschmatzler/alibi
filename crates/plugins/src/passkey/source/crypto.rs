@@ -60,7 +60,7 @@ impl TryFrom<&Cbor> for COSEKey {
             return Err(WebauthnError::COSEKeyInvalidCBORValue);
         };
         let type_ = COSEAlgorithm::try_from(*algorithm)
-            .map_err(|_| WebauthnError::COSEKeyInvalidAlgorithm)?;
+            .map_err(|()| WebauthnError::COSEKeyInvalidAlgorithm)?;
         if !matches!(
             type_,
             COSEAlgorithm::RS256

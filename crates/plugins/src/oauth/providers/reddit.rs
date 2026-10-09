@@ -176,26 +176,25 @@ impl OAuthUserInfoHandler for RedditUserInfo {
                 "Null Reddit profile",
             ));
         }
-        let email = match mapped
+        let email = if let Some(value) = mapped
             .get("email")
             .filter(|value| super::remaining_profile::truthy(value))
         {
-            Some(value) => value.clone(),
-            None => {
-                let identifier = profile
-                    .get("id")
-                    .map(super::remaining_profile::js_string)
-                    .transpose()
-                    .map_err(super::remaining_profile::profile_exception)?
-                    .unwrap_or_else(|| "undefined".into());
-                let email = format!("{identifier}@reddit.placeholder.invalid");
-                if !crate::authentication_helpers::is_valid_email(&email) {
-                    return Err(super::remaining_profile::profile_exception(
-                        "Invalid placeholder email",
-                    ));
-                }
-                Value::String(email)
+            value.clone()
+        } else {
+            let identifier = profile
+                .get("id")
+                .map(super::remaining_profile::js_string)
+                .transpose()
+                .map_err(super::remaining_profile::profile_exception)?
+                .unwrap_or_else(|| "undefined".into());
+            let email = format!("{identifier}@reddit.placeholder.invalid");
+            if !crate::authentication_helpers::is_valid_email(&email) {
+                return Err(super::remaining_profile::profile_exception(
+                    "Invalid placeholder email",
+                ));
             }
+            Value::String(email)
         };
         let image = match profile.get("icon_img") {
             None | Some(Value::Null) => None,

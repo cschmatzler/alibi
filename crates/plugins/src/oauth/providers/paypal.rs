@@ -1,4 +1,4 @@
-//! PayPal's sandbox/live endpoints, PKCE grants and original user-info subject.
+//! `PayPal`'s sandbox/live endpoints, PKCE grants and original user-info subject.
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
@@ -13,7 +13,7 @@ pub enum PayPalEnvironment {
     Live,
 }
 
-/// Application-owned PayPal configuration. The published factory ignores scopes,
+/// Application-owned `PayPal` configuration. The published factory ignores scopes,
 /// requestShippingAddress, clientKey and responseMode.
 /// Generic signup and asynchronous callbacks remain available on the provider.
 #[derive(Clone)]
@@ -24,7 +24,7 @@ pub struct PayPalOptions {
     pub prompt: Option<String>,
     pub authorization_endpoint: Option<String>,
     pub redirect_uri: Option<String>,
-    /// Trusted transport override retaining the PayPal query and mapping.
+    /// Trusted transport override retaining the `PayPal` query and mapping.
     pub user_info_endpoint: Option<String>,
     /// Receives the original profile; its ID cannot replace the account subject.
     pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,

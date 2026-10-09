@@ -151,7 +151,7 @@ fn pre_migration_rsa_credential_retains_exponent_and_authenticates() {
             .is_err(),
         "counter replay"
     );
-    let mut bad = authentication.clone();
+    let mut bad = authentication;
     let mut signature = bad.response.signature.as_ref().to_vec();
     signature[0] ^= 1;
     bad.response.signature = signature.into();

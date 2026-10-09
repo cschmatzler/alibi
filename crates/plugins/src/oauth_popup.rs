@@ -269,7 +269,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthPopupPlugin {
                 .filter(|cookie| cookie.name() == token_name)
                 .map(|cookie| {
                     urlencoding::decode(cookie.value())
-                        .map_or_else(|_| cookie.value().to_owned(), |value| value.into_owned())
+                        .map_or_else(|_| cookie.value().to_owned(), std::borrow::Cow::into_owned)
                 })
         });
         let message = if let Some(token) = token.filter(|value| !value.is_empty()) {

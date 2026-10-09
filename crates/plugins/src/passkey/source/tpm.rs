@@ -100,7 +100,7 @@ pub(super) fn verify(
         return Err(WebauthnError::AttestationStatementAlgInvalid);
     };
     let algorithm =
-        COSEAlgorithm::try_from(*algorithm).map_err(|_| WebauthnError::COSEKeyInvalidAlgorithm)?;
+        COSEAlgorithm::try_from(*algorithm).map_err(|()| WebauthnError::COSEKeyInvalidAlgorithm)?;
     let bytes = |key: &str| match statement.get(&Cbor::Text(key.into())) {
         Some(Cbor::Bytes(bytes)) => Ok(bytes.as_slice()),
         _ => Err(malformed()),
