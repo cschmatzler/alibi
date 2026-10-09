@@ -6,7 +6,7 @@ pub mod policy;
 
 pub mod extensions;
 
-pub mod handlers;
+pub(crate) mod handlers;
 
 pub use hooks::invitation::{
     InvitationLimit, OrganizationInvitationContext, OrganizationInvitationCreatePatch,
@@ -235,7 +235,7 @@ impl OrganizationPlugin {
             .iter()
             .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
             .collect();
-        let (user, session) = handlers::require_session(&resolution, ctx).await?;
+        let (user, session) = ctx.require_cached_session(&resolution).await?;
         handlers::org::delete_organization_core(
             body,
             &user,

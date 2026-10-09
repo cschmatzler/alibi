@@ -122,11 +122,7 @@ fn missing_permissions(
     Ok(missing)
 }
 
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_role_request<S: AuthSchema>(
+pub(crate) async fn handle_role_request<S: AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
     config: &OrganizationConfig,

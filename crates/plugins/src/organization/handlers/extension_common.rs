@@ -16,7 +16,7 @@ fn role_cache() -> &'static Mutex<HashMap<String, OrganizationRoles>> {
 }
 
 #[must_use]
-pub fn org_error(status: u16, code: &'static str) -> AuthError {
+pub(crate) fn org_error(status: u16, code: &'static str) -> AuthError {
     let message = match code {
         "UNAUTHORIZED" => "Unauthorized",
         "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_ORGANIZATION" => {
@@ -106,10 +106,7 @@ pub fn org_error(status: u16, code: &'static str) -> AuthError {
     }
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
-pub async fn session<S: AuthSchema>(
+pub(crate) async fn session<S: AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
 ) -> AuthResult<(alibi_core::AuthenticatedUser<S>, SessionView)> {
@@ -198,7 +195,7 @@ fn configured_roles(config: &OrganizationConfig) -> OrganizationRoles {
 /// # Errors
 ///
 /// Returns errors from organization-role storage or the shared role cache.
-pub async fn organization_roles<S: AuthSchema>(
+pub(crate) async fn organization_roles<S: AuthSchema>(
     config: &OrganizationConfig,
     ctx: &AuthContext<S>,
     org_id: &str,
@@ -253,7 +250,7 @@ pub(super) fn cached_has_permissions(
 /// # Errors
 ///
 /// Propagates errors from role loading and authorization callbacks.
-pub async fn has_permissions<S: AuthSchema>(
+pub(crate) async fn has_permissions<S: AuthSchema>(
     role: &str,
     required: &OrganizationPermissions,
     config: &OrganizationConfig,
@@ -265,7 +262,7 @@ pub async fn has_permissions<S: AuthSchema>(
 }
 
 #[must_use]
-pub fn role_has_permissions<H: std::hash::BuildHasher>(
+pub(crate) fn role_has_permissions<H: std::hash::BuildHasher>(
     role: &str,
     required: &OrganizationPermissions,
     roles: &HashMap<String, OrganizationPermissions, H>,
@@ -289,7 +286,7 @@ pub fn role_has_permissions<H: std::hash::BuildHasher>(
 /// # Errors
 ///
 /// Propagates errors from role loading and authorization callbacks.
-pub async fn has_action<S: AuthSchema>(
+pub(crate) async fn has_action<S: AuthSchema>(
     role: &str,
     resource: &str,
     action: &str,

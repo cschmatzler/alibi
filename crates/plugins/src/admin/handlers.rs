@@ -126,10 +126,6 @@ pub(crate) fn decode_admin_session_cookie_value(
     })
 }
 
-fn joined_role(role: &RoleInput) -> String {
-    role.joined()
-}
-
 fn validate_role_input(role: &RoleInput, config: &AdminConfig) -> AuthResult<()> {
     let Some(roles) = &config.roles else {
         return Ok(());
@@ -160,7 +156,7 @@ pub(crate) async fn set_role_core(
     validate_role_input(&body.role, config)?;
 
     let update = UpdateUser {
-        role: Some(joined_role(&body.role)),
+        role: Some(body.role.joined()),
         ..Default::default()
     };
 
@@ -242,7 +238,7 @@ pub(crate) async fn create_user_core(
 
     let role = requested_role
         .as_ref()
-        .map_or_else(|| config.default_role.clone(), joined_role);
+        .map_or_else(|| config.default_role.clone(), RoleInput::joined);
 
     let metadata = body.data.clone().map_or_else(
         || serde_json::json!({}),
@@ -346,7 +342,7 @@ pub(crate) async fn update_user_core(
         let role = serde_json::from_value::<RoleInput>(value.clone())
             .map_err(|_error| AuthError::bad_request(MESSAGE_INVALID_ROLE_TYPE))?;
         validate_role_input(&role, config)?;
-        update.role = Some(joined_role(&role));
+        update.role = Some(role.joined());
     }
 
     if ["banned", "banReason", "banExpires"]

@@ -1,5 +1,4 @@
 use super::page::OrganizationPageError;
-use super::require_session;
 use crate::organization::OrganizationConfig;
 use crate::organization::policy::{read_page_limit, truthy_number};
 use crate::organization::types::{
@@ -675,11 +674,7 @@ pub(crate) async fn leave_organization_core(
 }
 
 /// Handle create organization request
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_create_organization(
+pub(crate) async fn handle_create_organization(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
@@ -688,7 +683,7 @@ pub async fn handle_create_organization(
         Ok(v) => v,
         Err(resp) => return Ok(resp),
     };
-    let (user, session) = match require_session(req, ctx).await {
+    let (user, session) = match ctx.require_cached_session(req).await {
         Ok(session) => session,
         Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
             return Ok(AuthResponse::new(401).with_header("content-type", "application/json"));
@@ -704,11 +699,7 @@ pub async fn handle_create_organization(
 }
 
 /// Handle update organization request
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_update_organization(
+pub(crate) async fn handle_update_organization(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
@@ -717,7 +708,7 @@ pub async fn handle_update_organization(
         Ok(v) => v,
         Err(resp) => return Ok(resp),
     };
-    let (user, session) = match require_session(req, ctx).await {
+    let (user, session) = match ctx.require_cached_session(req).await {
         Ok(session) => session,
         Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
             return Ok(AuthResponse::json(
@@ -739,11 +730,7 @@ pub async fn handle_update_organization(
 }
 
 /// Handle delete organization request
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_delete_organization(
+pub(crate) async fn handle_delete_organization(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
@@ -758,7 +745,7 @@ pub async fn handle_delete_organization(
             "ORGANIZATION_DELETION_DISABLED",
         ));
     }
-    let (user, session) = match require_session(req, ctx).await {
+    let (user, session) = match ctx.require_cached_session(req).await {
         Ok(session) => session,
         Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
             return Ok(AuthResponse::new(401).with_header("content-type", "application/json"));
@@ -784,10 +771,7 @@ pub async fn handle_delete_organization(
 }
 
 /// Handle list organizations request
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
-pub async fn handle_list_organizations(
+pub(crate) async fn handle_list_organizations(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
@@ -797,15 +781,11 @@ pub async fn handle_list_organizations(
 }
 
 /// Retrieve organization metadata without loading members, invitations or teams.
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_get_organization(
+pub(crate) async fn handle_get_organization(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
-    let (user, session) = match require_session(req, ctx).await {
+    let (user, session) = match ctx.require_cached_session(req).await {
         Ok(session) => session,
         Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
             return Ok(AuthResponse::json(
@@ -859,10 +839,7 @@ pub async fn handle_get_organization(
     Ok(AuthResponse::json(200, &response)?)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
-pub async fn handle_get_full_organization(
+pub(crate) async fn handle_get_full_organization(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
@@ -877,11 +854,7 @@ pub async fn handle_get_full_organization(
 }
 
 /// Handle check slug request
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_check_slug(
+pub(crate) async fn handle_check_slug(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
@@ -895,11 +868,7 @@ pub async fn handle_check_slug(
 }
 
 /// Handle set active organization request
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_set_active_organization(
+pub(crate) async fn handle_set_active_organization(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
@@ -907,7 +876,7 @@ pub async fn handle_set_active_organization(
         Ok(v) => v,
         Err(resp) => return Ok(resp),
     };
-    let (user, session) = match require_session(req, ctx).await {
+    let (user, session) = match ctx.require_cached_session(req).await {
         Ok(session) => session,
         Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
             return Err(super::extension_common::org_error(401, "UNAUTHORIZED"));
@@ -963,11 +932,7 @@ pub async fn handle_set_active_organization(
 }
 
 /// Handle leave organization request
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_leave_organization(
+pub(crate) async fn handle_leave_organization(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,

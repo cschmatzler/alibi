@@ -1,20 +1,20 @@
-pub mod extension_common;
+pub(crate) mod extension_common;
 
-pub mod invitation;
+pub(crate) mod invitation;
 
-pub mod member;
+pub(crate) mod member;
 
 pub(crate) mod member_addition;
 
-pub mod org;
+pub(crate) mod org;
 
 pub(crate) mod org_input;
 
 mod page;
 
-pub mod role;
+pub(crate) mod role;
 
-pub mod team;
+pub(crate) mod team;
 
 mod validation;
 
@@ -26,20 +26,6 @@ use alibi_core::entity::{AuthMember, AuthSession, AuthUser};
 use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::plugin::AuthContext;
 use alibi_core::types::{AuthRequest, AuthResponse};
-pub use invitation::*;
-pub use member::*;
-pub use org::*;
-
-/// Helper function to require authenticated session
-pub(crate) async fn require_session<S: alibi_core::AuthSchema>(
-    req: &AuthRequest,
-    ctx: &AuthContext<S>,
-) -> AuthResult<(
-    alibi_core::AuthenticatedUser<S>,
-    alibi_core::wire::SessionView,
-)> {
-    ctx.require_cached_session(req).await
-}
 
 /// Helper function to get organization ID from request or session
 pub(crate) async fn resolve_organization_id(
@@ -104,11 +90,7 @@ pub(crate) async fn has_permission_core(
 }
 
 /// Handle has-permission request
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_has_permission(
+pub(crate) async fn handle_has_permission(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,

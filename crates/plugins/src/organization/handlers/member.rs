@@ -1,5 +1,5 @@
 use super::page::OrganizationPageError;
-use super::{require_session, resolve_organization_id};
+use super::resolve_organization_id;
 use crate::organization::OrganizationConfig;
 use crate::organization::policy::{read_page_limit, truthy_number};
 use crate::organization::types::{
@@ -492,11 +492,7 @@ pub(crate) async fn update_member_role_core(
 }
 
 /// Handle get active member request
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_get_active_member(
+pub(crate) async fn handle_get_active_member(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
@@ -506,10 +502,7 @@ pub async fn handle_get_active_member(
 }
 
 /// Handle list members request
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
-pub async fn handle_list_members(
+pub(crate) async fn handle_list_members(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
@@ -524,11 +517,7 @@ pub async fn handle_list_members(
 }
 
 /// Handle get active member role request
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_get_active_member_role(
+pub(crate) async fn handle_get_active_member_role(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
@@ -539,11 +528,7 @@ pub async fn handle_get_active_member_role(
 }
 
 /// Handle remove member request
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_remove_member(
+pub(crate) async fn handle_remove_member(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
@@ -564,11 +549,7 @@ pub async fn handle_remove_member(
 }
 
 /// Handle update member role request
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_update_member_role(
+pub(crate) async fn handle_update_member_role(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
@@ -579,7 +560,7 @@ pub async fn handle_update_member_role(
     };
     // Pinned nested session middleware maps failed session retrieval to
     // Unauthorized. Scope this mapping to authentication, not later callbacks.
-    let (user, session) = match require_session(req, ctx).await {
+    let (user, session) = match ctx.require_cached_session(req).await {
         Ok(session) => session,
         Err(AuthError::Unauthenticated) => {
             return Err(super::extension_common::org_error(401, "UNAUTHORIZED"));

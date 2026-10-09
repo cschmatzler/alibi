@@ -1,4 +1,4 @@
-use super::{require_session, resolve_organization_id};
+use super::resolve_organization_id;
 use crate::organization::types::OrganizationResponse;
 use crate::organization::types::{
     AcceptInvitationRequest, AcceptInvitationResponse, BasicMemberResponse,
@@ -34,14 +34,6 @@ impl crate::organization::OrganizationPlugin {
     ) -> AuthResult<Vec<UserInvitationResponse<InvitationView>>> {
         list_user_invitations_for_email_core(email, ctx).await
     }
-}
-
-fn normalized_roles(input: &crate::organization::types::RoleInput) -> String {
-    input.joined()
-}
-
-fn requested_roles(input: &crate::organization::types::RoleInput) -> Vec<&str> {
-    input.roles()
 }
 
 pub(super) fn require_verified_invitation_email<S: alibi_core::AuthSchema>(
@@ -107,7 +99,7 @@ pub(crate) async fn invite_member_core(
         ));
     }
 
-    let roles = requested_roles(&body.role);
+    let roles = body.role.roles();
 
     let mut valid_roles = vec!["owner".to_owned(), "admin".to_owned(), "member".to_owned()];
     valid_roles.extend(
@@ -314,7 +306,7 @@ pub(crate) async fn invite_member_core(
     let mut draft = OrganizationInvitationDraft {
         organization_id: org_id,
         email,
-        role: normalized_roles(&body.role),
+        role: body.role.joined(),
         team_ids: requested_teams.iter().map(|id| (*id).to_owned()).collect(),
         inviter_id: user.id().to_string(),
         expires_at: None,
@@ -624,11 +616,7 @@ pub(crate) async fn cancel_invitation_core(
     Ok(hook_context.invitation)
 }
 
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_invite_member(
+pub(crate) async fn handle_invite_member(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
@@ -645,16 +633,12 @@ pub async fn handle_invite_member(
     Ok(AuthResponse::json(200, &invitation)?)
 }
 
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_get_invitation(
+pub(crate) async fn handle_get_invitation(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
-    let (user, _) = match require_session(req, ctx).await {
+    let (user, _) = match ctx.require_cached_session(req).await {
         Ok(session) => session,
         Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
             return Ok(AuthResponse::json(
@@ -679,11 +663,7 @@ pub async fn handle_get_invitation(
     Ok(AuthResponse::json(200, &response)?)
 }
 
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_list_invitations(
+pub(crate) async fn handle_list_invitations(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
@@ -693,11 +673,7 @@ pub async fn handle_list_invitations(
     Ok(AuthResponse::json(200, &invitations)?)
 }
 
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_list_user_invitations(
+pub(crate) async fn handle_list_user_invitations(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
@@ -714,7 +690,7 @@ pub async fn handle_list_user_invitations(
             }),
         )?);
     }
-    let (user, _session) = match require_session(req, ctx).await {
+    let (user, _session) = match ctx.require_cached_session(req).await {
         Ok(session) => session,
         Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
             return Ok(AuthResponse::json(
@@ -730,10 +706,7 @@ pub async fn handle_list_user_invitations(
     Ok(AuthResponse::json(200, &invitations)?)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
-pub async fn handle_accept_invitation(
+pub(crate) async fn handle_accept_invitation(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
@@ -760,11 +733,7 @@ pub async fn handle_accept_invitation(
     Ok(AuthResponse::json(200, &response)?)
 }
 
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_reject_invitation(
+pub(crate) async fn handle_reject_invitation(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
@@ -782,11 +751,7 @@ pub async fn handle_reject_invitation(
     Ok(AuthResponse::json(200, &response)?)
 }
 
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_cancel_invitation(
+pub(crate) async fn handle_cancel_invitation(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,

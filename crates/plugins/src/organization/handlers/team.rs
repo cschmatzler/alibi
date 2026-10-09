@@ -189,15 +189,11 @@ async fn hook_context<S: AuthSchema>(
     Ok(TeamHookContext { organization, user })
 }
 
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 #[expect(
     clippy::cast_precision_loss,
     reason = "Source compares stored counts as ECMAScript Numbers"
 )]
-pub async fn create_team_core<S: AuthSchema>(
+pub(crate) async fn create_team_core<S: AuthSchema>(
     mut data: CreateTeam,
     actor: Option<(&UserView, &SessionView)>,
     request: Option<&AuthRequest>,
@@ -279,11 +275,7 @@ pub async fn create_team_core<S: AuthSchema>(
     Ok(team)
 }
 
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn remove_team_core<S: AuthSchema>(
+pub(crate) async fn remove_team_core<S: AuthSchema>(
     organization_id: &str,
     team_id: &str,
     actor: Option<(&UserView, &SessionView)>,
@@ -333,11 +325,7 @@ pub async fn remove_team_core<S: AuthSchema>(
     Ok(())
 }
 
-///
-/// # Errors
-///
-/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-pub async fn handle_team_request<S: AuthSchema>(
+pub(crate) async fn handle_team_request<S: AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
     config: &OrganizationConfig,
