@@ -1,4 +1,7 @@
-use super::*;
+use proc_macro2::TokenStream;
+use quote::quote;
+use syn::FieldsNamed;
+
 /// Generate the secondary-storage snapshot codec over every model field.
 #[must_use]
 pub fn secondary_codec(fields: &FieldsNamed, core_root: &TokenStream) -> TokenStream {

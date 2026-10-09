@@ -1,4 +1,8 @@
-use super::*;
+use alibi_schema_registry::{self as registry, EntityRole};
+use proc_macro2::{Ident, TokenStream};
+use quote::quote;
+use syn::{FieldsNamed, Type};
+
 #[must_use]
 pub fn has_field(fields: &FieldsNamed, name: &str) -> bool {
     fields
