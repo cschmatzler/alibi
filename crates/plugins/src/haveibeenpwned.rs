@@ -300,23 +300,7 @@ impl PasswordHashHook for HaveIBeenPwnedPlugin {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for HaveIBeenPwnedPlugin {
-    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
-        crate::metadata::plugin_metadata(
-            <Self as alibi_core::AuthPlugin<S>>::name(self),
-            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
-        )
-    }
-
-    fn openapi_metadata(
-        &self,
-        ctx: &alibi_core::AuthInitContext<S>,
-    ) -> alibi_core::PluginOpenApiMetadata {
-        crate::metadata::instance_plugin_metadata(
-            <Self as alibi_core::AuthPlugin<S>>::name(self),
-            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
-            ctx,
-        )
-    }
+    route_openapi_metadata!(S);
 
     fn name(&self) -> &'static str {
         "have-i-been-pwned"

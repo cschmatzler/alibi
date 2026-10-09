@@ -267,13 +267,7 @@ alibi_core::impl_auth_plugin! {
         post "/email-otp/change-email" => change_email, "changeEmailWithEmailOTP";
     }
     extra {
-    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
-        crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self))
-    }
-
-    fn openapi_metadata(&self, ctx: &alibi_core::AuthInitContext<S>) -> alibi_core::PluginOpenApiMetadata {
-        crate::metadata::instance_plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self), ctx)
-    }
+    route_openapi_metadata!(S);
 
         fn rate_limits(&self) -> Vec<alibi_core::PluginRateLimit> {
             vec![alibi_core::PluginRateLimit { matches: |path| matches!(path, "/email-otp/send-verification-otp" | "/email-otp/check-verification-otp" | "/email-otp/verify-email" | "/sign-in/email-otp" | "/email-otp/request-password-reset" | "/email-otp/reset-password" | "/forget-password/email-otp" | "/email-otp/request-email-change" | "/email-otp/change-email"), limit: alibi_core::EndpointRateLimit {

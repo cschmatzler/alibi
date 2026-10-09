@@ -648,12 +648,7 @@ impl EmailOtpPlugin {
         if let Some(hook) = &settings.before {
             hook(&ctx.user_view(&current))
                 .await
-                .map_err(|error| match error {
-                    AuthError::Api { .. }
-                    | AuthError::Upstream { .. }
-                    | AuthError::CallbackFailure(_) => error,
-                    error => AuthError::CallbackFailure(Box::new(error)),
-                })?;
+                .map_err(crate::helpers::callback_failure)?;
         }
         let updated = ctx
             .database
@@ -669,12 +664,7 @@ impl EmailOtpPlugin {
         if let Some(hook) = &settings.after {
             hook(&ctx.user_view(&updated))
                 .await
-                .map_err(|error| match error {
-                    AuthError::Api { .. }
-                    | AuthError::Upstream { .. }
-                    | AuthError::CallbackFailure(_) => error,
-                    error => AuthError::CallbackFailure(Box::new(error)),
-                })?;
+                .map_err(crate::helpers::callback_failure)?;
         }
         Ok(AuthResponse::json(200, &json!({"success":true}))
             .map_err(AuthError::from)?

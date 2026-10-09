@@ -123,12 +123,7 @@ impl PhoneNumberPlugin {
                     &alibi_core::CallbackContext::new(ctx, request),
                 )
                 .await
-                .map_err(|error| match error {
-                    AuthError::Api { .. }
-                    | AuthError::Upstream { .. }
-                    | AuthError::CallbackFailure(_) => error,
-                    error => AuthError::CallbackFailure(Box::new(error)),
-                })?
+                .map_err(crate::helpers::callback_failure)?
             {
                 return Err(invalid_otp());
             }
@@ -210,12 +205,7 @@ impl PhoneNumberPlugin {
             alibi_core::AwaitedNotificationErrorPolicy::Propagate,
         )
         .await
-        .map_err(|error| match error {
-            AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => {
-                error
-            }
-            error => AuthError::CallbackFailure(Box::new(error)),
-        })?;
+        .map_err(crate::helpers::callback_failure)?;
         AuthResponse::json(200, &json!({"message":"code sent"})).map_err(AuthError::from)
     }
     #[expect(

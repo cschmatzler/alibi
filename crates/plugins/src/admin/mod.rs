@@ -132,13 +132,7 @@ alibi_core::impl_auth_plugin! {
         post "/admin/has-permission" => handle_has_permission, "admin_has_permission";
     }
     extra {
-    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
-        crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self))
-    }
-
-    fn openapi_metadata(&self, ctx: &alibi_core::AuthInitContext<S>) -> alibi_core::PluginOpenApiMetadata {
-        crate::metadata::instance_plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self), ctx)
-    }
+    route_openapi_metadata!(S);
 
         fn session_fields(&self) -> alibi_core::field_policy::FieldConfigs {
             std::iter::once(("impersonatedBy".into(), alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"})).read_only())).collect()

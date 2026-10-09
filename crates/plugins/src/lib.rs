@@ -23,6 +23,30 @@ compile_error!(
      enable either the `native-tls` (default) or `rustls` feature."
 );
 
+/// Expand to the `OpenAPI` metadata methods of a plugin whose documentation
+/// comes entirely from its registered routes.
+macro_rules! route_openapi_metadata {
+    ($schema:ident) => {
+        fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
+            crate::metadata::plugin_metadata(
+                <Self as alibi_core::AuthPlugin<$schema>>::name(self),
+                &<Self as alibi_core::AuthPlugin<$schema>>::routes(self),
+            )
+        }
+
+        fn openapi_metadata(
+            &self,
+            ctx: &alibi_core::AuthInitContext<$schema>,
+        ) -> alibi_core::PluginOpenApiMetadata {
+            crate::metadata::instance_plugin_metadata(
+                <Self as alibi_core::AuthPlugin<$schema>>::name(self),
+                &<Self as alibi_core::AuthPlugin<$schema>>::routes(self),
+                ctx,
+            )
+        }
+    };
+}
+
 pub mod access;
 pub mod account_management;
 pub mod admin;

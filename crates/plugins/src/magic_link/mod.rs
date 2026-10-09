@@ -123,14 +123,10 @@ impl MagicLinkPlugin {
         match &self.config.storage {
             MagicLinkTokenStorage::Plain => Ok(token.to_owned()),
             MagicLinkTokenStorage::Hashed => Ok(hash_token(token)),
-            MagicLinkTokenStorage::Custom(hasher) => {
-                hasher.hash(token).await.map_err(|error| match error {
-                    AuthError::Api { .. }
-                    | AuthError::Upstream { .. }
-                    | AuthError::CallbackFailure(_) => error,
-                    error => AuthError::CallbackFailure(Box::new(error)),
-                })
-            }
+            MagicLinkTokenStorage::Custom(hasher) => hasher
+                .hash(token)
+                .await
+                .map_err(crate::helpers::callback_failure),
         }
     }
 
@@ -218,12 +214,7 @@ impl MagicLinkPlugin {
                 &alibi_core::CallbackContext::new(ctx, Some(req)),
             )
             .await
-            .map_err(|error| match error {
-                AuthError::Api { .. }
-                | AuthError::Upstream { .. }
-                | AuthError::CallbackFailure(_) => error,
-                error => AuthError::CallbackFailure(Box::new(error)),
-            })?;
+            .map_err(crate::helpers::callback_failure)?;
         AuthResponse::json(200, &json!({"status":true})).map_err(AuthError::from)
     }
 
@@ -349,13 +340,7 @@ alibi_core::impl_auth_plugin! {
         get "/magic-link/verify" => verify, "verifyMagicLink";
     }
     extra {
-    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
-        crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self))
-    }
-
-    fn openapi_metadata(&self, ctx: &alibi_core::AuthInitContext<S>) -> alibi_core::PluginOpenApiMetadata {
-        crate::metadata::instance_plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self), ctx)
-    }
+    route_openapi_metadata!(S);
 
         fn rate_limits(&self) -> Vec<alibi_core::PluginRateLimit> {
             vec![alibi_core::PluginRateLimit { matches: |path| path.starts_with("/sign-in/magic-link") || path.starts_with("/magic-link/verify"), limit: alibi_core::EndpointRateLimit {

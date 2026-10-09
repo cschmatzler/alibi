@@ -337,13 +337,7 @@ alibi_core::impl_auth_plugin! {
         post "/two-factor/verify-backup-code" => handle_verify_backup_code, "verify_backup_code";
     }
     extra {
-    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
-        crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self))
-    }
-
-    fn openapi_metadata(&self, ctx: &alibi_core::AuthInitContext<S>) -> alibi_core::PluginOpenApiMetadata {
-        crate::metadata::instance_plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self), ctx)
-    }
+    route_openapi_metadata!(S);
 
         fn rate_limits(&self) -> Vec<alibi_core::PluginRateLimit> {
             vec![alibi_core::PluginRateLimit { matches: |path| path.starts_with("/two-factor/"), limit: alibi_core::EndpointRateLimit { window_seconds: 10.0, max_requests: 3.0 } }]

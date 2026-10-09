@@ -69,10 +69,6 @@ pub struct AdvancedConfig {
 
     /// Database-related advanced options.
     pub database: AdvancedDatabaseConfig,
-
-    /// List of header names the framework trusts for extracting the
-    /// client's real IP when behind a proxy (e.g. `X-Forwarded-For`).
-    pub trusted_proxy_headers: Vec<String>,
 }
 
 /// IP-address extraction configuration.
