@@ -255,7 +255,7 @@ where
     async fn delete_member(&self, member_id: &str) -> AuthResult<()> {
         let member_id = member_id.to_owned();
         self.in_transaction(true, async move |tx| {
-            let exec = Exec::Tx(tx);
+            let exec = Exec::tx(tx);
             let mut select = self
                 .organization_models
                 .member
@@ -320,7 +320,7 @@ where
             user_id.to_owned(),
         );
         self.in_transaction(true, async move |tx| {
-            let exec = Exec::Tx(tx);
+            let exec = Exec::tx(tx);
             _ = exec
                 .execute(
                     self.organization_models

@@ -131,7 +131,7 @@ where
         let transaction = self.begin(true).await?;
         let outcome = async {
             let tx = &transaction;
-            let exec = Exec::Tx(tx);
+            let exec = Exec::tx(tx);
             let mut select = self
                 .organization_models
                 .invitation

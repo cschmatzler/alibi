@@ -100,7 +100,7 @@ where
             return self.create_device_code(input).await;
         }
         self.in_transaction(true, async move |tx| {
-            let exec = crate::pool::Exec::Tx(tx);
+            let exec = crate::pool::Exec::tx(tx);
             let create = Sql::with(exec.engine(), "CREATE TABLE IF NOT EXISTS device_code_fields (device_code_id TEXT PRIMARY KEY REFERENCES device_code(id) ON DELETE CASCADE, fields TEXT NOT NULL)");
             _ = exec.execute(create).await?;
             let row = self.create_device_code_with_connection(exec, input).await?;

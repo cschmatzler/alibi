@@ -72,7 +72,7 @@ where
         tx: &SqlxTransaction,
         create_account: CreateAccount,
     ) -> AuthResult<S::Account> {
-        self.create_account_with_connection(Exec::Tx(tx), Some(tx), create_account)
+        self.create_account_with_connection(Exec::tx(tx), Some(tx), create_account)
             .await
     }
 

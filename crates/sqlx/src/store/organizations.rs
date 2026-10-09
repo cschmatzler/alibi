@@ -245,7 +245,7 @@ where
     async fn delete_organization(&self, id: &str) -> AuthResult<()> {
         let id = id.to_owned();
         self.in_transaction(false, async move |tx| {
-            let exec = Exec::Tx(tx);
+            let exec = Exec::tx(tx);
             for query in [
                 self.organization_models
                     .member

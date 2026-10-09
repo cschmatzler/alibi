@@ -84,7 +84,7 @@ where
             }
         }
         self.in_transaction(true, async move |tx| {
-            Ok(Exec::Tx(tx).execute(sql).await? == 1)
+            Ok(Exec::tx(tx).execute(sql).await? == 1)
         })
         .await
     }

@@ -134,7 +134,7 @@ where
         tx: &SqlxTransaction,
         verification: CreateVerification,
     ) -> AuthResult<S::Verification> {
-        self.create_verification_with_connection(Exec::Tx(tx), Some(tx), verification)
+        self.create_verification_with_connection(Exec::tx(tx), Some(tx), verification)
             .await
     }
 
@@ -168,7 +168,7 @@ where
         // protects against another consumer using a separate store/process.
         let transaction = self.begin(true).await?;
         let outcome = async {
-            let exec = Exec::Tx(&transaction);
+            let exec = Exec::tx(&transaction);
             let mut select = Self::newest_generation(
                 exec,
                 &[(

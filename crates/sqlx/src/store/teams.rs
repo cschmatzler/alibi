@@ -52,7 +52,7 @@ where
         user_id: &str,
         maximum: Option<f64>,
     ) -> AuthResult<AddTeamMemberResult> {
-        let exec = Exec::Tx(tx);
+        let exec = Exec::tx(tx);
         if super::users::find_user_by_id::<S::User>(exec, user_id, super::users::Lock::Shared)
             .await?
             .is_none()
@@ -219,7 +219,7 @@ where
     async fn delete_team(&self, organization_id: &str, team_id: &str) -> AuthResult<bool> {
         let (organization_id, team_id) = (organization_id.to_owned(), team_id.to_owned());
         self.in_transaction(true, async move |tx| {
-            let exec = Exec::Tx(tx);
+            let exec = Exec::tx(tx);
             let mut delete = Sql::with(exec.engine(), "DELETE FROM ");
             delete.ident(team::Model::TABLE);
             delete.push(" WHERE ");
@@ -324,7 +324,7 @@ where
         let (team_id, user_id) = (team_id.to_owned(), user_id.to_owned());
         let removed = self
             .in_transaction(true, async move |tx| {
-                let exec = Exec::Tx(tx);
+                let exec = Exec::tx(tx);
                 let mut room = model::by_id::<team::Model>(exec, team_id.as_str());
                 model::limit_one(&mut room);
                 lock_exclusive(&mut room);
@@ -426,7 +426,7 @@ pub(super) async fn remove_owned_team_members(
     user_id: &str,
     organization_id: Option<&str>,
 ) -> AuthResult<()> {
-    let exec = Exec::Tx(tx);
+    let exec = Exec::tx(tx);
     if !super::migrator::has_table(exec, "team_member").await? {
         return Ok(());
     }
@@ -449,7 +449,7 @@ pub(super) async fn release_owned_team_members(
     user_id: &str,
     rooms: Vec<team::Model>,
 ) -> AuthResult<()> {
-    let exec = Exec::Tx(tx);
+    let exec = Exec::tx(tx);
     for room in rooms {
         let mut delete = Sql::with(exec.engine(), "DELETE FROM ");
         delete.ident(team_member::Model::TABLE);

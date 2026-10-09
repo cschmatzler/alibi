@@ -273,21 +273,13 @@ pub(crate) struct Exec<'a> {
     config: Option<&'a alibi_core::config::AuthConfig>,
 }
 impl<'a> Exec<'a> {
-    #[expect(
-        non_snake_case,
-        reason = "Retain the connection constructor names used by adapter call sites"
-    )]
-    pub(crate) const fn Pool(pool: &'a SqlxPool) -> Self {
+    pub(crate) const fn pool(pool: &'a SqlxPool) -> Self {
         Self {
             connection: ExecConnection::Pool(pool),
             config: None,
         }
     }
-    #[expect(
-        non_snake_case,
-        reason = "Retain the connection constructor names used by adapter call sites"
-    )]
-    pub(crate) fn Tx(tx: &'a SqlxTransaction) -> Self {
+    pub(crate) fn tx(tx: &'a SqlxTransaction) -> Self {
         Self {
             connection: ExecConnection::Tx(tx),
             config: tx.config.as_deref(),
@@ -309,9 +301,7 @@ impl<'a> Exec<'a> {
             sql = alibi_core::database_sql::map_two_factor(&sql, mapping)?;
         }
         if self.engine() == Engine::Postgres
-            && let Some(schema) = self
-                .config
-                .and_then(|config| config.advanced.database.schema_name.as_deref())
+            && let Some(schema) = self.schema_name()
         {
             return alibi_core::database_sql::qualify_schema(&sql, schema);
         }
@@ -436,36 +426,28 @@ impl Exec<'_> {
         let script = self.qualify(script.to_owned())?;
         let result = match self.connection {
             #[cfg(feature = "sqlite")]
-            ExecConnection::Pool(SqlxPool::Sqlite(pool)) => {
-                sqlx::raw_sql(AssertSqlSafe(script.clone()))
-                    .execute(pool)
-                    .await
-                    .map(drop)
-            }
+            ExecConnection::Pool(SqlxPool::Sqlite(pool)) => sqlx::raw_sql(AssertSqlSafe(script))
+                .execute(pool)
+                .await
+                .map(|_| ()),
             #[cfg(feature = "postgres")]
-            ExecConnection::Pool(SqlxPool::Postgres(pool)) => {
-                sqlx::raw_sql(AssertSqlSafe(script.clone()))
-                    .execute(pool)
-                    .await
-                    .map(drop)
-            }
+            ExecConnection::Pool(SqlxPool::Postgres(pool)) => sqlx::raw_sql(AssertSqlSafe(script))
+                .execute(pool)
+                .await
+                .map(|_| ()),
             ExecConnection::Tx(transaction) => {
                 let mut guard = transaction.inner.lock().await;
                 match guard.as_mut() {
                     #[cfg(feature = "sqlite")]
-                    Some(TransactionKind::Sqlite(open)) => {
-                        sqlx::raw_sql(AssertSqlSafe(script.clone()))
-                            .execute(&mut **open)
-                            .await
-                            .map(drop)
-                    }
+                    Some(TransactionKind::Sqlite(open)) => sqlx::raw_sql(AssertSqlSafe(script))
+                        .execute(&mut **open)
+                        .await
+                        .map(|_| ()),
                     #[cfg(feature = "postgres")]
-                    Some(TransactionKind::Postgres(open)) => {
-                        sqlx::raw_sql(AssertSqlSafe(script.clone()))
-                            .execute(&mut **open)
-                            .await
-                            .map(drop)
-                    }
+                    Some(TransactionKind::Postgres(open)) => sqlx::raw_sql(AssertSqlSafe(script))
+                        .execute(&mut **open)
+                        .await
+                        .map(|_| ()),
                     None => Err(sqlx::Error::PoolClosed),
                 }
             }

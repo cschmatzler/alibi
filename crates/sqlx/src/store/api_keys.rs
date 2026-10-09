@@ -168,7 +168,7 @@ where
     ) -> AuthResult<ConsumeApiKeyResult> {
         // SQLite must acquire its write reservation before reading usage counters.
         let transaction = self.begin(true).await?;
-        let exec = Exec::Tx(&transaction);
+        let exec = Exec::tx(&transaction);
         let id = id.to_owned();
         let result = async {
             let mut select = model::by_id::<Model>(exec, id.as_str());

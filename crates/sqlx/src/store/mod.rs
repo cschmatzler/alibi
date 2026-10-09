@@ -143,7 +143,7 @@ impl<S: AuthSchema> SqlxStore<S> {
     }
 
     pub(crate) fn exec(&self) -> Exec<'_> {
-        Exec::Pool(&self.pool).with_config(self.config.as_ref())
+        Exec::pool(&self.pool).with_config(self.config.as_ref())
     }
 
     pub(crate) fn hook_context<'a>(
@@ -193,7 +193,7 @@ impl<S: AuthSchema> SchemaMigrator for SqlxStore<S> {
         if let Some(mapping) = &self.config.advanced.database.two_factor {
             let commands = mapping.migration_statements()?;
             self.in_transaction(false, async move |tx| {
-                let exec = Exec::Tx(tx);
+                let exec = Exec::tx(tx);
                 if migrator::has_table(exec, "two_factor").await? {
                     for command in commands {
                         _ = exec
@@ -225,16 +225,16 @@ where
     S::Verification: SqlxVerificationModel,
 {
     async fn list_jwks(&self) -> AuthResult<Vec<alibi_core::types::Jwk>> {
-        self.store.list_jwks_with(Exec::Tx(self.tx)).await
+        self.store.list_jwks_with(Exec::tx(self.tx)).await
     }
     async fn get_jwk_by_id(&self, id: &str) -> AuthResult<Option<alibi_core::types::Jwk>> {
-        self.store.get_jwk_with(Exec::Tx(self.tx), id).await
+        self.store.get_jwk_with(Exec::tx(self.tx), id).await
     }
     async fn create_jwk(
         &self,
         data: alibi_core::types::CreateJwk,
     ) -> AuthResult<alibi_core::types::Jwk> {
-        self.store.create_jwk_with(Exec::Tx(self.tx), data).await
+        self.store.create_jwk_with(Exec::tx(self.tx), data).await
     }
 
     async fn get_team(
@@ -243,7 +243,7 @@ where
         team_id: &str,
     ) -> AuthResult<Option<alibi_core::types::Team>> {
         self.store
-            .get_team_with_connection(Exec::Tx(self.tx), Some(organization_id), team_id)
+            .get_team_with_connection(Exec::tx(self.tx), Some(organization_id), team_id)
             .await
     }
     async fn add_team_member(
@@ -261,7 +261,7 @@ where
         member: alibi_core::CreateMember,
     ) -> AuthResult<alibi_core::types::Member> {
         self.store
-            .create_member_with_connection(Exec::Tx(self.tx), member)
+            .create_member_with_connection(Exec::tx(self.tx), member)
             .await
     }
     async fn update_session_active_team(
@@ -271,7 +271,7 @@ where
     ) -> AuthResult<S::Session> {
         self.store
             .update_session_scope_with_connection(
-                Exec::Tx(self.tx),
+                Exec::tx(self.tx),
                 token,
                 sessions::SessionScope::Team(team_id),
             )
@@ -284,7 +284,7 @@ where
     ) -> AuthResult<S::Session> {
         self.store
             .update_session_scope_with_connection(
-                Exec::Tx(self.tx),
+                Exec::tx(self.tx),
                 token,
                 sessions::SessionScope::Organization(organization_id),
             )
@@ -294,17 +294,17 @@ where
         &self,
         id: &str,
     ) -> AuthResult<Option<serde_json::Value>> {
-        users::provider_verification_output::<S::User>(Exec::Tx(self.tx), id).await
+        users::provider_verification_output::<S::User>(Exec::tx(self.tx), id).await
     }
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>> {
-        users::find_user_by_id::<S::User>(Exec::Tx(self.tx), id, users::Lock::None).await
+        users::find_user_by_id::<S::User>(Exec::tx(self.tx), id, users::Lock::None).await
     }
     async fn create_passkey(
         &self,
         data: alibi_core::CreatePasskey,
     ) -> AuthResult<alibi_core::Passkey> {
         self.store
-            .create_passkey_with_connection(Exec::Tx(self.tx), data)
+            .create_passkey_with_connection(Exec::tx(self.tx), data)
             .await
     }
     async fn create_user(&self, create_user: alibi_core::CreateUser) -> AuthResult<S::User> {
@@ -351,7 +351,7 @@ where
     ) -> AuthResult<Option<(S::Session, alibi_core::field_policy::FieldValues)>> {
         self.store
             .prepare_secondary_update_with_connection(
-                Exec::Tx(self.tx),
+                Exec::tx(self.tx),
                 Some(self.tx),
                 session,
                 expires_at,
@@ -371,7 +371,7 @@ where
         let result = self
             .store
             .complete_secondary_update_with_connection(
-                Exec::Tx(self.tx),
+                Exec::tx(self.tx),
                 Some(self.tx),
                 session,
                 expires_at,
@@ -421,7 +421,7 @@ where
         let snapshot = self
             .store
             .create_verification_record_with_connection(
-                Exec::Tx(self.tx),
+                Exec::tx(self.tx),
                 Some(self.tx),
                 data,
                 publication,

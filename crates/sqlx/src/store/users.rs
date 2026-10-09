@@ -220,7 +220,7 @@ where
     ) -> AuthResult<S::User> {
         create_user.email = create_user.email.map(|email| normalize_user_email(&email));
         self.create_user_with_connection(
-            Exec::Tx(tx),
+            Exec::tx(tx),
             Some(tx),
             create_user,
             alibi_core::store::UserCreationDefaults::default(),
@@ -234,7 +234,7 @@ where
         prepared: alibi_core::user_validation::PreparedUserCreation,
     ) -> AuthResult<S::User> {
         let (data, defaults) = prepared.into_parts();
-        self.create_user_with_connection(Exec::Tx(tx), Some(tx), data, defaults)
+        self.create_user_with_connection(Exec::tx(tx), Some(tx), data, defaults)
             .await
     }
 
@@ -436,7 +436,7 @@ where
         let owner = user.id().into_owned();
         let id = id.to_owned();
         self.in_transaction(true, async move |tx| {
-            let exec = Exec::Tx(tx);
+            let exec = Exec::tx(tx);
             _ = find_user_by_id::<S::User>(exec, &id, Lock::Exclusive).await?;
             super::teams::remove_owned_team_members(tx, &owner, None).await?;
             super::wallets::remove_owned_wallets(tx, &owner).await?;

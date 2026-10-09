@@ -236,7 +236,7 @@ where
         input: CreateSession,
         persist: bool,
     ) -> AuthResult<S::Session> {
-        self.create_session_with_connection(Exec::Tx(tx), Some(tx), input, persist, false)
+        self.create_session_with_connection(Exec::tx(tx), Some(tx), input, persist, false)
             .await
     }
 
@@ -245,7 +245,7 @@ where
         tx: &SqlxTransaction,
         create_session: CreateSession,
     ) -> AuthResult<S::Session> {
-        self.create_session_with_connection(Exec::Tx(tx), Some(tx), create_session, true, true)
+        self.create_session_with_connection(Exec::tx(tx), Some(tx), create_session, true, true)
             .await
     }
 }

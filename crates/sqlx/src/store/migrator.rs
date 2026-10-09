@@ -50,7 +50,7 @@ async fn apply_scoped(
     migrations: &[Migration],
     config: Option<&std::sync::Arc<alibi_core::config::AuthConfig>>,
 ) -> AuthResult<()> {
-    let mut exec = Exec::Pool(pool);
+    let mut exec = Exec::pool(pool);
     if let Some(config) = config {
         if pool.engine() == Engine::Postgres
             && let Some(schema) = &config.advanced.database.schema_name
@@ -97,7 +97,7 @@ async fn apply_scoped(
     {
         let mut transaction = pool.begin(false).await?;
         transaction.config = config.cloned();
-        let exec = Exec::Tx(&transaction);
+        let exec = Exec::tx(&transaction);
         exec.execute_script(match backend {
             Engine::Sqlite => migration.sqlite,
             Engine::Postgres => migration.postgres,
