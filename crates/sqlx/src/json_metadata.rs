@@ -106,18 +106,7 @@ impl SqlxValue for JsonMetadata {
                     .map(Self::from)
                     .map_err(|_error| ValueTypeError)
             }
-            SqlValue::Bool(_)
-            | SqlValue::Int(_)
-            | SqlValue::BigInt(_)
-            | SqlValue::Float(_)
-            | SqlValue::Double(_)
-            | SqlValue::Text(None)
-            | SqlValue::BpChar(_)
-            | SqlValue::Bytes(_)
-            | SqlValue::Json(None)
-            | SqlValue::Timestamp(_)
-            | SqlValue::NaiveTimestamp(_)
-            | SqlValue::Uuid(_) => Err(ValueTypeError),
+            _ => Err(ValueTypeError),
         }
     }
     fn prepare(self, engine: Engine) -> AuthResult<Self> {

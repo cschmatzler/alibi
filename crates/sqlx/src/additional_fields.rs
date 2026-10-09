@@ -1,8 +1,9 @@
 //! Raw configured values staged on actual model columns.
 
+use crate::json_metadata::JsonMetadata;
 use crate::pool::Exec;
 use crate::sql::Sql;
-use crate::value::{ColumnKind, SqlValue};
+use crate::value::{ColumnKind, SqlValue, SqlxValue};
 use alibi_core::store::adapter::RawFieldValue;
 use alibi_core::{AuthError, AuthResult, utils::json::JsValue};
 
@@ -65,22 +66,9 @@ pub(crate) async fn prepare_value(
                 SqlValue::Double(Some(value)) => serde_json::json!(value),
                 SqlValue::Text(Some(value)) => serde_json::json!(value),
                 SqlValue::Json(Some(value)) => *value,
-                SqlValue::Bool(None)
-                | SqlValue::Int(_)
-                | SqlValue::BigInt(None)
-                | SqlValue::Float(_)
-                | SqlValue::Double(None)
-                | SqlValue::Text(None)
-                | SqlValue::BpChar(_)
-                | SqlValue::Bytes(_)
-                | SqlValue::Json(None)
-                | SqlValue::Timestamp(_)
-                | SqlValue::NaiveTimestamp(_)
-                | SqlValue::Uuid(_) => serde_json::Value::Null,
+                _ => serde_json::Value::Null,
             };
-            Ok(crate::value::SqlxValue::into_sql_value(
-                crate::JsonMetadata::for_backend(json, backend)?,
-            ))
+            Ok(JsonMetadata::for_backend(json, backend)?.into_sql_value())
         }
         ColumnKind::Double => Ok(match value {
             SqlValue::BigInt(Some(value)) => SqlValue::Double(Some(value as f64)),
