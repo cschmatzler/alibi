@@ -1,4 +1,6 @@
-use super::*;
+use alibi_core::entity::{AuthAccount, AuthUser};
+use alibi_core::{AuthContext, AuthResult};
+
 /// Fetch the user's credential account, if present.
 ///
 /// # Errors

@@ -1,7 +1,6 @@
 use super::{OneTimeTokenPlugin, OneTimeTokenSession};
 use crate::authentication_helpers::JsonField;
 use crate::endpoint::{definition, validate_fields};
-use alibi_core::HttpMethod;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
@@ -10,7 +9,7 @@ use alibi_core::utils::cookie_utils::{
     related_cookie_name, sign_cookie_value, verify_cookie_value,
 };
 use alibi_core::utils::json::JsValue;
-use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema};
+use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod};
 use chrono::Utc;
 use serde::Deserialize;
 
@@ -76,13 +75,10 @@ impl OneTimeTokenPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         if call.operation_id() == "generateOneTimeToken" {
-            let (user, session) = ctx.require_cached_session(call).await.map_err(|error| {
-                if matches!(error, AuthError::Unauthenticated) {
-                    super::unauthorized()
-                } else {
-                    error
-                }
-            })?;
+            let (user, session) = ctx
+                .require_cached_session(call)
+                .await
+                .map_err(crate::helpers::unauthorized_if_unauthenticated)?;
             let user = match &user {
                 alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
                 alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
@@ -108,17 +104,14 @@ impl OneTimeTokenPlugin {
                 token: String,
             }
             let body: Body = call.body_as()?;
-            let (user, stored_session) = match self.consume_stored_session(&body.token, ctx).await?
-            {
-                super::TokenSessionLookup::Found { user, session } => (user, session),
-                super::TokenSessionLookup::Missing(absence) => {
-                    return Err(AuthError::Api {
-                        status: 400,
-                        code: None,
-                        message: absence.message().into(),
-                    });
-                }
-            };
+            let (user, stored_session) = self
+                .consume_stored_session(&body.token, ctx)
+                .await?
+                .map_err(|message| AuthError::Api {
+                    status: 400,
+                    code: None,
+                    message: message.into(),
+                })?;
             let session = OneTimeTokenSession {
                 user: ctx.user_view(&user),
                 session: ctx.session_view(&stored_session),

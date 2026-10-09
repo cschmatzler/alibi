@@ -1,8 +1,7 @@
 use super::StatusResponse;
 use super::authentication_helpers::{JsonField, RequestBody, parse_body};
 use alibi_core::entity::{AuthAccount, AuthUser};
-use alibi_core::{AuthContext, AuthError, AuthResult};
-use alibi_core::{AuthRequest, AuthResponse};
+use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult};
 use serde::Deserialize;
 use validator::Validate;
 
@@ -46,10 +45,6 @@ alibi_core::impl_auth_plugin! {
  }
 }
 
-// ---------------------------------------------------------------------------
-// Old handler methods — delegate to core functions
-// ---------------------------------------------------------------------------
-
 impl AccountManagementPlugin {
     async fn handle_list_accounts(
         &self,
@@ -86,13 +81,6 @@ impl std::fmt::Debug for AccountManagementPlugin {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Core functions — framework-agnostic business logic
-// ---------------------------------------------------------------------------
-
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn list_accounts_core(
     user: &impl AuthUser,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -112,15 +100,12 @@ pub(crate) async fn list_accounts_core(
                     .collect(),
                 Some(_) => return Err(AuthError::internal("Account scope must be a string")),
             };
-            drop(output.insert("scopes".into(), serde_json::to_value(scopes)?));
+            _ = output.insert("scopes".into(), serde_json::to_value(scopes)?);
             Ok(output)
         })
         .collect()
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn unlink_account_core(
     user: &impl AuthUser,
     account_id: &str,

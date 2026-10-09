@@ -1,10 +1,10 @@
-use super::*;
+use alibi_core::field_policy::FieldInputError;
+use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, CreateUser};
+use serde_json::Value;
+
 /// Parse passwordless signup fields before username create-hook validation.
 /// Endpoint input transforms, database hooks, and adapter transforms are
 /// separate stages; display fallback uses the parsed username.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn prepare_additional_user_fields(
     ctx: &AuthContext<impl AuthSchema>,
     data: &mut CreateUser,
@@ -26,31 +26,22 @@ pub(crate) async fn prepare_additional_user_fields(
         .unwrap_or_default();
     let mut input = indexmap::IndexMap::new();
     if let Some(username) = &data.username {
-        drop(input.insert(
+        _ = input.insert(
             "username".into(),
             alibi_core::utils::json::JsValue::String(username.clone()),
-        ));
+        );
     }
     if policy.include_display_username
         && let Some(display) = &data.display_username
     {
-        drop(input.insert(
+        _ = input.insert(
             "displayUsername".into(),
             alibi_core::utils::json::JsValue::String(display.clone()),
-        ));
+        );
     }
     data.additional_fields = ctx
         .parse_user_fields(&input, true)
-        .map_err(|error| match error {
-            alibi_core::field_policy::FieldInputError::Validation { code, message } => {
-                AuthError::Api {
-                    status: 400,
-                    code: Some(code.into()),
-                    message,
-                }
-            }
-            alibi_core::field_policy::FieldInputError::Transform(error) => error,
-        })?;
+        .map_err(field_input_error)?;
     data.username = data
         .additional_fields
         .get("username")
@@ -115,5 +106,17 @@ pub(crate) fn apply_creation_input_defaults(
     }
     if enabled("two_factor.enabled") {
         _ = data.two_factor_enabled.get_or_insert(false);
+    }
+}
+
+/// Surface a rejected additional-field input as the published 400 response.
+pub(crate) fn field_input_error(error: FieldInputError) -> AuthError {
+    match error {
+        FieldInputError::Validation { code, message } => AuthError::Api {
+            status: 400,
+            code: Some(code.into()),
+            message,
+        },
+        FieldInputError::Transform(error) => error,
     }
 }

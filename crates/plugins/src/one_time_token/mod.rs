@@ -2,12 +2,10 @@
 
 mod endpoint;
 
-use super::authentication_helpers::{JsonField, RequestBody, parse_body};
-use super::helpers::{get_cookie, response_session};
-use alibi_core::utils::cookie_utils::{
-    create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
-    sign_cookie_value, verify_cookie_value,
+use super::authentication_helpers::{
+    JsonField, RequestBody, dont_remember_preference, parse_body, with_session_cookies,
 };
+use super::helpers::{response_session, unauthorized_if_unauthenticated};
 use alibi_core::wire::{SessionView, UserView};
 use alibi_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
@@ -30,27 +28,14 @@ pub struct OneTimeTokenSession {
     pub user: UserView,
 }
 
-enum TokenSessionAbsence {
-    InvalidToken,
-    SessionNotFound,
-}
-
-impl TokenSessionAbsence {
-    const fn message(&self) -> &'static str {
-        match self {
-            Self::InvalidToken => "Invalid token",
-            Self::SessionNotFound => "Session not found",
-        }
-    }
-}
-
-enum TokenSessionLookup<S: AuthSchema> {
-    Found {
-        user: S::User,
-        session: alibi_core::AdapterRecord<S::Session>,
-    },
-    Missing(TokenSessionAbsence),
-}
+/// A consumed token's user and session, or the public reason it resolves to none.
+type ConsumedSession<S> = Result<
+    (
+        <S as AuthSchema>::User,
+        alibi_core::AdapterRecord<<S as AuthSchema>::Session>,
+    ),
+    &'static str,
+>;
 
 /// Application-owned token generation, including asynchronous generators.
 ///
@@ -160,19 +145,18 @@ impl OneTimeTokenPlugin {
             Some(generator) => generator
                 .generate(session, request)
                 .await
-                .map_err(callback_error)?,
+                .map_err(crate::helpers::callback_failure)?,
             None => random_token(),
         };
         let stored = self.stored_token(&token).await?;
-        drop(
-            ctx.verifications()
-                .create(CreateVerification {
-                    identifier: format!("one-time-token:{stored}"),
-                    value: session.session.token.clone(),
-                    expires_at: Utc::now() + self.config.expires_in,
-                })
-                .await?,
-        );
+        _ = ctx
+            .verifications()
+            .create(CreateVerification {
+                identifier: format!("one-time-token:{stored}"),
+                value: session.session.token.clone(),
+                expires_at: Utc::now() + self.config.expires_in,
+            })
+            .await?;
         Ok(token)
     }
 
@@ -199,7 +183,10 @@ impl OneTimeTokenPlugin {
             OneTimeTokenStorage::Hashed => {
                 Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(token.as_bytes())))
             }
-            OneTimeTokenStorage::Custom(hasher) => hasher.hash(token).await.map_err(callback_error),
+            OneTimeTokenStorage::Custom(hasher) => hasher
+                .hash(token)
+                .await
+                .map_err(crate::helpers::callback_failure),
         }
     }
 
@@ -208,12 +195,10 @@ impl OneTimeTokenPlugin {
         token: &str,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<OneTimeTokenSession> {
-        let (user, session) = match self.consume_stored_session(token, ctx).await? {
-            TokenSessionLookup::Found { user, session } => (user, session),
-            TokenSessionLookup::Missing(absence) => {
-                return Err(AuthError::bad_request(absence.message()));
-            }
-        };
+        let (user, session) = self
+            .consume_stored_session(token, ctx)
+            .await?
+            .map_err(AuthError::bad_request)?;
         Ok(OneTimeTokenSession {
             session: ctx.session_view(&session),
             user: ctx.user_view(&user),
@@ -224,32 +209,26 @@ impl OneTimeTokenPlugin {
         &self,
         token: &str,
         ctx: &AuthContext<S>,
-    ) -> AuthResult<TokenSessionLookup<S>> {
+    ) -> AuthResult<ConsumedSession<S>> {
         let stored = self.stored_token(token).await?;
         let Some(verification) = ctx
             .verifications()
             .consume(&format!("one-time-token:{stored}"))
             .await?
         else {
-            return Ok(TokenSessionLookup::Missing(
-                TokenSessionAbsence::InvalidToken,
-            ));
+            return Ok(Err("Invalid token"));
         };
         let Some(session) = ctx
             .database
             .get_session_record(verification.value()?)
             .await?
         else {
-            return Ok(TokenSessionLookup::Missing(
-                TokenSessionAbsence::SessionNotFound,
-            ));
+            return Ok(Err("Session not found"));
         };
         let Some(user) = ctx.session_user(&session).await? else {
-            return Ok(TokenSessionLookup::Missing(
-                TokenSessionAbsence::SessionNotFound,
-            ));
+            return Ok(Err("Session not found"));
         };
-        Ok(TokenSessionLookup::Found { user, session })
+        Ok(Ok((user, session)))
     }
 
     async fn generate(
@@ -257,42 +236,10 @@ impl OneTimeTokenPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, session) =
-            ctx.require_cached_session(req)
-                .await
-                .map_err(|error| match error {
-                    AuthError::Unauthenticated => unauthorized(),
-                    error @ (AuthError::Api { .. }
-                    | AuthError::Upstream { .. }
-                    | AuthError::BadRequest(_)
-                    | AuthError::InvalidRequest(_)
-                    | AuthError::Validation(_)
-                    | AuthError::InvalidCredentials
-                    | AuthError::AuthenticationFailed(_)
-                    | AuthError::SessionNotFound
-                    | AuthError::Forbidden(_)
-                    | AuthError::UserCreationCancelled
-                    | AuthError::SessionCreationCancelled
-                    | AuthError::BannedUser(_)
-                    | AuthError::Unauthorized
-                    | AuthError::UserNotFound
-                    | AuthError::NotFound(_)
-                    | AuthError::Conflict(_)
-                    | AuthError::MethodNotAllowed(_)
-                    | AuthError::PayloadTooLarge(_)
-                    | AuthError::UnprocessableEntity(_)
-                    | AuthError::RateLimited { .. }
-                    | AuthError::NotImplemented(_)
-                    | AuthError::Config(_)
-                    | AuthError::Database(_)
-                    | AuthError::Serialization(_)
-                    | AuthError::Plugin { .. }
-                    | AuthError::CallbackFailure(_)
-                    | AuthError::Internal(_)
-                    | AuthError::Encryption(_)
-                    | AuthError::PasswordHash(_)
-                    | AuthError::Jwt(_)) => error,
-                })?;
+        let (user, session) = ctx
+            .require_cached_session(req)
+            .await
+            .map_err(unauthorized_if_unauthenticated)?;
         if self.config.disable_client_request {
             return message_response(400, "Client requests are disabled");
         }
@@ -345,28 +292,9 @@ impl OneTimeTokenPlugin {
         // The reference sets the existing session cookie before checking its
         // expiry, including on the expired-session rejection response.
         if !self.config.disable_set_session_cookie {
-            let dont_remember = get_cookie(req, &related_cookie_name(&ctx.config, "dont_remember"))
-                .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
-                .is_some_and(|value| !value.is_empty());
-            response.headers.append(
-                "set-cookie",
-                create_session_cookie_with_max_age(
-                    Some(&session.session.token),
-                    (!dont_remember).then_some(ctx.config.session.expires_in.num_seconds()),
-                    &ctx.config,
-                )?,
-            );
-            if dont_remember {
-                response.headers.append(
-                    "set-cookie",
-                    create_session_like_cookie(
-                        &related_cookie_name(&ctx.config, "dont_remember"),
-                        &sign_cookie_value("true", ctx.config.current_secret()),
-                        None,
-                        &ctx.config,
-                    )?,
-                );
-            }
+            let dont_remember = dont_remember_preference(req, &ctx.config);
+            response =
+                with_session_cookies(response, &ctx.config, &session.session.token, dont_remember)?;
         }
         Ok(response)
     }
@@ -435,13 +363,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OneTimeTokenPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
-        match (req.method(), req.path()) {
-            (HttpMethod::Get, "/one-time-token/generate") => {
-                Ok(Some(self.generate(req, ctx).await?))
-            }
-            (HttpMethod::Post, "/one-time-token/verify") => Ok(Some(self.verify(req, ctx).await?)),
-            _ => Ok(None),
-        }
+        let response = match (req.method(), req.path()) {
+            (HttpMethod::Get, "/one-time-token/generate") => self.generate(req, ctx).await?,
+            (HttpMethod::Post, "/one-time-token/verify") => self.verify(req, ctx).await?,
+            _ => return Ok(None),
+        };
+        Ok(Some(response))
     }
     async fn after_request(
         &self,
@@ -479,29 +406,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OneTimeTokenPlugin {
             if !expose.iter().any(|header| header == "set-ott") {
                 expose.push("set-ott".to_owned());
             }
-            drop(response.headers.insert("set-ott", token));
-            drop(
-                response
-                    .headers
-                    .insert("access-control-expose-headers", expose.join(", ")),
-            );
+            _ = response.headers.insert("set-ott", token);
+            _ = response
+                .headers
+                .insert("access-control-expose-headers", expose.join(", "));
         }
         Ok(response)
-    }
-}
-
-fn callback_error(error: AuthError) -> AuthError {
-    match error {
-        AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => error,
-        error => AuthError::CallbackFailure(Box::new(error)),
-    }
-}
-
-const fn unauthorized() -> AuthError {
-    AuthError::Upstream {
-        status: 401,
-        code: "UNAUTHORIZED",
-        message: "Unauthorized",
     }
 }
 
@@ -527,6 +437,9 @@ mod tests {
     use super::*;
     use crate::test_helpers;
     use alibi_core::CreateUser;
+    use alibi_core::utils::cookie_utils::{
+        related_cookie_name, sign_cookie_value, verify_cookie_value,
+    };
 
     type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 

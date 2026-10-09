@@ -1,9 +1,9 @@
-use super::*;
+use alibi_core::{AuthContext, AuthError, AuthResult};
+
 /// Fetch an API key by ID and verify that it belongs to the given user.
 ///
 /// Returns `AuthError::not_found` if the key does not exist or belongs to
-/// another user.  This pattern was duplicated in `handle_get`, `handle_update`,
-/// and `handle_delete`.
+/// another user.
 ///
 /// # Errors
 ///
@@ -78,8 +78,8 @@ pub async fn require_org_api_key_permission(
     // (comma-separated), so holding it alongside others still counts.
     let creator_role = ctx
         .get_metadata(METADATA_CREATOR_ROLE)
-        .and_then(|value| value.as_str().map(str::to_owned))
-        .unwrap_or_else(|| "owner".to_owned());
+        .and_then(serde_json::Value::as_str)
+        .map_or_else(|| "owner".to_owned(), str::to_owned);
     let config = OrganizationConfig {
         roles: ctx
             .get_metadata(METADATA_ROLES)

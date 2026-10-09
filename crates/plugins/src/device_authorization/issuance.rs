@@ -1,4 +1,12 @@
-use super::*;
+use super::types::{DeviceCodeRequest, DeviceCodeResponse};
+use super::{
+    DEVICE_STATUS_PENDING, DeviceAuthorizationPlugin, INVALID_CLIENT_ID, build_verification_uris,
+    device_error_response, duration_seconds_floor, is_unique_constraint_error, no_store,
+};
+use crate::helpers::callback_failure;
+use alibi_core::{AuthContext, AuthResponse, AuthResult, CreateDeviceCode};
+use chrono::Utc;
+
 impl DeviceAuthorizationPlugin {
     pub(in crate::device_authorization) async fn issue_device_code(
         &self,
@@ -27,7 +35,7 @@ impl DeviceAuthorizationPlugin {
         if let Some(callback) = &self.config.on_device_auth_request {
             callback(body.client_id.clone(), body.scope.clone())
                 .await
-                .map_err(device_callback_error)?;
+                .map_err(callback_failure)?;
         }
 
         let expires_at = Utc::now() + self.config.expires_in;
@@ -78,7 +86,7 @@ impl DeviceAuthorizationPlugin {
                 &user_code,
             )?;
 
-            return Ok(AuthResponse::json(
+            return Ok(no_store(AuthResponse::json(
                 200,
                 &DeviceCodeResponse {
                     device_code,
@@ -88,9 +96,7 @@ impl DeviceAuthorizationPlugin {
                     expires_in: duration_seconds_floor(self.config.expires_in),
                     interval: duration_seconds_floor(self.config.interval),
                 },
-            )?
-            .with_header("Cache-Control", "no-store")
-            .with_header("Pragma", "no-cache"));
+            )?));
         }
         device_error_response(
             500,

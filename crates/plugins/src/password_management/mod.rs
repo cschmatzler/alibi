@@ -1,30 +1,30 @@
-mod set_password;
-pub use set_password::set_password;
-
 pub(super) mod handlers;
-
+mod set_password;
 pub(super) mod types;
 
 use super::StatusResponse;
-use alibi_core::RequestMeta;
 use alibi_core::utils::password::PasswordHasher;
-use alibi_core::{AuthContext, AuthPlugin, AuthRoute};
-use alibi_core::{AuthError, AuthResult};
-use alibi_core::{AuthRequest, AuthResponse, HttpMethod};
+use alibi_core::{
+    AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
+    HttpMethod, RequestMeta,
+};
 use async_trait::async_trait;
 use handlers::{
     change_password_core, request_password_reset_core, reset_password_core,
     reset_password_token_core, verify_password_core,
 };
+pub use set_password::set_password;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use types::{
     ChangePasswordRequest, RequestPasswordResetRequest, ResetPasswordRequest,
-    ResetPasswordTokenQuery, ResetPasswordTokenResult, VerifyPasswordRequest,
+    ResetPasswordTokenQuery, VerifyPasswordRequest,
 };
 
-/// Type alias for the async password-reset callback to keep Clippy happy.
+const RESET_TOKEN_ROUTE_PREFIX: &str = "/reset-password/";
+
+/// Async callback invoked after a password reset, with the user as JSON.
 pub type OnPasswordResetCallback =
     dyn Fn(serde_json::Value) -> Pin<Box<dyn Future<Output = AuthResult<()>> + Send>> + Send + Sync;
 
@@ -157,31 +157,25 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
-        match (req.method(), req.path()) {
+        let response = match (req.method(), req.path()) {
             (HttpMethod::Post, "/request-password-reset") => {
-                Ok(Some(self.handle_request_password_reset(req, ctx).await?))
+                self.handle_request_password_reset(req, ctx).await?
             }
-            (HttpMethod::Post, "/reset-password") => {
-                Ok(Some(self.handle_reset_password(req, ctx).await?))
+            (HttpMethod::Post, "/reset-password") => self.handle_reset_password(req, ctx).await?,
+            (HttpMethod::Post, "/change-password") => self.handle_change_password(req, ctx).await?,
+            (HttpMethod::Post, "/verify-password") => self.handle_verify_password(req, ctx).await?,
+            (HttpMethod::Get, path) if path.starts_with(RESET_TOKEN_ROUTE_PREFIX) => {
+                let token = path
+                    .get(RESET_TOKEN_ROUTE_PREFIX.len()..)
+                    .unwrap_or_default();
+                self.handle_reset_password_token(token, req, ctx).await?
             }
-            (HttpMethod::Post, "/change-password") => {
-                Ok(Some(self.handle_change_password(req, ctx).await?))
-            }
-            (HttpMethod::Post, "/verify-password") => {
-                Ok(Some(self.handle_verify_password(req, ctx).await?))
-            }
-            (HttpMethod::Get, path) if path.starts_with("/reset-password/") => {
-                let token = path.get(16..).unwrap_or(""); // Remove "/reset-password/" prefix
-                Ok(Some(
-                    self.handle_reset_password_token(token, req, ctx).await?,
-                ))
-            }
-            _ => Ok(None),
-        }
+            _ => return Ok(None),
+        };
+        Ok(Some(response))
     }
 }
 
-// Implementation methods outside the trait
 impl PasswordManagementPlugin {
     async fn handle_request_password_reset(
         &self,
@@ -225,60 +219,24 @@ impl PasswordManagementPlugin {
         let (user, _session) = ctx
             .require_authoritative_session_record(req)
             .await
-            .map_err(|error| {
-                if matches!(
-                    error,
-                    AuthError::Unauthenticated
-                        | AuthError::SessionNotFound
-                        | AuthError::UserNotFound
-                ) {
-                    AuthError::Upstream {
-                        status: 401,
-                        code: "UNAUTHORIZED",
-                        message: "Unauthorized",
-                    }
-                } else {
-                    error
-                }
-            })?;
+            .map_err(crate::helpers::unauthorized_if_session_missing)?;
         let meta = RequestMeta::from_request(req);
 
         let (response, new_token) =
             change_password_core(&body, &user, &self.config, &meta, ctx).await?;
 
         let auth_response = AuthResponse::json(200, &response)?;
-
-        // Set session cookie if a new session was created
-        if let Some(token) = new_token {
-            use alibi_core::utils::cookie_utils::{
-                create_session_cookie_with_max_age, create_session_like_cookie,
-                related_cookie_name, sign_cookie_value, verify_cookie_value,
-            };
-            let preference = related_cookie_name(&ctx.config, "dont_remember");
-            let dont_remember = super::helpers::get_cookie(req, &preference)
-                .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
-                .is_some_and(|value| !value.is_empty());
-            let cookie_header = create_session_cookie_with_max_age(
-                Some(&token),
-                (!dont_remember).then(|| ctx.config.session.expires_in.num_seconds()),
-                &ctx.config,
-            )?;
-            let mut response = auth_response.with_header("Set-Cookie", cookie_header);
-            if dont_remember {
-                response.headers.append(
-                    "Set-Cookie",
-                    create_session_like_cookie(
-                        &preference,
-                        &sign_cookie_value("true", ctx.config.current_secret()),
-                        None,
-                        &ctx.config,
-                    )?,
-                );
-            }
-            Ok(response)
-        } else {
-            Ok(auth_response)
-        }
+        let Some(token) = new_token else {
+            return Ok(auth_response);
+        };
+        let dont_remember =
+            crate::authentication_helpers::dont_remember_preference(req, &ctx.config);
+        crate::authentication_helpers::with_session_cookies(
+            auth_response,
+            &ctx.config,
+            &token,
+            dont_remember,
+        )
     }
 
     async fn handle_verify_password(
@@ -291,8 +249,7 @@ impl PasswordManagementPlugin {
             Err(resp) => return Ok(resp),
         };
 
-        let user = self.get_current_user(req, ctx).await?;
-        let Some(user) = user else {
+        let Some(user) = Self::get_current_user(req, ctx).await? else {
             // better-call's default body for a session-gated endpoint hit
             // without a session, which upstream returns verbatim.
             return Ok(
@@ -312,22 +269,18 @@ impl PasswordManagementPlugin {
         let query = ResetPasswordTokenQuery {
             callback_url: req.query.get("callbackURL").cloned(),
         };
-        match reset_password_token_core(token, &query, ctx).await? {
-            ResetPasswordTokenResult::Redirect(url) => {
-                let mut headers = alibi_core::Headers::new();
-                drop(headers.insert("Location".to_owned(), url));
-                drop(headers.insert("content-type".to_owned(), "application/json".to_owned()));
-                Ok(AuthResponse {
-                    status: 302,
-                    headers,
-                    body: Vec::new(),
-                })
-            }
-        }
+        let url = reset_password_token_core(token, &query, ctx).await?;
+        let mut headers = alibi_core::Headers::new();
+        _ = headers.insert("Location", url);
+        _ = headers.insert("content-type", "application/json");
+        Ok(AuthResponse {
+            status: 302,
+            headers,
+            body: Vec::new(),
+        })
     }
 
     async fn get_current_user<S: alibi_core::AuthSchema>(
-        &self,
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<S::User>> {
@@ -399,24 +352,23 @@ mod tests {
             .with_email("test@example.com")
             .with_name("Test User");
         let user = test_helpers::create_user(&ctx, create_user).await;
-        drop(
-            ctx.database
-                .create_account(CreateAccount {
-                    additional_fields: Default::default(),
-                    user_id: user.id.clone(),
-                    account_id: user.id.clone(),
-                    provider_id: "credential".to_owned(),
-                    access_token: None,
-                    refresh_token: None,
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: None,
-                    password: Some(password_hash),
-                })
-                .await
-                .unwrap(),
-        );
+        _ = ctx
+            .database
+            .create_account(CreateAccount {
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
+                user_id: user.id.clone(),
+                account_id: user.id.clone(),
+                provider_id: "credential".to_owned(),
+                access_token: None,
+                refresh_token: None,
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: None,
+                password: Some(password_hash),
+            })
+            .await
+            .unwrap();
         let session =
             test_helpers::create_session(&ctx, user.id.clone(), Duration::hours(24)).await;
 
@@ -432,24 +384,23 @@ mod tests {
             ctx.database.delete_account(&account.id).await.unwrap();
         }
 
-        drop(
-            ctx.database
-                .create_account(CreateAccount {
-                    additional_fields: Default::default(),
-                    user_id: user.id.clone(),
-                    account_id: "google-account-id".to_owned(),
-                    provider_id: "google".to_owned(),
-                    access_token: Some("oauth-access-token".to_owned()),
-                    refresh_token: Some("oauth-refresh-token".to_owned()),
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: Some("email profile".to_owned()),
-                    password: None,
-                })
-                .await
-                .unwrap(),
-        );
+        _ = ctx
+            .database
+            .create_account(CreateAccount {
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
+                user_id: user.id.clone(),
+                account_id: "google-account-id".to_owned(),
+                provider_id: "google".to_owned(),
+                access_token: Some("oauth-access-token".to_owned()),
+                refresh_token: Some("oauth-refresh-token".to_owned()),
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: Some("email profile".to_owned()),
+                password: None,
+            })
+            .await
+            .unwrap();
 
         (ctx, user, session)
     }

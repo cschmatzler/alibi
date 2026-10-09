@@ -1,5 +1,5 @@
 //! Trusted server-only passwordless-to-credential operation.
-use super::super::email_password::EmailPasswordConfig;
+use crate::email_password::EmailPasswordConfig;
 use alibi_core::{
     AuthAccount, AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, AuthUser,
     CreateAccount, UpdateAccount,
@@ -25,17 +25,7 @@ pub async fn set_password<S: AuthSchema>(
     let (user, _) = context
         .require_authoritative_session(request)
         .await
-        .map_err(|error| {
-            if matches!(error, AuthError::Unauthenticated) {
-                AuthError::Upstream {
-                    status: 401,
-                    code: "UNAUTHORIZED",
-                    message: "Unauthorized",
-                }
-            } else {
-                error
-            }
-        })?;
+        .map_err(crate::helpers::unauthorized_if_unauthenticated)?;
     let policy = context.extensions.get::<EmailPasswordConfig>();
     let (minimum, maximum) = crate::email_password::password_length_limits(context);
     let length = new_password.encode_utf16().count();
@@ -83,37 +73,33 @@ pub async fn set_password<S: AuthSchema>(
                 message: "User already has a password set",
             });
         }
-        drop(
-            context
-                .database
-                .update_account_record(
-                    account.id().as_ref(),
-                    UpdateAccount {
-                        password: Some(password),
-                        ..Default::default()
-                    },
-                )
-                .await?,
-        );
-    } else {
-        drop(
-            context
-                .database
-                .create_account_record(CreateAccount {
-                    additional_fields: Default::default(),
-                    user_id: user.id().into_owned(),
-                    account_id: user.id().into_owned(),
-                    provider_id: "credential".to_owned(),
-                    access_token: None,
-                    refresh_token: None,
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: None,
+        _ = context
+            .database
+            .update_account_record(
+                account.id().as_ref(),
+                UpdateAccount {
                     password: Some(password),
-                })
-                .await?,
-        );
+                    ..Default::default()
+                },
+            )
+            .await?;
+    } else {
+        _ = context
+            .database
+            .create_account_record(CreateAccount {
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
+                user_id: user.id().into_owned(),
+                account_id: user.id().into_owned(),
+                provider_id: "credential".to_owned(),
+                access_token: None,
+                refresh_token: None,
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: None,
+                password: Some(password),
+            })
+            .await?;
     }
     Ok(())
 }

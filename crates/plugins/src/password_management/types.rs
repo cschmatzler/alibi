@@ -56,11 +56,6 @@ pub(crate) struct ChangePasswordResponse<U> {
     pub(crate) user: U,
 }
 
-/// Result of the reset-password-token core function.
-pub(crate) enum ResetPasswordTokenResult {
-    Redirect(String),
-}
-
 impl crate::authentication_helpers::RequestBody for ResetPasswordRequest {
     const FIELDS: &'static [crate::authentication_helpers::JsonField] = &[
         crate::authentication_helpers::JsonField::string("newPassword", true),

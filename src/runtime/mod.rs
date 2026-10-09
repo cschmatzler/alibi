@@ -1,12 +1,10 @@
 use body::parse_dispatch_body;
-use routing::route_path_matches;
 mod body;
 mod builder;
 mod builtin;
 mod endpoint;
 mod http;
 mod http_hooks;
-mod routing;
 use alibi_core::{
     AuthConfig, AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse,
     AuthResult, AuthRoute, AuthSchema, AuthStore, BeforeRequestAction, EmailProvider,

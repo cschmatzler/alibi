@@ -1,4 +1,10 @@
-use super::*;
+use super::{
+    CompletedSession, IssuedSession, IssuedSessionRecord, SessionIssueError, SessionOverrides,
+};
+use alibi_core::entity::AuthUser;
+use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, UpdateUser};
+use chrono::Utc;
+
 /// Source ordinary HTTP middleware admits the authenticated cache snapshot.
 /// Only the nested read is caught; subsequent storage and callback errors keep
 /// their own endpoint contract.
@@ -6,17 +12,9 @@ pub(crate) async fn ordinary_session<S: alibi_core::AuthSchema>(
     request: &AuthRequest,
     ctx: &AuthContext<S>,
 ) -> AuthResult<(alibi_core::AuthenticatedUser<S>, alibi_core::SessionView)> {
-    ctx.require_cached_session(request).await.map_err(|error| {
-        if matches!(error, AuthError::Unauthenticated) {
-            AuthError::Upstream {
-                status: 401,
-                code: "UNAUTHORIZED",
-                message: "Unauthorized",
-            }
-        } else {
-            error
-        }
-    })
+    ctx.require_cached_session(request)
+        .await
+        .map_err(super::unauthorized_if_unauthenticated)
 }
 
 /// Convert an `expiresIn` value (**seconds** from now) into an RFC 3339
@@ -28,17 +26,14 @@ pub(crate) async fn ordinary_session<S: alibi_core::AuthSchema>(
 ///
 /// Returns an error if the duration or resulting timestamp is outside the supported range.
 pub fn expires_in_to_at(expires_in_secs: Option<i64>) -> AuthResult<Option<String>> {
-    match expires_in_secs {
-        Some(secs) => {
-            let duration = chrono::Duration::try_seconds(secs)
-                .ok_or_else(|| AuthError::bad_request("expiresIn is out of range"))?;
-            let dt = Utc::now()
-                .checked_add_signed(duration)
-                .ok_or_else(|| AuthError::bad_request("expiresIn is out of range"))?;
-            Ok(Some(dt.to_rfc3339()))
-        }
-        None => Ok(None),
-    }
+    expires_in_secs
+        .map(|secs| {
+            chrono::Duration::try_seconds(secs)
+                .and_then(|duration| Utc::now().checked_add_signed(duration))
+                .map(|expires_at| expires_at.to_rfc3339())
+                .ok_or_else(|| AuthError::bad_request("expiresIn is out of range"))
+        })
+        .transpose()
 }
 
 /// Resolve the session selected by a completed response's signed session cookie.
@@ -51,21 +46,20 @@ pub fn expires_in_to_at(expires_in_secs: Option<i64>) -> AuthResult<Option<Strin
 /// Returns an error if the session cannot be serialized.
 pub async fn response_session<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
-    response: &alibi_core::AuthResponse,
+    response: &AuthResponse,
 ) -> AuthResult<Option<IssuedSession<S>>> {
     let token = response
         .headers
         .get_all("set-cookie")
         .filter_map(|header| {
             let cookie = cookie::Cookie::parse(header.clone()).ok()?;
-            (cookie.name() == ctx.config.session.cookie_name && !cookie.value().is_empty())
-                .then(|| {
-                    alibi_core::utils::cookie_utils::verify_cookie_value(
-                        cookie.value(),
-                        ctx.config.current_secret(),
-                    )
-                })
-                .flatten()
+            if cookie.name() != ctx.config.session.cookie_name || cookie.value().is_empty() {
+                return None;
+            }
+            alibi_core::utils::cookie_utils::verify_cookie_value(
+                cookie.value(),
+                ctx.config.current_secret(),
+            )
         })
         .last();
     let Some(token) = token else {
@@ -136,7 +130,7 @@ pub(crate) fn record_completed_session_user_view<S: alibi_core::AuthSchema>(
 
 pub(crate) fn response_has_session_cookie<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
-    response: &alibi_core::AuthResponse,
+    response: &AuthResponse,
 ) -> bool {
     response.headers.get_all("set-cookie").any(|header| {
         cookie::Cookie::parse(header.clone()).is_ok_and(|cookie| {
@@ -153,14 +147,15 @@ pub(crate) fn response_has_session_cookie<S: alibi_core::AuthSchema>(
 pub(crate) fn completed_response_session<S: alibi_core::AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
-    response: &alibi_core::AuthResponse,
+    response: &AuthResponse,
 ) -> Option<std::sync::Arc<CompletedSession<S>>> {
     // A clearing cookie is not a completed login. The snapshot comes from the
     // trusted issuer, never the response body or a freshly mutated database row.
-    let selected = response_has_session_cookie(ctx, response);
-    selected
-        .then(|| req.extensions().get::<CompletedSession<S>>())
-        .flatten()
+    if response_has_session_cookie(ctx, response) {
+        req.extensions().get::<CompletedSession<S>>()
+    } else {
+        None
+    }
 }
 
 /// Whether the admin plugin is active for this auth instance.
@@ -180,16 +175,13 @@ pub fn admin_banned_user_message(ctx: &AuthContext<impl alibi_core::AuthSchema>)
 }
 
 /// Resolve an awaited application message from the actual stored user entity.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn resolve_admin_banned_user_message<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
     user: &impl AuthUser,
 ) -> AuthResult<String> {
     if let Some(policy) = ctx
         .extensions
-        .get::<super::super::admin::BannedUserMessagePolicy>()
+        .get::<crate::admin::BannedUserMessagePolicy>()
     {
         return policy.message(user).await;
     }
@@ -263,8 +255,8 @@ pub async fn issue_user_session_with_fields_record<S: alibi_core::AuthSchema>(
 ) -> Result<IssuedSessionRecord<S>, SessionIssueError> {
     // Additional fields use schema bindings, so reject names that could replace
     // issuance-owned columns rather than trusting the caller's map shape.
-    for name in fields.additional_fields.keys() {
-        if matches!(
+    if let Some(name) = fields.additional_fields.keys().find(|name| {
+        matches!(
             name.as_str(),
             "id" | "token"
                 | "userId"
@@ -275,11 +267,11 @@ pub async fn issue_user_session_with_fields_record<S: alibi_core::AuthSchema>(
                 | "created_at"
                 | "updatedAt"
                 | "updated_at"
-        ) {
-            return Err(
-                AuthError::bad_request(format!("Session issuance owns the {name} field")).into(),
-            );
-        }
+        )
+    }) {
+        return Err(
+            AuthError::bad_request(format!("Session issuance owns the {name} field")).into(),
+        );
     }
     issue_user_session_inner(
         ctx,
@@ -389,19 +381,18 @@ pub(in crate::helpers) async fn issue_user_session_inner<S: alibi_core::AuthSche
             .ban_expires()
             .is_some_and(|expires| expires < Utc::now())
         {
-            drop(
-                ctx.database
-                    .update_user_record(
-                        user_id,
-                        UpdateUser {
-                            banned: Some(false),
-                            ban_reason: None,
-                            ban_expires: None,
-                            ..Default::default()
-                        },
-                    )
-                    .await?,
-            );
+            _ = ctx
+                .database
+                .update_user_record(
+                    user_id,
+                    UpdateUser {
+                        banned: Some(false),
+                        ban_reason: None,
+                        ban_expires: None,
+                        ..Default::default()
+                    },
+                )
+                .await?;
         } else {
             return Err(SessionIssueError::Banned {
                 message: resolve_admin_banned_user_message(ctx, &user).await?,

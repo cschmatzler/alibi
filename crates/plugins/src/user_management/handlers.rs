@@ -1,14 +1,16 @@
 use super::UserManagementConfig;
 use super::types::{ChangeEmailRequest, DeleteUserRequest};
+use crate::authentication_helpers::run_notification;
 use crate::email_password::EmailPasswordConfig;
 use crate::email_verification::EmailVerificationConfig;
 use crate::email_verification::handlers::verification_url;
 use crate::email_verification::token::create_email_verification_token;
-use alibi_core::SuccessMessageResponse;
 use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
 use alibi_core::utils::password as password_utils;
 use alibi_core::wire::{SessionView, UserView};
-use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResult, UpdateUser};
+use alibi_core::{
+    AuthContext, AuthError, AuthRequest, AuthResult, SuccessMessageResponse, UpdateUser,
+};
 use chrono::{Duration, Utc};
 use rand::RngExt;
 
@@ -46,28 +48,9 @@ pub(super) async fn authoritative_session<S: alibi_core::AuthSchema>(
     let (user, session) = ctx
         .require_authoritative_session(request)
         .await
-        .map_err(|error| {
-            if matches!(
-                error,
-                AuthError::Unauthenticated | AuthError::SessionNotFound | AuthError::UserNotFound
-            ) {
-                AuthError::Upstream {
-                    status: 401,
-                    code: "UNAUTHORIZED",
-                    message: "Unauthorized",
-                }
-            } else {
-                error
-            }
-        })?;
-    let dont_remember = super::super::helpers::get_cookie(
-        request,
-        &alibi_core::utils::cookie_utils::related_cookie_name(&ctx.config, "dont_remember"),
-    )
-    .and_then(|value| {
-        alibi_core::utils::cookie_utils::verify_cookie_value(&value, ctx.config.current_secret())
-    })
-    .is_some_and(|value| !value.is_empty());
+        .map_err(crate::helpers::unauthorized_if_session_missing)?;
+    let dont_remember =
+        crate::authentication_helpers::dont_remember_preference(request, &ctx.config);
     if !dont_remember
         && !ctx.session_manager().request_disables_refresh(request)
         && ctx
@@ -105,14 +88,13 @@ async fn send_verification(
         .as_ref()
         .and_then(|config| config.send_verification_email.as_ref())
     {
-        super::super::authentication_helpers::run_notification(sender.send(user, &url, token))
-            .await;
+        run_notification(sender.send(user, &url, token)).await;
     } else if let Some(sender) = ctx.email_verification_override() {
         sender.0.send(user, None, ctx).await?;
     } else if let Some(provider) = &ctx.email_provider {
         let text = format!("Confirm your email change: {url}");
         let html = format!("<p><a href=\"{url}\">Confirm Email Change</a></p>");
-        super::super::authentication_helpers::run_notification(provider.send(
+        run_notification(provider.send(
             user.email.as_deref().unwrap_or_default(),
             "Confirm your email change",
             &html,
@@ -163,29 +145,28 @@ pub(crate) async fn change_email_core(
         .await?
         .is_some()
     {
-        drop(create_email_verification_token(
+        _ = create_email_verification_token(
             ctx.config.current_secret(),
             user.email().unwrap_or_default(),
             Some(&new_email),
             expiry,
             None,
-        )?);
+        )?;
         return Ok(None);
     }
     let mut projection = ctx.user_view(user);
     projection.email = Some(new_email.clone());
     if can_update {
-        drop(
-            ctx.database
-                .update_user_record(
-                    &user.id(),
-                    UpdateUser {
-                        email: Some(new_email.clone()),
-                        ..Default::default()
-                    },
-                )
-                .await?,
-        );
+        _ = ctx
+            .database
+            .update_user_record(
+                &user.id(),
+                UpdateUser {
+                    email: Some(new_email.clone()),
+                    ..Default::default()
+                },
+            )
+            .await?;
         renew_session_snapshot(&projection, session, ctx).await?;
         if can_send {
             let token = create_email_verification_token(
@@ -220,13 +201,7 @@ pub(crate) async fn change_email_core(
         .filter(|_| can_confirm)
     {
         let url = verification_url(&ctx.config, &token, body.callback_url.as_deref());
-        super::super::authentication_helpers::run_notification(sender.send(
-            &ctx.user_view(user),
-            &new_email,
-            &url,
-            &token,
-        ))
-        .await;
+        run_notification(sender.send(&ctx.user_view(user), &new_email, &url, &token)).await;
     } else {
         send_verification(&projection, &token, body.callback_url.as_deref(), ctx).await?;
     }
@@ -254,12 +229,8 @@ pub(crate) async fn renew_session_snapshot<S: alibi_core::AuthSchema>(
         && stored.user_id() == user.id
         && let Some(original) = ctx.database.get_user_by_id(&user.id).await?
     {
-        super::super::helpers::record_completed_session::<S>(&original, &stored);
-        super::super::helpers::record_completed_session_user_view::<S>(
-            &original,
-            &stored,
-            user.clone(),
-        );
+        crate::helpers::record_completed_session::<S>(&original, &stored);
+        crate::helpers::record_completed_session_user_view::<S>(&original, &stored, user.clone());
     }
     Ok(())
 }
@@ -335,15 +306,14 @@ pub(crate) async fn delete_user_core(
         } else {
             config.delete_user.delete_token_expires_in
         };
-        drop(
-            ctx.verifications()
-                .create(alibi_core::CreateVerification {
-                    identifier: format!("delete-account-{token}"),
-                    value: user.id().into_owned(),
-                    expires_at: Utc::now() + expiry,
-                })
-                .await?,
-        );
+        _ = ctx
+            .verifications()
+            .create(alibi_core::CreateVerification {
+                identifier: format!("delete-account-{token}"),
+                value: user.id().into_owned(),
+                expires_at: Utc::now() + expiry,
+            })
+            .await?;
         let base = format!(
             "{}{}",
             ctx.config.base_url.trim_end_matches('/'),
@@ -359,12 +329,7 @@ pub(crate) async fn delete_user_core(
             )
         );
         if let Some(sender) = &config.delete_user.send_delete_account_verification {
-            super::super::authentication_helpers::run_notification(sender.send(
-                &ctx.user_view(user),
-                &url,
-                &token,
-            ))
-            .await;
+            run_notification(sender.send(&ctx.user_view(user), &url, &token)).await;
         } else {
             let email = user
                 .email()
@@ -415,13 +380,12 @@ pub(crate) async fn delete_user_callback_core(
     config: &UserManagementConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<SuccessMessageResponse> {
-    let verification = ctx
+    _ = ctx
         .verifications()
         .consume(&format!("delete-account-{token}"))
         .await?
         .filter(|verification| verification.value().is_ok_and(|value| value == user.id()))
         .ok_or_else(|| AuthError::not_found("Invalid token"))?;
-    drop(verification);
     perform_user_deletion(user, request, clear_cookie_errors, config, ctx).await?;
     Ok(SuccessMessageResponse {
         success: true,

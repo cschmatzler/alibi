@@ -1,72 +1,48 @@
 mod grant;
-pub use grant::*;
+pub use grant::{
+    DeviceAuthorizationGrant, DeviceGrantAuthorization, DeviceGrantFailure, DeviceGrantRecord,
+    DeviceRedemptionAuthorization, DeviceRedemptionPolicy, DeviceRedemptionResult,
+    redeem_device_code,
+};
+
 mod http;
 mod issuance;
 mod redemption;
 pub(super) mod types;
 
-use crate::helpers::{SessionIssueError, create_user_session_record};
-use alibi_core::entity::{AuthSession, AuthUser};
-use alibi_core::{
-    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateDeviceCode, RequestMeta,
-    UpdateDeviceCode,
-};
-use chrono::{Duration, Utc};
+use crate::helpers::callback_failure;
+use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult};
+use chrono::Duration;
 use rand::distr::{Alphanumeric, SampleString};
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use types::{
-    DeviceActionRequest, DeviceActionResponse, DeviceCodeRequest, DeviceCodeResponse,
-    DeviceErrorResponse, DeviceTokenRequest, DeviceTokenResponse, DeviceVerifyResponse,
-};
+use types::DeviceErrorResponse;
 use url::Url;
 
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
-
 const DEVICE_STATUS_PENDING: &str = "pending";
-
 const DEVICE_STATUS_APPROVED: &str = "approved";
-
 const DEVICE_STATUS_DENIED: &str = "denied";
-
 const DEFAULT_USER_CODE_CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
 const INVALID_DEVICE_CODE: &str = "Invalid device code";
-
 const EXPIRED_DEVICE_CODE: &str = "Device code has expired";
-
 const EXPIRED_USER_CODE: &str = "User code has expired";
-
 const AUTHORIZATION_PENDING: &str = "Authorization pending";
-
 const ACCESS_DENIED: &str = "Access denied";
-
 const INVALID_USER_CODE: &str = "Invalid user code";
-
 const DEVICE_CODE_ALREADY_PROCESSED: &str = "Device code already processed";
-
 const DEVICE_CODE_NOT_CLAIMED: &str = "Device code has not been claimed by a verifying session; call `GET /device` with the `user_code` while signed in before approving or denying";
-
 const POLLING_TOO_FREQUENTLY: &str = "Polling too frequently";
-
 const USER_NOT_FOUND: &str = "User not found";
-
 const FAILED_TO_CREATE_SESSION: &str = "Failed to create session";
-
 const INVALID_DEVICE_CODE_STATUS: &str = "Invalid device code status";
-
 const AUTHENTICATION_REQUIRED: &str = "Authentication required";
-
 const INVALID_CLIENT_ID: &str = "Invalid client ID";
-
 const CLIENT_ID_MISMATCH: &str = "Client ID mismatch";
-
 const INVALID_REQUEST: &str = "Invalid request";
-
 type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
-
 type ValidateClientCallback = dyn Fn(String) -> BoxFuture<AuthResult<bool>> + Send + Sync;
 
 type DeviceAuthRequestCallback =
@@ -129,7 +105,7 @@ impl fmt::Debug for DeviceAuthorizationConfig {
                 &self.on_device_auth_request.as_ref().map(|_| "custom"),
             )
             .field("verification_uri", &self.verification_uri)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -156,6 +132,7 @@ impl DeviceDecision {
 }
 
 /// OAuth 2.0 device authorization grant plugin.
+#[derive(Default)]
 pub struct DeviceAuthorizationPlugin {
     config: DeviceAuthorizationConfig,
 }
@@ -167,19 +144,11 @@ impl fmt::Debug for DeviceAuthorizationPlugin {
     }
 }
 
-impl Default for DeviceAuthorizationPlugin {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl DeviceAuthorizationPlugin {
     /// Create the plugin with TS-aligned defaults.
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            config: DeviceAuthorizationConfig::default(),
-        }
+        Self::default()
     }
 
     /// Override the device-code expiration window.
@@ -294,14 +263,14 @@ impl DeviceAuthorizationPlugin {
         match &self.config.validate_client {
             Some(callback) => callback(client_id.to_owned())
                 .await
-                .map_err(device_callback_error),
+                .map_err(callback_failure),
             None => Ok(true),
         }
     }
 
     async fn generate_device_code(&self) -> AuthResult<String> {
         match &self.config.generate_device_code {
-            Some(generator) => generator().await.map_err(device_callback_error),
+            Some(generator) => generator().await.map_err(callback_failure),
             None => {
                 Ok(Alphanumeric.sample_string(&mut rand::rng(), self.config.device_code_length))
             }
@@ -310,7 +279,7 @@ impl DeviceAuthorizationPlugin {
 
     async fn generate_user_code(&self) -> AuthResult<String> {
         match &self.config.generate_user_code {
-            Some(generator) => generator().await.map_err(device_callback_error),
+            Some(generator) => generator().await.map_err(callback_failure),
             None => Ok(default_generate_user_code(self.config.user_code_length)),
         }
     }
@@ -354,11 +323,10 @@ alibi_core::impl_auth_plugin! {
     }
 }
 
-fn device_callback_error(error: AuthError) -> AuthError {
-    match error {
-        AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => error,
-        error => AuthError::CallbackFailure(Box::new(error)),
-    }
+fn no_store(response: AuthResponse) -> AuthResponse {
+    response
+        .with_header("Cache-Control", "no-store")
+        .with_header("Pragma", "no-cache")
 }
 
 // Pinned createAuthEndpoint applies metadata.noStore when the handler starts,
@@ -453,7 +421,7 @@ fn parse_device_body(
     let mut body = if let Some(pairs) = &pairs {
         let mut object = serde_json::Map::new();
         for (key, value) in pairs {
-            drop(object.insert(key.clone(), serde_json::Value::String(value.clone())));
+            _ = object.insert(key.clone(), serde_json::Value::String(value.clone()));
         }
         serde_json::Value::Object(object)
     } else {
@@ -516,22 +484,22 @@ fn parse_device_body(
                 .map(|(_, value)| value)
                 .collect::<Vec<_>>();
             if values.len() > 1 {
-                return Err(device_error_response(
-                    400,
-                    "invalid_request",
-                    &format!("{field} must not be repeated"),
-                )
-                .unwrap_or_else(|_| AuthResponse::text(400, "Repeated request parameter"))
-                .with_header("Cache-Control", "no-store")
-                .with_header("Pragma", "no-cache"));
+                return Err(no_store(
+                    device_error_response(
+                        400,
+                        "invalid_request",
+                        &format!("{field} must not be repeated"),
+                    )
+                    .unwrap_or_else(|_| AuthResponse::text(400, "Repeated request parameter")),
+                ));
             }
             if let Some(value) = values.first()
                 && let Some(object) = body.as_object_mut()
             {
-                drop(object.insert(
+                _ = object.insert(
                     (*field).to_owned(),
                     serde_json::Value::String((*value).clone()),
-                ));
+                );
             }
         }
     }
@@ -586,7 +554,7 @@ fn build_verification_uris(
     if !replaced {
         pairs.push(("user_code".to_owned(), user_code.to_owned()));
     }
-    let _ignored_extend_pairs = verification_uri_complete
+    _ = verification_uri_complete
         .query_pairs_mut()
         .clear()
         .extend_pairs(pairs);
@@ -856,7 +824,7 @@ mod tests {
 
     fn device_verify_request(user_code: &str) -> AuthRequest {
         let mut query = HashMap::new();
-        drop(query.insert("user_code".to_owned(), user_code.to_owned()));
+        _ = query.insert("user_code".to_owned(), user_code.to_owned());
         test_helpers::create_auth_request(HttpMethod::Get, "/device", None, None, query)
     }
 
@@ -864,7 +832,7 @@ mod tests {
     /// `/device/approve` and `/device/deny` reject codes that were never claimed.
     fn device_claim_request(user_code: &str, token: &str) -> AuthRequest {
         let mut query = HashMap::new();
-        drop(query.insert("user_code".to_owned(), user_code.to_owned()));
+        _ = query.insert("user_code".to_owned(), user_code.to_owned());
         test_helpers::create_auth_request(HttpMethod::Get, "/device", Some(token), None, query)
     }
 

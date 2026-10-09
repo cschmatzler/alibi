@@ -144,98 +144,75 @@ impl MultiSessionPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let mut sessions = Vec::new();
-        let tokens = Self::signed_tokens(req, ctx)
-            .into_iter()
-            .map(|(_, token)| token)
-            .collect::<Vec<_>>();
+        let tokens = Self::session_tokens(req, ctx);
+        let now = Utc::now();
+        let mut seen_users = std::collections::HashSet::new();
+        let mut listed = Vec::new();
         for session in ctx.database.get_sessions_by_tokens_record(&tokens).await? {
-            if session.expires_at() > Utc::now()
+            if session.expires_at() > now
                 && session.active()
                 && let Some(user) = ctx.session_user(&session).await?
+                && seen_users.insert(user.id().to_string())
             {
-                sessions.push((session, user));
+                listed.push(json!({
+                    "session": ctx.session_view(&session),
+                    "user": ctx.user_view(&user),
+                }));
             }
         }
-        let mut seen = std::collections::HashSet::new();
-        let values:Vec<_>=sessions.into_iter().filter(|(_,user)|seen.insert(user.id().to_string()))
-            .map(|(session,user)|json!({"session":ctx.session_view(&session),"user":ctx.user_view(&user)})).collect();
-        Ok(AuthResponse::json(200, &values)?)
+        Ok(AuthResponse::json(200, &listed)?)
     }
 
-    async fn select<S: AuthSchema>(
-        &self,
-        req: &AuthRequest,
+    fn session_tokens(req: &AuthRequest, ctx: &AuthContext<impl AuthSchema>) -> Vec<String> {
+        Self::signed_tokens(req, ctx)
+            .into_iter()
+            .map(|(_, token)| token)
+            .collect()
+    }
+
+    async fn emit_selected_snapshot<S: AuthSchema>(
         ctx: &AuthContext<S>,
-        revoke: bool,
-    ) -> AuthResult<AuthResponse> {
-        let body: SessionTokenRequest = match parse_body(req) {
-            Ok(body) => body,
-            Err(response) => return Ok(response),
-        };
-        let current = if revoke {
-            Some(super::helpers::ordinary_session(req, ctx).await?)
-        } else {
-            None
-        };
+        user: &S::User,
+        session: &impl AuthSession,
+    ) -> AuthResult<()> {
+        let user_view = ctx.user_view(user);
+        let session_view = ctx.session_view(session);
+        alibi_core::session::cookie_cache::runtime::emit_issuance_snapshot(
+            ctx,
+            alibi_core::CacheVersionContext::created(
+                user_view.clone(),
+                session_view.clone(),
+                user_view,
+                session_view,
+            ),
+        )
+        .await
+    }
+
+    /// The cookie name and verified token a request's `sessionToken` selects.
+    fn selected_token(
+        req: &AuthRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+        body: &SessionTokenRequest,
+    ) -> AuthResult<(String, String)> {
         let name = Self::cookie_name(&body.session_token, ctx);
         let token = Self::cookie_value(req, &name)
             .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
             .filter(|token| !token.is_empty())
             .ok_or_else(invalid_token)?;
-        if revoke {
-            ctx.database.delete_session(&token).await?;
-            let mut response = AuthResponse::json(200, &json!({"status":true}))?;
-            response.headers.append(
-                "set-cookie",
-                create_derived_session_cookie(&name, "", true, &ctx.config)?,
-            );
-            if current
-                .as_ref()
-                .is_some_and(|(_, session)| session.token() == token)
-            {
-                let mut next = None;
-                let tokens = Self::signed_tokens(req, ctx)
-                    .into_iter()
-                    .map(|(_, token_2)| token_2)
-                    .collect::<Vec<_>>();
-                for session in ctx.database.get_sessions_by_tokens_record(&tokens).await? {
-                    if session.expires_at() > Utc::now()
-                        && ctx.session_user(&session).await?.is_some()
-                    {
-                        next = Some(session);
-                        break;
-                    }
-                }
-                match next {
-                    Some(session) => {
-                        let user = ctx
-                            .session_user(&session)
-                            .await?
-                            .ok_or(AuthError::UserNotFound)?;
-                        let user_view = ctx.user_view(&user);
-                        let session_view = ctx.session_view(&session);
-                        alibi_core::session::cookie_cache::runtime::emit_issuance_snapshot(
-                            ctx,
-                            alibi_core::CacheVersionContext::created(
-                                user_view.clone(),
-                                session_view.clone(),
-                                user_view,
-                                session_view,
-                            ),
-                        )
-                        .await?;
-                        Self::set_active_cookie(req, ctx, session.token(), &mut response)?;
-                    }
-                    None => {
-                        for header in delete_session_cookie_headers(&ctx.config)? {
-                            response.headers.append("set-cookie", header);
-                        }
-                    }
-                }
-            }
-            return Ok(response);
-        }
+        Ok((name, token))
+    }
+
+    async fn set_active<S: AuthSchema>(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<AuthResponse> {
+        let body: SessionTokenRequest = match parse_body(req) {
+            Ok(body) => body,
+            Err(response) => return Ok(response),
+        };
+        let (name, token) = Self::selected_token(req, ctx, &body)?;
         let session = ctx.database.get_session_record(&token).await?;
         let session = session.filter(|session| session.expires_at() > Utc::now());
         let Some(session) = session else {
@@ -254,20 +231,52 @@ impl MultiSessionPlugin {
             200,
             &json!({"session":ctx.session_view(&session),"user":ctx.user_view(&user)}),
         )?;
-        let user_view = ctx.user_view(&user);
-        let session_view = ctx.session_view(&session);
-        alibi_core::session::cookie_cache::runtime::emit_issuance_snapshot(
-            ctx,
-            alibi_core::CacheVersionContext::created(
-                user_view.clone(),
-                session_view.clone(),
-                user_view,
-                session_view,
-            ),
-        )
-        .await?;
+        Self::emit_selected_snapshot(ctx, &user, &session).await?;
         Self::set_active_cookie(req, ctx, session.token(), &mut response)?;
         super::helpers::record_completed_session::<S>(&user, session.stored());
+        Ok(response)
+    }
+
+    async fn revoke<S: AuthSchema>(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<AuthResponse> {
+        let body: SessionTokenRequest = match parse_body(req) {
+            Ok(body) => body,
+            Err(response) => return Ok(response),
+        };
+        let (_, current_session) = super::helpers::ordinary_session(req, ctx).await?;
+        let (name, token) = Self::selected_token(req, ctx, &body)?;
+        ctx.database.delete_session(&token).await?;
+        let mut response = AuthResponse::json(200, &json!({"status":true}))?;
+        response.headers.append(
+            "set-cookie",
+            create_derived_session_cookie(&name, "", true, &ctx.config)?,
+        );
+        if current_session.token() != token {
+            return Ok(response);
+        }
+        let tokens = Self::session_tokens(req, ctx);
+        let mut next = None;
+        for session in ctx.database.get_sessions_by_tokens_record(&tokens).await? {
+            if session.expires_at() > Utc::now() && ctx.session_user(&session).await?.is_some() {
+                next = Some(session);
+                break;
+            }
+        }
+        if let Some(session) = next {
+            let user = ctx
+                .session_user(&session)
+                .await?
+                .ok_or(AuthError::UserNotFound)?;
+            Self::emit_selected_snapshot(ctx, &user, &session).await?;
+            Self::set_active_cookie(req, ctx, session.token(), &mut response)?;
+        } else {
+            for header in delete_session_cookie_headers(&ctx.config)? {
+                response.headers.append("set-cookie", header);
+            }
+        }
         Ok(response)
     }
 }
@@ -320,18 +329,13 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
-        match (req.method(), req.path()) {
-            (HttpMethod::Get, "/multi-session/list-device-sessions") => {
-                Ok(Some(self.list(req, ctx).await?))
-            }
-            (HttpMethod::Post, "/multi-session/set-active") => {
-                Ok(Some(self.select(req, ctx, false).await?))
-            }
-            (HttpMethod::Post, "/multi-session/revoke") => {
-                Ok(Some(self.select(req, ctx, true).await?))
-            }
-            _ => Ok(None),
-        }
+        let response = match (req.method(), req.path()) {
+            (HttpMethod::Get, "/multi-session/list-device-sessions") => self.list(req, ctx).await?,
+            (HttpMethod::Post, "/multi-session/set-active") => self.set_active(req, ctx).await?,
+            (HttpMethod::Post, "/multi-session/revoke") => self.revoke(req, ctx).await?,
+            _ => return Ok(None),
+        };
+        Ok(Some(response))
     }
     async fn after_request(
         &self,
@@ -740,16 +744,14 @@ mod tests {
                 .contains("Max-Age=0")
         );
         let signout = request_with_cookies(HttpMethod::Post, "/sign-out", &[second], None);
-        drop(
-            plugin
-                .after_request(
-                    &signout,
-                    &ctx,
-                    AuthResponse::json(200, &json!({"success":true})).unwrap(),
-                )
-                .await
-                .unwrap(),
-        );
+        _ = plugin
+            .after_request(
+                &signout,
+                &ctx,
+                AuthResponse::json(200, &json!({"success":true})).unwrap(),
+            )
+            .await
+            .unwrap();
         assert!(
             ctx.database
                 .get_session(&two.token)

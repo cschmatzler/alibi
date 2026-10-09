@@ -13,10 +13,10 @@ mod source_endpoints;
 #[rustfmt::skip]
 #[allow(warnings, clippy::all, clippy::pedantic, clippy::nursery, clippy::restriction, reason = "Generated API declarations retain the upstream generator output")]
 mod source_models;
-use alibi_core::AuthRoute;
-use alibi_core::{OpenApiEndpoint, OpenApiField, OpenApiModel, PluginOpenApiMetadata};
+use alibi_core::{AuthRoute, OpenApiEndpoint, OpenApiField, OpenApiModel, PluginOpenApiMetadata};
 use alibi_schema_registry::{FieldDef, plugin_schemas};
 use serde_json::{Value, json};
+
 fn wire_name(name: &str) -> String {
     let mut words = name.split('_');
     let mut output = words.next().unwrap_or_default().to_owned();
@@ -53,7 +53,7 @@ fn field(field: &FieldDef, core: bool) -> Option<OpenApiField> {
     if core && field.name == "emailVerified" {
         field.input = false;
         if let Some(object) = field.schema.as_object_mut() {
-            drop(object.insert("default".into(), json!(false)));
+            _ = object.insert("default".into(), json!(false));
         }
     }
     Some(field)
@@ -169,23 +169,17 @@ fn response(description: &str, schema: &Value) -> Value {
     json!({"description":description,"content":{"application/json":{"schema":schema}}})
 }
 fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
-    if let Some(metadata) =
-        sign_in_annotations::endpoint(path).or_else(|| oauth_annotations::endpoint(path))
-    {
-        return Some(metadata);
-    }
-    if let Some(metadata) = user_annotations::endpoint(path) {
-        return Some(metadata);
-    }
-    if let Some(metadata) = account_annotations::endpoint(path)
+    sign_in_annotations::endpoint(path)
+        .or_else(|| oauth_annotations::endpoint(path))
+        .or_else(|| user_annotations::endpoint(path))
+        .or_else(|| account_annotations::endpoint(path))
         .or_else(|| password_annotations::endpoint(path))
         .or_else(|| email_annotations::endpoint(path))
-    {
-        return Some(metadata);
-    }
-    if let Some(metadata) = session_annotations::endpoint(path) {
-        return Some(metadata);
-    }
+        .or_else(|| session_annotations::endpoint(path))
+        .or_else(|| builtin_endpoint(path))
+}
+
+fn builtin_endpoint(path: &str) -> Option<OpenApiEndpoint> {
     let mut metadata = OpenApiEndpoint::default();
     match path {
         "/callback/{provider}" | "/callback/:id" => {
@@ -200,7 +194,7 @@ fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
                 "user",
                 "iss",
             ] {
-                drop(properties.insert(name.into(), json!({"type":"string"})));
+                _ = properties.insert(name.into(), json!({"type":"string"}));
             }
             metadata.request_body = Some(
                 json!({"required":false,"content":{"application/json":{"schema":{"type":"object","properties":properties}}}}),
@@ -208,18 +202,18 @@ fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
         }
         "/ok" => {
             metadata.description = Some("Check if the API is working".into());
-            drop(metadata.responses.insert("200".into(), response("API is working",&(json!({"type":"object","properties":{"ok":{"type":"boolean","description":"Indicates if the API is working"}},"required":["ok"]})))));
+            _ = metadata.responses.insert("200".into(), response("API is working",&(json!({"type":"object","properties":{"ok":{"type":"boolean","description":"Indicates if the API is working"}},"required":["ok"]}))));
         }
         "/error" => {
             metadata.description = Some("Displays an error page".into());
-            drop(metadata.responses.insert("200".into(),json!({"description":"Success","content":{"text/html":{"schema":{"type":"string","description":"The HTML content of the error page"}}}})));
+            _ = metadata.responses.insert("200".into(),json!({"description":"Success","content":{"text/html":{"schema":{"type":"string","description":"The HTML content of the error page"}}}}));
         }
         "/get-session" => {
             metadata.operation_id = Some("getSession".into());
             metadata.description = Some("Get the current session".into());
             // The upstream query is an optional wrapper; getParameters only
             // reflects a direct object, so its generated parameter list is empty.
-            drop(metadata.responses.insert("200".into(),response("Success",&(json!({"type":["object","null"],"properties":{"session":{"$ref":"#/components/schemas/Session"},"user":{"$ref":"#/components/schemas/User"}},"required":["session","user"]})))));
+            _ = metadata.responses.insert("200".into(),response("Success",&(json!({"type":["object","null"],"properties":{"session":{"$ref":"#/components/schemas/Session"},"user":{"$ref":"#/components/schemas/User"}},"required":["session","user"]}))));
         }
         _ => return None,
     }

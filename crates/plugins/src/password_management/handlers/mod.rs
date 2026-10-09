@@ -1,7 +1,7 @@
 use super::types::{
     ChangePasswordRequest, ChangePasswordResponse, RequestPasswordResetRequest,
     RequestPasswordResetResponse, ResetPasswordRequest, ResetPasswordTokenQuery,
-    ResetPasswordTokenResult, VerifyPasswordRequest,
+    VerifyPasswordRequest,
 };
 use super::{PasswordManagementConfig, StatusResponse};
 use crate::helpers::{get_credential_account, get_credential_password_hash};
@@ -17,13 +17,6 @@ use url::Url;
 const PASSWORD_RESET_SUCCESS_MESSAGE: &str =
     "If this email exists in our system, check your email for the reset link";
 
-// ---------------------------------------------------------------------------
-// Core functions (framework-agnostic business logic)
-// ---------------------------------------------------------------------------
-
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn request_password_reset_core(
     body: &RequestPasswordResetRequest,
     config: &PasswordManagementConfig,
@@ -44,8 +37,8 @@ pub(crate) async fn request_password_reset_core(
     };
 
     let Some(user) = ctx.database.get_user_by_email_record(&body.email).await? else {
-        drop(alibi_core::utils::id::generate_id(24));
-        drop(ctx.verifications().find("dummy-verification-token").await?);
+        _ = alibi_core::utils::id::generate_id(24);
+        _ = ctx.verifications().find("dummy-verification-token").await?;
         tracing::warn!("Reset Password: User not found");
         return Ok(success);
     };
@@ -57,15 +50,14 @@ pub(crate) async fn request_password_reset_core(
             .filter(|duration| !duration.is_zero())
             .unwrap_or_else(|| Duration::hours(config.reset_token_expiry_hours));
 
-    drop(
-        ctx.verifications()
-            .create(alibi_core::CreateVerification {
-                identifier: format!("reset-password:{reset_token}"),
-                value: user.id().to_string(),
-                expires_at,
-            })
-            .await?,
-    );
+    _ = ctx
+        .verifications()
+        .create(alibi_core::CreateVerification {
+            identifier: format!("reset-password:{reset_token}"),
+            value: user.id().to_string(),
+            expires_at,
+        })
+        .await?;
 
     let callback_url = body
         .redirect_to
@@ -87,9 +79,6 @@ pub(crate) async fn request_password_reset_core(
     Ok(success)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn reset_password_core(
     body: &ResetPasswordRequest,
     config: &PasswordManagementConfig,
@@ -127,35 +116,33 @@ pub(crate) async fn reset_password_core(
     let password_hash = ctx.hash_password(hasher, &body.new_password).await?;
 
     if let Some(account) = get_credential_account(ctx, &user_id).await? {
-        drop(
-            ctx.database
-                .update_account_record(
-                    &account.id(),
-                    UpdateAccount {
-                        password: Some(password_hash),
-                        ..Default::default()
-                    },
-                )
-                .await?,
-        );
-    } else {
-        drop(
-            ctx.database
-                .create_account_record(CreateAccount {
-                    additional_fields: Default::default(),
-                    user_id: user_id.clone(),
-                    account_id: user_id.clone(),
-                    provider_id: "credential".to_owned(),
-                    access_token: None,
-                    refresh_token: None,
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: None,
+        _ = ctx
+            .database
+            .update_account_record(
+                &account.id(),
+                UpdateAccount {
                     password: Some(password_hash),
-                })
-                .await?,
-        );
+                    ..Default::default()
+                },
+            )
+            .await?;
+    } else {
+        _ = ctx
+            .database
+            .create_account_record(CreateAccount {
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
+                user_id: user_id.clone(),
+                account_id: user_id.clone(),
+                provider_id: "credential".to_owned(),
+                access_token: None,
+                refresh_token: None,
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: None,
+                password: Some(password_hash),
+            })
+            .await?;
     }
 
     if let Some(callback) = &config.on_password_reset {
@@ -169,53 +156,42 @@ pub(crate) async fn reset_password_core(
     Ok(StatusResponse { status: true })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
+/// The redirect URL for `GET /reset-password/{token}`.
 pub(crate) async fn reset_password_token_core(
     token: &str,
     query: &ResetPasswordTokenQuery,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
-) -> AuthResult<ResetPasswordTokenResult> {
+) -> AuthResult<String> {
     if let Some(callback_url) = &query.callback_url {
         validate_redirect_target(callback_url, ctx, "Invalid callbackURL")?;
     }
-
-    if token.is_empty() || query.callback_url.is_none() {
-        return Ok(ResetPasswordTokenResult::Redirect(build_redirect_url(
+    let redirect = |param: (&str, &str)| {
+        build_redirect_url(
             &ctx.config.base_url,
             query.callback_url.as_deref(),
-            &[("error", "INVALID_TOKEN")],
-        )?));
+            &[param],
+        )
+    };
+
+    if token.is_empty() || query.callback_url.is_none() {
+        return redirect(("error", "INVALID_TOKEN"));
     }
 
     let verification = ctx
         .verifications()
         .find(&format!("reset-password:{token}"))
         .await?;
-
     if verification
         .as_ref()
-        .is_none_or(|verification| verification.is_expired())
+        .is_none_or(alibi_core::verification::VerificationSnapshot::is_expired)
     {
-        return Ok(ResetPasswordTokenResult::Redirect(build_redirect_url(
-            &ctx.config.base_url,
-            query.callback_url.as_deref(),
-            &[("error", "INVALID_TOKEN")],
-        )?));
+        return redirect(("error", "INVALID_TOKEN"));
     }
 
-    Ok(ResetPasswordTokenResult::Redirect(build_redirect_url(
-        &ctx.config.base_url,
-        query.callback_url.as_deref(),
-        &[("token", token)],
-    )?))
+    redirect(("token", token))
 }
 
 /// Change the user's password. Returns the response and an optional new session token.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn change_password_core<S: alibi_core::AuthSchema>(
     body: &ChangePasswordRequest,
     user: &alibi_core::AdapterRecord<S::User>,
@@ -254,17 +230,16 @@ pub(crate) async fn change_password_core<S: alibi_core::AuthSchema>(
         .map_err(|_error| AuthError::bad_request("Invalid password"))?;
     }
 
-    drop(
-        ctx.database
-            .update_account_record(
-                &credential_account.id(),
-                UpdateAccount {
-                    password: Some(password_hash),
-                    ..Default::default()
-                },
-            )
-            .await?,
-    );
+    _ = ctx
+        .database
+        .update_account_record(
+            &credential_account.id(),
+            UpdateAccount {
+                password: Some(password_hash),
+                ..Default::default()
+            },
+        )
+        .await?;
 
     let new_token = if body.revoke_other_sessions == Some(true) {
         ctx.database.delete_user_sessions(&user.id()).await?;
@@ -288,9 +263,6 @@ pub(crate) async fn change_password_core<S: alibi_core::AuthSchema>(
     Ok((response, new_token))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn verify_password_core(
     body: &VerifyPasswordRequest,
     user: &impl AuthUser,
@@ -313,45 +285,16 @@ pub(crate) async fn verify_password_core(
 
     password_utils::verify_password(hasher, &body.password, &stored_hash)
         .await
-        .map_err(|error| match error {
-            error if error.status_code() != 500 => error,
-            AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => {
+        .map_err(|error| {
+            if error.status_code() == 500 {
+                crate::helpers::callback_failure(error)
+            } else {
                 error
             }
-            error => AuthError::CallbackFailure(Box::new(error)),
         })
         .map_err(|error| match error {
             AuthError::InvalidCredentials => AuthError::bad_request("Invalid password"),
-            other @ (AuthError::Api { .. }
-            | AuthError::Upstream { .. }
-            | AuthError::BadRequest(_)
-            | AuthError::InvalidRequest(_)
-            | AuthError::Validation(_)
-            | AuthError::Unauthenticated
-            | AuthError::AuthenticationFailed(_)
-            | AuthError::SessionNotFound
-            | AuthError::Forbidden(_)
-            | AuthError::UserCreationCancelled
-            | AuthError::SessionCreationCancelled
-            | AuthError::BannedUser(_)
-            | AuthError::Unauthorized
-            | AuthError::UserNotFound
-            | AuthError::NotFound(_)
-            | AuthError::Conflict(_)
-            | AuthError::MethodNotAllowed(_)
-            | AuthError::PayloadTooLarge(_)
-            | AuthError::UnprocessableEntity(_)
-            | AuthError::RateLimited { .. }
-            | AuthError::NotImplemented(_)
-            | AuthError::Config(_)
-            | AuthError::Database(_)
-            | AuthError::Serialization(_)
-            | AuthError::Plugin { .. }
-            | AuthError::CallbackFailure(_)
-            | AuthError::Internal(_)
-            | AuthError::Encryption(_)
-            | AuthError::PasswordHash(_)
-            | AuthError::Jwt(_)) => other,
+            other => other,
         })?;
 
     Ok(StatusResponse { status: true })
@@ -404,7 +347,7 @@ fn build_redirect_url(
             if replaced {
                 return false;
             }
-            *previous = (*value).to_owned();
+            (*value).clone_into(previous);
             replaced = true;
             true
         });
@@ -412,7 +355,7 @@ fn build_redirect_url(
             pairs.push(((*key).to_owned(), (*value).to_owned()));
         }
     }
-    let _ = url.query_pairs_mut().clear().extend_pairs(pairs);
+    _ = url.query_pairs_mut().clear().extend_pairs(pairs);
 
     Ok(url.to_string())
 }

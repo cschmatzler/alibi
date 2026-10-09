@@ -2,6 +2,7 @@
 use super::PluginOpenApiMetadata;
 use alibi_core::{AuthInitContext, AuthSchema};
 use serde_json::json;
+
 pub(super) fn apply<S: AuthSchema>(
     plugin: &str,
     ctx: &AuthInitContext<S>,

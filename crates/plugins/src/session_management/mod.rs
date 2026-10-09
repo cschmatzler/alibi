@@ -1,12 +1,19 @@
 use super::StatusResponse;
-use super::authentication_helpers::{JsonField, RequestBody, parse_body};
-use super::helpers::{admin_plugin_enabled, delete_session_cookie_headers};
-use alibi_core::SuccessResponse;
+use super::authentication_helpers::{
+    JsonField, RequestBody, json_type, parse_body, validation_response, with_session_cookies,
+};
+use super::helpers::{
+    admin_plugin_enabled, delete_session_cookie_headers, unauthorized_if_unauthenticated,
+};
 use alibi_core::entity::{AuthSession, AuthUser};
+use alibi_core::field_policy::{FieldInputError, SessionFields};
+use alibi_core::utils::cookie_utils::{related_cookie_name, verify_cookie_value};
+use alibi_core::utils::json::JsValue;
 use alibi_core::wire::SessionView;
-use alibi_core::{AuthContext, AuthPlugin, AuthRoute};
-use alibi_core::{AuthError, AuthResult};
-use alibi_core::{AuthRequest, AuthResponse, HttpMethod};
+use alibi_core::{
+    AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
+    HttpMethod, SuccessResponse,
+};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -26,7 +33,6 @@ pub struct SessionManagementConfig {
     pub require_authentication: bool,
 }
 
-// Request structures for session endpoints
 #[derive(Debug, Deserialize)]
 struct RevokeSessionRequest {
     token: String,
@@ -88,36 +94,31 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
-        match (req.method(), req.path()) {
+        let response = match (req.method(), req.path()) {
             (HttpMethod::Get | HttpMethod::Post, "/get-session") => {
-                Ok(Some(self.handle_get_session(req, ctx).await?))
+                self.handle_get_session(req, ctx).await?
             }
-            (HttpMethod::Post, "/sign-out") => Ok(Some(self.handle_sign_out(req, ctx).await?)),
-            (HttpMethod::Post, "/update-session") => {
-                Ok(Some(self.handle_update_session(req, ctx).await?))
-            }
+            (HttpMethod::Post, "/sign-out") => self.handle_sign_out(req, ctx).await?,
+            (HttpMethod::Post, "/update-session") => self.handle_update_session(req, ctx).await?,
             (HttpMethod::Get, "/list-sessions") if self.config.enable_session_listing => {
-                Ok(Some(self.handle_list_sessions(req, ctx).await?))
+                self.handle_list_sessions(req, ctx).await?
             }
             (HttpMethod::Post, "/revoke-session") if self.config.enable_session_revocation => {
-                Ok(Some(self.handle_revoke_session(req, ctx).await?))
+                self.handle_revoke_session(req, ctx).await?
             }
             (HttpMethod::Post, "/revoke-sessions") if self.config.enable_session_revocation => {
-                Ok(Some(self.handle_revoke_sessions(req, ctx).await?))
+                self.handle_revoke_sessions(req, ctx).await?
             }
             (HttpMethod::Post, "/revoke-other-sessions")
                 if self.config.enable_session_revocation =>
             {
-                Ok(Some(self.handle_revoke_other_sessions(req, ctx).await?))
+                self.handle_revoke_other_sessions(req, ctx).await?
             }
-            _ => Ok(None),
-        }
+            _ => return Ok(None),
+        };
+        Ok(Some(response))
     }
 }
-
-// ---------------------------------------------------------------------------
-// Old handler methods — delegate to core functions
-// ---------------------------------------------------------------------------
 
 impl SessionManagementPlugin {
     #[expect(
@@ -129,14 +130,6 @@ impl SessionManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        use super::authentication_helpers::{json_type, validation_response};
-        use alibi_core::field_policy::{FieldInputError, SessionFields};
-        use alibi_core::utils::cookie_utils::{
-            create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
-            sign_cookie_value, verify_cookie_value,
-        };
-        use alibi_core::utils::json::JsValue;
-
         if req.body.is_some() {
             let content_type = req
                 .header("content-type")
@@ -244,36 +237,17 @@ impl SessionManagementPlugin {
                 .flatten()
                 .find(|cookie| cookie.name() == preference)
                 .and_then(|cookie| verify_cookie_value(cookie.value(), ctx.config.current_secret()))
-                .is_some_and(|value_2| !value_2.is_empty())
+                .is_some_and(|signed| !signed.is_empty())
         });
-        let mut response = AuthResponse::json(
-            200,
-            &serde_json::json!({"session":ctx.session_view(&updated)}),
-        )?
-        .with_appended_header(
-            "Set-Cookie",
-            create_session_cookie_with_max_age(
-                Some(updated.token()),
-                if dont_remember {
-                    None
-                } else {
-                    Some(ctx.config.session.expires_in.num_seconds())
-                },
-                &ctx.config,
+        with_session_cookies(
+            AuthResponse::json(
+                200,
+                &serde_json::json!({"session":ctx.session_view(&updated)}),
             )?,
-        );
-        if dont_remember {
-            response = response.with_appended_header(
-                "Set-Cookie",
-                create_session_like_cookie(
-                    &preference,
-                    &sign_cookie_value("true", ctx.config.current_secret()),
-                    None,
-                    &ctx.config,
-                )?,
-            );
-        }
-        Ok(response)
+            &ctx.config,
+            updated.token(),
+            dont_remember,
+        )
     }
 
     pub(crate) async fn handle_get_session(
@@ -358,9 +332,9 @@ impl SessionManagementPlugin {
                 {
                     current_user = Some(session.user_id().into_owned());
                 }
-                drop(sign_out_core(&session, ctx).await);
+                _ = sign_out_core(&session, ctx).await;
             } else {
-                drop(ctx.database.delete_session(&token).await);
+                _ = ctx.database.delete_session(&token).await;
             }
         }
 
@@ -398,7 +372,7 @@ impl SessionManagementPlugin {
             )?
             .body;
             if redirect {
-                drop(response.headers.insert("Location", url));
+                _ = response.headers.insert("Location", url);
             }
         }
         Ok(response)
@@ -417,15 +391,12 @@ impl SessionManagementPlugin {
                 message: "Session is not fresh",
             });
         }
-        let mut sessions = match list_sessions_core(user.id(), ctx).await {
-            Ok(sessions) => sessions,
-            Err(_) => {
-                tracing::error!("Session listing failed");
-                return Ok(AuthResponse::new(500).with_header("content-type", "application/json"));
-            }
+        let Ok(mut sessions) = list_sessions_core(user.id(), ctx).await else {
+            tracing::error!("Session listing failed");
+            return Ok(AuthResponse::new(500).with_header("content-type", "application/json"));
         };
         if admin_plugin_enabled(ctx) {
-            sessions.retain(|session_2| session_2.impersonated_by.is_none());
+            sessions.retain(|listed| listed.impersonated_by.is_none());
         }
         Ok(AuthResponse::json(200, &sessions)?)
     }
@@ -443,7 +414,7 @@ impl SessionManagementPlugin {
         let (user, _) = ctx
             .require_authoritative_cached_session(req)
             .await
-            .map_err(session_authorization_error)?;
+            .map_err(unauthorized_if_unauthenticated)?;
         let response = revoke_session_core(&user, &revoke_req.token, ctx).await?;
         Ok(AuthResponse::json(200, &response)?)
     }
@@ -456,7 +427,7 @@ impl SessionManagementPlugin {
         let (user, _) = ctx
             .require_authoritative_cached_session(req)
             .await
-            .map_err(session_authorization_error)?;
+            .map_err(unauthorized_if_unauthenticated)?;
         let response = revoke_sessions_core(user.id(), ctx).await?;
         Ok(AuthResponse::json(200, &response)?)
     }
@@ -469,7 +440,7 @@ impl SessionManagementPlugin {
         let (user, current_session) = ctx
             .require_authoritative_cached_session(req)
             .await
-            .map_err(session_authorization_error)?;
+            .map_err(unauthorized_if_unauthenticated)?;
         let response = revoke_other_sessions_core(user.id(), &current_session, ctx).await?;
         Ok(AuthResponse::json(200, &response)?)
     }
@@ -482,13 +453,6 @@ impl std::fmt::Debug for SessionManagementPlugin {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Core functions — framework-agnostic business logic
-// ---------------------------------------------------------------------------
-
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn sign_out_core(
     session: &impl AuthSession,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -497,9 +461,6 @@ pub(crate) async fn sign_out_core(
     Ok(SuccessResponse { success: true })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn list_sessions_core(
     user_id: impl AsRef<str>,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -516,9 +477,6 @@ pub(crate) async fn list_sessions_core(
         .collect())
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn revoke_session_core(
     user: &impl AuthUser,
     token: &str,
@@ -535,9 +493,6 @@ pub(crate) async fn revoke_session_core(
     Ok(StatusResponse { status: true })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn revoke_sessions_core(
     user_id: impl AsRef<str>,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -549,9 +504,6 @@ pub(crate) async fn revoke_sessions_core(
     Ok(StatusResponse { status: true })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn revoke_other_sessions_core(
     user_id: impl AsRef<str>,
     current_session: &impl AuthSession,
@@ -565,67 +517,39 @@ pub(crate) async fn revoke_other_sessions_core(
         .collect();
     let count = tokens.len();
     let database = ctx.database.clone();
-    let endpoint = alibi_core::endpoint::current_endpoint_call_context();
-    let hook = alibi_core::hooks::current_request_hook_context();
     let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
     // Each launched deletion keeps its ownership after the aggregate rejects.
-    drop(tokio::spawn(async move {
-        let revoke = async {
-            drop(
-                futures_util::future::join_all(tokens.into_iter().map(|token| {
-                    let database = &database;
-                    let sender = &sender;
-                    async move {
-                        let result = database.delete_session(&token).await;
-                        let _closed = sender.send(result);
-                    }
-                }))
-                .await,
-            );
-        };
-        if let Some(endpoint) = endpoint {
-            alibi_core::endpoint::with_endpoint_call_context(
-                endpoint,
-                alibi_core::hooks::with_optional_request_hook_context(hook, revoke),
-            )
-            .await;
-        } else {
-            alibi_core::hooks::with_optional_request_hook_context(hook, revoke).await;
-        }
-    }));
+    crate::helpers::spawn_in_request_context(async move {
+        _ = futures_util::future::join_all(tokens.into_iter().map(|token| {
+            let database = &database;
+            let sender = &sender;
+            async move {
+                let result = database.delete_session(&token).await;
+                _ = sender.send(result);
+            }
+        }))
+        .await;
+    });
     for _ in 0..count {
         receiver
             .recv()
             .await
             .ok_or_else(|| AuthError::internal("Session revocation task stopped"))?
-            .map_err(|error| match error {
-                AuthError::Api { .. }
-                | AuthError::Upstream { .. }
-                | AuthError::CallbackFailure(_) => error,
-                error => AuthError::CallbackFailure(Box::new(error)),
-            })?;
+            .map_err(crate::helpers::callback_failure)?;
     }
     Ok(StatusResponse { status: true })
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "used by value as a `map_err` callback"
+)]
 fn revocation_storage_error(error: AuthError) -> AuthError {
     tracing::error!(error = %error, "Session revocation failed");
     AuthError::Upstream {
         status: 500,
         code: "INTERNAL_SERVER_ERROR",
         message: "Internal Server Error",
-    }
-}
-
-fn session_authorization_error(error: AuthError) -> AuthError {
-    if matches!(error, AuthError::Unauthenticated) {
-        AuthError::Upstream {
-            status: 401,
-            code: "UNAUTHORIZED",
-            message: "Unauthorized",
-        }
-    } else {
-        error
     }
 }
 

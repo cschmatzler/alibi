@@ -1,7 +1,8 @@
 //! Axum router and session extractors. Enable the `axum` feature.
 
-use super::{
-    CurrentSession, OptionalSession, dispatch::DispatchSupervisor, max_body_bytes,
+use super::dispatch::DispatchSupervisor;
+use super::shared::{
+    CurrentSession, OptionalSession, auth_request, check_content_length, max_body_bytes,
     payload_too_large,
 };
 use crate::BetterAuth;
@@ -122,7 +123,7 @@ async fn convert_request<T: AuthSchema>(
 ) -> AuthResult<AuthRequest> {
     let max_bytes = max_body_bytes(auth);
     let (parts, body) = request.into_parts();
-    super::check_content_length(&parts.headers, max_bytes)?;
+    check_content_length(&parts.headers, max_bytes)?;
     let body = axum::body::to_bytes(body, max_bytes)
         .await
         .map_err(|error| {
@@ -136,7 +137,7 @@ async fn convert_request<T: AuthSchema>(
         .extensions
         .get::<OriginalUri>()
         .map_or(&parts.uri, |original| &original.0);
-    super::auth_request(
+    auth_request(
         &parts.method,
         &parts.uri,
         original_uri,
@@ -150,7 +151,7 @@ async fn convert_request<T: AuthSchema>(
 /// chunked framing or a client disconnect.
 fn is_length_limit_error(error: &axum::Error) -> bool {
     std::iter::successors(std::error::Error::source(error), |source| source.source())
-        .any(<(dyn std::error::Error + 'static)>::is::<http_body_util::LengthLimitError>)
+        .any(<dyn std::error::Error>::is::<http_body_util::LengthLimitError>)
 }
 
 fn render(result: Result<AuthResponse, AuthError>) -> Response {

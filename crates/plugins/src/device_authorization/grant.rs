@@ -1,8 +1,20 @@
 //! Application-owned issuance and redemption of durable device grants.
-use super::*;
-use alibi_core::{AuthSchema, DeviceCode};
+use super::types::DeviceCodeRequest;
+use super::{
+    ACCESS_DENIED, AUTHORIZATION_PENDING, DEVICE_STATUS_APPROVED, DEVICE_STATUS_DENIED,
+    DEVICE_STATUS_PENDING, DeviceAuthorizationPlugin, EXPIRED_DEVICE_CODE, INVALID_DEVICE_CODE,
+    INVALID_DEVICE_CODE_STATUS, POLLING_TOO_FREQUENTLY, USER_NOT_FOUND, device_error_response,
+    no_store, validate_device_media,
+};
+use crate::helpers::callback_failure;
+use alibi_core::{
+    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, DeviceCode,
+    UpdateDeviceCode,
+};
 use async_trait::async_trait;
+use chrono::Utc;
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum DeviceGrantFailure {
@@ -33,7 +45,7 @@ impl DeviceGrantFailure {
                 error,
                 description,
             } => device_error_response(status, &error, &description),
-            Self::Application(error) => Err(device_callback_error(error)),
+            Self::Application(error) => Err(callback_failure(error)),
         }
     }
 }
@@ -239,7 +251,9 @@ impl DeviceAuthorizationPlugin {
         for (name, schema) in &fields {
             let value = request.get(name).and_then(Value::as_str);
             let minimum = schema.get("minLength").and_then(Value::as_u64).unwrap_or(0);
-            if value.is_none_or(|value| value.encode_utf16().count() < minimum as usize) {
+            if value.is_none_or(|value| {
+                value.encode_utf16().count() < usize::try_from(minimum).unwrap_or(usize::MAX)
+            }) {
                 issues.push(name.clone());
             }
         }
@@ -257,11 +271,7 @@ impl DeviceAuthorizationPlugin {
         let authorized = match grant.authorize_request(&request, req).await {
             Ok(value) => value,
             Err(error) => {
-                return error.into_response().map(|response| {
-                    response
-                        .with_header("Cache-Control", "no-store")
-                        .with_header("Pragma", "no-cache")
-                });
+                return error.into_response().map(no_store);
             }
         };
         self.issue_device_code_with_fields(
@@ -277,11 +287,7 @@ impl DeviceAuthorizationPlugin {
             ctx,
         )
         .await
-        .map(|response| {
-            response
-                .with_header("Cache-Control", "no-store")
-                .with_header("Pragma", "no-cache")
-        })
+        .map(no_store)
     }
     pub(super) fn grant_openapi(
         &self,

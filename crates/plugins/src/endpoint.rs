@@ -1,5 +1,5 @@
 //! Shared validation for genuine logical calls, independent of HTTP decoding.
-use super::authentication_helpers::{JsonField, JsonFieldKind, is_valid_email, json_type};
+use super::authentication_helpers::{JsonField, field_issue, json_type};
 use alibi_core::endpoint::EndpointDefinition;
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthError, AuthResponse, AuthResult, HttpMethod};
@@ -43,55 +43,7 @@ pub(super) fn validate_fields(
         if value.is_none() && !field.required {
             continue;
         }
-        let expected = match field.kind {
-            JsonFieldKind::String | JsonFieldKind::NonEmptyString | JsonFieldKind::Email => {
-                "string"
-            }
-            JsonFieldKind::Boolean => "boolean",
-            JsonFieldKind::Record => "record",
-            JsonFieldKind::OneOf(_) => "enum",
-        };
-        let valid_type = match field.kind {
-            JsonFieldKind::String | JsonFieldKind::NonEmptyString | JsonFieldKind::Email => {
-                value.is_some_and(JsValue::is_string)
-            }
-            JsonFieldKind::Boolean => value.is_some_and(JsValue::is_boolean),
-            JsonFieldKind::Record => value.is_some_and(JsValue::is_object),
-            JsonFieldKind::OneOf(choices) => value
-                .and_then(JsValue::as_str)
-                .is_some_and(|value| choices.contains(&value)),
-        };
-        let issue = if let JsonFieldKind::OneOf(choices) = field.kind {
-            (!valid_type).then(|| {
-                format!(
-                    "Invalid option: expected one of {}",
-                    choices
-                        .iter()
-                        .map(|choice| format!("\"{choice}\""))
-                        .collect::<Vec<_>>()
-                        .join("|")
-                )
-            })
-        } else if !valid_type {
-            Some(format!(
-                "Invalid input: expected {expected}, received {}",
-                json_type(value)
-            ))
-        } else {
-            match field.kind {
-                JsonFieldKind::NonEmptyString
-                    if value.and_then(JsValue::as_str).is_some_and(str::is_empty) =>
-                {
-                    Some("Too small: expected string to have >=1 characters".into())
-                }
-                JsonFieldKind::Email
-                    if !value.and_then(JsValue::as_str).is_some_and(is_valid_email) =>
-                {
-                    Some("Invalid email address".into())
-                }
-                _ => None,
-            }
-        };
+        let issue = field_issue(field.kind, value, json_type(value));
         if let Some(issue) = issue {
             issues.push(format!("[{location}.{}] {issue}", field.name));
         }
@@ -108,6 +60,10 @@ pub(super) fn validate_fields(
     ))
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "used by value as a `map_err` callback"
+)]
 pub(super) fn error_response(response: AuthResponse) -> AuthError {
     let body = alibi_core::utils::json::from_slice::<JsValue>(&response.body).ok();
     AuthError::Api {

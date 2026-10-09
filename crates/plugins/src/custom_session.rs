@@ -127,7 +127,7 @@ impl<S: AuthSchema> AuthPlugin<S> for CustomSessionPlugin<S> {
             .transform
             .transform(session, req, ctx)
             .await
-            .map_err(callback_error)?;
+            .map_err(crate::helpers::callback_failure)?;
         response.body = serde_json::to_vec(&transformed)?;
         for (name, value) in core_headers {
             response.headers.append(name, value);
@@ -179,42 +179,27 @@ impl<S: AuthSchema> CustomSessionPlugin<S> {
             metadata: context.metadata.clone(),
             extensions: context.extensions.clone(),
         };
-        let endpoint = alibi_core::endpoint::current_endpoint_call_context();
-        let hook = alibi_core::hooks::current_request_hook_context();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         // Launched callbacks retain ownership after the aggregate rejects,
         // matching the independent application work of a device-session list.
-        drop(tokio::spawn(async move {
-            let project = async {
-                drop(
-                    futures_util::future::join_all(sessions.into_iter().enumerate().map(
-                        |(index, session)| {
-                            let transform = &transform;
-                            let request = &request;
-                            let context = &context;
-                            let sender = &sender;
-                            async move {
-                                let result = transform
-                                    .transform(session, request, context)
-                                    .await
-                                    .map_err(callback_error);
-                                let _closed = sender.send((index, result));
-                            }
-                        },
-                    ))
-                    .await,
-                );
-            };
-            if let Some(endpoint) = endpoint {
-                alibi_core::endpoint::with_endpoint_call_context(
-                    endpoint,
-                    alibi_core::hooks::with_optional_request_hook_context(hook, project),
-                )
-                .await;
-            } else {
-                alibi_core::hooks::with_optional_request_hook_context(hook, project).await;
-            }
-        }));
+        crate::helpers::spawn_in_request_context(async move {
+            _ = futures_util::future::join_all(sessions.into_iter().enumerate().map(
+                |(index, session)| {
+                    let transform = &transform;
+                    let request = &request;
+                    let context = &context;
+                    let sender = &sender;
+                    async move {
+                        let result = transform
+                            .transform(session, request, context)
+                            .await
+                            .map_err(crate::helpers::callback_failure);
+                        _ = sender.send((index, result));
+                    }
+                },
+            ))
+            .await;
+        });
         for _ in 0..results.len() {
             let (index, value) = receiver
                 .recv()
@@ -226,14 +211,6 @@ impl<S: AuthSchema> CustomSessionPlugin<S> {
             *slot = Some(value?);
         }
         Ok(results.into_iter().flatten().collect())
-    }
-}
-
-fn callback_error(error: alibi_core::AuthError) -> alibi_core::AuthError {
-    use alibi_core::AuthError;
-    match error {
-        AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => error,
-        error => AuthError::CallbackFailure(Box::new(error)),
     }
 }
 
@@ -333,11 +310,9 @@ mod tests {
             Some(&reject_session.token),
             None,
         );
-        drop(
-            req.headers
-                .insert("x-application".into(), "original".into()),
-        );
-        use alibi_core::utils::cookie_utils::sign_cookie_value;
+        _ = req
+            .headers
+            .insert("x-application".into(), "original".into());
         let cookies = [&reject_session.token, &slow_session.token]
             .into_iter()
             .map(|token| {
@@ -345,16 +320,19 @@ mod tests {
                     "{}_multi-{}={}",
                     ctx.config.session.cookie_name,
                     token.to_lowercase(),
-                    sign_cookie_value(token, ctx.config.current_secret())
+                    alibi_core::utils::cookie_utils::sign_cookie_value(
+                        token,
+                        ctx.config.current_secret()
+                    )
                 )
             })
             .collect::<Vec<_>>();
         let ordinary = req.header("cookie").expect("signed current cookie").clone();
-        drop(req.headers.insert(
+        _ = req.headers.insert(
             "cookie".into(),
             format!("{ordinary}; {}", cookies.join("; ")),
-        ));
-        let response = super::super::multi_session::MultiSessionPlugin::new()
+        );
+        let response = crate::multi_session::MultiSessionPlugin::new()
             .on_request(&req, &ctx)
             .await
             .expect("real list")

@@ -1,4 +1,5 @@
-use super::*;
+use alibi_core::{AuthContext, AuthResult, AuthSchema};
+
 /// Log a noncritical callback or a notification whose policy permits continuation.
 pub(crate) async fn run_notification(notification: impl Future<Output = AuthResult<()>>) {
     if let Err(error) = notification.await {
@@ -27,7 +28,7 @@ pub(crate) async fn run_owned_notification(
         match error_policy {
             alibi_core::AwaitedNotificationErrorPolicy::Propagate => notification.await?,
             alibi_core::AwaitedNotificationErrorPolicy::LogAndContinue => {
-                run_notification(notification).await
+                run_notification(notification).await;
             }
         }
     }

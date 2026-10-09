@@ -1,37 +1,22 @@
 //! Shared helpers for plugin implementations.
-//!
-//! Extracted to avoid duplicating common patterns across plugins (DRY).
 mod api_key_authorization;
 mod credentials;
 mod sessions;
 
-use alibi_core::entity::{AuthAccount, AuthUser};
-use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResult, CreateUser, UpdateUser};
-pub use api_key_authorization::get_owned_api_key;
-pub use api_key_authorization::require_org_api_key_permission;
-pub use credentials::get_credential_account;
-pub use credentials::get_credential_password_hash;
-pub use credentials::user_has_password;
-pub use sessions::admin_banned_user_message;
-pub use sessions::admin_plugin_enabled;
-pub(crate) use sessions::completed_response_session;
-pub(crate) use sessions::create_user_session_record;
-pub use sessions::delete_session_cookie_headers;
-pub use sessions::expires_in_to_at;
-pub use sessions::get_cookie;
-pub(crate) use sessions::issue_selected_user_session_record;
-pub use sessions::issue_user_session;
-pub use sessions::issue_user_session_record;
-pub use sessions::issue_user_session_with_fields;
-pub use sessions::issue_user_session_with_fields_record;
-pub use sessions::issue_user_session_with_overrides;
-pub use sessions::issue_user_session_with_overrides_record;
-pub(crate) use sessions::ordinary_session;
-pub(crate) use sessions::record_completed_session;
-pub(crate) use sessions::record_completed_session_record;
-pub(crate) use sessions::record_completed_session_user_view;
-pub(crate) use sessions::response_has_session_cookie;
-pub use sessions::response_session;
+use alibi_core::{AuthContext, AuthError, CreateUser};
+pub use api_key_authorization::{get_owned_api_key, require_org_api_key_permission};
+pub use credentials::{get_credential_account, get_credential_password_hash, user_has_password};
+pub use sessions::{
+    admin_banned_user_message, admin_plugin_enabled, delete_session_cookie_headers,
+    expires_in_to_at, get_cookie, issue_user_session, issue_user_session_record,
+    issue_user_session_with_fields, issue_user_session_with_fields_record,
+    issue_user_session_with_overrides, issue_user_session_with_overrides_record, response_session,
+};
+pub(crate) use sessions::{
+    completed_response_session, create_user_session_record, issue_selected_user_session_record,
+    ordinary_session, record_completed_session, record_completed_session_record,
+    record_completed_session_user_view, response_has_session_cookie,
+};
 
 /// Join the configured auth origin and mount path for links sent to users.
 pub(crate) fn auth_base_url(config: &alibi_core::AuthConfig) -> String {
@@ -43,7 +28,65 @@ pub(crate) fn auth_base_url(config: &alibi_core::AuthConfig) -> String {
         format!("{origin}/{path}")
     }
 }
-use chrono::Utc;
+
+/// Wrap an ordinary application callback failure as an empty HTTP 500; explicit
+/// API errors keep their public status and body.
+pub(crate) fn callback_failure(error: AuthError) -> AuthError {
+    if matches!(
+        error,
+        AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_)
+    ) {
+        error
+    } else {
+        AuthError::CallbackFailure(Box::new(error))
+    }
+}
+
+/// Run detached work that keeps the caller's endpoint and request-hook contexts,
+/// so it can outlive an aggregate that rejects early.
+pub(crate) fn spawn_in_request_context(work: impl Future<Output = ()> + Send + 'static) {
+    let endpoint = alibi_core::endpoint::current_endpoint_call_context();
+    let hook = alibi_core::hooks::current_request_hook_context();
+    _ = tokio::spawn(async move {
+        let work = alibi_core::hooks::with_optional_request_hook_context(hook, work);
+        if let Some(endpoint) = endpoint {
+            alibi_core::endpoint::with_endpoint_call_context(endpoint, work).await;
+        } else {
+            work.await;
+        }
+    });
+}
+
+/// The documented 401 for a request without an authenticated session.
+pub(crate) const fn unauthorized() -> AuthError {
+    AuthError::Upstream {
+        status: 401,
+        code: "UNAUTHORIZED",
+        message: "Unauthorized",
+    }
+}
+
+/// Map a missing session to the documented 401, passing other errors through.
+pub(crate) fn unauthorized_if_unauthenticated(error: AuthError) -> AuthError {
+    if matches!(error, AuthError::Unauthenticated) {
+        unauthorized()
+    } else {
+        error
+    }
+}
+
+/// Like [`unauthorized_if_unauthenticated`], also for a session or user that
+/// no longer exists.
+pub(crate) fn unauthorized_if_session_missing(error: AuthError) -> AuthError {
+    if matches!(
+        error,
+        AuthError::Unauthenticated | AuthError::SessionNotFound | AuthError::UserNotFound
+    ) {
+        unauthorized()
+    } else {
+        error
+    }
+}
 
 /// Result of issuing a real session for a user.
 pub struct IssuedSession<S: alibi_core::AuthSchema> {
