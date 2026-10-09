@@ -486,7 +486,7 @@ async fn anonymous_session<S: AuthSchema>(
     ctx: &AuthContext<S>,
 ) -> Option<(alibi_core::AuthenticatedUser<S>, SessionView)> {
     let mut read = req.clone();
-    drop(read.query.insert("disableRefresh".into(), "true".into()));
+    _ = read.query.insert("disableRefresh".into(), "true".into());
     ctx.require_cached_session(&read).await.ok()
 }
 

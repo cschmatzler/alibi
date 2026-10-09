@@ -183,16 +183,16 @@ impl AdminUserView {
             .as_ref()
             .map_or(&ctx.config.user.additional_fields, |fields| &fields.0.0);
         for (name, field) in fields {
-            drop(output.remove(name));
+            _ = output.remove(name);
             if field.returned
                 && let Some(value) = user.raw_snapshot().values().get(name)
             {
-                drop(output.insert(name.clone(), value.clone()));
+                _ = output.insert(name.clone(), value.clone());
             }
         }
         let view = ctx.user_view(user);
         if let Some(value) = view.is_anonymous {
-            drop(output.insert("isAnonymous".into(), serde_json::Value::Bool(value)));
+            _ = output.insert("isAnonymous".into(), serde_json::Value::Bool(value));
         }
         output.extend(view.extension_fields);
         Ok(Self(output))

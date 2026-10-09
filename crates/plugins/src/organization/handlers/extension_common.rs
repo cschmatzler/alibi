@@ -187,9 +187,9 @@ fn configured_roles(config: &OrganizationConfig) -> OrganizationRoles {
             ("team", &permission.team),
             ("ac", &permission.ac),
         ] {
-            drop(permissions.insert(resource.to_owned(), actions.clone()));
+            _ = permissions.insert(resource.to_owned(), actions.clone());
         }
-        drop(roles.insert(role.clone(), permissions));
+        _ = roles.insert(role.clone(), permissions);
     }
     roles
 }
@@ -225,12 +225,10 @@ pub async fn organization_roles<S: AuthSchema>(
             }
         }
     }
-    drop(
-        role_cache()
-            .lock()
-            .map_err(|_error| AuthError::internal("Organization role cache unavailable"))?
-            .insert(org_id.to_owned(), roles.clone()),
-    );
+    _ = role_cache()
+        .lock()
+        .map_err(|_error| AuthError::internal("Organization role cache unavailable"))?
+        .insert(org_id.to_owned(), roles.clone());
     Ok(roles)
 }
 

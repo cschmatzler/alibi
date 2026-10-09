@@ -84,7 +84,7 @@ impl EmailOtpPlugin {
         let (otp, value) = self
             .prepare_code(ctx, request, email, otp_type, identifier_override)
             .await?;
-        drop(ctx.verifications().create(value).await?);
+        _ = ctx.verifications().create(value).await?;
         Ok(otp)
     }
 
@@ -106,23 +106,22 @@ impl EmailOtpPlugin {
                 && let Some(otp) = self.config.storage.reusable(stored, &ctx.config).await?
                 && !otp.is_empty()
             {
-                drop(
-                    ctx.verifications()
-                        .update(
-                            &key,
-                            alibi_core::UpdateVerification {
-                                expires_at: Some(
-                                    super::super::passwordless_numeric::expires_at(
-                                        self.config.expires_in,
-                                        false,
-                                    )
-                                    .ok_or_else(|| AuthError::internal("Invalid Date"))?,
-                                ),
-                                ..Default::default()
-                            },
-                        )
-                        .await?,
-                );
+                _ = ctx
+                    .verifications()
+                    .update(
+                        &key,
+                        alibi_core::UpdateVerification {
+                            expires_at: Some(
+                                super::super::passwordless_numeric::expires_at(
+                                    self.config.expires_in,
+                                    false,
+                                )
+                                .ok_or_else(|| AuthError::internal("Invalid Date"))?,
+                            ),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
                 return Ok(otp);
             }
         }
@@ -143,7 +142,7 @@ impl EmailOtpPlugin {
             data.expires_at =
                 super::super::passwordless_numeric::expires_at(self.config.expires_in, false)
                     .ok_or_else(|| AuthError::internal("Invalid Date"))?;
-            drop(ctx.verifications().create(data).await?);
+            _ = ctx.verifications().create(data).await?;
         }
         Ok(otp)
     }
@@ -208,15 +207,14 @@ impl EmailOtpPlugin {
             return Err(too_many_attempts());
         }
         if !self.config.storage.verify(stored, otp, &ctx.config).await? {
-            drop(
-                ctx.verifications()
-                    .create(CreateVerification {
-                        identifier: key.to_owned(),
-                        value: format!("{stored}:{}", attempts + 1),
-                        expires_at: value.expires_at()?,
-                    })
-                    .await?,
-            );
+            _ = ctx
+                .verifications()
+                .create(CreateVerification {
+                    identifier: key.to_owned(),
+                    value: format!("{stored}:{}", attempts + 1),
+                    expires_at: value.expires_at()?,
+                })
+                .await?;
             return Err(invalid_otp());
         }
         Ok(())
@@ -303,17 +301,16 @@ impl EmailOtpPlugin {
             .verify(stored, &body.otp, &ctx.config)
             .await?
         {
-            drop(
-                ctx.verifications()
-                    .update(
-                        &key,
-                        alibi_core::UpdateVerification {
-                            value: Some(format!("{stored}:{}", attempts + 1)),
-                            ..Default::default()
-                        },
-                    )
-                    .await?,
-            );
+            _ = ctx
+                .verifications()
+                .update(
+                    &key,
+                    alibi_core::UpdateVerification {
+                        value: Some(format!("{stored}:{}", attempts + 1)),
+                        ..Default::default()
+                    },
+                )
+                .await?;
             return Err(invalid_otp());
         }
         if ctx
@@ -501,51 +498,48 @@ impl EmailOtpPlugin {
             .await?;
         if let Some(account) = super::super::helpers::get_credential_account(ctx, user.id()).await?
         {
-            drop(
-                ctx.database
-                    .update_account_record(
-                        &account.id(),
-                        UpdateAccount {
-                            password: Some(password),
-                            ..Default::default()
-                        },
-                    )
-                    .await?,
-            );
-        } else {
-            drop(
-                ctx.database
-                    .create_account_record(CreateAccount {
-                        additional_fields: FieldValues::default(),
-                        user_id: user.id().to_string(),
-                        account_id: user.id().to_string(),
-                        provider_id: "credential".to_owned(),
-                        access_token: None,
-                        refresh_token: None,
-                        id_token: None,
-                        access_token_expires_at: None,
-                        refresh_token_expires_at: None,
-                        scope: None,
+            _ = ctx
+                .database
+                .update_account_record(
+                    &account.id(),
+                    UpdateAccount {
                         password: Some(password),
-                    })
-                    .await?,
-            );
+                        ..Default::default()
+                    },
+                )
+                .await?;
+        } else {
+            _ = ctx
+                .database
+                .create_account_record(CreateAccount {
+                    additional_fields: FieldValues::default(),
+                    user_id: user.id().to_string(),
+                    account_id: user.id().to_string(),
+                    provider_id: "credential".to_owned(),
+                    access_token: None,
+                    refresh_token: None,
+                    id_token: None,
+                    access_token_expires_at: None,
+                    refresh_token_expires_at: None,
+                    scope: None,
+                    password: Some(password),
+                })
+                .await?;
         }
         if let Some(hook) = &settings.on_reset {
             hook(serde_json::to_value(ctx.user_view(&user))?).await?;
         }
         if !user.email_verified() {
-            drop(
-                ctx.database
-                    .update_user_record(
-                        &user.id(),
-                        UpdateUser {
-                            email_verified: Some(true),
-                            ..Default::default()
-                        },
-                    )
-                    .await?,
-            );
+            _ = ctx
+                .database
+                .update_user_record(
+                    &user.id(),
+                    UpdateUser {
+                        email_verified: Some(true),
+                        ..Default::default()
+                    },
+                )
+                .await?;
         }
         if settings.revoke_sessions {
             ctx.database.delete_user_sessions(&user.id()).await?;

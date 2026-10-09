@@ -323,7 +323,7 @@ pub async fn remove_team_core<S: AuthSchema>(
             .await
             .map_err(super::super::extensions::team_callback_error)?;
     }
-    let _ignored_delete_team = ctx.database.delete_team(organization_id, team_id).await?;
+    _ = ctx.database.delete_team(organization_id, team_id).await?;
     if let Some(callback) = &config.teams.hooks {
         callback
             .after_delete(&team, &hooks)
@@ -743,7 +743,7 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
                         .await
                         .map_err(super::super::extensions::team_callback_error)?;
                 }
-                let _ignored_remove_team_member = ctx
+                _ = ctx
                     .database
                     .remove_team_member(&team.id, &body.user_id)
                     .await?;

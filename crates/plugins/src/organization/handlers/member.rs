@@ -87,12 +87,11 @@ pub(crate) async fn list_members_core(
         resolve_organization_id(query.organization_id.as_deref(), None, session, ctx).await?
     };
 
-    drop(
-        ctx.database
-            .get_member(&org_id, &user.id())
-            .await?
-            .ok_or_else(|| AuthError::forbidden("You are not a member of this organization"))?,
-    );
+    _ = ctx
+        .database
+        .get_member(&org_id, &user.id())
+        .await?
+        .ok_or_else(|| AuthError::forbidden("You are not a member of this organization"))?;
 
     let member_params = MemberPageQuery {
         organization_id: org_id,
@@ -326,11 +325,10 @@ pub(crate) async fn remove_member_core(
         .await?;
 
     if is_self_removal && session.active_organization_id() == Some(org_id) {
-        drop(
-            ctx.database
-                .update_session_active_organization_record(session.token(), None)
-                .await?,
-        );
+        _ = ctx
+            .database
+            .update_session_active_organization_record(session.token(), None)
+            .await?;
     }
 
     if let (Some(hooks), Some(original)) = (&config.member_removal_hooks, original) {
@@ -601,7 +599,7 @@ pub(crate) async fn update_member_role_response(
 ) -> AuthResult<AuthResponse> {
     let empty = || {
         let mut response = AuthResponse::new(400);
-        drop(response.headers.insert("content-type", "application/json"));
+        _ = response.headers.insert("content-type", "application/json");
         response
     };
     // An empty string is falsy before organization resolution; an empty array

@@ -52,7 +52,7 @@ pub(super) fn require_verified_invitation_email<S: alibi_core::AuthSchema>(
 ) -> AuthResult<()> {
     let required = config
         .require_email_verification_on_invitation
-        .unwrap_or(ctx.config.advanced.database.serial_ids());
+        .unwrap_or_else(|| ctx.config.advanced.database.serial_ids());
     if required && !user.email_verified() {
         return Err(AuthError::forbidden(message));
     }
@@ -224,11 +224,10 @@ pub(crate) async fn invite_member_core(
             .await?;
             return Ok(invitation);
         }
-        drop(
-            ctx.database
-                .update_invitation_status(&existing.id, InvitationStatus::Canceled)
-                .await?,
-        );
+        _ = ctx
+            .database
+            .update_invitation_status(&existing.id, InvitationStatus::Canceled)
+            .await?;
     }
     let limit_context = OrganizationInvitationLimitContext {
         user: user_view.clone(),
@@ -274,12 +273,11 @@ pub(crate) async fn invite_member_core(
         return Err(super::extension_common::org_error(400, "INVALID_TEAM_ID"));
     }
     for team_id in requested_teams.iter().filter(|_| validate_teams) {
-        drop(
-            ctx.database
-                .get_team(Some(&org_id), team_id)
-                .await?
-                .ok_or_else(|| super::extension_common::org_error(400, "TEAM_NOT_FOUND"))?,
-        );
+        _ = ctx
+            .database
+            .get_team(Some(&org_id), team_id)
+            .await?
+            .ok_or_else(|| super::extension_common::org_error(400, "TEAM_NOT_FOUND"))?;
     }
     for team_id in requested_teams.iter().filter(|_| {
         validate_teams
@@ -440,12 +438,11 @@ pub(crate) async fn list_invitations_core(
     let org_id =
         resolve_organization_id(query.organization_id.as_deref(), None, session, ctx).await?;
 
-    drop(
-        ctx.database
-            .get_member(&org_id, &user.id())
-            .await?
-            .ok_or_else(|| AuthError::forbidden("Not a member of this organization"))?,
-    );
+    _ = ctx
+        .database
+        .get_member(&org_id, &user.id())
+        .await?
+        .ok_or_else(|| AuthError::forbidden("Not a member of this organization"))?;
 
     let invitations = ctx.database.list_organization_invitations(&org_id).await?;
     Ok(invitations

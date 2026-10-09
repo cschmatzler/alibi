@@ -30,7 +30,7 @@ fn parsed_role(role: &OrganizationRole) -> AuthResult<serde_json::Map<String, se
     let permission: serde_json::Value = serde_json::from_str(role.permission.as_str())
         .map_err(|error| AuthError::CallbackFailure(Box::new(error.into())))?;
     let mut value = role_object(role)?;
-    drop(value.insert("permission".to_owned(), permission));
+    _ = value.insert("permission".to_owned(), permission);
     Ok(value)
 }
 
@@ -195,7 +195,7 @@ pub(in crate::organization) async fn role_core<
                     "body.permission",
                 )));
             if let Some(additional) = body.get("additionalFields") {
-                let _ignored_take = issues.take(validation::object(
+                _ = issues.take(validation::object(
                     Some(additional),
                     "body.additionalFields",
                 ));
@@ -376,7 +376,7 @@ pub(in crate::organization) async fn role_core<
         // deletes still parse it and fail before returning or deleting the row.
         let mut role_data = if updates.is_some() && role.permission.as_str().is_empty() {
             let mut value = role_object(&role)?;
-            drop(value.insert("permission".to_owned(), serde_json::Value::Null));
+            _ = value.insert("permission".to_owned(), serde_json::Value::Null);
             value
         } else {
             parsed_role(&role)?
@@ -399,7 +399,7 @@ pub(in crate::organization) async fn role_core<
                 || permission.and_then(serde_json::Value::as_f64) == Some(0.0)
                 || permission.and_then(serde_json::Value::as_str) == Some("")
             {
-                drop(role_data.insert("permission".to_owned(), serde_json::Value::Null));
+                _ = role_data.insert("permission".to_owned(), serde_json::Value::Null);
             }
             // Only requested fields belong in the batch update. Copying the
             // selected row's permissions would overwrite other legacy rows
@@ -413,20 +413,19 @@ pub(in crate::organization) async fn role_core<
                         &serde_json::json!({"message":"You are not allowed to update a role","code":error_code,"missingPermissions":missing}),
                     )?));
                 }
-                drop(role_data.insert("permission".to_owned(), serde_json::to_value(permission)?));
+                _ = role_data.insert("permission".to_owned(), serde_json::to_value(permission)?);
                 update.permission = Some(permission.clone());
             }
             if let Some(name) = updates.role_name.filter(|name| !name.is_empty()) {
                 let name = name.to_lowercase();
                 check_name(&name, &org, config, ctx).await?;
                 update.role = Some(name.clone());
-                drop(role_data.insert("role".to_owned(), serde_json::Value::String(name)));
+                _ = role_data.insert("role".to_owned(), serde_json::Value::String(name));
             }
-            drop(
-                ctx.database
-                    .update_organization_role(&org, &chosen, update)
-                    .await?,
-            );
+            _ = ctx
+                .database
+                .update_organization_role(&org, &chosen, update)
+                .await?;
             // The upstream return value merges the pre-update row; the stored updatedAt still advances.
             AuthResponse::json(
                 200,

@@ -232,7 +232,7 @@ mod tests {
             let verified = if challenge.as_ref().is_some_and(|expected| {
                 expected.phone_number == delivery.phone_number && expected.code == delivery.code
             }) {
-                drop(challenge.take());
+                _ = challenge.take();
                 Ok(true)
             } else {
                 Ok(false)
@@ -319,24 +319,23 @@ mod tests {
         let hash = alibi_core::utils::password::hash_password(None, "original-password123")
             .await
             .unwrap();
-        drop(
-            ctx.database
-                .create_account(CreateAccount {
-                    additional_fields: alibi_core::field_policy::FieldValues::default(),
-                    user_id: user.id().to_string(),
-                    account_id: user.id().to_string(),
-                    provider_id: "credential".into(),
-                    access_token: None,
-                    refresh_token: None,
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: None,
-                    password: Some(hash),
-                })
-                .await
-                .unwrap(),
-        );
+        _ = ctx
+            .database
+            .create_account(CreateAccount {
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
+                user_id: user.id().to_string(),
+                account_id: user.id().to_string(),
+                provider_id: "credential".into(),
+                access_token: None,
+                refresh_token: None,
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: None,
+                password: Some(hash),
+            })
+            .await
+            .unwrap();
         user.id().to_string()
     }
 
@@ -412,7 +411,7 @@ mod tests {
         )
         .await;
         assert_eq!(direct.status, 500);
-        assert!(direct.body.is_empty());
+        assert_eq!(direct.body, Vec::<u8>::new());
         assert!(direct.headers.get("content-type").is_none());
         let direct_code = outbox.0.lock().unwrap().last().unwrap().code.clone();
         assert_eq!(
@@ -586,23 +585,17 @@ mod tests {
     // Upstream: attempts and expiry delete proofs, and a code for one phone cannot
     // authorize another. The server-only consumer cannot create any user/session.
     #[tokio::test]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
-    )]
     async fn phone_consumer_enforces_scope_expiry_budget_and_single_use() {
         let ctx = context().await;
         let (plugin, outbox, _) = configured();
         let phone = "+15551110002";
-        drop(
-            post(
-                &plugin,
-                &ctx,
-                "/phone-number/send-otp",
-                json!({"phoneNumber":phone}),
-            )
-            .await,
-        );
+        _ = post(
+            &plugin,
+            &ctx,
+            "/phone-number/send-otp",
+            json!({"phoneNumber":phone}),
+        )
+        .await;
         let code = outbox.0.lock().unwrap().last().unwrap().code.clone();
         assert_eq!(
             plugin
@@ -653,16 +646,15 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        drop(
-            ctx.database
-                .create_verification(CreateVerification {
-                    identifier: phone.into(),
-                    value: "654321:0".into(),
-                    expires_at: chrono::Utc::now() - Duration::seconds(1),
-                })
-                .await
-                .unwrap(),
-        );
+        _ = ctx
+            .database
+            .create_verification(CreateVerification {
+                identifier: phone.into(),
+                value: "654321:0".into(),
+                expires_at: chrono::Utc::now() - Duration::seconds(1),
+            })
+            .await
+            .unwrap();
         assert_eq!(
             plugin
                 .consume_otp(&ctx, phone, "654321")
@@ -673,15 +665,13 @@ mod tests {
                 .as_deref(),
             Some("OTP_EXPIRED")
         );
-        drop(
-            post(
-                &plugin,
-                &ctx,
-                "/phone-number/send-otp",
-                json!({"phoneNumber":phone}),
-            )
-            .await,
-        );
+        _ = post(
+            &plugin,
+            &ctx,
+            "/phone-number/send-otp",
+            json!({"phoneNumber":phone}),
+        )
+        .await;
         let code_2 = outbox.0.lock().unwrap().last().unwrap().code.clone();
         plugin.consume_otp(&ctx, phone, &code_2).await.unwrap();
         assert!(
@@ -721,29 +711,27 @@ mod tests {
         let phone = "+15551110012";
         let user_id = phone_user(&ctx, phone, true).await;
         let foreign_id = phone_user(&ctx, "+15551110013", true).await;
-        drop(
-            ctx.database
-                .update_user(
-                    &user_id,
-                    UpdateUser {
-                        two_factor_enabled: Some(true),
-                        ..Default::default()
-                    },
-                )
-                .await
-                .unwrap(),
-        );
+        _ = ctx
+            .database
+            .update_user(
+                &user_id,
+                UpdateUser {
+                    two_factor_enabled: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
         let trust_id = "trust-device-other-user";
-        drop(
-            ctx.database
-                .create_verification(CreateVerification {
-                    identifier: trust_id.into(),
-                    value: foreign_id.clone(),
-                    expires_at: chrono::Utc::now() + Duration::days(30),
-                })
-                .await
-                .unwrap(),
-        );
+        _ = ctx
+            .database
+            .create_verification(CreateVerification {
+                identifier: trust_id.into(),
+                value: foreign_id.clone(),
+                expires_at: chrono::Utc::now() + Duration::days(30),
+            })
+            .await
+            .unwrap();
         let mut mac = Hmac::<Sha256>::new_from_slice(ctx.config.secret.as_bytes()).unwrap();
         mac.update(format!("{foreign_id}!{trust_id}").as_bytes());
         let token = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
@@ -754,13 +742,13 @@ mod tests {
             None,
             Some(json!({"phoneNumber":phone,"password":"original-password123","rememberMe":false})),
         );
-        drop(req.headers.insert(
+        _ = req.headers.insert(
             "cookie".into(),
             format!(
                 "{}={cookie}",
                 related_cookie_name(&ctx.config, "trust_device")
             ),
-        ));
+        );
         let response = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
         assert_eq!(response.status, 200);
         let body: Value = serde_json::from_slice(&response.body).unwrap();
@@ -822,16 +810,14 @@ mod tests {
             .await
             .unwrap();
         let occupied = "+15551110005";
-        drop(phone_user(&ctx, occupied, true).await);
-        drop(
-            post(
-                &plugin,
-                &ctx,
-                "/phone-number/send-otp",
-                json!({"phoneNumber":occupied}),
-            )
-            .await,
-        );
+        _ = phone_user(&ctx, occupied, true).await;
+        _ = post(
+            &plugin,
+            &ctx,
+            "/phone-number/send-otp",
+            json!({"phoneNumber":occupied}),
+        )
+        .await;
         let code = outbox.0.lock().unwrap().last().unwrap().code.clone();
         let req = test_helpers::create_auth_json_request_no_query(
             HttpMethod::Post,
@@ -859,15 +845,13 @@ mod tests {
             Some("+15551110004")
         );
         let target = "+15551110006";
-        drop(
-            post(
-                &plugin,
-                &ctx,
-                "/phone-number/send-otp",
-                json!({"phoneNumber":target}),
-            )
-            .await,
-        );
+        _ = post(
+            &plugin,
+            &ctx,
+            "/phone-number/send-otp",
+            json!({"phoneNumber":target}),
+        )
+        .await;
         let code_2 = outbox.0.lock().unwrap().last().unwrap().code.clone();
         let req_2 = test_helpers::create_auth_json_request_no_query(
             HttpMethod::Post,
@@ -916,16 +900,15 @@ mod tests {
             phone_number: phone.into(),
             code: "provider-approved".into(),
         })))));
-        drop(
-            ctx.database
-                .create_verification(CreateVerification {
-                    identifier: phone.into(),
-                    value: "unrelated:100".into(),
-                    expires_at: chrono::Utc::now() - Duration::days(1),
-                })
-                .await
-                .unwrap(),
-        );
+        _ = ctx
+            .database
+            .create_verification(CreateVerification {
+                identifier: phone.into(),
+                value: "unrelated:100".into(),
+                expires_at: chrono::Utc::now() - Duration::days(1),
+            })
+            .await
+            .unwrap();
         assert!(
             plugin
                 .consume_otp(&ctx, "+15559999999", "provider-approved")
@@ -1011,15 +994,13 @@ mod tests {
         let ctx = context().await;
         let (plugin, outbox, _) = configured();
         let phone = "+15551110010";
-        drop(
-            post(
-                &plugin,
-                &ctx,
-                "/phone-number/send-otp",
-                json!({"phoneNumber":phone}),
-            )
-            .await,
-        );
+        _ = post(
+            &plugin,
+            &ctx,
+            "/phone-number/send-otp",
+            json!({"phoneNumber":phone}),
+        )
+        .await;
         let code = outbox.0.lock().unwrap().last().unwrap().code.clone();
         let (first, second) = tokio::join!(
             plugin.consume_otp(&ctx, phone, &code),
@@ -1045,15 +1026,13 @@ mod tests {
         plugin.config.callback_on_verification =
             Some(Arc::<VerificationCallback>::clone(&callback));
         let phone = "+15551110011";
-        drop(
-            post(
-                &plugin,
-                &ctx,
-                "/phone-number/send-otp",
-                json!({"phoneNumber":phone}),
-            )
-            .await,
-        );
+        _ = post(
+            &plugin,
+            &ctx,
+            "/phone-number/send-otp",
+            json!({"phoneNumber":phone}),
+        )
+        .await;
         let code = outbox.0.lock().unwrap().last().unwrap().code.clone();
         let success = post(
             &plugin,
@@ -1086,15 +1065,13 @@ mod tests {
         plugin.config.callback_on_verification =
             Some(Arc::<VerificationCallback>::clone(&rejecting));
         let rejected_phone = "+15551110012";
-        drop(
-            post(
-                &plugin,
-                &ctx,
-                "/phone-number/send-otp",
-                json!({"phoneNumber":rejected_phone}),
-            )
-            .await,
-        );
+        _ = post(
+            &plugin,
+            &ctx,
+            "/phone-number/send-otp",
+            json!({"phoneNumber":rejected_phone}),
+        )
+        .await;
         let code_2 = outbox.0.lock().unwrap().last().unwrap().code.clone();
         let rejected = post(
             &plugin,
@@ -1136,16 +1113,15 @@ mod tests {
         let (plugin, _, _) = configured();
         for attempts in ["3.0", "3e0", " 3 ", "0x3", "0o3", "0b11"] {
             let phone = format!("counter:{attempts}");
-            drop(
-                ctx.database
-                    .create_verification(CreateVerification {
-                        identifier: phone.clone(),
-                        value: format!("654321:{attempts}"),
-                        expires_at: chrono::Utc::now() + Duration::minutes(5),
-                    })
-                    .await
-                    .unwrap(),
-            );
+            _ = ctx
+                .database
+                .create_verification(CreateVerification {
+                    identifier: phone.clone(),
+                    value: format!("654321:{attempts}"),
+                    expires_at: chrono::Utc::now() + Duration::minutes(5),
+                })
+                .await
+                .unwrap();
             let result = plugin
                 .consume_otp(&ctx, &phone, "654321")
                 .await

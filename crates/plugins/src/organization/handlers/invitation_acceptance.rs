@@ -80,7 +80,7 @@ impl AcceptanceTransport {
             if let Some(index) = headers.iter().rposition(|(name, value)| {
                 name.eq_ignore_ascii_case("set-cookie") && value == cookie
             }) {
-                drop(headers.remove(index));
+                _ = headers.remove(index);
             }
         }
         for (name, value) in headers {
@@ -283,13 +283,12 @@ pub(in crate::organization) async fn accept<S: AuthSchema>(
                         .ok_or_else(|| AuthError::bad_request("Invitation role is missing"))?,
                 })
                 .await?;
-            drop(
-                tx.update_session_active_organization_record(
+            _ = tx
+                .update_session_active_organization_record(
                     &token,
                     Some(&accepted_for_tx.organization_id),
                 )
-                .await?,
-            );
+                .await?;
             Ok(member)
         })
     })
@@ -299,15 +298,14 @@ pub(in crate::organization) async fn accept<S: AuthSchema>(
         Err(error) => {
             // A reset error replaces the original transaction error. A missing
             // or independently transitioned row is a successful conditional no-op.
-            drop(
-                ctx.database
-                    .update_invitation_status_if_status(
-                        &body.invitation_id,
-                        InvitationStatus::Accepted,
-                        InvitationStatus::Pending,
-                    )
-                    .await?,
-            );
+            _ = ctx
+                .database
+                .update_invitation_status_if_status(
+                    &body.invitation_id,
+                    InvitationStatus::Accepted,
+                    InvitationStatus::Pending,
+                )
+                .await?;
             return Err(error);
         }
     };

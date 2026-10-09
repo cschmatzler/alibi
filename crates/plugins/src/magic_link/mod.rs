@@ -159,20 +159,19 @@ impl MagicLinkPlugin {
             email: body.email.clone(),
             name: body.name,
         };
-        let expires_at = match super::passwordless_numeric::expires_at(self.config.expires_in, true)
-        {
-            Some(value) => value,
-            None => return Ok(AuthResponse::new(500)),
+        let Some(expires_at) =
+            super::passwordless_numeric::expires_at(self.config.expires_in, true)
+        else {
+            return Ok(AuthResponse::new(500));
         };
-        drop(
-            ctx.verifications()
-                .create(CreateVerification {
-                    identifier: format!("magic-link:{stored}"),
-                    value: serde_json::to_string(&data)?,
-                    expires_at,
-                })
-                .await?,
-        );
+        _ = ctx
+            .verifications()
+            .create(CreateVerification {
+                identifier: format!("magic-link:{stored}"),
+                value: serde_json::to_string(&data)?,
+                expires_at,
+            })
+            .await?;
         let mut url = Url::parse(&ctx.config.base_url)
             .map_err(|_error| AuthError::config("Invalid base URL"))?;
         let path = url.path().trim_end_matches('/');
@@ -544,7 +543,7 @@ mod tests {
 
     fn verify_request(token: &str) -> AuthRequest {
         let mut req = AuthRequest::new(HttpMethod::Get, "/magic-link/verify");
-        drop(req.query.insert("token".into(), token.into()));
+        _ = req.query.insert("token".into(), token.into());
         req
     }
 
@@ -643,14 +642,12 @@ mod tests {
             None,
             Some(json!({"email":"new@example.com"})),
         );
-        drop(plugin.on_request(&req, &ctx).await.unwrap());
+        _ = plugin.on_request(&req, &ctx).await.unwrap();
         let delivery = outbox.0.lock().unwrap().last().unwrap().clone();
         let mut req_2 = verify_request(&delivery.token);
-        drop(
-            req_2
-                .query
-                .insert("callbackURL".into(), "https://evil.example/steal".into()),
-        );
+        _ = req_2
+            .query
+            .insert("callbackURL".into(), "https://evil.example/steal".into());
         assert_eq!(
             plugin
                 .on_request(&req_2, &ctx)
@@ -666,12 +663,10 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
-        drop(req_2.query.insert("callbackURL".into(), "/existing".into()));
-        drop(
-            req_2
-                .query
-                .insert("newUserCallbackURL".into(), "/welcome?source=magic".into()),
-        );
+        _ = req_2.query.insert("callbackURL".into(), "/existing".into());
+        _ = req_2
+            .query
+            .insert("newUserCallbackURL".into(), "/welcome?source=magic".into());
         let response = plugin.on_request(&req_2, &ctx).await.unwrap().unwrap();
         assert_eq!(response.status, 302);
         assert_eq!(
@@ -694,7 +689,7 @@ mod tests {
             None,
             Some(json!({"email":"disabled@example.com"})),
         );
-        drop(plugin.on_request(&req, &ctx).await.unwrap());
+        _ = plugin.on_request(&req, &ctx).await.unwrap();
         let delivery = outbox.0.lock().unwrap().last().unwrap().clone();
         let response = plugin
             .on_request(&verify_request(&delivery.token), &ctx)
@@ -739,7 +734,7 @@ mod tests {
             None,
             Some(json!({"email":"expired@example.com"})),
         );
-        drop(plugin.on_request(&req, &ctx).await.unwrap());
+        _ = plugin.on_request(&req, &ctx).await.unwrap();
         let delivery = outbox.0.lock().unwrap().last().unwrap().clone();
         assert!(
             ctx.database
@@ -811,7 +806,7 @@ mod tests {
             None,
             Some(json!({"email":"promote@example.com"})),
         );
-        drop(plugin.on_request(&req, &ctx).await.unwrap());
+        _ = plugin.on_request(&req, &ctx).await.unwrap();
         let delivery = outbox.0.lock().unwrap().last().unwrap().clone();
         assert_eq!(
             plugin
@@ -853,7 +848,7 @@ mod tests {
             None,
             Some(json!({"email":"custom@example.com"})),
         );
-        drop(plugin.on_request(&req, &ctx).await.unwrap());
+        _ = plugin.on_request(&req, &ctx).await.unwrap();
         let token = outbox.0.lock().unwrap().last().unwrap().token.clone();
         assert_eq!(token, "application-issued-link-token");
         assert!(
@@ -926,15 +921,13 @@ mod tests {
             None,
             Some(json!({"email":"ok@example.com"})),
         );
-        drop(plugin.on_request(&req_2, &ctx).await.unwrap());
+        _ = plugin.on_request(&req_2, &ctx).await.unwrap();
         let token = outbox.0.lock().unwrap().last().unwrap().token.clone();
         for field in ["callbackURL", "newUserCallbackURL", "errorCallbackURL"] {
             let mut req_3 = verify_request(&token);
-            drop(
-                req_3
-                    .query
-                    .insert(field.into(), "https://foreign.example/steal".into()),
-            );
+            _ = req_3
+                .query
+                .insert(field.into(), "https://foreign.example/steal".into());
             let error = plugin.on_request(&req_3, &ctx).await.unwrap_err();
             let (_, code, message) = error.error_payload();
             assert_eq!(code.as_deref(), Some("INVALID_CALLBACK_URL"));
@@ -1000,10 +993,10 @@ mod tests {
             200
         );
         let mut replay = req_2;
-        drop(replay.query.insert(
+        _ = replay.query.insert(
             "errorCallbackURL".into(),
             "/error?source=magic&error=old&error_description=preserved".into(),
-        ));
+        );
         let response = plugin.on_request(&replay, &ctx).await.unwrap().unwrap();
         let url = Url::parse(response.headers.get("location").unwrap()).unwrap();
         assert_eq!(

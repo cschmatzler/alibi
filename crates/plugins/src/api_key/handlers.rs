@@ -157,7 +157,7 @@ pub(crate) async fn create_key_core(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     request: Option<&alibi_core::AuthRequest>,
 ) -> AuthResult<CreateKeyResponse> {
-    let _ignored_as_deref = plugin.resolve_configuration(body.config_id.as_deref())?;
+    _ = plugin.resolve_configuration(body.config_id.as_deref())?;
     if body.refill_amount.is_some()
         || body.refill_interval.is_some()
         || body.rate_limit_max.is_some()
@@ -362,7 +362,7 @@ pub(crate) async fn list_keys_core(
     };
     let config_id = query.config_id.as_deref().filter(|id| !id.is_empty());
     if config_id.is_some() {
-        let _ignored_resolve_configuration = plugin.resolve_configuration(config_id)?;
+        _ = plugin.resolve_configuration(config_id)?;
     }
 
     let keys = if let Some(config_id) = config_id {
@@ -563,7 +563,7 @@ pub(super) async fn update_key_for_user(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<ApiKeyView> {
     let config = plugin.resolve_configuration(body.config_id.as_deref())?;
-    drop(helpers::get_owned_api_key(ctx, config, &body.key_id, user_id, "update").await?);
+    _ = helpers::get_owned_api_key(ctx, config, &body.key_id, user_id, "update").await?;
     ApiKeyPlugin::validate_name(config, body.name.as_deref(), false)?;
 
     let expires_at = match body.expires_in {

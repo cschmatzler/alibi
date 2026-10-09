@@ -76,27 +76,25 @@ pub(crate) async fn begin_sign_in_challenge(
 ) -> AuthResult<SignInTwoFactorRedirect> {
     let identifier = format!("2fa-{}", uuid::Uuid::new_v4());
     let expires_at = cookie_expiry(two_factor_cookie_max_age(ctx))?;
-    drop(
-        ctx.verifications()
-            .create(CreateVerification {
-                identifier: identifier.clone(),
-                value: user.id().to_string(),
-                expires_at,
-            })
-            .await?,
-    );
-    drop(
-        ctx.verifications()
-            .create(CreateVerification {
-                identifier: format!("2fa-attempts-{identifier}"),
-                value: "0".to_owned(),
-                expires_at,
-            })
-            .await?,
-    );
+    _ = ctx
+        .verifications()
+        .create(CreateVerification {
+            identifier: identifier.clone(),
+            value: user.id().to_string(),
+            expires_at,
+        })
+        .await?;
+    _ = ctx
+        .verifications()
+        .create(CreateVerification {
+            identifier: format!("2fa-attempts-{identifier}"),
+            value: "0".to_owned(),
+            expires_at,
+        })
+        .await?;
 
     let incoming = alibi_core::hooks::current_request_hook_context()
-        .map(|request| request.headers.clone())
+        .map(|request| request.headers)
         .unwrap_or_default();
     let mut headers = alibi_core::session::cookie_cache::runtime::session_cleanup_headers(
         &ctx.config,
@@ -283,15 +281,14 @@ pub(in crate::two_factor) async fn rearm_factor_attempt(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) {
     if let Some(attempt) = attempt {
-        drop(
-            ctx.verifications()
-                .create(CreateVerification {
-                    identifier: attempt.identifier.clone(),
-                    value: (attempt.count + if failed { 1.0 } else { 0.0 }).to_string(),
-                    expires_at: attempt.expires_at,
-                })
-                .await,
-        );
+        _ = ctx
+            .verifications()
+            .create(CreateVerification {
+                identifier: attempt.identifier.clone(),
+                value: (attempt.count + if failed { 1.0 } else { 0.0 }).to_string(),
+                expires_at: attempt.expires_at,
+            })
+            .await;
     }
 }
 

@@ -24,7 +24,7 @@ impl From<OrganizationPageError> for AuthError {
         match error {
             OrganizationPageError::Auth(error) => error,
             OrganizationPageError::MissingUser => {
-                AuthError::internal("Organization member user not found")
+                Self::internal("Organization member user not found")
             }
         }
     }

@@ -20,11 +20,10 @@ pub(in crate::two_factor) async fn assert_account_not_locked(
                 message: "Too many failed verification attempts. Your account is temporarily locked. Please try again later.",
             });
         }
-        drop(
-            ctx.database
-                .clear_expired_two_factor_lock(factor.id().as_ref(), now)
-                .await?,
-        );
+        _ = ctx
+            .database
+            .clear_expired_two_factor_lock(factor.id().as_ref(), now)
+            .await?;
     }
     Ok(())
 }
@@ -62,15 +61,14 @@ pub(in crate::two_factor) async fn record_account_failure(
         }
         let until = chrono::DateTime::from_timestamp_millis(milliseconds.trunc() as i64)
             .ok_or_else(|| AuthError::internal("Invalid two-factor lock date"))?;
-        drop(
-            ctx.database
-                .set_two_factor_lock_if_count_at_least(
-                    factor.id().as_ref(),
-                    config.account_lockout.max_failed_attempts,
-                    until,
-                )
-                .await?,
-        );
+        _ = ctx
+            .database
+            .set_two_factor_lock_if_count_at_least(
+                factor.id().as_ref(),
+                config.account_lockout.max_failed_attempts,
+                until,
+            )
+            .await?;
     }
     Ok(())
 }

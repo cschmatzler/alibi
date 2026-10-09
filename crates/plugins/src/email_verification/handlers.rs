@@ -102,13 +102,13 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
         } else {
             // Missing and already-verified mailboxes perform the same local
             // signing work and retain the same timing floor without delivery.
-            drop(create_email_verification_token(
+            _ = create_email_verification_token(
                 ctx.config.current_secret(),
                 &body.email,
                 None,
                 config.verification_token_expiry,
                 None,
-            )?);
+            )?;
             Ok(())
         };
         let remaining = std::time::Duration::from_millis(500).saturating_sub(start.elapsed());

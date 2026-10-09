@@ -67,17 +67,17 @@ pub(super) fn synthetic_response(
         customize(input)?
     } else {
         let mut fields = input.core_fields;
-        drop(fields.insert("id".into(), json!(input.id)));
+        _ = fields.insert("id".into(), json!(input.id));
         if config.enable_username {
-            drop(fields.insert("username".into(), json!(body.username)));
-            drop(fields.insert("displayUsername".into(), json!(body.display_username)));
+            _ = fields.insert("username".into(), json!(body.username));
+            _ = fields.insert("displayUsername".into(), json!(body.display_username));
         }
         fields
     };
     let mut result = Map::new();
     for field in ["id", "name", "email"] {
         if let Some(value) = candidate.remove(field) {
-            drop(result.insert(field.into(), value));
+            _ = result.insert(field.into(), value);
         }
     }
     for (field, default) in [
@@ -86,7 +86,7 @@ pub(super) fn synthetic_response(
         ("createdAt", json!(now)),
         ("updatedAt", json!(now)),
     ] {
-        drop(result.insert(field.into(), candidate.remove(field).unwrap_or(default)));
+        _ = result.insert(field.into(), candidate.remove(field).unwrap_or(default));
     }
     let mut defaults = Vec::new();
     let enabled = |key: &str| {
@@ -124,7 +124,7 @@ pub(super) fn synthetic_response(
         defaults.push(("lastLoginMethod", Value::Null));
     }
     for (field, default) in defaults {
-        drop(result.insert(field.into(), candidate.remove(field).unwrap_or(default)));
+        _ = result.insert(field.into(), candidate.remove(field).unwrap_or(default));
     }
     Ok((
         SignUpResponse {

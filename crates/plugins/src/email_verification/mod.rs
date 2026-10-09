@@ -195,8 +195,8 @@ impl EmailVerificationPlugin {
         match verify_email_core(&query, &self.config, req, ctx).await? {
             VerifyEmailResult::Redirect { url, session_token } => {
                 let mut headers = alibi_core::Headers::new();
-                drop(headers.insert("Location".to_owned(), url));
-                drop(headers.insert("content-type".to_owned(), "application/json".to_owned()));
+                _ = headers.insert("Location".to_owned(), url);
+                _ = headers.insert("content-type".to_owned(), "application/json".to_owned());
                 let mut response = AuthResponse {
                     status: 302,
                     headers,
@@ -852,15 +852,13 @@ mod tests {
             ),
         ] {
             let mut payload = dates;
-            drop(
-                payload
-                    .as_object_mut()
-                    .expect("token payload is an object")
-                    .insert(
-                        "email".to_owned(),
-                        serde_json::json!("proof-owner@fixture.test"),
-                    ),
-            );
+            _ = payload
+                .as_object_mut()
+                .expect("token payload is an object")
+                .insert(
+                    "email".to_owned(),
+                    serde_json::json!("proof-owner@fixture.test"),
+                );
             let token = external_verification_token(secret, algorithm, &payload);
             let query = HashMap::from([("token".to_owned(), token.clone())]);
             let req = test_helpers::create_auth_request(
@@ -1258,7 +1256,7 @@ mod tests {
         let ctx = test_helpers::create_test_context().await;
 
         // Create an unverified user
-        let _user = ctx
+        _ = ctx
             .database
             .create_user(
                 CreateUser::new()
@@ -1323,7 +1321,7 @@ mod tests {
             .after_email_verification(after_hook);
 
         let ctx = test_helpers::create_test_context().await;
-        let _user = ctx
+        _ = ctx
             .database
             .create_user(
                 CreateUser::new()
@@ -1364,7 +1362,7 @@ mod tests {
         let plugin = EmailVerificationPlugin::new().after_email_verification(after_hook);
 
         let ctx = test_helpers::create_test_context().await;
-        let _user = ctx
+        _ = ctx
             .database
             .create_user(
                 CreateUser::new()
@@ -1418,7 +1416,7 @@ mod tests {
         let plugin = EmailVerificationPlugin::new().after_email_verification(after_hook);
 
         let ctx = test_helpers::create_test_context().await;
-        let _source_user = ctx
+        _ = ctx
             .database
             .create_user(
                 CreateUser::new()
@@ -1427,7 +1425,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let _existing_user = ctx
+        _ = ctx
             .database
             .create_user(
                 CreateUser::new()
@@ -1476,7 +1474,7 @@ mod tests {
         let plugin = EmailVerificationPlugin::new().before_email_verification(before_hook);
 
         let ctx = test_helpers::create_test_context().await;
-        let _user = ctx
+        _ = ctx
             .database
             .create_user(
                 CreateUser::new()
@@ -1527,7 +1525,7 @@ mod tests {
             ))));
 
         let ctx = test_helpers::create_test_context().await;
-        let _user = ctx
+        _ = ctx
             .database
             .create_user(
                 CreateUser::new()
@@ -1581,7 +1579,7 @@ mod tests {
         let plugin = EmailVerificationPlugin::new().auto_sign_in_after_verification(false);
 
         let ctx = test_helpers::create_test_context().await;
-        let _user = ctx
+        _ = ctx
             .database
             .create_user(
                 CreateUser::new()
@@ -1617,7 +1615,7 @@ mod tests {
         let plugin = EmailVerificationPlugin::new().auto_sign_in_after_verification(true);
 
         let ctx = test_helpers::create_test_context().await;
-        let _user = ctx
+        _ = ctx
             .database
             .create_user(
                 CreateUser::new()
@@ -1659,7 +1657,7 @@ mod tests {
         let plugin = EmailVerificationPlugin::new().auto_sign_in_after_verification(false);
 
         let ctx = test_helpers::create_test_context().await;
-        let _user = ctx
+        _ = ctx
             .database
             .create_user(
                 CreateUser::new()
@@ -1917,7 +1915,7 @@ mod tests {
         let plugin = EmailVerificationPlugin::new();
         let ctx = test_helpers::create_test_context().await;
 
-        let _user = ctx
+        _ = ctx
             .database
             .create_user(
                 CreateUser::new()
@@ -1948,7 +1946,7 @@ mod tests {
         let plugin = EmailVerificationPlugin::new();
         let ctx = test_helpers::create_test_context().await;
 
-        let _user = ctx
+        _ = ctx
             .database
             .create_user(
                 CreateUser::new()
@@ -1983,7 +1981,7 @@ mod tests {
         let config = test_helpers::create_test_config().trusted_origin("https://trusted.com");
         let ctx = test_helpers::create_test_context_with_config(config).await;
 
-        let _user = ctx
+        _ = ctx
             .database
             .create_user(
                 CreateUser::new()
@@ -2021,7 +2019,7 @@ mod tests {
         let config = test_helpers::create_test_config().disable_origin_check(true);
         let ctx = test_helpers::create_test_context_with_config(config).await;
 
-        let _user = ctx
+        _ = ctx
             .database
             .create_user(
                 CreateUser::new()

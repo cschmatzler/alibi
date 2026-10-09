@@ -25,17 +25,16 @@ pub(in crate::two_factor) async fn generate_backup_codes_core(
         .ok_or_else(|| AuthError::bad_request("Two factor isn't enabled"))?;
 
     let (backup_codes, encrypted) = generate_backup_codes(config, &ctx.config).await?;
-    drop(
-        ctx.database
-            .update_two_factor(
-                factor.id().as_ref(),
-                UpdateTwoFactor {
-                    backup_codes: Some(encrypted),
-                    ..Default::default()
-                },
-            )
-            .await?,
-    );
+    _ = ctx
+        .database
+        .update_two_factor(
+            factor.id().as_ref(),
+            UpdateTwoFactor {
+                backup_codes: Some(encrypted),
+                ..Default::default()
+            },
+        )
+        .await?;
 
     Ok(BackupCodesResponse {
         status: true,

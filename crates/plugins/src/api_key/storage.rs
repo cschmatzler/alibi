@@ -236,13 +236,11 @@ impl ApiKeyConfig {
             && !keys.is_empty()
         {
             let cache = Arc::clone(&storage);
-            drop(
-                storage_map(keys.clone(), move |key| {
-                    let storage = Arc::clone(&cache);
-                    async move { write_storage(storage, &key, true).await }
-                })
-                .await?,
-            );
+            _ = storage_map(keys.clone(), move |key| {
+                let storage = Arc::clone(&cache);
+                async move { write_storage(storage, &key, true).await }
+            })
+            .await?;
             let ids: Vec<_> = keys.iter().map(|key| &key.id).collect();
             storage
                 .set(&ref_index(reference), &serde_json::to_string(&ids)?, None)
@@ -367,18 +365,16 @@ pub(super) async fn write_storage(
     let fields = value
         .as_object_mut()
         .ok_or_else(|| AuthError::internal("Invalid API key"))?;
-    drop(
-        fields.insert(
-            "metadata".to_owned(),
-            key.metadata
-                .as_deref()
-                .map(serde_json::from_str)
-                .transpose()?
-                .unwrap_or(serde_json::Value::Null),
-        ),
+    _ = fields.insert(
+        "metadata".to_owned(),
+        key.metadata
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()?
+            .unwrap_or(serde_json::Value::Null),
     );
     if !fallback && key.permissions.is_none() {
-        drop(fields.remove("permissions"));
+        _ = fields.remove("permissions");
     }
     let data = serde_json::to_string(&value)?;
     let hash = hash_index(&key.key_hash);
@@ -393,7 +389,7 @@ pub(super) async fn write_storage(
             ref_index(&key.reference_id),
         ));
     }
-    drop(storage_results(operations).await?);
+    _ = storage_results(operations).await?;
     if fallback {
         Ok(())
     } else {
@@ -537,7 +533,7 @@ async fn modify_reference(
             lock
         } else {
             let lock = Arc::new(tokio::sync::Mutex::new(()));
-            drop(locks.insert(index.clone(), Arc::downgrade(&lock)));
+            _ = locks.insert(index.clone(), Arc::downgrade(&lock));
             lock
         }
     };

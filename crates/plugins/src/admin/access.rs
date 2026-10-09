@@ -24,10 +24,10 @@ impl RolePermissions {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        drop(self.permissions.insert(
+        _ = self.permissions.insert(
             resource.into(),
             actions.into_iter().map(Into::into).collect(),
-        ));
+        );
         self
     }
 

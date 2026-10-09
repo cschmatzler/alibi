@@ -70,15 +70,14 @@ pub(in crate::two_factor) async fn create_trust_device_cookie_header(
     )?;
     let value = format!("{token}!{identifier}");
     let expires_at = cookie_expiry(trust_device_max_age(ctx))?;
-    drop(
-        ctx.verifications()
-            .create(CreateVerification {
-                identifier: identifier.clone(),
-                value: user.id().to_string(),
-                expires_at,
-            })
-            .await?,
-    );
+    _ = ctx
+        .verifications()
+        .create(CreateVerification {
+            identifier: identifier.clone(),
+            value: user.id().to_string(),
+            expires_at,
+        })
+        .await?;
     create_signed_cookie_header(
         ctx.config.current_secret(),
         &ctx.config,

@@ -1,4 +1,4 @@
-//! Fallible JavaScriptCore array ordering for cached metadata. Its relational
+//! Fallible `JavaScriptCore` array ordering for cached metadata. Its relational
 //! comparator can be cyclic, so comparison order is observable. Binary
 //! insertion, natural runs, Powersort and galloping follow JSC's StableSort.h:
 //! <https://github.com/WebKit/WebKit/blob/main/Source/JavaScriptCore/runtime/StableSort.h>
@@ -310,7 +310,7 @@ pub(super) fn sort(keys: &mut [ApiKey], direction: Option<&str>) -> AuthResult<(
 mod tests {
     use super::*;
 
-    fn key(index: usize, metadata: Option<String>) -> ApiKey {
+    fn key(index: usize, metadata: Option<&str>) -> ApiKey {
         serde_json::from_value(serde_json::json!({
             "id": index.to_string(),
             "key": index.to_string(),
@@ -404,7 +404,7 @@ mod tests {
                     let keys = metadata
                         .iter()
                         .enumerate()
-                        .map(|(index, metadata)| key(index, metadata.clone()))
+                        .map(|(index, metadata)| key(index, metadata.as_deref()))
                         .collect::<Vec<_>>();
                     let mut expected = keys.clone();
                     expected.sort_by(|left, right| {
@@ -441,7 +441,7 @@ mod tests {
         let mut keys = metadata
             .into_iter()
             .enumerate()
-            .map(|(index, metadata)| key(index, metadata))
+            .map(|(index, metadata)| key(index, metadata.as_deref()))
             .collect::<Vec<_>>();
         sort(&mut keys, Some("desc")).unwrap();
         let mut sorted = ids(&keys);

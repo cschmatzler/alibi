@@ -39,10 +39,9 @@ pub(crate) async fn sign_in_core(
         .get_user_by_email_record(&body.email.to_lowercase())
         .await?;
     let Some(user) = user else {
-        drop(
-            ctx.hash_password(config.password_hasher.as_ref(), &body.password)
-                .await?,
-        );
+        _ = ctx
+            .hash_password(config.password_hasher.as_ref(), &body.password)
+            .await?;
         return Err(AuthError::InvalidCredentials);
     };
     let credential = ctx
@@ -58,10 +57,9 @@ pub(crate) async fn sign_in_core(
         .and_then(AuthAccount::password)
         .filter(|password| !password.is_empty())
     else {
-        drop(
-            ctx.hash_password(config.password_hasher.as_ref(), &body.password)
-                .await?,
-        );
+        _ = ctx
+            .hash_password(config.password_hasher.as_ref(), &body.password)
+            .await?;
         return Err(AuthError::InvalidCredentials);
     };
     password_utils::verify_password(
@@ -114,11 +112,10 @@ pub(crate) async fn sign_in_username_core(
         .await
         .map_err(SignInUsernameFailure::Auth)?
     else {
-        drop(
-            ctx.hash_password(config.password_hasher.as_ref(), &body.password)
-                .await
-                .map_err(SignInUsernameFailure::Auth)?,
-        );
+        _ = ctx
+            .hash_password(config.password_hasher.as_ref(), &body.password)
+            .await
+            .map_err(SignInUsernameFailure::Auth)?;
         return Err(SignInUsernameFailure::InvalidUsernameOrPassword);
     };
 

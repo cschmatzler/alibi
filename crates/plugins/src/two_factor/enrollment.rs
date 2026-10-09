@@ -106,30 +106,28 @@ pub(in crate::two_factor) async fn enable_core(
     }
 
     if let Some(existing) = existing {
-        drop(
-            ctx.database
-                .update_two_factor(
-                    existing.id().as_ref(),
-                    UpdateTwoFactor {
-                        secret: Some(encrypted_secret),
-                        backup_codes: Some(encrypted_backup_codes),
-                        verified: Some(config.skip_verification_on_enable),
-                    },
-                )
-                .await?,
-        );
-    } else {
-        drop(
-            ctx.database
-                .create_two_factor(CreateTwoFactor {
-                    user_id: user.id().to_string(),
-                    secret: encrypted_secret,
-                    backup_codes: encrypted_backup_codes,
+        _ = ctx
+            .database
+            .update_two_factor(
+                existing.id().as_ref(),
+                UpdateTwoFactor {
+                    secret: Some(encrypted_secret),
+                    backup_codes: Some(encrypted_backup_codes),
                     verified: Some(config.skip_verification_on_enable),
-                    ..Default::default()
-                })
-                .await?,
-        );
+                },
+            )
+            .await?;
+    } else {
+        _ = ctx
+            .database
+            .create_two_factor(CreateTwoFactor {
+                user_id: user.id().to_string(),
+                secret: encrypted_secret,
+                backup_codes: encrypted_backup_codes,
+                verified: Some(config.skip_verification_on_enable),
+                ..Default::default()
+            })
+            .await?;
     }
 
     let issuer = body
@@ -233,17 +231,16 @@ pub(in crate::two_factor) async fn mark_factor_verified(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<()> {
     if two_factor.verified() != Some(true) {
-        drop(
-            ctx.database
-                .update_two_factor(
-                    two_factor.id().as_ref(),
-                    UpdateTwoFactor {
-                        verified: Some(true),
-                        ..Default::default()
-                    },
-                )
-                .await?,
-        );
+        _ = ctx
+            .database
+            .update_two_factor(
+                two_factor.id().as_ref(),
+                UpdateTwoFactor {
+                    verified: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await?;
     }
     Ok(())
 }

@@ -139,20 +139,20 @@ fn validate_key_body(body: Option<&JsValue>, operation: &str) -> AuthResult<JsVa
         let value = object.get(name);
         if value.is_none() && !required {
             if operation == "createApiKey" && matches!(name, "expiresIn" | "remaining") {
-                drop(output.insert(name.to_owned(), JsValue::Null));
+                _ = output.insert(name.to_owned(), JsValue::Null);
             }
             continue;
         }
         let path = format!("body.{name}");
         if nullable && value.is_some_and(JsValue::is_null) && !matches!(kind, CoercedId) {
-            drop(output.insert(name.to_owned(), JsValue::Null));
+            _ = output.insert(name.to_owned(), JsValue::Null);
             continue;
         }
         if matches!(kind, CoercedId) {
             if let Some(value) = value {
                 match value.coerce_string() {
                     Ok(value) => {
-                        drop(output.insert(name.to_owned(), JsValue::String(value)));
+                        _ = output.insert(name.to_owned(), JsValue::String(value));
                     }
                     Err(_) => issues.push(format!(
                         "[{path}] Invalid input: expected string, received {}",
@@ -191,7 +191,7 @@ fn validate_key_body(body: Option<&JsValue>, operation: &str) -> AuthResult<JsVa
             Permissions => validate_permissions(value,&path,&mut issues),
             _ => {}
         }
-        drop(output.insert(name.to_owned(), value.clone()));
+        _ = output.insert(name.to_owned(), value.clone());
     }
     if issues.is_empty() {
         Ok(JsValue::Object(output))
@@ -451,7 +451,7 @@ impl<S: AuthSchema> EndpointHook<S> for ApiKeyPlugin {
         ) < config.key_length
         {
             return Ok(Some(BeforeEndpointAction::Reject(rejection(
-                ApiKeyValidationError::new(ApiKeyErrorCode::InvalidApiKey),
+                &ApiKeyValidationError::new(ApiKeyErrorCode::InvalidApiKey),
                 Some(403),
             )?)));
         }
@@ -465,7 +465,7 @@ impl<S: AuthSchema> EndpointHook<S> for ApiKeyPlugin {
                 .await?
         {
             return Ok(Some(BeforeEndpointAction::Reject(rejection(
-                ApiKeyValidationError::new(ApiKeyErrorCode::InvalidApiKey),
+                &ApiKeyValidationError::new(ApiKeyErrorCode::InvalidApiKey),
                 Some(403),
             )?)));
         }
@@ -480,7 +480,7 @@ impl<S: AuthSchema> EndpointHook<S> for ApiKeyPlugin {
         {
             Ok(view) => view,
             Err(ApiKeyVerificationError::Validation(error)) => {
-                return Ok(Some(BeforeEndpointAction::Reject(rejection(error, None)?)));
+                return Ok(Some(BeforeEndpointAction::Reject(rejection(&error, None)?)));
             }
             Err(
                 ApiKeyVerificationError::Internal(error)
@@ -494,13 +494,13 @@ impl<S: AuthSchema> EndpointHook<S> for ApiKeyPlugin {
         }
         if config.references != ApiKeyReferences::User {
             return Ok(Some(BeforeEndpointAction::Reject(rejection(
-                ApiKeyValidationError::new(ApiKeyErrorCode::InvalidReferenceIdFromApiKey),
+                &ApiKeyValidationError::new(ApiKeyErrorCode::InvalidReferenceIdFromApiKey),
                 None,
             )?)));
         }
         let Some(user) = ctx.database.get_user_by_id(&view.reference_id).await? else {
             return Ok(Some(BeforeEndpointAction::Reject(rejection(
-                ApiKeyValidationError::new(ApiKeyErrorCode::InvalidReferenceIdFromApiKey),
+                &ApiKeyValidationError::new(ApiKeyErrorCode::InvalidReferenceIdFromApiKey),
                 None,
             )?)));
         };
@@ -521,14 +521,14 @@ impl<S: AuthSchema> EndpointHook<S> for ApiKeyPlugin {
     }
 }
 
-fn rejection(error: ApiKeyValidationError, status: Option<u16>) -> AuthResult<EndpointResponse> {
-    let status = status.unwrap_or(error.status());
+fn rejection(error: &ApiKeyValidationError, status: Option<u16>) -> AuthResult<EndpointResponse> {
+    let status = status.unwrap_or_else(|| error.status());
     let message = match &error.message {
         ApiKeyErrorMessage::Text(message) | ApiKeyErrorMessage::CodeMessage { message, .. } => {
             message.clone()
         }
     };
-    let body = alibi_core::utils::json::parse_value(&alibi_core::utils::json::to_string(&error)?)?;
+    let body = alibi_core::utils::json::parse_value(&alibi_core::utils::json::to_string(error)?)?;
     Ok(EndpointResponse::error(AuthError::Api {
         status,
         code: Some(error.code.as_str().into()),

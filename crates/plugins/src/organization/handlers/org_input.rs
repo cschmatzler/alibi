@@ -137,15 +137,14 @@ fn validate(issues: &[String]) -> Result<(), AuthResponse> {
 }
 
 pub(super) fn create(req: &AuthRequest) -> Result<CreateOrganizationRequest, AuthResponse> {
-    create_value(decode(req)?)
+    create_value(decode(req)?.as_ref())
 }
 
 pub(in crate::organization) fn create_value(
-    decoded: Option<JsValue>,
+    decoded: Option<&JsValue>,
 ) -> Result<CreateOrganizationRequest, AuthResponse> {
-    object(decoded.as_ref(), "body")
-        .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
-    let input = decoded.as_ref();
+    object(decoded, "body").map_err(|message| response(400, "VALIDATION_ERROR", message))?;
+    let input = decoded;
     let get = |key| {
         let value = input?;
         value.get(key)
@@ -190,11 +189,11 @@ pub(super) fn update(
     ),
     AuthResponse,
 > {
-    update_value(decode(req)?)
+    update_value(decode(req)?.as_ref())
 }
 
 pub(in crate::organization) fn update_value(
-    decoded: Option<JsValue>,
+    decoded: Option<&JsValue>,
 ) -> Result<
     (
         UpdateOrganizationRequest,
@@ -202,9 +201,8 @@ pub(in crate::organization) fn update_value(
     ),
     AuthResponse,
 > {
-    object(decoded.as_ref(), "body")
-        .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
-    let input = decoded.as_ref();
+    object(decoded, "body").map_err(|message| response(400, "VALIDATION_ERROR", message))?;
+    let input = decoded;
     let get = |key| {
         let value = input?;
         value.get(key)
@@ -299,16 +297,15 @@ pub(super) fn delete(req: &AuthRequest) -> Result<DeleteOrganizationRequest, Aut
 }
 
 pub(super) fn set_active(req: &AuthRequest) -> Result<SetActiveOrganizationRequest, AuthResponse> {
-    set_active_value(decode(req)?)
+    set_active_value(decode(req)?.as_ref())
 }
 
 pub(in crate::organization) fn set_active_value(
-    decoded: Option<JsValue>,
+    decoded: Option<&JsValue>,
 ) -> Result<SetActiveOrganizationRequest, AuthResponse> {
-    object(decoded.as_ref(), "body")
-        .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
+    object(decoded, "body").map_err(|message| response(400, "VALIDATION_ERROR", message))?;
     let get = |key| {
-        let value = decoded.as_ref()?;
+        let value = decoded?;
         value.get(key)
     };
     let mut issues = Vec::new();
@@ -365,16 +362,15 @@ pub(in crate::organization) fn validate_trusted_create(
 pub(super) fn member_role_update(
     req: &AuthRequest,
 ) -> Result<UpdateMemberRoleRequest, AuthResponse> {
-    member_role_update_value(decode(req)?)
+    member_role_update_value(decode(req)?.as_ref())
 }
 
 pub(in crate::organization) fn member_role_update_value(
-    decoded: Option<JsValue>,
+    decoded: Option<&JsValue>,
 ) -> Result<UpdateMemberRoleRequest, AuthResponse> {
-    object(decoded.as_ref(), "body")
-        .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
+    object(decoded, "body").map_err(|message| response(400, "VALIDATION_ERROR", message))?;
     let get = |key| {
-        let value = decoded.as_ref()?;
+        let value = decoded?;
         value.get(key)
     };
     let role = match get("role") {
@@ -463,16 +459,15 @@ pub(super) fn member_remove(req: &AuthRequest) -> Result<RemoveMemberRequest, Au
 pub(super) fn invitation_create(
     req: &AuthRequest,
 ) -> Result<super::super::types::InviteMemberRequest, AuthResponse> {
-    invitation_create_value(decode(req)?)
+    invitation_create_value(decode(req)?.as_ref())
 }
 
 pub(in crate::organization) fn invitation_create_value(
-    decoded: Option<JsValue>,
+    decoded: Option<&JsValue>,
 ) -> Result<super::super::types::InviteMemberRequest, AuthResponse> {
     use super::super::types::{InviteMemberRequest, TeamInput};
-    object(decoded.as_ref(), "body")
-        .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
-    let get = |key| decoded.as_ref().and_then(|value| value.get(key));
+    object(decoded, "body").map_err(|message| response(400, "VALIDATION_ERROR", message))?;
+    let get = |key| decoded.and_then(|value| value.get(key));
     let mut issues = Vec::new();
     let email = string(get("email"), "body.email", true, false, false, &mut issues);
     let role = match get("role") {
@@ -532,17 +527,16 @@ pub(in crate::organization) fn invitation_create_value(
 }
 
 pub(super) fn invitation_id(req: &AuthRequest) -> Result<String, AuthResponse> {
-    invitation_id_value(decode(req)?)
+    invitation_id_value(decode(req)?.as_ref())
 }
 
 pub(in crate::organization) fn invitation_id_value(
-    decoded: Option<JsValue>,
+    decoded: Option<&JsValue>,
 ) -> Result<String, AuthResponse> {
-    object(decoded.as_ref(), "body")
-        .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
+    object(decoded, "body").map_err(|message| response(400, "VALIDATION_ERROR", message))?;
     let mut issues = Vec::new();
     let id = string(
-        decoded.as_ref().and_then(|value| value.get("invitationId")),
+        decoded.and_then(|value| value.get("invitationId")),
         "body.invitationId",
         true,
         false,

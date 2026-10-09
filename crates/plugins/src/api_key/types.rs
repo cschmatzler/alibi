@@ -256,10 +256,10 @@ where
     let input: JsValue = request
         .body_as_json()
         .map_err(|_error| validation_response("body", "Invalid JSON"))?;
-    parse_api_key_value(input)
+    parse_api_key_value(&input)
 }
 
-pub(super) fn parse_api_key_value<T>(input: JsValue) -> Result<T, AuthResponse>
+pub(super) fn parse_api_key_value<T>(input: &JsValue) -> Result<T, AuthResponse>
 where
     T: serde::de::DeserializeOwned + Validate,
 {
@@ -270,7 +270,7 @@ where
         }
         let detail = error.inner().to_string();
         let input_number = {
-            let mut value = Some(&input);
+            let mut value = Some(input);
             for segment in error.path() {
                 value = value.and_then(|current| match segment {
                     serde_path_to_error::Segment::Seq { index } => current.as_array()?.get(*index),

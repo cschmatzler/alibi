@@ -75,16 +75,16 @@ impl EmailPasswordPlugin {
             let mut callback_body = req.body_as_json::<alibi_core::utils::json::JsValue>()?;
             if let alibi_core::utils::json::JsValue::Object(body) = &mut callback_body {
                 if let Some(value) = &signup_req.username {
-                    drop(body.insert(
+                    _ = body.insert(
                         "username".into(),
                         alibi_core::utils::json::JsValue::String(value.clone()),
-                    ));
+                    );
                 }
                 if let Some(value) = &signup_req.display_username {
-                    drop(body.insert(
+                    _ = body.insert(
                         "displayUsername".into(),
                         alibi_core::utils::json::JsValue::String(value.clone()),
-                    ));
+                    );
                 }
             }
             req.extensions()
@@ -116,7 +116,7 @@ impl EmailPasswordPlugin {
 
         let mut callback_body: alibi_core::utils::json::JsValue = req.body_as_json()?;
         if let alibi_core::utils::json::JsValue::Object(body) = &mut callback_body {
-            let _remember = body
+            _ = body
                 .entry("rememberMe".into())
                 .or_insert(alibi_core::utils::json::JsValue::Bool(true));
         }

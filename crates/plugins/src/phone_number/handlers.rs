@@ -68,23 +68,22 @@ impl PhoneNumberPlugin {
         count_attempts: bool,
     ) -> AuthResult<String> {
         let code = self.generate_code()?;
-        drop(
-            ctx.verifications()
-                .create(CreateVerification {
-                    identifier: identifier.into(),
-                    value: if count_attempts {
-                        format!("{code}:0")
-                    } else {
-                        code.clone()
-                    },
-                    expires_at: super::super::passwordless_numeric::expires_at(
-                        self.config.expires_in,
-                        false,
-                    )
-                    .ok_or_else(|| AuthError::internal("Invalid Date"))?,
-                })
-                .await?,
-        );
+        _ = ctx
+            .verifications()
+            .create(CreateVerification {
+                identifier: identifier.into(),
+                value: if count_attempts {
+                    format!("{code}:0")
+                } else {
+                    code.clone()
+                },
+                expires_at: super::super::passwordless_numeric::expires_at(
+                    self.config.expires_in,
+                    false,
+                )
+                .ok_or_else(|| AuthError::internal("Invalid Date"))?,
+            })
+            .await?;
         Ok(code)
     }
     async fn callback(
@@ -170,15 +169,14 @@ impl PhoneNumberPlugin {
             return Err(phone_error(403, "TOO_MANY_ATTEMPTS", "Too many attempts"));
         }
         if code != provided_code {
-            drop(
-                ctx.verifications()
-                    .create(CreateVerification {
-                        identifier: identifier.into(),
-                        value: format!("{code}:{}", attempts_2 + 1),
-                        expires_at: consumed.expires_at()?,
-                    })
-                    .await?,
-            );
+            _ = ctx
+                .verifications()
+                .create(CreateVerification {
+                    identifier: identifier.into(),
+                    value: format!("{code}:{}", attempts_2 + 1),
+                    expires_at: consumed.expires_at()?,
+                })
+                .await?;
             return Err(invalid_otp());
         }
         Ok(())
@@ -567,35 +565,33 @@ impl PhoneNumberPlugin {
             .hash_password(settings.hasher.as_ref(), &body.new_password)
             .await?;
         if let Some(account) = crate::helpers::get_credential_account(ctx, user.id()).await? {
-            drop(
-                ctx.database
-                    .update_account_record(
-                        &account.id(),
-                        UpdateAccount {
-                            password: Some(hash),
-                            ..Default::default()
-                        },
-                    )
-                    .await?,
-            );
-        } else {
-            drop(
-                ctx.database
-                    .create_account_record(CreateAccount {
-                        additional_fields: FieldValues::default(),
-                        user_id: user.id().to_string(),
-                        account_id: user.id().to_string(),
-                        provider_id: "credential".into(),
-                        access_token: None,
-                        refresh_token: None,
-                        id_token: None,
-                        access_token_expires_at: None,
-                        refresh_token_expires_at: None,
-                        scope: None,
+            _ = ctx
+                .database
+                .update_account_record(
+                    &account.id(),
+                    UpdateAccount {
                         password: Some(hash),
-                    })
-                    .await?,
-            );
+                        ..Default::default()
+                    },
+                )
+                .await?;
+        } else {
+            _ = ctx
+                .database
+                .create_account_record(CreateAccount {
+                    additional_fields: FieldValues::default(),
+                    user_id: user.id().to_string(),
+                    account_id: user.id().to_string(),
+                    provider_id: "credential".into(),
+                    access_token: None,
+                    refresh_token: None,
+                    id_token: None,
+                    access_token_expires_at: None,
+                    refresh_token_expires_at: None,
+                    scope: None,
+                    password: Some(hash),
+                })
+                .await?;
         }
         if let Some(callback) = settings.on_reset {
             callback(serde_json::to_value(ctx.user_view(&user))?).await?;

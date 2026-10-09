@@ -92,7 +92,7 @@ fn try_decode(value: &str) -> String {
             return value.to_owned();
         }
     }
-    urlencoding::decode(value).map_or_else(|_| value.to_owned(), |decoded| decoded.into_owned())
+    urlencoding::decode(value).map_or_else(|_| value.to_owned(), std::borrow::Cow::into_owned)
 }
 
 fn encode_component(value: &str) -> String {
@@ -128,9 +128,9 @@ fn replace_cookie(header: &str, name: &str, value: &str) -> String {
         {
             continue;
         }
-        drop(cookies.insert(key.to_owned(), try_decode(value)));
+        _ = cookies.insert(key.to_owned(), try_decode(value));
     }
-    drop(cookies.insert(name.to_owned(), value.to_owned()));
+    _ = cookies.insert(name.to_owned(), value.to_owned());
     cookies
         .into_iter()
         .map(|(key, value)| format!("{key}={}", encode_component(&value)))
@@ -188,7 +188,7 @@ impl<S: AuthSchema> AuthPlugin<S> for BearerPlugin {
         let cookie = replace_cookie(existing, &ctx.config.session.cookie_name, &token);
         let mut headers = req.headers.clone();
         headers.retain(|key, _| !key.eq_ignore_ascii_case("cookie"));
-        drop(headers.insert("cookie".to_owned(), cookie));
+        _ = headers.insert("cookie".to_owned(), cookie);
         Ok(Some(BeforeRequestAction::ReplaceHeaders { headers }))
     }
 
@@ -234,12 +234,10 @@ impl<S: AuthSchema> AuthPlugin<S> for BearerPlugin {
                 exposed.push("set-auth-token");
             }
             let exposed = exposed.join(", ");
-            drop(response.headers.insert("set-auth-token", token));
-            drop(
-                response
-                    .headers
-                    .insert("access-control-expose-headers", exposed),
-            );
+            _ = response.headers.insert("set-auth-token", token);
+            _ = response
+                .headers
+                .insert("access-control-expose-headers", exposed);
         }
         Ok(response)
     }

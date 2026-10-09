@@ -840,24 +840,23 @@ mod tests {
                     )
                     .await
                     .unwrap();
-                drop(
-                    ctx.database
-                        .create_account(CreateAccount {
-                            additional_fields: alibi_core::field_policy::FieldValues::default(),
-                            user_id: user.id.clone(),
-                            account_id: user.id.clone(),
-                            provider_id: "credential".into(),
-                            password: Some(password_hash.clone()),
-                            access_token: None,
-                            refresh_token: None,
-                            id_token: None,
-                            access_token_expires_at: None,
-                            refresh_token_expires_at: None,
-                            scope: None,
-                        })
-                        .await
-                        .unwrap(),
-                );
+                _ = ctx
+                    .database
+                    .create_account(CreateAccount {
+                        additional_fields: alibi_core::field_policy::FieldValues::default(),
+                        user_id: user.id.clone(),
+                        account_id: user.id.clone(),
+                        provider_id: "credential".into(),
+                        password: Some(password_hash.clone()),
+                        access_token: None,
+                        refresh_token: None,
+                        id_token: None,
+                        access_token_expires_at: None,
+                        refresh_token_expires_at: None,
+                        scope: None,
+                    })
+                    .await
+                    .unwrap();
                 let session = ctx
                     .database
                     .create_session(CreateSession {
@@ -927,11 +926,9 @@ mod tests {
                 ctx.extensions = parts.extensions;
                 let cookie = create_session_cookie(&session.token, &ctx.config).unwrap();
                 let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
-                drop(
-                    request
-                        .headers
-                        .insert("cookie".into(), cookie.split(';').next().unwrap().into()),
-                );
+                _ = request
+                    .headers
+                    .insert("cookie".into(), cookie.split(';').next().unwrap().into());
                 request.body = Some(br#"{"password":"password123"}"#.to_vec());
                 let result = alibi_core::with_request_hook_context(
                     &request,
@@ -1035,18 +1032,17 @@ mod tests {
             .into_iter()
             .find(|account| account.provider_id == "credential")
             .unwrap();
-        drop(
-            ctx.database
-                .update_account(
-                    &account.id,
-                    UpdateAccount {
-                        password: Some(hash.clone()),
-                        ..Default::default()
-                    },
-                )
-                .await
-                .unwrap(),
-        );
+        _ = ctx
+            .database
+            .update_account(
+                &account.id,
+                UpdateAccount {
+                    password: Some(hash.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
         let plugin = TwoFactorPlugin::new();
         let mut init =
             alibi_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
@@ -1062,11 +1058,9 @@ mod tests {
         ctx.metadata = parts.metadata;
         let cookie = create_session_cookie(&session.token, &ctx.config).unwrap();
         let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
-        drop(
-            request
-                .headers
-                .insert("cookie".into(), cookie.split(';').next().unwrap().into()),
-        );
+        _ = request
+            .headers
+            .insert("cookie".into(), cookie.split(';').next().unwrap().into());
         request.body = Some(br#"{"password":"password123"}"#.to_vec());
         let response = plugin.on_request(&request, &ctx).await.unwrap().unwrap();
         assert_eq!(response.status, 200);
@@ -1140,13 +1134,13 @@ mod tests {
             Some(String::new())
         );
         let mut req = AuthRequest::new(HttpMethod::Post, "/two-factor/verify-otp");
-        drop(req.headers.insert(
+        _ = req.headers.insert(
             "cookie".into(),
             format!(
                 "{}={signed}",
                 related_cookie_name(&ctx.config, TWO_FACTOR_COOKIE_SUFFIX)
             ),
-        ));
+        );
         let error = resolve_two_factor_state(&req, &ctx)
             .await
             .err()
@@ -1202,10 +1196,10 @@ mod tests {
                 .next()
                 .unwrap();
             let mut req = AuthRequest::new(HttpMethod::Post, "/two-factor/verify-otp");
-            drop(req.headers.insert(
+            _ = req.headers.insert(
                 "cookie".into(),
                 format!("{challenge_cookie}; {preference_name}={preference}"),
-            ));
+            );
             let ResolvedTwoFactorState::Pending(pending) =
                 resolve_two_factor_state(&req, &ctx).await.unwrap()
             else {
@@ -1236,7 +1230,7 @@ mod tests {
                 .map(|header| header.split(';').next().unwrap())
                 .collect::<Vec<_>>()
                 .join("; ");
-            drop(read.headers.insert("cookie".into(), cookies));
+            _ = read.headers.insert("cookie".into(), cookies);
             let (authenticated_user, authenticated_session) =
                 ctx.require_session(&read).await.unwrap();
             assert_eq!(authenticated_user.id(), user.id);
@@ -1276,24 +1270,23 @@ mod tests {
         let password_hash = alibi_core::hash_password(None, "password123")
             .await
             .unwrap();
-        drop(
-            ctx.database
-                .create_account(CreateAccount {
-                    additional_fields: alibi_core::field_policy::FieldValues::default(),
-                    user_id: user.id.clone(),
-                    account_id: user.id.clone(),
-                    provider_id: "credential".to_owned(),
-                    access_token: None,
-                    refresh_token: None,
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: None,
-                    password: Some(password_hash),
-                })
-                .await
-                .unwrap(),
-        );
+        _ = ctx
+            .database
+            .create_account(CreateAccount {
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
+                user_id: user.id.clone(),
+                account_id: user.id.clone(),
+                provider_id: "credential".to_owned(),
+                access_token: None,
+                refresh_token: None,
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: None,
+                password: Some(password_hash),
+            })
+            .await
+            .unwrap();
 
         let user = if two_factor_enabled {
             UserView::from(
@@ -1503,11 +1496,9 @@ mod tests {
         ctx.extensions = configured.extensions;
         let cookie = create_session_cookie(&session.token, &ctx.config).unwrap();
         let mut enrollment = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
-        drop(
-            enrollment
-                .headers
-                .insert("cookie".into(), cookie.split(';').next().unwrap().into()),
-        );
+        _ = enrollment
+            .headers
+            .insert("cookie".into(), cookie.split(';').next().unwrap().into());
         enrollment.body = Some(br#"{"password":"password123"}"#.to_vec());
         let enabled = plugin.on_request(&enrollment, &ctx).await.unwrap().unwrap();
         assert_eq!(enabled.status, 200);
@@ -1608,17 +1599,15 @@ mod tests {
         assert_eq!(verified_factor.backup_codes, factor.backup_codes);
         assert_eq!(verified_factor.verified, Some(true));
         let mut browser = AuthRequest::new(HttpMethod::Get, "/get-session");
-        drop(
-            browser.headers.insert(
-                "cookie".into(),
-                (*(set_cookie_headers)
-                    .first()
-                    .expect("fixture contains the requested index"))
-                .split(';')
-                .next()
-                .unwrap()
-                .into(),
-            ),
+        _ = browser.headers.insert(
+            "cookie".into(),
+            (*(set_cookie_headers)
+                .first()
+                .expect("fixture contains the requested index"))
+            .split(';')
+            .next()
+            .unwrap()
+            .into(),
         );
         let (current_user, current_session) = ctx.require_session(&browser).await.unwrap();
         assert_eq!(current_user.id, user.id);
@@ -1646,17 +1635,16 @@ mod tests {
             &serde_json::to_string(&expected_codes).unwrap(),
         )
         .unwrap();
-        drop(
-            ctx.database
-                .create_two_factor(CreateTwoFactor {
-                    user_id: user.id.clone(),
-                    secret: encrypt_value(&ctx.config, "totp-secret").unwrap(),
-                    backup_codes: encrypted,
-                    ..Default::default()
-                })
-                .await
-                .unwrap(),
-        );
+        _ = ctx
+            .database
+            .create_two_factor(CreateTwoFactor {
+                user_id: user.id.clone(),
+                secret: encrypt_value(&ctx.config, "totp-secret").unwrap(),
+                backup_codes: encrypted,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
 
         let backup_codes = plugin.view_backup_codes(&user.id, &ctx).await.unwrap();
         assert_eq!(backup_codes, serde_json::json!(expected_codes));
@@ -1668,17 +1656,16 @@ mod tests {
         let (ctx, user, _session) =
             create_test_context_with_credential_user("invalid-view-codes@example.com", true).await;
 
-        drop(
-            ctx.database
-                .create_two_factor(CreateTwoFactor {
-                    user_id: user.id.clone(),
-                    secret: encrypt_value(&ctx.config, "totp-secret").unwrap(),
-                    backup_codes: encrypt_value(&ctx.config, "[").unwrap(),
-                    ..Default::default()
-                })
-                .await
-                .unwrap(),
-        );
+        _ = ctx
+            .database
+            .create_two_factor(CreateTwoFactor {
+                user_id: user.id.clone(),
+                secret: encrypt_value(&ctx.config, "totp-secret").unwrap(),
+                backup_codes: encrypt_value(&ctx.config, "[").unwrap(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
 
         let err = plugin.view_backup_codes(&user.id, &ctx).await.unwrap_err();
         assert_eq!(err.to_string(), "Invalid backup code");
@@ -1769,14 +1756,14 @@ mod tests {
         let mut req = AuthRequest::new(HttpMethod::Post, "/two-factor/disable");
         req.body =
             Some(serde_json::to_vec(&serde_json::json!({"password":"password123"})).unwrap());
-        drop(req.headers.insert(
+        _ = req.headers.insert(
             "cookie".to_owned(),
             format!(
                 "{}={session_cookie}; {}={trust_cookie}",
                 ctx.config.session.cookie_name,
                 related_cookie_name(&ctx.config, TRUST_DEVICE_COOKIE_SUFFIX)
             ),
-        ));
+        );
         let response = TwoFactorPlugin::new()
             .on_request(&req, &ctx)
             .await
@@ -2363,15 +2350,13 @@ mod tests {
                 });
                 let cookie = create_session_cookie(&session.token, &ctx.config).unwrap();
                 let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
-                drop(
-                    request
-                        .headers
-                        .insert("cookie".into(), cookie.split(';').next().unwrap().into()),
-                );
+                _ = request
+                    .headers
+                    .insert("cookie".into(), cookie.split(';').next().unwrap().into());
                 request.body = Some(br#"{"password":"password123"}"#.to_vec());
                 // Resolve the short-lived native fixture session before observing
                 // callback effects; this performs the ordinary expiry refresh.
-                drop(ctx.require_session(&request).await.unwrap());
+                _ = ctx.require_session(&request).await.unwrap();
                 let before_sessions =
                     serde_json::to_value(ctx.database.get_user_sessions(&user.id).await.unwrap())
                         .unwrap();
@@ -2412,18 +2397,17 @@ mod tests {
                 };
                 assert_eq!(*observed.lock().unwrap(), expected);
 
-                drop(
-                    ctx.database
-                        .update_user(
-                            &user.id,
-                            UpdateUser {
-                                two_factor_enabled: Some(true),
-                                ..Default::default()
-                            },
-                        )
-                        .await
-                        .unwrap(),
-                );
+                _ = ctx
+                    .database
+                    .update_user(
+                        &user.id,
+                        UpdateUser {
+                            two_factor_enabled: Some(true),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .unwrap();
                 let factor = ctx
                     .database
                     .create_two_factor(CreateTwoFactor {
@@ -2977,14 +2961,13 @@ mod tests {
         impl SendTwoFactorOtp for Sender {
             async fn send(&self, user: &UserView, otp: &str) -> AuthResult<()> {
                 self.record(user);
-                drop(
-                    self.entered
-                        .lock()
-                        .unwrap()
-                        .take()
-                        .unwrap()
-                        .send(otp.into()),
-                );
+                _ = self
+                    .entered
+                    .lock()
+                    .unwrap()
+                    .take()
+                    .unwrap()
+                    .send(otp.into());
                 let release = self.release.lock().unwrap().take().unwrap();
                 release.await.unwrap();
                 self.record(user);
@@ -3033,27 +3016,21 @@ mod tests {
         let session = test_helpers::create_session(&ctx, user.id.clone(), Duration::hours(1)).await;
         let ctx = Arc::new(ctx);
         let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/send-otp");
-        drop(
-            request.headers.insert(
-                "cookie".into(),
-                create_session_cookie(&session.token, &ctx.config)
-                    .unwrap()
-                    .split(';')
-                    .next()
-                    .unwrap()
-                    .into(),
-            ),
+        _ = request.headers.insert(
+            "cookie".into(),
+            create_session_cookie(&session.token, &ctx.config)
+                .unwrap()
+                .split(';')
+                .next()
+                .unwrap()
+                .into(),
         );
-        drop(
-            request
-                .headers
-                .insert("x-delivery-origin".into(), "original-sender".into()),
-        );
-        drop(
-            request
-                .query
-                .insert("delivery".into(), "original-marker".into()),
-        );
+        _ = request
+            .headers
+            .insert("x-delivery-origin".into(), "original-sender".into());
+        _ = request
+            .query
+            .insert("delivery".into(), "original-marker".into());
         request.body = Some(b"{}".to_vec());
         let running_ctx = Arc::clone(&ctx);
         let running_plugin = Arc::clone(&plugin);
@@ -3089,16 +3066,12 @@ mod tests {
                 .is_some()
         );
         request.path = "/two-factor/verify-otp".into();
-        drop(
-            request
-                .headers
-                .insert("x-delivery-origin".into(), "different-verifier".into()),
-        );
-        drop(
-            request
-                .query
-                .insert("delivery".into(), "different-marker".into()),
-        );
+        _ = request
+            .headers
+            .insert("x-delivery-origin".into(), "different-verifier".into());
+        _ = request
+            .query
+            .insert("delivery".into(), "different-marker".into());
         request.body = Some(serde_json::to_vec(&serde_json::json!({"code":code})).unwrap());
         let verified =
             alibi_core::with_request_hook_context(&request, plugin.on_request(&request, &ctx))
@@ -3135,7 +3108,7 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        let _ignored_send = release.send(());
+        _ = release.send(());
         tokio::time::timeout(std::time::Duration::from_secs(1), done)
             .await
             .expect("owned delivery must finish after its actual release")

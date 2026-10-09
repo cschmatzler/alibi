@@ -201,10 +201,9 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
             });
         }
         if self.config.enable_username {
-            drop(
-                ctx.metadata
-                    .insert("username.enabled".into(), serde_json::Value::Bool(true)),
-            );
+            _ = ctx
+                .metadata
+                .insert("username.enabled".into(), serde_json::Value::Bool(true));
         }
         Ok(())
     }
@@ -262,10 +261,10 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
             && !user.email_verified()
             && let Some(email) = user.email()
         {
-            drop(writeln!(
+            _ = writeln!(
                 std::io::stdout().lock(),
                 "Email verification required for user: {email}"
-            ));
+            );
         }
         Ok(())
     }
@@ -355,18 +354,18 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
     let mut input_fields = body.additional_fields.clone();
     if config.enable_username {
         if let Some(value) = &body.username {
-            drop(input_fields.insert(
+            _ = input_fields.insert(
                 "username".into(),
                 alibi_core::utils::json::JsValue::String(value.clone()),
-            ));
+            );
         }
         if config.username.include_display_username
             && let Some(value) = &body.display_username
         {
-            drop(input_fields.insert(
+            _ = input_fields.insert(
                 "displayUsername".into(),
                 alibi_core::utils::json::JsValue::String(value.clone()),
-            ));
+            );
         }
     }
     let additional_fields =
@@ -395,10 +394,9 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
     // Check if user already exists
     if let Some(user) = ctx.database.get_user_by_email(&body.email).await? {
         if config.require_email_verification || !config.auto_sign_in {
-            drop(
-                ctx.hash_password(config.password_hasher.as_ref(), &body.password)
-                    .await?,
-            );
+            _ = ctx
+                .hash_password(config.password_hasher.as_ref(), &body.password)
+                .await?;
             signup::notify_existing(ctx.user_view(&user), request, config, ctx).await?;
             return signup::synthetic_response(body, config, ctx);
         }
@@ -497,8 +495,8 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
                 Err(error) => return Err(error),
             };
 
-            drop(
-                tx.create_account_record(CreateAccount {
+            _ = tx
+                .create_account_record(CreateAccount {
                     additional_fields: FieldValues::default(),
                     user_id: user.id().to_string(),
                     account_id: user.id().to_string(),
@@ -511,8 +509,7 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
                     scope: None,
                     password: Some(password_hash.clone()),
                 })
-                .await?,
-            );
+                .await?;
 
             super::email_verification::send_signup_verification(
                 &user,

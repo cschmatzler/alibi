@@ -261,8 +261,8 @@ impl ApiKeyPlugin {
                     references,
                     storage,
                     fallback_to_database,
-                    custom_storage,
                     secondary_storage,
+                    custom_storage,
                     key_length,
                     prefix,
                     default_permissions,
@@ -303,6 +303,8 @@ impl ApiKeyPlugin {
         config: &ApiKeyConfig,
         custom_prefix: Option<&str>,
     ) -> AuthResult<(String, String, alibi_core::ApiKeyStartingCharacters)> {
+        // Match TS: generateRandomString(length, "a-z", "A-Z") — alpha only
+        const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
         if config.key_length <= 0.0 {
             return Err(AuthError::internal("Length must be a positive integer."));
         }
@@ -317,8 +319,6 @@ impl ApiKeyPlugin {
             .to_string()
             .parse::<u32>()
             .map_err(|error| AuthError::internal(error.to_string()))?;
-        // Match TS: generateRandomString(length, "a-z", "A-Z") — alpha only
-        const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
         let mut rng = rand::rng();
         let mut raw = String::new();
         raw.try_reserve_exact(
@@ -489,11 +489,9 @@ impl ApiKeyPlugin {
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let mut resolution = req.clone();
-        drop(
-            resolution
-                .query
-                .insert("disableCookieCache".into(), "true".into()),
-        );
+        _ = resolution
+            .query
+            .insert("disableCookieCache".into(), "true".into());
         let (user, _session) = ctx
             .require_cached_session(&resolution)
             .await
@@ -553,8 +551,8 @@ impl ApiKeyPlugin {
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let mut resolution = req.clone();
-        drop(resolution.query.remove("disableCookieCache"));
-        drop(resolution.query.remove("disableRefresh"));
+        _ = resolution.query.remove("disableCookieCache");
+        _ = resolution.query.remove("disableRefresh");
         let (user, _session) = super::helpers::ordinary_session(&resolution, ctx).await?;
         let id = req
             .query
@@ -570,8 +568,8 @@ impl ApiKeyPlugin {
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let mut resolution = req.clone();
-        drop(resolution.query.remove("disableCookieCache"));
-        drop(resolution.query.remove("disableRefresh"));
+        _ = resolution.query.remove("disableCookieCache");
+        _ = resolution.query.remove("disableRefresh");
         let (user, _session) = super::helpers::ordinary_session(&resolution, ctx).await?;
         let query = match ListKeysQuery::from_request(req) {
             Ok(query) => query,
@@ -586,11 +584,9 @@ impl ApiKeyPlugin {
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let mut resolution = req.clone();
-        drop(
-            resolution
-                .query
-                .insert("disableCookieCache".into(), "true".into()),
-        );
+        _ = resolution
+            .query
+            .insert("disableCookieCache".into(), "true".into());
         let (user, _session) = ctx
             .require_cached_session(&resolution)
             .await
@@ -687,7 +683,7 @@ alibi_core::impl_auth_plugin! {
                 if model.name!="Apikey" {continue;}
                 for field in &mut model.fields {
                     let value=match field.name.as_str() {"rateLimitTimeWindow"=>defaults.time_window,"rateLimitMax"=>defaults.max_requests,_=>continue};
-                    if let Some(schema)=field.schema.as_object_mut() {drop(schema.insert("default".into(),serde_json::json!(value)));}
+                    if let Some(schema)=field.schema.as_object_mut() {_ = schema.insert("default".into(),serde_json::json!(value));}
                 }
             }
             metadata
@@ -971,7 +967,7 @@ mod tests {
     async fn delete_all_expired(
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> serde_json::Value {
-        let _ignored_result = ctx.database.delete_expired_api_keys().await.unwrap();
+        _ = ctx.database.delete_expired_api_keys().await.unwrap();
         serde_json::json!({ "success": true, "error": null })
     }
 
@@ -1137,8 +1133,8 @@ mod tests {
         let (ctx, user1, session1) = create_test_context_with_user().await;
         let (_user2, session2) = create_user_with_session(&ctx, "other@example.com").await;
 
-        drop(create_key_and_get_id(&plugin, &ctx, &session1.token, "u1-key").await);
-        drop(create_key_and_get_id(&plugin, &ctx, &session2.token, "u2-key").await);
+        _ = create_key_and_get_id(&plugin, &ctx, &session1.token, "u1-key").await;
+        _ = create_key_and_get_id(&plugin, &ctx, &session2.token, "u2-key").await;
 
         let list_req = create_auth_request(
             HttpMethod::Get,
@@ -1686,11 +1682,9 @@ mod tests {
 
             for method in [HttpMethod::Get, HttpMethod::Post] {
                 let mut request = create_auth_request(method, "/get-session", None, None, None);
-                drop(
-                    request
-                        .headers
-                        .insert("x-api-key".to_owned(), raw_key.clone()),
-                );
+                _ = request
+                    .headers
+                    .insert("x-api-key".to_owned(), raw_key.clone());
                 let action = AuthPlugin::<TestSchema>::before_request(&plugin, &request, &ctx)
                     .await
                     .unwrap();
@@ -2352,10 +2346,10 @@ mod tests {
 
             // Stand in for a registered organization plugin.
             let mut metadata: HashMap<String, serde_json::Value> = HashMap::new();
-            drop(metadata.insert(
+            _ = metadata.insert(
                 crate::organization::METADATA_ENABLED.to_owned(),
                 serde_json::Value::Bool(true),
-            ));
+            );
             let ctx = AuthContext::with_metadata(
                 Arc::clone(&ctx.config),
                 Arc::clone(&ctx.database),
@@ -3513,7 +3507,7 @@ mod crud_tests {
             let rank = (index * 37) % 96;
             let mut row: serde_json::Value =
                 serde_json::from_str(&pair.first().unwrap().1).unwrap();
-            drop(ordered.insert(rank, row.get("id").unwrap().clone()));
+            _ = ordered.insert(rank, row.get("id").unwrap().clone());
             *row.get_mut("metadata").unwrap() = json!(rank);
             let serialized = serde_json::to_string(&row).unwrap();
             for (key, value) in pair {

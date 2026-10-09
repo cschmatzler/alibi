@@ -212,7 +212,7 @@ pub(super) fn body<T: DeserializeOwned + 'static>(req: &AuthRequest) -> Result<T
                         if matches!(rule, Rule::NonemptyId) && coerced_value.is_empty() {
                             issues.push(format!("[{path}] userId cannot be empty"));
                         }
-                        drop(input.insert(field.into(), JsValue::String(coerced_value)));
+                        _ = input.insert(field.into(), JsValue::String(coerced_value));
                     } else {
                         issues.push(expected(&path, "string", Some(value_2_3)));
                     }
@@ -258,10 +258,10 @@ pub(super) fn body<T: DeserializeOwned + 'static>(req: &AuthRequest) -> Result<T
             }
             (false, false) => issues.push("[body] Invalid input".into()),
             (true, false) => {
-                drop(input.shift_remove("permissions"));
+                _ = input.shift_remove("permissions");
             }
             (false, true) => {
-                drop(input.shift_remove("permission"));
+                _ = input.shift_remove("permission");
             }
         }
     }
@@ -273,7 +273,7 @@ pub(super) fn body<T: DeserializeOwned + 'static>(req: &AuthRequest) -> Result<T
 }
 
 pub(super) fn get_user(req: &AuthRequest) -> Result<super::types::GetUserQuery, AuthResponse> {
-    drop(parse(req)?);
+    _ = parse(req)?;
     match req.query_values("id") {
         Some([id]) => Ok(super::types::GetUserQuery { id: id.clone() }),
         Some(_) => Err(schema_error(&[
@@ -284,7 +284,7 @@ pub(super) fn get_user(req: &AuthRequest) -> Result<super::types::GetUserQuery, 
 }
 
 pub(super) fn list_users(req: &AuthRequest) -> Result<(), AuthResponse> {
-    drop(parse(req)?);
+    _ = parse(req)?;
     let mut issues = Vec::new();
     // Query arrays are materialized by repeated names before the endpoint
     // schema. Retain schema field order, including string/number unions.

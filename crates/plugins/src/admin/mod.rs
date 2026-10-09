@@ -366,16 +366,15 @@ impl AdminPlugin {
         }
 
         if let Some(username) = username {
-            drop(
-                body.data
-                    .insert("username".to_owned(), serde_json::Value::String(username)),
-            );
+            _ = body
+                .data
+                .insert("username".to_owned(), serde_json::Value::String(username));
         }
         if let Some(display_username) = display_username {
-            drop(body.data.insert(
+            _ = body.data.insert(
                 "displayUsername".to_owned(),
                 serde_json::Value::String(display_username),
-            ));
+            );
         }
 
         let response = update_user_core(&body, &user, &self.config, ctx).await?;
@@ -833,7 +832,7 @@ mod tests {
             .await
             .unwrap();
 
-        let _user = database
+        _ = database
             .create_user(
                 CreateUser::new()
                     .with_email("user@example.com")

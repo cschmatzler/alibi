@@ -28,11 +28,11 @@ pub(crate) fn create_email_verification_token(
     let fields = claims
         .as_object_mut()
         .ok_or_else(|| AuthError::internal("Verification claims must serialize as an object"))?;
-    drop(fields.insert("iat".to_owned(), serde_json::json!(now.timestamp())));
-    drop(fields.insert(
+    _ = fields.insert("iat".to_owned(), serde_json::json!(now.timestamp()));
+    _ = fields.insert(
         "exp".to_owned(),
         serde_json::json!((now + expires_in).timestamp()),
-    ));
+    );
     let mut header = Header::new(Algorithm::HS256);
     header.typ = None;
 

@@ -173,11 +173,10 @@ pub(crate) async fn create_organization_core(
             Some(team) => team,
             None => ctx.database.create_team(data).await?,
         };
-        drop(
-            ctx.database
-                .add_team_member(&team.id, user.id().as_ref(), None)
-                .await?,
-        );
+        _ = ctx
+            .database
+            .add_team_member(&team.id, user.id().as_ref(), None)
+            .await?;
         if let Some(callback) = &config.teams.hooks {
             callback
                 .after_create(&team, &hooks)
@@ -366,11 +365,10 @@ pub(crate) async fn delete_organization_core(
     }
 
     if session.active_organization_id() == Some(body.organization_id.as_str()) {
-        drop(
-            ctx.database
-                .update_session_active_organization_record(session.token(), None)
-                .await?,
-        );
+        _ = ctx
+            .database
+            .update_session_active_organization_record(session.token(), None)
+            .await?;
     }
     let Some(organization) = ctx
         .database
@@ -522,11 +520,10 @@ pub(crate) async fn get_full_organization_core(
         .await?
         .is_none()
     {
-        drop(
-            ctx.database
-                .update_session_active_organization_record(session.token(), None)
-                .await?,
-        );
+        _ = ctx
+            .database
+            .update_session_active_organization_record(session.token(), None)
+            .await?;
         return Err(AuthError::forbidden("User is not a member of the organization").into());
     }
 
@@ -604,11 +601,10 @@ pub(crate) async fn set_active_organization_core(
         .await?
         .is_none()
     {
-        drop(
-            ctx.database
-                .update_session_active_organization_record(session.token(), None)
-                .await?,
-        );
+        _ = ctx
+            .database
+            .update_session_active_organization_record(session.token(), None)
+            .await?;
         return Err(super::extension_common::org_error(
             403,
             "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
@@ -669,11 +665,10 @@ pub(crate) async fn leave_organization_core(
     ctx.database.delete_member(&member.id()).await?;
 
     if session.active_organization_id() == Some(&body.organization_id) {
-        drop(
-            ctx.database
-                .update_session_active_organization_record(session.token(), None)
-                .await?,
-        );
+        _ = ctx
+            .database
+            .update_session_active_organization_record(session.token(), None)
+            .await?;
     }
 
     Ok(response)
@@ -851,11 +846,10 @@ pub async fn handle_get_organization(
         .await?
         .is_none()
     {
-        drop(
-            ctx.database
-                .update_session_active_organization_record(session.token(), None)
-                .await?,
-        );
+        _ = ctx
+            .database
+            .update_session_active_organization_record(session.token(), None)
+            .await?;
         return Err(AuthError::forbidden(
             "User is not a member of the organization",
         ));
@@ -891,7 +885,7 @@ pub async fn handle_check_slug(
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
-    drop(super::extension_common::session(req, ctx).await?);
+    _ = super::extension_common::session(req, ctx).await?;
     let body: CheckSlugRequest = match alibi_core::validate_request_body(req) {
         Ok(v) => v,
         Err(resp) => return Ok(resp),

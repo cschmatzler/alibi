@@ -64,49 +64,49 @@ pub fn default_roles() -> HashMap<String, Role> {
     let mut roles = HashMap::new();
 
     // Owner - full permissions
-    drop(roles.insert(
+    _ = roles.insert(
         "owner".to_owned(),
         Role {
             name: "owner".to_owned(),
             permissions: {
                 let mut p = HashMap::new();
-                drop(p.insert(Resource::Organization, vec![Action::Update, Action::Delete]));
-                drop(p.insert(
+                _ = p.insert(Resource::Organization, vec![Action::Update, Action::Delete]);
+                _ = p.insert(
                     Resource::Member,
                     vec![Action::Create, Action::Update, Action::Delete],
-                ));
-                drop(p.insert(Resource::Invitation, vec![Action::Create, Action::Cancel]));
+                );
+                _ = p.insert(Resource::Invitation, vec![Action::Create, Action::Cancel]);
                 p
             },
         },
-    ));
+    );
 
     // Admin - most permissions except org deletion
-    drop(roles.insert(
+    _ = roles.insert(
         "admin".to_owned(),
         Role {
             name: "admin".to_owned(),
             permissions: {
                 let mut p = HashMap::new();
-                drop(p.insert(Resource::Organization, vec![Action::Update]));
-                drop(p.insert(
+                _ = p.insert(Resource::Organization, vec![Action::Update]);
+                _ = p.insert(
                     Resource::Member,
                     vec![Action::Create, Action::Update, Action::Delete],
-                ));
-                drop(p.insert(Resource::Invitation, vec![Action::Create, Action::Cancel]));
+                );
+                _ = p.insert(Resource::Invitation, vec![Action::Create, Action::Cancel]);
                 p
             },
         },
-    ));
+    );
 
     // Member - read-only
-    drop(roles.insert(
+    _ = roles.insert(
         "member".to_owned(),
         Role {
             name: "member".to_owned(),
             permissions: HashMap::new(),
         },
-    ));
+    );
 
     roles
 }

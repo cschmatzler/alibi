@@ -41,7 +41,7 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
             .get(field)
             .map_or_else(|| Ok("undefined".into()), JsValue::coerce_string)
             .map_err(crate::endpoint::validation)?;
-        drop(body.insert(field.into(), JsValue::String(user_id)));
+        _ = body.insert(field.into(), JsValue::String(user_id));
     }
     Ok(EndpointInput {
         body: Some(validate_fields(

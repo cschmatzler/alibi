@@ -151,7 +151,7 @@ pub(crate) async fn set_role_core(
     config: &AdminConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<UserResponse<AdminUserView>> {
-    let _target = ctx
+    _ = ctx
         .database
         .get_user_by_id_record(&body.user_id)
         .await?
@@ -247,7 +247,7 @@ pub(crate) async fn create_user_core(
     let metadata = body.data.clone().map_or_else(
         || serde_json::json!({}),
         |mut data| {
-            drop(data.remove("role"));
+            _ = data.remove("role");
             serde_json::Value::Object(data)
         },
     );
@@ -282,23 +282,22 @@ pub(crate) async fn create_user_core(
                 password,
             )
             .await?;
-        drop(
-            ctx.database
-                .create_account_record(CreateAccount {
-                    additional_fields: FieldValues::default(),
-                    user_id: user.id().to_string(),
-                    account_id: user.id().to_string(),
-                    provider_id: "credential".to_owned(),
-                    access_token: None,
-                    refresh_token: None,
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: None,
-                    password: Some(password_hash),
-                })
-                .await?,
-        );
+        _ = ctx
+            .database
+            .create_account_record(CreateAccount {
+                additional_fields: FieldValues::default(),
+                user_id: user.id().to_string(),
+                account_id: user.id().to_string(),
+                provider_id: "credential".to_owned(),
+                access_token: None,
+                refresh_token: None,
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: None,
+                password: Some(password_hash),
+            })
+            .await?;
     }
 
     Ok(UserResponse {
@@ -530,7 +529,7 @@ pub(crate) async fn ban_user_core(
         return Err(AuthError::bad_request("You cannot ban yourself").into());
     }
 
-    let _target = ctx
+    _ = ctx
         .database
         .get_user_by_id_record(&body.user_id)
         .await?
@@ -563,7 +562,7 @@ pub(crate) async fn ban_user_core(
         .database
         .update_user_record(&body.user_id, update)
         .await?;
-    let _ignored_revoke_all_user_sessions = ctx
+    _ = ctx
         .session_manager()
         .revoke_all_user_sessions(&body.user_id)
         .await?;
@@ -577,7 +576,7 @@ pub(crate) async fn unban_user_core(
     body: &UserIdRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<UserResponse<AdminUserView>> {
-    let _target = ctx
+    _ = ctx
         .database
         .get_user_by_id_record(&body.user_id)
         .await?
@@ -634,19 +633,18 @@ pub(crate) async fn impersonate_user_core(
             .ban_expires()
             .is_some_and(|expires| expires < Utc::now())
         {
-            drop(
-                ctx.database
-                    .update_user_record(
-                        &body.user_id,
-                        UpdateUser {
-                            banned: Some(false),
-                            ban_reason: None,
-                            ban_expires: None,
-                            ..Default::default()
-                        },
-                    )
-                    .await?,
-            );
+            _ = ctx
+                .database
+                .update_user_record(
+                    &body.user_id,
+                    UpdateUser {
+                        banned: Some(false),
+                        ban_reason: None,
+                        ban_expires: None,
+                        ..Default::default()
+                    },
+                )
+                .await?;
         } else {
             let message = match &config.banned_user_message_callback {
                 Some(handler) => handler.message(&target).await?,
@@ -770,7 +768,7 @@ pub(crate) async fn remove_user_core(
         return Err(AuthError::bad_request("You cannot remove yourself"));
     }
 
-    let _target = ctx
+    _ = ctx
         .database
         .get_user_by_id_record(&body.user_id)
         .await?
@@ -815,35 +813,33 @@ pub(crate) async fn set_user_password_core(
         .await?;
 
     if let Some(account) = crate::helpers::get_credential_account(ctx, &body.user_id).await? {
-        drop(
-            ctx.database
-                .update_account_record(
-                    &account.id(),
-                    alibi_core::UpdateAccount {
-                        password: Some(password_hash),
-                        ..Default::default()
-                    },
-                )
-                .await?,
-        );
-    } else {
-        drop(
-            ctx.database
-                .create_account_record(CreateAccount {
-                    additional_fields: FieldValues::default(),
-                    user_id: body.user_id.clone(),
-                    account_id: target.id().to_string(),
-                    provider_id: "credential".into(),
+        _ = ctx
+            .database
+            .update_account_record(
+                &account.id(),
+                alibi_core::UpdateAccount {
                     password: Some(password_hash),
-                    access_token: None,
-                    refresh_token: None,
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: None,
-                })
-                .await?,
-        );
+                    ..Default::default()
+                },
+            )
+            .await?;
+    } else {
+        _ = ctx
+            .database
+            .create_account_record(CreateAccount {
+                additional_fields: FieldValues::default(),
+                user_id: body.user_id.clone(),
+                account_id: target.id().to_string(),
+                provider_id: "credential".into(),
+                password: Some(password_hash),
+                access_token: None,
+                refresh_token: None,
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: None,
+            })
+            .await?;
     }
 
     Ok(StatusResponse { status: true })

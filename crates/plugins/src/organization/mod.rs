@@ -333,22 +333,16 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
 
     fn session_fields(&self) -> alibi_core::field_policy::FieldConfigs {
         let mut fields = alibi_core::field_policy::FieldConfigs::new();
-        drop(
-            fields.insert(
-                "activeOrganizationId".into(),
-                alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"}))
-                    .read_only(),
-            ),
+        _ = fields.insert(
+            "activeOrganizationId".into(),
+            alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"}))
+                .read_only(),
         );
         if self.config.teams.enabled {
-            drop(
-                fields.insert(
-                    "activeTeamId".into(),
-                    alibi_core::field_policy::FieldConfig::new(
-                        serde_json::json!({"type":"string"}),
-                    )
+            _ = fields.insert(
+                "activeTeamId".into(),
+                alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"}))
                     .read_only(),
-                ),
             );
         }
         fields
@@ -1027,12 +1021,10 @@ mod extension_tests {
                 .await?;
             let mut request = json!({"organizationId":organization.id,"teamId":team.id});
             if let Some(input) = input {
-                drop(
-                    request
-                        .as_object_mut()
-                        .expect("request is an object")
-                        .insert("userId".to_owned(), input),
-                );
+                _ = request
+                    .as_object_mut()
+                    .expect("request is an object")
+                    .insert("userId".to_owned(), input);
             }
             let added = call(
                 &plugin,
@@ -1093,12 +1085,10 @@ mod extension_tests {
                     "YOU_ARE_NOT_ALLOWED_TO_REMOVE_A_TEAM_MEMBER",
                 )?;
                 let mut wrong_tenant = request.clone();
-                drop(
-                    wrong_tenant
-                        .as_object_mut()
-                        .expect("request is an object")
-                        .insert("teamId".to_owned(), json!(other_team.id)),
-                );
+                _ = wrong_tenant
+                    .as_object_mut()
+                    .expect("request is an object")
+                    .insert("teamId".to_owned(), json!(other_team.id));
                 assert_error(
                     &call(
                         &plugin,
@@ -1114,11 +1104,9 @@ mod extension_tests {
                     "TEAM_NOT_FOUND",
                 )?;
                 assert_eq!(ctx.database.list_team_members(&team.id).await?.len(), 1);
-                assert!(
-                    ctx.database
-                        .list_team_members(&other_team.id)
-                        .await?
-                        .is_empty()
+                assert_eq!(
+                    ctx.database.list_team_members(&other_team.id).await?,
+                    vec![]
                 );
             }
             let removed = call(
@@ -1132,7 +1120,7 @@ mod extension_tests {
             )
             .await?;
             assert_eq!(removed.status, 200);
-            assert!(ctx.database.list_team_members(&team.id).await?.is_empty());
+            assert_eq!(ctx.database.list_team_members(&team.id).await?, vec![]);
         }
         Ok(())
     }
@@ -1220,17 +1208,16 @@ mod extension_tests {
                 .split(';')
                 .next()
                 .ok_or_else(|| AuthError::internal("Session cookie missing pair"))?;
-            drop(req.headers.insert("cookie".to_owned(), pair.to_owned()));
+            _ = req.headers.insert("cookie".to_owned(), pair.to_owned());
         }
         for (key, value) in query {
-            drop(req.query.insert((*key).to_owned(), (*value).to_owned()));
+            _ = req.query.insert((*key).to_owned(), (*value).to_owned());
         }
         if let Some(body) = body {
             req.body = Some(serde_json::to_vec(&body)?);
-            drop(
-                req.headers
-                    .insert("content-type".to_owned(), "application/json".to_owned()),
-            );
+            _ = req
+                .headers
+                .insert("content-type".to_owned(), "application/json".to_owned());
         }
         match plugin.on_request(&req, ctx).await {
             Ok(Some(response)) => Ok(response),
@@ -1314,16 +1301,14 @@ mod extension_tests {
             .await?
             .ok_or_else(|| std::io::Error::other("Owner session missing"))?;
         assert_eq!(persisted.active_team_id(), Some(default_team.id.as_str()));
-        drop(
-            ctx.database
-                .create_member(CreateMember::new(org_id, &member.id, "member"))
-                .await?,
-        );
-        drop(
-            ctx.database
-                .update_session_active_organization(&member_session.token, Some(org_id))
-                .await?,
-        );
+        _ = ctx
+            .database
+            .create_member(CreateMember::new(org_id, &member.id, "member"))
+            .await?;
+        _ = ctx
+            .database
+            .update_session_active_organization(&member_session.token, Some(org_id))
+            .await?;
 
         assert_error(
             &call(
@@ -1571,18 +1556,16 @@ mod extension_tests {
             403,
             "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_TEAM",
         )?;
-        drop(
-            call(
-                &plugin,
-                &ctx,
-                Some(&owner_session.token),
-                HttpMethod::Post,
-                "/organization/set-active-team",
-                Some(json!({"teamId":null})),
-                &[],
-            )
-            .await?,
-        );
+        _ = call(
+            &plugin,
+            &ctx,
+            Some(&owner_session.token),
+            HttpMethod::Post,
+            "/organization/set-active-team",
+            Some(json!({"teamId":null})),
+            &[],
+        )
+        .await?;
         assert_error(
             &call(
                 &plugin,
@@ -1645,11 +1628,10 @@ mod extension_tests {
                 .map(|team| team.name.as_str()),
             Some("hook:Callbacks")
         );
-        drop(
-            ctx.database
-                .create_member(CreateMember::new(org_id, &denied.id, "member"))
-                .await?,
-        );
+        _ = ctx
+            .database
+            .create_member(CreateMember::new(org_id, &denied.id, "member"))
+            .await?;
         let created_2 = call(
             &plugin,
             &ctx,
@@ -1911,7 +1893,7 @@ mod extension_tests {
         .await?;
         let organization: Value = body(&created)?;
         let org_id = id(&organization)?;
-        assert!(ctx.database.list_teams(org_id).await?.is_empty());
+        assert_eq!(ctx.database.list_teams(org_id).await?, vec![]);
         let team = plugin
             .create_team(
                 &ctx,
@@ -1936,11 +1918,10 @@ mod extension_tests {
             400,
             "YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_TEAMS",
         )?;
-        drop(
-            ctx.database
-                .create_member(CreateMember::new(org_id, &target_session.user_id, "member"))
-                .await?,
-        );
+        _ = ctx
+            .database
+            .create_member(CreateMember::new(org_id, &target_session.user_id, "member"))
+            .await?;
         let added = call(
             &plugin,
             &ctx,
@@ -1976,7 +1957,7 @@ mod extension_tests {
             ..Default::default()
         });
         allowed.remove_team(&ctx, org_id, &team.id).await?;
-        assert!(ctx.database.list_teams(org_id).await?.is_empty());
+        assert_eq!(ctx.database.list_teams(org_id).await?, vec![]);
         Ok(())
     }
 
@@ -2024,7 +2005,7 @@ mod extension_tests {
         )
         .await?;
         let created: Value = body(&created)?;
-        let _org_id = id(&created)?;
+        _ = id(&created)?;
         let member_id = created
             .get("members")
             .and_then(Value::as_array)
@@ -2165,12 +2146,10 @@ mod extension_tests {
         assert_eq!(saved.status, alibi_core::types::InvitationStatus::Pending);
 
         let (sender, inviter_session) = actor(&founder_ctx, "configured-inviter").await;
-        drop(
-            founder_ctx
-                .database
-                .create_member(CreateMember::new(founder_org, &sender.id, "inviter"))
-                .await?,
-        );
+        _ = founder_ctx
+            .database
+            .create_member(CreateMember::new(founder_org, &sender.id, "inviter"))
+            .await?;
         assert_error(
         &call(
             &founder,
@@ -2213,17 +2192,16 @@ mod extension_tests {
         let mut ctx = context(&plugin).await?;
         let (owner, owner_session) = actor(&ctx, "verified-inviter").await;
         let (recipient, recipient_session) = actor(&ctx, "unverified-recipient").await;
-        drop(
-            ctx.database
-                .update_user(
-                    &recipient.id,
-                    alibi_core::UpdateUser {
-                        email_verified: Some(false),
-                        ..Default::default()
-                    },
-                )
-                .await?,
-        );
+        _ = ctx
+            .database
+            .update_user(
+                &recipient.id,
+                alibi_core::UpdateUser {
+                    email_verified: Some(false),
+                    ..Default::default()
+                },
+            )
+            .await?;
         let created = call(
             &plugin,
             &ctx,
@@ -2296,12 +2274,7 @@ mod extension_tests {
                 .await?
                 .is_none()
         );
-        assert!(
-            ctx.database
-                .list_user_teams(&recipient.id)
-                .await?
-                .is_empty()
-        );
+        assert_eq!(ctx.database.list_user_teams(&recipient.id).await?, vec![]);
 
         // Opaque IDs use the default policy without requiring email verification.
         let automatic = OrganizationPlugin::with_config(configuration());
@@ -2429,17 +2402,16 @@ mod extension_tests {
             400,
             "INVITATION_NOT_FOUND",
         )?;
-        drop(
-            ctx.database
-                .update_user(
-                    &recipient.id,
-                    alibi_core::UpdateUser {
-                        email_verified: Some(true),
-                        ..Default::default()
-                    },
-                )
-                .await?,
-        );
+        _ = ctx
+            .database
+            .update_user(
+                &recipient.id,
+                alibi_core::UpdateUser {
+                    email_verified: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await?;
         // Rejecting an expired, pending invitation remains supported upstream.
         assert_eq!(
             call(
@@ -3031,7 +3003,7 @@ mod dynamic_role_tests {
             403,
             "YOU_ARE_NOT_ALLOWED_TO_CREATE_TEAMS_IN_THIS_ORGANIZATION",
         )?;
-        assert!(ctx.database.list_teams(&org).await?.is_empty());
+        assert_eq!(ctx.database.list_teams(&org).await?, vec![]);
         Ok(())
     }
 
@@ -3241,21 +3213,19 @@ mod dynamic_role_tests {
 
     fn delegated_configuration() -> OrganizationConfig {
         let mut config = configuration();
-        drop(
-            config
-                .access_control
-                .as_mut()
-                .expect("Access control configured")
-                .insert(
-                    "apiKey".to_owned(),
-                    vec![
-                        "create".to_owned(),
-                        "read".to_owned(),
-                        "update".to_owned(),
-                        "delete".to_owned(),
-                    ],
-                ),
-        );
+        _ = config
+            .access_control
+            .as_mut()
+            .expect("Access control configured")
+            .insert(
+                "apiKey".to_owned(),
+                vec![
+                    "create".to_owned(),
+                    "read".to_owned(),
+                    "update".to_owned(),
+                    "delete".to_owned(),
+                ],
+            );
         config.roles = Some(
             [
                 (
@@ -3394,11 +3364,10 @@ mod dynamic_role_tests {
         .as_str()
         .ok_or("Role ID missing")?
         .to_owned();
-        drop(
-            ctx.database
-                .update_member_role(&member.id, "key-editor")
-                .await?,
-        );
+        _ = ctx
+            .database
+            .update_member_role(&member.id, "key-editor")
+            .await?;
         crate::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "create").await?;
         crate::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "read").await?;
         let error =
@@ -3434,11 +3403,10 @@ mod dynamic_role_tests {
             403,
             "INSUFFICIENT_API_KEY_PERMISSIONS",
         )?;
-        drop(
-            ctx.database
-                .update_member_role(&member.id, " owner ")
-                .await?,
-        );
+        _ = ctx
+            .database
+            .update_member_role(&member.id, " owner ")
+            .await?;
         let error_3 =
             crate::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "read")
                 .await
@@ -3449,7 +3417,7 @@ mod dynamic_role_tests {
             403,
             "INSUFFICIENT_API_KEY_PERMISSIONS",
         )?;
-        drop(ctx.database.update_member_role(&member.id, "owner").await?);
+        _ = ctx.database.update_member_role(&member.id, "owner").await?;
         crate::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "delete").await?;
         Ok(())
     }
@@ -3473,7 +3441,7 @@ mod dynamic_role_tests {
         let (_, owner) = actor(&ctx, "quota-owner").await;
         let first = organization(&plugin, &ctx, &owner, "native-role-quota-one").await?;
         let second = organization(&plugin, &ctx, &owner, "native-role-quota-two").await?;
-        let _ignored_clone = policies
+        _ = policies
             .lock()
             .map_err(|_error| "Role policy unavailable")?
             .insert(first.clone(), 1);
@@ -3744,24 +3712,18 @@ mod dynamic_role_tests {
             ),
         ] {
             let mut request = AuthRequest::new(HttpMethod::Post, "/organization/create-role");
-            drop(
-                request
-                    .headers
-                    .insert("content-type".to_owned(), "application/json".to_owned()),
-            );
+            _ = request
+                .headers
+                .insert("content-type".to_owned(), "application/json".to_owned());
             if let Some(value) = transfer_encoding {
-                drop(
-                    request
-                        .headers
-                        .insert("transfer-encoding".to_owned(), value.to_owned()),
-                );
+                _ = request
+                    .headers
+                    .insert("transfer-encoding".to_owned(), value.to_owned());
             }
             if let Some(value) = length {
-                drop(
-                    request
-                        .headers
-                        .insert("content-length".to_owned(), value.to_owned()),
-                );
+                _ = request
+                    .headers
+                    .insert("content-length".to_owned(), value.to_owned());
             }
             request.body = bytes;
             let response = plugin

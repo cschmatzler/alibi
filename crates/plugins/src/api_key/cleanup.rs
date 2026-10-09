@@ -8,7 +8,7 @@ impl ApiKeyPlugin {
         &self,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<()> {
-        drop(self.start_configured_cleanup(ctx).await?);
+        _ = self.start_configured_cleanup(ctx).await?;
         Ok(())
     }
 
@@ -66,7 +66,7 @@ impl ApiKeyPlugin {
         &self,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> DeleteExpiredApiKeysResponse {
-        let _ignored_result = admit_expired_cleanup(true);
+        _ = admit_expired_cleanup(true);
         if !self.configurations.iter().any(ApiKeyConfig::uses_database) {
             return DeleteExpiredApiKeysResponse {
                 success: true,

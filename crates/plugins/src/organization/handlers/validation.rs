@@ -167,7 +167,7 @@ pub(super) fn permissions(
                     .extend(expected(&format!("{action_path}.{index}"), "string", Some(action)).0);
             }
         }
-        drop(permissions.insert(resource.to_owned(), granted));
+        _ = permissions.insert(resource.to_owned(), granted);
     }
     if issues.is_empty() {
         Ok(permissions)

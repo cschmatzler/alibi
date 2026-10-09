@@ -333,10 +333,9 @@ impl<S: alibi_core::AuthSchema> alibi_core::VerificationEmailOverride<S> for Ema
             "/email-otp/send-verification-otp",
         );
         req.body = Some(serde_json::to_vec(&body)?);
-        drop(
-            self.send_verification_with_request(&req, request, ctx)
-                .await?,
-        );
+        _ = self
+            .send_verification_with_request(&req, request, ctx)
+            .await?;
         Ok(())
     }
 
@@ -354,7 +353,7 @@ impl<S: alibi_core::AuthSchema> alibi_core::VerificationEmailOverride<S> for Ema
         let (otp, value) = self
             .prepare_code(ctx, request, &email, EmailOtpType::EmailVerification, None)
             .await?;
-        drop(ctx.verifications().create_in_transaction(tx, value).await?);
+        _ = ctx.verifications().create_in_transaction(tx, value).await?;
         self.deliver(ctx, request, &email, otp, EmailOtpType::EmailVerification)
             .await
     }
@@ -603,12 +602,11 @@ mod tests {
                 .hook(CancelVerificationUpdate(Arc::clone(&calls))),
         );
         let ctx = AuthContext::new(config, store);
-        drop(
-            ctx.database
-                .create_user(CreateUser::new().with_email("veto@example.com"))
-                .await
-                .unwrap(),
-        );
+        _ = ctx
+            .database
+            .create_user(CreateUser::new().with_email("veto@example.com"))
+            .await
+            .unwrap();
         let (config_2, _) = configured();
         let plugin = EmailOtpPlugin::new(config_2);
         let otp = plugin
@@ -741,14 +739,14 @@ mod tests {
                     Some(body.clone()),
                 );
                 if let Some(value) = preference {
-                    drop(request.headers.insert(
+                    _ = request.headers.insert(
                         "cookie".to_owned(),
                         format!(
                             "{}={}",
                             related_cookie_name(&ctx.config, "dont_remember"),
                             sign_cookie_value(value, &ctx.config.secret)
                         ),
-                    ));
+                    );
                 }
                 let response = plugin.on_request(&request, &ctx).await.unwrap().unwrap();
                 assert_eq!(response.status, 200);
@@ -953,16 +951,15 @@ mod tests {
         let ctx = test_helpers::create_test_context().await;
         let (config, _) = configured();
         let plugin = EmailOtpPlugin::new(config);
-        drop(
-            ctx.database
-                .create_verification(CreateVerification {
-                    identifier: "sign-in-otp-expired@example.com".into(),
-                    value: "654321:0".into(),
-                    expires_at: chrono::Utc::now() - Duration::seconds(1),
-                })
-                .await
-                .unwrap(),
-        );
+        _ = ctx
+            .database
+            .create_verification(CreateVerification {
+                identifier: "sign-in-otp-expired@example.com".into(),
+                value: "654321:0".into(),
+                expires_at: chrono::Utc::now() - Duration::seconds(1),
+            })
+            .await
+            .unwrap();
         let expired = post(
             &plugin,
             &ctx,
@@ -1032,24 +1029,23 @@ mod tests {
             .await
             .unwrap();
         for provider in ["credential", "google"] {
-            drop(
-                ctx.database
-                    .create_account(CreateAccount {
-                        additional_fields: alibi_core::field_policy::FieldValues::default(),
-                        user_id: user.id().to_string(),
-                        account_id: format!("{provider}-identity"),
-                        provider_id: provider.into(),
-                        access_token: None,
-                        refresh_token: None,
-                        id_token: None,
-                        access_token_expires_at: None,
-                        refresh_token_expires_at: None,
-                        scope: None,
-                        password: (provider == "credential").then_some("old-password-hash".into()),
-                    })
-                    .await
-                    .unwrap(),
-            );
+            _ = ctx
+                .database
+                .create_account(CreateAccount {
+                    additional_fields: alibi_core::field_policy::FieldValues::default(),
+                    user_id: user.id().to_string(),
+                    account_id: format!("{provider}-identity"),
+                    provider_id: provider.into(),
+                    access_token: None,
+                    refresh_token: None,
+                    id_token: None,
+                    access_token_expires_at: None,
+                    refresh_token_expires_at: None,
+                    scope: None,
+                    password: (provider == "credential").then_some("old-password-hash".into()),
+                })
+                .await
+                .unwrap();
         }
         let old_session = ctx
             .session_manager()
@@ -1669,16 +1665,15 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        drop(
-            ctx.database
-                .create_verification(CreateVerification {
-                    identifier: "email-verification-otp-expired-check@example.com".into(),
-                    value: "654321:0".into(),
-                    expires_at: chrono::Utc::now() - Duration::seconds(1),
-                })
-                .await
-                .unwrap(),
-        );
+        _ = ctx
+            .database
+            .create_verification(CreateVerification {
+                identifier: "email-verification-otp-expired-check@example.com".into(),
+                value: "654321:0".into(),
+                expires_at: chrono::Utc::now() - Duration::seconds(1),
+            })
+            .await
+            .unwrap();
         assert!(
             plugin
                 .get_verification_otp(
@@ -1809,12 +1804,11 @@ mod tests {
             .create_user(CreateUser::new().with_email("proof@example.com"))
             .await
             .unwrap();
-        drop(
-            ctx.database
-                .create_user(CreateUser::new().with_email("occupied@example.com"))
-                .await
-                .unwrap(),
-        );
+        _ = ctx
+            .database
+            .create_user(CreateUser::new().with_email("occupied@example.com"))
+            .await
+            .unwrap();
         let session = ctx
             .session_manager()
             .create_session(&user, None, None)
@@ -1993,12 +1987,10 @@ mod tests {
         let request = AuthRequest::new(HttpMethod::Post, "/sign-up/email");
         let response =
             AuthResponse::json(200, &json!({"user":{"email":"signup@example.com"}})).unwrap();
-        drop(
-            plugin
-                .after_request(&request, &ctx, response)
-                .await
-                .unwrap(),
-        );
+        _ = plugin
+            .after_request(&request, &ctx, response)
+            .await
+            .unwrap();
         assert_eq!(
             outbox.0.lock().unwrap().last().unwrap().otp_type,
             EmailOtpType::EmailVerification

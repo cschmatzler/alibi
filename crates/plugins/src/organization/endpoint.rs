@@ -42,7 +42,7 @@ pub(super) fn validate(
     match call.operation_id() {
         "createOrganization" => {
             let _validated =
-                handlers::org_input::create_value(body.clone()).map_err(error_response)?;
+                handlers::org_input::create_value(body.as_ref()).map_err(error_response)?;
             if let Some(JsValue::Object(body)) = &mut body {
                 // Configured additional fields belong to the body schema, as upstream.
                 body.retain(|key, _| {
@@ -59,7 +59,7 @@ pub(super) fn validate(
                 });
                 if let Some(value) = body.get("userId") {
                     let value = value.coerce_string().map_err(validation)?;
-                    drop(body.insert("userId".into(), JsValue::String(value)));
+                    _ = body.insert("userId".into(), JsValue::String(value));
                 }
             }
         }
@@ -74,8 +74,8 @@ pub(super) fn validate(
                 .get("userId")
                 .map_or_else(|| Ok("undefined".into()), JsValue::coerce_string)
                 .map_err(validation)?;
-            drop(input.insert("userId".into(), JsValue::String(user_id)));
-            let _strings = validate_fields(
+            _ = input.insert("userId".into(), JsValue::String(user_id));
+            _ = validate_fields(
                 body.as_ref(),
                 "body",
                 &[
@@ -164,7 +164,7 @@ impl OrganizationPlugin {
         if let Some(user_id) = user_id
             && let JsValue::Object(body) = &mut value
         {
-            drop(body.insert("userId".into(), JsValue::String(user_id.into())));
+            _ = body.insert("userId".into(), JsValue::String(user_id.into()));
         }
         Ok(ServerEndpoint::new("organization", "createOrganization").with_body_value(value))
     }

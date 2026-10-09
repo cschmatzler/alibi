@@ -219,7 +219,7 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
     // Native calls validate logical values after before hooks, without media-type or URL decoding.
     match call.operation_id() {
         "updateOrganization" => {
-            drop(handlers::org_input::update_value(call.body().cloned()).map_err(error_response)?);
+            _ = handlers::org_input::update_value(call.body()).map_err(error_response)?;
         }
         "getOrganization" => {
             let _: types::GetOrganizationQuery = call
@@ -237,10 +237,7 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                 .map_err(|error| validation(error.to_string()))?;
         }
         "setActiveOrganization" => {
-            drop(
-                handlers::org_input::set_active_value(call.body().cloned())
-                    .map_err(error_response)?,
-            );
+            _ = handlers::org_input::set_active_value(call.body()).map_err(error_response)?;
         }
         "leaveOrganization" => {
             let _: types::LeaveOrganizationRequest = call
@@ -248,10 +245,8 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                 .map_err(|error| validation(error.to_string()))?;
         }
         "inviteMember" => {
-            drop(
-                handlers::org_input::invitation_create_value(call.body().cloned())
-                    .map_err(error_response)?,
-            );
+            _ = handlers::org_input::invitation_create_value(call.body())
+                .map_err(error_response)?;
         }
         "getInvitation" => {
             let _: types::GetInvitationQuery = call
@@ -294,10 +289,8 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                 .map_err(|error| validation(error.to_string()))?;
         }
         "updateMemberRole" => {
-            drop(
-                handlers::org_input::member_role_update_value(call.body().cloned())
-                    .map_err(error_response)?,
-            );
+            _ = handlers::org_input::member_role_update_value(call.body())
+                .map_err(error_response)?;
         }
         "hasPermission" => {
             let _: types::HasPermissionRequest = call
@@ -671,21 +664,19 @@ fn response(output: AuthResponse) -> AuthResult<EndpointResponse> {
     Ok(response)
 }
 
-fn query_pairs(call: &EndpointCall) -> AuthResult<std::collections::HashMap<String, String>> {
-    call.query()
-        .and_then(JsValue::as_object)
-        .map(|fields| {
-            fields
-                .iter()
-                .map(|(key, value)| {
-                    value
-                        .coerce_string()
-                        .map(|value| (key.clone(), value))
-                        .map_err(validation)
-                })
-                .collect()
+fn query_pairs(call: &EndpointCall) -> AuthResult<HashMap<String, String>> {
+    let Some(fields) = call.query().and_then(JsValue::as_object) else {
+        return Ok(HashMap::new());
+    };
+    fields
+        .iter()
+        .map(|(key, value)| {
+            value
+                .coerce_string()
+                .map(|value| (key.clone(), value))
+                .map_err(validation)
         })
-        .unwrap_or_else(|| Ok(HashMap::default()))
+        .collect()
 }
 
 pub(super) async fn execute<S: AuthSchema>(
@@ -723,7 +714,7 @@ pub(super) async fn execute<S: AuthSchema>(
         }
         "updateOrganization" => {
             let (body, metadata) =
-                handlers::org_input::update_value(call.body().cloned()).map_err(error_response)?;
+                handlers::org_input::update_value(call.body()).map_err(error_response)?;
             EndpointResponse::json(
                 &handlers::org::update_organization_core(
                     &body, metadata, &user, &session, config, ctx,
@@ -753,11 +744,10 @@ pub(super) async fn execute<S: AuthSchema>(
                 .await?
                 .is_none()
             {
-                drop(
-                    ctx.database
-                        .update_session_active_organization_record(&session.token, None)
-                        .await?,
-                );
+                _ = ctx
+                    .database
+                    .update_session_active_organization_record(&session.token, None)
+                    .await?;
                 return Err(AuthError::forbidden(
                     "User is not a member of the organization",
                 ));
@@ -781,8 +771,8 @@ pub(super) async fn execute<S: AuthSchema>(
             EndpointResponse::json(&handlers::org::check_slug_core(&call.body_as()?, ctx).await?)
         }
         "setActiveOrganization" => {
-            let body = handlers::org_input::set_active_value(call.body().cloned())
-                .map_err(error_response)?;
+            let body =
+                handlers::org_input::set_active_value(call.body()).map_err(error_response)?;
             let organization =
                 handlers::org::set_active_organization_core(&body, &user, &session, ctx).await?;
             if organization.is_some()
@@ -832,7 +822,7 @@ pub(super) async fn execute<S: AuthSchema>(
                 .await?,
         ),
         "inviteMember" => {
-            let body = handlers::org_input::invitation_create_value(call.body().cloned())
+            let body = handlers::org_input::invitation_create_value(call.body())
                 .map_err(error_response)?;
             EndpointResponse::json(
                 &handlers::invitation::invite_member_core(&body, &user, &session, config, ctx)
@@ -887,7 +877,7 @@ pub(super) async fn execute<S: AuthSchema>(
                 .map_err(AuthError::from)?,
         ),
         "updateMemberRole" => {
-            let body = handlers::org_input::member_role_update_value(call.body().cloned())
+            let body = handlers::org_input::member_role_update_value(call.body())
                 .map_err(error_response)?;
             response(
                 handlers::member::update_member_role_response(&body, &user, &session, config, ctx)

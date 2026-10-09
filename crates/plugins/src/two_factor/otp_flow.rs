@@ -33,15 +33,14 @@ pub(in crate::two_factor) async fn send_otp_core(
     let expires_at = chrono::DateTime::from_timestamp_millis(milliseconds.trunc() as i64)
         .ok_or(SendOtpError::InvalidGeneration)?;
 
-    drop(
-        ctx.verifications()
-            .create(CreateVerification {
-                identifier,
-                value: format!("{stored_otp}:0"),
-                expires_at,
-            })
-            .await?,
-    );
+    _ = ctx
+        .verifications()
+        .create(CreateVerification {
+            identifier,
+            value: format!("{stored_otp}:0"),
+            expires_at,
+        })
+        .await?;
 
     otp::deliver(
         Arc::clone(sender),
@@ -147,15 +146,14 @@ pub(in crate::two_factor) async fn verify_otp_core(
         let next_value = format!("{stored_otp}:{next_counter}");
         let expires_at = verification.expires_at()?;
         let verification_identifier = otp_verification_identifier(state.key());
-        drop(
-            ctx.verifications()
-                .create(CreateVerification {
-                    identifier: verification_identifier,
-                    value: next_value,
-                    expires_at,
-                })
-                .await?,
-        );
+        _ = ctx
+            .verifications()
+            .create(CreateVerification {
+                identifier: verification_identifier,
+                value: next_value,
+                expires_at,
+            })
+            .await?;
         if let Some(factor) = &factor {
             record_account_failure(config, factor, ctx).await?;
         }
