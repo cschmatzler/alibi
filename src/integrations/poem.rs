@@ -1,7 +1,8 @@
 //! Poem endpoint and session extractors. Enable the `poem` feature.
 
-use super::{
-    CurrentSession, OptionalSession, dispatch::DispatchSupervisor, max_body_bytes,
+use super::dispatch::DispatchSupervisor;
+use super::shared::{
+    CurrentSession, OptionalSession, auth_request, check_content_length, max_body_bytes,
     payload_too_large,
 };
 use crate::BetterAuth;
@@ -87,7 +88,7 @@ async fn convert_request<S: AuthSchema>(
     mut request: Request,
 ) -> AuthResult<AuthRequest> {
     let max_bytes = max_body_bytes(auth);
-    super::check_content_length(request.headers(), max_bytes)?;
+    check_content_length(request.headers(), max_bytes)?;
     let body = request
         .take_body()
         .into_bytes_limit(max_bytes)
@@ -96,7 +97,7 @@ async fn convert_request<S: AuthSchema>(
             poem::error::ReadBodyError::PayloadTooLarge => payload_too_large(max_bytes),
             _ => AuthError::bad_request("Failed to read request body"),
         })?;
-    super::auth_request(
+    auth_request(
         request.method(),
         request.uri(),
         request.original_uri(),
