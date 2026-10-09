@@ -17,9 +17,9 @@ In both modes the session lives in an encrypted cookie, so neither can revoke a 
 ```rust
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::store::StatelessSchema;
-use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthBuilder, AuthConfig, AuthResult, Alibi};
 
-async fn build_auth() -> AuthResult<BetterAuth<StatelessSchema>> {
+async fn build_auth() -> AuthResult<Alibi<StatelessSchema>> {
     let config = AuthConfig::new("a-secret-with-at-least-32-characters")
         .base_url("http://localhost:3000");
     AuthBuilder::without_database(config)
@@ -69,13 +69,13 @@ To keep users and accounts in SQL while sessions live only in the cookie, make t
 use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::sqlx::{SqlxPool, SqlxStore};
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
-async fn build_auth(secret: &str, pool: SqlxPool) -> AuthResult<BetterAuth<AppAuthSchema>> {
+async fn build_auth(secret: &str, pool: SqlxPool) -> AuthResult<Alibi<AppAuthSchema>> {
     let mut config = AuthConfig::new(secret).base_url("https://auth.example.com");
     config.session = config.session.stateless();
     let store = SqlxStore::<AppAuthSchema>::new(config.clone(), pool);
-    BetterAuth::<AppAuthSchema>::new(config)
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .build()

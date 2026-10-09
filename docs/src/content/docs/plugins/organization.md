@@ -67,13 +67,13 @@ An organization model without `updated_at` uses its creation timestamp for that 
 use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::OrganizationPlugin;
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(OrganizationPlugin::new())
         .build()
@@ -446,13 +446,13 @@ Some operations are only available to trusted server code — they bypass the "c
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::endpoint::EndpointOptions;
 use alibi::plugins::OrganizationPlugin;
 use alibi::plugins::organization::types::CreateOrganizationRequest;
 
 async fn create_for(
-    auth: &BetterAuth<AppAuthSchema>,
+    auth: &Alibi<AppAuthSchema>,
     user_id: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let body = CreateOrganizationRequest {
@@ -526,7 +526,7 @@ See the official [Organization guide](https://www.better-auth.com/docs/plugins/o
 
 ## Typed native endpoints
 
-Call organization operations in-process through `BetterAuth::dispatch_endpoint`.
+Call organization operations in-process through `Alibi::dispatch_endpoint`.
 The installed plugin, authentication, authorization, organization callbacks, and
 builder endpoint hooks all participate. Input is validated after before-hook
 patches. Supply genuine credentials with `EndpointOptions`; an optional original

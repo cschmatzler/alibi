@@ -44,8 +44,8 @@ const HASH_PASSWORD: &str = "Actual-Phase-Hash-Password-205";
 struct Application {
     events: Arc<Mutex<Vec<Value>>>,
     mode: Arc<Mutex<String>>,
-    other: Arc<Mutex<Option<Arc<alibi::BetterAuth<TestSchema>>>>>,
-    primary: Arc<Mutex<Option<Arc<alibi::BetterAuth<TestSchema>>>>>,
+    other: Arc<Mutex<Option<Arc<alibi::Alibi<TestSchema>>>>>,
+    primary: Arc<Mutex<Option<Arc<alibi::Alibi<TestSchema>>>>>,
     hash_phase: Arc<Mutex<String>>,
     ranges: Arc<Mutex<Vec<Value>>>,
     serial: Arc<std::sync::atomic::AtomicUsize>,

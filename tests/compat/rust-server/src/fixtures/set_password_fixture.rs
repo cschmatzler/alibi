@@ -15,7 +15,7 @@ use alibi::seaorm::{
     store::entities::{account, session, user},
 };
 use alibi::utils::password::{PasswordHasher, ScryptHasher};
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult};
 use alibi::{AuthRequest, CookieCacheConfig, HttpMethod};
 use async_trait::async_trait;
 use axum::{
@@ -201,7 +201,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 }
             }
             let operation:AuthResult<Value>=async {
-    let profile=body.get("profile").and_then(Value::as_str).unwrap_or("set-password-default");let auth: &Arc<BetterAuth<TestSchema>>=profiles.get(profile).ok_or_else(||AuthError::bad_request("unknown fixture profile"))?;
+    let profile=body.get("profile").and_then(Value::as_str).unwrap_or("set-password-default");let auth: &Arc<Alibi<TestSchema>>=profiles.get(profile).ok_or_else(||AuthError::bad_request("unknown fixture profile"))?;
     let op=body.get("operation").and_then(Value::as_str).unwrap_or_default();
     if op=="mode" {let mode=body.get("mode").and_then(Value::as_str).unwrap_or("normal");*app.mode.lock().unwrap()=mode.to_owned();app.events.lock().unwrap().clear();app.ordinal.store(0, Ordering::SeqCst);*app.first_hash.lock().unwrap()=None;*app.watch_user_id.lock().unwrap()=body.get("userId").and_then(Value::as_str).unwrap_or_default().to_owned();*app.barrier.lock().unwrap()=Some(Arc::new(Barrier::new(2)));return Ok(json!({"status":true,"mode":mode}));}
     if op=="misbind-credential" {let id=body.get("accountId").and_then(Value::as_str).unwrap_or_default();let row=account::Entity::find_by_id(id).one(&db).await.map_err(database_error)?.ok_or_else(||AuthError::bad_request("missing account"))?;let mut model=row.into_active_model();model.account_id=Set(body.get("userId").and_then(Value::as_str).unwrap_or_default().to_owned());model.password=Set(None);model.updated_at=Set(chrono::Utc::now());drop(model.update(&db).await.map_err(database_error)?);return Ok(json!({"status":true}));}

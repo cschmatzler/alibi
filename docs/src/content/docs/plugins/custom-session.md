@@ -18,7 +18,7 @@ use alibi::plugin::AuthContext;
 use alibi::plugins::{CustomSessionPlugin, SessionManagementPlugin, SessionTransform};
 use alibi::prelude::AuthRequest;
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 use serde_json::Value;
 
 struct AppSession;
@@ -39,8 +39,8 @@ impl SessionTransform<AppAuthSchema> for AppSession {
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(CustomSessionPlugin::new(AppSession))
         .plugin(SessionManagementPlugin::new())

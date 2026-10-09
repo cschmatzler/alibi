@@ -23,7 +23,7 @@ const FUTURE_MILLIS: i64 = 4_102_444_800_000;
 
 async fn secondary_only<B: Backend>(
     db: &Db,
-) -> TestResult<(BetterAuth<B::Schema>, Arc<MemoryCacheAdapter>)> {
+) -> TestResult<(Alibi<B::Schema>, Arc<MemoryCacheAdapter>)> {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let cache = Arc::new(MemoryCacheAdapter::new());
     let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);

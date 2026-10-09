@@ -17,7 +17,7 @@ use alibi::email::EmailProvider;
 use alibi::plugins::email_otp::EmailOtpDelivery;
 use alibi::plugins::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 use std::sync::Arc;
 
 struct Mailer(Arc<dyn EmailProvider>);
@@ -41,8 +41,8 @@ async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
     mail: Arc<dyn EmailProvider>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(EmailOtpPlugin::new(EmailOtpConfig {
             send_verification_otp: Some(Arc::new(Mailer(mail))),
@@ -140,10 +140,10 @@ Two operations exist only on the server — handy for tests, support tools or cu
 use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::email_otp::EmailOtpType;
 use alibi::plugins::{EmailOtpConfig, EmailOtpPlugin};
-use alibi::{AuthResult, BetterAuth};
+use alibi::{AuthResult, Alibi};
 
 async fn issue_support_code(
-    auth: &BetterAuth<AppAuthSchema>,
+    auth: &Alibi<AppAuthSchema>,
     plugin: &EmailOtpPlugin,
     email: &str,
 ) -> AuthResult<String> {

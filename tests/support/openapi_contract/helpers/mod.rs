@@ -12,7 +12,7 @@ use alibi::plugins::phone_number::PhoneNumberPlugin;
 use alibi::plugins::siwe::{Eip191Verifier, RandomSiweNonce, SiweConfig, SiwePlugin};
 use alibi::seaorm::{Database, DatabaseConnection, SeaOrmStore};
 use alibi::{
-    AuthBuilder, AuthConfig, BetterAuth,
+    Alibi, AuthBuilder, AuthConfig,
     plugins::{
         AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
         EmailOtpConfig, EmailOtpPlugin, EmailPasswordPlugin, EmailVerificationPlugin,
@@ -39,7 +39,7 @@ use std::sync::{Mutex, OnceLock};
 
 type TestSchema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
-type TestAuth = BetterAuth<TestSchema>;
+type TestAuth = Alibi<TestSchema>;
 
 const MOCK_OAUTH_BASE_URL: &str = "http://127.0.0.1:3110";
 
@@ -147,7 +147,7 @@ impl TestHarness {
         }
     }
 
-    /// Access the inner `BetterAuth` reference.
+    /// Access the inner `Alibi` reference.
     pub fn auth(&self) -> &TestAuth {
         &self.auth
     }

@@ -58,7 +58,7 @@ use axum::Router;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::sqlx::{SqlxPool, SqlxStore};
-use alibi::{AuthConfig, BetterAuth};
+use alibi::{AuthConfig, Alibi};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -70,7 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let store = SqlxStore::<AppAuthSchema>::new(config.clone(), pool);
 
     let auth = Arc::new(
-        BetterAuth::<AppAuthSchema>::new(config)
+        Alibi::<AppAuthSchema>::new(config)
             .store(store)
             .plugin(EmailPasswordPlugin::new().enable_signup(true))
             .build()

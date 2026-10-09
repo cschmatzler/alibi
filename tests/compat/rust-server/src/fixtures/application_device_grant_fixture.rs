@@ -239,7 +239,7 @@ async fn observation(db: &DatabaseConnection, code: &str) -> Value {
     let receipts=db.query_all_raw(Statement::from_string(db.get_database_backend(),"SELECT row_id,owner_id,audience FROM application_grant_receipts")).await.unwrap().iter().map(|row|json!({"rowId":row.try_get::<String>("","row_id").unwrap(),"userId":row.try_get::<String>("","owner_id").unwrap(),"audience":row.try_get::<String>("","audience").unwrap()})).collect::<Vec<_>>();
     json!({"rows":values,"events":*EVENTS.lock().unwrap(),"receipts":receipts})
 }
-pub fn router(db: DatabaseConnection) -> Router<Arc<alibi::BetterAuth<TestSchema>>> {
+pub fn router(db: DatabaseConnection) -> Router<Arc<alibi::Alibi<TestSchema>>> {
     let read = db.clone();
     Router::new().route(
         "/__test/device-grant/control",

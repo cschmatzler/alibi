@@ -109,7 +109,7 @@ fn outcome(response: &AuthResponse) -> Value {
 }
 
 async fn get<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     path: &str,
     query: &[(&str, &str)],
     cookie: &str,
@@ -121,7 +121,7 @@ async fn get<S: AuthSchema>(
 
 /// Production receives the provider callback; its answer redirects to the bridge.
 async fn forward<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     state: &str,
     code: &str,
     cookie: &str,
@@ -136,7 +136,7 @@ async fn forward<S: AuthSchema>(
 }
 
 async fn bridge<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     forwarded: &AuthResponse,
     cookie: &str,
 ) -> AuthResponse {
@@ -360,7 +360,7 @@ async fn proxy_session_and_identity_failures<B: Backend>(db: Db) -> TestResult {
                 .await
         }
     };
-    let run = async |auth: &BetterAuth<B::Schema>| {
+    let run = async |auth: &Alibi<B::Schema>| {
         let (state, cookie) = authorize(auth, "/sign-in/social", input(), "").await;
         let forwarded = forward(auth, &state, "grant", &cookie).await;
         bridge(auth, &forwarded, &cookie).await

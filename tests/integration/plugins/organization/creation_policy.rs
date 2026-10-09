@@ -7,7 +7,7 @@ use alibi::seaorm::store::entities::{member, organization, session};
 use alibi::seaorm::{Database, SeaOrmStore};
 use alibi::utils::cookie_utils::create_session_cookie;
 use alibi::wire::UserView;
-use alibi::{AuthBuilder, AuthConfig, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig};
 use alibi::{AuthRequest, AuthResponse, AuthResult, HttpMethod};
 use async_trait::async_trait;
 use serde_json::{Value, json};
@@ -29,7 +29,7 @@ impl OrganizationCreationPolicy for PartialOverride {
 }
 
 async fn post(
-    auth: &BetterAuth<Schema>,
+    auth: &Alibi<Schema>,
     path: &str,
     body: Value,
     cookie: Option<&str>,

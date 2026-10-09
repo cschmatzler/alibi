@@ -131,7 +131,7 @@ pub(super) fn client(challenge: &Value) -> Value {
     reason = "each argument names one axis of the attestation matrix"
 )]
 async fn attestation_shapes_with<B: Backend>(
-    auth: &BetterAuth<B::Schema>,
+    auth: &Alibi<B::Schema>,
     owner: &str,
     trace: &mut Trace,
     label: &str,

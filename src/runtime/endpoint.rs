@@ -1,4 +1,4 @@
-use super::BetterAuth;
+use super::Alibi;
 use alibi_core::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointError, EndpointHook,
     EndpointOptions, EndpointOutput, EndpointResponse, ServerEndpoint, is_endpoint_api_error,
@@ -9,7 +9,7 @@ use alibi_core::{AuthError, AuthSchema, Headers};
 const HOOK_MATCHER_FAILURE: &str =
     "An error occurred during hook matcher execution. Check the logs for more details.";
 
-impl<S: AuthSchema> BetterAuth<S> {
+impl<S: AuthSchema> Alibi<S> {
     /// Dispatch a trusted operation through configured hooks and its installed plugin.
     ///
     /// Logical headers and input remain independent of an optional actual HTTP

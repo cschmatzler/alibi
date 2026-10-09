@@ -21,7 +21,7 @@ use alibi::seaorm::store::entities::{
 use alibi::types::{
     CreateMember, CreateOrganizationRole, CreateTeam, CreateUser, OrganizationPermissions,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult};
 use axum::{
     Json, Router,
     extract::Query,
@@ -34,7 +34,7 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-type Auth = Arc<BetterAuth<TestSchema>>;
+type Auth = Arc<Alibi<TestSchema>>;
 
 #[derive(Clone)]
 pub(crate) struct TeamProfile {

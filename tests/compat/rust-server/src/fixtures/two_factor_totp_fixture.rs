@@ -3,7 +3,7 @@ use alibi::plugins::two_factor::TwoFactorConfig;
 use alibi::seaorm::DatabaseConnection;
 use alibi::utils::json::{self, JsValue};
 use alibi::{
-    AuthBuilder, AuthConfig, AuthResult, BetterAuth,
+    Alibi, AuthBuilder, AuthConfig, AuthResult,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin},
@@ -11,7 +11,7 @@ use alibi::{
 use axum::{Json, Router, body::Bytes, http::StatusCode, response::IntoResponse, routing::post};
 use serde_json::json;
 use std::{collections::HashMap, sync::Arc};
-type Auth = Arc<BetterAuth<TestSchema>>;
+type Auth = Arc<Alibi<TestSchema>>;
 struct SessionFailure;
 #[async_trait::async_trait]
 impl alibi::seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for SessionFailure {

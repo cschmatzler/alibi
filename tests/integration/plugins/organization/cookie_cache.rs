@@ -3,14 +3,14 @@ use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::organization::{OrganizationConfig, TeamsConfig};
 use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin};
 use alibi::seaorm::{Database, SeaOrmStore};
-use alibi::{AuthBuilder, AuthConfig, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig};
 use alibi::{AuthRequest, CookieCacheConfig, CookieCacheStrategy, HttpMethod};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
-async fn build(config: AuthConfig) -> BetterAuth<Schema> {
+async fn build(config: AuthConfig) -> Alibi<Schema> {
     let database = Database::connect("sqlite::memory:").await.unwrap();
     alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await

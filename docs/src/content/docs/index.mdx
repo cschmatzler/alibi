@@ -22,9 +22,9 @@ Alibi `0.3.0` is available on [crates.io](https://crates.io/crates/alibi) and ta
 
 ```rust
 use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, TwoFactorPlugin};
-use alibi::{AuthBuilder, AuthResult, AuthSchema, BetterAuth};
+use alibi::{AuthBuilder, AuthResult, AuthSchema, Alibi};
 
-async fn with_features<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthResult<BetterAuth<S>> {
+async fn with_features<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthResult<Alibi<S>> {
     builder
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .plugin(TwoFactorPlugin::new())

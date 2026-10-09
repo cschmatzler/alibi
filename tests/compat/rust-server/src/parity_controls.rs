@@ -2,7 +2,7 @@
 
 use crate::TestSchema;
 use alibi::{
-    BetterAuth,
+    Alibi,
     prelude::{AuthAccount, AuthSession, AuthUser},
 };
 use axum::{
@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-type Auth = Arc<BetterAuth<TestSchema>>;
+type Auth = Arc<Alibi<TestSchema>>;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

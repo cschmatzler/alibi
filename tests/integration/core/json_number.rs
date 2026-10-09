@@ -7,7 +7,7 @@ use alibi::plugins::{ApiKeyPlugin, EmailPasswordPlugin};
 use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
 use alibi::seaorm::{Database, SeaOrmStore};
 use alibi::utils::cookie_utils::create_session_cookie;
-use alibi::{AuthBuilder, AuthConfig, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig};
 use alibi::{
     AuthRequest, AuthResponse, AuthResult, CreateOrganization, HttpMethod, UpdateOrganization,
 };
@@ -39,7 +39,7 @@ impl SendMagicLink for Sender {
 }
 
 async fn post(
-    auth: &BetterAuth<Schema>,
+    auth: &Alibi<Schema>,
     path: &str,
     body: &str,
     cookie: Option<&str>,

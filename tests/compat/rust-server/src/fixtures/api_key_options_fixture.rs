@@ -218,7 +218,7 @@ fn caught(error: AuthError) -> Value {
 }
 #[derive(Clone)]
 struct Fixture {
-    auth: Arc<alibi::BetterAuth<TestSchema>>,
+    auth: Arc<alibi::Alibi<TestSchema>>,
     plugin: ApiKeyPlugin,
     database: DatabaseConnection,
     application: Application,

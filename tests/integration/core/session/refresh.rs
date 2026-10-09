@@ -2,7 +2,7 @@
 
 use crate::storage::{Backend, Db, Raw, TestResult, backend_tests, on_raw, postgres_tests};
 use alibi::plugins::SessionManagementPlugin;
-use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthSchema};
 use alibi::{AuthRequest, AuthResponse, AuthSession, AuthUser, CreateUser, HttpMethod};
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
@@ -10,11 +10,7 @@ use std::sync::Arc;
 
 const ORIGIN: &str = "http://session.fixture.test";
 
-async fn fixture<B: Backend>(
-    db: Db,
-    deferred: bool,
-    disabled: bool,
-) -> (BetterAuth<B::Schema>, Db) {
+async fn fixture<B: Backend>(db: Db, deferred: bool, disabled: bool) -> (Alibi<B::Schema>, Db) {
     let mut config =
         AuthConfig::new("session-fixture-secret-at-least-32-characters").base_url(ORIGIN);
     config.session.defer_session_refresh = deferred;
@@ -22,10 +18,7 @@ async fn fixture<B: Backend>(
     fixture_with_config::<B>(db, config).await
 }
 
-async fn fixture_with_config<B: Backend>(
-    db: Db,
-    config: AuthConfig,
-) -> (BetterAuth<B::Schema>, Db) {
+async fn fixture_with_config<B: Backend>(db: Db, config: AuthConfig) -> (Alibi<B::Schema>, Db) {
     let connection = B::connect(&db.url, None).await.unwrap();
     let store = B::store(Arc::new(config.clone()), &connection);
     alibi::store::SchemaMigrator::migrate(&store).await.unwrap();
@@ -41,7 +34,7 @@ async fn fixture_with_config<B: Backend>(
     (auth, db)
 }
 
-async fn issued<S: AuthSchema>(auth: &BetterAuth<S>, email: &str) -> (String, String, String) {
+async fn issued<S: AuthSchema>(auth: &Alibi<S>, email: &str) -> (String, String, String) {
     let user = auth
         .store()
         .create_user(CreateUser::new().with_email(email))
@@ -62,7 +55,7 @@ async fn issued<S: AuthSchema>(auth: &BetterAuth<S>, email: &str) -> (String, St
 }
 
 async fn request<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     method: HttpMethod,
     path: &str,
     cookie: &str,
@@ -400,7 +393,7 @@ mod secondary {
         cache: Arc<dyn CacheAdapter>,
         stored: bool,
         preserved: bool,
-    ) -> (BetterAuth<B::Schema>, Db) {
+    ) -> (Alibi<B::Schema>, Db) {
         let mut config =
             AuthConfig::new("secondary-session-fixture-secret-at-least-32").base_url(ORIGIN);
         config.verification.secondary_storage = Some(cache.clone());

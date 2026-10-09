@@ -24,18 +24,18 @@ The generated models derive from `sqlx::FromRow`, so your application depends on
 use crate::auth_schema::{AppAuthSchema, run_app_migrations};
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::sqlx::{SqlxPool, SqlxStore};
-use alibi::{AuthConfig, BetterAuth};
+use alibi::{AuthConfig, Alibi};
 
 async fn build_auth(
     secret: &str,
     database_url: &str,
-) -> Result<BetterAuth<AppAuthSchema>, Box<dyn std::error::Error>> {
+) -> Result<Alibi<AppAuthSchema>, Box<dyn std::error::Error>> {
     let config = AuthConfig::new(secret).base_url("http://localhost:3000");
     let pool = SqlxPool::connect(database_url).await?;
     run_app_migrations(&pool).await?;
     let store = SqlxStore::<AppAuthSchema>::new(config.clone(), pool);
 
-    Ok(BetterAuth::<AppAuthSchema>::new(config)
+    Ok(Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .build()

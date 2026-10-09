@@ -82,7 +82,7 @@ fn config() -> AuthConfig {
 
 async fn exercise<S: AuthSchema>(store: Arc<dyn AuthStore<S>>) -> TestResult {
     use alibi::prelude::{AuthRequest, HttpMethod};
-    let auth = alibi::BetterAuth::<S>::new(config())
+    let auth = alibi::Alibi::<S>::new(config())
         .store_arc(store)
         .plugin(alibi::plugins::EmailPasswordPlugin::new())
         .plugin(alibi::plugins::ApiKeyPlugin::with_config(

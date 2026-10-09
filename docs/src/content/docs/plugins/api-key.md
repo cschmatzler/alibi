@@ -39,13 +39,13 @@ CREATE INDEX idx_api_keys_reference_id ON api_keys (reference_id);
 use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::ApiKeyPlugin;
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(
             ApiKeyPlugin::builder()
@@ -162,13 +162,13 @@ Verification is a **server-only** operation, not an HTTP route. It checks hash, 
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::endpoint::EndpointOptions;
 use alibi::plugins::ApiKeyPlugin;
 use alibi::plugins::api_key::ApiKeyVerificationInput;
 
 async fn authorize(
-    auth: &BetterAuth<AppAuthSchema>,
+    auth: &Alibi<AppAuthSchema>,
     presented: &str,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let result = auth
@@ -193,13 +193,13 @@ The returned `key` omits the plaintext and the hash. Permissions are `IndexMap<S
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::endpoint::EndpointOptions;
 use alibi::plugins::ApiKeyPlugin;
 use alibi::plugins::api_key::CreateKeyRequest;
 
 async fn provision(
-    auth: &BetterAuth<AppAuthSchema>,
+    auth: &Alibi<AppAuthSchema>,
     user_id: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let request = CreateKeyRequest {

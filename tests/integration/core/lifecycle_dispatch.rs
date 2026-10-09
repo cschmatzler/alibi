@@ -307,7 +307,7 @@ impl AuthPlugin<Schema> for InitializedEmail {
     }
 }
 
-async fn auth(probe: Probe) -> alibi::BetterAuth<Schema> {
+async fn auth(probe: Probe) -> alibi::Alibi<Schema> {
     let config = AuthConfig::new("dispatch-tests-only-secret-minimum-32-characters");
     let db = Database::connect("sqlite::memory:").await.unwrap();
     alibi::seaorm::store::__private_test_support::migrator::run_migrations(&db)

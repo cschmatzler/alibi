@@ -16,9 +16,9 @@ You assemble an auth instance from four parts:
 
 ```rust
 use alibi::plugins::{EmailPasswordPlugin, TwoFactorPlugin};
-use alibi::{AuthBuilder, AuthResult, AuthSchema, BetterAuth};
+use alibi::{AuthBuilder, AuthResult, AuthSchema, Alibi};
 
-async fn build<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthResult<BetterAuth<S>> {
+async fn build<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthResult<Alibi<S>> {
     builder
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .plugin(TwoFactorPlugin::new())

@@ -26,7 +26,7 @@ fn params(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<String, String> 
         .collect()
 }
 
-async fn authorization_query<S: AuthSchema>(auth: &BetterAuth<S>, input: Value) -> Value {
+async fn authorization_query<S: AuthSchema>(auth: &Alibi<S>, input: Value) -> Value {
     let response = call(auth, request("/sign-in/social", Some(input), ""), 200).await;
     let url = url::Url::parse(body(&response)["url"].as_str().unwrap()).unwrap();
     let query = url

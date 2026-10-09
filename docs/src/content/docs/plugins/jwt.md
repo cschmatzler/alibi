@@ -21,13 +21,13 @@ Adds the `jwks` table (`public_key`, `private_key`, `alg`, `crv`, `created_at`, 
 use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::jwt::JwtPlugin;
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(JwtPlugin::new())
         .build()
@@ -150,12 +150,12 @@ Sign arbitrary payloads and verify tokens from your own code through [`dispatch_
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::endpoint::EndpointOptions;
 use alibi::plugins::jwt::JwtPlugin;
 
 async fn check(
-    auth: &BetterAuth<AppAuthSchema>,
+    auth: &Alibi<AppAuthSchema>,
     token: &str,
 ) -> Result<Option<serde_json::Map<String, serde_json::Value>>, Box<dyn std::error::Error>> {
     let output = auth

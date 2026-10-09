@@ -70,7 +70,7 @@ Without a valid session the response is `null` with status 200. `GET /list-sessi
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use axum::{Json, Router, routing::get};
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::integrations::{CurrentSession, OptionalSession, axum::AxumIntegration};
 use alibi::prelude::AuthUser;
 use serde_json::{Value, json};
@@ -90,7 +90,7 @@ async fn home(session: OptionalSession<AppAuthSchema>) -> String {
     }
 }
 
-fn router(auth: Arc<BetterAuth<AppAuthSchema>>) -> Router {
+fn router(auth: Arc<Alibi<AppAuthSchema>>) -> Router {
     Router::new()
         .nest("/api/auth", auth.clone().axum_router())
         .route("/profile", get(profile))
@@ -126,15 +126,15 @@ set-cookie: better-auth.dont_remember=; Max-Age=0; Path=/; HttpOnly; SameSite=La
 
 ## Call the handler from Rust
 
-`BetterAuth::handle_request` accepts the same method, path, headers and body as an HTTP request. Use it in tests, in a framework without an adapter, or to proxy requests:
+`Alibi::handle_request` accepts the same method, path, headers and body as an HTTP request. Use it in tests, in a framework without an adapter, or to proxy requests:
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use alibi::prelude::{AuthRequest, AuthResponse, HttpMethod};
-use alibi::{AuthResult, BetterAuth};
+use alibi::{AuthResult, Alibi};
 
 async fn sign_in(
-    auth: &BetterAuth<AppAuthSchema>,
+    auth: &Alibi<AppAuthSchema>,
     email: &str,
     password: &str,
 ) -> AuthResult<AuthResponse> {

@@ -9,7 +9,7 @@ use alibi::plugins::{
 use alibi::seaorm::DatabaseConnection;
 use alibi::seaorm::sea_orm::{EntityTrait, QueryOrder};
 use alibi::seaorm::store::entities::session;
-use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthResult};
 use alibi::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute};
 use axum::{Json, Router, routing::get};
 use chrono::SecondsFormat;
@@ -50,7 +50,7 @@ pub(crate) async fn router(
     base: &AuthConfig,
     db: DatabaseConnection,
     sender: Arc<dyn alibi::plugins::email_verification::SendVerificationEmail>,
-) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
+) -> AuthResult<Router<Arc<Alibi<TestSchema>>>> {
     let mut router = Router::new();
     for name in [
         "default",

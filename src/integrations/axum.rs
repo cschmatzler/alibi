@@ -5,7 +5,7 @@ use super::shared::{
     CurrentSession, OptionalSession, auth_request, check_content_length, max_body_bytes,
     payload_too_large,
 };
-use crate::BetterAuth;
+use crate::Alibi;
 use alibi_core::{AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, core_paths};
 use axum::{
     Router,
@@ -27,17 +27,17 @@ pub trait AxumIntegration {
     /// graceful shutdown alone need not await disconnected work; runtime/process
     /// shutdown can cancel it. Only the framework request context and tracing
     /// span are carried into dispatch, not arbitrary caller task-local values.
-    fn axum_router(self) -> Router<Arc<BetterAuth<Self::Schema>>>;
+    fn axum_router(self) -> Router<Arc<Alibi<Self::Schema>>>;
 
     /// Create a router to nest into an application with its own state type.
     fn axum_router_with_state<S>(self) -> Router<S>
     where
         Self: Sized,
-        Arc<BetterAuth<Self::Schema>>: FromRef<S>,
+        Arc<Alibi<Self::Schema>>: FromRef<S>,
         S: Clone + Send + Sync + 'static;
 }
 
-impl<T: AuthSchema> AxumIntegration for Arc<BetterAuth<T>> {
+impl<T: AuthSchema> AxumIntegration for Arc<Alibi<T>> {
     type Schema = T;
 
     fn axum_router(self) -> Router<Self> {
@@ -71,13 +71,13 @@ impl<T: AuthSchema> AxumIntegration for Arc<BetterAuth<T>> {
 impl<S, T> FromRequestParts<S> for CurrentSession<T>
 where
     T: AuthSchema,
-    Arc<BetterAuth<T>>: FromRef<S>,
+    Arc<Alibi<T>>: FromRef<S>,
     S: Send + Sync,
 {
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let auth = Arc::<BetterAuth<T>>::from_ref(state);
+        let auth = Arc::<Alibi<T>>::from_ref(state);
         Self::resolve(&auth, parts.uri.path(), &parts.headers)
             .await
             .map_err(IntoResponse::into_response)
@@ -87,7 +87,7 @@ where
 impl<S, T> FromRequestParts<S> for OptionalSession<T>
 where
     T: AuthSchema,
-    Arc<BetterAuth<T>>: FromRef<S>,
+    Arc<Alibi<T>>: FromRef<S>,
     S: Send + Sync,
 {
     type Rejection = Response;
@@ -105,8 +105,8 @@ type HandlerFuture = Pin<Box<dyn Future<Output = Response> + Send>>;
 
 fn handler<T: AuthSchema>(
     supervisor: DispatchSupervisor<Response>,
-) -> impl Fn(State<Arc<BetterAuth<T>>>, Request) -> HandlerFuture + Clone {
-    move |State(auth): State<Arc<BetterAuth<T>>>, request: Request| {
+) -> impl Fn(State<Arc<Alibi<T>>>, Request) -> HandlerFuture + Clone {
+    move |State(auth): State<Arc<Alibi<T>>>, request: Request| {
         let supervisor = supervisor.clone();
         Box::pin(async move {
             match convert_request(&auth, request).await {
@@ -118,7 +118,7 @@ fn handler<T: AuthSchema>(
 }
 
 async fn convert_request<T: AuthSchema>(
-    auth: &BetterAuth<T>,
+    auth: &Alibi<T>,
     request: Request,
 ) -> AuthResult<AuthRequest> {
     let max_bytes = max_body_bytes(auth);

@@ -592,7 +592,7 @@ fn legacy_naver(profile: Value) -> Result<OAuthUserInfo, String> {
 }
 
 pub(super) async fn begin<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     name: &str,
 ) -> (HashMap<String, String>, String) {
     let started = call(auth, request("/sign-in/social", Some(json!({"provider":name,"callbackURL":format!("{ORIGIN}/done"),"errorCallbackURL":format!("{ORIGIN}/failed"),"disableRedirect":true})), ""), 200).await;
@@ -601,7 +601,7 @@ pub(super) async fn begin<S: AuthSchema>(
 }
 
 pub(super) async fn complete<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     name: &str,
     authorization: &HashMap<String, String>,
     cookie: &str,

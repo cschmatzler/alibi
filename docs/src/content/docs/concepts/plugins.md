@@ -17,13 +17,13 @@ alibi generate --plugins admin,two-factor -o src/auth_schema.rs
 use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::{AdminPlugin, EmailPasswordPlugin, TwoFactorPlugin};
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .plugin(TwoFactorPlugin::new())
@@ -80,9 +80,9 @@ Registering one of these yourself **replaces** the default with your configurati
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::BetterAuth;
+use alibi::Alibi;
 
-fn describe(auth: &BetterAuth<AppAuthSchema>) {
+fn describe(auth: &Alibi<AppAuthSchema>) {
     println!("plugins: {:?}", auth.plugin_names());
     for route in auth.registered_routes() {
         println!("{:?} {}", route.method, route.path);

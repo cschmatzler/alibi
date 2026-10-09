@@ -26,10 +26,7 @@ impl SendTwoFactorOtp for Outbox {
     }
 }
 
-async fn enroll<S: AuthSchema>(
-    auth: &BetterAuth<S>,
-    cookie: &str,
-) -> (totp_rs::Totp, Value, String) {
+async fn enroll<S: AuthSchema>(auth: &Alibi<S>, cookie: &str) -> (totp_rs::Totp, Value, String) {
     let response = call(
         auth,
         request(
@@ -47,7 +44,7 @@ async fn enroll<S: AuthSchema>(
 }
 
 /// Create a user with an active authenticator and return its code generator.
-async fn enabled_user<S: AuthSchema>(auth: &BetterAuth<S>, email: &str) -> totp_rs::Totp {
+async fn enabled_user<S: AuthSchema>(auth: &Alibi<S>, email: &str) -> totp_rs::Totp {
     let owner = cookies(&signup(auth, email).await);
     let (totp, _, _) = enroll(auth, &owner).await;
     let _ = call(
@@ -64,7 +61,7 @@ async fn enabled_user<S: AuthSchema>(auth: &BetterAuth<S>, email: &str) -> totp_
 }
 
 async fn sign_in<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     email: &str,
     extra: Value,
     cookie: &str,

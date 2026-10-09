@@ -1,7 +1,7 @@
 //! Common traits and data types used by handlers, tests, hooks, and direct dispatch.
 
 pub use crate::{
-    AuthBuilder, AuthConfig, AuthError, AuthResult, AuthSchema, AuthenticatedUser, BetterAuth,
+    Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult, AuthSchema, AuthenticatedUser,
 };
 pub use alibi_core::entity::{
     AuthAccount, AuthApiKey, AuthInvitation, AuthMember, AuthOrganization, AuthPasskey,

@@ -19,13 +19,13 @@ Adds the nullable `users.is_anonymous` column (`isAnonymous` in API output, defa
 use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::AnonymousPlugin;
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(AnonymousPlugin::new())
         .build()

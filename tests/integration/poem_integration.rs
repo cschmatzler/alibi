@@ -209,10 +209,7 @@ async fn wire_and_authority<B: Backend>(db: Db) -> TestResult {
     B::close(connection).await
 }
 
-async fn denied_session<S: AuthSchema>(
-    auth: &Arc<alibi::BetterAuth<S>>,
-    cookie: &str,
-) -> TestResult {
+async fn denied_session<S: AuthSchema>(auth: &Arc<alibi::Alibi<S>>, cookie: &str) -> TestResult {
     let mut req = request(Method::GET, "/profile", ());
     let _ = req.headers_mut().insert("cookie", cookie.parse()?);
     req.set_data(auth.clone());

@@ -19,7 +19,7 @@ use crate::auth_schema::AppAuthSchema;
 use async_trait::async_trait;
 use alibi::email::EmailProvider;
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthError, AuthResult, Alibi};
 
 struct HttpMailer {
     client: reqwest::Client,
@@ -49,8 +49,8 @@ async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
     mailer: HttpMailer,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .email_provider(mailer)
         .build()

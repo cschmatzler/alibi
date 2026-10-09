@@ -14,7 +14,7 @@ use alibi::seaorm::{
     sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder},
     store::entities::verification,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult};
 use alibi::{AuthRequest, CreateVerification, DatabaseError, HttpMethod, wire::VerificationView};
 use async_trait::async_trait;
 use axum::{
@@ -193,7 +193,7 @@ impl alibi::plugins::email_otp::EmailOtpGenerator for Sender {
 }
 #[derive(Clone)]
 struct Runtime {
-    auth: Arc<BetterAuth<TestSchema>>,
+    auth: Arc<Alibi<TestSchema>>,
     otp: EmailOtpPlugin,
 }
 #[derive(Deserialize)]
@@ -261,7 +261,7 @@ pub(super) async fn router(
     database: DatabaseConnection,
     outbox: Outbox,
     verification_outbox: Arc<Mutex<HashMap<String, EmailOutboxRecord>>>,
-    default_auth: Arc<BetterAuth<TestSchema>>,
+    default_auth: Arc<Alibi<TestSchema>>,
     default_otp: EmailOtpPlugin,
 ) -> AuthResult<Router> {
     let mut router = Router::new();

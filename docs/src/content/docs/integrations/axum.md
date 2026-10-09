@@ -15,7 +15,7 @@ axum = "0.8"
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use axum::{Router, routing::get};
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::integrations::{CurrentSession, axum::AxumIntegration};
 use alibi::prelude::AuthUser;
 use std::sync::Arc;
@@ -24,7 +24,7 @@ async fn profile(session: CurrentSession<AppAuthSchema>) -> String {
     format!("Hello, {}", session.user.id())
 }
 
-fn router(auth: Arc<BetterAuth<AppAuthSchema>>) -> Router {
+fn router(auth: Arc<Alibi<AppAuthSchema>>) -> Router {
     Router::new()
         .nest("/api/auth", auth.clone().axum_router())
         .route("/profile", get(profile))
@@ -32,9 +32,9 @@ fn router(auth: Arc<BetterAuth<AppAuthSchema>>) -> Router {
 }
 ```
 
-- `axum_router()` is implemented for `Arc<BetterAuth<S>>`. It returns a `Router<Arc<BetterAuth<S>>>`, so the application state is the auth instance.
+- `axum_router()` is implemented for `Arc<Alibi<S>>`. It returns a `Router<Arc<Alibi<S>>>`, so the application state is the auth instance.
 - Nest it at `AuthConfig::base_path` (`/api/auth` by default). Auth dispatch itself owns method matching, disabled paths and trailing-slash policy, so the nested router answers `405`/`404` exactly like the reference server rather than Axum's own defaults.
-- The extractors need `Arc<BetterAuth<S>>` in the router state.
+- The extractors need `Arc<Alibi<S>>` in the router state.
 
 ## Extractors
 
@@ -101,17 +101,17 @@ When your application has its own state, implement `FromRef` and mount with `axu
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use axum::{Router, extract::FromRef};
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::integrations::axum::AxumIntegration;
 use std::sync::Arc;
 
 #[derive(Clone)]
 struct AppState {
-    auth: Arc<BetterAuth<AppAuthSchema>>,
+    auth: Arc<Alibi<AppAuthSchema>>,
     // db: sqlx::PgPool, config: …
 }
 
-impl FromRef<AppState> for Arc<BetterAuth<AppAuthSchema>> {
+impl FromRef<AppState> for Arc<Alibi<AppAuthSchema>> {
     fn from_ref(state: &AppState) -> Self {
         state.auth.clone()
     }
@@ -134,12 +134,12 @@ Apply tower layers around the nested router like any other Axum service:
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use axum::{Router, http::{HeaderValue, Method, header}};
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::integrations::axum::AxumIntegration;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
-fn router(auth: Arc<BetterAuth<AppAuthSchema>>) -> Router {
+fn router(auth: Arc<Alibi<AppAuthSchema>>) -> Router {
     let cors = CorsLayer::new()
         .allow_origin("https://app.example.com".parse::<HeaderValue>().unwrap())
         .allow_methods([Method::GET, Method::POST])

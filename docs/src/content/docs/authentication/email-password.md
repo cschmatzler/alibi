@@ -11,13 +11,13 @@ description: "Password sign-up and sign-in, password policy, reset and change fl
 use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(
             EmailPasswordPlugin::new()
@@ -122,7 +122,7 @@ use async_trait::async_trait;
 use alibi::email::EmailProvider;
 use alibi::plugins::{PasswordManagementPlugin, SendResetPassword};
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 use chrono::Duration;
 use std::sync::Arc;
 
@@ -140,8 +140,8 @@ async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
     mail: Arc<dyn EmailProvider>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(
             PasswordManagementPlugin::new()

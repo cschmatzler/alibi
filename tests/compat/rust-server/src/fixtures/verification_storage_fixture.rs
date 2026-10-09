@@ -18,7 +18,7 @@ use alibi::seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ActiveModelTrait, Set},
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult};
 use alibi::{
     AuthRequest, UpdateVerification,
     store::{CacheAdapter, transaction},
@@ -554,10 +554,7 @@ fn creation(body: &Value) -> AuthResult<VerificationCreation> {
             .unwrap_or(now),
     })
 }
-async fn sql_state(
-    auth: &BetterAuth<TestSchema>,
-    database: &DatabaseConnection,
-) -> AuthResult<Value> {
+async fn sql_state(auth: &Alibi<TestSchema>, database: &DatabaseConnection) -> AuthResult<Value> {
     let users = crate::backend::rows::<user::Model>(
         database,
         "SELECT * FROM users ORDER BY created_at",

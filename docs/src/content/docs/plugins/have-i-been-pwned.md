@@ -11,13 +11,13 @@ description: "Reject passwords that appear in known data breaches, without ever 
 use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::{EmailPasswordPlugin, HaveIBeenPwnedPlugin};
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .plugin(HaveIBeenPwnedPlugin::new())

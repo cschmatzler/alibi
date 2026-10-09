@@ -11,13 +11,13 @@ A one-time token (OTT) lets an already signed-in session be **handed off** to a 
 use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::one_time_token::OneTimeTokenPlugin;
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(OneTimeTokenPlugin::new())
         .build()
@@ -80,12 +80,12 @@ fn ott() -> OneTimeTokenPlugin {
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::endpoint::EndpointOptions;
 use alibi::plugins::one_time_token::OneTimeTokenPlugin;
 
 async fn exchange(
-    auth: &BetterAuth<AppAuthSchema>,
+    auth: &Alibi<AppAuthSchema>,
     token: &str,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let session = auth

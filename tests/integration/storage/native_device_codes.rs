@@ -2,7 +2,7 @@
 use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
 use alibi::plugins::{DeviceAuthorizationPlugin, EmailPasswordPlugin};
-use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthSchema};
 use alibi::{AuthRequest, AuthResponse, AuthSession, HttpMethod, UpdateDeviceCode};
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
@@ -30,7 +30,7 @@ fn body(response: &AuthResponse) -> Value {
     serde_json::from_slice(&response.body).unwrap()
 }
 async fn call<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     trace: &mut Vec<Value>,
     path: &str,
     input: Option<Value>,
@@ -192,7 +192,7 @@ async fn without_database_native_device_workflow() -> TestResult {
     }
     Ok(())
 }
-async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, backend: &str) -> TestResult<String> {
+async fn workflow<S: AuthSchema>(auth: &Alibi<S>, backend: &str) -> TestResult<String> {
     let mut trace = Vec::new();
     let mut cookies = Vec::new();
     for name in ["owner", "other"] {

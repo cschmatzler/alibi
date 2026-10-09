@@ -264,7 +264,7 @@ async fn custom_session_fields_seaorm_postgres() -> TestResult {
 }
 
 async fn exercise<S: AuthSchema>(
-    auth: BetterAuth<S>,
+    auth: Alibi<S>,
     db: &Db,
     asynchronous: AsyncObservation,
 ) -> TestResult {
@@ -589,7 +589,7 @@ fn secondary_config() -> AuthConfig {
 }
 
 async fn secondary_exercise<S: AuthSchema>(
-    auth: BetterAuth<S>,
+    auth: Alibi<S>,
     db: &Db,
     hooks: &SessionHooks,
 ) -> TestResult {

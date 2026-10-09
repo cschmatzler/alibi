@@ -14,14 +14,14 @@ use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::captcha::TurnstileConfig;
 use alibi::plugins::{CaptchaConfig, CaptchaPlugin, CaptchaProvider};
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
     turnstile_secret: &str,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(CaptchaPlugin::new(CaptchaConfig::new(
             CaptchaProvider::CloudflareTurnstile(TurnstileConfig::new(turnstile_secret)),

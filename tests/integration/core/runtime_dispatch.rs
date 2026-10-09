@@ -203,7 +203,7 @@ impl<S: AuthSchema> AuthPlugin<S> for Edge {
     }
 }
 
-async fn edge_auth(config: AuthConfig) -> alibi::BetterAuth<Schema> {
+async fn edge_auth(config: AuthConfig) -> alibi::Alibi<Schema> {
     AuthBuilder::without_database(config)
         .plugin(Edge)
         .build()
@@ -225,7 +225,7 @@ fn post(path: &str, content_type: Option<&str>, body: &[u8]) -> AuthRequest {
     request
 }
 
-async fn body_of(auth: &alibi::BetterAuth<Schema>, request: AuthRequest) -> (u16, Value) {
+async fn body_of(auth: &alibi::Alibi<Schema>, request: AuthRequest) -> (u16, Value) {
     let response = auth.handle_request(request).await.unwrap();
     let body = serde_json::from_slice(&response.body).unwrap_or(Value::Null);
     (response.status, body)

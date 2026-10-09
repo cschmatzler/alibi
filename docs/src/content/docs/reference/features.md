@@ -27,7 +27,7 @@ alibi = { version = "0.3.0", default-features = false, features = ["axum", "sqlx
 - **Pick exactly one TLS feature.** The default is `native-tls`; to use `rustls`, disable default features.
 - **Passkeys are opt-in.** Add `passkey` to use `PasskeyPlugin`. Without it, a Rustls build has no OpenSSL dependency. Passkey verification requires OpenSSL independently of the HTTP and database TLS stack.
 - **Pick the engine you use.** Disabling default features and selecting `sqlx-sqlite` *or* `sqlx-postgres` removes the other engine's code. `SqlxPool::connect` returns a configuration error for a URL whose engine is not compiled in.
-- **Frameworks are opt-in.** Without `axum` or `poem`, use `BetterAuth::handle_request` directly ([Other frameworks](/integrations/other-frameworks/)).
+- **Frameworks are opt-in.** Without `axum` or `poem`, use `Alibi::handle_request` directly ([Other frameworks](/integrations/other-frameworks/)).
 - **SeaORM and SQLx are independent.** Enable one or both; each provides its own store, hooks and rate-limit storage.
 
 ## Common combinations

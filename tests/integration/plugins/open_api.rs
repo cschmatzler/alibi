@@ -11,7 +11,7 @@ use alibi::plugin::{
 use alibi::plugins::{OpenApiConfig, OpenApiPlugin};
 use alibi::seaorm::store::entities::{account, session, user, verification};
 use alibi::seaorm::{Database, SeaOrmStore};
-use alibi::{AuthBuilder, AuthConfig, AuthResult, AuthSchema, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthResult, AuthSchema};
 use alibi::{AuthRequest, AuthResponse, HttpMethod};
 use async_trait::async_trait;
 use serde_json::{Value, json};
@@ -140,7 +140,7 @@ impl AuthPlugin<AppSchema> for AppPlugin {
     }
 }
 
-async fn handle(auth: &BetterAuth<AppSchema>, request: AuthRequest) -> AuthResult<AuthResponse> {
+async fn handle(auth: &Alibi<AppSchema>, request: AuthRequest) -> AuthResult<AuthResponse> {
     Box::pin(auth.handle_request(request)).await
 }
 

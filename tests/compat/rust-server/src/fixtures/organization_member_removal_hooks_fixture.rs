@@ -5,7 +5,7 @@ use alibi::seaorm::{
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use alibi::{
-    AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
+    Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::organization::{
@@ -237,7 +237,7 @@ impl OrganizationMemberRemovalHooks for Hooks {
 pub(crate) async fn router(
     base: &AuthConfig,
     database: DatabaseConnection,
-) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
+) -> AuthResult<Router<Arc<Alibi<TestSchema>>>> {
     let hooks = Arc::new(Hooks {
         database: database.clone(),
         store: Arc::new(crate::backend::store(base.clone(), database)),

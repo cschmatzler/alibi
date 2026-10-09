@@ -1,7 +1,7 @@
 //! Controlled invitation clocks; these routes are outside the auth router.
 
 use crate::TestSchema;
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::seaorm::sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use alibi::seaorm::store::entities::invitation;
 use axum::{Json, Router, extract::State, http::StatusCode, routing::post};
@@ -17,12 +17,11 @@ struct ExpireInvitation {
     expires_at: DateTime<Utc>,
 }
 
-pub(crate) fn router(database: DatabaseConnection) -> Router<Arc<BetterAuth<TestSchema>>> {
+pub(crate) fn router(database: DatabaseConnection) -> Router<Arc<Alibi<TestSchema>>> {
     Router::new().route(
         "/__test/expire-invitation",
         post(
-            move |State(_): State<Arc<BetterAuth<TestSchema>>>,
-                  Json(body): Json<ExpireInvitation>| {
+            move |State(_): State<Arc<Alibi<TestSchema>>>, Json(body): Json<ExpireInvitation>| {
                 let database = database.clone();
                 async move {
                     match invitation::Entity::update_many()

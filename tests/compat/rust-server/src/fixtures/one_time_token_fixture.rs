@@ -15,7 +15,7 @@ use alibi::plugins::{
 };
 use alibi::prelude::{AuthRequest, HttpMethod};
 use alibi::seaorm::DatabaseConnection;
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult};
 use alibi::{AuthContext, AuthPlugin, AuthResponse, AuthRoute};
 use axum::{
     Json, Router,
@@ -30,7 +30,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-type Auth = Arc<BetterAuth<TestSchema>>;
+type Auth = Arc<Alibi<TestSchema>>;
 const PROFILES: &[&str] = &[
     "ott-composed",
     "ott-custom-callback",

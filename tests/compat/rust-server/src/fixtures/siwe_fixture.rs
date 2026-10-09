@@ -13,7 +13,7 @@ use alibi::seaorm::sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr,
 };
 use alibi::seaorm::store::entities::{account, session, user, verification, wallet_address};
-use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthResult};
 use async_trait::async_trait;
 use axum::{
     Json, Router,
@@ -144,7 +144,7 @@ impl EnsLookup for Lookup {
 struct ControlState {
     state: SharedState,
     database: DatabaseConnection,
-    auth: Arc<BetterAuth<TestSchema>>,
+    auth: Arc<Alibi<TestSchema>>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

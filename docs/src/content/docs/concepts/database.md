@@ -49,7 +49,7 @@ impl AuthSchema for AppAuthSchema {
 }
 ```
 
-Include it with `mod auth_schema;` and use `AppAuthSchema` as the type parameter of `BetterAuth`, `SqlxStore` and every extractor. Regenerate whenever you add a plugin that needs columns, review the diff, and write the matching migration. See the [CLI reference](/reference/cli/) for all flags.
+Include it with `mod auth_schema;` and use `AppAuthSchema` as the type parameter of `Alibi`, `SqlxStore` and every extractor. Regenerate whenever you add a plugin that needs columns, review the diff, and write the matching migration. See the [CLI reference](/reference/cli/) for all flags.
 
 ## Plugin schema
 

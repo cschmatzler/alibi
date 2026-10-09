@@ -74,7 +74,7 @@ mod verification_cache;
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
-use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthSchema};
 use alibi::{AuthRequest, AuthResponse, HttpMethod};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
@@ -110,11 +110,7 @@ fn request(path: &str, body: Option<Value>, cookie: &str) -> AuthRequest {
     request
 }
 
-async fn call<S: AuthSchema>(
-    auth: &BetterAuth<S>,
-    request: AuthRequest,
-    status: u16,
-) -> AuthResponse {
+async fn call<S: AuthSchema>(auth: &Alibi<S>, request: AuthRequest, status: u16) -> AuthResponse {
     let path = request.path.clone();
     let response = Box::pin(auth.handle_request(request)).await.unwrap();
     assert_eq!(
@@ -148,7 +144,7 @@ fn cookies(response: &AuthResponse) -> String {
         .join("; ")
 }
 
-async fn signup<S: AuthSchema>(auth: &BetterAuth<S>, email: &str) -> AuthResponse {
+async fn signup<S: AuthSchema>(auth: &Alibi<S>, email: &str) -> AuthResponse {
     call(
         auth,
         request(
@@ -161,7 +157,7 @@ async fn signup<S: AuthSchema>(auth: &BetterAuth<S>, email: &str) -> AuthRespons
     .await
 }
 
-async fn authenticated<S: AuthSchema>(auth: &BetterAuth<S>, cookie: &str, email: &str) {
+async fn authenticated<S: AuthSchema>(auth: &Alibi<S>, cookie: &str, email: &str) {
     let session = call(auth, request("/get-session", None, cookie), 200).await;
     assert_eq!(body(&session)["user"]["email"], email);
     assert!(

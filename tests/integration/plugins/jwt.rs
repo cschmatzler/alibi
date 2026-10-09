@@ -6,7 +6,7 @@ use alibi::plugins::jwt::{
 use alibi::plugins::{ApiKeyPlugin, SessionManagementPlugin};
 use alibi::seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use alibi::seaorm::{Database, SeaOrmStore};
-use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthResult};
 use alibi::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, AuthSession, AuthUser,
     CreateUser, HttpMethod,
@@ -80,7 +80,7 @@ async fn fixture(
     deferred: bool,
     disabled: bool,
 ) -> (
-    BetterAuth<Schema>,
+    Alibi<Schema>,
     DatabaseConnection,
     JwtPlugin,
     Arc<ObservedClaims>,
@@ -125,7 +125,7 @@ async fn fixture(
     (auth, db, jwt, observed)
 }
 
-async fn issued(auth: &BetterAuth<Schema>, email: &str) -> (String, String, String) {
+async fn issued(auth: &Alibi<Schema>, email: &str) -> (String, String, String) {
     let user = auth
         .store()
         .create_user(CreateUser::new().with_email(email))
@@ -152,12 +152,7 @@ fn request(path: &str, cookie: &str) -> AuthRequest {
     req
 }
 
-async fn age(
-    auth: &BetterAuth<Schema>,
-    db: &DatabaseConnection,
-    token: &str,
-    expired: bool,
-) -> Value {
+async fn age(auth: &Alibi<Schema>, db: &DatabaseConnection, token: &str, expired: bool) -> Value {
     auth.store()
         .update_session_expiry(
             token,
@@ -191,7 +186,7 @@ async fn writes(db: &DatabaseConnection) -> i64 {
     .unwrap()
 }
 
-async fn verified(jwt: &JwtPlugin, auth: &BetterAuth<Schema>, token: &str) -> Map<String, Value> {
+async fn verified(jwt: &JwtPlugin, auth: &Alibi<Schema>, token: &str) -> Map<String, Value> {
     jwt.verify_jwt(token, None, None, auth.context())
         .await
         .unwrap()

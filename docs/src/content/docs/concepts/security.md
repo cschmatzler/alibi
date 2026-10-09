@@ -68,13 +68,13 @@ A browser app on another origin needs CORS headers and credentialed requests. Re
 use crate::auth_schema::AppAuthSchema;
 use alibi::middleware::CorsConfig;
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .cors(
             CorsConfig::new()
@@ -110,15 +110,15 @@ To use a framework CORS layer such as `tower-http`'s `CorsLayer`, leave `CorsCon
 use crate::auth_schema::AppAuthSchema;
 use alibi::middleware::BodyLimitConfig;
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
+) -> AuthResult<Alibi<AppAuthSchema>> {
     // Hide a route entirely: matching requests receive 404.
     let config = config.disabled_path("/sign-up/email");
-    BetterAuth::<AppAuthSchema>::new(config)
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .body_limit(BodyLimitConfig::new().max_bytes(64 * 1024)) // default is 1 MiB
         .build()

@@ -11,27 +11,27 @@
 )]
 
 use crate::contract::helpers::*;
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::entity::AuthUser;
 use alibi::store::UserStore;
 use std::sync::Arc;
 
 type TestSchema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
-fn test_session_cookie(token: &str, auth: &BetterAuth<TestSchema>) -> String {
+fn test_session_cookie(token: &str, auth: &Alibi<TestSchema>) -> String {
     format!(
         "better-auth.session_token={}",
         alibi::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
     )
 }
 
-/// Helper to create test `BetterAuth` instance with memory database
-async fn create_test_auth_memory() -> Arc<BetterAuth<TestSchema>> {
+/// Helper to create test `Alibi` instance with memory database
+async fn create_test_auth_memory() -> Arc<Alibi<TestSchema>> {
     TestHarness::minimal().await.into_arc()
 }
 
 /// Helper to create user and get session token
-async fn create_test_user_and_session(auth: Arc<BetterAuth<TestSchema>>) -> (String, String) {
+async fn create_test_user_and_session(auth: Arc<Alibi<TestSchema>>) -> (String, String) {
     let req = post_json(
         "/sign-up/email",
         serde_json::json!({
@@ -48,7 +48,7 @@ async fn create_test_user_and_session(auth: Arc<BetterAuth<TestSchema>>) -> (Str
     (user_id, session_token)
 }
 
-async fn user_id_from_email(auth: &Arc<BetterAuth<TestSchema>>, email: &str) -> String {
+async fn user_id_from_email(auth: &Arc<Alibi<TestSchema>>, email: &str) -> String {
     auth.store()
         .get_user_by_email(email)
         .await
@@ -61,7 +61,7 @@ async fn user_id_from_email(auth: &Arc<BetterAuth<TestSchema>>, email: &str) -> 
 // ---------------------------------------------------------------------------
 
 /// Helper: create auth with `ApiKeyPlugin` and return auth + session token
-async fn create_auth_with_apikey() -> (Arc<BetterAuth<TestSchema>>, String, String) {
+async fn create_auth_with_apikey() -> (Arc<Alibi<TestSchema>>, String, String) {
     let auth = create_test_auth_memory().await;
     let (user_id, session_token) = create_test_user_and_session(Arc::clone(&auth)).await;
     (auth, user_id, session_token)
@@ -69,7 +69,7 @@ async fn create_auth_with_apikey() -> (Arc<BetterAuth<TestSchema>>, String, Stri
 
 /// Create an API key and return (`raw_key`, `key_id`)
 async fn create_api_key(
-    auth: &BetterAuth<TestSchema>,
+    auth: &Alibi<TestSchema>,
     token: &str,
     body: serde_json::Value,
 ) -> (String, String) {

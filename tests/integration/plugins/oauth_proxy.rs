@@ -9,7 +9,7 @@ use alibi::plugins::oauth::OAuthProvider;
 use alibi::plugins::{
     EmailPasswordPlugin, OAuthPlugin, OAuthProxyConfig, OAuthProxyPlugin, SessionManagementPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthSchema};
 use alibi::{AuthRequest, AuthResponse, AuthSession, AuthUser, HttpMethod};
 use axum::{
     Json, Router,
@@ -39,8 +39,8 @@ struct Provider {
 }
 
 struct Fixture<B: Backend> {
-    preview: BetterAuth<B::Schema>,
-    production: BetterAuth<B::Schema>,
+    preview: Alibi<B::Schema>,
+    production: Alibi<B::Schema>,
     preview_db: Db,
     production_db: Db,
     _connections: (B::Connection, B::Connection),
@@ -211,7 +211,7 @@ impl<B: Backend> Drop for Fixture<B> {
 }
 
 async fn request<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     path: &str,
     body: Option<Value>,
     cookie: Option<&str>,
@@ -283,7 +283,7 @@ async fn build<B: Backend>(
     database: &B::Connection,
     proxy: bool,
     options: Options,
-) -> BetterAuth<B::Schema> {
+) -> Alibi<B::Schema> {
     let mut config = AuthConfig::new(SECRET)
         .base_url(origin)
         .trusted_origin(PREVIEW)

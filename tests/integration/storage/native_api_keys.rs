@@ -7,7 +7,7 @@ use alibi::plugins::api_key::{
     ApiKeyConfig, ApiKeyPlugin, ApiKeyVerificationInput, CreateKeyRequest, UpdateKeyRequest,
 };
 use alibi::store::ConsumeApiKeyResult;
-use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthSchema};
 use alibi::{AuthRequest, AuthResponse, HttpMethod, UpdateApiKey};
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
@@ -64,7 +64,7 @@ fn cookies(response: &AuthResponse) -> String {
         .join("; ")
 }
 async fn call<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     trace: &mut Vec<Value>,
     path: &str,
     input: Option<Value>,
@@ -276,7 +276,7 @@ async fn without_database_native_api_key_workflow() -> TestResult {
     assert!(auth.store().get_api_key_by_id(&id).await?.is_none());
     Ok(())
 }
-async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, backend: &str) -> TestResult {
+async fn workflow<S: AuthSchema>(auth: &Alibi<S>, backend: &str) -> TestResult {
     let mut trace = Vec::new();
     let signup = call(
         auth,

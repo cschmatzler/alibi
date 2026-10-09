@@ -20,7 +20,7 @@ fn payload(response: &AuthResponse) -> Value {
     .unwrap()
 }
 
-async fn start<S: AuthSchema>(auth: &BetterAuth<S>, query: &[(&str, &str)]) -> AuthResponse {
+async fn start<S: AuthSchema>(auth: &Alibi<S>, query: &[(&str, &str)]) -> AuthResponse {
     let mut req = request("/oauth-popup/start", None, "");
     req.set_query_pairs(
         [("popupOrigin", ORIGIN), ("popupNonce", "nonce-1")]

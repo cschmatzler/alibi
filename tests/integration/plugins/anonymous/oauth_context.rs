@@ -8,7 +8,7 @@ use crate::storage::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use alibi::plugins::anonymous::{AnonymousConfig, AnonymousLink, LinkAnonymousAccount};
 use alibi::plugins::oauth::OAuthProvider;
 use alibi::plugins::{AnonymousPlugin, EmailPasswordPlugin, OAuthPlugin};
-use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthSchema};
 use alibi::{
     AuthRequest, AuthResponse, AuthResult, AuthSession, AuthUser, AuthVerification, HttpMethod,
 };
@@ -75,7 +75,7 @@ fn cookies(response: &AuthResponse) -> String {
 }
 
 async fn initiate<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     cookie: &str,
     foreign: &str,
 ) -> (String, String, Value) {
@@ -105,7 +105,7 @@ async fn initiate<S: AuthSchema>(
     )
 }
 
-async fn callback<S: AuthSchema>(auth: &BetterAuth<S>, state: &str, cookie: &str) -> AuthResponse {
+async fn callback<S: AuthSchema>(auth: &Alibi<S>, state: &str, cookie: &str) -> AuthResponse {
     let mut request = request("/api/auth/callback/gitlab", None, Some(cookie));
     drop(
         request

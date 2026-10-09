@@ -65,7 +65,7 @@ use axum::Router;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::sqlx::{SqlxPool, SqlxStore};
-use alibi::{AuthConfig, BetterAuth};
+use alibi::{AuthConfig, Alibi};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -77,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let store = SqlxStore::<AppAuthSchema>::new(config.clone(), pool);
 
     let auth = Arc::new(
-        BetterAuth::<AppAuthSchema>::new(config)
+        Alibi::<AppAuthSchema>::new(config)
             .store(store)
             .plugin(EmailPasswordPlugin::new().enable_signup(true))
             .build()
@@ -99,7 +99,7 @@ What each step does:
 2. `SqlxPool::connect` selects SQLite or PostgreSQL from the URL scheme.
 3. `run_app_migrations` creates the generated tables. It is meant for new local databases; use your own versioned migrations as the schema evolves (see [Database](/concepts/database/)).
 4. `.plugin(...)` registers features. Credential sign-in is disabled until `EmailPasswordPlugin` is registered, and signup is off until `enable_signup(true)`.
-5. `.build().await` validates the configuration, initializes every plugin and returns a `BetterAuth<AppAuthSchema>`.
+5. `.build().await` validates the configuration, initializes every plugin and returns a `Alibi<AppAuthSchema>`.
 6. `axum_router()` returns the auth routes. Nest it at `AuthConfig::base_path` — `/api/auth` unless you change it.
 
 ## 5. Try it

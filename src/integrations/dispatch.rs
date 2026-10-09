@@ -1,6 +1,6 @@
 //! Router-owned dispatch continues after a fully buffered client request disconnects.
 
-use crate::BetterAuth;
+use crate::Alibi;
 use alibi_core::{AuthError, AuthRequest, AuthResponse, AuthSchema};
 use std::sync::{Arc, Mutex};
 use tokio::{
@@ -41,7 +41,7 @@ impl<R: Send + 'static> DispatchSupervisor<R> {
 
     pub(super) async fn dispatch<S: AuthSchema>(
         &self,
-        auth: Arc<BetterAuth<S>>,
+        auth: Arc<Alibi<S>>,
         request: AuthRequest,
     ) -> R {
         let failure = || (self.render)(Err(AuthError::internal("Authentication request failed")));
