@@ -1,3 +1,4 @@
+use alibi_core::WalletAddress;
 use sea_orm::entity::prelude::*;
 
 /// Better Auth's number columns use SQLite INTEGER affinity.
@@ -119,7 +120,7 @@ pub struct Model {
 pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}
 
-impl From<Model> for alibi_core::WalletAddress {
+impl From<Model> for WalletAddress {
     fn from(row: Model) -> Self {
         Self {
             id: row.id,

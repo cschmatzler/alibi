@@ -1,9 +1,10 @@
-use super::ScopedTransaction;
-use super::{SeaOrmStore, map_db_err};
+use super::{ScopedTransaction, SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmSessionModel};
 use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::field_policy::FieldValues;
 use alibi_core::store::SessionStore;
 use alibi_core::types::CreateSession;
+use alibi_core::utils::json::JsValue;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sea_orm::{
@@ -63,10 +64,7 @@ where
         ];
         for (name, destination) in &mut typed_fields {
             if let Some(value) = destination.as_ref() {
-                fields.preserve_creation_value(
-                    name,
-                    alibi_core::utils::json::JsValue::String(value.clone()),
-                );
+                fields.preserve_creation_value(name, JsValue::String(value.clone()));
             }
             // Configured values now belong to the adapter input. A transform
             // that omits one must also omit its original typed creation value.
@@ -137,8 +135,8 @@ where
         tx: Option<&ScopedTransaction>,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        mut fields: alibi_core::field_policy::FieldValues,
-    ) -> AuthResult<Option<(S::Session, alibi_core::field_policy::FieldValues)>> {
+        mut fields: FieldValues,
+    ) -> AuthResult<Option<(S::Session, FieldValues)>> {
         use alibi_core::AuthSession;
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
@@ -171,7 +169,7 @@ where
         tx: Option<&ScopedTransaction>,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        mut fields: alibi_core::field_policy::FieldValues,
+        mut fields: FieldValues,
         persist: bool,
     ) -> AuthResult<Option<S::Session>> {
         use alibi_core::AuthSession;
@@ -255,7 +253,7 @@ where
         &self,
         token: &str,
         expires_at: Option<DateTime<Utc>>,
-        mut fields: alibi_core::field_policy::FieldValues,
+        mut fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         let hook_context = self.hook_context(None);
         for hook in self.hooks() {
@@ -376,8 +374,8 @@ where
         &self,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        fields: alibi_core::field_policy::FieldValues,
-    ) -> AuthResult<Option<(S::Session, alibi_core::field_policy::FieldValues)>> {
+        fields: FieldValues,
+    ) -> AuthResult<Option<(S::Session, FieldValues)>> {
         self.prepare_secondary_update_with_connection(
             self.scoped_connection(),
             None,
@@ -391,7 +389,7 @@ where
         &self,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        fields: alibi_core::field_policy::FieldValues,
+        fields: FieldValues,
         persist: bool,
     ) -> AuthResult<Option<S::Session>> {
         self.complete_secondary_update_with_connection(
@@ -550,7 +548,7 @@ where
     async fn update_session_fields(
         &self,
         token: &str,
-        fields: alibi_core::field_policy::FieldValues,
+        fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         self.update_session_with_fields(token, None, fields).await
     }
@@ -579,7 +577,7 @@ where
         &self,
         token: &str,
         expires_at: DateTime<Utc>,
-        fields: alibi_core::field_policy::FieldValues,
+        fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         self.update_session_with_fields(token, Some(expires_at), fields)
             .await

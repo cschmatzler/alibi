@@ -3,7 +3,8 @@ use super::{SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmSessionModel, SeaOrmUserModel};
 use alibi_core::entity::AuthUser;
 use alibi_core::error::{AuthError, AuthResult};
-use alibi_core::store::InvitationStore;
+use alibi_core::store::{InvitationCreateOptions, InvitationStore};
+use alibi_core::types::{AddTeamMemberResult, Member};
 use alibi_core::{CreateInvitation, Invitation, InvitationStatus};
 use async_trait::async_trait;
 use chrono::Utc;
@@ -30,7 +31,7 @@ where
     async fn create_invitation_with_options(
         &self,
         invitation: CreateInvitation,
-        options: alibi_core::store::InvitationCreateOptions,
+        options: InvitationCreateOptions,
     ) -> AuthResult<Invitation> {
         ActiveModel {
             id: Set(match options.id {
@@ -93,7 +94,7 @@ where
         session_token: &str,
         team_limits: &[(String, Option<f64>)],
         membership_limit: Option<usize>,
-    ) -> AuthResult<Option<(Invitation, alibi_core::types::Member)>> {
+    ) -> AuthResult<Option<(Invitation, Member)>> {
         use super::entities::{member, organization};
         use alibi_core::error::AuthError;
         let transaction = self
@@ -188,7 +189,7 @@ where
                 if matches!(
                     self.add_team_member_in_tx(&transaction, team_id, user_id, maximum)
                         .await?,
-                    alibi_core::types::AddTeamMemberResult::LimitReached
+                    AddTeamMemberResult::LimitReached
                 ) {
                     return Err(AuthError::Upstream {
                         status: 403,

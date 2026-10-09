@@ -1,7 +1,5 @@
 //! SeaORM-backed persistence implementation for built-in auth tables.
 
-mod scoped_connection;
-use scoped_connection::{ScopedConnection, ScopedTransaction};
 mod accounts;
 mod api_key_usage_phases;
 mod api_keys;
@@ -12,9 +10,11 @@ mod invitations;
 mod jwks;
 mod members;
 mod migrator;
+mod oauth_token_conversion;
 mod organization_roles;
 mod organizations;
 mod passkeys;
+mod scoped_connection;
 mod sessions;
 mod teams;
 mod two_factor;
@@ -33,84 +33,30 @@ pub mod __private_test_support {
     }
 }
 
-impl<S: AuthSchema> SeaOrmStore<S> {
-    async fn migrate_bundled_schema(&self) -> AuthResult<()> {
-        if self.db.get_database_backend() == sea_orm::DbBackend::Postgres
-            && let Some(schema) = &self.db.schema
-        {
-            use sea_orm::{ConnectionTrait, Statement};
-            use sea_orm_migration::MigratorTrait;
-            let quoted = format!("\"{}\"", schema.replace('"', "\"\""));
-            _ = self
-                .db
-                .inner
-                .execute_unprepared(&format!("CREATE SCHEMA IF NOT EXISTS {quoted}"))
-                .await
-                .map_err(map_db_err)?;
-            // Only the migration transaction has a local DDL namespace.
-            // Runtime connections and statements retain statement qualification.
-            let transaction = self.db.inner.begin().await.map_err(map_db_err)?;
-            _ = transaction
-                .execute_raw(Statement::from_string(
-                    sea_orm::DbBackend::Postgres,
-                    format!("SET LOCAL search_path TO {quoted}"),
-                ))
-                .await
-                .map_err(map_db_err)?;
-            migrator::AuthMigrator::up(&transaction, None)
-                .await
-                .map_err(map_db_err)?;
-            return transaction.commit().await.map_err(map_db_err);
-        }
-        migrator::run_migrations(&self.db.inner)
-            .await
-            .map_err(map_db_err)
-    }
-}
-
-#[async_trait]
-impl<S: AuthSchema> alibi_core::store::SchemaMigrator for SeaOrmStore<S> {
-    async fn migrate(&self) -> AuthResult<()> {
-        self.migrate_bundled_schema().await?;
-        if self.config.advanced.database.serial_ids() {
-            use sea_orm::ConnectionTrait;
-            let [ddl, _] = alibi_core::config::serial_id_statements("", "", false);
-            _ = self.db.execute_unprepared(&ddl).await.map_err(map_db_err)?;
-        }
-        if let Some(mapping) = &self.config.advanced.database.two_factor {
-            use sea_orm::ConnectionTrait;
-            let commands = mapping.migration_statements()?;
-            let transaction = self.db.begin().await.map_err(map_db_err)?;
-            if transaction
-                .has_table("two_factor")
-                .await
-                .map_err(map_db_err)?
-            {
-                for command in commands {
-                    _ = transaction
-                        .execute_unprepared(&command)
-                        .await
-                        .map_err(map_db_err)?;
-                }
-            }
-            transaction.commit().await.map_err(map_db_err)?;
-        }
-        Ok(())
-    }
-}
-
 use crate::hooks::{DatabaseHooks, SeaOrmBackend, SeaOrmHookContext, current_request_hook_context};
 use crate::schema::{
     AuthSchema, SeaOrmAccountModel, SeaOrmSessionModel, SeaOrmUserModel, SeaOrmVerificationModel,
 };
 use alibi_core::config::AuthConfig;
 use alibi_core::error::{AuthError, AuthResult, DatabaseError};
+use alibi_core::field_policy::FieldValues;
+use alibi_core::store::SchemaMigrator;
 use alibi_core::store::adapter::{AfterHook, AfterHookQueue};
 use alibi_core::store::{
     AuthTransaction, BoxedTransactionValue, TransactionStore, TransactionWork,
 };
+use alibi_core::types::{AddTeamMemberResult, CreateJwk, Jwk, Member, Team};
+use alibi_core::user_validation::PreparedUserCreation;
+use alibi_core::verification::{
+    VerificationCreation, VerificationPublication, VerificationSnapshot,
+};
+use alibi_core::{
+    CreateAccount, CreateMember, CreatePasskey, CreateSession, CreateUser, CreateVerification,
+    Passkey,
+};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use scoped_connection::{ScopedConnection, ScopedTransaction};
 use sea_orm::{DatabaseConnection, DbErr, SqlErr, TransactionTrait};
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -217,6 +163,72 @@ impl<S: AuthSchema> SeaOrmStore<S> {
     }
 }
 
+impl<S: AuthSchema> SeaOrmStore<S> {
+    async fn migrate_bundled_schema(&self) -> AuthResult<()> {
+        if self.db.get_database_backend() == sea_orm::DbBackend::Postgres
+            && let Some(schema) = &self.db.schema
+        {
+            use sea_orm::{ConnectionTrait, Statement};
+            use sea_orm_migration::MigratorTrait;
+            let quoted = format!("\"{}\"", schema.replace('"', "\"\""));
+            _ = self
+                .db
+                .inner
+                .execute_unprepared(&format!("CREATE SCHEMA IF NOT EXISTS {quoted}"))
+                .await
+                .map_err(map_db_err)?;
+            // Only the migration transaction has a local DDL namespace.
+            // Runtime connections and statements retain statement qualification.
+            let transaction = self.db.inner.begin().await.map_err(map_db_err)?;
+            _ = transaction
+                .execute_raw(Statement::from_string(
+                    sea_orm::DbBackend::Postgres,
+                    format!("SET LOCAL search_path TO {quoted}"),
+                ))
+                .await
+                .map_err(map_db_err)?;
+            migrator::AuthMigrator::up(&transaction, None)
+                .await
+                .map_err(map_db_err)?;
+            return transaction.commit().await.map_err(map_db_err);
+        }
+        migrator::run_migrations(&self.db.inner)
+            .await
+            .map_err(map_db_err)
+    }
+}
+
+#[async_trait]
+impl<S: AuthSchema> SchemaMigrator for SeaOrmStore<S> {
+    async fn migrate(&self) -> AuthResult<()> {
+        self.migrate_bundled_schema().await?;
+        if self.config.advanced.database.serial_ids() {
+            use sea_orm::ConnectionTrait;
+            let [ddl, _] = alibi_core::config::serial_id_statements("", "", false);
+            _ = self.db.execute_unprepared(&ddl).await.map_err(map_db_err)?;
+        }
+        if let Some(mapping) = &self.config.advanced.database.two_factor {
+            use sea_orm::ConnectionTrait;
+            let commands = mapping.migration_statements()?;
+            let transaction = self.db.begin().await.map_err(map_db_err)?;
+            if transaction
+                .has_table("two_factor")
+                .await
+                .map_err(map_db_err)?
+            {
+                for command in commands {
+                    _ = transaction
+                        .execute_unprepared(&command)
+                        .await
+                        .map_err(map_db_err)?;
+                }
+            }
+            transaction.commit().await.map_err(map_db_err)?;
+        }
+        Ok(())
+    }
+}
+
 struct SeaOrmStoreTransaction<'a, S: AuthSchema> {
     store: &'a SeaOrmStore<S>,
     tx: &'a ScopedTransaction,
@@ -232,24 +244,17 @@ where
     S::Session: SeaOrmSessionModel,
     S::Verification: SeaOrmVerificationModel,
 {
-    async fn list_jwks(&self) -> AuthResult<Vec<alibi_core::types::Jwk>> {
+    async fn list_jwks(&self) -> AuthResult<Vec<Jwk>> {
         self.store.list_jwks_with_connection(self.tx).await
     }
-    async fn get_jwk_by_id(&self, id: &str) -> AuthResult<Option<alibi_core::types::Jwk>> {
+    async fn get_jwk_by_id(&self, id: &str) -> AuthResult<Option<Jwk>> {
         self.store.get_jwk_with_connection(self.tx, id).await
     }
-    async fn create_jwk(
-        &self,
-        data: alibi_core::types::CreateJwk,
-    ) -> AuthResult<alibi_core::types::Jwk> {
+    async fn create_jwk(&self, data: CreateJwk) -> AuthResult<Jwk> {
         self.store.create_jwk_with_connection(self.tx, data).await
     }
 
-    async fn get_team(
-        &self,
-        organization_id: &str,
-        team_id: &str,
-    ) -> AuthResult<Option<alibi_core::types::Team>> {
+    async fn get_team(&self, organization_id: &str, team_id: &str) -> AuthResult<Option<Team>> {
         self.store
             .get_team_with_connection(self.tx, Some(organization_id), team_id)
             .await
@@ -259,15 +264,12 @@ where
         team_id: &str,
         user_id: &str,
         maximum: Option<f64>,
-    ) -> AuthResult<alibi_core::types::AddTeamMemberResult> {
+    ) -> AuthResult<AddTeamMemberResult> {
         self.store
             .add_team_member_in_tx(self.tx, team_id, user_id, maximum)
             .await
     }
-    async fn create_member(
-        &self,
-        member: alibi_core::CreateMember,
-    ) -> AuthResult<alibi_core::types::Member> {
+    async fn create_member(&self, member: CreateMember) -> AuthResult<Member> {
         self.store
             .create_member_with_connection(self.tx, member)
             .await
@@ -313,15 +315,12 @@ where
             .await
             .map_err(map_db_err)
     }
-    async fn create_passkey(
-        &self,
-        data: alibi_core::CreatePasskey,
-    ) -> AuthResult<alibi_core::Passkey> {
+    async fn create_passkey(&self, data: CreatePasskey) -> AuthResult<Passkey> {
         self.store
             .create_passkey_with_connection(self.tx, data)
             .await
     }
-    async fn create_user(&self, create_user: alibi_core::CreateUser) -> AuthResult<S::User> {
+    async fn create_user(&self, create_user: CreateUser) -> AuthResult<S::User> {
         let user = self.store.create_user_in_tx(self.tx, create_user).await?;
         self.pending_after
             .push(AfterHook::UserCreated(user.clone()))
@@ -329,10 +328,7 @@ where
         Ok(user)
     }
 
-    async fn create_user_prepared(
-        &self,
-        prepared: alibi_core::user_validation::PreparedUserCreation,
-    ) -> AuthResult<S::User> {
+    async fn create_user_prepared(&self, prepared: PreparedUserCreation) -> AuthResult<S::User> {
         let user = self
             .store
             .create_user_prepared_in_tx(self.tx, prepared)
@@ -343,10 +339,7 @@ where
         Ok(user)
     }
 
-    async fn create_account(
-        &self,
-        create_account: alibi_core::CreateAccount,
-    ) -> AuthResult<S::Account> {
+    async fn create_account(&self, create_account: CreateAccount) -> AuthResult<S::Account> {
         let account = self
             .store
             .create_account_in_tx(self.tx, create_account)
@@ -361,8 +354,8 @@ where
         &self,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        fields: alibi_core::field_policy::FieldValues,
-    ) -> AuthResult<Option<(S::Session, alibi_core::field_policy::FieldValues)>> {
+        fields: FieldValues,
+    ) -> AuthResult<Option<(S::Session, FieldValues)>> {
         self.store
             .prepare_secondary_update_with_connection(
                 self.tx,
@@ -377,7 +370,7 @@ where
         &self,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        fields: alibi_core::field_policy::FieldValues,
+        fields: FieldValues,
         persist: bool,
     ) -> AuthResult<Option<S::Session>> {
         use alibi_core::AuthSession;
@@ -402,7 +395,7 @@ where
     }
     async fn prepare_secondary_session_creation(
         &self,
-        input: alibi_core::CreateSession,
+        input: CreateSession,
         persist: bool,
     ) -> AuthResult<S::Session> {
         let session = self
@@ -414,10 +407,7 @@ where
             .await;
         Ok(session)
     }
-    async fn create_session(
-        &self,
-        create_session: alibi_core::CreateSession,
-    ) -> AuthResult<S::Session> {
+    async fn create_session(&self, create_session: CreateSession) -> AuthResult<S::Session> {
         let session = self
             .store
             .create_session_in_tx(self.tx, create_session)
@@ -429,9 +419,9 @@ where
     }
     async fn create_verification_record(
         &self,
-        data: alibi_core::verification::VerificationCreation,
-        publication: alibi_core::verification::VerificationPublication,
-    ) -> AuthResult<Option<alibi_core::verification::VerificationSnapshot>> {
+        data: VerificationCreation,
+        publication: VerificationPublication,
+    ) -> AuthResult<Option<VerificationSnapshot>> {
         let snapshot = self
             .store
             .create_verification_record_with_connection(self.tx, Some(self.tx), data, publication)
@@ -446,7 +436,7 @@ where
 
     async fn create_verification(
         &self,
-        verification: alibi_core::CreateVerification,
+        verification: CreateVerification,
     ) -> AuthResult<S::Verification> {
         let verification = self
             .store
@@ -547,5 +537,3 @@ pub(crate) fn bind_page(
     }
     Ok(statement)
 }
-
-mod oauth_token_conversion;

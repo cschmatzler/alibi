@@ -1,5 +1,4 @@
-use super::ScopedTransaction;
-use super::{SeaOrmStore, map_db_err};
+use super::{ScopedTransaction, SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmVerificationModel};
 use alibi_core::entity::AuthVerification;
 use alibi_core::error::{AuthError, AuthResult};

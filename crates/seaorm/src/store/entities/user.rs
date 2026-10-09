@@ -1,7 +1,8 @@
+use crate::{AuthEntity, JsonMetadata};
 use sea_orm::entity::prelude::*;
 use serde::Serialize;
 
-#[derive(crate::AuthEntity, Clone, Debug, PartialEq, Serialize, DeriveEntityModel)]
+#[derive(AuthEntity, Clone, Debug, PartialEq, Serialize, DeriveEntityModel)]
 #[auth(role = "user", secondary_storage)]
 #[sea_orm(table_name = "users")]
 pub struct Model {
@@ -18,7 +19,7 @@ pub struct Model {
     pub banned: Option<bool>,
     pub ban_reason: Option<String>,
     pub ban_expires: Option<DateTimeUtc>,
-    pub metadata: crate::JsonMetadata,
+    pub metadata: JsonMetadata,
     pub is_anonymous: Option<bool>,
     pub phone_number: Option<String>,
     pub phone_number_verified: Option<bool>,

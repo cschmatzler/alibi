@@ -6,6 +6,7 @@
 //! [`MetadataBinding::prepare`] on Set metadata after application hooks and
 //! before the store write; manual models can override
 //! `SeaOrmUserModel::prepare_json_metadata` to choose their binding policy.
+use alibi_core::AuthResult;
 
 /// JSON storage preserving every application object key.
 ///
@@ -143,24 +144,24 @@ pub trait MetadataBinding: Sized {
     /// # Errors
     ///
     /// Returns an error if the value cannot be serialized for `backend`.
-    fn prepare(self, backend: sea_orm::DbBackend) -> alibi_core::AuthResult<Self>;
+    fn prepare(self, backend: sea_orm::DbBackend) -> AuthResult<Self>;
 }
 
 impl MetadataBinding for serde_json::Value {
-    fn prepare(self, _backend: sea_orm::DbBackend) -> alibi_core::AuthResult<Self> {
+    fn prepare(self, _backend: sea_orm::DbBackend) -> AuthResult<Self> {
         Ok(alibi_core::utils::json::to_value(&self)?)
     }
 }
 
 impl MetadataBinding for JsonMetadata {
-    fn prepare(self, backend: sea_orm::DbBackend) -> alibi_core::AuthResult<Self> {
+    fn prepare(self, backend: sea_orm::DbBackend) -> AuthResult<Self> {
         let value = alibi_core::utils::json::to_value(&self.0)?;
         Ok(Self::for_backend(value, backend)?)
     }
 }
 
 impl<T: MetadataBinding> MetadataBinding for Option<T> {
-    fn prepare(self, backend: sea_orm::DbBackend) -> alibi_core::AuthResult<Self> {
+    fn prepare(self, backend: sea_orm::DbBackend) -> AuthResult<Self> {
         self.map(|value| value.prepare(backend)).transpose()
     }
 }

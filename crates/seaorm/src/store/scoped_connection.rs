@@ -1,4 +1,5 @@
 //! Statement-level namespace policy, retained across nested transactions.
+use alibi_core::config::TwoFactorDatabaseConfig;
 use async_trait::async_trait;
 use sea_orm::{
     AccessMode, ConnectionTrait, DatabaseConnection, DatabaseTransaction, DbBackend, DbErr,
@@ -11,7 +12,7 @@ use std::{future::Future, pin::Pin};
 pub(crate) struct Scoped<C> {
     pub(super) inner: C,
     pub(super) schema: Option<String>,
-    pub(super) factor: Option<alibi_core::config::TwoFactorDatabaseConfig>,
+    pub(super) factor: Option<TwoFactorDatabaseConfig>,
 }
 pub(super) type ScopedConnection = Scoped<DatabaseConnection>;
 pub(super) type ScopedTransaction = Scoped<DatabaseTransaction>;

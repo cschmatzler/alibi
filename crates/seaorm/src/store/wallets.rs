@@ -1,6 +1,5 @@
-use super::ScopedTransaction;
 use super::entities::wallet_address;
-use super::{SeaOrmStore, map_db_err};
+use super::{ScopedTransaction, SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmUserModel};
 use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::store::WalletAddressStore;

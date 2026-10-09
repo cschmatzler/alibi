@@ -1,6 +1,5 @@
-use super::entities;
 use super::entities::organization::{ActiveModel, Column, Entity, JsonMetadata, Model};
-use super::{SeaOrmStore, map_db_err};
+use super::{SeaOrmStore, entities, map_db_err};
 use crate::schema::AuthSchema;
 use alibi_core::error::AuthResult;
 use alibi_core::store::OrganizationStore;

@@ -1,11 +1,11 @@
-use super::ScopedTransaction;
-use super::{SeaOrmStore, map_db_err};
+use super::{ScopedTransaction, SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmUserModel};
 use alibi_core::AuthUser;
 use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::store::adapter::cancelled_by_hook;
-use alibi_core::store::{NumericTextInput, UserStore};
+use alibi_core::store::{NumericTextInput, UserCreationDefaults, UserStore};
 use alibi_core::types::{CreateUser, ListUsersParams, UpdateUser};
+use alibi_core::user_validation::PreparedUserCreation;
 use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::sea_query::{Expr, ExprTrait};
@@ -221,7 +221,7 @@ where
         db: &C,
         tx: Option<&ScopedTransaction>,
         mut create_user: CreateUser,
-        defaults: alibi_core::store::UserCreationDefaults,
+        defaults: UserCreationDefaults,
     ) -> AuthResult<S::User>
     where
         C: ConnectionTrait,
@@ -299,7 +299,7 @@ where
     pub(crate) async fn create_user_prepared_in_tx(
         &self,
         tx: &ScopedTransaction,
-        prepared: alibi_core::user_validation::PreparedUserCreation,
+        prepared: PreparedUserCreation,
     ) -> AuthResult<S::User> {
         let (data, defaults) = prepared.into_parts();
         self.create_user_with_connection(tx, Some(tx), data, defaults)
@@ -331,10 +331,7 @@ where
         .await
     }
 
-    async fn create_user_prepared(
-        &self,
-        prepared: alibi_core::user_validation::PreparedUserCreation,
-    ) -> AuthResult<S::User> {
+    async fn create_user_prepared(&self, prepared: PreparedUserCreation) -> AuthResult<S::User> {
         let (data, defaults) = prepared.into_parts();
         self.create_user_with_connection(self.scoped_connection(), None, data, defaults)
             .await
