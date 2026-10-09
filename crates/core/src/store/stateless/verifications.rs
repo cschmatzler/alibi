@@ -24,7 +24,6 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
                 return Err(AuthError::internal("duplicate verification primary ID"));
             }
             _ = state.verifications.insert(model.id.clone(), model.clone());
-            drop(state);
             crate::verification::VerificationSnapshot::from_model(&model)
         } else {
             data.snapshot()
@@ -47,7 +46,6 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
         state
             .verifications
             .retain(|_, sibling| sibling.identifier != identifier);
-        drop(state);
         Ok(found)
     }
 
@@ -72,7 +70,6 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
                 }
             }
         }
-        drop(state);
         Ok(found)
     }
 
@@ -96,7 +93,6 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
             updated_at: now,
         };
         _ = entry.insert(model.clone());
-        drop(state);
         Ok(Some(model))
     }
 
@@ -185,8 +181,6 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
                 .verifications
                 .retain(|_, sibling| sibling.identifier != identifier);
         }
-        drop(state);
-
         Ok(found.filter(|verification| verification.expires_at >= Utc::now()))
     }
 
@@ -217,8 +211,6 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
         state
             .verifications
             .retain(|_, sibling| sibling.identifier != identifier);
-        drop(state);
-
         Ok(found.filter(|verification| verification.expires_at >= Utc::now()))
     }
 
@@ -246,8 +238,6 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
         value.clone_into(&mut verification.value);
         verification.expires_at = expires_at;
         verification.updated_at = Utc::now();
-        drop(state);
-
         Ok(true)
     }
 
@@ -267,7 +257,6 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
             created_at: now,
             updated_at: now,
         });
-        drop(state);
         Ok(true)
     }
 

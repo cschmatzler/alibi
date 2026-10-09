@@ -201,22 +201,19 @@ impl UserStore<StatelessSchema> for StatelessStore {
         for (key, value) in update.additional_fields {
             _ = user.extension_fields.insert(key, value.to_json_value()?);
         }
-        for name in ["name", "email", "image", "username", "displayUsername"] {
-            let present = match name {
-                "name" => user.name.is_some(),
-                "email" => user.email.is_some(),
-                "image" => user.image.is_some(),
-                "username" => user.username.is_some(),
-                _ => user.display_username.is_some(),
-            };
+        for (name, present) in [
+            ("name", user.name.is_some()),
+            ("email", user.email.is_some()),
+            ("image", user.image.is_some()),
+            ("username", user.username.is_some()),
+            ("displayUsername", user.display_username.is_some()),
+        ] {
             if present {
                 _ = user.omitted_fields.remove(name);
             }
         }
         user.updated_at = Utc::now();
-        let locked_result = Ok(user.clone());
-        drop(state);
-        locked_result
+        Ok(user.clone())
     }
 
     async fn delete_user(&self, id: &str) -> AuthResult<()> {

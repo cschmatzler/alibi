@@ -87,9 +87,7 @@ impl AccountStore<StatelessSchema> for StatelessStore {
             account.password = Some(password);
         }
         account.updated_at = Utc::now();
-        let locked_result = Ok(account.clone());
-        drop(state);
-        locked_result
+        Ok(account.clone())
     }
 
     async fn delete_account(&self, id: &str) -> AuthResult<()> {

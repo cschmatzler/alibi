@@ -116,9 +116,7 @@ impl DeviceCodeStore for StatelessStore {
             device_code.last_polled_at = last_polled_at;
         }
 
-        let locked_result = Ok(device_code.clone());
-        drop(state);
-        locked_result
+        Ok(device_code.clone())
     }
 
     async fn update_device_code_if_status(
@@ -145,8 +143,6 @@ impl DeviceCodeStore for StatelessStore {
         if let Some(last_polled_at) = update.last_polled_at {
             device_code.last_polled_at = last_polled_at;
         }
-        drop(state);
-
         Ok(true)
     }
 
@@ -161,8 +157,6 @@ impl DeviceCodeStore for StatelessStore {
         }
 
         device_code.user_id = Some(user_id.to_owned());
-        drop(state);
-
         Ok(true)
     }
 
@@ -185,8 +179,6 @@ impl DeviceCodeStore for StatelessStore {
             _ = state.device_code_fields.shift_remove(id);
         }
 
-        let locked_result = Ok(should_delete);
-        drop(state);
-        locked_result
+        Ok(should_delete)
     }
 }
