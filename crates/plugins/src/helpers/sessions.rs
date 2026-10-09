@@ -180,9 +180,6 @@ pub fn admin_banned_user_message(ctx: &AuthContext<impl alibi_core::AuthSchema>)
 }
 
 /// Resolve an awaited application message from the actual stored user entity.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn resolve_admin_banned_user_message<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
     user: &impl AuthUser,
@@ -389,19 +386,18 @@ pub(in crate::helpers) async fn issue_user_session_inner<S: alibi_core::AuthSche
             .ban_expires()
             .is_some_and(|expires| expires < Utc::now())
         {
-            drop(
-                ctx.database
-                    .update_user_record(
-                        user_id,
-                        UpdateUser {
-                            banned: Some(false),
-                            ban_reason: None,
-                            ban_expires: None,
-                            ..Default::default()
-                        },
-                    )
-                    .await?,
-            );
+            _ = ctx
+                .database
+                .update_user_record(
+                    user_id,
+                    UpdateUser {
+                        banned: Some(false),
+                        ban_reason: None,
+                        ban_expires: None,
+                        ..Default::default()
+                    },
+                )
+                .await?;
         } else {
             return Err(SessionIssueError::Banned {
                 message: resolve_admin_banned_user_message(ctx, &user).await?,

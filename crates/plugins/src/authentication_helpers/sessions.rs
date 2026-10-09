@@ -1,7 +1,4 @@
 use super::*;
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn session_response<S: AuthSchema>(
     ctx: &AuthContext<S>,
     req: &AuthRequest,
@@ -10,9 +7,6 @@ pub(crate) async fn session_response<S: AuthSchema>(
     session_response_with_remember(ctx, req, user, None).await
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn session_response_with_remember<S: AuthSchema>(
     ctx: &AuthContext<S>,
     req: &AuthRequest,
@@ -81,9 +75,6 @@ pub(crate) async fn session_response_with_remember<S: AuthSchema>(
 
 /// Email-primary proof replaces access accrued before mailbox ownership was
 /// proven. The database reservation serializes cleanup across auth instances.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn revoke_unproven_access<S: AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: &str,
@@ -142,6 +133,6 @@ pub(crate) async fn revoke_unproven_access<S: AuthSchema>(
             .map(Some)
     }
     .await;
-    drop(ctx.verifications().delete(&identifier).await);
+    _ = ctx.verifications().delete(&identifier).await;
     result
 }

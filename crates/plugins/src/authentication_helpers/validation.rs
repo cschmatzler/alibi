@@ -30,9 +30,6 @@ pub(crate) trait RequestBody: DeserializeOwned + 'static {
     const FIELDS: &'static [JsonField];
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) fn parse_email(email: &str) -> AuthResult<String> {
     let normalized = email.to_lowercase();
     if !is_valid_email(&normalized) {
@@ -83,17 +80,11 @@ pub(crate) fn is_valid_email(email: &str) -> bool {
 
 /// Parse the upstream schema at the HTTP boundary. The error includes all
 /// failed fields in declaration order, including explicitly null optionals.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) fn parse_body<T: RequestBody>(req: &AuthRequest) -> Result<T, AuthResponse> {
     parse_body_with_fields(req, T::FIELDS)
 }
 
 /// Parse schemas whose required fields depend on trusted plugin configuration.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) fn parse_body_with_fields<T: DeserializeOwned + 'static>(
     req: &AuthRequest,
     fields: &[JsonField],
@@ -103,9 +94,6 @@ pub(crate) fn parse_body_with_fields<T: DeserializeOwned + 'static>(
 
 /// Remove configured unknown fields before schema validation without serializing
 /// the remaining JavaScript numbers (which may include infinity or signed zero).
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) fn parse_body_with_ignored_fields<T: RequestBody>(
     req: &AuthRequest,
     ignored: &[&str],
@@ -140,7 +128,7 @@ pub(in crate::authentication_helpers) fn parse_body_with_fields_and_ignored<
     };
     if let alibi_core::utils::json::JsValue::Object(object) = &mut value {
         for field in ignored {
-            drop(object.shift_remove(*field));
+            _ = object.shift_remove(*field);
         }
     }
     let Some(object) = value.as_object() else {

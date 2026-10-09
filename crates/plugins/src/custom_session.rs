@@ -184,26 +184,24 @@ impl<S: AuthSchema> CustomSessionPlugin<S> {
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         // Launched callbacks retain ownership after the aggregate rejects,
         // matching the independent application work of a device-session list.
-        drop(tokio::spawn(async move {
+        _ = tokio::spawn(async move {
             let project = async {
-                drop(
-                    futures_util::future::join_all(sessions.into_iter().enumerate().map(
-                        |(index, session)| {
-                            let transform = &transform;
-                            let request = &request;
-                            let context = &context;
-                            let sender = &sender;
-                            async move {
-                                let result = transform
-                                    .transform(session, request, context)
-                                    .await
-                                    .map_err(callback_error);
-                                let _closed = sender.send((index, result));
-                            }
-                        },
-                    ))
-                    .await,
-                );
+                _ = futures_util::future::join_all(sessions.into_iter().enumerate().map(
+                    |(index, session)| {
+                        let transform = &transform;
+                        let request = &request;
+                        let context = &context;
+                        let sender = &sender;
+                        async move {
+                            let result = transform
+                                .transform(session, request, context)
+                                .await
+                                .map_err(callback_error);
+                            let _closed = sender.send((index, result));
+                        }
+                    },
+                ))
+                .await;
             };
             if let Some(endpoint) = endpoint {
                 alibi_core::endpoint::with_endpoint_call_context(
@@ -214,7 +212,7 @@ impl<S: AuthSchema> CustomSessionPlugin<S> {
             } else {
                 alibi_core::hooks::with_optional_request_hook_context(hook, project).await;
             }
-        }));
+        });
         for _ in 0..results.len() {
             let (index, value) = receiver
                 .recv()
@@ -333,10 +331,9 @@ mod tests {
             Some(&reject_session.token),
             None,
         );
-        drop(
-            req.headers
-                .insert("x-application".into(), "original".into()),
-        );
+        _ = req
+            .headers
+            .insert("x-application".into(), "original".into());
         use alibi_core::utils::cookie_utils::sign_cookie_value;
         let cookies = [&reject_session.token, &slow_session.token]
             .into_iter()
@@ -350,10 +347,10 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let ordinary = req.header("cookie").expect("signed current cookie").clone();
-        drop(req.headers.insert(
+        _ = req.headers.insert(
             "cookie".into(),
             format!("{ordinary}; {}", cookies.join("; ")),
-        ));
+        );
         let response = super::super::multi_session::MultiSessionPlugin::new()
             .on_request(&req, &ctx)
             .await

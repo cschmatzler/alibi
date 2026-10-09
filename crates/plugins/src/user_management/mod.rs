@@ -14,16 +14,12 @@ use handlers::{change_email_core, delete_user_callback_core, delete_user_core};
 use std::sync::Arc;
 use types::{ChangeEmailRequest, DeleteUserRequest, TokenQuery};
 
-// ---------------------------------------------------------------------------
 // User info snapshot (dyn-compatible alternative to &dyn AuthUser)
-// ---------------------------------------------------------------------------
 
 /// The initialized user's full snapshot passed to application lifecycle hooks.
 pub type UserInfo = UserView;
 
-// ---------------------------------------------------------------------------
 // Callback traits
-// ---------------------------------------------------------------------------
 
 /// Custom callback for sending change-email confirmation emails.
 ///
@@ -63,9 +59,7 @@ pub trait AfterDeleteUser: Send + Sync {
     async fn after_delete(&self, user: &UserInfo) -> AuthResult<()>;
 }
 
-// ---------------------------------------------------------------------------
 // Configuration
-// ---------------------------------------------------------------------------
 
 /// Configuration for the change-email feature.
 #[derive(Clone, Default)]
@@ -150,9 +144,7 @@ pub struct UserManagementConfig {
     pub delete_user: DeleteUserConfig,
 }
 
-// ---------------------------------------------------------------------------
 // Plugin
-// ---------------------------------------------------------------------------
 
 /// User self-service management plugin (change email & delete account).
 pub struct UserManagementPlugin {
@@ -248,9 +240,7 @@ impl Default for UserManagementPlugin {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Route handlers (delegate to core functions)
-// ---------------------------------------------------------------------------
 
 impl UserManagementPlugin {
     /// `POST /change-email`
@@ -324,8 +314,8 @@ impl UserManagementPlugin {
             delete_user_callback_core(&query.token, &user, req, true, &self.config, ctx).await?;
         if let Some(callback_url) = query.callback_url.filter(|url| !url.is_empty()) {
             let mut headers = alibi_core::Headers::new();
-            drop(headers.insert("Location".to_owned(), callback_url));
-            drop(headers.insert("Content-Type".to_owned(), "application/json".to_owned()));
+            _ = headers.insert("Location".to_owned(), callback_url);
+            _ = headers.insert("Content-Type".to_owned(), "application/json".to_owned());
             let mut response_2 = AuthResponse {
                 status: 302,
                 headers,
@@ -341,9 +331,7 @@ impl UserManagementPlugin {
     }
 }
 
-// ---------------------------------------------------------------------------
 // AuthPlugin implementation
-// ---------------------------------------------------------------------------
 
 #[async_trait]
 impl<S: alibi_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {

@@ -740,16 +740,14 @@ mod tests {
                 .contains("Max-Age=0")
         );
         let signout = request_with_cookies(HttpMethod::Post, "/sign-out", &[second], None);
-        drop(
-            plugin
-                .after_request(
-                    &signout,
-                    &ctx,
-                    AuthResponse::json(200, &json!({"success":true})).unwrap(),
-                )
-                .await
-                .unwrap(),
-        );
+        _ = plugin
+            .after_request(
+                &signout,
+                &ctx,
+                AuthResponse::json(200, &json!({"success":true})).unwrap(),
+            )
+            .await
+            .unwrap();
         assert!(
             ctx.database
                 .get_session(&two.token)

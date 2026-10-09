@@ -315,8 +315,8 @@ impl PasswordManagementPlugin {
         match reset_password_token_core(token, &query, ctx).await? {
             ResetPasswordTokenResult::Redirect(url) => {
                 let mut headers = alibi_core::Headers::new();
-                drop(headers.insert("Location".to_owned(), url));
-                drop(headers.insert("content-type".to_owned(), "application/json".to_owned()));
+                _ = headers.insert("Location".to_owned(), url);
+                _ = headers.insert("content-type".to_owned(), "application/json".to_owned());
                 Ok(AuthResponse {
                     status: 302,
                     headers,
@@ -399,24 +399,23 @@ mod tests {
             .with_email("test@example.com")
             .with_name("Test User");
         let user = test_helpers::create_user(&ctx, create_user).await;
-        drop(
-            ctx.database
-                .create_account(CreateAccount {
-                    additional_fields: Default::default(),
-                    user_id: user.id.clone(),
-                    account_id: user.id.clone(),
-                    provider_id: "credential".to_owned(),
-                    access_token: None,
-                    refresh_token: None,
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: None,
-                    password: Some(password_hash),
-                })
-                .await
-                .unwrap(),
-        );
+        _ = ctx
+            .database
+            .create_account(CreateAccount {
+                additional_fields: Default::default(),
+                user_id: user.id.clone(),
+                account_id: user.id.clone(),
+                provider_id: "credential".to_owned(),
+                access_token: None,
+                refresh_token: None,
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: None,
+                password: Some(password_hash),
+            })
+            .await
+            .unwrap();
         let session =
             test_helpers::create_session(&ctx, user.id.clone(), Duration::hours(24)).await;
 
@@ -432,24 +431,23 @@ mod tests {
             ctx.database.delete_account(&account.id).await.unwrap();
         }
 
-        drop(
-            ctx.database
-                .create_account(CreateAccount {
-                    additional_fields: Default::default(),
-                    user_id: user.id.clone(),
-                    account_id: "google-account-id".to_owned(),
-                    provider_id: "google".to_owned(),
-                    access_token: Some("oauth-access-token".to_owned()),
-                    refresh_token: Some("oauth-refresh-token".to_owned()),
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: Some("email profile".to_owned()),
-                    password: None,
-                })
-                .await
-                .unwrap(),
-        );
+        _ = ctx
+            .database
+            .create_account(CreateAccount {
+                additional_fields: Default::default(),
+                user_id: user.id.clone(),
+                account_id: "google-account-id".to_owned(),
+                provider_id: "google".to_owned(),
+                access_token: Some("oauth-access-token".to_owned()),
+                refresh_token: Some("oauth-refresh-token".to_owned()),
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: Some("email profile".to_owned()),
+                password: None,
+            })
+            .await
+            .unwrap();
 
         (ctx, user, session)
     }

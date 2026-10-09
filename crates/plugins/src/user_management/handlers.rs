@@ -163,29 +163,28 @@ pub(crate) async fn change_email_core(
         .await?
         .is_some()
     {
-        drop(create_email_verification_token(
+        _ = create_email_verification_token(
             ctx.config.current_secret(),
             user.email().unwrap_or_default(),
             Some(&new_email),
             expiry,
             None,
-        )?);
+        )?;
         return Ok(None);
     }
     let mut projection = ctx.user_view(user);
     projection.email = Some(new_email.clone());
     if can_update {
-        drop(
-            ctx.database
-                .update_user_record(
-                    &user.id(),
-                    UpdateUser {
-                        email: Some(new_email.clone()),
-                        ..Default::default()
-                    },
-                )
-                .await?,
-        );
+        _ = ctx
+            .database
+            .update_user_record(
+                &user.id(),
+                UpdateUser {
+                    email: Some(new_email.clone()),
+                    ..Default::default()
+                },
+            )
+            .await?;
         renew_session_snapshot(&projection, session, ctx).await?;
         if can_send {
             let token = create_email_verification_token(
@@ -335,15 +334,14 @@ pub(crate) async fn delete_user_core(
         } else {
             config.delete_user.delete_token_expires_in
         };
-        drop(
-            ctx.verifications()
-                .create(alibi_core::CreateVerification {
-                    identifier: format!("delete-account-{token}"),
-                    value: user.id().into_owned(),
-                    expires_at: Utc::now() + expiry,
-                })
-                .await?,
-        );
+        _ = ctx
+            .verifications()
+            .create(alibi_core::CreateVerification {
+                identifier: format!("delete-account-{token}"),
+                value: user.id().into_owned(),
+                expires_at: Utc::now() + expiry,
+            })
+            .await?;
         let base = format!(
             "{}{}",
             ctx.config.base_url.trim_end_matches('/'),

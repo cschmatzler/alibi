@@ -24,7 +24,7 @@ pub(super) fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
             metadata.request_body = Some(
                 json!({"content":{"application/json":{"schema":{"type":"object","properties":{"name":{"type":"string","description":"The name of the user"},"image":{"type":"string","description":"The image of the user","nullable":true}}}}}}),
             );
-            drop(metadata.responses.insert("200".into(),response("Success",&(json!({"type":"object","properties":{"user":{"type":"object","$ref":"#/components/schemas/User"}}})))));
+            _ = metadata.responses.insert("200".into(),response("Success",&(json!({"type":"object","properties":{"user":{"type":"object","$ref":"#/components/schemas/User"}}}))));
         }
         "/change-password" => {
             metadata.operation_id = Some("changePassword".into());
@@ -34,7 +34,7 @@ pub(super) fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
     "newPassword":{"type":"string","description":"The new password to set"},"currentPassword":{"type":"string","description":"The current password is required"},"revokeOtherSessions":{"type":"boolean","description":"Must be a boolean value"}
    },"required":["newPassword","currentPassword"]}}}}),
             );
-            drop(metadata.responses.insert("200".into(),response("Password successfully changed",&(json!({"type":"object","properties":{"token":{"type":"string","nullable":true,"description":"New session token if other sessions were revoked"},"user":user()},"required":["user"]})))));
+            _ = metadata.responses.insert("200".into(),response("Password successfully changed",&(json!({"type":"object","properties":{"token":{"type":"string","nullable":true,"description":"New session token if other sessions were revoked"},"user":user()},"required":["user"]}))));
         }
         "/delete-user" => {
             metadata.operation_id = Some("deleteUser".into());
@@ -44,7 +44,7 @@ pub(super) fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
                  "callbackURL":{"type":"string","description":"The callback URL to redirect to after the user is deleted"},"password":{"type":"string","description":"The user's password. Required if session is not fresh"},"token":{"type":"string","description":"The deletion verification token"}
                 }}}}}),
             );
-            drop(metadata.responses.insert("200".into(),response("User deletion processed successfully",&(json!({"type":"object","properties":{"success":{"type":"boolean","description":"Indicates if the operation was successful"},"message":{"type":"string","enum":["User deleted","Verification email sent"],"description":"Status message of the deletion process"}},"required":["success","message"]})))));
+            _ = metadata.responses.insert("200".into(),response("User deletion processed successfully",&(json!({"type":"object","properties":{"success":{"type":"boolean","description":"Indicates if the operation was successful"},"message":{"type":"string","enum":["User deleted","Verification email sent"],"description":"Status message of the deletion process"}},"required":["success","message"]}))));
         }
         "/delete-user/callback" => {
             metadata.description =
@@ -53,14 +53,14 @@ pub(super) fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
                 json!({"name":"token","in":"query","schema":{"type":"string","description":"The token to verify the deletion request"}}),
                 json!({"name":"callbackURL","in":"query","schema":{"type":"string","description":"The URL to redirect to after deletion"}}),
             ];
-            drop(metadata.responses.insert("200".into(),response("User successfully deleted",&(json!({"type":"object","properties":{"success":{"type":"boolean","description":"Indicates if the deletion was successful"},"message":{"type":"string","enum":["User deleted"],"description":"Confirmation message"}},"required":["success","message"]})))));
+            _ = metadata.responses.insert("200".into(),response("User successfully deleted",&(json!({"type":"object","properties":{"success":{"type":"boolean","description":"Indicates if the deletion was successful"},"message":{"type":"string","enum":["User deleted"],"description":"Confirmation message"}},"required":["success","message"]}))));
         }
         "/change-email" => {
             metadata.operation_id = Some("changeEmail".into());
             metadata.request_body = Some(
                 json!({"required":true,"content":{"application/json":{"schema":{"type":"object","properties":{"newEmail":{"type":"string","description":"The new email address to set must be a valid email address"},"callbackURL":{"type":"string","description":"The URL to redirect to after email verification"}},"required":["newEmail"]}}}}),
             );
-            drop(metadata.responses.insert("200".into(),response("Email change request processed successfully",&(json!({"type":"object","properties":{"user":{"type":"object","$ref":"#/components/schemas/User"},"status":{"type":"boolean","description":"Indicates if the request was successful"},"message":{"type":"string","enum":["Email updated","Verification email sent"],"description":"Status message of the email change process","nullable":true}},"required":["status"]})))));
+            _ = metadata.responses.insert("200".into(),response("Email change request processed successfully",&(json!({"type":"object","properties":{"user":{"type":"object","$ref":"#/components/schemas/User"},"status":{"type":"boolean","description":"Indicates if the request was successful"},"message":{"type":"string","enum":["Email updated","Verification email sent"],"description":"Status message of the email change process","nullable":true}},"required":["status"]}))));
         }
         _ => return None,
     }

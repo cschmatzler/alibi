@@ -83,37 +83,33 @@ pub async fn set_password<S: AuthSchema>(
                 message: "User already has a password set",
             });
         }
-        drop(
-            context
-                .database
-                .update_account_record(
-                    account.id().as_ref(),
-                    UpdateAccount {
-                        password: Some(password),
-                        ..Default::default()
-                    },
-                )
-                .await?,
-        );
-    } else {
-        drop(
-            context
-                .database
-                .create_account_record(CreateAccount {
-                    additional_fields: Default::default(),
-                    user_id: user.id().into_owned(),
-                    account_id: user.id().into_owned(),
-                    provider_id: "credential".to_owned(),
-                    access_token: None,
-                    refresh_token: None,
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: None,
+        _ = context
+            .database
+            .update_account_record(
+                account.id().as_ref(),
+                UpdateAccount {
                     password: Some(password),
-                })
-                .await?,
-        );
+                    ..Default::default()
+                },
+            )
+            .await?;
+    } else {
+        _ = context
+            .database
+            .create_account_record(CreateAccount {
+                additional_fields: Default::default(),
+                user_id: user.id().into_owned(),
+                account_id: user.id().into_owned(),
+                provider_id: "credential".to_owned(),
+                access_token: None,
+                refresh_token: None,
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: None,
+                password: Some(password),
+            })
+            .await?;
     }
     Ok(())
 }

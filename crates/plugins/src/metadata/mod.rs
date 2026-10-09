@@ -53,7 +53,7 @@ fn field(field: &FieldDef, core: bool) -> Option<OpenApiField> {
     if core && field.name == "emailVerified" {
         field.input = false;
         if let Some(object) = field.schema.as_object_mut() {
-            drop(object.insert("default".into(), json!(false)));
+            _ = object.insert("default".into(), json!(false));
         }
     }
     Some(field)
@@ -200,7 +200,7 @@ fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
                 "user",
                 "iss",
             ] {
-                drop(properties.insert(name.into(), json!({"type":"string"})));
+                _ = properties.insert(name.into(), json!({"type":"string"}));
             }
             metadata.request_body = Some(
                 json!({"required":false,"content":{"application/json":{"schema":{"type":"object","properties":properties}}}}),
@@ -208,18 +208,18 @@ fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
         }
         "/ok" => {
             metadata.description = Some("Check if the API is working".into());
-            drop(metadata.responses.insert("200".into(), response("API is working",&(json!({"type":"object","properties":{"ok":{"type":"boolean","description":"Indicates if the API is working"}},"required":["ok"]})))));
+            _ = metadata.responses.insert("200".into(), response("API is working",&(json!({"type":"object","properties":{"ok":{"type":"boolean","description":"Indicates if the API is working"}},"required":["ok"]}))));
         }
         "/error" => {
             metadata.description = Some("Displays an error page".into());
-            drop(metadata.responses.insert("200".into(),json!({"description":"Success","content":{"text/html":{"schema":{"type":"string","description":"The HTML content of the error page"}}}})));
+            _ = metadata.responses.insert("200".into(),json!({"description":"Success","content":{"text/html":{"schema":{"type":"string","description":"The HTML content of the error page"}}}}));
         }
         "/get-session" => {
             metadata.operation_id = Some("getSession".into());
             metadata.description = Some("Get the current session".into());
             // The upstream query is an optional wrapper; getParameters only
             // reflects a direct object, so its generated parameter list is empty.
-            drop(metadata.responses.insert("200".into(),response("Success",&(json!({"type":["object","null"],"properties":{"session":{"$ref":"#/components/schemas/Session"},"user":{"$ref":"#/components/schemas/User"}},"required":["session","user"]})))));
+            _ = metadata.responses.insert("200".into(),response("Success",&(json!({"type":["object","null"],"properties":{"session":{"$ref":"#/components/schemas/Session"},"user":{"$ref":"#/components/schemas/User"}},"required":["session","user"]}))));
         }
         _ => return None,
     }

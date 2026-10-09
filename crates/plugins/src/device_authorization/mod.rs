@@ -453,7 +453,7 @@ fn parse_device_body(
     let mut body = if let Some(pairs) = &pairs {
         let mut object = serde_json::Map::new();
         for (key, value) in pairs {
-            drop(object.insert(key.clone(), serde_json::Value::String(value.clone())));
+            _ = object.insert(key.clone(), serde_json::Value::String(value.clone()));
         }
         serde_json::Value::Object(object)
     } else {
@@ -528,10 +528,10 @@ fn parse_device_body(
             if let Some(value) = values.first()
                 && let Some(object) = body.as_object_mut()
             {
-                drop(object.insert(
+                _ = object.insert(
                     (*field).to_owned(),
                     serde_json::Value::String((*value).clone()),
-                ));
+                );
             }
         }
     }
@@ -856,7 +856,7 @@ mod tests {
 
     fn device_verify_request(user_code: &str) -> AuthRequest {
         let mut query = HashMap::new();
-        drop(query.insert("user_code".to_owned(), user_code.to_owned()));
+        _ = query.insert("user_code".to_owned(), user_code.to_owned());
         test_helpers::create_auth_request(HttpMethod::Get, "/device", None, None, query)
     }
 
@@ -864,7 +864,7 @@ mod tests {
     /// `/device/approve` and `/device/deny` reject codes that were never claimed.
     fn device_claim_request(user_code: &str, token: &str) -> AuthRequest {
         let mut query = HashMap::new();
-        drop(query.insert("user_code".to_owned(), user_code.to_owned()));
+        _ = query.insert("user_code".to_owned(), user_code.to_owned());
         test_helpers::create_auth_request(HttpMethod::Get, "/device", Some(token), None, query)
     }
 

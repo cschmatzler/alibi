@@ -115,9 +115,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Old handler methods — delegate to core functions
-// ---------------------------------------------------------------------------
 
 impl SessionManagementPlugin {
     #[expect(
@@ -358,9 +356,9 @@ impl SessionManagementPlugin {
                 {
                     current_user = Some(session.user_id().into_owned());
                 }
-                drop(sign_out_core(&session, ctx).await);
+                _ = sign_out_core(&session, ctx).await;
             } else {
-                drop(ctx.database.delete_session(&token).await);
+                _ = ctx.database.delete_session(&token).await;
             }
         }
 
@@ -398,7 +396,7 @@ impl SessionManagementPlugin {
             )?
             .body;
             if redirect {
-                drop(response.headers.insert("Location", url));
+                _ = response.headers.insert("Location", url);
             }
         }
         Ok(response)
@@ -482,13 +480,8 @@ impl std::fmt::Debug for SessionManagementPlugin {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Core functions — framework-agnostic business logic
-// ---------------------------------------------------------------------------
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn sign_out_core(
     session: &impl AuthSession,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -497,9 +490,6 @@ pub(crate) async fn sign_out_core(
     Ok(SuccessResponse { success: true })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn list_sessions_core(
     user_id: impl AsRef<str>,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -516,9 +506,6 @@ pub(crate) async fn list_sessions_core(
         .collect())
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn revoke_session_core(
     user: &impl AuthUser,
     token: &str,
@@ -535,9 +522,6 @@ pub(crate) async fn revoke_session_core(
     Ok(StatusResponse { status: true })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn revoke_sessions_core(
     user_id: impl AsRef<str>,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -549,9 +533,6 @@ pub(crate) async fn revoke_sessions_core(
     Ok(StatusResponse { status: true })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn revoke_other_sessions_core(
     user_id: impl AsRef<str>,
     current_session: &impl AuthSession,
@@ -569,19 +550,17 @@ pub(crate) async fn revoke_other_sessions_core(
     let hook = alibi_core::hooks::current_request_hook_context();
     let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
     // Each launched deletion keeps its ownership after the aggregate rejects.
-    drop(tokio::spawn(async move {
+    _ = tokio::spawn(async move {
         let revoke = async {
-            drop(
-                futures_util::future::join_all(tokens.into_iter().map(|token| {
-                    let database = &database;
-                    let sender = &sender;
-                    async move {
-                        let result = database.delete_session(&token).await;
-                        let _closed = sender.send(result);
-                    }
-                }))
-                .await,
-            );
+            _ = futures_util::future::join_all(tokens.into_iter().map(|token| {
+                let database = &database;
+                let sender = &sender;
+                async move {
+                    let result = database.delete_session(&token).await;
+                    let _closed = sender.send(result);
+                }
+            }))
+            .await;
         };
         if let Some(endpoint) = endpoint {
             alibi_core::endpoint::with_endpoint_call_context(
@@ -592,7 +571,7 @@ pub(crate) async fn revoke_other_sessions_core(
         } else {
             alibi_core::hooks::with_optional_request_hook_context(hook, revoke).await;
         }
-    }));
+    });
     for _ in 0..count {
         receiver
             .recv()

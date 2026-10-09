@@ -31,9 +31,6 @@ pub(crate) use validation::validation_response;
 
 /// Preserve the newest lookup snapshot before the configured global cleanup.
 /// The atomic consume operation has its own expiry and concurrency contract.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn find_verification<S: AuthSchema>(
     ctx: &AuthContext<S>,
     identifier: &str,

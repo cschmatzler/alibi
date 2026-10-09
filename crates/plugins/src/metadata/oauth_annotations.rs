@@ -99,7 +99,7 @@ fn request(linking: bool) -> Value {
                 json!({"type":"object","propertyNames":{"type":"string"},"additionalProperties":{}})
             }
         };
-        drop(properties.insert(name.into(), schema));
+        _ = properties.insert(name.into(), schema);
     }
     json!({"required":true,"content":{"application/json":{"schema":{"type":"object","properties":properties,"required":["provider"]}}}})
 }
@@ -134,6 +134,6 @@ pub(super) fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
     } else {
         json!({"type":"object","description":"Returns session details when idToken is provided, or an authorize URL otherwise","properties":{"token":{"type":"string"},"user":{"type":"object","$ref":"#/components/schemas/User"},"url":{"type":"string"},"redirect":{"type":"boolean"}},"required":["redirect"]})
     };
-    drop(metadata.responses.insert("200".into(),response(if linking {"Success"} else {"Success - Returns session details (idToken branch) or an authorize URL (redirect branch)"},&(schema))));
+    _ = metadata.responses.insert("200".into(),response(if linking {"Success"} else {"Success - Returns session details (idToken branch) or an authorize URL (redirect branch)"},&(schema)));
     Some(metadata)
 }

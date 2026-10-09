@@ -117,13 +117,13 @@ pub async fn handle_update_user<S: alibi_core::AuthSchema>(
         .ok_or_else(|| AuthError::bad_request("Invalid JSON object"))?
         .clone();
     if policy.is_none() {
-        drop(input_fields.shift_remove("username"));
+        _ = input_fields.shift_remove("username");
     }
     if policy
         .as_ref()
         .is_none_or(|policy| !policy.include_display_username)
     {
-        drop(input_fields.shift_remove("displayUsername"));
+        _ = input_fields.shift_remove("displayUsername");
     }
     let additional_fields = context
         .parse_user_fields(&input_fields, false)
@@ -216,14 +216,13 @@ pub async fn handle_update_user<S: alibi_core::AuthSchema>(
                 user.metadata = metadata;
             }
             for (name, value) in update_user.additional_fields {
-                drop(user.extension_fields.insert(name, value.to_json_value()?));
+                _ = user.extension_fields.insert(name, value.to_json_value()?);
             }
             if let Some(phone_number) = update_user.phone_number {
                 user.phone_number = phone_number;
-                drop(
-                    user.extension_fields
-                        .insert("phoneNumber".into(), serde_json::Value::Null),
-                );
+                _ = user
+                    .extension_fields
+                    .insert("phoneNumber".into(), serde_json::Value::Null);
             }
             alibi_core::CacheVersionContext::created(
                 user.clone(),

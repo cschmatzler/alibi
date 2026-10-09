@@ -164,15 +164,14 @@ impl OneTimeTokenPlugin {
             None => random_token(),
         };
         let stored = self.stored_token(&token).await?;
-        drop(
-            ctx.verifications()
-                .create(CreateVerification {
-                    identifier: format!("one-time-token:{stored}"),
-                    value: session.session.token.clone(),
-                    expires_at: Utc::now() + self.config.expires_in,
-                })
-                .await?,
-        );
+        _ = ctx
+            .verifications()
+            .create(CreateVerification {
+                identifier: format!("one-time-token:{stored}"),
+                value: session.session.token.clone(),
+                expires_at: Utc::now() + self.config.expires_in,
+            })
+            .await?;
         Ok(token)
     }
 
@@ -479,12 +478,10 @@ impl<S: AuthSchema> AuthPlugin<S> for OneTimeTokenPlugin {
             if !expose.iter().any(|header| header == "set-ott") {
                 expose.push("set-ott".to_owned());
             }
-            drop(response.headers.insert("set-ott", token));
-            drop(
-                response
-                    .headers
-                    .insert("access-control-expose-headers", expose.join(", ")),
-            );
+            _ = response.headers.insert("set-ott", token);
+            _ = response
+                .headers
+                .insert("access-control-expose-headers", expose.join(", "));
         }
         Ok(response)
     }

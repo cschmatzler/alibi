@@ -2,9 +2,6 @@ use super::*;
 /// Parse passwordless signup fields before username create-hook validation.
 /// Endpoint input transforms, database hooks, and adapter transforms are
 /// separate stages; display fallback uses the parsed username.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn prepare_additional_user_fields(
     ctx: &AuthContext<impl AuthSchema>,
     data: &mut CreateUser,
@@ -26,18 +23,18 @@ pub(crate) async fn prepare_additional_user_fields(
         .unwrap_or_default();
     let mut input = indexmap::IndexMap::new();
     if let Some(username) = &data.username {
-        drop(input.insert(
+        _ = input.insert(
             "username".into(),
             alibi_core::utils::json::JsValue::String(username.clone()),
-        ));
+        );
     }
     if policy.include_display_username
         && let Some(display) = &data.display_username
     {
-        drop(input.insert(
+        _ = input.insert(
             "displayUsername".into(),
             alibi_core::utils::json::JsValue::String(display.clone()),
-        ));
+        );
     }
     data.additional_fields = ctx
         .parse_user_fields(&input, true)
