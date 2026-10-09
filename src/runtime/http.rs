@@ -98,7 +98,7 @@ impl<S: AuthSchema> BetterAuth<S> {
                     drop(req.take_response_headers());
                     cache_headers.clear();
                 }
-                if alibi_api::plugins::oauth_proxy::take_unhandled_error(&req) {
+                if alibi_plugins::oauth_proxy::take_unhandled_error(&req) {
                     run_after_hooks = false;
                 }
                 let mut nested_headers = req.take_response_headers();

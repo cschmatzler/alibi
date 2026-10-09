@@ -23,8 +23,8 @@ resolver = "2"
 default-members = [".", "crates/*"]
 members = [
     "crates/core",
-    "crates/api",
-    "crates/derive",
+    "crates/plugins",
+    "crates/macros",
     "crates/entity-codegen",
     "crates/seaorm",
     "crates/seaorm-macros",
@@ -47,8 +47,8 @@ homepage = "https://alibi.schmatzler.com"
 [workspace.dependencies]
 regex = "1"
 alibi-core = { version = "0.1.1", path = "crates/core" }
-alibi-api = { version = "0.1.1", path = "crates/api", default-features = false }
-alibi-macros = { version = "0.1.1", path = "crates/derive" }
+alibi-plugins = { version = "0.1.1", path = "crates/plugins", default-features = false }
+alibi-macros = { version = "0.1.1", path = "crates/macros" }
 alibi-seaorm = { version = "0.1.1", path = "crates/seaorm" }
 alibi-schema-registry = { version = "0.1.1", path = "crates/schema-registry" }
 alibi-entity-codegen = { version = "0.1.1", path = "crates/entity-codegen" }
@@ -98,12 +98,12 @@ syn = { version = "3", features = ["full"] }
 [features]
 default = ["native-tls", "sqlx"]
 native-tls = [
-    "alibi-api/native-tls",
+    "alibi-plugins/native-tls",
     "alibi-sqlx?/tls-native-tls",
     "alibi-seaorm?/tls-native-tls",
 ]
 rustls = [
-    "alibi-api/rustls",
+    "alibi-plugins/rustls",
     "alibi-sqlx?/tls-rustls",
     "alibi-seaorm?/tls-rustls",
 ]
@@ -112,7 +112,7 @@ axum = [
     "dep:http",
     "dep:http-body-util",
     "alibi-core/axum",
-    "alibi-api/axum",
+    "alibi-plugins/axum",
 ]
 poem = ["dep:poem", "dep:http"]
 seaorm = ["dep:alibi-seaorm"]
@@ -122,7 +122,7 @@ sqlx-postgres = ["dep:alibi-sqlx", "alibi-sqlx/postgres"]
 redis-cache = ["alibi-core/redis-cache"]
 [dependencies]
 alibi-core = { workspace = true }
-alibi-api = { workspace = true }
+alibi-plugins = { workspace = true }
 alibi-seaorm = { workspace = true, optional = true }
 alibi-sqlx = { workspace = true, optional = true, default-features = false }
 tokio = { workspace = true }

@@ -20,7 +20,7 @@ Or enter the shell manually with `devenv shell`. Rust tooling and lint rules com
 
 ```text
 crates/core            shared contracts and services: config, sessions, stores, middleware
-crates/api             built-in plugins and their endpoint/model metadata
+crates/plugins             built-in plugins and their endpoint/model metadata
 crates/sqlx            SQLx store, AuthEntity derive, rate-limit storage
 crates/seaorm          SeaORM store and entities
 crates/cli             `alibi generate`

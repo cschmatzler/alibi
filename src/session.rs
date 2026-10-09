@@ -59,7 +59,7 @@
 //! the returned session contains the final stored values. For callbacks that
 //! need retained adapter output, use [`issue_user_session_with_fields_record`].
 
-pub use alibi_api::plugins::helpers::{
+pub use alibi_plugins::helpers::{
     IssuedSession, IssuedSessionRecord, SessionIssueError, SessionOverrides, issue_user_session,
     issue_user_session_record, issue_user_session_with_fields,
     issue_user_session_with_fields_record, issue_user_session_with_overrides,

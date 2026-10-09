@@ -9,10 +9,10 @@
     reason = "oauth integration tests intentionally discard setup return values from inserts and config mutation helpers"
 )]
 
-use alibi_api::AccountManagementPlugin;
-use alibi_api::OAuthPlugin;
-use alibi_api::plugins::oauth::encryption::{decrypt_token, encrypt_token, maybe_encrypt};
-use alibi_api::plugins::oauth::{
+use alibi_plugins::AccountManagementPlugin;
+use alibi_plugins::OAuthPlugin;
+use alibi_plugins::oauth::encryption::{decrypt_token, encrypt_token, maybe_encrypt};
+use alibi_plugins::oauth::{
     OAuthConfig, OAuthProvider, OAuthRefreshTokenHandler, OAuthTokenSet, OAuthUserInfo,
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };

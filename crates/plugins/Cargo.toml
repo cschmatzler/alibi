@@ -1,0 +1,107 @@
+[package]
+name = "alibi-plugins"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = "MIT AND MPL-2.0"
+description = "Built-in authentication plugins and API metadata for Alibi"
+repository = { workspace = true }
+homepage = { workspace = true }
+documentation = "https://docs.rs/alibi-plugins"
+publish = ["crates-io"]
+include = ["/src/**", "/migrations/**", "/README.md", "/LICENSE"]
+
+readme = { workspace = true }
+keywords = { workspace = true }
+categories = { workspace = true }
+
+[lib]
+name = "alibi_plugins"
+
+[lints]
+workspace = true
+
+[dependencies]
+rand_core = { version = "0.6", features = ["getrandom"] }
+signature = "3"
+alibi-core = { workspace = true }
+alibi-schema-registry = { workspace = true }
+
+# Asynchronous runtime
+async-trait = { workspace = true }
+futures-util = { version = "0.3.32", default-features = false, features = ["std"] }
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+ryu-js = { workspace = true }
+num-traits = "0.2.19"
+
+# Validation
+validator = { workspace = true }
+
+# Time handling
+chrono = { workspace = true }
+
+# Cookie handling
+cookie = { workspace = true }
+
+# Data structures
+uuid = { workspace = true }
+indexmap = { workspace = true }
+
+# Crypto
+sha1 = { workspace = true }
+sha2 = { workspace = true }
+sha3 = { workspace = true }
+k256 = { workspace = true }
+aes-gcm = { workspace = true }
+ed25519-dalek = { workspace = true }
+p256 = { workspace = true }
+p384 = { version = "0.14", features = ["ecdsa", "pkcs8"] }
+p521 = { workspace = true }
+rsa = { workspace = true }
+chacha20poly1305 = { workspace = true }
+hkdf = { workspace = true }
+hmac = { workspace = true }
+rand = { workspace = true }
+base64 = { workspace = true }
+totp-rs = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# HTTP client
+reqwest = { workspace = true }
+
+# URL
+regex = { workspace = true }
+url = { workspace = true }
+urlencoding = "2"
+bon = "3.3"
+jsonwebtoken.workspace = true
+serde_with = "3.18.0"
+webauthn-rs = { version = "=0.5.4", features = ["conditional-ui", "danger-allow-state-serialisation", "danger-credential-internals"] }
+webauthn-rs-core = "=0.5.4"
+base64urlsafedata = "=0.5.4"
+openssl = "0.10.75"
+x509-parser = "0.16"
+der-parser = "9"
+serde_cbor_2 = "0.13.0"
+serde_path_to_error = "0.1.20"
+
+[dev-dependencies]
+# Path-only on purpose: alibi-seaorm depends on alibi-core, so a
+# versioned dev-dependency here would constrain publish order. Cargo drops
+# dev-dependencies without a version from the published manifest.
+alibi-seaorm = { path = "../seaorm" }
+
+[features]
+default = ["native-tls"]
+native-tls = ["reqwest/default-tls"]
+rustls = ["reqwest/__rustls-aws-lc-rs", "reqwest/system-proxy"]
+axum = ["alibi-core/axum"]
+
+[package.metadata.docs.rs]
+features = ["axum"]

@@ -86,7 +86,7 @@ impl<S: AuthSchema> BetterAuth<S> {
                 ))
             }
             (HttpMethod::Post, core_paths::UPDATE_USER) => Ok(Some(
-                crate::plugins::user_management::handle_update_user(req, context).await?,
+                alibi_plugins::user_management::handle_update_user(req, context).await?,
             )),
             _ => Ok(None),
         }

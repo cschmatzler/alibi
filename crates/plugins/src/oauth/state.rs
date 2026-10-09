@@ -1,0 +1,392 @@
+use alibi_core::entity::AuthAccount;
+use alibi_core::utils::cookie_utils::{sign_cookie_value, verify_cookie_value};
+use alibi_core::{AuthConfig, AuthError, AuthRequest, AuthResult, OAuthStateStrategy};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use chrono::{Duration, Utc};
+use hmac::{Hmac, KeyInit, Mac};
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+use sha2::Sha256;
+
+/// Only trusted hooks populate this context before OAuth state issuance.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct OAuthServerContext {
+    #[serde(rename = "anonymousUserId")]
+    pub(crate) anonymous_user_id: String,
+}
+
+pub(crate) struct CapturedOAuthServerContext(pub(crate) OAuthServerContext);
+
+pub(crate) struct RecoveredOAuthServerContext(
+    pub(crate) OAuthServerContext,
+);
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub(crate) struct OAuthStateLink {
+    pub email: String,
+    #[serde(rename = "userId")]
+    pub user_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub(crate) struct OAuthStatePayload {
+    #[serde(rename = "callbackURL")]
+    pub callback_url: String,
+    #[serde(rename = "codeVerifier")]
+    pub code_verifier: String,
+    #[serde(
+        rename = "idTokenNonce",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub id_token_nonce: Option<String>,
+    #[serde(rename = "errorURL", skip_serializing_if = "Option::is_none")]
+    pub error_url: Option<String>,
+    #[serde(rename = "newUserURL", skip_serializing_if = "Option::is_none")]
+    pub new_user_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link: Option<OAuthStateLink>,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: i64,
+    #[serde(rename = "requestSignUp", skip_serializing_if = "Option::is_none")]
+    pub request_sign_up: Option<bool>,
+    // Old state codecs permitted arbitrary client additionalData under these
+    // names. Deserialize them without assigning authority; authenticate the
+    // original values before narrowing to the trusted typed context.
+    #[serde(
+        rename = "serverContext",
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "alibi_core::utils::json::deserialize_optional_value"
+    )]
+    pub server_context: Option<Value>,
+    #[serde(
+        rename = "_serverContextProof",
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "alibi_core::utils::json::deserialize_optional_value"
+    )]
+    pub server_context_proof: Option<Value>,
+    #[serde(flatten)]
+    #[serde(deserialize_with = "alibi_core::utils::json::deserialize_map")]
+    pub additional_data: Map<String, Value>,
+}
+
+impl OAuthStatePayload {
+    #[must_use]
+    pub(crate) fn new(
+        callback_url: String,
+        code_verifier: String,
+        error_url: Option<String>,
+        new_user_url: Option<String>,
+        link: Option<OAuthStateLink>,
+        request_sign_up: Option<bool>,
+        additional_data: Map<String, Value>,
+    ) -> Self {
+        Self {
+            callback_url,
+            code_verifier,
+            id_token_nonce: None,
+            error_url,
+            new_user_url,
+            link,
+            expires_at: (Utc::now() + Duration::minutes(10)).timestamp_millis(),
+            request_sign_up,
+            server_context: None,
+            server_context_proof: None,
+            additional_data,
+        }
+    }
+
+    pub(crate) fn is_expired(&self) -> bool {
+        self.expires_at < Utc::now().timestamp_millis()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct AccountCookiePayload {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(rename = "userId")]
+    pub user_id: String,
+    #[serde(rename = "providerId")]
+    pub provider_id: String,
+    #[serde(rename = "accountId")]
+    pub account_id: String,
+    #[serde(rename = "accessToken")]
+    pub access_token: Option<String>,
+    #[serde(rename = "refreshToken")]
+    pub refresh_token: Option<String>,
+    #[serde(rename = "idToken")]
+    pub id_token: Option<String>,
+    #[serde(
+        rename = "accessTokenExpiresAt",
+        serialize_with = "alibi_core::utils::datetime::serialize_optional"
+    )]
+    pub access_token_expires_at: Option<chrono::DateTime<Utc>>,
+    #[serde(
+        rename = "refreshTokenExpiresAt",
+        serialize_with = "alibi_core::utils::datetime::serialize_optional"
+    )]
+    pub refresh_token_expires_at: Option<chrono::DateTime<Utc>>,
+    pub scope: Option<String>,
+    pub password: Option<String>,
+    #[serde(
+        rename = "createdAt",
+        serialize_with = "alibi_core::utils::datetime::serialize_optional"
+    )]
+    pub created_at: Option<chrono::DateTime<Utc>>,
+    #[serde(
+        rename = "updatedAt",
+        serialize_with = "alibi_core::utils::datetime::serialize_optional"
+    )]
+    pub updated_at: Option<chrono::DateTime<Utc>>,
+    #[serde(flatten)]
+    pub additional: Map<String, Value>,
+    #[serde(skip)]
+    pub snapshot: Option<Map<String, Value>>,
+    #[serde(skip)]
+    pub original: Option<Map<String, Value>>,
+}
+
+impl AccountCookiePayload {
+    #[must_use]
+    pub(crate) fn from_account(account: &impl AuthAccount) -> Self {
+        let mut payload = Self {
+            id: Some(account.id().to_string()),
+            user_id: account.user_id().to_string(),
+            provider_id: account.provider_id().to_owned(),
+            account_id: account.account_id().to_owned(),
+            access_token: account.access_token().map(str::to_owned),
+            refresh_token: account.refresh_token().map(str::to_owned),
+            id_token: account.id_token().map(str::to_owned),
+            access_token_expires_at: account.access_token_expires_at(),
+            refresh_token_expires_at: account.refresh_token_expires_at(),
+            scope: account.scope().map(str::to_owned),
+            password: account.password().map(str::to_owned),
+            created_at: Some(account.created_at()),
+            updated_at: Some(account.updated_at()),
+            additional: account.additional_fields(),
+            snapshot: account
+                .adapter_snapshot()
+                .map(|output| output.values().clone()),
+            original: None,
+        };
+        payload.original = serde_json::to_value(&payload)
+            .ok()
+            .and_then(|value| value.as_object().cloned());
+        payload
+    }
+
+    pub(crate) fn wire_value(&self) -> AuthResult<Value> {
+        let Value::Object(current) = serde_json::to_value(self)? else {
+            return Err(AuthError::internal("Account cookie must be an object"));
+        };
+        let Some(snapshot) = &self.snapshot else {
+            return Ok(Value::Object(current));
+        };
+        let mut output = snapshot.clone();
+        // Retain raw projection values and omissions until a token field is
+        // actually changed by sign-in/refresh. Physical getters remain authority.
+        for (key, value) in current {
+            if self
+                .original
+                .as_ref()
+                .and_then(|original| original.get(&key))
+                != Some(&value)
+            {
+                drop(output.insert(key, value));
+            }
+        }
+        Ok(Value::Object(output))
+    }
+}
+
+fn server_context_mac(secret: &str, state: &str, context: &Value) -> AuthResult<Hmac<Sha256>> {
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+        .map_err(|_error| AuthError::internal("Invalid OAuth context signing key"))?;
+    let bytes = alibi_core::utils::json::to_vec(context)?;
+    let state_len = u64::try_from(state.len())
+        .map_err(|_error| AuthError::internal("OAuth state is too long"))?;
+    let context_len = u64::try_from(bytes.len())
+        .map_err(|_error| AuthError::internal("OAuth context is too long"))?;
+    mac.update(b"better-auth-rs:oauth:server-context:v1\0");
+    mac.update(&state_len.to_be_bytes());
+    mac.update(state.as_bytes());
+    mac.update(&context_len.to_be_bytes());
+    mac.update(&bytes);
+    Ok(mac)
+}
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(crate) fn capture_server_context(
+    payload: &mut OAuthStatePayload,
+    state: &str,
+    secret: &str,
+) -> AuthResult<()> {
+    let Some(context) = alibi_core::hooks::current_request_hook_context()
+        .and_then(|request| request.extensions.get::<CapturedOAuthServerContext>())
+    else {
+        return Ok(());
+    };
+    let value = alibi_core::utils::json::to_value(&context.0)?;
+    let proof = URL_SAFE_NO_PAD.encode(
+        server_context_mac(secret, state, &value)?
+            .finalize()
+            .into_bytes(),
+    );
+    payload.server_context = Some(value);
+    payload.server_context_proof = Some(Value::String(proof));
+    Ok(())
+}
+
+pub(crate) fn verified_server_context(
+    payload: &OAuthStatePayload,
+    state: &str,
+    secret: &str,
+) -> Option<OAuthServerContext> {
+    let context = payload.server_context.as_ref()?;
+    let proof = payload.server_context_proof.as_ref()?.as_str()?;
+    if proof.len() != 43 {
+        return None;
+    }
+    let proof = URL_SAFE_NO_PAD.decode(proof).ok()?;
+    server_context_mac(secret, state, context)
+        .ok()?
+        .verify_slice(&proof)
+        .ok()?;
+    // Only an authenticated newly issued value may select a stored user.
+    alibi_core::utils::json::from_slice(&alibi_core::utils::json::to_vec(context).ok()?).ok()
+}
+
+pub(crate) fn state_cookie_name(config: &AuthConfig) -> String {
+    match config.account.store_state_strategy {
+        OAuthStateStrategy::Cookie => related_cookie_name(config, "oauth_state"),
+        OAuthStateStrategy::Automatic | OAuthStateStrategy::Database => {
+            related_cookie_name(config, "state")
+        }
+    }
+}
+
+pub(super) fn account_cookie_name(config: &AuthConfig) -> String {
+    alibi_core::utils::cookie_utils::related_cookie_name(config, "account_data")
+}
+
+/// Sign the database-backed state's correlation cookie using Better Call's wire format.
+pub(super) fn create_database_state_cookie_value(secret: &str, state: &str) -> String {
+    sign_cookie_value(state, secret)
+}
+
+///
+/// # Errors
+/// Returns an error when the correlation cookie has no authenticated state.
+pub(super) fn decode_database_state_cookie_value(secret: &str, token: &str) -> AuthResult<String> {
+    verify_cookie_value(token, secret)
+        .filter(|state| !state.is_empty())
+        .ok_or_else(|| AuthError::internal("Invalid OAuth state cookie"))
+}
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(super) fn create_cookie_state_value(
+    config: &AuthConfig,
+    payload: &OAuthStatePayload,
+) -> AuthResult<String> {
+    super::super::token_crypto::encrypt_with_config_for_purpose(
+        &alibi_core::utils::json::to_string(payload)?,
+        config,
+        super::super::token_crypto::EncryptionPurpose::StateCookie,
+    )
+}
+
+/// # Errors
+/// Rejects unauthenticated or malformed state payloads.
+pub(crate) fn decode_cookie_state_value(
+    config: &AuthConfig,
+    token: &str,
+) -> AuthResult<OAuthStatePayload> {
+    let plain = super::super::token_crypto::decrypt_with_config_for_purpose(
+        token,
+        config,
+        super::super::token_crypto::EncryptionPurpose::StateCookie,
+    )?;
+    alibi_core::utils::json::from_slice(plain.as_bytes()).map_err(AuthError::from)
+}
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(crate) fn create_account_cookie_value(
+    config: &AuthConfig,
+    payload: &AccountCookiePayload,
+    max_age: f64,
+) -> AuthResult<String> {
+    super::account_cookie::encode(config.current_secret(), payload, max_age)
+}
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(super) fn decode_account_cookie_value(
+    config: &AuthConfig,
+    token: &str,
+) -> AuthResult<AccountCookiePayload> {
+    config
+        .verification_secrets()
+        .find_map(|secret| super::account_cookie::decode(secret, token).ok())
+        .ok_or_else(|| AuthError::bad_request("Account not found"))
+}
+
+pub(crate) fn get_cookie(req: &AuthRequest, name: &str) -> Option<String> {
+    let header = req.headers.get("cookie")?;
+    header.split(';').find_map(|cookie| {
+        let trimmed = cookie.trim();
+        let (cookie_name, cookie_value) = trimmed.split_once('=')?;
+        (cookie_name == name).then_some(cookie_value.to_owned())
+    })
+}
+
+pub(super) fn related_cookie_name(config: &AuthConfig, suffix: &str) -> String {
+    config
+        .session
+        .cookie_name
+        .strip_suffix("session_token")
+        .map_or_else(
+            || format!("better-auth.{suffix}"),
+            |prefix| format!("{prefix}{suffix}"),
+        )
+}
+
+pub(super) fn filter_additional_state_data(
+    additional_data: Option<Map<String, Value>>,
+) -> Map<String, Value> {
+    additional_data
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(key, _)| !reserved_state_key(key))
+        .collect()
+}
+
+fn reserved_state_key(key: &str) -> bool {
+    matches!(
+        key,
+        "callbackURL"
+            | "codeVerifier"
+            | "idTokenNonce"
+            | "errorURL"
+            | "newUserURL"
+            | "link"
+            | "expiresAt"
+            | "requestSignUp"
+            | "serverContext"
+            | "_serverContextProof"
+    )
+}
+
+/// OAuth records cannot be confused with other verification purposes.
+pub(crate) fn state_verification_identifier(state: &str) -> String {
+    format!("auth-state:{state}")
+}

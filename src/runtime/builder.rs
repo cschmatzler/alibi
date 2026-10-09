@@ -160,17 +160,17 @@ impl<S: AuthSchema> AuthBuilder<S> {
         // Core modules exist on every instance. Explicit modules keep their own
         // configuration and priority; defaults never enable credential login.
         let defaults: Vec<Box<dyn AuthPlugin<S>>> = vec![
-            Box::new(crate::plugins::SessionManagementPlugin::new()),
+            Box::new(alibi_plugins::SessionManagementPlugin::new()),
             Box::new(
-                crate::plugins::EmailPasswordPlugin::new()
+                alibi_plugins::EmailPasswordPlugin::new()
                     .enabled(false)
                     .enable_username(false),
             ),
-            Box::new(crate::plugins::PasswordManagementPlugin::new()),
-            Box::new(crate::plugins::EmailVerificationPlugin::new()),
-            Box::new(crate::plugins::AccountManagementPlugin::new()),
-            Box::new(crate::plugins::OAuthPlugin::new()),
-            Box::new(crate::plugins::UserManagementPlugin::new()),
+            Box::new(alibi_plugins::PasswordManagementPlugin::new()),
+            Box::new(alibi_plugins::EmailVerificationPlugin::new()),
+            Box::new(alibi_plugins::AccountManagementPlugin::new()),
+            Box::new(alibi_plugins::OAuthPlugin::new()),
+            Box::new(alibi_plugins::UserManagementPlugin::new()),
         ];
         for plugin in defaults {
             if !self
@@ -238,8 +238,8 @@ impl<S: AuthSchema> AuthBuilder<S> {
                 account: alibi_core::field_policy::SessionAdapterFields(Arc::new(account_adapter)),
             });
         let mut openapi = OpenApiRegistry::configured(S::openapi_models(), &config);
-        let core_routes = alibi_api::metadata::core_routes();
-        let core_metadata = alibi_api::metadata::plugin_metadata("core", &core_routes);
+        let core_routes = alibi_plugins::metadata::core_routes();
+        let core_metadata = alibi_plugins::metadata::plugin_metadata("core", &core_routes);
         openapi.register("core", core_routes, core_metadata);
         for plugin in &self.plugins {
             openapi.register(

@@ -76,32 +76,81 @@ checksum = "250f629c0161ad8107cf89319e990051fae62832fd343083bea452d93e2205fd"
 name = "alibi"
 version = "0.1.1"
 dependencies = [
- "alibi-api",
  "alibi-core",
+ "alibi-plugins",
  "alibi-seaorm",
  "alibi-sqlx",
  "async-trait",
  "axum",
- "base64 0.23.1",
- "chrono",
- "clap",
+ "http",
  "http-body-util",
- "jsonwebtoken",
  "multer",
- "rand 0.10.3",
  "serde",
  "serde_json",
- "serde_yaml",
- "thiserror 2.0.21",
  "tokio",
- "tower",
  "tracing",
  "url",
- "uuid",
 ]
 
 [[package]]
-name = "alibi-api"
+name = "alibi-core"
+version = "0.1.1"
+dependencies = [
+ "aes-gcm",
+ "alibi-macros",
+ "alibi-schema-registry",
+ "async-trait",
+ "axum",
+ "base64 0.23.1",
+ "chrono",
+ "cookie",
+ "flate2",
+ "futures-util",
+ "hkdf 0.13.0",
+ "hmac 0.13.0",
+ "http",
+ "hybrid-array",
+ "indexmap 2.14.2",
+ "jsonwebtoken",
+ "percent-encoding",
+ "rand 0.10.3",
+ "regex",
+ "ryu-js",
+ "scrypt",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sqlparser",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "unicode-normalization",
+ "url",
+ "uuid",
+ "validator",
+]
+
+[[package]]
+name = "alibi-entity-codegen"
+version = "0.1.1"
+dependencies = [
+ "alibi-schema-registry",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
+name = "alibi-macros"
+version = "0.1.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
+name = "alibi-plugins"
 version = "0.1.1"
 dependencies = [
  "aes-gcm",
@@ -152,63 +201,6 @@ dependencies = [
  "webauthn-rs",
  "webauthn-rs-core",
  "x509-parser",
-]
-
-[[package]]
-name = "alibi-core"
-version = "0.1.1"
-dependencies = [
- "aes-gcm",
- "alibi-macros",
- "alibi-schema-registry",
- "async-trait",
- "axum",
- "base64 0.23.1",
- "chrono",
- "cookie",
- "flate2",
- "futures-util",
- "glob-match",
- "hkdf 0.13.0",
- "hmac 0.13.0",
- "hybrid-array",
- "indexmap 2.14.2",
- "jsonwebtoken",
- "percent-encoding",
- "rand 0.10.3",
- "regex",
- "ryu-js",
- "scrypt",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "sqlparser",
- "thiserror 2.0.21",
- "tokio",
- "tracing",
- "unicode-normalization",
- "url",
- "uuid",
- "validator",
-]
-
-[[package]]
-name = "alibi-entity-codegen"
-version = "0.1.1"
-dependencies = [
- "alibi-schema-registry",
- "proc-macro2",
- "quote",
- "syn 3.0.6",
-]
-
-[[package]]
-name = "alibi-macros"
-version = "0.1.1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.6",
 ]
 
 [[package]]
@@ -2000,12 +1992,6 @@ name = "glob"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
-
-[[package]]
-name = "glob-match"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9985c9503b412198aa4197559e9a318524ebc4519c229bfa05a535828c950b9d"
 
 [[package]]
 name = "group"
@@ -4342,19 +4328,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_yaml"
-version = "0.9.34+deprecated"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
-dependencies = [
- "indexmap 2.14.2",
- "itoa",
- "ryu",
- "serde",
- "unsafe-libyaml",
-]
-
-[[package]]
 name = "serdect"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5239,12 +5212,6 @@ dependencies = [
  "crypto-common 0.2.2",
  "ctutils",
 ]
-
-[[package]]
-name = "unsafe-libyaml"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "untrusted"
