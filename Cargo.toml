@@ -120,6 +120,7 @@ sqlx = ["sqlx-sqlite", "sqlx-postgres"]
 sqlx-sqlite = ["dep:alibi-sqlx", "alibi-sqlx/sqlite"]
 sqlx-postgres = ["dep:alibi-sqlx", "alibi-sqlx/postgres"]
 redis-cache = ["alibi-core/redis-cache"]
+passkey = ["alibi-plugins/passkey"]
 [dependencies]
 alibi-core = { workspace = true }
 alibi-plugins = { workspace = true }
@@ -138,8 +139,8 @@ url = { workspace = true }
 tracing = { workspace = true }
 [dev-dependencies]
 rsa = { workspace = true }
-# Enable adapters for repository tests without changing downstream defaults.
-alibi = { path = ".", features = ["axum", "poem", "seaorm"] }
+# Enable adapters and passkeys for repository tests without changing downstream defaults.
+alibi = { path = ".", features = ["axum", "poem", "seaorm", "passkey"] }
 jsonwebtoken = { workspace = true, features = ["use_pem"] }
 ed25519-dalek = { workspace = true }
 k256 = { workspace = true }
@@ -231,4 +232,4 @@ opt-level = 3
 opt-level = 3
 
 [package.metadata.docs.rs]
-features = ["axum", "poem", "seaorm", "redis-cache"]
+features = ["axum", "poem", "seaorm", "redis-cache", "passkey"]

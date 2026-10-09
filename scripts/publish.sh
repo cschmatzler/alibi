@@ -9,4 +9,4 @@ if [[ "${1:-}" == "--publish" ]]; then
   shift
 fi
 
-exec cargo publish --workspace --registry crates-io --locked --features alibi/axum,alibi/poem,alibi/seaorm,alibi/redis-cache "${dry_run[@]}" "$@"
+exec cargo publish --workspace --registry crates-io --locked --features alibi/axum,alibi/poem,alibi/seaorm,alibi/redis-cache,alibi/passkey "${dry_run[@]}" "$@"

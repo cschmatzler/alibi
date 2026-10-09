@@ -93,7 +93,7 @@ curl http://localhost:3000/api/auth/ok
 # {"ok":true}
 ```
 
-The generated schema belongs to your application. `run_app_migrations` sets up a new local database; use your own versioned migrations as the schema evolves. The default build uses OpenSSL; see [Cargo features](docs/src/content/docs/reference/features.md) for Rustls.
+The generated schema belongs to your application. `run_app_migrations` sets up a new local database; use your own versioned migrations as the schema evolves. The default build uses OpenSSL; see [Cargo features](docs/src/content/docs/reference/features.md) for Rustls. Passkeys require the opt-in `passkey` Cargo feature and OpenSSL, independently of the TLS stack.
 
 Continue with the [installation guide](docs/src/content/docs/installation.md), [basic usage](docs/src/content/docs/basic-usage.md), or [SeaORM setup](docs/src/content/docs/databases/seaorm.md). For the frontend, follow Better Auth's official [client setup](https://www.better-auth.com/docs/concepts/client).
 

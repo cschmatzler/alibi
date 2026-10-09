@@ -5,7 +5,7 @@ mkdir -p coverage
 # Keep this checkout's coverage objects separate from shared build caches.
 export CARGO_LLVM_COV_TARGET_DIR="$PWD/coverage/target"
 cargo llvm-cov clean --workspace
-cargo llvm-cov nextest --workspace --locked --features axum,seaorm,redis-cache --no-report
+cargo llvm-cov nextest --workspace --locked --features axum,seaorm,redis-cache,passkey --no-report
 cargo llvm-cov report --locked --package '*' \
   --ignore-filename-regex '(tests/|scripts/|target/)' \
   --lcov --output-path coverage/lcov.raw.info

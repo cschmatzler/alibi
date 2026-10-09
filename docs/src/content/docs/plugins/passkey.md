@@ -15,6 +15,14 @@ Adds the `passkeys` table (credential id, public key, counter, device type, back
 
 ## Setup
 
+Enable the opt-in `passkey` Cargo feature alongside your framework and database features:
+
+```toml
+alibi = { version = "0.2.0", features = ["axum", "passkey"] }
+```
+
+Passkey verification requires OpenSSL even when the `rustls` feature is selected. Applications without `passkey` can use Rustls without linking OpenSSL.
+
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::PasskeyPlugin;

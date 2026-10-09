@@ -76,6 +76,7 @@ pub mod one_tap;
 pub mod one_time_token;
 pub mod open_api;
 pub mod organization;
+#[cfg(feature = "passkey")]
 pub mod passkey;
 pub mod password_management;
 mod passwordless_numeric;
@@ -287,6 +288,7 @@ pub use organization::{
     OrganizationCreationHooks, OrganizationDraftContext, OrganizationMemberCreatePatch,
     OrganizationMemberDraftContext, OrganizationPlugin,
 };
+#[cfg(feature = "passkey")]
 pub use passkey::{
     AuthenticationResult, PasskeyAuthenticationAfterVerification, PasskeyAuthenticationConfig,
     PasskeyAuthenticationContext, PasskeyAuthenticatorSelection, PasskeyConfig, PasskeyExtensions,
