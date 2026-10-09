@@ -107,7 +107,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
         active
             .update(self.scoped_connection())
             .await
-            .map(|model_2| Some(Passkey::from(&model_2)))
+            .map(|model| Some(Passkey::from(&model)))
             .map_err(map_db_err)
     }
 
@@ -126,7 +126,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
         active
             .update(self.scoped_connection())
             .await
-            .map(|model_2| Passkey::from(&model_2))
+            .map(|model| Passkey::from(&model))
             .map_err(map_db_err)
     }
 

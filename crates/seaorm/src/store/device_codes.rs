@@ -187,7 +187,7 @@ where
         active
             .update(self.scoped_connection())
             .await
-            .map(|model_2| DeviceCode::from(&model_2))
+            .map(|model| DeviceCode::from(&model))
             .map_err(map_db_err)
     }
 

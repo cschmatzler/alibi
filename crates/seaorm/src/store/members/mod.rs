@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DbErr, EntityTrait, IntoActiveModel, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, QueryTrait, Select, Set, TransactionTrait,
+    QueryFilter, QueryOrder, QuerySelect, QueryTrait, Select, Set,
 };
 use uuid::Uuid;
 
@@ -77,7 +77,7 @@ where
         active
             .update(self.scoped_connection())
             .await
-            .map(|model_2| Member::from(&model_2))
+            .map(|model| Member::from(&model))
             .map_err(map_db_err)
     }
 
@@ -96,21 +96,14 @@ where
         let mut active = model.into_active_model();
         active.role = Set(role.to_owned());
         match active.update(self.scoped_connection()).await {
-            Ok(model_2) => Ok(Some(Member::from(&model_2))),
+            Ok(model) => Ok(Some(Member::from(&model))),
             Err(DbErr::RecordNotUpdated) => Ok(None),
             Err(error) => Err(map_db_err(error)),
         }
     }
 
     async fn delete_member(&self, member_id: &str) -> AuthResult<()> {
-        let transaction = self
-            .scoped_connection()
-            .begin_with_options(sea_orm::TransactionOptions {
-                sqlite_transaction_mode: Some(sea_orm::SqliteTransactionMode::Immediate),
-                ..Default::default()
-            })
-            .await
-            .map_err(map_db_err)?;
+        let transaction = self.scoped_connection().begin_immediate().await?;
         if let Some(member) = Entity::find_by_id(member_id.to_owned())
             .lock_exclusive()
             .one(&transaction)
@@ -148,14 +141,7 @@ where
         user_id: &str,
         remove_team_members: bool,
     ) -> AuthResult<()> {
-        let transaction = self
-            .scoped_connection()
-            .begin_with_options(sea_orm::TransactionOptions {
-                sqlite_transaction_mode: Some(sea_orm::SqliteTransactionMode::Immediate),
-                ..Default::default()
-            })
-            .await
-            .map_err(map_db_err)?;
+        let transaction = self.scoped_connection().begin_immediate().await?;
         _ = Entity::delete_by_id(member_id.to_owned())
             .exec(&transaction)
             .await

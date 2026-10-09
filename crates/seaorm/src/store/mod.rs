@@ -57,7 +57,7 @@ use alibi_core::{
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use scoped_connection::{ScopedConnection, ScopedTransaction};
-use sea_orm::{DatabaseConnection, DbErr, SqlErr, TransactionTrait};
+use sea_orm::{DatabaseConnection, DbErr, EntityTrait, SqlErr, TransactionTrait};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -101,6 +101,18 @@ impl<S: AuthSchema> SeaOrmStore<S> {
             .ok_or_else(|| AuthError::internal("ID allocation returned no value"))?;
         let value: i64 = row.try_get("", "value").map_err(map_db_err)?;
         Ok(Some(value.to_string()))
+    }
+
+    /// `generated_id` for a model entity, naming its table and ID column.
+    pub(crate) async fn generated_entity_id<E: EntityTrait, C: sea_orm::ConnectionTrait>(
+        &self,
+        db: &C,
+        model: &str,
+        id_column: impl sea_orm::Iden,
+    ) -> AuthResult<Option<String>> {
+        let table = E::default().table_name().to_owned();
+        self.generated_id(db, model, &table, &id_column.to_string())
+            .await
     }
 
     #[must_use]

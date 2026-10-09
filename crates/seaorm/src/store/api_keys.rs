@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, Iterable, QueryFilter, QueryOrder,
-    QuerySelect, QueryTrait, Set, SqliteTransactionMode, TransactionOptions, TransactionTrait,
+    QuerySelect, QueryTrait, Set,
 };
 use uuid::Uuid;
 
@@ -71,9 +71,7 @@ where
         };
         let inserted = if sqlite_cast {
             use sea_orm::sea_query::{Expr, ExprTrait, Query};
-            // Keep one bound INSERT with every ordinary model value. Only the
-            // invalid-surrogate SQLite start needs a bytes-to-TEXT expression;
-            // other engines and valid strings retain the original ORM path.
+            // Only an invalid-surrogate SQLite start needs a bytes-to-TEXT expression.
             let mut insert = Entity::insert(model.clone());
             let mut values = Query::select();
             for column in Column::iter() {
@@ -115,8 +113,7 @@ where
     }
 
     async fn list_api_keys_by_reference(&self, reference_id: &str) -> AuthResult<Vec<ApiKey>> {
-        // Explicit ASC order matches TS insertion-order behavior and avoids
-        // nondeterministic results across database backends.
+        // Explicit ASC order matches TS insertion order on every backend.
         Entity::find()
             .filter(Column::ReferenceId.eq(reference_id))
             .order_by_asc(Column::CreatedAt)
@@ -139,7 +136,7 @@ where
         active
             .update(self.scoped_connection())
             .await
-            .map(|model_2| ApiKey::from(&model_2))
+            .map(|model| ApiKey::from(&model))
             .map_err(map_db_err)
     }
 
@@ -154,14 +151,7 @@ where
         global_rate_limit_enabled: bool,
     ) -> AuthResult<ConsumeApiKeyResult> {
         // SQLite must acquire its write reservation before reading usage counters.
-        let transaction = self
-            .scoped_connection()
-            .begin_with_options(TransactionOptions {
-                sqlite_transaction_mode: Some(SqliteTransactionMode::Immediate),
-                ..Default::default()
-            })
-            .await
-            .map_err(map_db_err)?;
+        let transaction = self.scoped_connection().begin_immediate().await?;
         let txn = &transaction;
         let id = id.to_owned();
         let result = async {
@@ -258,8 +248,6 @@ where
     }
 
     async fn delete_expired_api_keys(&self) -> AuthResult<usize> {
-        // Single query: DELETE FROM api_keys WHERE expires_at IS NOT NULL AND expires_at < NOW()
-        // Matches TS: adapter.deleteMany({ where: [{ field: "expiresAt", operator: "lt", value: new Date() }, ...] })
         Entity::delete_many()
             .filter(Column::ExpiresAt.is_not_null())
             .filter(Column::ExpiresAt.lt(Utc::now()))

@@ -12,7 +12,7 @@ use chrono::Utc;
 use sea_orm::sea_query::{Expr, ExprTrait};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
-    QueryOrder, QuerySelect, QueryTrait, TransactionTrait,
+    QueryOrder, QuerySelect, QueryTrait,
 };
 
 pub(super) fn user_query<M: SeaOrmUserModel>(
@@ -244,13 +244,10 @@ where
         let now = Utc::now();
         if create_user.id.is_none() {
             create_user.id = self
-                .generated_id(
+                .generated_entity_id::<<S::User as SeaOrmUserModel>::Entity, _>(
                     db,
                     "user",
-                    <<S::User as SeaOrmUserModel>::Entity as sea_orm::EntityName>::table_name(
-                        &Default::default(),
-                    ),
-                    &sea_orm::Iden::to_string(&S::User::id_column()),
+                    S::User::id_column(),
                 )
                 .await?;
         }
@@ -301,10 +298,8 @@ where
                 return Err(AuthError::bad_request("Value must be an array"));
             }
         };
-        // The upstream schema transform coerces a scalar string on a
-        // boolean field before the adapter binds it. Array operands
-        // retain their original strings. The actual model column type
-        // also supports custom boolean fields and physical renames.
+        // Upstream coerces a scalar string on a boolean field before binding;
+        // array operands keep their original strings.
         let numeric_cast =
             if self.scoped_connection().get_database_backend() == sea_orm::DbBackend::Postgres {
                 use sea_orm::sea_query::ColumnType;
@@ -463,7 +458,7 @@ where
             .await
             .map_err(map_db_err)?
             .ok_or_else(|| AuthError::internal("Numeric text coercion returned no value"))?;
-        // The configured database's own CAST decides the stored text.
+        // The database's own CAST decides the stored text.
         row.try_get("", "value").map_err(map_db_err)
     }
 
@@ -627,14 +622,7 @@ where
         // API keys reference their owner polymorphically, so they carry no
         // foreign key to cascade from. Without this, a deleted user's keys
         // would outlive them and start working again if the id were reused.
-        let transaction = self
-            .scoped_connection()
-            .begin_with_options(sea_orm::TransactionOptions {
-                sqlite_transaction_mode: Some(sea_orm::SqliteTransactionMode::Immediate),
-                ..Default::default()
-            })
-            .await
-            .map_err(map_db_err)?;
+        let transaction = self.scoped_connection().begin_immediate().await?;
         _ = user_query::<S::User>(self.scoped_connection().get_database_backend())
             .filter(S::User::id_column().eq(user_id.clone()))
             .lock_exclusive()

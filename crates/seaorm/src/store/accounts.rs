@@ -40,13 +40,10 @@ where
         let mut fields = std::mem::take(&mut create_account.additional_fields);
         fields.apply_adapter_transforms_async().await?;
         let generated_id = self
-            .generated_id(
+            .generated_entity_id::<<S::Account as SeaOrmAccountModel>::Entity, _>(
                 db,
                 "account",
-                <<S::Account as SeaOrmAccountModel>::Entity as sea_orm::EntityName>::table_name(
-                    &Default::default(),
-                ),
-                &sea_orm::Iden::to_string(&S::Account::id_column()),
+                S::Account::id_column(),
             )
             .await?;
         let id = generated_id

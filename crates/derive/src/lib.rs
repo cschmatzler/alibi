@@ -15,42 +15,34 @@ struct FieldInfo {
 #[proc_macro_derive(AuthSchema, attributes(auth))]
 pub fn derive_auth_schema(input: ProcMacroTokenStream) -> ProcMacroTokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    generate_auth_schema(&input).into()
+    generate_auth_schema(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
 }
 
 #[proc_macro_derive(PluginConfig, attributes(plugin, config))]
 pub fn derive_plugin_config(input: ProcMacroTokenStream) -> ProcMacroTokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    generate_plugin_config(&input).into()
+    generate_plugin_config(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
 }
 
-fn generate_auth_schema(input: &DeriveInput) -> TokenStream {
-    let user = match parse_type_attr(input, "user") {
-        Ok(value) => value,
-        Err(err) => return err.to_compile_error(),
-    };
-    let session = match parse_type_attr(input, "session") {
-        Ok(value) => value,
-        Err(err) => return err.to_compile_error(),
-    };
-    let account = match parse_type_attr(input, "account") {
-        Ok(value) => value,
-        Err(err) => return err.to_compile_error(),
-    };
-    let verification = match parse_type_attr(input, "verification") {
-        Ok(value) => value,
-        Err(err) => return err.to_compile_error(),
-    };
+fn generate_auth_schema(input: &DeriveInput) -> syn::Result<TokenStream> {
+    let user = parse_type_attr(input, "user")?;
+    let session = parse_type_attr(input, "session")?;
+    let account = parse_type_attr(input, "account")?;
+    let verification = parse_type_attr(input, "verification")?;
     let ident = &input.ident;
 
-    quote! {
+    Ok(quote! {
         impl ::alibi::__private_core::schema::AuthSchema for #ident {
             type User = #user;
             type Session = #session;
             type Account = #account;
             type Verification = #verification;
         }
-    }
+    })
 }
 
 fn parse_type_attr(input: &DeriveInput, key: &str) -> Result<Type, syn::Error> {
@@ -78,36 +70,33 @@ fn parse_type_attr(input: &DeriveInput, key: &str) -> Result<Type, syn::Error> {
     })
 }
 
-fn generate_plugin_config(input: &DeriveInput) -> TokenStream {
-    let plugin_name = match parse_plugin_name(input) {
-        Ok(name) => name,
-        Err(error) => return error.to_compile_error(),
-    };
+fn generate_plugin_config(input: &DeriveInput) -> syn::Result<TokenStream> {
+    let plugin_name = parse_plugin_name(input)?;
     let config_name = &input.ident;
 
     let fields = match &input.data {
         Data::Struct(data) => match &data.fields {
             Fields::Named(named) => &named.named,
             Fields::Unnamed(_) | Fields::Unit => {
-                return syn::Error::new_spanned(
+                return Err(syn::Error::new_spanned(
                     &input.ident,
                     "PluginConfig requires a struct with named fields",
-                )
-                .to_compile_error();
+                ));
             }
         },
         Data::Enum(_) | Data::Union(_) => {
-            return syn::Error::new_spanned(&input.ident, "PluginConfig requires a struct")
-                .to_compile_error();
+            return Err(syn::Error::new_spanned(
+                &input.ident,
+                "PluginConfig requires a struct",
+            ));
         }
     };
 
-    let field_infos: Vec<FieldInfo> = match fields.iter().map(parse_field_info).collect() {
-        Ok(v) => v,
-        Err(e) => return e.to_compile_error(),
-    };
+    let field_infos = fields
+        .iter()
+        .map(parse_field_info)
+        .collect::<syn::Result<Vec<_>>>()?;
 
-    // Generate Default impl for Config
     let default_fields: Vec<_> = field_infos
         .iter()
         .map(|fi| {
@@ -127,7 +116,6 @@ fn generate_plugin_config(input: &DeriveInput) -> TokenStream {
         }
     };
 
-    // Generate builder methods
     let builder_methods: Vec<_> = field_infos
         .iter()
         .filter(|fi| !fi.skip)
@@ -160,11 +148,11 @@ fn generate_plugin_config(input: &DeriveInput) -> TokenStream {
         }
     };
 
-    quote! {
+    Ok(quote! {
         #default_impl
         #plugin_impl
         #plugin_default
-    }
+    })
 }
 
 fn parse_plugin_name(input: &DeriveInput) -> Result<Ident, syn::Error> {
@@ -230,11 +218,7 @@ fn parse_field_info(field: &syn::Field) -> Result<FieldInfo, syn::Error> {
 }
 
 fn is_string_type(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty {
-        type_path.path.is_ident("String")
-    } else {
-        false
-    }
+    matches!(ty, Type::Path(type_path) if type_path.path.is_ident("String"))
 }
 
 fn extract_option_inner(ty: &Type) -> Option<&Type> {

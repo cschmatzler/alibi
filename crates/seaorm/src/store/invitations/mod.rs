@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
-    QuerySelect, Set, TransactionTrait,
+    QuerySelect, Set,
 };
 use uuid::Uuid;
 
@@ -79,7 +79,7 @@ where
         active
             .update(self.scoped_connection())
             .await
-            .map(|row_2| Invitation::from(&row_2))
+            .map(|row| Invitation::from(&row))
             .map_err(map_db_err)
     }
 
@@ -97,14 +97,7 @@ where
     ) -> AuthResult<Option<(Invitation, Member)>> {
         use super::entities::{member, organization};
         use alibi_core::error::AuthError;
-        let transaction = self
-            .scoped_connection()
-            .begin_with_options(sea_orm::TransactionOptions {
-                sqlite_transaction_mode: Some(sea_orm::SqliteTransactionMode::Immediate),
-                ..Default::default()
-            })
-            .await
-            .map_err(map_db_err)?;
+        let transaction = self.scoped_connection().begin_immediate().await?;
         let outcome = async {
             let Some(invitation) = Entity::find_by_id(invitation_id.to_owned())
                 .lock_exclusive()
@@ -353,7 +346,7 @@ where
         active
             .update(self.scoped_connection())
             .await
-            .map(|model_2| Invitation::from(&model_2))
+            .map(|model| Invitation::from(&model))
             .map_err(map_db_err)
     }
 

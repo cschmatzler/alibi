@@ -149,7 +149,7 @@ where
         let active = apply_update_fields(model.into_active(), update)?;
         model::update::<Model>(self.exec(), &active)
             .await?
-            .map(|model_2| ApiKey::from(&model_2))
+            .map(|model| ApiKey::from(&model))
             .ok_or_else(record_not_updated)
     }
 

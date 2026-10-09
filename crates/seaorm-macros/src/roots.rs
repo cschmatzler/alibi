@@ -5,10 +5,7 @@ use quote::quote;
 pub(crate) fn found_crate_tokens(package_name: &str) -> Option<TokenStream> {
     match crate_name(package_name).ok()? {
         FoundCrate::Itself => {
-            // `Itself` means the Cargo.toml that triggered compilation lists
-            // this crate as its own package name. Examples and integration
-            // tests compile as separate binaries that link the crate
-            // externally, so `crate::` would be wrong: use the extern name.
+            // Examples and integration tests link the crate externally.
             let ident = Ident::new("alibi", Span::call_site());
             Some(quote!(::#ident))
         }

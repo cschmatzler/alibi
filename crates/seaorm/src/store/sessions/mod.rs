@@ -87,13 +87,10 @@ where
             }
         }
         let generated_id = self
-            .generated_id(
+            .generated_entity_id::<<S::Session as SeaOrmSessionModel>::Entity, _>(
                 db,
                 "session",
-                <<S::Session as SeaOrmSessionModel>::Entity as sea_orm::EntityName>::table_name(
-                    &Default::default(),
-                ),
-                &sea_orm::Iden::to_string(&S::Session::id_column()),
+                S::Session::id_column(),
             )
             .await?;
         let id = generated_id
@@ -102,17 +99,7 @@ where
             .transpose()?;
         let mut active = S::Session::new_active(id, token, create_session, now);
         if !fields.is_empty() {
-            for (column, value) in
-                S::Session::additional_field_bindings(&fields, db.get_database_backend())?
-            {
-                let value = crate::additional_fields::prepare_value(db, &column, value).await?;
-                S::Session::set_additional_field(
-                    &mut active,
-                    column,
-                    value,
-                    db.get_database_backend(),
-                )?;
-            }
+            stage_additional_fields::<S::Session, _>(db, &mut active, &fields).await?;
         }
         let session = if persist {
             active.insert(db).await.map_err(map_db_err)?
@@ -150,11 +137,7 @@ where
         }
         // The cache stores hook output before SQL adapter input transformations.
         let mut active = session.into_active_model();
-        let backend = db.get_database_backend();
-        for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
-            let value = crate::additional_fields::prepare_value(db, &column, value).await?;
-            S::Session::set_additional_field(&mut active, column, value, backend)?;
-        }
+        stage_additional_fields::<S::Session, _>(db, &mut active, &fields).await?;
         if let Some(expiry) = expires_at {
             S::Session::set_expires_at(&mut active, expiry);
         }
@@ -190,11 +173,7 @@ where
                 return Ok(None);
             };
             let mut active = current.into_active_model();
-            let backend = db.get_database_backend();
-            for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
-                let value = crate::additional_fields::prepare_value(db, &column, value).await?;
-                S::Session::set_additional_field(&mut active, column, value, backend)?;
-            }
+            stage_additional_fields::<S::Session, _>(db, &mut active, &fields).await?;
             if let Some(expiry) = expires_at {
                 S::Session::set_expires_at(&mut active, expiry);
             }
@@ -237,6 +216,20 @@ where
         self.create_session_with_connection(tx, Some(tx), create_session, true, true)
             .await
     }
+}
+
+/// Stage the configured additional fields on the row, coerced to their columns.
+async fn stage_additional_fields<M: SeaOrmSessionModel, C: ConnectionTrait>(
+    db: &C,
+    active: &mut M::ActiveModel,
+    fields: &FieldValues,
+) -> AuthResult<()> {
+    let backend = db.get_database_backend();
+    for (column, value) in M::additional_field_bindings(fields, backend)? {
+        let value = crate::additional_fields::prepare_value(db, &column, value).await?;
+        M::set_additional_field(active, column, value, backend)?;
+    }
+    Ok(())
 }
 
 pub(super) enum SessionScope<'a> {
@@ -283,17 +276,13 @@ where
             return Ok(None);
         };
         let mut active = model.into_active_model();
-        let backend = self.scoped_connection().get_database_backend();
         if !fields.is_empty() {
-            for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
-                let value = crate::additional_fields::prepare_value(
-                    self.scoped_connection(),
-                    &column,
-                    value,
-                )
-                .await?;
-                S::Session::set_additional_field(&mut active, column, value, backend)?;
-            }
+            stage_additional_fields::<S::Session, _>(
+                self.scoped_connection(),
+                &mut active,
+                &fields,
+            )
+            .await?;
         }
         if let Some(expires_at) = expires_at {
             S::Session::set_expires_at(&mut active, expires_at);

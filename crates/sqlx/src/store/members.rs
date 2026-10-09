@@ -228,7 +228,7 @@ where
             .member
             .update(self.exec(), &active)
             .await?
-            .map(|model_2| Member::from(&model_2))
+            .map(|model| Member::from(&model))
             .ok_or_else(crate::error::record_not_updated)
     }
 
@@ -247,7 +247,7 @@ where
             .member
             .update(self.exec(), &active)
             .await?
-            .map(|model_2| Member::from(&model_2)))
+            .map(|model| Member::from(&model)))
     }
 
     async fn delete_member(&self, member_id: &str) -> AuthResult<()> {

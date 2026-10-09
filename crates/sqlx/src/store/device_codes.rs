@@ -208,7 +208,7 @@ where
 
         model::update::<Model>(self.exec(), &active)
             .await?
-            .map(|model_2| DeviceCode::from(&model_2))
+            .map(|model| DeviceCode::from(&model))
             .ok_or_else(record_not_updated)
     }
 

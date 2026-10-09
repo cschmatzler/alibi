@@ -117,7 +117,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SqlxStore<S> {
         active.set("updated_at", Utc::now());
         model::update::<Model>(self.exec(), &active)
             .await?
-            .map(|model_2| Some(Passkey::from(&model_2)))
+            .map(|model| Some(Passkey::from(&model)))
             .ok_or_else(record_not_updated)
     }
 
@@ -131,7 +131,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SqlxStore<S> {
         active.set("updated_at", Utc::now());
         model::update::<Model>(self.exec(), &active)
             .await?
-            .map(|model_2| Passkey::from(&model_2))
+            .map(|model| Passkey::from(&model))
             .ok_or_else(record_not_updated)
     }
 

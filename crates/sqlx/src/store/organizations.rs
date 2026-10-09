@@ -151,7 +151,7 @@ where
             .organization
             .update(self.exec(), &active)
             .await?
-            .map(|model_2| Organization::from(&model_2))
+            .map(|model| Organization::from(&model))
             .ok_or_else(record_not_updated)
     }
 
@@ -241,7 +241,7 @@ where
             .organization
             .update(self.exec(), &active)
             .await?
-            .map(|model_2| Organization::from(&model_2)))
+            .map(|model| Organization::from(&model)))
     }
 
     async fn delete_organization(&self, id: &str) -> AuthResult<()> {

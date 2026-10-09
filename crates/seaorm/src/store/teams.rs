@@ -9,7 +9,7 @@ use chrono::Utc;
 use sea_orm::ExprTrait;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect, Set, SqliteTransactionMode, TransactionOptions, TransactionTrait,
+    QueryOrder, QuerySelect, Set,
 };
 use uuid::Uuid;
 
@@ -193,14 +193,7 @@ where
             .map_err(map_db_err)
     }
     async fn delete_team(&self, organization_id: &str, team_id: &str) -> AuthResult<bool> {
-        let tx = self
-            .scoped_connection()
-            .begin_with_options(TransactionOptions {
-                sqlite_transaction_mode: Some(SqliteTransactionMode::Immediate),
-                ..Default::default()
-            })
-            .await
-            .map_err(map_db_err)?;
+        let tx = self.scoped_connection().begin_immediate().await?;
         let deleted = team::Entity::delete_many()
             .filter(team::Column::Id.eq(team_id))
             .filter(team::Column::OrganizationId.eq(organization_id))
@@ -261,14 +254,7 @@ where
         user_id: &str,
         maximum: Option<f64>,
     ) -> AuthResult<AddTeamMemberResult> {
-        let tx = self
-            .scoped_connection()
-            .begin_with_options(TransactionOptions {
-                sqlite_transaction_mode: Some(SqliteTransactionMode::Immediate),
-                ..Default::default()
-            })
-            .await
-            .map_err(map_db_err)?;
+        let tx = self.scoped_connection().begin_immediate().await?;
         let result = self
             .add_team_member_in_tx(&tx, team_id, user_id, maximum)
             .await?;
@@ -276,14 +262,7 @@ where
         Ok(result)
     }
     async fn remove_team_member(&self, team_id: &str, user_id: &str) -> AuthResult<usize> {
-        let tx = self
-            .scoped_connection()
-            .begin_with_options(TransactionOptions {
-                sqlite_transaction_mode: Some(SqliteTransactionMode::Immediate),
-                ..Default::default()
-            })
-            .await
-            .map_err(map_db_err)?;
+        let tx = self.scoped_connection().begin_immediate().await?;
         _ = team::Entity::find_by_id(team_id.to_owned())
             .lock_exclusive()
             .one(&tx)

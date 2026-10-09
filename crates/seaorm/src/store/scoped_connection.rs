@@ -1,10 +1,12 @@
 //! Statement-level namespace policy, retained across nested transactions.
+use super::map_db_err;
 use alibi_core::config::TwoFactorDatabaseConfig;
+use alibi_core::error::AuthResult;
 use async_trait::async_trait;
 use sea_orm::{
     AccessMode, ConnectionTrait, DatabaseConnection, DatabaseTransaction, DbBackend, DbErr,
-    ExecResult, IsolationLevel, QueryResult, Statement, TransactionError, TransactionOptions,
-    TransactionSession, TransactionTrait,
+    ExecResult, IntoDatabaseExecutor, IsolationLevel, QueryResult, SqliteTransactionMode,
+    Statement, TransactionError, TransactionOptions, TransactionSession, TransactionTrait,
 };
 use std::{future::Future, pin::Pin};
 
@@ -34,11 +36,56 @@ impl<C: ConnectionTrait> Scoped<C> {
         }
         Ok(sql)
     }
+    fn scope<T>(&self, inner: T) -> Scoped<T> {
+        Scoped {
+            inner,
+            schema: self.schema.clone(),
+            factor: self.factor.clone(),
+        }
+    }
+
     fn statement(&self, mut statement: Statement) -> Result<Statement, DbErr> {
         statement.sql = self.sql(statement.sql)?;
         Ok(statement)
     }
 }
+impl<C> Scoped<C>
+where
+    C: ConnectionTrait,
+    for<'a> &'a C: IntoDatabaseExecutor<'a>,
+{
+    pub(super) async fn has_table(&self, table: &str) -> Result<bool, DbErr> {
+        if self.get_database_backend() == DbBackend::Postgres {
+            let (sql, values) = if let Some(schema) = &self.schema {
+                (
+                    "SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2",
+                    vec![schema.clone().into(), table.to_owned().into()],
+                )
+            } else {
+                (
+                    "SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_name = $1",
+                    vec![table.to_owned().into()],
+                )
+            };
+            let row = self
+                .inner
+                .query_one_raw(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    sql,
+                    values,
+                ))
+                .await?;
+            return row
+                .map(|row| row.try_get::<i64>("", "count").map(|count| count > 0))
+                .transpose()
+                .map(|value| value.unwrap_or(false));
+        }
+        sea_orm_migration::SchemaManager::new(&self.inner)
+            .has_table(table)
+            .await
+    }
+}
+
 #[async_trait]
 impl<C: ConnectionTrait + Send + Sync> ConnectionTrait for Scoped<C> {
     fn get_database_backend(&self) -> DbBackend {
@@ -72,32 +119,20 @@ where
 {
     type Transaction = ScopedTransaction;
     async fn begin(&self) -> Result<Self::Transaction, DbErr> {
-        Ok(Scoped {
-            inner: self.inner.begin().await?,
-            schema: self.schema.clone(),
-            factor: self.factor.clone(),
-        })
+        Ok(self.scope(self.inner.begin().await?))
     }
     async fn begin_with_config(
         &self,
         isolation: Option<IsolationLevel>,
         access: Option<AccessMode>,
     ) -> Result<Self::Transaction, DbErr> {
-        Ok(Scoped {
-            inner: self.inner.begin_with_config(isolation, access).await?,
-            schema: self.schema.clone(),
-            factor: self.factor.clone(),
-        })
+        Ok(self.scope(self.inner.begin_with_config(isolation, access).await?))
     }
     async fn begin_with_options(
         &self,
         options: TransactionOptions,
     ) -> Result<Self::Transaction, DbErr> {
-        Ok(Scoped {
-            inner: self.inner.begin_with_options(options).await?,
-            schema: self.schema.clone(),
-            factor: self.factor.clone(),
-        })
+        Ok(self.scope(self.inner.begin_with_options(options).await?))
     }
     async fn transaction<F, T, E>(&self, callback: F) -> Result<T, TransactionError<E>>
     where
@@ -156,74 +191,23 @@ impl TransactionSession for ScopedTransaction {
     }
 }
 
+impl ScopedConnection {
+    /// Begin a transaction taking SQLite's writer reservation up front.
+    pub(super) async fn begin_immediate(&self) -> AuthResult<ScopedTransaction> {
+        self.begin_with_options(TransactionOptions {
+            sqlite_transaction_mode: Some(SqliteTransactionMode::Immediate),
+            ..Default::default()
+        })
+        .await
+        .map_err(map_db_err)
+    }
+}
+
 impl ScopedTransaction {
     pub(super) async fn commit(self) -> Result<(), DbErr> {
         self.inner.commit().await
     }
     pub(super) async fn rollback(self) -> Result<(), DbErr> {
         self.inner.rollback().await
-    }
-    pub(super) async fn has_table(&self, table: &str) -> Result<bool, DbErr> {
-        if self.get_database_backend() == DbBackend::Postgres {
-            let (sql, values) = if let Some(schema) = &self.schema {
-                (
-                    "SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2",
-                    vec![schema.clone().into(), table.to_owned().into()],
-                )
-            } else {
-                (
-                    "SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_name = $1",
-                    vec![table.to_owned().into()],
-                )
-            };
-            let row = self
-                .inner
-                .query_one_raw(Statement::from_sql_and_values(
-                    DbBackend::Postgres,
-                    sql,
-                    values,
-                ))
-                .await?;
-            return row
-                .map(|row| row.try_get::<i64>("", "count").map(|count| count > 0))
-                .transpose()
-                .map(|value| value.unwrap_or(false));
-        }
-        sea_orm_migration::SchemaManager::new(&self.inner)
-            .has_table(table)
-            .await
-    }
-}
-
-impl ScopedConnection {
-    pub(super) async fn has_table(&self, table: &str) -> Result<bool, DbErr> {
-        if self.get_database_backend() == DbBackend::Postgres {
-            let (sql, values) = if let Some(schema) = &self.schema {
-                (
-                    "SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2",
-                    vec![schema.clone().into(), table.to_owned().into()],
-                )
-            } else {
-                (
-                    "SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_name = $1",
-                    vec![table.to_owned().into()],
-                )
-            };
-            let row = self
-                .inner
-                .query_one_raw(Statement::from_sql_and_values(
-                    DbBackend::Postgres,
-                    sql,
-                    values,
-                ))
-                .await?;
-            return row
-                .map(|row| row.try_get::<i64>("", "count").map(|count| count > 0))
-                .transpose()
-                .map(|value| value.unwrap_or(false));
-        }
-        sea_orm_migration::SchemaManager::new(&self.inner)
-            .has_table(table)
-            .await
     }
 }

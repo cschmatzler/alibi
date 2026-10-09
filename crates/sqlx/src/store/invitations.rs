@@ -111,7 +111,7 @@ where
             .invitation
             .update(self.exec(), &active)
             .await?
-            .map(|row_2| Invitation::from(&row_2))
+            .map(|row| Invitation::from(&row))
             .ok_or_else(record_not_updated)
     }
 
@@ -462,7 +462,7 @@ where
             .invitation
             .update(self.exec(), &active)
             .await?
-            .map(|model_2| Invitation::from(&model_2))
+            .map(|model| Invitation::from(&model))
             .ok_or_else(record_not_updated)
     }
 

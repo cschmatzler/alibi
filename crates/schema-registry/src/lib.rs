@@ -61,11 +61,8 @@ macro_rules! f {
 macro_rules! pk {
     ($name:expr, $ty:expr) => {
         FieldDef {
-            name: $name,
-            ty: $ty,
             is_primary_key: true,
-            column_name: None,
-            default_value: None,
+            ..f!($name, $ty)
         }
     };
 }
@@ -73,11 +70,8 @@ macro_rules! pk {
 macro_rules! f_col {
     ($name:expr, $ty:expr, $column_name:expr) => {
         FieldDef {
-            name: $name,
-            ty: $ty,
-            is_primary_key: false,
             column_name: Some($column_name),
-            default_value: None,
+            ..f!($name, $ty)
         }
     };
 }
