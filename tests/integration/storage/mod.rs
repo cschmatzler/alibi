@@ -27,6 +27,7 @@ mod api_keys;
 #[cfg(all(feature = "sqlx", feature = "seaorm"))]
 mod character_ids;
 mod database_callbacks;
+mod decorated_store;
 mod http_composition;
 mod id_strategies;
 mod invitations;

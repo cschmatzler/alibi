@@ -1,10 +1,12 @@
 //! Plugin initialization, HTTP dispatch and persisted effects on both adapters.
 //! Validation tables remain owned by plugin units; these exercise composition.
+mod account_fields;
 mod account_sessions;
 mod admin;
 mod admin_matrix;
 mod api_key_callbacks;
 mod api_key_matrix;
+mod cookie_cache;
 mod credentials;
 mod crypto;
 mod device_callbacks;
@@ -24,6 +26,7 @@ mod otp_callbacks;
 mod passkey_matrix;
 mod passwordless;
 mod providers;
+mod secondary_sessions;
 mod server_endpoints;
 #[cfg(all(feature = "sqlx", feature = "seaorm"))]
 mod session_fields;
@@ -31,7 +34,9 @@ mod session_plugins;
 mod signup_privacy;
 mod social_flows;
 mod two_factor;
+mod user_defaults;
 mod user_lifecycle;
+mod verification_cache;
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};

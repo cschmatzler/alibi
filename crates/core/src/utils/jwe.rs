@@ -245,3 +245,99 @@ pub fn decode_parsed(secret: &str, salt: &str, token: &str) -> AuthResult<serde_
     }
     crate::utils::json::from_slice(&ciphertext).map_err(|_error| invalid())
 }
+
+// LCOV_EXCL_START
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::indexing_slicing,
+        reason = "test fixtures index known-length tokens"
+    )]
+    use super::*;
+    use std::io::Write as _;
+
+    const SECRET: &str = "jwe-test-secret";
+    const SALT: &str = "jwe-test-salt";
+
+    fn seal(header: &serde_json::Value, plaintext: &[u8]) -> String {
+        let key = key(SECRET, SALT).unwrap();
+        let header = BASE64.encode(serde_json::to_vec(header).unwrap());
+        let mut ciphertext = plaintext.to_vec();
+        let padding = 16 - ciphertext.len() % 16;
+        ciphertext.resize(ciphertext.len() + padding, u8::try_from(padding).unwrap());
+        let iv = [7u8; 16];
+        let cipher = Aes256::new_from_slice(&key[32..]).unwrap();
+        let mut previous = iv;
+        for block in ciphertext.as_chunks_mut::<16>().0 {
+            for (byte, previous) in block.iter_mut().zip(previous) {
+                *byte ^= previous;
+            }
+            let block_array: &mut Array<u8, _> = block.into();
+            cipher.encrypt_block(block_array);
+            previous.copy_from_slice(block);
+        }
+        let tag = authentication(&key, &header, &iv, &ciphertext)
+            .unwrap()
+            .finalize()
+            .into_bytes();
+        format!(
+            "{header}..{}.{}.{}",
+            BASE64.encode(iv),
+            BASE64.encode(ciphertext),
+            BASE64.encode(&tag[..32])
+        )
+    }
+
+    fn deflate(data: &[u8]) -> Vec<u8> {
+        let mut encoder =
+            flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(data).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    fn header_with_zip() -> serde_json::Value {
+        json!({"alg":"dir","enc":"A256CBC-HS512","zip":"DEF"})
+    }
+
+    #[test]
+    fn deflated_payload_roundtrips() {
+        let claims = br#"{"sub":"user-1"}"#;
+        let token = seal(&header_with_zip(), &deflate(claims));
+        assert_eq!(
+            decode_parsed(SECRET, SALT, &token).unwrap(),
+            json!({"sub":"user-1"})
+        );
+    }
+
+    #[test]
+    fn rejects_corrupt_and_oversized_deflate_streams() {
+        let garbage = seal(&header_with_zip(), &[0xff, 0xff, 0xff, 0xff]);
+        assert!(decode_parsed(SECRET, SALT, &garbage).is_err());
+
+        let truncated = seal(&header_with_zip(), &deflate(br#"{"sub":"user-1"}"#)[..4]);
+        assert!(decode_parsed(SECRET, SALT, &truncated).is_err());
+
+        let big = format!(r#"{{"v":"{}"}}"#, "a".repeat(250_001));
+        let oversized = seal(&header_with_zip(), &deflate(big.as_bytes()));
+        assert!(decode_parsed(SECRET, SALT, &oversized).is_err());
+    }
+
+    #[test]
+    fn rejects_malformed_compact_tokens() {
+        let valid = encode(SECRET, SALT, &json!({"a":1}), 60.0).unwrap();
+        assert!(decode_parsed(SECRET, SALT, &valid).is_ok());
+        assert!(decode_parsed(SECRET, SALT, "a.b.c").is_err());
+        assert!(decode_parsed(SECRET, SALT, "a.b.c.d.e").is_err());
+
+        let mut parts: Vec<_> = valid.split('.').collect();
+        let short_iv = BASE64.encode([0u8; 8]);
+        parts[2] = &short_iv;
+        assert!(decode_parsed(SECRET, SALT, &parts.join(".")).is_err());
+
+        let mut parts: Vec<_> = valid.split('.').collect();
+        let bad_padding = format!("{}==", parts[3]);
+        parts[3] = &bad_padding;
+        assert!(decode_parsed(SECRET, SALT, &parts.join(".")).is_err());
+    }
+}
+// LCOV_EXCL_STOP
