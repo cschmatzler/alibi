@@ -66,8 +66,10 @@ async fn account_cookie_and_token_retention_on_sign_in<B: Backend>(db: Db) -> Te
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let mut trace = Trace::default();
     let social = Social::start().await;
-    let mut account = AccountConfig::default();
-    account.store_account_cookie = true;
+    let account = AccountConfig {
+        store_account_cookie: true,
+        ..Default::default()
+    };
     let auth = social
         .auth::<B>(&connection, account.clone(), |_| {})
         .await?;
@@ -287,7 +289,7 @@ async fn provider_supplied_fields_and_identity_denials<B: Backend>(db: Db) -> Te
         .as_deref(),
         Some("member")
     );
-    social
+    _ = social
         .profile
         .user
         .lock()
@@ -434,8 +436,9 @@ async fn callback_user_payload_reaches_the_profile_handler<B: Backend>(db: Db) -
         }
         assert_eq!(callback(&auth, &query, &cookie).await.status, 302);
     }
-    let seen = seen.lock().unwrap();
     let summary: Vec<_> = seen
+        .lock()
+        .unwrap()
         .iter()
         .map(|user| {
             user.as_ref().map(|user| {
@@ -526,13 +529,12 @@ async fn ambiguous_provider_accounts_fail_closed<B: Backend>(db: Db) -> TestResu
         .await?;
     assert_eq!(sign_in(&auth, "").await.status, 302);
     let owner = cookies(&signup(&auth, "owner@example.com").await);
-    drop(
-        db.execute(
+    _ = db
+        .execute(
             "INSERT INTO accounts (id, user_id, account_id, provider_id, created_at, updated_at) SELECT 'duplicate-account', user_id, account_id, provider_id, created_at, updated_at FROM accounts WHERE provider_id = 'google'",
             &[],
         )
-        .await?,
-    );
+        .await?;
     let sessions = db.count("sessions").await?;
     trace.response("callback sign-in", &sign_in(&auth, "").await);
     let by_token = |path: &'static str, cookie: &str| {

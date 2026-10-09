@@ -284,7 +284,7 @@ async fn id_token_linking_outcomes<B: Backend>(db: Db) -> TestResult {
     let mut trace = Trace::default();
     let owner = cookies(&signup(&auth, "token-owner@example.com").await);
     let link = async |cookie: &str| {
-        let response = Box::pin(auth.handle_request(request(
+        Box::pin(auth.handle_request(request(
             "/link-social",
             Some(json!({
                 "provider": "google",
@@ -299,8 +299,7 @@ async fn id_token_linking_outcomes<B: Backend>(db: Db) -> TestResult {
             cookie,
         )))
         .await
-        .unwrap();
-        response
+        .unwrap()
     };
 
     *social.profile.valid_id_token.lock().unwrap() = false;

@@ -17,6 +17,7 @@
     clippy::panic_in_result_fn,
     clippy::indexing_slicing,
     clippy::too_many_lines,
+    clippy::type_complexity,
     reason = "storage contract tests fail fast on setup and assert persisted invariants directly"
 )]
 

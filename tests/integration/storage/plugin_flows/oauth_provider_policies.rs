@@ -1,6 +1,6 @@
 //! Provider factory policy: client-ID lists, environments, credential modes and
 //! profile rules that need no HTTP dispatch.
-use super::oauth_profile_edges::{fetch, mapped, unsigned, wire};
+use super::oauth_profile_edges::{fetch, unsigned};
 use super::oauth_profiles::FailedMapper;
 use super::*;
 use alibi::plugins::oauth::*;
@@ -72,7 +72,7 @@ async fn client_id_lists_reconfigure_every_transport_that_embeds_them() {
         .await
         .unwrap();
     assert_eq!(tokens.access_token.as_deref(), Some("wechat-access"));
-    wechat
+    _ = wechat
         .refresh_access_token
         .as_ref()
         .unwrap()
@@ -97,7 +97,7 @@ async fn client_id_lists_reconfigure_every_transport_that_embeds_them() {
             .as_deref(),
         None
     );
-    fetch(&vk, None).await.unwrap();
+    _ = fetch(&vk, None).await.unwrap();
     assert_eq!(form(&remote.take()[0])["client_id"], "first,second");
     assert!(
         vk.get_user_info

@@ -7,7 +7,7 @@ use alibi::plugins::{OAuthProxyConfig, OAuthProxyPlugin};
 use alibi_core::hooks::RequestHookContext;
 use alibi_core::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
 use alibi_core::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
-use alibi_core::{AccountConfig, AuthResult, CreateSession};
+use alibi_core::{AuthResult, CreateSession};
 
 backend_tests!(
     proxy_forwards_and_completes_provider_flows,

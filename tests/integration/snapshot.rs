@@ -13,7 +13,14 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Body fields whose string values are generated, however short.
-const GENERATED_KEYS: &[&str] = &["key", "start", "token", "user_code", "userCode"];
+const GENERATED_KEYS: &[&str] = &[
+    "backupCodes",
+    "key",
+    "start",
+    "token",
+    "user_code",
+    "userCode",
+];
 /// Body fields whose numbers depend on elapsed time.
 const TIMING_KEYS: &[&str] = &["tryAgainIn", "expires_in", "expiresIn"];
 
@@ -161,6 +168,19 @@ impl Trace {
                         let value = match value {
                             Value::String(text) if GENERATED_KEYS.contains(&key.as_str()) => {
                                 Value::String(self.placeholder("g", &text))
+                            }
+                            Value::Array(values) if GENERATED_KEYS.contains(&key.as_str()) => {
+                                Value::Array(
+                                    values
+                                        .into_iter()
+                                        .map(|value| match value {
+                                            Value::String(text) => {
+                                                Value::String(self.placeholder("g", &text))
+                                            }
+                                            value => self.normalize(value),
+                                        })
+                                        .collect(),
+                                )
                             }
                             Value::Number(_) if TIMING_KEYS.contains(&key.as_str()) => {
                                 Value::String("<elapsed>".into())

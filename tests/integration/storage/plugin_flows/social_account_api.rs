@@ -14,8 +14,10 @@ async fn account_endpoints_validate_selection_authentication_and_refresh<B: Back
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let social = Social::start().await;
     let mut trace = Trace::default();
-    let mut account = AccountConfig::default();
-    account.store_account_cookie = true;
+    let account = AccountConfig {
+        store_account_cookie: true,
+        ..Default::default()
+    };
     let auth = social.auth::<B>(&connection, account, |_| {}).await?;
     let (state, cookie) = authorize(
         &auth,

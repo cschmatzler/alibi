@@ -412,14 +412,20 @@ async fn device_session_projection<B: Backend>(db: Db) -> TestResult {
     }
     for name in ["ok", "api", "internal"] {
         *mode.lock().unwrap() = name;
-        trace.response(
+        // Both sessions can share a creation instant, so their order is unspecified.
+        let listed = Box::pin(auth.handle_request(request(
+            "/multi-session/list-device-sessions",
+            None,
+            &jar,
+        )))
+        .await?;
+        let mut sessions: Value = serde_json::from_slice(&listed.body).unwrap_or(Value::Null);
+        if let Some(sessions) = sessions.as_array_mut() {
+            sessions.sort_by_key(|session| session["email"].to_string());
+        }
+        trace.value(
             &format!("device sessions {name}"),
-            &Box::pin(auth.handle_request(request(
-                "/multi-session/list-device-sessions",
-                None,
-                &jar,
-            )))
-            .await?,
+            json!({"status": listed.status, "body": sessions}),
         );
         trace.response(
             &format!("session {name}"),

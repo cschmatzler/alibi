@@ -407,13 +407,12 @@ async fn one_tap_identity_outcomes<B: Backend>(db: Db) -> TestResult {
         0
     );
 
-    drop(
-        db.execute(
+    _ = db
+        .execute(
             "UPDATE users SET banned = true WHERE email = $1",
             &["tap@example.test"],
         )
-        .await?,
-    );
+        .await?;
     trace.response("banned", &tap(&auth, json!({}), "").await);
     B::close(connection).await?;
     trace.assert("social/one-tap-identity");
@@ -424,8 +423,10 @@ async fn one_tap_account_cookie_and_remember_state<B: Backend>(db: Db) -> TestRe
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let remote = Tap::start().await;
     let mut trace = Trace::default();
-    let mut account = AccountConfig::default();
-    account.store_account_cookie = true;
+    let mut account = AccountConfig {
+        store_account_cookie: true,
+        ..Default::default()
+    };
     account.account_linking.require_local_email_verified = false;
     let auth = remote
         .auth::<B>(

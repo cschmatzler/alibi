@@ -707,8 +707,10 @@ mod tests {
         let (authorization, _) = fixture.issue("/api/auth/sign-in/social", None).await;
         let query: HashMap<_, _> = authorization.query_pairs().into_owned().collect();
         let callback = |extra: &[(&str, &str)]| {
-            let mut url = url::Url::parse(&query["redirect_uri"]).unwrap();
-            _ = url.query_pairs_mut().append_pair("state", &query["state"]);
+            let mut url = url::Url::parse(query.get("redirect_uri").unwrap()).unwrap();
+            _ = url
+                .query_pairs_mut()
+                .append_pair("state", query.get("state").unwrap());
             for (key, value) in extra {
                 _ = url.query_pairs_mut().append_pair(key, value);
             }

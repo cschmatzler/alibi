@@ -8,13 +8,19 @@
   {
     "single use second": {
       "valid": false,
-      "error": "Object({\"code\": String(\"USAGE_EXCEEDED\"), \"message\": String(\"API Key has reached its usage limit\")})"
+      "error": {
+        "code": "USAGE_EXCEEDED",
+        "message": "API Key has reached its usage limit"
+      }
     }
   },
   {
     "single use third": {
       "valid": false,
-      "error": "Object({\"code\": String(\"INVALID_API_KEY\"), \"message\": String(\"Invalid API key.\")})"
+      "error": {
+        "code": "INVALID_API_KEY",
+        "message": "Invalid API key."
+      }
     }
   },
   {
@@ -34,7 +40,10 @@
   {
     "refill not yet due": {
       "valid": false,
-      "error": "Object({\"code\": String(\"USAGE_EXCEEDED\"), \"message\": String(\"API Key has reached its usage limit\")})"
+      "error": {
+        "code": "USAGE_EXCEEDED",
+        "message": "API Key has reached its usage limit"
+      }
     }
   },
   {
@@ -57,7 +66,13 @@
   {
     "rate limited": {
       "valid": false,
-      "error": "Object({\"code\": String(\"RATE_LIMITED\"), \"message\": String(\"Rate limit exceeded.\"), \"details\": Object({\"tryAgainIn\": Number(984.0)})})"
+      "error": {
+        "code": "RATE_LIMITED",
+        "message": "Rate limit exceeded.",
+        "details": {
+          "tryAgainIn": "<elapsed>"
+        }
+      }
     }
   },
   {

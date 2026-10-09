@@ -2,11 +2,6 @@
   {
     "device sessions ok": {
       "status": 200,
-      "headers": {
-        "content-type": [
-          "application/json"
-        ]
-      },
       "body": [
         {
           "email": "projection-one@example.com",
@@ -36,11 +31,6 @@
   {
     "device sessions api": {
       "status": 418,
-      "headers": {
-        "content-type": [
-          "application/json"
-        ]
-      },
       "body": {
         "code": "PROJECTION_DENIED",
         "message": "projection denied"
@@ -64,8 +54,7 @@
   {
     "device sessions internal": {
       "status": 500,
-      "headers": {},
-      "body": ""
+      "body": null
     }
   },
   {
