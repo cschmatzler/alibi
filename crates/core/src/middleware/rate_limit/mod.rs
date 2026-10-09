@@ -1,13 +1,12 @@
 pub mod bucket;
 
 use super::Middleware;
-use crate::error::AuthResult;
+use crate::error::{AuthError, AuthResult};
 use crate::types::{AuthRequest, AuthResponse};
 use async_trait::async_trait;
 use indexmap::IndexMap;
 use std::collections::{BTreeSet, HashMap};
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// A compiled `per_endpoint` key. Patterns without `*` match exactly.
@@ -30,9 +29,7 @@ impl PathPattern {
         match self {
             Self::Exact => Ok(pattern == path),
             Self::Glob(compiled) => Ok(compiled.is_match(path)),
-            Self::Invalid => Err(crate::error::AuthError::internal(
-                "Invalid rate-limit path pattern",
-            )),
+            Self::Invalid => Err(AuthError::internal("Invalid rate-limit path pattern")),
         }
     }
 }
@@ -81,7 +78,7 @@ impl MemoryRateLimitStorage {
         let mut state = self
             .state
             .lock()
-            .map_err(|_| crate::error::AuthError::internal("Rate-limit lock poisoned"))?;
+            .map_err(|_| AuthError::internal("Rate-limit lock poisoned"))?;
         while state
             .expirations
             .first()
@@ -175,17 +172,12 @@ impl CacheRateLimitStorage {
 impl RateLimitStorage for CacheRateLimitStorage {
     async fn consume(&self, key: &str, rule: &EndpointRateLimit) -> AuthResult<RateLimitDecision> {
         let ttl = Duration::try_from_secs_f64(rule.window_seconds)
-            .map_err(|_| crate::error::AuthError::internal("Invalid shared rate-limit window"))?;
+            .map_err(|_| AuthError::internal("Invalid shared rate-limit window"))?;
         let count = self
             .cache
             .increment(key, ttl)
             .await
-            .map_err(|error| match error {
-                error @ (crate::AuthError::Api { .. }
-                | crate::AuthError::Upstream { .. }
-                | crate::AuthError::CallbackFailure(_)) => error,
-                error => crate::AuthError::CallbackFailure(Box::new(error)),
-            })?;
+            .map_err(AuthError::into_callback_failure)?;
         Ok(if count <= rule.max_requests {
             RateLimitDecision::Allowed
         } else {
@@ -298,7 +290,7 @@ impl RateLimitConfig {
 
     #[must_use]
     pub fn rule(mut self, path: impl Into<String>, rule: RateLimitRule) -> Self {
-        drop(self.per_endpoint.insert(path.into(), rule));
+        _ = self.per_endpoint.insert(path.into(), rule);
         self
     }
 
@@ -396,7 +388,9 @@ impl RateLimitMiddleware {
     /// Match and key routes relative to the application's auth mount path.
     #[must_use]
     pub fn with_base_path(mut self, path: impl Into<String>) -> Self {
-        self.base_path = path.into().trim_end_matches('/').to_owned();
+        path.into()
+            .trim_end_matches('/')
+            .clone_into(&mut self.base_path);
         self
     }
 
@@ -429,10 +423,14 @@ impl RateLimitMiddleware {
         req: &AuthRequest,
         path: &str,
     ) -> AuthResult<Option<EndpointRateLimit>> {
-        let mut limit = self.default_limit_for_path(path).clone();
-        if let Some(rule) = self.plugin_rules.iter().find(|rule| (rule.matches)(path)) {
-            limit = rule.limit.clone();
-        }
+        let limit = self
+            .plugin_rules
+            .iter()
+            .find(|rule| (rule.matches)(path))
+            .map_or_else(
+                || self.default_limit_for_path(path).clone(),
+                |rule| rule.limit.clone(),
+            );
         for ((pattern, rule), compiled) in
             self.config.per_endpoint.iter().zip(&self.endpoint_patterns)
         {

@@ -29,12 +29,12 @@ impl OpenApiField {
     fn from_policy(name: &str, policy: &crate::field_policy::FieldConfig) -> Self {
         let mut schema = policy.schema.clone();
         if let Some(object) = schema.as_object_mut() {
-            drop(object.remove("default"));
+            _ = object.remove("default");
             if let Some(crate::field_policy::FieldDefault::Value(value)) = &policy.default {
-                drop(object.insert(
+                _ = object.insert(
                     "default".into(),
                     value.to_json_value().unwrap_or(Value::Null),
-                ));
+                );
             }
         }
         Self {
@@ -75,16 +75,16 @@ impl OpenApiModel {
     }
     pub(crate) fn to_schema(&self) -> Value {
         let mut properties = serde_json::Map::new();
-        drop(properties.insert("id".into(), json!({"type":"string","readOnly":true})));
+        _ = properties.insert("id".into(), json!({"type":"string","readOnly":true}));
         let mut required = vec!["id".to_owned()];
         for field in &self.fields {
             let mut schema = field.schema.clone();
             if !field.input
                 && let Some(object) = schema.as_object_mut()
             {
-                drop(object.insert("readOnly".into(), json!(true)));
+                _ = object.insert("readOnly".into(), json!(true));
             }
-            drop(properties.insert(field.name.clone(), schema));
+            _ = properties.insert(field.name.clone(), schema);
             if field.required && field.returned && !required.contains(&field.name) {
                 required.push(field.name.clone());
             }
@@ -216,11 +216,9 @@ impl OpenApiRegistry {
                     .collect::<Vec<_>>();
                 if model.name == "User" {
                     for field in &overrides {
-                        drop(
-                            registry
-                                .user_input_fields
-                                .insert(field.name.clone(), field.clone()),
-                        );
+                        _ = registry
+                            .user_input_fields
+                            .insert(field.name.clone(), field.clone());
                     }
                 }
                 if !overrides.is_empty() {
@@ -256,10 +254,9 @@ impl OpenApiRegistry {
         for model in metadata.models {
             if model.name == "User" {
                 for field in &model.fields {
-                    drop(
-                        self.user_input_fields
-                            .insert(field.name.clone(), field.clone()),
-                    );
+                    _ = self
+                        .user_input_fields
+                        .insert(field.name.clone(), field.clone());
                 }
             }
             self.merge_model(model);
@@ -278,10 +275,9 @@ impl OpenApiRegistry {
             .collect::<Vec<_>>();
         if model_name == "User" {
             for field in &fields {
-                drop(
-                    self.user_input_fields
-                        .insert(field.name.clone(), field.clone()),
-                );
+                _ = self
+                    .user_input_fields
+                    .insert(field.name.clone(), field.clone());
             }
         }
         self.merge_model(OpenApiModel::new(model_name, fields));
@@ -301,7 +297,7 @@ impl OpenApiRegistry {
                 }
             }
         } else {
-            drop(self.models.insert(model.name.clone(), model));
+            _ = self.models.insert(model.name.clone(), model);
         }
     }
 }

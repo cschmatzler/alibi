@@ -120,15 +120,19 @@ impl UsernameConfig {
         match &self.normalization {
             UsernameNormalization::Lowercase => Ok(value.to_lowercase()),
             UsernameNormalization::Preserve => Ok(value.to_owned()),
-            UsernameNormalization::Custom(normalizer) => {
-                normalizer.normalize(value).map_err(callback_error)
-            }
+            UsernameNormalization::Custom(normalizer) => normalizer
+                .normalize(value)
+                .map_err(AuthError::into_callback_failure),
         }
     }
     pub fn normalize_display(&self, value: &str) -> AuthResult<String> {
         self.display_normalizer.as_ref().map_or_else(
             || Ok(value.to_owned()),
-            |normalizer| normalizer.normalize(value).map_err(callback_error),
+            |normalizer| {
+                normalizer
+                    .normalize(value)
+                    .map_err(AuthError::into_callback_failure)
+            },
         )
     }
     pub async fn value_error(&self, value: &str) -> AuthResult<Option<UsernameValidationError>> {
@@ -150,7 +154,10 @@ impl UsernameConfig {
             return Ok(Some(UsernameValidationError::TooLong));
         }
         let valid = if let Some(validator) = &self.validator {
-            validator.validate(value).await.map_err(callback_error)?
+            validator
+                .validate(value)
+                .await
+                .map_err(AuthError::into_callback_failure)?
         } else {
             super::valid_default_characters(value)
         };
@@ -183,7 +190,11 @@ impl UsernameConfig {
             } else {
                 value
             };
-            if !validator.validate(input).await.map_err(callback_error)? {
+            if !validator
+                .validate(input)
+                .await
+                .map_err(AuthError::into_callback_failure)?
+            {
                 return Err(AuthError::Upstream {
                     status: 400,
                     code: "INVALID_DISPLAY_USERNAME",
@@ -198,7 +209,7 @@ impl UsernameConfig {
         use crate::field_policy::FieldConfig;
         let mut fields = crate::field_policy::FieldConfigs::new();
         let policy = self.clone();
-        let _ = fields.insert(
+        _ = fields.insert(
             "username".into(),
             FieldConfig::new(serde_json::json!({"type":"string"})).transform(move |value| {
                 match value {
@@ -214,7 +225,7 @@ impl UsernameConfig {
         }
         if self.include_display_username {
             let policy = self.clone();
-            let _ = fields.insert(
+            _ = fields.insert(
                 "displayUsername".into(),
                 FieldConfig::new(serde_json::json!({"type":"string"})).transform(move |value| {
                     match value {
@@ -229,7 +240,7 @@ impl UsernameConfig {
             let mut hidden = FieldConfig::new(serde_json::json!({"type":"string"}));
             hidden.input = false;
             hidden.returned = false;
-            let _ = fields.insert("displayUsername".into(), hidden);
+            _ = fields.insert("displayUsername".into(), hidden);
         }
         fields
     }
@@ -246,7 +257,7 @@ impl UsernameConfig {
             if !value.is_empty() {
                 *value = self.normalize(value)?;
             }
-            let _ = values.insert("username".into(), JsValue::String(value.clone()));
+            _ = values.insert("username".into(), JsValue::String(value.clone()));
         }
         if self.include_display_username {
             if creation
@@ -255,22 +266,15 @@ impl UsernameConfig {
             {
                 display.clone_from(&original_username);
                 if let Some(value) = &display {
-                    let _ = values.insert("displayUsername".into(), JsValue::String(value.clone()));
+                    _ = values.insert("displayUsername".into(), JsValue::String(value.clone()));
                 }
             } else if let Some(value) = display.as_mut().filter(|value| !value.is_empty()) {
                 *value = self.normalize_display(value)?;
-                let _ = values.insert("displayUsername".into(), JsValue::String(value.clone()));
+                _ = values.insert("displayUsername".into(), JsValue::String(value.clone()));
             }
         } else {
             *display = None;
         }
         Ok(())
-    }
-}
-
-fn callback_error(error: AuthError) -> AuthError {
-    match error {
-        AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => error,
-        error => AuthError::CallbackFailure(Box::new(error)),
     }
 }

@@ -1,4 +1,7 @@
-use super::*;
+use crate::AuthUser;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize, Serializer};
+use std::borrow::Cow;
 /// Public user response shape.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(try_from = "UserViewInput")]
@@ -10,61 +13,30 @@ pub struct UserView {
     pub email_verified: bool,
     pub image: Option<String>,
     #[serde(rename = "createdAt")]
-    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub created_at: DateTime<Utc>,
     #[serde(rename = "updatedAt")]
-    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub updated_at: DateTime<Utc>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub username: Option<String>,
-    #[serde(
-        rename = "displayUsername",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "displayUsername", default)]
     pub display_username: Option<String>,
-    #[serde(
-        rename = "twoFactorEnabled",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "twoFactorEnabled", default)]
     pub two_factor_enabled: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub role: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub banned: Option<bool>,
-    #[serde(rename = "banReason", default, skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "banReason", default)]
     pub ban_reason: Option<String>,
-    #[serde(
-        rename = "banExpires",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[serde(serialize_with = "crate::utils::datetime::serialize_optional")]
+    #[serde(rename = "banExpires", default)]
     pub ban_expires: Option<DateTime<Utc>>,
-    #[serde(
-        rename = "isAnonymous",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "isAnonymous", default)]
     pub is_anonymous: Option<bool>,
-    #[serde(
-        rename = "phoneNumber",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "phoneNumber", default)]
     pub phone_number: Option<String>,
-    #[serde(
-        rename = "phoneNumberVerified",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "phoneNumberVerified", default)]
     pub phone_number_verified: Option<bool>,
-    #[serde(
-        rename = "lastLoginMethod",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "lastLoginMethod", default)]
     pub last_login_method: Option<String>,
     /// Nullable fields contributed by an enabled plugin's output schema.
     #[serde(
@@ -162,61 +134,30 @@ pub(in crate::wire) struct UserViewInput {
     pub(in crate::wire) email_verified: serde_json::Value,
     pub(in crate::wire) image: Option<String>,
     #[serde(rename = "createdAt")]
-    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub(in crate::wire) created_at: DateTime<Utc>,
     #[serde(rename = "updatedAt")]
-    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub(in crate::wire) updated_at: DateTime<Utc>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub(in crate::wire) username: Option<String>,
-    #[serde(
-        rename = "displayUsername",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "displayUsername", default)]
     pub(in crate::wire) display_username: Option<String>,
-    #[serde(
-        rename = "twoFactorEnabled",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "twoFactorEnabled", default)]
     pub(in crate::wire) two_factor_enabled: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub(in crate::wire) role: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub(in crate::wire) banned: Option<bool>,
-    #[serde(rename = "banReason", default, skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "banReason", default)]
     pub(in crate::wire) ban_reason: Option<String>,
-    #[serde(
-        rename = "banExpires",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[serde(serialize_with = "crate::utils::datetime::serialize_optional")]
+    #[serde(rename = "banExpires", default)]
     pub(in crate::wire) ban_expires: Option<DateTime<Utc>>,
-    #[serde(
-        rename = "isAnonymous",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "isAnonymous", default)]
     pub(in crate::wire) is_anonymous: Option<bool>,
-    #[serde(
-        rename = "phoneNumber",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "phoneNumber", default)]
     pub(in crate::wire) phone_number: Option<String>,
-    #[serde(
-        rename = "phoneNumberVerified",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "phoneNumberVerified", default)]
     pub(in crate::wire) phone_number_verified: Option<bool>,
-    #[serde(
-        rename = "lastLoginMethod",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "lastLoginMethod", default)]
     pub(in crate::wire) last_login_method: Option<String>,
     /// Nullable fields contributed by an enabled plugin's output schema.
     #[serde(
@@ -240,11 +181,9 @@ impl TryFrom<UserViewInput> for UserView {
             }
         };
         if !input.email_verified.is_boolean() {
-            drop(
-                input
-                    .extension_fields
-                    .insert("emailVerified".into(), input.email_verified),
-            );
+            _ = input
+                .extension_fields
+                .insert("emailVerified".into(), input.email_verified);
         }
         Ok(Self {
             email_verified,
@@ -302,10 +241,9 @@ impl<T: AuthUser> From<&T> for UserView {
             .and_then(|output| output.values().get("emailVerified"))
             && !value.is_boolean()
         {
-            drop(
-                view.extension_fields
-                    .insert("emailVerified".into(), value.clone()),
-            );
+            _ = view
+                .extension_fields
+                .insert("emailVerified".into(), value.clone());
         }
         view
     }

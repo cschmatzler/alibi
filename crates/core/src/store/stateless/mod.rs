@@ -6,6 +6,13 @@
 //! no-database memory adapter. Native two-factor/passkey/API-key/device-code/JWK/organization records share that
 //! instance-local lifetime; other optional records require an application store.
 //! Applications can also use cookie-only sessions with durable SQL user storage.
+use crate::types::OrganizationRole;
+use crate::{
+    ApiKey, AuthError, AuthResult, AuthSchema, DeviceCode, Invitation, Jwk, Member, Organization,
+    Passkey, Team, TeamMember, TwoFactor, WalletAddressStore,
+};
+use indexmap::IndexMap;
+use std::sync::{Mutex, MutexGuard};
 mod accounts;
 mod sessions;
 mod users;
@@ -22,9 +29,7 @@ mod roles;
 mod teams;
 mod transaction;
 
-use super::*;
 use crate::{AccountView, SessionView, UserView, VerificationView};
-use chrono::{DateTime, Utc};
 
 /// Wire schema for deployments that do not configure a database.
 pub struct StatelessSchema;
@@ -41,32 +46,32 @@ impl AuthSchema for StatelessSchema {
 /// Instance-local provisioning without durable persistence. Session ownership
 /// comes from trusted issuance; the initialized wrapper retains ephemeral sessions.
 pub struct StatelessStore {
-    state: std::sync::Mutex<IdentityState>,
-    organizations: std::sync::Mutex<OrganizationState>,
+    state: Mutex<IdentityState>,
+    organizations: Mutex<OrganizationState>,
     find_many_limit: usize,
 }
 
 #[derive(Default)]
 struct IdentityState {
-    users: indexmap::IndexMap<String, UserView>,
-    accounts: indexmap::IndexMap<String, AccountView>,
-    verifications: indexmap::IndexMap<String, VerificationView>,
-    two_factors: indexmap::IndexMap<String, TwoFactor>,
-    passkeys: indexmap::IndexMap<String, Passkey>,
-    api_keys: indexmap::IndexMap<String, ApiKey>,
-    device_codes: indexmap::IndexMap<String, DeviceCode>,
-    device_code_fields: indexmap::IndexMap<String, serde_json::Map<String, serde_json::Value>>,
-    jwks: indexmap::IndexMap<String, Jwk>,
+    users: IndexMap<String, UserView>,
+    accounts: IndexMap<String, AccountView>,
+    verifications: IndexMap<String, VerificationView>,
+    two_factors: IndexMap<String, TwoFactor>,
+    passkeys: IndexMap<String, Passkey>,
+    api_keys: IndexMap<String, ApiKey>,
+    device_codes: IndexMap<String, DeviceCode>,
+    device_code_fields: IndexMap<String, serde_json::Map<String, serde_json::Value>>,
+    jwks: IndexMap<String, Jwk>,
 }
 
 #[derive(Default, Clone)]
 struct OrganizationState {
-    organizations: indexmap::IndexMap<String, Organization>,
-    members: indexmap::IndexMap<String, Member>,
-    invitations: indexmap::IndexMap<String, Invitation>,
-    teams: indexmap::IndexMap<String, Team>,
-    team_members: indexmap::IndexMap<String, TeamMember>,
-    roles: indexmap::IndexMap<String, OrganizationRole>,
+    organizations: IndexMap<String, Organization>,
+    members: IndexMap<String, Member>,
+    invitations: IndexMap<String, Invitation>,
+    teams: IndexMap<String, Team>,
+    team_members: IndexMap<String, TeamMember>,
+    roles: IndexMap<String, OrganizationRole>,
 }
 
 impl Default for StatelessStore {
@@ -80,19 +85,19 @@ impl StatelessStore {
     #[must_use]
     pub fn with_find_many_limit(find_many_limit: usize) -> Self {
         Self {
-            state: Default::default(),
-            organizations: Default::default(),
+            state: Mutex::default(),
+            organizations: Mutex::default(),
             find_many_limit,
         }
     }
 
-    fn organization_state(&self) -> AuthResult<std::sync::MutexGuard<'_, OrganizationState>> {
+    fn organization_state(&self) -> AuthResult<MutexGuard<'_, OrganizationState>> {
         self.organizations
             .lock()
             .map_err(|_| AuthError::internal("No-database organization state poisoned"))
     }
 
-    fn lock(&self) -> AuthResult<std::sync::MutexGuard<'_, IdentityState>> {
+    fn lock(&self) -> AuthResult<MutexGuard<'_, IdentityState>> {
         self.state
             .lock()
             .map_err(|_| AuthError::internal("No-database identity state poisoned"))

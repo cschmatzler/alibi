@@ -122,7 +122,6 @@ fn unsupported() -> AuthError {
     )
 }
 
-///
 /// # Errors
 ///
 /// Returns an error if the membership identifiers cannot be serialized.

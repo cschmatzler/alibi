@@ -1,6 +1,9 @@
 //! Trusted endpoint calls keep logical input separate from an optional HTTP request.
 
+use crate::AuthContext;
+use crate::session::SessionRequest;
 use crate::types::RequestExtensions;
+use crate::utils::LockUnpoisoned;
 use crate::utils::json::JsValue;
 use crate::wire::{SessionView, UserView};
 use crate::{AuthError, AuthRequest, AuthResult, AuthSchema, Headers, HttpMethod};
@@ -303,7 +306,6 @@ impl EndpointCall {
 
     /// The nested session getter preserves caller input and validates its own query.
     pub(crate) fn session_read_context(&self) -> Self {
-        use crate::session::SessionRequest;
         let mut context = self.clone();
         context.phase = EndpointPhase::Handler;
         if context.path.as_ref().is_none_or(String::is_empty) {
@@ -318,7 +320,7 @@ impl EndpointCall {
                 .and_then(|value| value.get(name))
                 .is_some()
             {
-                drop(query.insert(name.into(), JsValue::Bool(self.session_query_truthy(name))));
+                _ = query.insert(name.into(), JsValue::Bool(self.session_query_truthy(name)));
             }
         }
         context.query = Some(JsValue::Object(query));
@@ -337,11 +339,7 @@ impl EndpointCall {
 
     #[must_use]
     pub fn virtual_session(&self) -> Option<SessionView> {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .session
-            .clone()
+        self.state.lock_unpoisoned().session.clone()
     }
 
     /// Retain the actual model and snapshot after a trusted hook has authenticated them.
@@ -351,17 +349,14 @@ impl EndpointCall {
         user: S::User,
         user_view: UserView,
         session: SessionView,
-        context: &crate::AuthContext<S>,
+        context: &AuthContext<S>,
     ) {
         self.extensions.insert(VerifiedEndpointUser::<S> {
             user,
             config: context.config.clone(),
             database: context.database.clone(),
         });
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut state = self.state.lock_unpoisoned();
         state.principal = Some((user_view, session.clone()));
         state.session = Some(session);
     }
@@ -369,25 +364,15 @@ impl EndpointCall {
     /// Callback-visible authenticated data. This observation does not confer authority.
     #[must_use]
     pub fn session(&self) -> Option<(UserView, SessionView)> {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .principal
-            .clone()
+        self.state.lock_unpoisoned().principal.clone()
     }
 
     pub fn record_authenticated_session(&self, user: UserView, session: SessionView) {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .principal = Some((user, session));
+        self.state.lock_unpoisoned().principal = Some((user, session));
     }
 
     #[must_use]
-    pub fn authenticated_user<S: AuthSchema>(
-        &self,
-        context: &crate::AuthContext<S>,
-    ) -> Option<S::User> {
+    pub fn authenticated_user<S: AuthSchema>(&self, context: &AuthContext<S>) -> Option<S::User> {
         self.extensions
             .get::<VerifiedEndpointUser<S>>()
             .filter(|user| {
@@ -398,47 +383,31 @@ impl EndpointCall {
     }
 
     pub fn set_response_header(&self, name: impl Into<String>, value: impl Into<String>) {
-        drop(
-            self.state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .response_headers
-                .insert(name, value),
-        );
+        _ = self
+            .state
+            .lock_unpoisoned()
+            .response_headers
+            .insert(name, value);
     }
 
     pub fn queue_response_header(&self, name: impl Into<String>, value: impl Into<String>) {
         self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .lock_unpoisoned()
             .response_headers
             .append(name, value);
     }
 
     pub fn take_response_headers(&self) -> Headers {
-        std::mem::take(
-            &mut self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .response_headers,
-        )
+        std::mem::take(&mut self.state.lock_unpoisoned().response_headers)
     }
 
     pub fn set_session_hook_snapshot(&self, user: UserView, session: SessionView) {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .session_observation = Some((user, session));
+        self.state.lock_unpoisoned().session_observation = Some((user, session));
     }
 
     #[must_use]
     pub fn session_hook_snapshot(&self) -> Option<(UserView, SessionView)> {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .session_observation
-            .clone()
+        self.state.lock_unpoisoned().session_observation.clone()
     }
 
     /// # Errors
@@ -530,7 +499,7 @@ fn merge_value(target: &mut JsValue, patch: JsValue) {
             if let Some(target) = target.get_mut(name) {
                 merge_value(target, value.clone());
             } else {
-                drop(target.insert(name.clone(), value.clone()));
+                _ = target.insert(name.clone(), value.clone());
             }
         }
     } else {
@@ -672,7 +641,7 @@ fn merge_header(headers: &mut Headers, name: String, value: String) {
     if name.eq_ignore_ascii_case("set-cookie") {
         headers.append(name, value);
     } else {
-        drop(headers.insert(name, value));
+        _ = headers.insert(name, value);
     }
 }
 
@@ -682,11 +651,7 @@ pub trait EndpointHook<S: AuthSchema>: Send + Sync {
     /// Matchers observe raw logical context, before middleware normalization.
     /// # Errors
     /// Returns an application matcher error, which dispatch logs and masks.
-    fn matches_before(
-        &self,
-        _call: &EndpointCall,
-        _ctx: &crate::AuthContext<S>,
-    ) -> AuthResult<bool> {
+    fn matches_before(&self, _call: &EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<bool> {
         Ok(true)
     }
 
@@ -695,7 +660,7 @@ pub trait EndpointHook<S: AuthSchema>: Send + Sync {
     async fn before(
         &self,
         _call: &EndpointCall,
-        _ctx: &crate::AuthContext<S>,
+        _ctx: &AuthContext<S>,
     ) -> AuthResult<Option<BeforeEndpointAction>> {
         Ok(None)
     }
@@ -705,7 +670,7 @@ pub trait EndpointHook<S: AuthSchema>: Send + Sync {
     fn matches_after(
         &self,
         _call: &EndpointCall,
-        _ctx: &crate::AuthContext<S>,
+        _ctx: &AuthContext<S>,
         _response: &EndpointResponse,
     ) -> AuthResult<bool> {
         Ok(true)
@@ -716,7 +681,7 @@ pub trait EndpointHook<S: AuthSchema>: Send + Sync {
     async fn after(
         &self,
         _call: &EndpointCall,
-        _ctx: &crate::AuthContext<S>,
+        _ctx: &AuthContext<S>,
         response: EndpointResponse,
     ) -> AuthResult<EndpointResponse> {
         Ok(response)

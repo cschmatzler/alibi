@@ -1,10 +1,9 @@
-use super::*;
+use super::SameSite;
+use crate::utils::javascript::number_from_i64;
+use chrono::Duration;
+use std::sync::Arc;
 /// Session-specific configuration
 #[derive(Clone)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
-)]
 pub struct SessionConfig {
     /// No durable server session authority. Session records are instance-local
     /// in memory; no SQL session rows are read or written. Captured caches remain
@@ -136,7 +135,7 @@ impl SessionConfig {
             self.cookie_cache = Some(CookieCacheConfig {
                 enabled: true,
                 strategy: CookieCacheStrategy::Jwe,
-                max_age: self.expires_in.num_seconds() as f64,
+                max_age: number_from_i64(self.expires_in.num_seconds()),
                 ..CookieCacheConfig::default()
             });
         }

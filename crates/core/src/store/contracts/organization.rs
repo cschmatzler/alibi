@@ -1,4 +1,8 @@
-use super::*;
+use crate::{
+    AuthError, AuthResult, CreateInvitation, CreateMember, CreateOrganization, Invitation,
+    InvitationStatus, Member, Organization, UpdateOrganization,
+};
+use async_trait::async_trait;
 /// Query parameters for listing organization members.
 #[derive(Debug, Clone, Default)]
 pub struct ListOrganizationMembersParams {
@@ -53,7 +57,7 @@ pub trait OrganizationStore: Send + Sync {
     /// Returns absence separately from database errors. Empty patches are sent
     /// to the adapter rather than converted into timestamp-only updates.
     /// Custom stores serving the default HTTP update route must implement this
-    /// bounded operation; the default fails closed with NotImplemented.
+    /// bounded operation; the default fails closed with `NotImplemented`.
     /// Model callbacks belong to `update_organization_if_present` instead.
     async fn patch_organization_if_present(
         &self,
@@ -148,7 +152,7 @@ pub trait MemberStore: Send + Sync {
 }
 
 /// Trusted persisted-field overrides returned by an invitation creation hook.
-/// They are separate from the stable default CreateInvitation constructor.
+/// They are separate from the stable default `CreateInvitation` constructor.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct InvitationCreateOptions {
     pub id: Option<String>,

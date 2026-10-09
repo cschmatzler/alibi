@@ -1,5 +1,7 @@
 //! Application and plugin field policies at the session input boundary.
+use crate::AdapterOutput;
 use crate::utils::json::JsValue;
+use crate::{AuthError, AuthResult};
 use indexmap::{IndexMap, IndexSet};
 use serde_json::Value;
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
@@ -36,13 +38,13 @@ impl FieldValues {
     /// # Errors
     ///
     /// Propagates errors from configured adapter field transforms.
-    pub fn apply_adapter_transforms(&mut self) -> crate::AuthResult<()> {
+    pub fn apply_adapter_transforms(&mut self) -> AuthResult<()> {
         if self.adapter_fields.as_ref().is_some_and(|fields| {
             fields
                 .values()
                 .any(|field| field.adapter_input_transform.is_some())
         }) {
-            return Err(crate::AuthError::config(
+            return Err(AuthError::config(
                 "Asynchronous adapter transforms require apply_adapter_transforms_async",
             ));
         }
@@ -65,21 +67,16 @@ impl FieldValues {
     ///
     /// # Errors
     /// Propagates configured callback errors.
-    pub async fn apply_adapter_transforms_async(&mut self) -> crate::AuthResult<()> {
+    pub async fn apply_adapter_transforms_async(&mut self) -> AuthResult<()> {
         if let Some(fields) = self.adapter_fields.take() {
             for (name, field) in &*fields {
                 if !self.prepare_adapter_value(name, field) {
                     continue;
                 }
                 let value = if let Some(transform) = &field.adapter_input_transform {
-                    transform(self.values.get(name).cloned()).await.map_err(
-                        |error| match error {
-                            crate::AuthError::Internal(_) => {
-                                crate::AuthError::CallbackFailure(Box::new(error))
-                            }
-                            error => error,
-                        },
-                    )?
+                    transform(self.values.get(name).cloned())
+                        .await
+                        .map_err(crate::store::adapter::callback_error)?
                 } else if let Some(transform) = &field.transform {
                     transform(self.values.get(name))?
                 } else {
@@ -101,23 +98,23 @@ impl FieldValues {
                 || (field.required && self.values.get(name).is_some_and(JsValue::is_null)))
             && let Some(default) = &field.default
         {
-            drop(self.values.insert(name.to_owned(), default.value()));
+            _ = self.values.insert(name.to_owned(), default.value());
         }
         if !self.transform_omitted
             && !self.values.contains_key(name)
             && let Some(update) = &field.on_update
         {
-            drop(self.values.insert(name.to_owned(), update()));
+            _ = self.values.insert(name.to_owned(), update());
         }
         true
     }
     fn set_adapter_value(&mut self, name: &str, value: Option<JsValue>) {
         match value {
             Some(value) => {
-                drop(self.values.insert(name.to_owned(), value));
+                _ = self.values.insert(name.to_owned(), value);
             }
             None => {
-                drop(self.values.shift_remove(name));
+                _ = self.values.shift_remove(name);
             }
         }
     }
@@ -133,7 +130,7 @@ impl FieldValues {
             .as_ref()
             .is_some_and(|fields| fields.contains_key(name))
         {
-            let _ignored_or_insert = self.values.entry(name.to_owned()).or_insert(value);
+            _ = self.values.entry(name.to_owned()).or_insert(value);
         }
     }
 }
@@ -219,13 +216,11 @@ pub type AsyncFieldValidator = Arc<
 
 /// `None` is JavaScript undefined: absent input or omitted adapter output.
 pub type FieldTransform =
-    Arc<dyn Fn(Option<&JsValue>) -> crate::AuthResult<Option<JsValue>> + Send + Sync>;
+    Arc<dyn Fn(Option<&JsValue>) -> AuthResult<Option<JsValue>> + Send + Sync>;
 
 /// Adapter output callbacks receive an owned actual storage value and are awaited.
 pub type FieldOutputTransform = Arc<
-    dyn Fn(
-            Option<JsValue>,
-        ) -> Pin<Box<dyn Future<Output = crate::AuthResult<Option<JsValue>>> + Send>>
+    dyn Fn(Option<JsValue>) -> Pin<Box<dyn Future<Output = AuthResult<Option<JsValue>>> + Send>>
         + Send
         + Sync,
 >;
@@ -361,17 +356,14 @@ impl FieldConfig {
     #[must_use]
     pub fn transform(
         mut self,
-        transform: impl Fn(Option<&JsValue>) -> crate::AuthResult<Option<JsValue>>
-        + Send
-        + Sync
-        + 'static,
+        transform: impl Fn(Option<&JsValue>) -> AuthResult<Option<JsValue>> + Send + Sync + 'static,
     ) -> Self {
         self.transform = Some(Arc::new(transform));
         self
     }
 
     /// A Promise-style validator is invoked but rejected by endpoint parsing,
-    /// matching the published ASYNC_VALIDATION_NOT_SUPPORTED contract.
+    /// matching the published `ASYNC_VALIDATION_NOT_SUPPORTED` contract.
     #[must_use]
     pub fn validate_async<F, Fut>(mut self, validate: F) -> Self
     where
@@ -399,7 +391,7 @@ impl FieldConfig {
     pub fn transform_adapter_input<F, Fut>(mut self, transform: F) -> Self
     where
         F: Fn(Option<JsValue>) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = crate::AuthResult<Option<JsValue>>> + Send + 'static,
+        Fut: Future<Output = AuthResult<Option<JsValue>>> + Send + 'static,
     {
         self.adapter_input_transform = Some(Arc::new(move |value| Box::pin(transform(value))));
         self
@@ -409,7 +401,7 @@ impl FieldConfig {
     pub fn transform_output<F, Fut>(mut self, transform: F) -> Self
     where
         F: Fn(Option<JsValue>) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = crate::AuthResult<Option<JsValue>>> + Send + 'static,
+        Fut: Future<Output = AuthResult<Option<JsValue>>> + Send + 'static,
     {
         self.output_transform = Some(Arc::new(move |value| Box::pin(transform(value))));
         self
@@ -442,13 +434,12 @@ impl SessionFields {
     pub fn defaults(&self, values: &mut FieldValues) {
         for (name, field) in &self.0 {
             if let Some(default) = &field.default {
-                let _ignored_value = values
+                _ = values
                     .entry(name.clone())
                     .or_insert_with(|| default.value());
             }
         }
     }
-    ///
     /// # Errors
     ///
     /// Returns a validation error for disallowed fields or rejected field validators.
@@ -478,7 +469,7 @@ impl SessionFields {
             let Some(value) = input.get(name) else {
                 if creation {
                     if let Some(default) = &field.default {
-                        drop(parsed.insert(name.clone(), default.value()));
+                        _ = parsed.insert(name.clone(), default.value());
                     } else if field.required {
                         return Err(FieldInputError::Validation {
                             code: "MISSING_FIELD",
@@ -490,10 +481,10 @@ impl SessionFields {
             };
             if !field.input {
                 if creation && let Some(default) = &field.default {
-                    drop(parsed.insert(name.clone(), default.value()));
+                    _ = parsed.insert(name.clone(), default.value());
                     continue;
                 }
-                if truthy(value) {
+                if value.is_truthy() {
                     return Err(FieldInputError::Validation {
                         code: "FIELD_NOT_ALLOWED",
                         message: format!("{name} is not allowed to be set"),
@@ -502,8 +493,8 @@ impl SessionFields {
                 continue;
             }
             if let Some(validator) = &field.async_validator {
-                drop(validator(value.clone()));
-                return Err(FieldInputError::Transform(crate::AuthError::Upstream {
+                _ = validator(value.clone());
+                return Err(FieldInputError::Transform(AuthError::Upstream {
                     status: 500,
                     code: "ASYNC_VALIDATION_NOT_SUPPORTED",
                     message: "Async validation is not supported",
@@ -527,10 +518,10 @@ impl SessionFields {
             };
             match value {
                 Some(value) => {
-                    drop(parsed.insert(name.clone(), value));
+                    _ = parsed.insert(name.clone(), value);
                 }
                 None => {
-                    let _ignored_clone = parsed.undefined_input_keys.insert(name.clone());
+                    _ = parsed.undefined_input_keys.insert(name.clone());
                 }
             }
         }
@@ -582,11 +573,9 @@ impl SessionAdapterFields {
         canonical: Value,
         mut additional: FieldOutput,
         base: Value,
-    ) -> crate::AuthResult<crate::AdapterOutput> {
+    ) -> AuthResult<AdapterOutput> {
         let (Value::Object(canonical), Value::Object(mut base)) = (canonical, base) else {
-            return Err(crate::AuthError::internal(
-                "Adapter output must be an object",
-            ));
+            return Err(AuthError::internal("Adapter output must be an object"));
         };
         additional.extend(canonical);
         for name in self.0.keys() {
@@ -596,21 +585,18 @@ impl SessionAdapterFields {
             if !additional.contains_key(name)
                 && let Some(value) = base.get(name)
             {
-                drop(additional.insert(name.clone(), value.clone()));
+                _ = additional.insert(name.clone(), value.clone());
             }
-            drop(base.remove(name));
+            _ = base.remove(name);
         }
-        let mut output = crate::AdapterOutput::from_values(base);
+        let mut output = AdapterOutput::from_values(base);
         output.extend(self.output(additional).await?);
         Ok(output)
     }
 
     /// Transform only declared additional fields, retaining their omission.
-    pub(crate) async fn output(
-        &self,
-        values: FieldOutput,
-    ) -> crate::AuthResult<crate::AdapterOutput> {
-        let mut output = crate::AdapterOutput::default();
+    pub(crate) async fn output(&self, values: FieldOutput) -> AuthResult<AdapterOutput> {
+        let mut output = AdapterOutput::default();
         for (name, field) in &*self.0 {
             let value = values
                 .get(name)
@@ -624,8 +610,8 @@ impl SessionAdapterFields {
                 .map(JsValue::from);
             let value = if let Some(transform) = &field.output_transform {
                 transform(value).await.map_err(|error| match error {
-                    crate::AuthError::Api { .. } | crate::AuthError::Upstream { .. } => error,
-                    error => crate::AuthError::CallbackFailure(Box::new(error)),
+                    AuthError::Api { .. } | AuthError::Upstream { .. } => error,
+                    error => AuthError::CallbackFailure(Box::new(error)),
                 })?
             } else {
                 value
@@ -636,15 +622,5 @@ impl SessionAdapterFields {
             );
         }
         Ok(output)
-    }
-}
-
-fn truthy(value: &JsValue) -> bool {
-    match value {
-        JsValue::Null => false,
-        JsValue::Bool(value) => *value,
-        JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
-        JsValue::String(value) => !value.is_empty(),
-        JsValue::Array(_) | JsValue::Object(_) => true,
     }
 }

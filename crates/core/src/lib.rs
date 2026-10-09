@@ -14,64 +14,40 @@
 
 extern crate self as alibi;
 
-pub mod authenticated_user;
-
 pub mod adapter_record;
-
+pub mod authenticated_user;
 pub mod background_tasks;
-
 pub mod config;
-
+#[doc(hidden)]
+pub mod database_sql;
 pub mod email;
-
 pub mod endpoint;
-
 pub mod entity;
-
 pub mod error;
-
 pub mod field_policy;
-
 pub mod hooks;
-
 pub mod middleware;
-
-pub mod openapi;
-
 pub mod oauth_token_conversion;
-
+pub mod openapi;
 pub mod plugin;
-
 pub mod schema;
-
 pub mod session;
-
 pub mod store;
-
 #[cfg(test)]
 pub(crate) mod test_store;
-
 pub mod types;
-
-pub mod user_validation;
-
-pub mod verification;
-
 #[doc(hidden)]
 pub mod user_query;
-
+pub mod user_validation;
 pub mod utils;
-
+pub mod verification;
 pub mod wire;
 
-// Re-export commonly used items
 #[doc(hidden)]
 pub use crate as __private_core;
 pub use adapter_record::{AdapterOutput, AdapterRecord};
-// Re-export commonly used items
 pub use alibi_macros::{AuthSchema, PluginConfig};
 pub use authenticated_user::AuthenticatedUser;
-// Re-export commonly used items
 pub use background_tasks::{
     BackgroundTaskCompletion, BackgroundTaskHandler, start_background_task,
 };
@@ -141,6 +117,3 @@ pub use wire::{
     AccountView, ApiKeyView, InvitationView, OrganizationView, PasskeyView, SessionView, UserView,
     VerificationView,
 };
-
-#[doc(hidden)]
-pub mod database_sql;

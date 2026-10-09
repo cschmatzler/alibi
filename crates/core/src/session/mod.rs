@@ -1,3 +1,4 @@
+use crate::AdapterRecord;
 pub mod cookie_cache;
 mod request;
 use crate::config::AuthConfig;
@@ -37,6 +38,16 @@ pub struct SessionRead<T> {
     pub session: Option<T>,
     pub needs_refresh: bool,
     pub refreshed: bool,
+}
+
+impl<T> SessionRead<T> {
+    const fn absent() -> Self {
+        Self {
+            session: None,
+            needs_refresh: false,
+            refreshed: false,
+        }
+    }
 }
 
 /// Session manager handles session creation, validation, and cleanup
@@ -85,7 +96,7 @@ impl<S: AuthSchema> SessionManager<S> {
         user: &impl AuthUser,
         ip_address: Option<String>,
         user_agent: Option<String>,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         self.database
             .create_session_record(self.new_session(user, ip_address, user_agent))
             .await
@@ -134,11 +145,7 @@ impl<S: AuthSchema> SessionManager<S> {
         options: SessionReadOptions,
     ) -> AuthResult<SessionRead<S::Session>> {
         let Some(session) = self.database.get_session(token).await? else {
-            return Ok(SessionRead {
-                session: None,
-                needs_refresh: false,
-                refreshed: false,
-            });
+            return Ok(SessionRead::absent());
         };
         self.read_loaded_session(session, options).await
     }
@@ -166,9 +173,9 @@ impl<S: AuthSchema> SessionManager<S> {
     /// The record must originate from this manager's actual initialized store.
     pub async fn read_loaded_session_record(
         &self,
-        session: crate::AdapterRecord<S::Session>,
+        session: AdapterRecord<S::Session>,
         options: SessionReadOptions,
-    ) -> AuthResult<SessionRead<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<SessionRead<AdapterRecord<S::Session>>> {
         self.read_loaded(session, options, |token, expires_at| async move {
             self.database
                 .refresh_session_record(&token, expires_at)
@@ -194,11 +201,7 @@ impl<S: AuthSchema> SessionManager<S> {
             if options.cleanup_expired {
                 self.database.delete_session(token).await?;
             }
-            return Ok(SessionRead {
-                session: None,
-                needs_refresh: false,
-                refreshed: false,
-            });
+            return Ok(SessionRead::absent());
         }
         let needs_refresh = !self.config.session.disable_session_refresh
             && self.config.session.update_age.is_none_or(|age| {
@@ -226,10 +229,7 @@ impl<S: AuthSchema> SessionManager<S> {
     /// including `false`, disables refreshing.
     #[must_use]
     pub fn request_disables_refresh(&self, request: &impl SessionRequest) -> bool {
-        if request.session_query_truthy("disableRefresh") {
-            return true;
-        }
-        self.has_dont_remember_cookie(request)
+        request.session_query_truthy("disableRefresh") || self.has_dont_remember_cookie(request)
     }
 
     /// The independently signed browser session preference.
@@ -259,8 +259,7 @@ impl<S: AuthSchema> SessionManager<S> {
     ///
     /// Propagates errors from the session store.
     pub async fn delete_session(&self, token: &str) -> AuthResult<()> {
-        self.database.delete_session(token).await?;
-        Ok(())
+        self.database.delete_session(token).await
     }
 
     /// Delete all sessions for a user
@@ -269,8 +268,7 @@ impl<S: AuthSchema> SessionManager<S> {
     ///
     /// Propagates errors from the session store.
     pub async fn delete_user_sessions(&self, user_id: impl AsRef<str>) -> AuthResult<()> {
-        self.database.delete_user_sessions(user_id.as_ref()).await?;
-        Ok(())
+        self.database.delete_user_sessions(user_id.as_ref()).await
     }
 
     /// Get all active sessions for a user
@@ -284,14 +282,10 @@ impl<S: AuthSchema> SessionManager<S> {
     ) -> AuthResult<Vec<S::Session>> {
         let sessions = self.database.get_user_sessions(user_id.as_ref()).await?;
         let now = Utc::now();
-
-        // Filter out expired sessions
-        let active_sessions = sessions
+        Ok(sessions
             .into_iter()
             .filter(|session| session.expires_at() > now && session.active())
-            .collect();
-
-        Ok(active_sessions)
+            .collect())
     }
 
     /// Revoke a specific session by token
@@ -300,15 +294,11 @@ impl<S: AuthSchema> SessionManager<S> {
     ///
     /// Propagates errors from the session store.
     pub async fn revoke_session(&self, token: &str) -> AuthResult<bool> {
-        // Check if session exists before trying to delete
-        let session_exists = self.get_session(token).await?.is_some();
-
-        if session_exists {
-            self.delete_session(token).await?;
-            Ok(true)
-        } else {
-            Ok(false)
+        if self.get_session(token).await?.is_none() {
+            return Ok(false);
         }
+        self.delete_session(token).await?;
+        Ok(true)
     }
 
     /// Revoke all sessions for a user
@@ -317,11 +307,8 @@ impl<S: AuthSchema> SessionManager<S> {
     ///
     /// Propagates errors from the session store.
     pub async fn revoke_all_user_sessions(&self, user_id: impl AsRef<str>) -> AuthResult<usize> {
-        // Get count of sessions before deletion for return value
         let user_id = user_id.as_ref();
-        let sessions = self.list_user_sessions(user_id).await?;
-        let count = sessions.len();
-
+        let count = self.list_user_sessions(user_id).await?.len();
         self.delete_user_sessions(user_id).await?;
         Ok(count)
     }
@@ -346,16 +333,6 @@ impl<S: AuthSchema> SessionManager<S> {
             }
         }
 
-        Ok(count)
-    }
-
-    /// Cleanup expired sessions
-    ///
-    /// # Errors
-    ///
-    /// Propagates errors from the session store.
-    pub async fn cleanup_expired_sessions(&self) -> AuthResult<usize> {
-        let count = self.database.delete_expired_sessions().await?;
         Ok(count)
     }
 
@@ -437,8 +414,6 @@ mod tests {
         SessionManager::new(test_config(), runtime.block_on(test_database()))
     }
 
-    // ── validate_token_format ───────────────────────────────────────────
-
     // Rust-specific surface: `SessionManager` and its token/session helper APIs are public Rust APIs with no direct TS analogue.
     #[test]
     fn valid_token_format() {
@@ -461,18 +436,15 @@ mod tests {
         assert!(!mgr.validate_token_format("session_short"));
     }
 
-    // ── extract_session_token ───────────────────────────────────────────
-
     // Pinned Better Call sessions require a signed cookie; bearer authentication
     // is supplied by the separate bearer plugin, not core session parsing.
     #[test]
     fn extract_rejects_bare_bearer() {
         let mgr = test_manager();
         let mut req = AuthRequest::new(HttpMethod::Get, "/test");
-        drop(
-            req.headers
-                .insert("authorization".into(), "Bearer my-token".into()),
-        );
+        _ = req
+            .headers
+            .insert("authorization".into(), "Bearer my-token".into());
         assert_eq!(mgr.extract_session_token(&req), None);
     }
 
@@ -499,7 +471,7 @@ mod tests {
             ),
         ] {
             let mut req = AuthRequest::new(HttpMethod::Get, "/test");
-            drop(req.headers.insert("cookie".into(), cookie));
+            _ = req.headers.insert("cookie".into(), cookie);
             assert_eq!(mgr.extract_session_token(&req).as_deref(), expected);
         }
     }
@@ -508,16 +480,15 @@ mod tests {
     fn extract_ignores_bearer_when_signed_cookie_exists() {
         let mgr = test_manager();
         let mut req = AuthRequest::new(HttpMethod::Get, "/test");
-        drop(
-            req.headers
-                .insert("authorization".into(), "Bearer bearer-tok".into()),
-        );
+        _ = req
+            .headers
+            .insert("authorization".into(), "Bearer bearer-tok".into());
         let signed =
             crate::utils::cookie_utils::sign_cookie_value("cookie-tok", &mgr.config.secret);
-        drop(req.headers.insert(
+        _ = req.headers.insert(
             "cookie".into(),
             format!("better-auth.session_token={signed}"),
-        ));
+        );
         assert_eq!(mgr.extract_session_token(&req), Some("cookie-tok".into()));
     }
 
@@ -534,14 +505,11 @@ mod tests {
     fn extract_skips_empty_cookie_value() {
         let mgr = test_manager();
         let mut req = AuthRequest::new(HttpMethod::Get, "/test");
-        drop(
-            req.headers
-                .insert("cookie".into(), "better-auth.session_token=".into()),
-        );
+        _ = req
+            .headers
+            .insert("cookie".into(), "better-auth.session_token=".into());
         assert_eq!(mgr.extract_session_token(&req), None);
     }
-
-    // ── is_session_fresh ────────────────────────────────────────────────
 
     // Rust-specific surface: `SessionManager` and its token/session helper APIs are public Rust APIs with no direct TS analogue.
     #[test]
@@ -623,8 +591,6 @@ mod tests {
         assert!(mgr.is_session_fresh(&session));
     }
 
-    // ── async operations ────────────────────────────────────────────────
-
     // Rust-specific surface: `SessionManager` and its token/session helper APIs are public Rust APIs with no direct TS analogue.
     #[tokio::test]
     async fn create_and_get_session() {
@@ -702,12 +668,12 @@ mod tests {
             (format!("{name}={valid}; {name}=invalid"), true),
         ] {
             let mut request = AuthRequest::new(HttpMethod::Get, "/get-session");
-            drop(request.headers.insert("cookie".into(), header));
+            _ = request.headers.insert("cookie".into(), header);
             assert_eq!(manager.request_disables_refresh(&request), expected);
         }
         for (value, expected) in [("", false), ("false", true), ("0", true), ("true", true)] {
             let mut request = AuthRequest::new(HttpMethod::Get, "/get-session");
-            drop(request.query.insert("disableRefresh".into(), value.into()));
+            _ = request.query.insert("disableRefresh".into(), value.into());
             assert_eq!(manager.request_disables_refresh(&request), expected);
         }
     }
@@ -812,8 +778,8 @@ mod tests {
             .unwrap();
 
         // Create two sessions
-        drop(mgr.create_session(&user, None, None).await.unwrap());
-        drop(mgr.create_session(&user, None, None).await.unwrap());
+        _ = mgr.create_session(&user, None, None).await.unwrap();
+        _ = mgr.create_session(&user, None, None).await.unwrap();
 
         let sessions = mgr.list_user_sessions(user.id()).await.unwrap();
         assert_eq!(sessions.len(), 2);
@@ -830,8 +796,8 @@ mod tests {
             .await
             .unwrap();
 
-        drop(mgr.create_session(&user, None, None).await.unwrap());
-        drop(mgr.create_session(&user, None, None).await.unwrap());
+        _ = mgr.create_session(&user, None, None).await.unwrap();
+        _ = mgr.create_session(&user, None, None).await.unwrap();
 
         let count = mgr.revoke_all_user_sessions(user.id()).await.unwrap();
         assert_eq!(count, 2);
@@ -852,8 +818,8 @@ mod tests {
             .unwrap();
 
         let current = mgr.create_session(&user, None, None).await.unwrap();
-        drop(mgr.create_session(&user, None, None).await.unwrap());
-        drop(mgr.create_session(&user, None, None).await.unwrap());
+        _ = mgr.create_session(&user, None, None).await.unwrap();
+        _ = mgr.create_session(&user, None, None).await.unwrap();
 
         let count = mgr
             .revoke_other_user_sessions(user.id(), current.token())

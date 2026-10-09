@@ -93,6 +93,17 @@ impl JsValue {
     pub fn get(&self, key: &str) -> Option<&Self> {
         self.as_object()?.get(key)
     }
+    /// JavaScript truthiness.
+    #[must_use]
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            Self::Null => false,
+            Self::Bool(value) => *value,
+            Self::Number(value) => *value != 0.0 && !value.is_nan(),
+            Self::String(value) => !value.is_empty(),
+            Self::Array(_) | Self::Object(_) => true,
+        }
+    }
     #[must_use]
     pub const fn is_null(&self) -> bool {
         matches!(self, Self::Null)
@@ -203,7 +214,7 @@ impl<'de> Deserialize<'de> for JsValue {
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
                 let mut values = IndexMap::new();
                 while let Some((key, value)) = map.next_entry()? {
-                    drop(values.insert(key, value));
+                    _ = values.insert(key, value);
                 }
                 Ok(JsValue::Object(values))
             }
@@ -219,24 +230,16 @@ impl IntoDeserializer<'_, serde_json::Error> for JsValue {
     }
 }
 
-macro_rules! signed_number {
-    ($($method:ident),*) => {$(
-#[expect(clippy::as_conversions, clippy::cast_possible_truncation, reason = "Finite integral values are checked against the target integer bounds before conversion")]
-        fn $method<V: Visitor<'de>>(self,visitor:V)->Result<V::Value,Self::Error> {
+/// Integral numbers within the target's range deserialize as integers; everything
+/// else defers to `deserialize_any`.
+macro_rules! integer_number {
+    ($visit:ident, $cast:ty, $range:expr, $expect:meta, $($method:ident),*) => {$(
+        #[$expect]
+        fn $method<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
             match self {
-                Self::Number(n) if n.is_finite() && n.fract()==0.0 && (-9_223_372_036_854_776_000.0..9_223_372_036_854_776_000.0).contains(&n) => visitor.visit_i64(n as i64),
-                value => value.deserialize_any(visitor),
-            }
-        }
-    )*};
-}
-
-macro_rules! unsigned_number {
-    ($($method:ident),*) => {$(
-#[expect(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "Finite integral values are checked against the target integer bounds before conversion")]
-        fn $method<V: Visitor<'de>>(self,visitor:V)->Result<V::Value,Self::Error> {
-            match self {
-                Self::Number(n) if n.is_finite() && n.fract()==0.0 && (0.0..18_446_744_073_709_552_000.0).contains(&n) => visitor.visit_u64(n as u64),
+                Self::Number(n) if n.is_finite() && n.fract() == 0.0 && $range.contains(&n) => {
+                    visitor.$visit(n as $cast)
+                }
                 value => value.deserialize_any(visitor),
             }
         }
@@ -289,14 +292,31 @@ impl<'de> Deserializer<'de> for JsValue {
             }
         }
     }
-    signed_number!(
+    integer_number!(
+        visit_i64,
+        i64,
+        (-9_223_372_036_854_776_000.0..9_223_372_036_854_776_000.0),
+        expect(
+            clippy::as_conversions,
+            clippy::cast_possible_truncation,
+            reason = "Finite integral values are checked against the target integer bounds before conversion"
+        ),
         deserialize_i8,
         deserialize_i16,
         deserialize_i32,
         deserialize_i64,
         deserialize_i128
     );
-    unsigned_number!(
+    integer_number!(
+        visit_u64,
+        u64,
+        (0.0..18_446_744_073_709_552_000.0),
+        expect(
+            clippy::as_conversions,
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "Finite integral values are checked against the target integer bounds before conversion"
+        ),
         deserialize_u8,
         deserialize_u16,
         deserialize_u32,
@@ -383,7 +403,7 @@ impl Parser<'_> {
                         return Err(invalid("expected JSON colon"));
                     }
                     let value = self.value(depth + 1)?;
-                    drop(values.insert(key, value));
+                    _ = values.insert(key, value);
                     self.whitespace();
                     if self.take(b'}') {
                         break;
@@ -444,7 +464,7 @@ impl Parser<'_> {
     }
     fn number(&mut self) -> Result<JsValue, serde_json::Error> {
         let start = self.position;
-        let _ignored_take = self.take(b'-');
+        _ = self.take(b'-');
         if !self.take(b'0') && !self.digits() {
             return Err(invalid("invalid JSON number"));
         }
@@ -452,7 +472,7 @@ impl Parser<'_> {
             return Err(invalid("invalid JSON fraction"));
         }
         if self.take(b'e') || self.take(b'E') {
-            let _ignored_take_2 = self.take(b'+') || self.take(b'-');
+            _ = self.take(b'+') || self.take(b'-');
             if !self.digits() {
                 return Err(invalid("invalid JSON exponent"));
             }
@@ -462,7 +482,7 @@ impl Parser<'_> {
             .ok_or_else(|| invalid("invalid JSON number bounds"))?
             .parse::<f64>()
             .map(JsValue::Number)
-            .map_err(|_error| invalid("invalid JSON number"))
+            .map_err(|_| invalid("invalid JSON number"))
     }
 }
 
@@ -482,12 +502,11 @@ pub fn parse_value(input: &str) -> Result<JsValue, serde_json::Error> {
     Ok(value)
 }
 
-///
 /// # Errors
 ///
 /// Returns an error if the input is not valid JSON or cannot be deserialized into the requested type.
 pub fn from_slice<T: DeserializeOwned + 'static>(input: &[u8]) -> Result<T, serde_json::Error> {
-    let text = std::str::from_utf8(input).map_err(|_error| invalid("invalid JSON UTF8"))?;
+    let text = std::str::from_utf8(input).map_err(|_| invalid("invalid JSON UTF8"))?;
     from_value(parse_value(text)?)
 }
 
@@ -506,7 +525,7 @@ pub fn from_value<T: DeserializeOwned + 'static>(input: JsValue) -> Result<T, se
         return value
             .downcast::<T>()
             .map(|value| *value)
-            .map_err(|_error| invalid("invalid JSON value type"));
+            .map_err(|_| invalid("invalid JSON value type"));
     }
     T::deserialize(input)
 }
@@ -591,7 +610,6 @@ pub fn number_as_f64(number: &Number) -> Option<f64> {
     number.as_f64()
 }
 
-///
 /// # Errors
 ///
 /// Returns an error if the number cannot be serialized in JavaScript-compatible notation.
@@ -613,15 +631,13 @@ pub fn to_vec<T: Serialize + ?Sized>(data: &T) -> Result<Vec<u8>, serde_json::Er
     Ok(bytes)
 }
 
-///
 /// # Errors
 ///
 /// Returns an error if the input cannot be serialized as JavaScript-compatible JSON.
 pub fn to_string<T: Serialize + ?Sized>(data: &T) -> Result<String, serde_json::Error> {
-    String::from_utf8(to_vec(data)?).map_err(|_error| invalid("invalid JSON output UTF8"))
+    String::from_utf8(to_vec(data)?).map_err(|_| invalid("invalid JSON output UTF8"))
 }
 
-///
 /// # Errors
 ///
 /// Returns an error if the `OpenAPI` document cannot be serialized.
@@ -629,7 +645,6 @@ pub fn to_value<T: Serialize + ?Sized>(data: &T) -> Result<Value, serde_json::Er
     finite_value(&JsValue::from(serde_json::to_value(data)?))
 }
 
-///
 /// # Errors
 ///
 /// Propagates errors from the serializer.
@@ -677,8 +692,8 @@ fn finite_value(value: &JsValue) -> Result<Value, serde_json::Error> {
             let mut entries: Vec<_> = m.iter().collect();
             entries.sort_by_key(|(name, _)| array_index(name).unwrap_or(u32::MAX));
             let mut values = serde_json::Map::new();
-            for (key, value_2) in entries {
-                drop(values.insert(key.clone(), finite_value(value_2)?));
+            for (key, value) in entries {
+                _ = values.insert(key.clone(), finite_value(value)?);
             }
             Ok(Value::Object(values))
         }
@@ -700,11 +715,11 @@ fn write_value(value: &JsValue, bytes: &mut Vec<u8>) -> Result<(), serde_json::E
         JsValue::String(s) => serde_json::to_writer(bytes, s)?,
         JsValue::Array(a) => {
             bytes.push(b'[');
-            for (index, value_2) in a.iter().enumerate() {
+            for (index, item) in a.iter().enumerate() {
                 if index != 0 {
                     bytes.push(b',');
                 }
-                write_value(value_2, bytes)?;
+                write_value(item, bytes)?;
             }
             bytes.push(b']');
         }
@@ -712,13 +727,13 @@ fn write_value(value: &JsValue, bytes: &mut Vec<u8>) -> Result<(), serde_json::E
             let mut entries: Vec<_> = m.iter().collect();
             entries.sort_by_key(|(name, _)| array_index(name).unwrap_or(u32::MAX));
             bytes.push(b'{');
-            for (index, (key, value_3)) in entries.into_iter().enumerate() {
+            for (index, (key, value)) in entries.into_iter().enumerate() {
                 if index != 0 {
                     bytes.push(b',');
                 }
                 serde_json::to_writer(&mut *bytes, key)?;
                 bytes.push(b':');
-                write_value(value_3, bytes)?;
+                write_value(value, bytes)?;
             }
             bytes.push(b'}');
         }

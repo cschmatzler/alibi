@@ -17,10 +17,7 @@ fn string_field(user: &impl AuthUser, field: &str) -> Option<String> {
 }
 
 fn bool_field(user: &impl AuthUser, field: &str) -> Option<bool> {
-    match field {
-        "banned" => Some(user.banned()),
-        _ => None,
-    }
+    (field == "banned").then(|| user.banned())
 }
 
 fn date_field(user: &impl AuthUser, field: &str) -> Option<DateTime<Utc>> {
@@ -142,18 +139,7 @@ fn matches_filter(user: &impl AuthUser, params: &ListUsersParams) -> bool {
     false
 }
 
-fn compare_option_strings(lhs: Option<&str>, rhs: Option<&str>, direction: &str) -> Ordering {
-    match direction {
-        "asc" => lhs.cmp(&rhs),
-        _ => rhs.cmp(&lhs),
-    }
-}
-
-fn compare_option_dates(
-    lhs: Option<DateTime<Utc>>,
-    rhs: Option<DateTime<Utc>>,
-    direction: &str,
-) -> Ordering {
+fn compare_options<T: Ord + Copy>(lhs: Option<T>, rhs: Option<T>, direction: &str) -> Ordering {
     match direction {
         "asc" => lhs.cmp(&rhs),
         _ => rhs.cmp(&lhs),
@@ -187,23 +173,24 @@ fn apply<T: AuthUser + Clone>(
 
     let sort_by = params.sort_by.as_deref().unwrap_or("createdAt");
     // An explicit sort field defaults to ascending in the public admin API.
+    let default_direction = if params.sort_by.is_some() {
+        "asc"
+    } else {
+        "desc"
+    };
     let sort_direction = params
         .sort_direction
         .as_deref()
-        .unwrap_or(if params.sort_by.is_some() {
-            "asc"
-        } else {
-            "desc"
-        });
+        .unwrap_or(default_direction);
 
     if !presorted {
         users.sort_by(|lhs, rhs| match sort_by {
-            "id" | "_id" | "email" | "name" | "username" | "role" => compare_option_strings(
+            "id" | "_id" | "email" | "name" | "username" | "role" => compare_options(
                 string_field(lhs, sort_by).as_deref(),
                 string_field(rhs, sort_by).as_deref(),
                 sort_direction,
             ),
-            "createdAt" | "updatedAt" | "banExpires" => compare_option_dates(
+            "createdAt" | "updatedAt" | "banExpires" => compare_options(
                 date_field(lhs, sort_by),
                 date_field(rhs, sort_by),
                 sort_direction,
@@ -212,7 +199,7 @@ fn apply<T: AuthUser + Clone>(
                 "asc" => bool_field(lhs, sort_by).cmp(&bool_field(rhs, sort_by)),
                 _ => bool_field(rhs, sort_by).cmp(&bool_field(lhs, sort_by)),
             },
-            _ => compare_option_dates(
+            _ => compare_options(
                 date_field(lhs, "createdAt"),
                 date_field(rhs, "createdAt"),
                 sort_direction,

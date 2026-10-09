@@ -1,4 +1,5 @@
-use super::*;
+use crate::{AuthError, AuthResult, CreateDeviceCode, DeviceCode, UpdateDeviceCode};
+use async_trait::async_trait;
 /// Persistence for OAuth device authorization codes.
 #[async_trait]
 pub trait DeviceCodeStore: Send + Sync {

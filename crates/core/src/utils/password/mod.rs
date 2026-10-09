@@ -1,8 +1,4 @@
-//! Shared password utilities for hashing, verification, validation and
-//! session-cookie construction.
-//!
-//! Lives in `alibi-core` so that any crate in the workspace (plugins,
-//! integrations, etc.) can reuse these primitives without duplicating logic.
+//! Password hashing, verification and validation.
 
 use crate::error::{AuthError, AuthResult};
 use crate::plugin::AuthContext;
@@ -13,10 +9,6 @@ use serde::Serialize;
 use std::fmt::Write;
 use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
-
-// ---------------------------------------------------------------------------
-// PasswordHasher trait
-// ---------------------------------------------------------------------------
 
 /// Custom password hasher trait for pluggable password hashing strategies.
 ///
@@ -130,10 +122,6 @@ fn hexadecimal(bytes: &[u8]) -> String {
     })
 }
 
-// ---------------------------------------------------------------------------
-// hash / verify helpers
-// ---------------------------------------------------------------------------
-
 /// Hash `password` using the custom `hasher` (if provided) or the default
 /// scrypt algorithm and NFKC normalization.
 ///
@@ -144,11 +132,10 @@ pub async fn hash_password(
     hasher: Option<&Arc<dyn PasswordHasher>>,
     password: &str,
 ) -> AuthResult<String> {
-    if let Some(hasher) = hasher {
-        return hasher.hash(password).await;
+    match hasher {
+        Some(hasher) => hasher.hash(password).await,
+        None => ScryptHasher.hash(password).await,
     }
-
-    ScryptHasher.hash(password).await
 }
 
 /// Verify `password` against `hash` using the custom `hasher` (if provided) or
@@ -163,27 +150,16 @@ pub async fn verify_password(
     password: &str,
     hash: &str,
 ) -> AuthResult<()> {
-    if let Some(hasher) = hasher {
-        return {
-            let valid = hasher.verify(hash, password).await?;
-            if valid {
-                Ok(())
-            } else {
-                Err(AuthError::InvalidCredentials)
-            }
-        };
-    }
-
-    if ScryptHasher.verify(hash, password).await? {
+    let valid = match hasher {
+        Some(hasher) => hasher.verify(hash, password).await?,
+        None => ScryptHasher.verify(hash, password).await?,
+    };
+    if valid {
         Ok(())
     } else {
         Err(AuthError::InvalidCredentials)
     }
 }
-
-// ---------------------------------------------------------------------------
-// Password validation
-// ---------------------------------------------------------------------------
 
 /// Validate `password` against both the plugin-level length limits and the global `PasswordConfig`
 /// strength rules.
@@ -203,7 +179,6 @@ pub fn validate_password(
 
     let length = password.encode_utf16().count();
     if length < min_length {
-        _ = config;
         return Err(AuthError::bad_request("Password too short"));
     }
 
@@ -242,10 +217,6 @@ pub fn validate_password(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Serialisation helper
-// ---------------------------------------------------------------------------
-
 /// Serialize any `Serialize`-able value to `serde_json::Value`, converting
 /// errors to `AuthError::internal`.
 ///
@@ -256,10 +227,6 @@ pub fn serialize_to_value(value: &impl Serialize) -> AuthResult<serde_json::Valu
     serde_json::to_value(value)
         .map_err(|e| AuthError::internal(format!("Failed to serialize value: {e}")))
 }
-
-// ---------------------------------------------------------------------------
-// UpdateUser helper
-// ---------------------------------------------------------------------------
 
 /// Build an `UpdateUser` that only changes the `metadata` field.
 #[must_use]

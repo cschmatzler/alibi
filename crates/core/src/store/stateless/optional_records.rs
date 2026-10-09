@@ -3,7 +3,14 @@
 //! Mutations lock only an individual adapter operation, never an entire plugin
 //! workflow or callback. Earlier successful writes survive later failures, and
 //! restarting the store loses every record. Expiry remains the plugin's policy.
-use super::*;
+use crate::store::stateless::StatelessStore;
+use crate::store::{PasskeyStore, TwoFactorStore};
+use crate::types::UpdatePasskeyAuthentication;
+use crate::{
+    AuthError, AuthResult, CreatePasskey, CreateTwoFactor, Passkey, TwoFactor, UpdateTwoFactor,
+};
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 
 /// Mutate an exact stored generation; never recreate a concurrently deleted row.
 fn mutate_record<T: Clone>(
@@ -30,11 +37,10 @@ impl TwoFactorStore for StatelessStore {
             created_at: now,
             updated_at: now,
         };
-        drop(
-            self.lock()?
-                .two_factors
-                .insert(record.id.clone(), record.clone()),
-        );
+        _ = self
+            .lock()?
+            .two_factors
+            .insert(record.id.clone(), record.clone());
         Ok(record)
     }
     async fn get_two_factor_by_user_id(&self, user_id: &str) -> AuthResult<Option<TwoFactor>> {
@@ -74,7 +80,7 @@ impl TwoFactorStore for StatelessStore {
             .values_mut()
             .find(|record| record.user_id == user_id)
             .ok_or_else(|| AuthError::not_found("Two-factor settings not found"))?;
-        record.backup_codes = backup_codes.to_owned();
+        backup_codes.clone_into(&mut record.backup_codes);
         record.updated_at = Utc::now();
         Ok(record.clone())
     }
@@ -125,11 +131,11 @@ impl TwoFactorStore for StatelessStore {
         }))
     }
     async fn reset_two_factor_failures(&self, id: &str) -> AuthResult<()> {
-        drop(mutate_record(&mut self.lock()?.two_factors, id, |record| {
+        _ = mutate_record(&mut self.lock()?.two_factors, id, |record| {
             record.failed_verification_count = Some(0.0);
             record.locked_until = None;
             true
-        }));
+        });
         Ok(())
     }
     async fn compare_and_swap_two_factor_backup_codes(
@@ -140,7 +146,7 @@ impl TwoFactorStore for StatelessStore {
     ) -> AuthResult<bool> {
         Ok(mutate_record(&mut self.lock()?.two_factors, id, |record| {
             if record.backup_codes == expected {
-                record.backup_codes = replacement.to_owned();
+                replacement.clone_into(&mut record.backup_codes);
                 true
             } else {
                 false
@@ -169,11 +175,10 @@ impl PasskeyStore for StatelessStore {
             created_at: now,
             updated_at: now,
         };
-        drop(
-            self.lock()?
-                .passkeys
-                .insert(record.id.clone(), record.clone()),
-        );
+        _ = self
+            .lock()?
+            .passkeys
+            .insert(record.id.clone(), record.clone());
         Ok(record)
     }
     async fn get_passkey_by_id(&self, id: &str) -> AuthResult<Option<Passkey>> {
@@ -223,7 +228,7 @@ impl PasskeyStore for StatelessStore {
         .ok_or_else(|| AuthError::not_found("Passkey not found"))
     }
     async fn delete_passkey(&self, id: &str) -> AuthResult<()> {
-        drop(self.lock()?.passkeys.shift_remove(id));
+        _ = self.lock()?.passkeys.shift_remove(id);
         Ok(())
     }
 }

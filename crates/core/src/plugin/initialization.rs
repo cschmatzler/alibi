@@ -1,4 +1,9 @@
-use super::*;
+use crate::plugin::MetadataMap;
+use crate::{
+    AuthConfig, AuthContext, AuthResult, AuthSchema, AuthStore, ContextExtensions, EmailProvider,
+    VerificationEmailOverride, VerificationEmailOverrideHandle,
+};
+use std::sync::Arc;
 pub struct AuthInitParts {
     pub metadata: MetadataMap,
     pub email_provider: Option<Arc<dyn EmailProvider>>,
@@ -28,7 +33,7 @@ impl<S: AuthSchema> AuthInitContext<S> {
     }
 
     pub fn set_metadata(&mut self, key: impl Into<String>, value: serde_json::Value) {
-        drop(self.metadata.insert(key.into(), value));
+        _ = self.metadata.insert(key.into(), value);
     }
 
     /// Decorate the instance's actual password hashing boundary. Later
@@ -39,9 +44,7 @@ impl<S: AuthSchema> AuthInitContext<S> {
     ) {
         let mut hooks = self
             .extensions
-            .get::<crate::utils::password::PasswordHashHooks>()
-            .map(|value| (*value).clone())
-            .unwrap_or_default();
+            .cloned_or_default::<crate::utils::password::PasswordHashHooks>();
         hooks.0.push(hook);
         self.extensions.insert(hooks);
     }
@@ -61,9 +64,7 @@ impl<S: AuthSchema> AuthInitContext<S> {
     {
         let mut transforms = self
             .extensions
-            .get::<crate::store::UserTransforms>()
-            .map(|value| (*value).clone())
-            .unwrap_or_default();
+            .cloned_or_default::<crate::store::UserTransforms>();
         transforms.creates.push(Arc::new(transform));
         self.extensions.insert(transforms);
     }
@@ -79,9 +80,7 @@ impl<S: AuthSchema> AuthInitContext<S> {
     {
         let mut transforms = self
             .extensions
-            .get::<crate::store::UserTransforms>()
-            .map(|value| (*value).clone())
-            .unwrap_or_default();
+            .cloned_or_default::<crate::store::UserTransforms>();
         transforms.adapter_defaults.0.push(Arc::new(default));
         self.extensions.insert(transforms);
     }
@@ -96,9 +95,7 @@ impl<S: AuthSchema> AuthInitContext<S> {
     {
         let mut transforms = self
             .extensions
-            .get::<crate::store::UserTransforms>()
-            .map(|value| (*value).clone())
-            .unwrap_or_default();
+            .cloned_or_default::<crate::store::UserTransforms>();
         transforms.updates.push(Arc::new(transform));
         self.extensions.insert(transforms);
     }
@@ -113,9 +110,7 @@ impl<S: AuthSchema> AuthInitContext<S> {
     ) {
         let mut callbacks = self
             .extensions
-            .get::<crate::store::SessionCreatedCallbacks<S>>()
-            .map(|value| (*value).clone())
-            .unwrap_or_default();
+            .cloned_or_default::<crate::store::SessionCreatedCallbacks<S>>();
         callbacks.callbacks.push(callback);
         self.extensions.insert(callbacks);
     }
@@ -128,9 +123,7 @@ impl<S: AuthSchema> AuthInitContext<S> {
     ) {
         let mut callbacks = self
             .extensions
-            .get::<crate::store::AdapterCallbacks<S>>()
-            .map(|callbacks| (*callbacks).clone())
-            .unwrap_or_default();
+            .cloned_or_default::<crate::store::AdapterCallbacks<S>>();
         callbacks.0.push(callback);
         self.extensions.insert(callbacks);
     }
@@ -140,14 +133,10 @@ impl<S: AuthSchema> AuthInitContext<S> {
     pub fn database_with_registered_transforms(&self) -> Arc<dyn AuthStore<S>> {
         let transforms = self
             .extensions
-            .get::<crate::store::UserTransforms>()
-            .map(|value| (*value).clone())
-            .unwrap_or_default();
+            .cloned_or_default::<crate::store::UserTransforms>();
         let session_callbacks = self
             .extensions
-            .get::<crate::store::SessionCreatedCallbacks<S>>()
-            .map(|value| (*value).clone())
-            .unwrap_or_default();
+            .cloned_or_default::<crate::store::SessionCreatedCallbacks<S>>();
         let fields = self.extensions.get::<crate::field_policy::SessionFields>();
         if self.config.session.secondary_storage.is_none()
             && transforms.creates.is_empty()
@@ -180,12 +169,14 @@ impl<S: AuthSchema> AuthInitContext<S> {
             ),
             self.extensions
                 .get::<crate::field_policy::SessionAdapterFields>()
-                .map(|fields_2| (*fields_2).clone())
-                .unwrap_or_else(|| {
-                    crate::field_policy::SessionAdapterFields(Arc::new(
-                        self.config.session.additional_fields.clone(),
-                    ))
-                }),
+                .map_or_else(
+                    || {
+                        crate::field_policy::SessionAdapterFields(Arc::new(
+                            self.config.session.additional_fields.clone(),
+                        ))
+                    },
+                    |fields| (*fields).clone(),
+                ),
             AuthContext::with_metadata(
                 Arc::clone(&self.config),
                 Arc::clone(&self.database),

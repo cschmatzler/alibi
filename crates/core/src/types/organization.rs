@@ -1,4 +1,5 @@
 use crate::entity::{AuthInvitation, AuthMember, AuthOrganization};
+use crate::field_policy::FieldValues;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
@@ -65,10 +66,10 @@ impl From<String> for InvitationStatus {
 impl std::fmt::Display for InvitationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Pending => write!(f, "pending"),
-            Self::Accepted => write!(f, "accepted"),
-            Self::Rejected => write!(f, "rejected"),
-            Self::Canceled => write!(f, "canceled"),
+            Self::Pending => f.write_str("pending"),
+            Self::Accepted => f.write_str("accepted"),
+            Self::Rejected => f.write_str("rejected"),
+            Self::Canceled => f.write_str("canceled"),
         }
     }
 }
@@ -119,7 +120,7 @@ impl Invitation {
 /// Organization creation data
 #[derive(Debug, Clone)]
 pub struct CreateOrganization {
-    pub additional_fields: crate::field_policy::FieldValues,
+    pub additional_fields: FieldValues,
     pub id: Option<String>,
     pub name: String,
     pub slug: String,
@@ -132,7 +133,7 @@ impl CreateOrganization {
     pub fn new(name: impl Into<String>, slug: impl Into<String>) -> Self {
         Self {
             id: None,
-            additional_fields: Default::default(),
+            additional_fields: FieldValues::default(),
             name: name.into(),
             slug: slug.into(),
             logo: None,
@@ -156,7 +157,7 @@ impl CreateOrganization {
 /// Organization update data
 #[derive(Debug, Clone, Default)]
 pub struct UpdateOrganization {
-    pub additional_fields: crate::field_policy::FieldValues,
+    pub additional_fields: FieldValues,
     pub name: Option<String>,
     pub slug: Option<String>,
     /// None retains the stored logo; Some(None) clears it; Some(Some) sets it.
@@ -480,9 +481,9 @@ where
     let value = Option::<MetadataValue>::deserialize(deserializer)?;
     value
         .map(|inner| match inner {
-            MetadataValue::Json(value_2) => Ok(value_2),
-            MetadataValue::String(value_3) => crate::utils::json::from_slice(value_3.as_bytes())
-                .map_or_else(|_| Ok(serde_json::Value::String(value_3)), Ok),
+            MetadataValue::Json(value) => Ok(value),
+            MetadataValue::String(text) => crate::utils::json::from_slice(text.as_bytes())
+                .map_or_else(|_| Ok(serde_json::Value::String(text)), Ok),
         })
         .transpose()
 }

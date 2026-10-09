@@ -1,34 +1,28 @@
+mod account;
+mod advanced;
+mod client_ip;
 mod id;
+mod identity;
+mod origin;
+mod secrets;
+mod session;
+
+pub use account::{AccountConfig, AccountLinkingConfig, OAuthStateStrategy};
+pub use advanced::{
+    AdvancedConfig, AdvancedDatabaseConfig, CookieAttributes, CookieOverride, CrossSubDomainConfig,
+    IpAddressConfig, SameSite, TwoFactorDatabaseConfig,
+};
 #[doc(hidden)]
 pub use id::serial_id_statements;
 pub use id::{DatabaseIdGenerator, DatabaseIdStrategy};
-mod account;
-mod advanced;
-mod identity;
-mod session;
-
-pub use account::AccountConfig;
-pub use account::AccountLinkingConfig;
-pub use account::OAuthStateStrategy;
-pub use advanced::AdvancedConfig;
-pub use advanced::AdvancedDatabaseConfig;
-pub use advanced::CookieAttributes;
-pub use advanced::CookieOverride;
-pub use advanced::CrossSubDomainConfig;
-pub use advanced::IpAddressConfig;
-pub use advanced::SameSite;
-pub use advanced::TwoFactorDatabaseConfig;
-pub use identity::PasswordConfig;
-pub use identity::UserConfig;
-pub use identity::VerificationConfig;
-pub use session::CookieCacheConfig;
-pub use session::CookieCacheStrategy;
-pub use session::CookieRefreshCache;
-pub use session::JwtConfig;
-pub use session::SessionConfig;
-mod client_ip;
-mod secrets;
+pub use identity::{PasswordConfig, UserConfig, VerificationConfig};
+pub use origin::{
+    BaseUrlProtocol, DynamicBaseUrl, TrustedOriginsResolver, TrustedProvidersResolver,
+};
 pub use secrets::ManagedSecrets;
+pub use session::{
+    CookieCacheConfig, CookieCacheStrategy, CookieRefreshCache, JwtConfig, SessionConfig,
+};
 
 /// Well-known core route paths.
 ///
@@ -36,7 +30,6 @@ pub use secrets::ManagedSecrets;
 /// the core request dispatcher (`handle_core_request`) and framework-specific
 /// routers (e.g. Axum) so that path strings are never duplicated.
 pub mod core_paths {
-
     pub const OK: &str = "/ok";
     pub const ERROR: &str = "/error";
     pub const HEALTH: &str = "/health";
@@ -64,11 +57,6 @@ pub enum AwaitedNotificationErrorPolicy {
     LogAndContinue,
 }
 
-mod origin;
-pub use origin::{
-    BaseUrlProtocol, DynamicBaseUrl, TrustedOriginsResolver, TrustedProvidersResolver,
-};
-
 /// Main configuration for `BetterAuth`
 #[derive(Clone)]
 pub struct AuthConfig {
@@ -91,7 +79,7 @@ pub struct AuthConfig {
     pub dynamic_base_url: Option<DynamicBaseUrl>,
 
     /// Application callback resolving additional trusted origins from the real request.
-    pub trusted_origins_resolver: Option<std::sync::Arc<dyn TrustedOriginsResolver>>,
+    pub trusted_origins_resolver: Option<Arc<dyn TrustedOriginsResolver>>,
 
     /// Base path where the auth routes are mounted.
     ///
@@ -364,7 +352,7 @@ impl AuthConfig {
         let keys = self
             .managed_secrets
             .as_ref()
-            .map(|secrets| secrets.verification_secrets());
+            .map(secrets::ManagedSecrets::verification_secrets);
         keys.into_iter().flatten().chain(
             self.managed_secrets
                 .is_none()
@@ -440,7 +428,6 @@ impl AuthConfig {
     /// with [`resolve_request`](Self::resolve_request) before evaluating them.
     #[must_use]
     pub fn is_origin_trusted(&self, origin: &str) -> bool {
-        // Check base_url origin
         if self.dynamic_base_url.is_none()
             && let Some(base_origin) = extract_origin(&self.base_url)
             && (origin == base_origin
@@ -465,10 +452,7 @@ impl AuthConfig {
     /// targets) and per-endpoint origin checks (e.g. verify-email GET).
     #[must_use]
     pub fn is_redirect_target_trusted(&self, url: &str) -> bool {
-        if is_safe_relative_path(url) {
-            return true;
-        }
-        self.is_origin_trusted(url)
+        is_safe_relative_path(url) || self.is_origin_trusted(url)
     }
 
     /// Check whether a given path is disabled.
@@ -477,7 +461,6 @@ impl AuthConfig {
         self.disabled_paths.iter().any(|disabled| disabled == path)
     }
 
-    ///
     /// # Errors
     ///
     /// Returns a configuration error if the signing secret is empty or shorter than 32 bytes.
@@ -587,8 +570,6 @@ fn legacy_pattern_origin(url: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    // ── extract_origin ──────────────────────────────────────────────────
-
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]
     fn extract_origin_with_path() {
@@ -640,8 +621,6 @@ mod tests {
         assert_eq!(extract_origin("example.com"), None);
     }
 
-    // ── AuthConfig::new ─────────────────────────────────────────────────
-
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]
     fn new_config_sets_secret() {
@@ -658,8 +637,6 @@ mod tests {
         assert_eq!(cfg.base_path, "/api/auth");
         assert_eq!(cfg.trusted_origins, Vec::<String>::new());
     }
-
-    // ── Builder methods ─────────────────────────────────────────────────
 
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]
@@ -730,8 +707,6 @@ mod tests {
         assert_eq!(cfg.disabled_paths, vec!["/new"]);
     }
 
-    // ── is_origin_trusted ───────────────────────────────────────────────
-
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]
     fn is_origin_trusted_matches_base_url() {
@@ -758,8 +733,6 @@ mod tests {
         assert!(cfg.is_origin_trusted("https://sub.example.com"));
         assert!(!cfg.is_origin_trusted("https://other.com"));
     }
-
-    // ── is_redirect_target_trusted ─────────────────────────────────────
 
     // Upstream reference: packages/better-auth/src/api/middlewares/origin-check.ts :: originCheck validates callbackURL against trustedOrigins.
     #[test]
@@ -799,8 +772,6 @@ mod tests {
         assert!(!cfg.is_redirect_target_trusted("//evil.com"));
     }
 
-    // ── is_path_disabled ────────────────────────────────────────────────
-
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]
     fn is_path_disabled_matches() {
@@ -808,8 +779,6 @@ mod tests {
         assert!(cfg.is_path_disabled("/admin"));
         assert!(!cfg.is_path_disabled("/user"));
     }
-
-    // ── validate ────────────────────────────────────────────────────────
 
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]
@@ -831,8 +800,6 @@ mod tests {
         let cfg = AuthConfig::new("test-secret-min-32-chars-1234567");
         assert!(cfg.validate().is_ok());
     }
-
-    // ── Defaults ────────────────────────────────────────────────────────
 
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]
@@ -910,8 +877,6 @@ mod tests {
         assert!(crate::error::page::error_page_html("SOME_ERROR-CODE").contains("SOME_ERROR-CODE"));
         assert!(crate::error::page::error_page_html("it's").contains("it's"));
     }
-
-    // ── session builder methods ─────────────────────────────────────────
 
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]

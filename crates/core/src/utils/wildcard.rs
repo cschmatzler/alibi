@@ -1,6 +1,10 @@
 //! Better Auth's `wildcardMatch` and the simple path globs used by rate limits.
 
+use crate::utils::LockUnpoisoned;
 use regex::Regex;
+use std::collections::HashMap;
+use std::fmt::Write as _;
+use std::sync::{LazyLock, Mutex};
 
 const SEPARATOR: &str = r"[/\\]";
 const SEGMENT_CHARACTER: &str = r"[^/\\]";
@@ -30,7 +34,7 @@ pub fn compile(pattern: &str) -> Result<Regex, regex::Error> {
                 if index > 0 {
                     expression.push_str(&separator);
                 }
-                expression.push_str(&format!("(?:{SEGMENT_RUN}{separator})*?"));
+                _ = write!(expression, "(?:{SEGMENT_RUN}{separator})*?");
             }
             continue;
         }
@@ -45,10 +49,23 @@ pub fn compile(pattern: &str) -> Result<Regex, regex::Error> {
     Regex::new(&expression)
 }
 
-/// Match `value` against a [`compile`]d pattern.
+/// Match `value` against a [`compile`]d pattern. Compiled patterns are cached,
+/// since trusted-origin matching evaluates the same few patterns on every request.
 #[must_use]
 pub fn matches(pattern: &str, value: &str) -> bool {
-    compile(pattern).is_ok_and(|compiled| compiled.is_match(value))
+    const CACHE_LIMIT: usize = 256;
+    static CACHE: LazyLock<Mutex<HashMap<String, Option<Regex>>>> = LazyLock::new(Mutex::default);
+    let compiled = {
+        let mut cache = CACHE.lock_unpoisoned();
+        if cache.len() >= CACHE_LIMIT && !cache.contains_key(pattern) {
+            cache.clear();
+        }
+        cache
+            .entry(pattern.to_owned())
+            .or_insert_with(|| compile(pattern).ok())
+            .clone()
+    };
+    compiled.is_some_and(|compiled| compiled.is_match(value))
 }
 
 /// Compile a path glob in which `*` matches any characters, including separators.
@@ -76,10 +93,12 @@ fn translate(
     let mut characters = pattern.chars();
     while let Some(character) = characters.next() {
         let literal = match (character, special(character)) {
-            ('\\', _) => match characters.next() {
-                Some(escaped) => escaped,
-                None => continue,
-            },
+            ('\\', _) => {
+                let Some(escaped) = characters.next() else {
+                    continue;
+                };
+                escaped
+            }
             (_, Some(translated)) => {
                 expression.push_str(translated);
                 continue;

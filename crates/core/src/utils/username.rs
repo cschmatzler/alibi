@@ -21,20 +21,16 @@ pub fn normalize_username(username: &str) -> String {
     username.to_lowercase()
 }
 
-///
 /// # Errors
 ///
 /// Returns an error if the username fails the configured length or character validation.
 pub fn validate_username(username: &str) -> Result<(), UsernameValidationError> {
-    if username.encode_utf16().count() < USERNAME_MIN_LENGTH {
-        return Err(UsernameValidationError::TooShort);
-    }
-
-    if username.encode_utf16().count() > USERNAME_MAX_LENGTH {
-        return Err(UsernameValidationError::TooLong);
-    }
-
-    if valid_default_characters(username) {
+    let length = username.encode_utf16().count();
+    if length < USERNAME_MIN_LENGTH {
+        Err(UsernameValidationError::TooShort)
+    } else if length > USERNAME_MAX_LENGTH {
+        Err(UsernameValidationError::TooLong)
+    } else if valid_default_characters(username) {
         Ok(())
     } else {
         Err(UsernameValidationError::Invalid)
@@ -43,21 +39,13 @@ pub fn validate_username(username: &str) -> Result<(), UsernameValidationError> 
 
 #[must_use]
 pub fn normalize_username_fields(
-    mut username: Option<String>,
-    mut display_username: Option<String>,
+    username: Option<String>,
+    display_username: Option<String>,
 ) -> (Option<String>, Option<String>) {
-    if username.is_some() && display_username.is_none() {
-        display_username.clone_from(&username);
-    }
-
-    if display_username.is_some() && username.is_none() {
-        username.clone_from(&display_username);
-    }
-
-    if let Some(username_value) = username.as_mut() {
-        *username_value = normalize_username(username_value);
-    }
-
+    let display_username = display_username.or_else(|| username.clone());
+    let username = username
+        .or_else(|| display_username.clone())
+        .map(|username| normalize_username(&username));
     (username, display_username)
 }
 

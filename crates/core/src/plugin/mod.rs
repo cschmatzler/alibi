@@ -4,30 +4,15 @@ mod extensions;
 mod initialization;
 mod routes;
 
-use crate::config::AuthConfig;
-use crate::email::EmailProvider;
-use crate::entity::AuthSession;
-use crate::error::{AuthError, AuthResult};
-use crate::schema::AuthSchema;
-use crate::session::SessionManager;
-use crate::store::AuthStore;
-use crate::types::{AuthRequest, AuthResponse, HttpMethod};
-use async_trait::async_trait;
 pub use context::AuthContext;
-pub use contracts::AuthPlugin;
-pub use contracts::BeforeRequestAction;
-pub use contracts::HttpEndpointResponse;
-pub use contracts::HttpRequestAction;
-pub use contracts::VerificationEmailOverride;
-pub use contracts::VerificationEmailOverrideHandle;
+pub use contracts::{
+    AuthPlugin, BeforeRequestAction, HttpEndpointResponse, HttpRequestAction,
+    VerificationEmailOverride, VerificationEmailOverrideHandle,
+};
 pub use extensions::ContextExtensions;
-pub use initialization::AuthInitContext;
-pub use initialization::AuthInitParts;
-pub use routes::AuthRoute;
-pub use routes::ResolvedEndpoint;
-use std::any::{Any, TypeId};
+pub use initialization::{AuthInitContext, AuthInitParts};
+pub use routes::{AuthRoute, ResolvedEndpoint};
 use std::collections::HashMap;
-use std::sync::Arc;
 
 type MetadataMap = HashMap<String, serde_json::Value>;
 
@@ -35,8 +20,14 @@ type MetadataMap = HashMap<String, serde_json::Value>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AuthConfig;
+    use crate::AuthRequest;
+    use crate::HttpMethod;
+    use crate::SessionManager;
+    use crate::entity::AuthSession;
     use crate::entity::AuthUser;
     use crate::test_store::test_database;
+    use std::sync::Arc;
 
     // Rust-specific surface: plugin infrastructure helpers and request-dispatch helpers in `crates/core::plugin` are Rust library APIs with no direct TS analogue.
     #[test]
@@ -128,13 +119,13 @@ mod tests {
         // Build request with the session token
         let ctx = AuthContext::new(Arc::clone(&config), db);
         let mut req = AuthRequest::new(HttpMethod::Get, "/test");
-        drop(req.headers.insert(
+        _ = req.headers.insert(
             "cookie".into(),
             format!(
                 "better-auth.session_token={}",
                 crate::utils::cookie_utils::sign_cookie_value(session.token(), &config.secret)
             ),
-        ));
+        );
 
         let (found_user, _found_session) = ctx.require_session(&req).await.unwrap();
         assert_eq!(found_user.id(), user.id());

@@ -1,4 +1,8 @@
-use super::*;
+use crate::store::OrganizationStore;
+use crate::store::stateless::StatelessStore;
+use crate::{AuthError, AuthResult, CreateOrganization, Organization, UpdateOrganization};
+use async_trait::async_trait;
+use chrono::Utc;
 
 fn patch(row: &mut Organization, update: UpdateOrganization) {
     if let Some(name) = update.name {
@@ -20,7 +24,7 @@ impl OrganizationStore for StatelessStore {
     async fn create_organization(&self, data: CreateOrganization) -> AuthResult<Organization> {
         let now = Utc::now();
         let row = Organization {
-            additional_fields: Default::default(),
+            additional_fields: std::collections::BTreeMap::default(),
             id: data.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
             name: data.name,
             slug: data.slug,
@@ -29,11 +33,10 @@ impl OrganizationStore for StatelessStore {
             created_at: now,
             updated_at: now,
         };
-        drop(
-            self.organization_state()?
-                .organizations
-                .insert(row.id.clone(), row.clone()),
-        );
+        _ = self
+            .organization_state()?
+            .organizations
+            .insert(row.id.clone(), row.clone());
         Ok(row)
     }
     async fn get_organization_by_id(&self, id: &str) -> AuthResult<Option<Organization>> {
@@ -95,7 +98,7 @@ impl OrganizationStore for StatelessStore {
         let mut state = self.organization_state()?;
         state.members.retain(|_, row| row.organization_id != id);
         state.invitations.retain(|_, row| row.organization_id != id);
-        drop(state.organizations.shift_remove(id));
+        _ = state.organizations.shift_remove(id);
         Ok(())
     }
     async fn list_user_organizations(&self, user_id: &str) -> AuthResult<Vec<Organization>> {

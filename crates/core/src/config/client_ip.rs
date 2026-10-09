@@ -19,13 +19,12 @@ impl IpAddressConfig {
             .collect::<Vec<_>>();
         self.headers
             .iter()
-            .filter_map(|name| {
+            .find_map(|name| {
                 headers
                     .iter()
                     .find(|(key, _)| key.eq_ignore_ascii_case(name))
                     .and_then(|(_, value)| self.resolve_header(value, &proxies))
             })
-            .next()
             .or_else(|| self.localhost_fallback.then(|| "127.0.0.1".to_owned()))
     }
 

@@ -1,4 +1,9 @@
-use super::*;
+use crate::field_policy::FieldValues;
+use crate::store::SessionStore;
+use crate::store::stateless::{StatelessSchema, StatelessStore};
+use crate::{AuthError, AuthResult, CreateSession, SessionView};
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 #[async_trait]
 impl SessionStore<StatelessSchema> for StatelessStore {
     async fn prepare_secondary_session_creation(
@@ -40,29 +45,27 @@ impl SessionStore<StatelessSchema> for StatelessStore {
                 .map(|(key, value)| value.to_json_value().map(|value| (key, value)))
                 .collect::<Result<_, _>>()?,
             active: true,
-            omitted_fields: Default::default(),
+            omitted_fields: std::collections::BTreeSet::default(),
         })
     }
     async fn prepare_secondary_session_update(
         &self,
         mut session: SessionView,
         expires_at: Option<DateTime<Utc>>,
-        mut fields: crate::field_policy::FieldValues,
-    ) -> AuthResult<Option<(SessionView, crate::field_policy::FieldValues)>> {
+        mut fields: FieldValues,
+    ) -> AuthResult<Option<(SessionView, FieldValues)>> {
         fields.apply_adapter_transforms_async().await?;
         for (key, value) in &fields {
             match key.as_str() {
                 "activeOrganizationId" => {
-                    session.active_organization_id = value.as_str().map(str::to_owned)
+                    session.active_organization_id = value.as_str().map(str::to_owned);
                 }
                 "activeTeamId" => session.active_team_id = value.as_str().map(str::to_owned),
                 "impersonatedBy" => session.impersonated_by = value.as_str().map(str::to_owned),
                 _ => {
-                    drop(
-                        session
-                            .extension_fields
-                            .insert(key.clone(), value.to_json_value()?),
-                    );
+                    _ = session
+                        .extension_fields
+                        .insert(key.clone(), value.to_json_value()?);
                 }
             }
         }
@@ -76,7 +79,7 @@ impl SessionStore<StatelessSchema> for StatelessStore {
         &self,
         session: SessionView,
         _expires_at: Option<DateTime<Utc>>,
-        _fields: crate::field_policy::FieldValues,
+        _fields: FieldValues,
         persist: bool,
     ) -> AuthResult<Option<SessionView>> {
         if persist {

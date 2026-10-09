@@ -1,5 +1,23 @@
 //! Shared JavaScript primitive coercion used by actual identity and storage boundaries.
 
+/// Nearest `f64` to an integer, as `Number(value)` would produce.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "JavaScript numbers are IEEE754 doubles"
+)]
+pub(crate) const fn number_from_i64(value: i64) -> f64 {
+    value as f64
+}
+
+/// Nearest `f64` to a length or count, as `Number(value)` would produce.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "JavaScript numbers are IEEE754 doubles"
+)]
+pub(crate) const fn number_from_usize(value: usize) -> f64 {
+    value as f64
+}
+
 #[must_use]
 pub fn trim(value: &str) -> &str {
     value.trim_matches(is_whitespace)

@@ -100,59 +100,46 @@ impl CorsMiddleware {
     }
 
     fn is_origin_allowed(&self, origin: &str) -> bool {
-        if self.config.allowed_origins.is_empty() {
-            return false;
-        }
         self.config
             .allowed_origins
             .iter()
-            .any(|o| o == "*" || o == origin)
+            .any(|allowed| allowed == "*" || allowed == origin)
+    }
+
+    /// The request's origin when it sends one and the policy admits it.
+    fn allowed_origin<'a>(&self, req: &'a AuthRequest) -> Option<&'a str> {
+        req.headers
+            .get("origin")
+            .map(String::as_str)
+            .filter(|origin| self.is_origin_allowed(origin))
     }
 
     fn cors_headers(&self, origin: &str) -> Vec<(String, String)> {
-        let mut headers = Vec::new();
-
-        // Use the request origin if allowed (not wildcard when credentials are on)
-        let allow_origin = if self.config.allow_credentials {
-            origin.to_owned()
-        } else if self.config.allowed_origins.contains(&"*".to_owned()) {
-            "*".to_owned()
-        } else {
-            origin.to_owned()
-        };
-
-        headers.push(("Access-Control-Allow-Origin".into(), allow_origin));
-
-        if self.config.allow_credentials {
+        let config = &self.config;
+        // A wildcard is not a valid Allow-Origin when credentials are allowed.
+        let allow_origin =
+            if !config.allow_credentials && config.allowed_origins.iter().any(|o| o == "*") {
+                "*"
+            } else {
+                origin
+            };
+        let mut headers = vec![(
+            "Access-Control-Allow-Origin".to_owned(),
+            allow_origin.to_owned(),
+        )];
+        if config.allow_credentials {
             headers.push(("Access-Control-Allow-Credentials".into(), "true".into()));
         }
-
-        if !self.config.allowed_methods.is_empty() {
-            headers.push((
-                "Access-Control-Allow-Methods".into(),
-                self.config.allowed_methods.join(", "),
-            ));
+        for (name, values) in [
+            ("Access-Control-Allow-Methods", &config.allowed_methods),
+            ("Access-Control-Allow-Headers", &config.allowed_headers),
+            ("Access-Control-Expose-Headers", &config.exposed_headers),
+        ] {
+            if !values.is_empty() {
+                headers.push((name.into(), values.join(", ")));
+            }
         }
-
-        if !self.config.allowed_headers.is_empty() {
-            headers.push((
-                "Access-Control-Allow-Headers".into(),
-                self.config.allowed_headers.join(", "),
-            ));
-        }
-
-        if !self.config.exposed_headers.is_empty() {
-            headers.push((
-                "Access-Control-Expose-Headers".into(),
-                self.config.exposed_headers.join(", "),
-            ));
-        }
-
-        headers.push((
-            "Access-Control-Max-Age".into(),
-            self.config.max_age.to_string(),
-        ));
-
+        headers.push(("Access-Control-Max-Age".into(), config.max_age.to_string()));
         headers
     }
 }
@@ -164,29 +151,16 @@ impl Middleware for CorsMiddleware {
     }
 
     async fn before_request(&self, req: &AuthRequest) -> AuthResult<Option<AuthResponse>> {
-        if !self.config.enabled {
+        if !self.config.enabled || req.method != HttpMethod::Options {
             return Ok(None);
         }
-
-        let origin = match req.headers.get("origin") {
-            Some(o) => o.clone(),
-            None => return Ok(None), // No Origin header → not a CORS request
-        };
-
-        if !self.is_origin_allowed(&origin) {
-            return Ok(None); // Origin not allowed → skip CORS headers
-        }
-
-        // Handle preflight
-        if req.method == HttpMethod::Options {
-            let mut response = AuthResponse::new(204);
-            for (key, value) in self.cors_headers(&origin) {
-                response = response.with_header(key, value);
-            }
-            return Ok(Some(response));
-        }
-
-        Ok(None)
+        Ok(self.allowed_origin(req).map(|origin| {
+            self.cors_headers(origin)
+                .into_iter()
+                .fold(AuthResponse::new(204), |response, (key, value)| {
+                    response.with_header(key, value)
+                })
+        }))
     }
 
     async fn after_request(
@@ -194,23 +168,13 @@ impl Middleware for CorsMiddleware {
         req: &AuthRequest,
         mut response: AuthResponse,
     ) -> AuthResult<AuthResponse> {
-        if !self.config.enabled {
-            return Ok(response);
+        if self.config.enabled
+            && let Some(origin) = self.allowed_origin(req)
+        {
+            for (key, value) in self.cors_headers(origin) {
+                _ = response.headers.insert(key, value);
+            }
         }
-
-        let origin = match req.headers.get("origin") {
-            Some(o) => o.clone(),
-            None => return Ok(response),
-        };
-
-        if !self.is_origin_allowed(&origin) {
-            return Ok(response);
-        }
-
-        for (key, value) in self.cors_headers(&origin) {
-            drop(response.headers.insert(key, value));
-        }
-
         Ok(response)
     }
 }

@@ -1,4 +1,20 @@
-use super::*;
+use crate::field_policy::FieldValues;
+use crate::store::{
+    AdapterEvent, BoxedTransactionValue, PluginStore, TransactionStore, TransactionWork,
+    UserCreateTransform, UserCreationDefaults, create_data,
+};
+use crate::types::AddTeamMemberResult;
+use crate::user_validation::{PreparedUserCreation, UserValidationSource, prepare_creation};
+use crate::utils::json::JsValue;
+use crate::verification::{VerificationCreation, VerificationPublication, VerificationSnapshot};
+use crate::{AdapterRecord, AuthUser};
+use crate::{
+    AuthError, AuthResult, AuthSchema, AuthSession, AuthTransaction, CreateAccount, CreateJwk,
+    CreateMember, CreatePasskey, CreateSession, CreateUser, CreateVerification, Jwk, Member,
+    Passkey, Team,
+};
+use async_trait::async_trait;
+use std::sync::Arc;
 pub(in crate::store) struct PluginTransaction<'a, S: AuthSchema> {
     pub(in crate::store) inner: &'a dyn AuthTransaction<S>,
     pub(in crate::store) config: Arc<crate::AuthConfig>,
@@ -24,7 +40,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
     pub(in crate::store) async fn update_ephemeral_scope(
         &self,
         token: &str,
-        mut fields: crate::field_policy::FieldValues,
+        mut fields: FieldValues,
     ) -> AuthResult<S::Session> {
         self.adapter_fields.attach(&mut fields, false);
         let staged = self
@@ -37,9 +53,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
             Some(session) => session,
             None => self
                 .record_store
-                .ephemeral_sessions
-                .lock()
-                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
+                .ephemeral()?
                 .get(token)
                 .cloned()
                 .ok_or(AuthError::SessionNotFound)?,
@@ -54,18 +68,17 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
             .complete_secondary_session_update(updated, None, fields, false)
             .await?
             .ok_or(AuthError::SessionNotFound)?;
-        drop(
-            self.pending_scopes
-                .lock()
-                .map_err(|_| AuthError::internal("Ephemeral scope queue poisoned"))?
-                .insert(token.to_owned(), updated.clone()),
-        );
+        _ = self
+            .pending_scopes
+            .lock()
+            .map_err(|_| AuthError::internal("Ephemeral scope queue poisoned"))?
+            .insert(token.to_owned(), updated.clone());
         Ok(updated)
     }
     pub(in crate::store) async fn update_secondary_scope(
         &self,
         token: &str,
-        mut fields: crate::field_policy::FieldValues,
+        mut fields: FieldValues,
     ) -> AuthResult<S::Session> {
         self.adapter_fields.attach(&mut fields, false);
         let (session, user) = self
@@ -97,8 +110,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
     pub(in crate::store) async fn transaction_user_record(
         &self,
         user: S::User,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
-        use crate::AuthUser;
+    ) -> AuthResult<AdapterRecord<S::User>> {
         let verification = self.inner.provider_verification_output(&user.id()).await?;
         let mut record = self
             .record_store
@@ -134,7 +146,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
     async fn create_user_record(
         &self,
         create_user: CreateUser,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+    ) -> AuthResult<AdapterRecord<S::User>> {
         let model = self.create_user(create_user).await?;
         let record = self.transaction_user_record(model).await?;
         self.observe(AdapterEvent::UserCreated(record.clone()))?;
@@ -145,7 +157,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         &self,
         create_user: CreateUser,
         source: UserValidationSource,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+    ) -> AuthResult<AdapterRecord<S::User>> {
         let model = self.create_user_with_source(create_user, source).await?;
         let record = self.transaction_user_record(model).await?;
         self.observe(AdapterEvent::UserCreated(record.clone()))?;
@@ -155,17 +167,14 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
     async fn create_user_prepared_record(
         &self,
         prepared: PreparedUserCreation,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+    ) -> AuthResult<AdapterRecord<S::User>> {
         let model = self.create_user_prepared(prepared).await?;
         let record = self.transaction_user_record(model).await?;
         self.observe(AdapterEvent::UserCreated(record.clone()))?;
         Ok(record)
     }
 
-    async fn get_user_by_id_record(
-        &self,
-        id: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+    async fn get_user_by_id_record(&self, id: &str) -> AuthResult<Option<AdapterRecord<S::User>>> {
         let Some(model) = self.get_user_by_id(id).await? else {
             return Ok(None);
         };
@@ -176,7 +185,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
     async fn create_account_record(
         &self,
         create_account: CreateAccount,
-    ) -> AuthResult<crate::AdapterRecord<S::Account>> {
+    ) -> AuthResult<AdapterRecord<S::Account>> {
         let model = self.create_account(create_account).await?;
         let record = self.record_store.account_record(model).await?;
         self.observe(AdapterEvent::AccountCreated(record.clone()))?;
@@ -186,7 +195,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
     async fn create_session_record(
         &self,
         create_session: CreateSession,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         let model = self.create_session(create_session).await?;
         let record = self.record_store.session_record(model).await?;
         self.observe(AdapterEvent::SessionCreated(record.clone()))?;
@@ -197,7 +206,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         &self,
         token: &str,
         organization_id: Option<&str>,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         let model = self
             .update_session_active_organization(token, organization_id)
             .await?;
@@ -210,7 +219,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         &self,
         token: &str,
         team_id: Option<&str>,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         let model = self.update_session_active_team(token, team_id).await?;
         let record = self.record_store.session_record(model).await?;
         self.observe(AdapterEvent::SessionUpdated(record.clone()))?;
@@ -240,26 +249,22 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         team_id: Option<&str>,
     ) -> AuthResult<S::Session> {
         if self.config.session.stateless {
-            let mut fields = crate::field_policy::FieldValues::new();
-            drop(fields.insert(
+            let mut fields = FieldValues::new();
+            _ = fields.insert(
                 "activeTeamId".into(),
-                team_id.map_or(crate::utils::json::JsValue::Null, |value| {
-                    crate::utils::json::JsValue::String(value.to_owned())
-                }),
-            ));
+                team_id.map_or(JsValue::Null, |value| JsValue::String(value.to_owned())),
+            );
             return self.update_ephemeral_scope(token, fields).await;
         }
         if self.record_store.secondary().is_some()
             && (!self.record_store.session_uses_database()
                 || self.record_store.cached_session(token).await?.is_some())
         {
-            let mut fields = crate::field_policy::FieldValues::new();
-            drop(fields.insert(
+            let mut fields = FieldValues::new();
+            _ = fields.insert(
                 "activeTeamId".into(),
-                team_id.map_or(crate::utils::json::JsValue::Null, |value| {
-                    crate::utils::json::JsValue::String(value.to_owned())
-                }),
-            ));
+                team_id.map_or(JsValue::Null, |value| JsValue::String(value.to_owned())),
+            );
             return self.update_secondary_scope(token, fields).await;
         }
         self.inner.update_session_active_team(token, team_id).await
@@ -271,26 +276,22 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         organization_id: Option<&str>,
     ) -> AuthResult<S::Session> {
         if self.config.session.stateless {
-            let mut fields = crate::field_policy::FieldValues::new();
-            drop(fields.insert(
+            let mut fields = FieldValues::new();
+            _ = fields.insert(
                 "activeOrganizationId".into(),
-                organization_id.map_or(crate::utils::json::JsValue::Null, |value| {
-                    crate::utils::json::JsValue::String(value.to_owned())
-                }),
-            ));
+                organization_id.map_or(JsValue::Null, |value| JsValue::String(value.to_owned())),
+            );
             return self.update_ephemeral_scope(token, fields).await;
         }
         if self.record_store.secondary().is_some()
             && (!self.record_store.session_uses_database()
                 || self.record_store.cached_session(token).await?.is_some())
         {
-            let mut fields = crate::field_policy::FieldValues::new();
-            drop(fields.insert(
+            let mut fields = FieldValues::new();
+            _ = fields.insert(
                 "activeOrganizationId".into(),
-                organization_id.map_or(crate::utils::json::JsValue::Null, |value| {
-                    crate::utils::json::JsValue::String(value.to_owned())
-                }),
-            ));
+                organization_id.map_or(JsValue::Null, |value| JsValue::String(value.to_owned())),
+            );
             return self.update_secondary_scope(token, fields).await;
         }
         self.inner
@@ -368,7 +369,6 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
                     self.record_store.session_uses_database(),
                 )
                 .await?;
-            use crate::AuthSession;
             let user = self
                 .inner
                 .get_user_by_id(model.user_id().as_ref())
@@ -445,10 +445,7 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
                     .lock()
                     .map_err(|_| AuthError::internal("Ephemeral scope queue poisoned"))?,
             );
-            let mut sessions = self
-                .ephemeral_sessions
-                .lock()
-                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?;
+            let mut sessions = self.ephemeral()?;
             for (token, session) in scopes {
                 if let Some(destination) = sessions.get_mut(&token) {
                     *destination = session;

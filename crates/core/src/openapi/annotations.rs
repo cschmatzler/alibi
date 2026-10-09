@@ -40,7 +40,7 @@ fn field(field: &FieldDef, core: bool) -> Option<OpenApiField> {
     if core && field.name == "emailVerified" {
         field.input = false;
         if let Some(object) = field.schema.as_object_mut() {
-            drop(object.insert("default".into(), json!(false)));
+            _ = object.insert("default".into(), json!(false));
         }
     }
     Some(field)

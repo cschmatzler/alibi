@@ -1,5 +1,8 @@
 //! Native device grants share the no-database identity lifetime.
-use super::*;
+use crate::store::DeviceCodeStore;
+use crate::store::stateless::StatelessStore;
+use crate::{AuthError, AuthResult, CreateDeviceCode, DeviceCode, UpdateDeviceCode};
+use async_trait::async_trait;
 
 #[async_trait]
 impl DeviceCodeStore for StatelessStore {
@@ -113,9 +116,7 @@ impl DeviceCodeStore for StatelessStore {
             device_code.last_polled_at = last_polled_at;
         }
 
-        let locked_result = Ok(device_code.clone());
-        drop(state);
-        locked_result
+        Ok(device_code.clone())
     }
 
     async fn update_device_code_if_status(
@@ -142,8 +143,6 @@ impl DeviceCodeStore for StatelessStore {
         if let Some(last_polled_at) = update.last_polled_at {
             device_code.last_polled_at = last_polled_at;
         }
-        drop(state);
-
         Ok(true)
     }
 
@@ -158,15 +157,13 @@ impl DeviceCodeStore for StatelessStore {
         }
 
         device_code.user_id = Some(user_id.to_owned());
-        drop(state);
-
         Ok(true)
     }
 
     async fn delete_device_code(&self, id: &str) -> AuthResult<()> {
         let mut state = self.lock()?;
-        drop(state.device_codes.shift_remove(id));
-        drop(state.device_code_fields.shift_remove(id));
+        _ = state.device_codes.shift_remove(id);
+        _ = state.device_code_fields.shift_remove(id);
         Ok(())
     }
 
@@ -178,12 +175,10 @@ impl DeviceCodeStore for StatelessStore {
             .is_some_and(|device_code| device_code.status == status);
 
         if should_delete {
-            drop(state.device_codes.shift_remove(id));
-            drop(state.device_code_fields.shift_remove(id));
+            _ = state.device_codes.shift_remove(id);
+            _ = state.device_code_fields.shift_remove(id);
         }
 
-        let locked_result = Ok(should_delete);
-        drop(state);
-        locked_result
+        Ok(should_delete)
     }
 }

@@ -1,4 +1,17 @@
-use super::*;
+use crate::field_policy::FieldValues;
+use crate::store::stateless::{StatelessSchema, StatelessStore};
+use crate::store::{
+    AccountStore, BoxedTransactionValue, MemberStore, SessionStore, TeamStore, TransactionStore,
+    TransactionWork, UserStore,
+};
+use crate::types::AddTeamMemberResult;
+use crate::user_validation::PreparedUserCreation;
+use crate::{
+    AccountView, AuthError, AuthResult, AuthTransaction, CreateAccount, CreateMember,
+    CreateSession, CreateUser, Member, SessionView, Team, UserView,
+};
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 
 /// Reconcile only transaction-owned changes. Concurrent untouched rows survive;
 /// a changed row wins last, as in the published memory adapter. This is not
@@ -16,7 +29,7 @@ fn merge<T: Clone + PartialEq>(
         // Published merge walks live rows first, then appends only new IDs.
         // A base row concurrently deleted from live must stay deleted.
         if live.contains_key(&id) || !base.contains_key(&id) {
-            drop(live.insert(id, row));
+            _ = live.insert(id, row);
         }
     }
 }
@@ -35,7 +48,7 @@ impl TransactionStore<StatelessSchema> for StatelessStore {
         let base = self.organization_state()?.clone();
         let tx = OrganizationTransaction {
             live: self,
-            snapshot: StatelessStore {
+            snapshot: Self {
                 organizations: std::sync::Mutex::new(base.clone()),
                 ..Self::with_find_many_limit(self.find_many_limit)
             },
@@ -99,8 +112,8 @@ impl AuthTransaction<StatelessSchema> for OrganizationTransaction<'_> {
         &self,
         session: SessionView,
         expires_at: Option<DateTime<Utc>>,
-        fields: crate::field_policy::FieldValues,
-    ) -> AuthResult<Option<(SessionView, crate::field_policy::FieldValues)>> {
+        fields: FieldValues,
+    ) -> AuthResult<Option<(SessionView, FieldValues)>> {
         SessionStore::<StatelessSchema>::prepare_secondary_session_update(
             self.live, session, expires_at, fields,
         )
@@ -110,7 +123,7 @@ impl AuthTransaction<StatelessSchema> for OrganizationTransaction<'_> {
         &self,
         session: SessionView,
         expires_at: Option<DateTime<Utc>>,
-        fields: crate::field_policy::FieldValues,
+        fields: FieldValues,
         persist: bool,
     ) -> AuthResult<Option<SessionView>> {
         SessionStore::<StatelessSchema>::complete_secondary_session_update(

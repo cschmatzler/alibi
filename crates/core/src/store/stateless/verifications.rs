@@ -1,4 +1,8 @@
-use super::*;
+use crate::store::VerificationStore;
+use crate::store::stateless::{StatelessSchema, StatelessStore};
+use crate::{AuthError, AuthResult, CreateVerification, VerificationView};
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 #[async_trait]
 impl VerificationStore<StatelessSchema> for StatelessStore {
     async fn create_verification_record(
@@ -19,8 +23,7 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
             if state.verifications.contains_key(&model.id) {
                 return Err(AuthError::internal("duplicate verification primary ID"));
             }
-            drop(state.verifications.insert(model.id.clone(), model.clone()));
-            drop(state);
+            _ = state.verifications.insert(model.id.clone(), model.clone());
             crate::verification::VerificationSnapshot::from_model(&model)
         } else {
             data.snapshot()
@@ -43,7 +46,6 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
         state
             .verifications
             .retain(|_, sibling| sibling.identifier != identifier);
-        drop(state);
         Ok(found)
     }
 
@@ -68,7 +70,6 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
                 }
             }
         }
-        drop(state);
         Ok(found)
     }
 
@@ -92,7 +93,6 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
             updated_at: now,
         };
         _ = entry.insert(model.clone());
-        drop(state);
         Ok(Some(model))
     }
 
@@ -109,11 +109,10 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
             created_at: now,
             updated_at: now,
         };
-        drop(
-            self.lock()?
-                .verifications
-                .insert(verification.id.clone(), verification.clone()),
-        );
+        _ = self
+            .lock()?
+            .verifications
+            .insert(verification.id.clone(), verification.clone());
         Ok(verification)
     }
 
@@ -182,8 +181,6 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
                 .verifications
                 .retain(|_, sibling| sibling.identifier != identifier);
         }
-        drop(state);
-
         Ok(found.filter(|verification| verification.expires_at >= Utc::now()))
     }
 
@@ -214,8 +211,6 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
         state
             .verifications
             .retain(|_, sibling| sibling.identifier != identifier);
-        drop(state);
-
         Ok(found.filter(|verification| verification.expires_at >= Utc::now()))
     }
 
@@ -240,11 +235,9 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
         if verification.value != expected_value {
             return Ok(false);
         }
-        verification.value = value.to_owned();
+        value.clone_into(&mut verification.value);
         verification.expires_at = expires_at;
         verification.updated_at = Utc::now();
-        drop(state);
-
         Ok(true)
     }
 
@@ -256,7 +249,7 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
         };
 
         let now = Utc::now();
-        let _ignored_insert = entry.insert(VerificationView {
+        _ = entry.insert(VerificationView {
             id,
             identifier: verification.identifier,
             value: verification.value,
@@ -264,12 +257,11 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
             created_at: now,
             updated_at: now,
         });
-        drop(state);
         Ok(true)
     }
 
     async fn delete_verification(&self, id: &str) -> AuthResult<()> {
-        drop(self.lock()?.verifications.shift_remove(id));
+        _ = self.lock()?.verifications.shift_remove(id);
         Ok(())
     }
 

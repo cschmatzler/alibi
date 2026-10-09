@@ -1,4 +1,11 @@
-use super::*;
+use crate::store::OrganizationRoleStore;
+use crate::store::stateless::StatelessStore;
+use crate::types::{
+    CreateOrganizationRole, OrganizationRole, OrganizationRoleSelector, UpdateOrganizationRole,
+};
+use crate::{AuthError, AuthResult};
+use async_trait::async_trait;
+use chrono::Utc;
 
 fn selected(
     row: &OrganizationRole,
@@ -25,11 +32,10 @@ impl OrganizationRoleStore for StatelessStore {
             created_at: Utc::now(),
             updated_at: None,
         };
-        drop(
-            self.organization_state()?
-                .roles
-                .insert(row.id.clone(), row.clone()),
-        );
+        _ = self
+            .organization_state()?
+            .roles
+            .insert(row.id.clone(), row.clone());
         Ok(row)
     }
     async fn get_organization_role(

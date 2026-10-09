@@ -49,14 +49,14 @@ fn decode_segment(value: &str) -> AuthResult<Vec<u8>> {
             .with_decode_allow_trailing_bits(true),
     )
     .decode(compact.get(..unpadded).ok_or_else(invalid)?)
-    .map_err(|_error| invalid())
+    .map_err(|_| invalid())
 }
 
 fn key(secret: &str, salt: &str) -> AuthResult<[u8; 64]> {
     let mut key = [0; 64];
     Hkdf::<Sha256>::new(Some(salt.as_bytes()), secret.as_bytes())
         .expand(INFO, &mut key)
-        .map_err(|_error| invalid())?;
+        .map_err(|_| invalid())?;
     Ok(key)
 }
 
@@ -72,13 +72,13 @@ fn authentication(
     ciphertext: &[u8],
 ) -> AuthResult<Hmac<Sha512>> {
     let mut mac = Hmac::<Sha512>::new_from_slice(key.get(..32).ok_or_else(invalid)?)
-        .map_err(|_error| invalid())?;
+        .map_err(|_| invalid())?;
     mac.update(header.as_bytes());
     mac.update(iv);
     mac.update(ciphertext);
     mac.update(
         &(u64::try_from(header.len())
-            .map_err(|_error| invalid())?
+            .map_err(|_| invalid())?
             .checked_mul(8)
             .ok_or_else(invalid)?)
         .to_be_bytes(),
@@ -86,9 +86,6 @@ fn authentication(
     Ok(mac)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub fn encode(
     secret: &str,
     salt: &str,
@@ -102,15 +99,15 @@ pub fn encode(
     let now = Utc::now().timestamp();
     let mut claims = serde_json::to_value(payload)?;
     let claims = claims.as_object_mut().ok_or_else(invalid)?;
-    drop(claims.insert("iat".into(), json!(now)));
+    _ = claims.insert("iat".into(), json!(now));
     let expiry = serde_json::Number::from(now).as_f64().ok_or_else(invalid)? + max_age;
     if !expiry.is_finite() {
         return Err(AuthError::internal(
             "Invalid encrypted-cookie expiration time",
         ));
     }
-    drop(claims.insert("exp".into(), json!(expiry)));
-    drop(claims.insert("jti".into(), json!(uuid::Uuid::new_v4().to_string())));
+    _ = claims.insert("exp".into(), json!(expiry));
+    _ = claims.insert("jti".into(), json!(uuid::Uuid::new_v4().to_string()));
     let mut ciphertext = crate::utils::json::to_vec(claims)?;
     let padding = 16 - ciphertext.len() % 16;
     ciphertext.resize(
@@ -120,11 +117,11 @@ pub fn encode(
     let mut iv = [0; 16];
     rand::fill(&mut iv);
     let cipher =
-        Aes256::new_from_slice(key.get(32..).ok_or_else(invalid)?).map_err(|_error| invalid())?;
+        Aes256::new_from_slice(key.get(32..).ok_or_else(invalid)?).map_err(|_| invalid())?;
     let mut previous = iv;
     for block in ciphertext.as_chunks_mut::<16>().0 {
-        for (byte, previous_2_3) in block.iter_mut().zip(previous) {
-            *byte ^= previous_2_3;
+        for (byte, chained) in block.iter_mut().zip(previous) {
+            *byte ^= chained;
         }
         let block_array: &mut Array<u8, _> = block.into();
         cipher.encrypt_block(block_array);
@@ -150,7 +147,7 @@ pub fn decode(secret: &str, salt: &str, token: &str) -> AuthResult<serde_json::V
     // before JOSE sees the protected header and its authenticated spelling.
     let token = percent_encoding::percent_decode_str(token)
         .decode_utf8()
-        .map_err(|_error| invalid())?;
+        .map_err(|_| invalid())?;
     decode_parsed(secret, salt, &token)
 }
 
@@ -168,8 +165,8 @@ pub fn decode_parsed(secret: &str, salt: &str, token: &str) -> AuthResult<serde_
     }
     let key = key(secret, salt)?;
     let header_bytes = decode_segment(header)?;
-    let header_data = parse_value(std::str::from_utf8(&header_bytes).map_err(|_error| invalid())?)
-        .map_err(|_error| invalid())?;
+    let header_data = parse_value(std::str::from_utf8(&header_bytes).map_err(|_| invalid())?)
+        .map_err(|_| invalid())?;
     if header_data.get("alg").and_then(JsValue::as_str) != Some("dir")
         || header_data.get("enc").and_then(JsValue::as_str) != Some("A256CBC-HS512")
         || header_data.get("crit").is_some()
@@ -192,17 +189,17 @@ pub fn decode_parsed(secret: &str, salt: &str, token: &str) -> AuthResult<serde_
     }
     authentication(&key, header, &iv, &ciphertext)?
         .verify_truncated_left(&tag)
-        .map_err(|_error| invalid())?;
+        .map_err(|_| invalid())?;
     let cipher =
-        Aes256::new_from_slice(key.get(32..).ok_or_else(invalid)?).map_err(|_error| invalid())?;
-    let mut previous: [u8; 16] = iv.try_into().map_err(|_error| invalid())?;
+        Aes256::new_from_slice(key.get(32..).ok_or_else(invalid)?).map_err(|_| invalid())?;
+    let mut previous: [u8; 16] = iv.try_into().map_err(|_| invalid())?;
     for block in ciphertext.as_chunks_mut::<16>().0 {
         let mut encrypted = [0; 16];
         encrypted.copy_from_slice(block);
         let block_array: &mut Array<u8, _> = block.into();
         cipher.decrypt_block(block_array);
-        for (byte, previous_2) in block.iter_mut().zip(previous) {
-            *byte ^= previous_2;
+        for (byte, previous) in block.iter_mut().zip(previous) {
+            *byte ^= previous;
         }
         previous = encrypted;
     }
@@ -224,14 +221,14 @@ pub fn decode_parsed(secret: &str, salt: &str, token: &str) -> AuthResult<serde_
         let mut inflater = flate2::Decompress::new(false);
         let status = inflater
             .decompress_vec(&ciphertext, &mut inflated, flate2::FlushDecompress::Finish)
-            .map_err(|_error| invalid())?;
+            .map_err(|_| invalid())?;
         if status != flate2::Status::StreamEnd || inflated.len() > 250_000 {
             return Err(invalid());
         }
         ciphertext = inflated;
     }
-    let claims = parse_value(std::str::from_utf8(&ciphertext).map_err(|_error| invalid())?)
-        .map_err(|_error| invalid())?;
+    let claims = parse_value(std::str::from_utf8(&ciphertext).map_err(|_| invalid())?)
+        .map_err(|_| invalid())?;
     let now = serde_json::Number::from(Utc::now().timestamp())
         .as_f64()
         .ok_or_else(invalid)?;
@@ -243,7 +240,7 @@ pub fn decode_parsed(secret: &str, salt: &str, token: &str) -> AuthResult<serde_
             }
         }
     }
-    crate::utils::json::from_slice(&ciphertext).map_err(|_error| invalid())
+    crate::utils::json::from_slice(&ciphertext).map_err(|_| invalid())
 }
 
 // LCOV_EXCL_START

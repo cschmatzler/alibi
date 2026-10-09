@@ -1,4 +1,6 @@
-use super::*;
+use crate::{AdapterRecord, AuthAccount};
+use crate::{AuthError, AuthResult, AuthSchema, CreateAccount, UpdateAccount};
+use async_trait::async_trait;
 #[async_trait]
 pub trait AccountStore<S: AuthSchema>: Send + Sync {
     /// Apply the physical token TEXT column's scalar affinity before persistence.
@@ -23,8 +25,8 @@ pub trait AccountStore<S: AuthSchema>: Send + Sync {
     async fn create_account_record(
         &self,
         create_account: CreateAccount,
-    ) -> AuthResult<crate::AdapterRecord<S::Account>> {
-        crate::AdapterRecord::physical(self.create_account(create_account).await?)
+    ) -> AuthResult<AdapterRecord<S::Account>> {
+        AdapterRecord::physical(self.create_account(create_account).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -33,10 +35,10 @@ pub trait AccountStore<S: AuthSchema>: Send + Sync {
         &self,
         provider: &str,
         provider_account_id: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::Account>>> {
+    ) -> AuthResult<Option<AdapterRecord<S::Account>>> {
         self.get_account(provider, provider_account_id)
             .await?
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .transpose()
     }
 
@@ -47,26 +49,25 @@ pub trait AccountStore<S: AuthSchema>: Send + Sync {
     async fn get_credential_account_record(
         &self,
         user_id: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::Account>>> {
-        use crate::AuthAccount;
+    ) -> AuthResult<Option<AdapterRecord<S::Account>>> {
         self.get_user_accounts(user_id)
             .await?
             .into_iter()
             .find(|account| {
                 account.provider_id() == "credential" && account.account_id() == user_id
             })
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .transpose()
     }
 
     async fn get_user_accounts_record(
         &self,
         user_id: &str,
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::Account>>> {
+    ) -> AuthResult<Vec<AdapterRecord<S::Account>>> {
         self.get_user_accounts(user_id)
             .await?
             .into_iter()
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .collect()
     }
 
@@ -76,8 +77,8 @@ pub trait AccountStore<S: AuthSchema>: Send + Sync {
         &self,
         id: &str,
         update: UpdateAccount,
-    ) -> AuthResult<crate::AdapterRecord<S::Account>> {
-        crate::AdapterRecord::physical(self.update_account(id, update).await?)
+    ) -> AuthResult<AdapterRecord<S::Account>> {
+        AdapterRecord::physical(self.update_account(id, update).await?)
     }
 
     async fn create_account(&self, create_account: CreateAccount) -> AuthResult<S::Account>;

@@ -127,7 +127,7 @@ impl OpenApiBuilder {
                     }
                 }
             }
-            drop(schemas.insert(model.name.clone(), model.to_schema()));
+            _ = schemas.insert(model.name.clone(), model.to_schema());
         }
         builder.spec.components = Some(json!({"schemas":schemas,"securitySchemes":{
             "apiKeyCookie":{"type":"apiKey","in":"cookie","name":"apiKeyCookie","description":"API Key authentication via cookie"},
@@ -178,10 +178,6 @@ impl OpenApiBuilder {
     }
 
     #[must_use]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Apply endpoint annotations in the same precedence order as the registered metadata"
-    )]
     pub fn annotated(
         mut self,
         method: &HttpMethod,
@@ -203,37 +199,11 @@ impl OpenApiBuilder {
         }
         let mut parameters = metadata.parameters.clone();
         let documented_path = metadata.document_path.as_deref().unwrap_or(path);
-        let path_2=documented_path.split('/').map(|segment| {
-            segment.strip_prefix(':').or_else(|| segment.strip_prefix('{').and_then(|name| name.strip_suffix('}'))).map_or_else(|| segment.to_owned(), |name| {
-                if !parameters.iter().any(|parameter|parameter["in"]=="path" && parameter["name"]==name) { parameters.push(json!({"name":name,"in":"path","required":true,"schema":{"type":"string"}})); }
-                format!("{{{name}}}")
-            })
-        }).collect::<Vec<_>>().join("/");
+        let path = path_template(documented_path, &mut parameters);
         let operation_id = metadata
             .operation_id
-            .as_ref()
-            .map(|id| {
-                let mut candidate = id.clone();
-                if self.used_ids.contains(&candidate) {
-                    let mut chars = method_name.chars();
-                    let suffix = chars
-                        .next()
-                        .map(|first| {
-                            let mut name = first.to_uppercase().collect::<String>();
-                            name.push_str(chars.as_str());
-                            name
-                        })
-                        .unwrap_or_default();
-                    candidate = format!("{id}{suffix}");
-                    let mut index = 2;
-                    while self.used_ids.contains(&candidate) {
-                        candidate = format!("{id}{suffix}{index}");
-                        index += 1;
-                    }
-                }
-                let _ignored_clone = self.used_ids.insert(candidate.clone());
-                candidate
-            })
+            .as_deref()
+            .map(|id| self.unique_operation_id(id, method_name))
             .unwrap_or_default();
         let mut responses = default_responses();
         for (status, response) in &metadata.responses {
@@ -242,53 +212,37 @@ impl OpenApiBuilder {
                 .remove("description")
                 .and_then(|value| value.as_str().map(str::to_owned))
                 .unwrap_or_default();
-            drop(responses.insert(
+            _ = responses.insert(
                 status.clone(),
                 OpenApiResponse {
                     description,
                     metadata: fields,
                 },
-            ));
+            );
         }
         let tags = if core {
             let mut tags = vec!["Default".into()];
             tags.extend(metadata.tags.clone().unwrap_or_default());
             tags
         } else {
-            metadata.tags.clone().unwrap_or_else(|| {
-                let mut chars = plugin.chars();
-                vec![
-                    chars
-                        .next()
-                        .map(|first| {
-                            let mut name = first.to_uppercase().collect::<String>();
-                            name.push_str(chars.as_str());
-                            name
-                        })
-                        .unwrap_or_default(),
-                ]
-            })
+            metadata
+                .tags
+                .clone()
+                .unwrap_or_else(|| vec![capitalize(plugin)])
         };
-        let mut request_body = if matches!(
+        let request_body = matches!(
             method,
             HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch
-        ) {
-            metadata.request_body.clone()
-        } else {
-            None
-        };
-        if core
-            && request_body.is_none()
-            && matches!(
-                method,
-                HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch
-            )
-        {
-            request_body = Some(
-                json!({"content":{"application/json":{"schema":{"type":"object","properties":{}}}}}),
-            );
-        }
-        drop(self.spec.paths.entry(path_2).or_default().insert(
+        )
+        .then(|| {
+            metadata.request_body.clone().or_else(|| {
+                core.then(|| {
+                    json!({"content":{"application/json":{"schema":{"type":"object","properties":{}}}}})
+                })
+            })
+        })
+        .flatten();
+        _ = self.spec.paths.entry(path).or_default().insert(
             method_name.into(),
             OpenApiOperation {
                 operation_id,
@@ -300,8 +254,24 @@ impl OpenApiBuilder {
                 request_body,
                 responses,
             },
-        ));
+        );
         self
+    }
+
+    /// Reserve `id`, suffixing the HTTP method (then a counter) when already taken.
+    fn unique_operation_id(&mut self, id: &str, method_name: &str) -> String {
+        let mut candidate = id.to_owned();
+        if self.used_ids.contains(&candidate) {
+            let suffix = capitalize(method_name);
+            candidate = format!("{id}{suffix}");
+            let mut index = 2;
+            while self.used_ids.contains(&candidate) {
+                candidate = format!("{id}{suffix}{index}");
+                index += 1;
+            }
+        }
+        _ = self.used_ids.insert(candidate.clone());
+        candidate
     }
 
     #[must_use]
@@ -353,14 +323,12 @@ impl OpenApiBuilder {
 }
 
 impl OpenApiSpec {
-    ///
     /// # Errors
     ///
     /// Returns an error if the `OpenAPI` document cannot be serialized.
     pub fn to_json(&self) -> serde_json::Result<String> {
         serde_json::to_string_pretty(self)
     }
-    ///
     /// # Errors
     ///
     /// Returns an error if the `OpenAPI` document cannot be serialized.
@@ -369,20 +337,74 @@ impl OpenApiSpec {
     }
 }
 
+fn capitalize(text: &str) -> String {
+    let mut chars = text.chars();
+    chars
+        .next()
+        .map(|first| {
+            let mut name = first.to_uppercase().collect::<String>();
+            name.push_str(chars.as_str());
+            name
+        })
+        .unwrap_or_default()
+}
+
+/// Rewrite `:name` and `{name}` segments to `{name}`, documenting each as a path parameter.
+fn path_template(path: &str, parameters: &mut Vec<Value>) -> String {
+    path.split('/')
+        .map(|segment| {
+            let name = segment.strip_prefix(':').or_else(|| {
+                segment
+                    .strip_prefix('{')
+                    .and_then(|name| name.strip_suffix('}'))
+            });
+            let Some(name) = name else {
+                return segment.to_owned();
+            };
+            if !parameters
+                .iter()
+                .any(|parameter| parameter["in"] == "path" && parameter["name"] == name)
+            {
+                parameters.push(
+                    json!({"name":name,"in":"path","required":true,"schema":{"type":"string"}}),
+                );
+            }
+            format!("{{{name}}}")
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 fn default_responses() -> BTreeMap<String, OpenApiResponse> {
     [
-        ("400","Bad Request. Usually due to missing parameters, or invalid parameters."),
-        ("401","Unauthorized. Due to missing or invalid authentication."),
-        ("403","Forbidden. You do not have permission to access this resource or to perform this action."),
-        ("404","Not Found. The requested resource was not found."),
-        ("429","Too Many Requests. You have exceeded the rate limit. Try again later."),
-        ("500","Internal Server Error. This is a problem with the server that you cannot fix."),
-    ].into_iter().map(|(status,description)| {
-        let mut schema=json!({"type":"object","properties":{"message":{"type":"string"}}});
-        if (status=="400" || status=="401") && let Some(object)=schema.as_object_mut() {drop(object.insert("required".into(),json!(["message"])));}
-        let mut metadata=serde_json::Map::new();drop(metadata.insert("content".into(),json!({"application/json":{"schema":schema}})));
-        (status.into(),OpenApiResponse {description:description.into(),metadata})
-    }).collect()
+        ("400", "Bad Request. Usually due to missing parameters, or invalid parameters."),
+        ("401", "Unauthorized. Due to missing or invalid authentication."),
+        ("403", "Forbidden. You do not have permission to access this resource or to perform this action."),
+        ("404", "Not Found. The requested resource was not found."),
+        ("429", "Too Many Requests. You have exceeded the rate limit. Try again later."),
+        ("500", "Internal Server Error. This is a problem with the server that you cannot fix."),
+    ]
+    .into_iter()
+    .map(|(status, description)| {
+        let mut schema = json!({"type":"object","properties":{"message":{"type":"string"}}});
+        if matches!(status, "400" | "401")
+            && let Some(object) = schema.as_object_mut()
+        {
+            _ = object.insert("required".into(), json!(["message"]));
+        }
+        let metadata = serde_json::Map::from_iter([(
+            "content".to_owned(),
+            json!({"application/json":{"schema":schema}}),
+        )]);
+        (
+            status.to_owned(),
+            OpenApiResponse {
+                description: description.to_owned(),
+                metadata,
+            },
+        )
+    })
+    .collect()
 }
 
 // LCOV_EXCL_START

@@ -9,20 +9,9 @@ mod session;
 mod user;
 mod verification;
 
-use crate::entity::{
-    AuthAccount, AuthApiKey, AuthInvitation, AuthOrganization, AuthPasskey, AuthSession, AuthUser,
-    AuthVerification,
-};
-use crate::types::InvitationStatus;
 pub use account::AccountView;
-use chrono::{DateTime, Utc};
-pub use plugins::ApiKeyView;
-pub use plugins::InvitationView;
-pub use plugins::OrganizationView;
-pub use plugins::PasskeyView;
-use serde::{Deserialize, Serialize, Serializer};
+pub use plugins::{ApiKeyView, InvitationView, OrganizationView, PasskeyView};
 pub use session::SessionView;
-use std::borrow::Cow;
 pub use user::UserView;
 pub use verification::VerificationView;
 
@@ -30,6 +19,7 @@ pub use verification::VerificationView;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
 
     #[test]
     fn user_view_serializes_camel_case() {

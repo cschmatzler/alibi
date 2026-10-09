@@ -1,4 +1,7 @@
-use super::*;
+use crate::AuthVerification;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 /// Public verification response shape.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct VerificationView {

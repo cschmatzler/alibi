@@ -1,4 +1,5 @@
-use super::*;
+use crate::{ApiKey, AuthError, AuthResult, CreateApiKey, UpdateApiKey};
+use async_trait::async_trait;
 #[async_trait]
 pub trait ApiKeyStore: Send + Sync {
     async fn create_api_key(&self, input: CreateApiKey) -> AuthResult<ApiKey>;

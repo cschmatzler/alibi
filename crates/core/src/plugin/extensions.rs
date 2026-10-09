@@ -1,4 +1,7 @@
-use super::*;
+use std::any::{Any, TypeId};
+use std::collections::HashMap;
+use std::sync::Arc;
+
 /// Typed settings and callbacks published during plugin initialization.
 ///
 /// Registration is complete before requests begin; readers share immutable
@@ -8,12 +11,22 @@ pub struct ContextExtensions(HashMap<TypeId, Arc<dyn Any + Send + Sync>>);
 
 impl ContextExtensions {
     pub fn insert<T: Any + Send + Sync>(&mut self, value: T) {
-        drop(self.0.insert(TypeId::of::<T>(), Arc::new(value)));
+        _ = self.0.insert(TypeId::of::<T>(), Arc::new(value));
     }
 
     #[must_use]
     pub fn get<T: Any + Send + Sync>(&self) -> Option<Arc<T>> {
         Arc::clone(self.0.get(&TypeId::of::<T>())?).downcast().ok()
+    }
+}
+
+impl ContextExtensions {
+    /// An owned copy of the registered value, or its default when absent.
+    #[must_use]
+    pub(crate) fn cloned_or_default<T: Any + Send + Sync + Clone + Default>(&self) -> T {
+        self.get::<T>()
+            .map(|value| (*value).clone())
+            .unwrap_or_default()
     }
 }
 
