@@ -151,15 +151,15 @@ pub(in crate::passkey) async fn generate_register_options_core(
             .get_mut("authenticatorSelection")
             .and_then(Value::as_object_mut)
     {
-        let _ = selection.insert("authenticatorAttachment".into(), json!(attachment));
+        _ = selection.insert("authenticatorAttachment".into(), json!(attachment));
     }
     if let Some(mut extensions) = extensions {
         let object = extensions
             .as_object_mut()
             .ok_or_else(|| AuthError::bad_request("Passkey extensions must be an object"))?;
-        let _ = object.insert("credProps".into(), json!(true));
+        _ = object.insert("credProps".into(), json!(true));
         if let Some(object) = response.as_object_mut() {
-            let _ = object.insert("extensions".into(), extensions);
+            _ = object.insert("extensions".into(), extensions);
         }
     }
     if let Some(object) = response.as_object_mut() {

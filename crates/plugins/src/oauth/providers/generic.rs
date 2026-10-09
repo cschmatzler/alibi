@@ -315,11 +315,11 @@ impl OAuthUserInfoHandler for GenericUserInfo {
         let mut raw = if let Some(mut profile) = decoded {
             if let Some(object) = profile.as_object_mut() {
                 let id = object.get("sub").cloned().unwrap_or(Value::Null);
-                let _entry = object.entry("id").or_insert(id);
+                _ = object.entry("id").or_insert(id);
                 let verified = object.get("email_verified").cloned().unwrap_or(Value::Null);
-                let _entry = object.entry("emailVerified").or_insert(verified);
+                _ = object.entry("emailVerified").or_insert(verified);
                 if let Some(image) = object.get("picture").cloned() {
-                    let _entry = object.entry("image").or_insert(image);
+                    _ = object.entry("image").or_insert(image);
                 }
             }
             profile

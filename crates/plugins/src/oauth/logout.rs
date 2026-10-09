@@ -106,7 +106,7 @@ pub(crate) async fn provider_logout_url<S: AuthSchema>(
         }
         if !parameters.is_empty() {
             let mut query = url.query_pairs_mut();
-            let _serializer = query.clear().extend_pairs(parameters);
+            _ = query.clear().extend_pairs(parameters);
         }
         return Some(url.into());
     }

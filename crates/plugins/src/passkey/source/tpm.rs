@@ -59,13 +59,13 @@ fn check_public(bytes: &[u8], key: &COSEKey) -> Result<(), WebauthnError> {
     ) {
         return Err(malformed());
     }
-    let _ = input.take(4)?; // objectAttributes
-    let _ = input.vector()?; // authPolicy
+    _ = input.take(4)?; // objectAttributes
+    _ = input.vector()?; // authPolicy
     input.null()?; // symmetric
     input.null()?; // scheme
     let matched = match kind {
         1 => {
-            let _ = input.take(6)?; // keyBits and exponent, ignored by pinned policy
+            _ = input.take(6)?; // keyBits and exponent, ignored by pinned policy
             let modulus = input.vector()?;
             matches!(&key.key, COSEKeyType::RSA(key) if key.n.as_slice() == modulus)
         }

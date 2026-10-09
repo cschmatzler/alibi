@@ -90,13 +90,13 @@ impl<T: Ceremony> AttestationObject<T> {
             large_blob_key: Option<&'a [u8]>,
         }
         let mut decoder = serde_cbor_2::de::Deserializer::from_slice(bytes);
-        let _ = serde_cbor_2::Value::deserialize(&mut decoder)?;
+        _ = serde_cbor_2::Value::deserialize(&mut decoder)?;
         let inner: Object<'_> = serde_cbor_2::from_slice(
             bytes
                 .get(..decoder.byte_offset())
                 .ok_or(WebauthnError::ParseNOMFailure)?,
         )?;
-        let _ = (inner.ep_att, inner.large_blob_key);
+        _ = (inner.ep_att, inner.large_blob_key);
         Ok(Self {
             fmt: inner.fmt.into(),
             att_stmt: inner.att_stmt,

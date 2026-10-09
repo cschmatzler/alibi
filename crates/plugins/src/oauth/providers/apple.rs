@@ -132,7 +132,7 @@ impl OAuthUserInfoHandler for AppleUserInfo {
         let mut profile =
             parse_value(std::str::from_utf8(&bytes).map_err(|error| error.to_string())?)
                 .map_err(|error| error.to_string())?;
-        let _ignored_as_object = profile.as_object().ok_or("Invalid Apple profile")?;
+        _ = profile.as_object().ok_or("Invalid Apple profile")?;
         let name_value = if let Some(name) = request.user.and_then(|user| user.name) {
             JsValue::String(
                 format!(

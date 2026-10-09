@@ -214,7 +214,7 @@ pub(crate) async fn verify_jwks_token(
         .decode(header_encoded)
         .ok()?;
     let header = parse_value(std::str::from_utf8(&raw_header).ok()?).ok()?;
-    let _ignored_as_object = header.as_object()?;
+    _ = header.as_object()?;
     let algorithm: Algorithm =
         serde_json::from_value(header.get("alg")?.to_json_value().ok()?).ok()?;
     if matches!(

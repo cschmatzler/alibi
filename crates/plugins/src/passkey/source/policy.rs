@@ -187,7 +187,7 @@ impl SourcePolicy {
             if object.fmt == "apple" {
                 check_ec_certificate(&leaf, true)?;
             } else {
-                let _ = certificate_algorithm(&leaf)?;
+                _ = certificate_algorithm(&leaf)?;
                 if object.fmt == "android-key" {
                     check_ec_certificate(&leaf, false)?;
                 }

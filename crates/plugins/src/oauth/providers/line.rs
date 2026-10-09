@@ -284,9 +284,9 @@ impl OAuthIdTokenVerifier for LineVerifier {
 }
 fn decode_profile(token: &str) -> Option<Value> {
     let mut parts = token.split('.');
-    let _header = parts.next()?;
+    _ = parts.next()?;
     let payload = parts.next()?;
-    let _signature = parts.next()?;
+    _ = parts.next()?;
     if payload.is_empty() || parts.next().is_some() {
         return None;
     }

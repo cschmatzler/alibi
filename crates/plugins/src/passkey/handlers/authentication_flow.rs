@@ -81,7 +81,7 @@ pub(in crate::passkey) async fn generate_authenticate_options_core<U: AuthUser>(
             ));
         }
         if let Some(object) = response.as_object_mut() {
-            let _ = object.insert("extensions".into(), extensions);
+            _ = object.insert("extensions".into(), extensions);
         }
     }
     if let Some(object) = response.as_object_mut() {

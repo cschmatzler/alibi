@@ -43,7 +43,7 @@ impl OAuthPrivateKeyJwtOptions {
     /// # Errors
     /// Rejects missing key material, unsupported algorithms, and algorithm conflicts.
     pub fn into_assertion(self) -> Result<OAuthClientAssertion, String> {
-        let _algorithm = self.resolved_algorithm()?;
+        _ = self.resolved_algorithm()?;
         Ok(OAuthClientAssertion(Arc::new(self)))
     }
     fn resolved_algorithm(&self) -> Result<&str, String> {
@@ -111,7 +111,7 @@ impl OAuthPrivateKeyJwtOptions {
             let key = if let Some(jwk) = jwk {
                 // WebCrypto imports the complete two-prime private JWK.
                 for name in ["dp", "dq", "qi"] {
-                    let _component = field(jwk, name)?;
+                    _ = field(jwk, name)?;
                 }
                 rsa::RsaPrivateKey::from_components(
                     rsa::BigUint::from_bytes_be(&field(jwk, "n")?),
