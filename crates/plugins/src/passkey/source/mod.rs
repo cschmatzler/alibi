@@ -118,17 +118,17 @@ impl Verifier {
             .acd
             .as_ref()
             .ok_or(WebauthnError::MissingAttestationCredentialData)?;
-        self.policy.check_leaf(&object)?;
+        SourcePolicy::check_leaf(&object)?;
         let hash = compute_sha256(registration.response.client_data_json.as_ref());
         let (attested, metadata) = match format {
             AttestationFormat::None => (ParsedAttestationData::None, AttestationMetadata::None),
             AttestationFormat::Packed => attestation::packed(acd, &object, &hash)?,
             AttestationFormat::Tpm => tpm::verify(acd, &object, &hash)?,
             AttestationFormat::FIDOU2F => (
-                self.policy.verify_u2f(acd, &object, &hash)?,
+                SourcePolicy::verify_u2f(acd, &object, &hash)?,
                 AttestationMetadata::None,
             ),
-            AttestationFormat::AppleAnonymous => self.policy.verify_apple(acd, &object, &hash)?,
+            AttestationFormat::AppleAnonymous => SourcePolicy::verify_apple(acd, &object, &hash)?,
             AttestationFormat::AndroidKey => self.policy.verify_android_key(acd, &object, &hash)?,
             AttestationFormat::AndroidSafetyNet => self.policy.verify_safetynet(&object, &hash)?,
         };

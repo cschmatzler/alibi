@@ -172,7 +172,6 @@ impl SourcePolicy {
     }
 
     pub(super) fn check_leaf(
-        &self,
         object: &AttestationObject<Registration>,
     ) -> Result<(), WebauthnError> {
         if let Cbor::Map(statement) = &object.att_stmt
@@ -273,7 +272,6 @@ impl SourcePolicy {
     }
 
     pub(super) fn verify_u2f(
-        &self,
         acd: &AttestedCredentialData,
         object: &AttestationObject<Registration>,
         client_hash: &[u8],
@@ -302,7 +300,6 @@ impl SourcePolicy {
     }
 
     pub(super) fn verify_apple(
-        &self,
         acd: &AttestedCredentialData,
         object: &AttestationObject<Registration>,
         client_hash: &[u8],
@@ -710,7 +707,7 @@ pub(super) fn verify_certificate_signature(
         | COSEAlgorithm::RS512
         | COSEAlgorithm::EDDSA => MessageDigest::sha512(),
         COSEAlgorithm::INSECURE_RS1 => MessageDigest::sha1(),
-        _ => return Err(malformed()),
+        COSEAlgorithm::PinUvProtocol => return Err(malformed()),
     };
     let public = certificate.public_key()?;
     let mut verifier = Verifier::new(hash, &public)?;

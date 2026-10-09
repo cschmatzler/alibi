@@ -46,20 +46,19 @@ impl Passkey {
         if result.cred_id() != self.cred_id() {
             return None;
         }
-        let mut changed = false;
-        if result.counter() > self.cred.counter {
+        let counter_advanced = result.counter() > self.cred.counter;
+        if counter_advanced {
             self.cred.counter = result.counter();
-            changed = true;
         }
-        if result.backup_state() != self.cred.backup_state {
+        let backup_state_changed = result.backup_state() != self.cred.backup_state;
+        if backup_state_changed {
             self.cred.backup_state = result.backup_state();
-            changed = true;
         }
-        if result.backup_eligible() && !self.cred.backup_eligible {
+        let became_eligible = result.backup_eligible() && !self.cred.backup_eligible;
+        if became_eligible {
             self.cred.backup_eligible = true;
-            changed = true;
         }
-        Some(changed)
+        Some(counter_advanced || backup_state_changed || became_eligible)
     }
 }
 impl From<webauthn_rs::prelude::Passkey> for Passkey {
