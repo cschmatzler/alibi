@@ -1,6 +1,5 @@
-use alibi_core::AuthContext;
-use alibi_core::AuthResult;
 use alibi_core::entity::{AuthAccount, AuthUser};
+use alibi_core::{AuthContext, AuthResult};
 
 /// Fetch the user's credential account, if present.
 ///

@@ -1,9 +1,47 @@
+use alibi_core::utils::cookie_utils::{
+    create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
+    sign_cookie_value, verify_cookie_value,
+};
 use alibi_core::{
-    AuthAccount, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema,
-    AuthSession, AuthUser, CreateVerification, UpdateUser,
+    AuthAccount, AuthConfig, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult,
+    AuthSchema, AuthSession, AuthUser, CreateVerification, UpdateUser,
 };
 use chrono::{Duration, Utc};
 use serde_json::Value;
+
+/// Whether the request carries the signed `dont_remember` preference cookie.
+pub(crate) fn dont_remember_preference(req: &AuthRequest, config: &AuthConfig) -> bool {
+    crate::helpers::get_cookie(req, &related_cookie_name(config, "dont_remember"))
+        .and_then(|value| verify_cookie_value(&value, config.current_secret()))
+        .is_some_and(|value| !value.is_empty())
+}
+
+/// Append the session cookie, plus the signed preference cookie that keeps a
+/// `dont_remember` session browser-scoped.
+pub(crate) fn with_session_cookies(
+    response: AuthResponse,
+    config: &AuthConfig,
+    token: &str,
+    dont_remember: bool,
+) -> AuthResult<AuthResponse> {
+    let max_age = (!dont_remember).then(|| config.session.expires_in.num_seconds());
+    let mut response = response.with_appended_header(
+        "Set-Cookie",
+        create_session_cookie_with_max_age(Some(token), max_age, config)?,
+    );
+    if dont_remember {
+        response.headers.append(
+            "Set-Cookie",
+            create_session_like_cookie(
+                &related_cookie_name(config, "dont_remember"),
+                &sign_cookie_value("true", config.current_secret()),
+                None,
+                config,
+            )?,
+        );
+    }
+    Ok(response)
+}
 
 pub(crate) async fn session_response<S: AuthSchema>(
     ctx: &AuthContext<S>,
@@ -19,15 +57,10 @@ pub(crate) async fn session_response_with_remember<S: AuthSchema>(
     user: alibi_core::AdapterRecord<S::User>,
     remember_me: Option<bool>,
 ) -> AuthResult<(Value, AuthResponse)> {
-    use alibi_core::utils::cookie_utils::{
-        create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
-        sign_cookie_value, verify_cookie_value,
-    };
-    let inherited =
-        crate::helpers::get_cookie(req, &related_cookie_name(&ctx.config, "dont_remember"))
-            .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
-            .is_some_and(|value| !value.is_empty());
-    let dont_remember = remember_me.map_or(inherited, |value| !value);
+    let dont_remember = remember_me.map_or_else(
+        || dont_remember_preference(req, &ctx.config),
+        |remember| !remember,
+    );
     let mut config = (*ctx.config).clone();
     if remember_me == Some(false) {
         config.session.expires_in = Duration::days(1);
@@ -52,30 +85,12 @@ pub(crate) async fn session_response_with_remember<S: AuthSchema>(
     let user = serde_json::to_value(ctx.user_view(&issued.user))?;
     let session = serde_json::to_value(ctx.session_view(&issued.session))?;
     let payload = serde_json::json!({"token":token,"user":user,"session":session});
-    let mut response = AuthResponse::json(200, &serde_json::json!({"token":token,"user":user}))?
-        .with_header(
-            "Set-Cookie",
-            create_session_cookie_with_max_age(
-                Some(token),
-                if dont_remember {
-                    None
-                } else {
-                    Some(ctx.config.session.expires_in.num_seconds())
-                },
-                &ctx.config,
-            )?,
-        );
-    if dont_remember {
-        response.headers.append(
-            "Set-Cookie",
-            create_session_like_cookie(
-                &related_cookie_name(&ctx.config, "dont_remember"),
-                &sign_cookie_value("true", ctx.config.current_secret()),
-                None,
-                &ctx.config,
-            )?,
-        );
-    }
+    let response = with_session_cookies(
+        AuthResponse::json(200, &serde_json::json!({"token":token,"user":user}))?,
+        &ctx.config,
+        token,
+        dont_remember,
+    )?;
     Ok((payload, response))
 }
 

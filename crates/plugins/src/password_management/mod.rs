@@ -224,22 +224,7 @@ impl PasswordManagementPlugin {
         let (user, _session) = ctx
             .require_authoritative_session_record(req)
             .await
-            .map_err(|error| {
-                if matches!(
-                    error,
-                    AuthError::Unauthenticated
-                        | AuthError::SessionNotFound
-                        | AuthError::UserNotFound
-                ) {
-                    AuthError::Upstream {
-                        status: 401,
-                        code: "UNAUTHORIZED",
-                        message: "Unauthorized",
-                    }
-                } else {
-                    error
-                }
-            })?;
+            .map_err(crate::helpers::unauthorized_if_session_missing)?;
         let meta = RequestMeta::from_request(req);
 
         let (response, new_token) =
@@ -249,32 +234,14 @@ impl PasswordManagementPlugin {
 
         // Set session cookie if a new session was created
         if let Some(token) = new_token {
-            use alibi_core::utils::cookie_utils::{
-                create_session_cookie_with_max_age, create_session_like_cookie,
-                related_cookie_name, sign_cookie_value, verify_cookie_value,
-            };
-            let preference = related_cookie_name(&ctx.config, "dont_remember");
-            let dont_remember = super::helpers::get_cookie(req, &preference)
-                .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
-                .is_some_and(|value| !value.is_empty());
-            let cookie_header = create_session_cookie_with_max_age(
-                Some(&token),
-                (!dont_remember).then(|| ctx.config.session.expires_in.num_seconds()),
+            let dont_remember =
+                crate::authentication_helpers::dont_remember_preference(req, &ctx.config);
+            crate::authentication_helpers::with_session_cookies(
+                auth_response,
                 &ctx.config,
-            )?;
-            let mut response = auth_response.with_header("Set-Cookie", cookie_header);
-            if dont_remember {
-                response.headers.append(
-                    "Set-Cookie",
-                    create_session_like_cookie(
-                        &preference,
-                        &sign_cookie_value("true", ctx.config.current_secret()),
-                        None,
-                        &ctx.config,
-                    )?,
-                );
-            }
-            Ok(response)
+                &token,
+                dont_remember,
+            )
         } else {
             Ok(auth_response)
         }

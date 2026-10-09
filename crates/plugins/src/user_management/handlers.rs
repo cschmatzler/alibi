@@ -46,28 +46,9 @@ pub(super) async fn authoritative_session<S: alibi_core::AuthSchema>(
     let (user, session) = ctx
         .require_authoritative_session(request)
         .await
-        .map_err(|error| {
-            if matches!(
-                error,
-                AuthError::Unauthenticated | AuthError::SessionNotFound | AuthError::UserNotFound
-            ) {
-                AuthError::Upstream {
-                    status: 401,
-                    code: "UNAUTHORIZED",
-                    message: "Unauthorized",
-                }
-            } else {
-                error
-            }
-        })?;
-    let dont_remember = super::super::helpers::get_cookie(
-        request,
-        &alibi_core::utils::cookie_utils::related_cookie_name(&ctx.config, "dont_remember"),
-    )
-    .and_then(|value| {
-        alibi_core::utils::cookie_utils::verify_cookie_value(&value, ctx.config.current_secret())
-    })
-    .is_some_and(|value| !value.is_empty());
+        .map_err(crate::helpers::unauthorized_if_session_missing)?;
+    let dont_remember =
+        crate::authentication_helpers::dont_remember_preference(request, &ctx.config);
     if !dont_remember
         && !ctx.session_manager().request_disables_refresh(request)
         && ctx

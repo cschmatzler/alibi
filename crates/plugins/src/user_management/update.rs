@@ -14,21 +14,10 @@ pub async fn handle_update_user<S: alibi_core::AuthSchema>(
     req: &AuthRequest,
     context: &AuthContext<S>,
 ) -> AuthResult<AuthResponse> {
-    let (current_user, current_session) =
-        context.require_cached_session(req).await.map_err(|error| {
-            if matches!(
-                error,
-                AuthError::Unauthenticated | AuthError::SessionNotFound | AuthError::UserNotFound
-            ) {
-                AuthError::Upstream {
-                    status: 401,
-                    code: "UNAUTHORIZED",
-                    message: "Unauthorized",
-                }
-            } else {
-                error
-            }
-        })?;
+    let (current_user, current_session) = context
+        .require_cached_session(req)
+        .await
+        .map_err(crate::helpers::unauthorized_if_session_missing)?;
     let body: serde_json::Value = req
         .body_as_json()
         .map_err(|e| AuthError::bad_request(format!("Invalid JSON: {e}")))?;

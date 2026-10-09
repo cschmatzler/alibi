@@ -76,13 +76,10 @@ impl OneTimeTokenPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         if call.operation_id() == "generateOneTimeToken" {
-            let (user, session) = ctx.require_cached_session(call).await.map_err(|error| {
-                if matches!(error, AuthError::Unauthenticated) {
-                    super::unauthorized()
-                } else {
-                    error
-                }
-            })?;
+            let (user, session) = ctx
+                .require_cached_session(call)
+                .await
+                .map_err(crate::helpers::unauthorized_if_unauthenticated)?;
             let user = match &user {
                 alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
                 alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),

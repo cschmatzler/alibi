@@ -25,17 +25,7 @@ pub async fn set_password<S: AuthSchema>(
     let (user, _) = context
         .require_authoritative_session(request)
         .await
-        .map_err(|error| {
-            if matches!(error, AuthError::Unauthenticated) {
-                AuthError::Upstream {
-                    status: 401,
-                    code: "UNAUTHORIZED",
-                    message: "Unauthorized",
-                }
-            } else {
-                error
-            }
-        })?;
+        .map_err(crate::helpers::unauthorized_if_unauthenticated)?;
     let policy = context.extensions.get::<EmailPasswordConfig>();
     let (minimum, maximum) = crate::email_password::password_length_limits(context);
     let length = new_password.encode_utf16().count();

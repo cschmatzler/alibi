@@ -290,42 +290,16 @@ pub(crate) async fn verify_password_core(
 
     password_utils::verify_password(hasher, &body.password, &stored_hash)
         .await
-        .map_err(|error| match error {
-            error if error.status_code() != 500 => error,
-            error => crate::helpers::callback_failure(error),
+        .map_err(|error| {
+            if error.status_code() == 500 {
+                crate::helpers::callback_failure(error)
+            } else {
+                error
+            }
         })
         .map_err(|error| match error {
             AuthError::InvalidCredentials => AuthError::bad_request("Invalid password"),
-            other @ (AuthError::Api { .. }
-            | AuthError::Upstream { .. }
-            | AuthError::BadRequest(_)
-            | AuthError::InvalidRequest(_)
-            | AuthError::Validation(_)
-            | AuthError::Unauthenticated
-            | AuthError::AuthenticationFailed(_)
-            | AuthError::SessionNotFound
-            | AuthError::Forbidden(_)
-            | AuthError::UserCreationCancelled
-            | AuthError::SessionCreationCancelled
-            | AuthError::BannedUser(_)
-            | AuthError::Unauthorized
-            | AuthError::UserNotFound
-            | AuthError::NotFound(_)
-            | AuthError::Conflict(_)
-            | AuthError::MethodNotAllowed(_)
-            | AuthError::PayloadTooLarge(_)
-            | AuthError::UnprocessableEntity(_)
-            | AuthError::RateLimited { .. }
-            | AuthError::NotImplemented(_)
-            | AuthError::Config(_)
-            | AuthError::Database(_)
-            | AuthError::Serialization(_)
-            | AuthError::Plugin { .. }
-            | AuthError::CallbackFailure(_)
-            | AuthError::Internal(_)
-            | AuthError::Encryption(_)
-            | AuthError::PasswordHash(_)
-            | AuthError::Jwt(_)) => other,
+            other => other,
         })?;
 
     Ok(StatusResponse { status: true })

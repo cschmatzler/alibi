@@ -3,7 +3,7 @@
 mod endpoint;
 
 use super::authentication_helpers::{JsonField, RequestBody, parse_body};
-use super::helpers::{get_cookie, response_session};
+use super::helpers::{get_cookie, response_session, unauthorized_if_unauthenticated};
 use alibi_core::utils::cookie_utils::{
     create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
     sign_cookie_value, verify_cookie_value,
@@ -259,42 +259,10 @@ impl OneTimeTokenPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, session) =
-            ctx.require_cached_session(req)
-                .await
-                .map_err(|error| match error {
-                    AuthError::Unauthenticated => unauthorized(),
-                    error @ (AuthError::Api { .. }
-                    | AuthError::Upstream { .. }
-                    | AuthError::BadRequest(_)
-                    | AuthError::InvalidRequest(_)
-                    | AuthError::Validation(_)
-                    | AuthError::InvalidCredentials
-                    | AuthError::AuthenticationFailed(_)
-                    | AuthError::SessionNotFound
-                    | AuthError::Forbidden(_)
-                    | AuthError::UserCreationCancelled
-                    | AuthError::SessionCreationCancelled
-                    | AuthError::BannedUser(_)
-                    | AuthError::Unauthorized
-                    | AuthError::UserNotFound
-                    | AuthError::NotFound(_)
-                    | AuthError::Conflict(_)
-                    | AuthError::MethodNotAllowed(_)
-                    | AuthError::PayloadTooLarge(_)
-                    | AuthError::UnprocessableEntity(_)
-                    | AuthError::RateLimited { .. }
-                    | AuthError::NotImplemented(_)
-                    | AuthError::Config(_)
-                    | AuthError::Database(_)
-                    | AuthError::Serialization(_)
-                    | AuthError::Plugin { .. }
-                    | AuthError::CallbackFailure(_)
-                    | AuthError::Internal(_)
-                    | AuthError::Encryption(_)
-                    | AuthError::PasswordHash(_)
-                    | AuthError::Jwt(_)) => error,
-                })?;
+        let (user, session) = ctx
+            .require_cached_session(req)
+            .await
+            .map_err(unauthorized_if_unauthenticated)?;
         if self.config.disable_client_request {
             return message_response(400, "Client requests are disabled");
         }
@@ -487,14 +455,6 @@ impl<S: AuthSchema> AuthPlugin<S> for OneTimeTokenPlugin {
                 .insert("access-control-expose-headers", expose.join(", "));
         }
         Ok(response)
-    }
-}
-
-const fn unauthorized() -> AuthError {
-    AuthError::Upstream {
-        status: 401,
-        code: "UNAUTHORIZED",
-        message: "Unauthorized",
     }
 }
 

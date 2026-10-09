@@ -12,17 +12,9 @@ pub(crate) async fn ordinary_session<S: alibi_core::AuthSchema>(
     request: &AuthRequest,
     ctx: &AuthContext<S>,
 ) -> AuthResult<(alibi_core::AuthenticatedUser<S>, alibi_core::SessionView)> {
-    ctx.require_cached_session(request).await.map_err(|error| {
-        if matches!(error, AuthError::Unauthenticated) {
-            AuthError::Upstream {
-                status: 401,
-                code: "UNAUTHORIZED",
-                message: "Unauthorized",
-            }
-        } else {
-            error
-        }
-    })
+    ctx.require_cached_session(request)
+        .await
+        .map_err(super::unauthorized_if_unauthenticated)
 }
 
 /// Convert an `expiresIn` value (**seconds** from now) into an RFC 3339
