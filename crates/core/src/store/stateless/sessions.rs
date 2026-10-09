@@ -1,3 +1,4 @@
+use crate::field_policy::FieldValues;
 use crate::store::SessionStore;
 use crate::store::stateless::{StatelessSchema, StatelessStore};
 use crate::{AuthError, AuthResult, CreateSession, SessionView};
@@ -51,8 +52,8 @@ impl SessionStore<StatelessSchema> for StatelessStore {
         &self,
         mut session: SessionView,
         expires_at: Option<DateTime<Utc>>,
-        mut fields: crate::field_policy::FieldValues,
-    ) -> AuthResult<Option<(SessionView, crate::field_policy::FieldValues)>> {
+        mut fields: FieldValues,
+    ) -> AuthResult<Option<(SessionView, FieldValues)>> {
         fields.apply_adapter_transforms_async().await?;
         for (key, value) in &fields {
             match key.as_str() {
@@ -78,7 +79,7 @@ impl SessionStore<StatelessSchema> for StatelessStore {
         &self,
         session: SessionView,
         _expires_at: Option<DateTime<Utc>>,
-        _fields: crate::field_policy::FieldValues,
+        _fields: FieldValues,
         persist: bool,
     ) -> AuthResult<Option<SessionView>> {
         if persist {

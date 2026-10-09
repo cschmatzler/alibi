@@ -1,5 +1,6 @@
 //! Request-local cache cookies and genuine stored/cached snapshot transitions.
 use crate::utils::LockUnpoisoned;
+use crate::{AdapterOutput, SessionView, UserView};
 mod cookies;
 mod issuance;
 mod read;
@@ -39,26 +40,26 @@ struct PublishedSession(Option<PublishedSessionSnapshot>);
 /// Trusted hooks may observe it; it never establishes authentication.
 #[derive(Clone, Debug)]
 pub struct PublishedSessionSnapshot {
-    user: crate::UserView,
-    session: crate::SessionView,
-    user_output: Option<crate::AdapterOutput>,
-    session_output: Option<crate::AdapterOutput>,
+    user: UserView,
+    session: SessionView,
+    user_output: Option<AdapterOutput>,
+    session_output: Option<AdapterOutput>,
 }
 impl PublishedSessionSnapshot {
     #[must_use]
-    pub const fn user(&self) -> &crate::UserView {
+    pub const fn user(&self) -> &UserView {
         &self.user
     }
     #[must_use]
-    pub const fn session(&self) -> &crate::SessionView {
+    pub const fn session(&self) -> &SessionView {
         &self.session
     }
     #[must_use]
-    pub const fn user_output(&self) -> Option<&crate::AdapterOutput> {
+    pub const fn user_output(&self) -> Option<&AdapterOutput> {
         self.user_output.as_ref()
     }
     #[must_use]
-    pub const fn session_output(&self) -> Option<&crate::AdapterOutput> {
+    pub const fn session_output(&self) -> Option<&AdapterOutput> {
         self.session_output.as_ref()
     }
 }
@@ -66,9 +67,7 @@ impl PublishedSessionSnapshot {
 /// The snapshot whose session cookies completed successfully in this dispatch.
 /// Response hooks may observe it; it never establishes authentication.
 #[must_use]
-pub fn published_session(
-    request: &impl SessionRequest,
-) -> Option<(crate::UserView, crate::SessionView)> {
+pub fn published_session(request: &impl SessionRequest) -> Option<(UserView, SessionView)> {
     published_session_snapshot(request).map(|snapshot| (snapshot.user, snapshot.session))
 }
 
@@ -126,7 +125,7 @@ struct PendingData {
 /// snapshot, while Stored retains the actual application model.
 pub struct AuthenticatedRead<S: AuthSchema> {
     pub user: crate::AuthenticatedUser<S>,
-    pub session: crate::SessionView,
+    pub session: SessionView,
     pub needs_refresh: Option<bool>,
 }
 
@@ -135,7 +134,7 @@ struct EstablishedSession<S: AuthSchema>(Option<EstablishedRead<S>>);
 struct EstablishedRead<S: AuthSchema> {
     read: AuthenticatedRead<S>,
     headers: std::collections::HashMap<String, String>,
-    virtual_session: Option<crate::SessionView>,
+    virtual_session: Option<SessionView>,
     config: Arc<crate::AuthConfig>,
     database: Arc<dyn crate::AuthStore<S>>,
 }

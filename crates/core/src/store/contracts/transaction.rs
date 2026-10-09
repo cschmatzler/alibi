@@ -1,3 +1,5 @@
+use crate::AdapterRecord;
+use crate::field_policy::FieldValues;
 use crate::types::AddTeamMemberResult;
 use crate::user_validation::{PreparedUserCreation, UserValidationSource};
 use crate::verification::{VerificationCreation, VerificationPublication, VerificationSnapshot};
@@ -46,8 +48,8 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         _session: S::Session,
         _expires_at: Option<chrono::DateTime<chrono::Utc>>,
-        _fields: crate::field_policy::FieldValues,
-    ) -> AuthResult<Option<(S::Session, crate::field_policy::FieldValues)>> {
+        _fields: FieldValues,
+    ) -> AuthResult<Option<(S::Session, FieldValues)>> {
         Err(AuthError::NotImplemented(
             "Transactional secondary session updates are unsupported".into(),
         ))
@@ -57,7 +59,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         _session: S::Session,
         _expires_at: Option<chrono::DateTime<chrono::Utc>>,
-        _fields: crate::field_policy::FieldValues,
+        _fields: FieldValues,
         _persist: bool,
     ) -> AuthResult<Option<S::Session>> {
         Err(AuthError::NotImplemented(
@@ -89,7 +91,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     async fn create_user_record(
         &self,
         create_user: CreateUser,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+    ) -> AuthResult<AdapterRecord<S::User>> {
         crate::AdapterRecord::physical(self.create_user(create_user).await?)
     }
 
@@ -99,7 +101,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         create_user: CreateUser,
         source: UserValidationSource,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+    ) -> AuthResult<AdapterRecord<S::User>> {
         crate::AdapterRecord::physical(self.create_user_with_source(create_user, source).await?)
     }
 
@@ -108,16 +110,13 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     async fn create_user_prepared_record(
         &self,
         prepared: PreparedUserCreation,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+    ) -> AuthResult<AdapterRecord<S::User>> {
         crate::AdapterRecord::physical(self.create_user_prepared(prepared).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
     /// serialized snapshot; initialized stores apply their declared output policy.
-    async fn get_user_by_id_record(
-        &self,
-        id: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+    async fn get_user_by_id_record(&self, id: &str) -> AuthResult<Option<AdapterRecord<S::User>>> {
         self.get_user_by_id(id)
             .await?
             .map(crate::AdapterRecord::physical)
@@ -129,7 +128,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     async fn create_account_record(
         &self,
         create_account: CreateAccount,
-    ) -> AuthResult<crate::AdapterRecord<S::Account>> {
+    ) -> AuthResult<AdapterRecord<S::Account>> {
         crate::AdapterRecord::physical(self.create_account(create_account).await?)
     }
 
@@ -138,7 +137,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     async fn create_session_record(
         &self,
         create_session: CreateSession,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         crate::AdapterRecord::physical(self.create_session(create_session).await?)
     }
 
@@ -148,7 +147,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         token: &str,
         organization_id: Option<&str>,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         crate::AdapterRecord::physical(
             self.update_session_active_organization(token, organization_id)
                 .await?,
@@ -161,7 +160,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         token: &str,
         team_id: Option<&str>,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         crate::AdapterRecord::physical(self.update_session_active_team(token, team_id).await?)
     }
 

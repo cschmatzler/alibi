@@ -1,3 +1,4 @@
+use crate::field_policy::FieldValues;
 use crate::store::stateless::{StatelessSchema, StatelessStore};
 use crate::store::{
     AccountStore, BoxedTransactionValue, MemberStore, SessionStore, TeamStore, TransactionStore,
@@ -111,8 +112,8 @@ impl AuthTransaction<StatelessSchema> for OrganizationTransaction<'_> {
         &self,
         session: SessionView,
         expires_at: Option<DateTime<Utc>>,
-        fields: crate::field_policy::FieldValues,
-    ) -> AuthResult<Option<(SessionView, crate::field_policy::FieldValues)>> {
+        fields: FieldValues,
+    ) -> AuthResult<Option<(SessionView, FieldValues)>> {
         SessionStore::<StatelessSchema>::prepare_secondary_session_update(
             self.live, session, expires_at, fields,
         )
@@ -122,7 +123,7 @@ impl AuthTransaction<StatelessSchema> for OrganizationTransaction<'_> {
         &self,
         session: SessionView,
         expires_at: Option<DateTime<Utc>>,
-        fields: crate::field_policy::FieldValues,
+        fields: FieldValues,
         persist: bool,
     ) -> AuthResult<Option<SessionView>> {
         SessionStore::<StatelessSchema>::complete_secondary_session_update(

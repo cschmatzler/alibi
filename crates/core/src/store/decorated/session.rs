@@ -1,3 +1,5 @@
+use crate::AdapterRecord;
+use crate::field_policy::FieldValues;
 use crate::store::{AdapterEvent, PluginStore, SessionStore};
 use crate::{AuthError, AuthResult, AuthSchema, AuthSession, CreateSession};
 use async_trait::async_trait;
@@ -6,7 +8,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn get_session_user_record(
         &self,
         token: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+    ) -> AuthResult<Option<AdapterRecord<S::User>>> {
         let Some(user) = self.get_session_user(token).await? else {
             return Ok(None);
         };
@@ -15,7 +17,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn create_session_record(
         &self,
         create_session: CreateSession,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         let record = self
             .session_record(self.create_session(create_session).await?)
             .await?;
@@ -27,7 +29,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn get_session_record(
         &self,
         token: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<Option<AdapterRecord<S::Session>>> {
         let Some(model) = self.get_session(token).await? else {
             return Ok(None);
         };
@@ -38,7 +40,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn get_sessions_by_tokens_record(
         &self,
         tokens: &[String],
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<Vec<AdapterRecord<S::Session>>> {
         let mut records = Vec::new();
         for model in self.get_sessions_by_tokens(tokens).await? {
             records.push(self.session_record(model).await?);
@@ -49,7 +51,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn get_user_sessions_record(
         &self,
         user_id: &str,
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<Vec<AdapterRecord<S::Session>>> {
         self.session_records(self.get_user_sessions(user_id).await?)
             .await
     }
@@ -57,7 +59,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn get_active_user_sessions_record(
         &self,
         user_id: &str,
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<Vec<AdapterRecord<S::Session>>> {
         let now = chrono::Utc::now();
         let models = self
             .get_user_sessions(user_id)
@@ -72,7 +74,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         &self,
         token: &str,
         expires_at: chrono::DateTime<chrono::Utc>,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<Option<AdapterRecord<S::Session>>> {
         let Some(model) = self.refresh_session(token, expires_at).await? else {
             return Ok(None);
         };
@@ -85,8 +87,8 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn update_session_fields_record(
         &self,
         token: &str,
-        fields: crate::field_policy::FieldValues,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::Session>>> {
+        fields: FieldValues,
+    ) -> AuthResult<Option<AdapterRecord<S::Session>>> {
         let Some(model) = self.update_session_fields(token, fields).await? else {
             return Ok(None);
         };
@@ -100,7 +102,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         &self,
         token: &str,
         organization_id: Option<&str>,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         let record = self
             .session_record(
                 self.update_session_active_organization(token, organization_id)
@@ -116,7 +118,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         &self,
         token: &str,
         team_id: Option<&str>,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         let record = self
             .session_record(self.update_session_active_team(token, team_id).await?)
             .await?;
@@ -128,7 +130,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn update_session_fields(
         &self,
         token: &str,
-        mut fields: crate::field_policy::FieldValues,
+        mut fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         self.adapter_fields.attach(&mut fields, false);
         if self.config.session.stateless {
@@ -241,7 +243,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         &self,
         token: &str,
         expires_at: chrono::DateTime<chrono::Utc>,
-        mut fields: crate::field_policy::FieldValues,
+        mut fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         self.adapter_fields.attach(&mut fields, false);
         if self.config.session.stateless {

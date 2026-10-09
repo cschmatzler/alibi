@@ -1,3 +1,4 @@
+use crate::AdapterRecord;
 pub mod cookie_cache;
 mod request;
 use crate::config::AuthConfig;
@@ -95,7 +96,7 @@ impl<S: AuthSchema> SessionManager<S> {
         user: &impl AuthUser,
         ip_address: Option<String>,
         user_agent: Option<String>,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         self.database
             .create_session_record(self.new_session(user, ip_address, user_agent))
             .await
@@ -172,9 +173,9 @@ impl<S: AuthSchema> SessionManager<S> {
     /// The record must originate from this manager's actual initialized store.
     pub async fn read_loaded_session_record(
         &self,
-        session: crate::AdapterRecord<S::Session>,
+        session: AdapterRecord<S::Session>,
         options: SessionReadOptions,
-    ) -> AuthResult<SessionRead<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<SessionRead<AdapterRecord<S::Session>>> {
         self.read_loaded(session, options, |token, expires_at| async move {
             self.database
                 .refresh_session_record(&token, expires_at)

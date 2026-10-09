@@ -1,5 +1,6 @@
 //! Session authentication consumes logical credential input, not an invented HTTP request.
 
+use crate::AuthContext;
 use crate::types::RequestExtensions;
 use crate::{AuthRequest, AuthSchema, HttpMethod, SessionView, UserView};
 use std::collections::HashMap;
@@ -15,14 +16,8 @@ pub trait SessionRequest: Send + Sync {
     fn session_method(&self) -> &HttpMethod;
     fn session_query_truthy(&self, name: &str) -> bool;
     fn extensions(&self) -> &RequestExtensions;
-    fn virtual_session<S: AuthSchema>(
-        &self,
-        context: &crate::AuthContext<S>,
-    ) -> Option<SessionView>;
-    fn authenticated_user<S: AuthSchema>(
-        &self,
-        _context: &crate::AuthContext<S>,
-    ) -> Option<S::User> {
+    fn virtual_session<S: AuthSchema>(&self, context: &AuthContext<S>) -> Option<SessionView>;
+    fn authenticated_user<S: AuthSchema>(&self, _context: &AuthContext<S>) -> Option<S::User> {
         None
     }
     fn take_response_headers(&self) -> crate::Headers;
@@ -43,10 +38,7 @@ impl SessionRequest for AuthRequest {
     fn extensions(&self) -> &RequestExtensions {
         self.extensions()
     }
-    fn virtual_session<S: AuthSchema>(
-        &self,
-        _context: &crate::AuthContext<S>,
-    ) -> Option<SessionView> {
+    fn virtual_session<S: AuthSchema>(&self, _context: &AuthContext<S>) -> Option<SessionView> {
         self.virtual_session().cloned()
     }
     fn take_response_headers(&self) -> crate::Headers {
@@ -88,17 +80,11 @@ impl SessionRequest for crate::endpoint::EndpointCall {
     fn extensions(&self) -> &RequestExtensions {
         self.extensions()
     }
-    fn virtual_session<S: AuthSchema>(
-        &self,
-        context: &crate::AuthContext<S>,
-    ) -> Option<SessionView> {
+    fn virtual_session<S: AuthSchema>(&self, context: &AuthContext<S>) -> Option<SessionView> {
         self.authenticated_user(context)
             .and_then(|_| self.virtual_session())
     }
-    fn authenticated_user<S: AuthSchema>(
-        &self,
-        context: &crate::AuthContext<S>,
-    ) -> Option<S::User> {
+    fn authenticated_user<S: AuthSchema>(&self, context: &AuthContext<S>) -> Option<S::User> {
         self.authenticated_user::<S>(context)
     }
     fn take_response_headers(&self) -> crate::Headers {

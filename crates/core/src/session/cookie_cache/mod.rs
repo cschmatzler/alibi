@@ -3,6 +3,8 @@
 //! The codec authenticates data; storage bypass and authoritative-read policy
 //! belong to the session resolver. No database model is reconstructed here.
 
+use crate::AdapterOutput;
+use crate::utils::json::JsValue;
 pub(crate) mod date;
 
 pub mod jwt;
@@ -38,8 +40,8 @@ pub struct CacheVersionContext {
     originals: Option<(Arc<dyn Any + Send + Sync>, Arc<dyn Any + Send + Sync>)>,
     source: CacheVersionSource,
     public_projection: Option<(UserView, SessionView)>,
-    user_output: Option<crate::AdapterOutput>,
-    session_output: Option<crate::AdapterOutput>,
+    user_output: Option<AdapterOutput>,
+    session_output: Option<AdapterOutput>,
 }
 
 impl fmt::Debug for CacheVersionContext {
@@ -86,8 +88,8 @@ impl CacheVersionContext {
     pub(crate) fn stored(
         user: UserView,
         session: SessionView,
-        user_output: Option<crate::AdapterOutput>,
-        session_output: Option<crate::AdapterOutput>,
+        user_output: Option<AdapterOutput>,
+        session_output: Option<AdapterOutput>,
     ) -> Self {
         Self {
             user,
@@ -128,11 +130,11 @@ impl CacheVersionContext {
     /// Actual callback-stage adapter values. Cache hits have no retained record;
     /// their exact values remain available through `user()` and `session()`.
     #[must_use]
-    pub const fn user_output(&self) -> Option<&crate::AdapterOutput> {
+    pub const fn user_output(&self) -> Option<&AdapterOutput> {
         self.user_output.as_ref()
     }
     #[must_use]
-    pub const fn session_output(&self) -> Option<&crate::AdapterOutput> {
+    pub const fn session_output(&self) -> Option<&AdapterOutput> {
         self.session_output.as_ref()
     }
     #[must_use]
@@ -315,9 +317,7 @@ pub(crate) fn decode_compact_http(value: &str, secret: &str) -> AuthResult<Optio
     ))
 }
 
-fn compact_envelope(
-    parsed: &crate::utils::json::JsValue,
-) -> Option<(&crate::utils::json::JsValue, f64, &str)> {
+fn compact_envelope(parsed: &JsValue) -> Option<(&JsValue, f64, &str)> {
     let expires_at = parsed
         .get("expiresAt")?
         .as_f64()
@@ -329,7 +329,7 @@ fn compact_envelope(
 }
 
 fn authenticate_compact(
-    original_payload: &crate::utils::json::JsValue,
+    original_payload: &JsValue,
     expires_at: f64,
     signature: &[u8],
     secret: &str,
@@ -349,10 +349,7 @@ fn authenticate_compact(
 }
 
 /// Validate and revive an authenticated session snapshot without granting storage authority.
-pub(crate) fn parse_payload(
-    original_payload: &crate::utils::json::JsValue,
-    expires_at: f64,
-) -> Option<CompactCache> {
+pub(crate) fn parse_payload(original_payload: &JsValue, expires_at: f64) -> Option<CompactCache> {
     // Revived dates are runtime Date objects in the source. Required string
     // fields reject them even when their canonical JSON text did not change.
     for (object, required, optional) in [

@@ -1,3 +1,4 @@
+use crate::AdapterRecord;
 use crate::{AuthResult, AuthSchema, AuthStore, CreateUser};
 use async_trait::async_trait;
 
@@ -26,12 +27,12 @@ pub trait SessionCreatedHook<S: AuthSchema>: Send + Sync {
 /// A persisted adapter result after declared output transforms. Hidden fields
 /// remain present; public response filtering has not run on this record.
 pub enum AdapterEvent<S: AuthSchema> {
-    UserCreated(crate::AdapterRecord<S::User>),
-    UserUpdated(crate::AdapterRecord<S::User>),
-    SessionCreated(crate::AdapterRecord<S::Session>),
-    SessionUpdated(crate::AdapterRecord<S::Session>),
-    AccountCreated(crate::AdapterRecord<S::Account>),
-    AccountUpdated(crate::AdapterRecord<S::Account>),
+    UserCreated(AdapterRecord<S::User>),
+    UserUpdated(AdapterRecord<S::User>),
+    SessionCreated(AdapterRecord<S::Session>),
+    SessionUpdated(AdapterRecord<S::Session>),
+    AccountCreated(AdapterRecord<S::Account>),
+    AccountUpdated(AdapterRecord<S::Account>),
 }
 
 /// Record-aware application adapter after observer. Output errors prevent this

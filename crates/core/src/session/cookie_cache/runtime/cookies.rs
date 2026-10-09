@@ -1,3 +1,4 @@
+use crate::AuthConfig;
 use crate::session::cookie_cache as cache;
 use crate::utils::cookie_utils::{related_cookie_name, verify_cookie_value};
 use crate::{AuthError, AuthResult};
@@ -96,7 +97,7 @@ pub(in crate::session::cookie_cache::runtime) fn existing_names(
 
 pub(in crate::session::cookie_cache) fn browser_preference(
     headers: &std::collections::HashMap<String, String>,
-    config: &crate::AuthConfig,
+    config: &AuthConfig,
 ) -> bool {
     cookies(headers)
         .get(&related_cookie_name(config, "dont_remember"))
@@ -122,7 +123,7 @@ pub fn chunked_cookie_headers<H: std::hash::BuildHasher + Sync>(
     name: &str,
     value: &str,
     max_age: Option<f64>,
-    config: &crate::AuthConfig,
+    config: &AuthConfig,
     headers: &std::collections::HashMap<String, String, H>,
     account: bool,
 ) -> AuthResult<Vec<String>> {
@@ -170,7 +171,7 @@ pub fn chunked_cookie_headers<H: std::hash::BuildHasher + Sync>(
 /// # Errors
 /// Propagates invalid configured cookie attributes.
 pub fn session_cleanup_headers<H: std::hash::BuildHasher + Sync>(
-    config: &crate::AuthConfig,
+    config: &AuthConfig,
     headers: &std::collections::HashMap<String, String, H>,
     skip_remember: bool,
 ) -> AuthResult<Vec<String>> {

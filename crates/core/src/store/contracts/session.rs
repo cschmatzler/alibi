@@ -1,4 +1,5 @@
-use crate::AuthSession;
+use crate::field_policy::FieldValues;
+use crate::{AdapterRecord, AuthSession};
 use crate::{AuthError, AuthResult, AuthSchema, CreateSession};
 use async_trait::async_trait;
 use std::collections::BTreeSet;
@@ -26,8 +27,8 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         &self,
         _session: S::Session,
         _expires_at: Option<chrono::DateTime<chrono::Utc>>,
-        _fields: crate::field_policy::FieldValues,
-    ) -> AuthResult<Option<(S::Session, crate::field_policy::FieldValues)>> {
+        _fields: FieldValues,
+    ) -> AuthResult<Option<(S::Session, FieldValues)>> {
         Err(AuthError::NotImplemented(
             "Secondary session updates are unsupported".into(),
         ))
@@ -37,7 +38,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         &self,
         _session: S::Session,
         _expires_at: Option<chrono::DateTime<chrono::Utc>>,
-        _fields: crate::field_policy::FieldValues,
+        _fields: FieldValues,
         _persist: bool,
     ) -> AuthResult<Option<S::Session>> {
         Err(AuthError::NotImplemented(
@@ -66,7 +67,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
     async fn get_session_user_record(
         &self,
         token: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+    ) -> AuthResult<Option<AdapterRecord<S::User>>> {
         self.get_session_user(token)
             .await?
             .map(crate::AdapterRecord::physical)
@@ -78,7 +79,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
     async fn create_session_record(
         &self,
         create_session: CreateSession,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         crate::AdapterRecord::physical(self.create_session(create_session).await?)
     }
 
@@ -87,7 +88,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
     async fn get_session_record(
         &self,
         token: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<Option<AdapterRecord<S::Session>>> {
         self.get_session(token)
             .await?
             .map(crate::AdapterRecord::physical)
@@ -99,7 +100,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
     async fn get_sessions_by_tokens_record(
         &self,
         tokens: &[String],
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<Vec<AdapterRecord<S::Session>>> {
         self.get_sessions_by_tokens(tokens)
             .await?
             .into_iter()
@@ -112,7 +113,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
     async fn get_user_sessions_record(
         &self,
         user_id: &str,
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<Vec<AdapterRecord<S::Session>>> {
         self.get_user_sessions(user_id)
             .await?
             .into_iter()
@@ -125,7 +126,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
     async fn get_active_user_sessions_record(
         &self,
         user_id: &str,
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<Vec<AdapterRecord<S::Session>>> {
         let now = chrono::Utc::now();
         self.get_user_sessions(user_id)
             .await?
@@ -141,7 +142,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         &self,
         token: &str,
         expires_at: chrono::DateTime<chrono::Utc>,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<Option<AdapterRecord<S::Session>>> {
         self.refresh_session(token, expires_at)
             .await?
             .map(crate::AdapterRecord::physical)
@@ -153,8 +154,8 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
     async fn update_session_fields_record(
         &self,
         token: &str,
-        fields: crate::field_policy::FieldValues,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::Session>>> {
+        fields: FieldValues,
+    ) -> AuthResult<Option<AdapterRecord<S::Session>>> {
         self.update_session_fields(token, fields)
             .await?
             .map(crate::AdapterRecord::physical)
@@ -167,7 +168,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         &self,
         token: &str,
         organization_id: Option<&str>,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         crate::AdapterRecord::physical(
             self.update_session_active_organization(token, organization_id)
                 .await?,
@@ -180,7 +181,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         &self,
         token: &str,
         team_id: Option<&str>,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         crate::AdapterRecord::physical(self.update_session_active_team(token, team_id).await?)
     }
 
@@ -188,7 +189,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
     async fn update_session_fields(
         &self,
         _token: &str,
-        _fields: crate::field_policy::FieldValues,
+        _fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         Err(AuthError::internal(
             "the store does not support session field updates",
@@ -227,7 +228,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         &self,
         token: &str,
         expires_at: chrono::DateTime<chrono::Utc>,
-        mut fields: crate::field_policy::FieldValues,
+        mut fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         fields.apply_adapter_transforms_async().await?;
         if !fields.is_empty() {

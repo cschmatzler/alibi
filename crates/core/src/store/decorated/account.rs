@@ -1,5 +1,5 @@
-use crate::AuthAccount;
 use crate::store::{AccountStore, AdapterEvent, PluginStore};
+use crate::{AdapterRecord, AuthAccount};
 use crate::{AuthResult, AuthSchema, CreateAccount, UpdateAccount};
 use async_trait::async_trait;
 #[async_trait]
@@ -11,7 +11,7 @@ impl<S: AuthSchema> AccountStore<S> for PluginStore<S> {
     async fn create_account_record(
         &self,
         create_account: CreateAccount,
-    ) -> AuthResult<crate::AdapterRecord<S::Account>> {
+    ) -> AuthResult<AdapterRecord<S::Account>> {
         let record = self
             .account_record(self.create_account(create_account).await?)
             .await?;
@@ -24,7 +24,7 @@ impl<S: AuthSchema> AccountStore<S> for PluginStore<S> {
         &self,
         provider: &str,
         provider_account_id: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::Account>>> {
+    ) -> AuthResult<Option<AdapterRecord<S::Account>>> {
         let account = self.get_account(provider, provider_account_id).await?;
         self.optional_account_record(account).await
     }
@@ -32,7 +32,7 @@ impl<S: AuthSchema> AccountStore<S> for PluginStore<S> {
     async fn get_credential_account_record(
         &self,
         user_id: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::Account>>> {
+    ) -> AuthResult<Option<AdapterRecord<S::Account>>> {
         let account = self
             .get_user_accounts(user_id)
             .await?
@@ -46,7 +46,7 @@ impl<S: AuthSchema> AccountStore<S> for PluginStore<S> {
     async fn get_user_accounts_record(
         &self,
         user_id: &str,
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::Account>>> {
+    ) -> AuthResult<Vec<AdapterRecord<S::Account>>> {
         let mut records = Vec::new();
         for model in self.get_user_accounts(user_id).await? {
             records.push(self.account_record(model).await?);
@@ -58,7 +58,7 @@ impl<S: AuthSchema> AccountStore<S> for PluginStore<S> {
         &self,
         id: &str,
         update: UpdateAccount,
-    ) -> AuthResult<crate::AdapterRecord<S::Account>> {
+    ) -> AuthResult<AdapterRecord<S::Account>> {
         let record = self
             .account_record(self.update_account(id, update).await?)
             .await?;

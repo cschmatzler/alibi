@@ -1,3 +1,4 @@
+use crate::AdapterRecord;
 use crate::store::{
     AdapterAfterHook, AdapterEvent, SessionCreatedHook, UserCreateTransform, UserCreationDefaults,
 };
@@ -116,7 +117,7 @@ impl<S: AuthSchema> PluginStore<S> {
     pub(in crate::store) async fn user_record(
         &self,
         user: S::User,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+    ) -> AuthResult<AdapterRecord<S::User>> {
         let verification = self.inner.provider_verification_output(&user.id()).await?;
         let mut record = self.projection_context.user_adapter_record(user).await?;
         if let Some(value) = verification {
@@ -128,7 +129,7 @@ impl<S: AuthSchema> PluginStore<S> {
     pub(in crate::store) async fn optional_user_record(
         &self,
         user: Option<S::User>,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+    ) -> AuthResult<Option<AdapterRecord<S::User>>> {
         match user {
             Some(user) => self.user_record(user).await.map(Some),
             None => Ok(None),
@@ -138,7 +139,7 @@ impl<S: AuthSchema> PluginStore<S> {
     pub(in crate::store) async fn user_records(
         &self,
         users: Vec<S::User>,
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::User>>> {
+    ) -> AuthResult<Vec<AdapterRecord<S::User>>> {
         let mut records = Vec::with_capacity(users.len());
         for user in users {
             records.push(self.user_record(user).await?);
@@ -149,7 +150,7 @@ impl<S: AuthSchema> PluginStore<S> {
     pub(in crate::store) async fn optional_account_record(
         &self,
         account: Option<S::Account>,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::Account>>> {
+    ) -> AuthResult<Option<AdapterRecord<S::Account>>> {
         match account {
             Some(account) => self.account_record(account).await.map(Some),
             None => Ok(None),
@@ -159,7 +160,7 @@ impl<S: AuthSchema> PluginStore<S> {
     pub(in crate::store) async fn session_record(
         &self,
         session: S::Session,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         let absent = self.secondary_absent_fields(session.token()).await?;
         let mut public = serde_json::to_value(crate::SessionView::from(&session))?;
         let mut physical =
@@ -184,7 +185,7 @@ impl<S: AuthSchema> PluginStore<S> {
     pub(in crate::store) async fn session_records(
         &self,
         models: Vec<S::Session>,
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<Vec<AdapterRecord<S::Session>>> {
         if models.is_empty() {
             return Ok(Vec::new());
         }
@@ -235,7 +236,7 @@ impl<S: AuthSchema> PluginStore<S> {
     pub(in crate::store) async fn account_record(
         &self,
         account: S::Account,
-    ) -> AuthResult<crate::AdapterRecord<S::Account>> {
+    ) -> AuthResult<AdapterRecord<S::Account>> {
         let serde_json::Value::Object(mut canonical) =
             serde_json::to_value(crate::AccountView::from(&account))?
         else {

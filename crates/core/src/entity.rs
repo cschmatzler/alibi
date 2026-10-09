@@ -9,6 +9,7 @@
 //! runtime.
 
 use crate::types::InvitationStatus;
+use crate::{AdapterOutput, AuthResult};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -66,20 +67,20 @@ impl<T: AuthTimestamp> AuthTimestamp for Option<T> {
 pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
     /// Encode the complete typed model for a trusted secondary backend.
     /// Custom entities can opt in without adding a Deserialize bound to all schemas.
-    fn secondary_snapshot(&self) -> crate::AuthResult<serde_json::Value> {
+    fn secondary_snapshot(&self) -> AuthResult<serde_json::Value> {
         Err(crate::AuthError::NotImplemented(
             "Secondary model encoding is unsupported".into(),
         ))
     }
     /// Restore a model from a trusted secondary backend, before public projection.
-    fn from_secondary_snapshot(_snapshot: serde_json::Value) -> crate::AuthResult<Self> {
+    fn from_secondary_snapshot(_snapshot: serde_json::Value) -> AuthResult<Self> {
         Err(crate::AuthError::NotImplemented(
             "Secondary model decoding is unsupported".into(),
         ))
     }
 
     /// A genuine retained adapter result, including declared undefined values.
-    fn adapter_snapshot(&self) -> Option<&crate::AdapterOutput> {
+    fn adapter_snapshot(&self) -> Option<&AdapterOutput> {
         None
     }
     /// A chosen authenticated view is already projected and must remain exact.
@@ -132,19 +133,19 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
 pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
     /// Encode the complete typed model for a trusted secondary backend.
     /// Custom entities can opt in without adding a Deserialize bound to all schemas.
-    fn secondary_snapshot(&self) -> crate::AuthResult<serde_json::Value> {
+    fn secondary_snapshot(&self) -> AuthResult<serde_json::Value> {
         Err(crate::AuthError::NotImplemented(
             "Secondary model encoding is unsupported".into(),
         ))
     }
     /// Restore a model from a trusted secondary backend, before public projection.
-    fn from_secondary_snapshot(_snapshot: serde_json::Value) -> crate::AuthResult<Self> {
+    fn from_secondary_snapshot(_snapshot: serde_json::Value) -> AuthResult<Self> {
         Err(crate::AuthError::NotImplemented(
             "Secondary model decoding is unsupported".into(),
         ))
     }
 
-    fn adapter_snapshot(&self) -> Option<&crate::AdapterOutput> {
+    fn adapter_snapshot(&self) -> Option<&AdapterOutput> {
         None
     }
     fn retained_session_view(&self) -> Option<&crate::SessionView> {
@@ -171,7 +172,7 @@ pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
 
 /// Trait representing an account entity (OAuth provider linking).
 pub trait AuthAccount: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
-    fn adapter_snapshot(&self) -> Option<&crate::AdapterOutput> {
+    fn adapter_snapshot(&self) -> Option<&AdapterOutput> {
         None
     }
     fn additional_fields(&self) -> crate::field_policy::FieldOutput {

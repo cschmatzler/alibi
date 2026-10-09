@@ -1,5 +1,6 @@
 //! Session persistence through an application-owned secondary backend.
 use super::PluginStore;
+use crate::field_policy::FieldValues;
 use crate::{AuthError, AuthResult, AuthSchema, AuthSession, AuthUser};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
@@ -62,7 +63,7 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         token: &str,
         expires_at: Option<DateTime<Utc>>,
-        fields: crate::field_policy::FieldValues,
+        fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         let original = self.ephemeral()?.get(token).cloned();
         let Some(original) = original else {
@@ -166,7 +167,7 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         session: &S::Session,
         user: &S::User,
-        updated_fields: Option<&crate::field_policy::FieldValues>,
+        updated_fields: Option<&FieldValues>,
     ) -> AuthResult<()> {
         let Some(cache) = self.secondary() else {
             return Ok(());
@@ -354,7 +355,7 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         token: &str,
         expires_at: Option<DateTime<Utc>>,
-        fields: crate::field_policy::FieldValues,
+        fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         let Some((session, user)) = self.cached_session(token).await? else {
             // A combined database write may still occur, but it must not revive

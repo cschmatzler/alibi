@@ -1,5 +1,6 @@
 //! Trusted endpoint calls keep logical input separate from an optional HTTP request.
 
+use crate::AuthContext;
 use crate::session::SessionRequest;
 use crate::types::RequestExtensions;
 use crate::utils::LockUnpoisoned;
@@ -348,7 +349,7 @@ impl EndpointCall {
         user: S::User,
         user_view: UserView,
         session: SessionView,
-        context: &crate::AuthContext<S>,
+        context: &AuthContext<S>,
     ) {
         self.extensions.insert(VerifiedEndpointUser::<S> {
             user,
@@ -371,10 +372,7 @@ impl EndpointCall {
     }
 
     #[must_use]
-    pub fn authenticated_user<S: AuthSchema>(
-        &self,
-        context: &crate::AuthContext<S>,
-    ) -> Option<S::User> {
+    pub fn authenticated_user<S: AuthSchema>(&self, context: &AuthContext<S>) -> Option<S::User> {
         self.extensions
             .get::<VerifiedEndpointUser<S>>()
             .filter(|user| {
@@ -653,11 +651,7 @@ pub trait EndpointHook<S: AuthSchema>: Send + Sync {
     /// Matchers observe raw logical context, before middleware normalization.
     /// # Errors
     /// Returns an application matcher error, which dispatch logs and masks.
-    fn matches_before(
-        &self,
-        _call: &EndpointCall,
-        _ctx: &crate::AuthContext<S>,
-    ) -> AuthResult<bool> {
+    fn matches_before(&self, _call: &EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<bool> {
         Ok(true)
     }
 
@@ -666,7 +660,7 @@ pub trait EndpointHook<S: AuthSchema>: Send + Sync {
     async fn before(
         &self,
         _call: &EndpointCall,
-        _ctx: &crate::AuthContext<S>,
+        _ctx: &AuthContext<S>,
     ) -> AuthResult<Option<BeforeEndpointAction>> {
         Ok(None)
     }
@@ -676,7 +670,7 @@ pub trait EndpointHook<S: AuthSchema>: Send + Sync {
     fn matches_after(
         &self,
         _call: &EndpointCall,
-        _ctx: &crate::AuthContext<S>,
+        _ctx: &AuthContext<S>,
         _response: &EndpointResponse,
     ) -> AuthResult<bool> {
         Ok(true)
@@ -687,7 +681,7 @@ pub trait EndpointHook<S: AuthSchema>: Send + Sync {
     async fn after(
         &self,
         _call: &EndpointCall,
-        _ctx: &crate::AuthContext<S>,
+        _ctx: &AuthContext<S>,
         response: EndpointResponse,
     ) -> AuthResult<EndpointResponse> {
         Ok(response)

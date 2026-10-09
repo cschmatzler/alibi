@@ -1,3 +1,4 @@
+use crate::field_policy::FieldValues;
 use crate::utils::normalize_user_email;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -15,7 +16,7 @@ pub struct CreateUser {
     #[serde(skip)]
     pub provider_image: Option<serde_json::Value>,
     #[serde(flatten, default)]
-    pub additional_fields: crate::field_policy::FieldValues,
+    pub additional_fields: FieldValues,
     pub id: Option<String>,
     /// Trusted creation timestamps; omitted values use the adapter's clock.
     pub created_at: Option<DateTime<Utc>>,
@@ -54,7 +55,7 @@ pub struct UpdateUser {
     #[serde(skip)]
     pub provider_image: Option<serde_json::Value>,
     #[serde(flatten, default)]
-    pub additional_fields: crate::field_policy::FieldValues,
+    pub additional_fields: FieldValues,
     pub email: Option<String>,
     pub name: Option<String>,
     pub image: Option<String>,
@@ -88,7 +89,7 @@ pub struct UpdateUser {
 /// Session creation data
 #[derive(Debug, Clone)]
 pub struct CreateSession {
-    pub additional_fields: crate::field_policy::FieldValues,
+    pub additional_fields: FieldValues,
     /// Optional token override for trusted database hooks and server-side creation.
     /// Stores generate a secure 32-character alphanumeric token when omitted.
     pub token: Option<String>,
@@ -104,7 +105,7 @@ pub struct CreateSession {
 /// Account creation data
 #[derive(Debug, Clone)]
 pub struct CreateAccount {
-    pub additional_fields: crate::field_policy::FieldValues,
+    pub additional_fields: FieldValues,
     pub user_id: String,
     pub account_id: String,
     pub provider_id: String,
@@ -123,7 +124,7 @@ pub struct UpdateAccount {
     /// Trusted OAuth writes distinguish an explicit token null from omission.
     /// Order: access token, refresh token, ID token. Defaults retain omission.
     pub provider_token_nulls: [bool; 3],
-    pub additional_fields: crate::field_policy::FieldValues,
+    pub additional_fields: FieldValues,
     pub access_token: Option<String>,
     pub refresh_token: Option<String>,
     pub id_token: Option<String>,
