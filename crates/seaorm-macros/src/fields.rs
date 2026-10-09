@@ -1,4 +1,7 @@
-use super::*;
+use alibi_entity_codegen as codegen;
+use proc_macro2::Ident;
+use syn::{FieldsNamed, LitStr};
+
 /// One model field with its `Column` variant and explicitly renamed column.
 pub(crate) struct Field {
     pub(crate) ident: Ident,

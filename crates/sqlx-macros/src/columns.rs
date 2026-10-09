@@ -1,4 +1,7 @@
-use super::*;
+use alibi_entity_codegen as codegen;
+use proc_macro2::{Ident, Span};
+use syn::{DeriveInput, FieldsNamed, LitStr};
+
 /// One model field with its physical column.
 pub(crate) struct Column {
     pub(crate) ident: Ident,
