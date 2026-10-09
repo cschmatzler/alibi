@@ -10,18 +10,20 @@ stage() { printf '\n==> %s\n' "$*"; }
 stage "Format and lint"
 cargo fmt --all -- --check
 cargo fmt --manifest-path tests/compat/rust-server/Cargo.toml -- --check
-cargo clippy --workspace --all-targets --locked --features axum,seaorm,redis-cache -- -D warnings
+cargo clippy --workspace --all-targets --locked --features axum,seaorm,redis-cache,passkey -- -D warnings
 cargo clippy --manifest-path tests/compat/rust-server/Cargo.toml --all-targets --locked -- -D warnings
 cargo clippy --manifest-path tests/compat/rust-server/Cargo.toml --all-targets --locked --features seaorm -- -D warnings
 
 stage "Feature builds"
+bash scripts/check-rustls.sh
 for features in rustls,axum,sqlx-sqlite rustls,axum,sqlx-postgres rustls,seaorm,poem native-tls,sqlx; do
   cargo check --locked -p alibi --lib --no-default-features --features "$features"
 done
+cargo check --locked -p alibi --lib --no-default-features --features rustls,passkey
 
 stage "Native tests"
-cargo nextest run --workspace --locked --features axum,seaorm,redis-cache
-cargo test --workspace --doc --locked --features axum,seaorm,redis-cache
+cargo nextest run --workspace --locked --features axum,seaorm,redis-cache,passkey
+cargo test --workspace --doc --locked --features axum,seaorm,redis-cache,passkey
 
 stage "Documentation"
-RUSTDOCFLAGS='-D warnings' cargo doc --workspace --locked --no-deps
+RUSTDOCFLAGS='-D warnings' cargo doc --workspace --locked --no-deps --features passkey

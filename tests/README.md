@@ -26,7 +26,7 @@ cargo nextest run --no-run
 ```
 
 Cargo's `default-members` selects the workspace. The root development dependency
-enables Axum, Poem and SeaORM alongside SQLx for repository tests, without changing
+enables Axum, Poem, SeaORM and passkeys alongside SQLx for repository tests, without changing
 the features downstream applications enable. No wrapper or special nextest profile
 is needed. Outside the development shell, prefix the command with `devenv shell --`.
 

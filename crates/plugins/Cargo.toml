@@ -82,13 +82,13 @@ urlencoding = "2"
 bon = "3.3"
 jsonwebtoken.workspace = true
 serde_with = "3.18.0"
-webauthn-rs = { version = "=0.5.4", features = ["conditional-ui", "danger-allow-state-serialisation", "danger-credential-internals"] }
-webauthn-rs-core = "=0.5.4"
-base64urlsafedata = "=0.5.4"
-openssl = "0.10.75"
-x509-parser = "0.16"
-der-parser = "9"
-serde_cbor_2 = "0.13.0"
+webauthn-rs = { version = "=0.5.4", optional = true, features = ["conditional-ui", "danger-allow-state-serialisation", "danger-credential-internals"] }
+webauthn-rs-core = { version = "=0.5.4", optional = true }
+base64urlsafedata = { version = "=0.5.4", optional = true }
+openssl = { version = "0.10.75", optional = true }
+x509-parser = { version = "0.16", optional = true }
+der-parser = { version = "9", optional = true }
+serde_cbor_2 = { version = "0.13.0", optional = true }
 serde_path_to_error = "0.1.20"
 
 [dev-dependencies]
@@ -102,6 +102,15 @@ default = ["native-tls"]
 native-tls = ["reqwest/default-tls"]
 rustls = ["reqwest/__rustls-aws-lc-rs", "reqwest/system-proxy"]
 axum = ["alibi-core/axum"]
+passkey = [
+    "dep:webauthn-rs",
+    "dep:webauthn-rs-core",
+    "dep:base64urlsafedata",
+    "dep:openssl",
+    "dep:x509-parser",
+    "dep:der-parser",
+    "dep:serde_cbor_2",
+]
 
 [package.metadata.docs.rs]
-features = ["axum"]
+features = ["axum", "passkey"]

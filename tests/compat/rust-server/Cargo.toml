@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-alibi = { path = "../../..", features = ["axum", "seaorm"] }
+alibi = { path = "../../..", features = ["axum", "seaorm", "passkey"] }
 sqlx = { version = "0.9", default-features = false, features = ["sqlite", "chrono", "json", "derive"] }
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
