@@ -1,5 +1,6 @@
 //! Trusted endpoint calls keep logical input separate from an optional HTTP request.
 
+use crate::session::SessionRequest;
 use crate::types::RequestExtensions;
 use crate::utils::LockUnpoisoned;
 use crate::utils::json::JsValue;
@@ -304,7 +305,6 @@ impl EndpointCall {
 
     /// The nested session getter preserves caller input and validates its own query.
     pub(crate) fn session_read_context(&self) -> Self {
-        use crate::session::SessionRequest;
         let mut context = self.clone();
         context.phase = EndpointPhase::Handler;
         if context.path.as_ref().is_none_or(String::is_empty) {

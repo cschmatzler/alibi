@@ -1,3 +1,4 @@
+use crate::AuthAccount;
 use crate::{AuthError, AuthResult, AuthSchema, CreateAccount, UpdateAccount};
 use async_trait::async_trait;
 #[async_trait]
@@ -49,7 +50,6 @@ pub trait AccountStore<S: AuthSchema>: Send + Sync {
         &self,
         user_id: &str,
     ) -> AuthResult<Option<crate::AdapterRecord<S::Account>>> {
-        use crate::AuthAccount;
         self.get_user_accounts(user_id)
             .await?
             .into_iter()

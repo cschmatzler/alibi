@@ -1,3 +1,4 @@
+use crate::AuthAccount;
 use crate::store::{AccountStore, AdapterEvent, PluginStore};
 use crate::{AuthResult, AuthSchema, CreateAccount, UpdateAccount};
 use async_trait::async_trait;
@@ -32,7 +33,6 @@ impl<S: AuthSchema> AccountStore<S> for PluginStore<S> {
         &self,
         user_id: &str,
     ) -> AuthResult<Option<crate::AdapterRecord<S::Account>>> {
-        use crate::AuthAccount;
         let account = self
             .get_user_accounts(user_id)
             .await?

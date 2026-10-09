@@ -1,3 +1,4 @@
+use crate::AuthSession;
 use crate::{AuthError, AuthResult, AuthSchema, CreateSession};
 use async_trait::async_trait;
 use std::collections::BTreeSet;
@@ -125,7 +126,6 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         &self,
         user_id: &str,
     ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
-        use crate::AuthSession;
         let now = chrono::Utc::now();
         self.get_user_sessions(user_id)
             .await?

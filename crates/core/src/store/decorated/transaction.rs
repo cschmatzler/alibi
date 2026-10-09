@@ -1,3 +1,4 @@
+use crate::AuthUser;
 use crate::store::{
     AdapterEvent, BoxedTransactionValue, PluginStore, TransactionStore, TransactionWork,
     UserCreateTransform, UserCreationDefaults, create_data,
@@ -108,7 +109,6 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
         &self,
         user: S::User,
     ) -> AuthResult<crate::AdapterRecord<S::User>> {
-        use crate::AuthUser;
         let verification = self.inner.provider_verification_output(&user.id()).await?;
         let mut record = self
             .record_store

@@ -1,6 +1,7 @@
 use crate::store::{
     AdapterAfterHook, AdapterEvent, SessionCreatedHook, UserCreateTransform, UserCreationDefaults,
 };
+use crate::{AuthAccount, AuthSession, AuthUser};
 use crate::{AuthError, AuthResult, AuthSchema, AuthStore, UpdateUser};
 use std::sync::Arc;
 mod account;
@@ -116,7 +117,6 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         user: S::User,
     ) -> AuthResult<crate::AdapterRecord<S::User>> {
-        use crate::AuthUser;
         let verification = self.inner.provider_verification_output(&user.id()).await?;
         let mut record = self.projection_context.user_adapter_record(user).await?;
         if let Some(value) = verification {
@@ -160,7 +160,6 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         session: S::Session,
     ) -> AuthResult<crate::AdapterRecord<S::Session>> {
-        use crate::AuthSession;
         let absent = self.secondary_absent_fields(session.token()).await?;
         let mut public = serde_json::to_value(crate::SessionView::from(&session))?;
         let mut physical =
@@ -237,7 +236,6 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         account: S::Account,
     ) -> AuthResult<crate::AdapterRecord<S::Account>> {
-        use crate::AuthAccount;
         let serde_json::Value::Object(mut canonical) =
             serde_json::to_value(crate::AccountView::from(&account))?
         else {

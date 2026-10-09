@@ -2,11 +2,12 @@
 use crate::error::{AuthError, AuthResult};
 use sqlparser::{
     ast::{
-        ColumnOption, Ident, ObjectName, ObjectNamePart, Query, Statement, TableConstraint,
-        VisitMut, VisitorMut,
+        AssignmentTarget, ColumnOption, Expr, Ident, ObjectName, ObjectNamePart, Query, Statement,
+        TableConstraint, VisitMut, VisitorMut, visit_relations,
     },
     dialect::{GenericDialect, PostgreSqlDialect},
     parser::Parser,
+    tokenizer::{Token, Tokenizer},
 };
 use std::ops::ControlFlow;
 
@@ -87,7 +88,6 @@ pub fn map_two_factor(
     sql: &str,
     mapping: &crate::config::TwoFactorDatabaseConfig,
 ) -> AuthResult<String> {
-    use sqlparser::ast::{AssignmentTarget, Expr, Statement};
     struct Mapper<'a>(&'a crate::config::TwoFactorDatabaseConfig);
     impl Mapper<'_> {
         fn identifier(&self, identifier: &mut Ident) {
@@ -152,14 +152,17 @@ pub fn map_two_factor(
     }
     // Migration scripts remain in the migrator's DDL path. Tokenize to skip
     // comments safely without trying to parse unrelated SQLite DDL as DML.
-    let tokens = sqlparser::tokenizer::Tokenizer::new(&GenericDialect {}, sql)
+    const DML: [&str; 5] = ["SELECT", "INSERT", "UPDATE", "DELETE", "WITH"];
+    let tokens = Tokenizer::new(&GenericDialect {}, sql)
         .tokenize()
         .map_err(|error| AuthError::internal(format!("Cannot tokenize factor SQL: {error}")))?;
-    let first = tokens
+    let is_dml = tokens
         .iter()
-        .find(|token| !matches!(token, sqlparser::tokenizer::Token::Whitespace(_)));
-    if !matches!(first, Some(sqlparser::tokenizer::Token::Word(word)) if ["SELECT", "INSERT", "UPDATE", "DELETE", "WITH"].contains(&word.value.to_ascii_uppercase().as_str()))
-    {
+        .find(|token| !matches!(token, Token::Whitespace(_)))
+        .is_some_and(|token| {
+            matches!(token, Token::Word(word) if DML.contains(&word.value.to_ascii_uppercase().as_str()))
+        });
+    if !is_dml {
         return Ok(sql.to_owned());
     }
     let mut statements = Parser::parse_sql(&GenericDialect {}, sql)
@@ -176,15 +179,12 @@ pub fn map_two_factor(
             continue;
         }
         let mut target = false;
-        _ =
-            sqlparser::ast::visit_relations(statement, |name| {
-                if name.0.iter().any(
-                    |part| matches!(part,ObjectNamePart::Identifier(id) if id.value=="two_factor"),
-                ) {
-                    target = true;
-                }
-                ControlFlow::<()>::Continue(())
-            });
+        _ = visit_relations(statement, |name| {
+            target |= name.0.iter().any(
+                |part| matches!(part, ObjectNamePart::Identifier(id) if id.value == "two_factor"),
+            );
+            ControlFlow::<()>::Continue(())
+        });
         if target {
             _ = statement.visit(&mut Mapper(mapping));
         }

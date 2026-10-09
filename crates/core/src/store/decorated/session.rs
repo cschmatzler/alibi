@@ -1,5 +1,5 @@
 use crate::store::{AdapterEvent, PluginStore, SessionStore};
-use crate::{AuthError, AuthResult, AuthSchema, CreateSession};
+use crate::{AuthError, AuthResult, AuthSchema, AuthSession, CreateSession};
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
@@ -58,7 +58,6 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         &self,
         user_id: &str,
     ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
-        use crate::AuthSession;
         let now = chrono::Utc::now();
         let models = self
             .get_user_sessions(user_id)
@@ -197,11 +196,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             let sessions = self.ephemeral()?;
             return Ok(sessions
                 .values()
-                .filter(|session| {
-                    tokens
-                        .iter()
-                        .any(|token| token == crate::AuthSession::token(*session))
-                })
+                .filter(|session| tokens.iter().any(|token| token == session.token()))
                 .cloned()
                 .collect());
         }
@@ -221,7 +216,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             return Ok(self
                 .ephemeral()?
                 .values()
-                .filter(|session| crate::AuthSession::user_id(*session).as_ref() == user_id)
+                .filter(|session| session.user_id().as_ref() == user_id)
                 .cloned()
                 .collect());
         }
@@ -290,7 +285,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
         if self.config.session.stateless {
             self.ephemeral()?
-                .retain(|_, session| crate::AuthSession::user_id(session).as_ref() != user_id);
+                .retain(|_, session| session.user_id().as_ref() != user_id);
             return Ok(());
         }
         _ = self.get_user_sessions_record(user_id).await;
@@ -308,8 +303,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         if self.config.session.stateless {
             let mut sessions = self.ephemeral()?;
             let before = sessions.len();
-            sessions
-                .retain(|_, session| crate::AuthSession::expires_at(session) >= chrono::Utc::now());
+            sessions.retain(|_, session| session.expires_at() >= chrono::Utc::now());
             return Ok(before - sessions.len());
         }
         if self.secondary().is_some()
