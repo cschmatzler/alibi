@@ -100,8 +100,8 @@ pub fn normalize_json_date(value: &str) -> Option<String> {
     Some(format!("{year}{}", date.format("-%m-%dT%H:%M:%S%.3fZ")))
 }
 
-/// JavaScript Date JSON at every valid TimeClip millisecond, including dates
-/// outside Chrono's physical model range. Callers must supply a TimeClip value.
+/// JavaScript Date JSON at every valid `TimeClip` millisecond, including dates
+/// outside Chrono's physical model range. Callers must supply a `TimeClip` value.
 #[must_use]
 pub fn json_date_millis(millis: i64) -> String {
     let days = millis.div_euclid(86_400_000);

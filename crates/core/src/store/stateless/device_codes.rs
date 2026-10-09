@@ -1,5 +1,8 @@
 //! Native device grants share the no-database identity lifetime.
-use super::*;
+use crate::store::DeviceCodeStore;
+use crate::store::stateless::StatelessStore;
+use crate::{AuthError, AuthResult, CreateDeviceCode, DeviceCode, UpdateDeviceCode};
+use async_trait::async_trait;
 
 #[async_trait]
 impl DeviceCodeStore for StatelessStore {

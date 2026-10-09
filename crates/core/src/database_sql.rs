@@ -139,7 +139,7 @@ pub fn map_two_factor(
                             AssignmentTarget::ColumnName(name) => self.name(name),
                             AssignmentTarget::Tuple(names) => {
                                 for name in names {
-                                    self.name(name)
+                                    self.name(name);
                                 }
                             }
                         }

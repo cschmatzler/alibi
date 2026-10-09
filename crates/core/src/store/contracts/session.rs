@@ -1,4 +1,6 @@
-use super::*;
+use crate::{AuthError, AuthResult, AuthSchema, CreateSession};
+use async_trait::async_trait;
+use std::collections::BTreeSet;
 #[async_trait]
 pub trait SessionStore<S: AuthSchema>: Send + Sync {
     /// Stage a secondary session through creation hooks and optional physical persistence.

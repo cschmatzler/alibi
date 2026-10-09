@@ -1,4 +1,9 @@
-use super::*;
+use crate::plugin::MetadataMap;
+use crate::{
+    AuthConfig, AuthContext, AuthResult, AuthSchema, AuthStore, ContextExtensions, EmailProvider,
+    VerificationEmailOverride, VerificationEmailOverrideHandle,
+};
+use std::sync::Arc;
 pub struct AuthInitParts {
     pub metadata: MetadataMap,
     pub email_provider: Option<Arc<dyn EmailProvider>>,
@@ -180,12 +185,14 @@ impl<S: AuthSchema> AuthInitContext<S> {
             ),
             self.extensions
                 .get::<crate::field_policy::SessionAdapterFields>()
-                .map(|fields_2| (*fields_2).clone())
-                .unwrap_or_else(|| {
-                    crate::field_policy::SessionAdapterFields(Arc::new(
-                        self.config.session.additional_fields.clone(),
-                    ))
-                }),
+                .map_or_else(
+                    || {
+                        crate::field_policy::SessionAdapterFields(Arc::new(
+                            self.config.session.additional_fields.clone(),
+                        ))
+                    },
+                    |fields_2| (*fields_2).clone(),
+                ),
             AuthContext::with_metadata(
                 Arc::clone(&self.config),
                 Arc::clone(&self.database),

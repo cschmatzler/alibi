@@ -1,4 +1,7 @@
-use super::*;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::ops::Index;
+use std::sync::{Arc, Mutex};
 /// HTTP method enumeration
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HttpMethod {

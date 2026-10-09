@@ -1,4 +1,6 @@
-use super::*;
+use crate::types::UpdatePasskeyAuthentication;
+use crate::{AuthResult, CreatePasskey, Passkey};
+use async_trait::async_trait;
 #[async_trait]
 pub trait PasskeyStore: Send + Sync {
     async fn create_passkey(&self, input: CreatePasskey) -> AuthResult<Passkey>;

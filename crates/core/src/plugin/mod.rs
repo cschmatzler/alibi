@@ -4,15 +4,6 @@ mod extensions;
 mod initialization;
 mod routes;
 
-use crate::config::AuthConfig;
-use crate::email::EmailProvider;
-use crate::entity::AuthSession;
-use crate::error::{AuthError, AuthResult};
-use crate::schema::AuthSchema;
-use crate::session::SessionManager;
-use crate::store::AuthStore;
-use crate::types::{AuthRequest, AuthResponse, HttpMethod};
-use async_trait::async_trait;
 pub use context::AuthContext;
 pub use contracts::AuthPlugin;
 pub use contracts::BeforeRequestAction;
@@ -25,9 +16,7 @@ pub use initialization::AuthInitContext;
 pub use initialization::AuthInitParts;
 pub use routes::AuthRoute;
 pub use routes::ResolvedEndpoint;
-use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::sync::Arc;
 
 type MetadataMap = HashMap<String, serde_json::Value>;
 
@@ -35,8 +24,14 @@ type MetadataMap = HashMap<String, serde_json::Value>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AuthConfig;
+    use crate::AuthRequest;
+    use crate::HttpMethod;
+    use crate::SessionManager;
+    use crate::entity::AuthSession;
     use crate::entity::AuthUser;
     use crate::test_store::test_database;
+    use std::sync::Arc;
 
     // Rust-specific surface: plugin infrastructure helpers and request-dispatch helpers in `crates/core::plugin` are Rust library APIs with no direct TS analogue.
     #[test]

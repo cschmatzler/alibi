@@ -6,8 +6,7 @@ use crate::types::{AuthRequest, AuthResponse};
 use async_trait::async_trait;
 use indexmap::IndexMap;
 use std::collections::{BTreeSet, HashMap};
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// A compiled `per_endpoint` key. Patterns without `*` match exactly.

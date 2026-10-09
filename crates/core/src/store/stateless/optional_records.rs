@@ -3,7 +3,14 @@
 //! Mutations lock only an individual adapter operation, never an entire plugin
 //! workflow or callback. Earlier successful writes survive later failures, and
 //! restarting the store loses every record. Expiry remains the plugin's policy.
-use super::*;
+use crate::store::stateless::StatelessStore;
+use crate::store::{PasskeyStore, TwoFactorStore};
+use crate::types::UpdatePasskeyAuthentication;
+use crate::{
+    AuthError, AuthResult, CreatePasskey, CreateTwoFactor, Passkey, TwoFactor, UpdateTwoFactor,
+};
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 
 /// Mutate an exact stored generation; never recreate a concurrently deleted row.
 fn mutate_record<T: Clone>(

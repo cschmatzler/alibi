@@ -1,4 +1,4 @@
-use super::*;
+use std::sync::Arc;
 #[derive(Debug, Clone, Default)]
 pub struct UserConfig {
     pub additional_fields: crate::field_policy::FieldConfigs,

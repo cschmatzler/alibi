@@ -24,15 +24,12 @@ impl AdapterOutput {
     }
 
     pub(crate) fn insert(&mut self, name: String, value: Option<serde_json::Value>) {
-        match value {
-            Some(value) => {
-                _ = self.undefined_fields.remove(&name);
-                _ = self.values.insert(name, value);
-            }
-            None => {
-                _ = self.values.remove(&name);
-                _ = self.undefined_fields.insert(name);
-            }
+        if let Some(value) = value {
+            _ = self.undefined_fields.remove(&name);
+            _ = self.values.insert(name, value);
+        } else {
+            _ = self.values.remove(&name);
+            _ = self.undefined_fields.insert(name);
         }
     }
 

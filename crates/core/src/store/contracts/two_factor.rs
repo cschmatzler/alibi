@@ -1,4 +1,5 @@
-use super::*;
+use crate::{AuthError, AuthResult, CreateTwoFactor, TwoFactor, UpdateTwoFactor};
+use async_trait::async_trait;
 #[async_trait]
 pub trait TwoFactorStore: Send + Sync {
     async fn create_two_factor(&self, two_factor: CreateTwoFactor) -> AuthResult<TwoFactor>;

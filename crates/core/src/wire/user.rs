@@ -1,4 +1,7 @@
-use super::*;
+use crate::AuthUser;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize, Serializer};
+use std::borrow::Cow;
 /// Public user response shape.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(try_from = "UserViewInput")]

@@ -1,4 +1,6 @@
-use super::*;
+use crate::store::{AccountStore, AdapterEvent, PluginStore};
+use crate::{AuthResult, AuthSchema, CreateAccount, UpdateAccount};
+use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> AccountStore<S> for PluginStore<S> {
     async fn provider_token_text(&self, value: &serde_json::Value) -> AuthResult<Option<String>> {

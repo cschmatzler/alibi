@@ -1,4 +1,16 @@
-use super::*;
+use crate::store::stateless::{StatelessSchema, StatelessStore};
+use crate::store::{
+    AccountStore, BoxedTransactionValue, MemberStore, SessionStore, TeamStore, TransactionStore,
+    TransactionWork, UserStore,
+};
+use crate::types::AddTeamMemberResult;
+use crate::user_validation::PreparedUserCreation;
+use crate::{
+    AccountView, AuthError, AuthResult, AuthTransaction, CreateAccount, CreateMember,
+    CreateSession, CreateUser, Member, SessionView, Team, UserView,
+};
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 
 /// Reconcile only transaction-owned changes. Concurrent untouched rows survive;
 /// a changed row wins last, as in the published memory adapter. This is not
@@ -35,7 +47,7 @@ impl TransactionStore<StatelessSchema> for StatelessStore {
         let base = self.organization_state()?.clone();
         let tx = OrganizationTransaction {
             live: self,
-            snapshot: StatelessStore {
+            snapshot: Self {
                 organizations: std::sync::Mutex::new(base.clone()),
                 ..Self::with_find_many_limit(self.find_many_limit)
             },

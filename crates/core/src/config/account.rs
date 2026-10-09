@@ -1,4 +1,4 @@
-use super::*;
+use crate::config::TrustedProvidersResolver;
 /// Account-level configuration: linking, token encryption, sign-in behavior.
 #[derive(Debug, Clone)]
 #[expect(
@@ -16,7 +16,7 @@ pub struct AccountConfig {
     /// Store account data in an account cookie for OAuth-backed access token flows.
     pub store_account_cookie: bool,
     /// Override the account cookie lifetime in seconds, including fractional
-    /// and nonfinite values. Equivalent to the published account_data cookie's
+    /// and nonfinite values. Equivalent to the published `account_data` cookie's
     /// maxAge attribute; takes precedence over the integer advanced override.
     /// None inherits the session cache lifetime (or 300 seconds).
     pub cookie_max_age: Option<f64>,

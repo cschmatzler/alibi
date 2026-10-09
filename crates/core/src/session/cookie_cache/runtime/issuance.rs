@@ -1,4 +1,12 @@
-use super::*;
+use crate::session::cookie_cache::runtime::{
+    IssuancePreference, PendingIssuance, PublishedSessionSnapshot, browser_preference,
+    chunked_cookie_headers, record_publication,
+};
+use crate::types::RequestExtensions;
+use crate::utils::cookie_utils::{related_cookie_name, sign_cookie_value};
+use crate::{
+    AuthContext, AuthError, AuthResult, AuthSchema, AuthSession, AuthUser, CacheVersionContext,
+};
 /// Build cache cookies from the actual stored models and their public output.
 pub async fn stored_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
     ctx: &AuthContext<S>,
@@ -213,7 +221,7 @@ pub(in crate::session::cookie_cache::runtime) async fn emit_snapshot_inner<S: Au
             .unwrap_or_default()
     };
     let dont_remember = extensions
-        .and_then(|extensions| extensions.get::<IssuancePreference>())
+        .and_then(crate::types::RequestExtensions::get::<IssuancePreference>)
         .map_or_else(
             || browser_preference(&headers, &ctx.config),
             |value| value.0,

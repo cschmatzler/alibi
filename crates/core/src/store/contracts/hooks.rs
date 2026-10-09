@@ -1,4 +1,5 @@
-use super::*;
+use crate::{AuthResult, AuthSchema, AuthStore, CreateUser};
+use async_trait::async_trait;
 
 /// Registered model defaults applied by an adapter after its creation hooks.
 /// Keeping this phase separate preserves a validation candidate's absent fields.

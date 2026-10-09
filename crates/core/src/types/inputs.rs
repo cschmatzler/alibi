@@ -1,4 +1,7 @@
-use super::*;
+use crate::utils::normalize_user_email;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use validator::Validate;
 /// User creation data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateUser {

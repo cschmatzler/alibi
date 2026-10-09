@@ -48,23 +48,7 @@ mod jwks;
 
 mod wallets;
 
-use crate::error::{AuthError, AuthResult};
 use crate::schema::AuthSchema;
-use crate::types::{
-    AddTeamMemberResult, CreateJwk, CreateOrganizationRole, CreateTeam, CreateWalletAddress, Jwk,
-    OrganizationRole, OrganizationRoleSelector, Team, TeamMember, UpdateOrganizationRole,
-    UpdateTeam, WalletAddress,
-};
-use crate::types::{
-    ApiKey, CreateAccount, CreateApiKey, CreateDeviceCode, CreateInvitation, CreateMember,
-    CreateOrganization, CreatePasskey, CreateSession, CreateTwoFactor, CreateUser,
-    CreateVerification, DeviceCode, Invitation, InvitationStatus, ListUsersParams, Member,
-    Organization, Passkey, TwoFactor, UpdateAccount, UpdateApiKey, UpdateDeviceCode,
-    UpdateOrganization, UpdatePasskeyAuthentication, UpdateTwoFactor, UpdateUser,
-};
-use crate::user_validation::{PreparedUserCreation, UserValidationSource, prepare_creation};
-use crate::verification::{VerificationCreation, VerificationPublication, VerificationSnapshot};
-use async_trait::async_trait;
 pub use database_hooks::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
 pub use jwks::JwkStore;
 pub use migrations::SchemaMigrator;
@@ -72,7 +56,6 @@ pub use org_extensions::{OrganizationRoleStore, TeamStore, team_membership_key};
 #[cfg(feature = "redis-cache")]
 pub use secondary_storage::RedisAdapter;
 pub use secondary_storage::{CacheAdapter, MemoryCacheAdapter};
-use std::sync::Arc;
 pub use wallets::WalletAddressStore;
 
 pub trait AuthStore<S: AuthSchema>:

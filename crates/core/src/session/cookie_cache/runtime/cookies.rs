@@ -1,4 +1,6 @@
-use super::*;
+use crate::utils::cookie_utils::{related_cookie_name, verify_cookie_value};
+use crate::{AuthError, AuthResult};
+use indexmap::IndexMap;
 // Better Call reads the first base cookie. Better Auth's session-store reader
 // uses the last valid duplicate for chunks, with its stricter octet grammar.
 pub(in crate::session::cookie_cache::runtime) fn cookies<H: std::hash::BuildHasher + Sync>(
@@ -42,7 +44,7 @@ pub(in crate::session::cookie_cache::runtime) fn cookie_values<H: std::hash::Bui
             }
             let decoded = percent_encoding::percent_decode_str(value)
                 .decode_utf8()
-                .map_or_else(|_| value.to_owned(), |decoded| decoded.into_owned());
+                .map_or_else(|_| value.to_owned(), std::borrow::Cow::into_owned);
             if chunks {
                 _ = values.insert(name.to_owned(), decoded);
             } else {

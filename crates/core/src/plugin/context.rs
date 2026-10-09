@@ -1,4 +1,9 @@
-use super::*;
+use crate::plugin::MetadataMap;
+use crate::{
+    AuthConfig, AuthError, AuthRequest, AuthResult, AuthSchema, AuthSession, AuthStore,
+    ContextExtensions, EmailProvider, SessionManager, VerificationEmailOverrideHandle,
+};
+use std::sync::Arc;
 /// Context passed to plugin methods.
 pub struct AuthContext<S: AuthSchema> {
     pub config: Arc<AuthConfig>,
@@ -234,8 +239,7 @@ impl<S: AuthSchema> AuthContext<S> {
         let physical = user.additional_fields();
         let values = user
             .adapter_snapshot()
-            .map(crate::AdapterOutput::values)
-            .unwrap_or(&physical);
+            .map_or(&physical, crate::AdapterOutput::values);
         for (name, field) in fields {
             _ = view.extension_fields.remove(name);
             if (!public || field.returned)
@@ -365,8 +369,7 @@ impl<S: AuthSchema> AuthContext<S> {
         let physical = account.additional_fields();
         let values = account
             .adapter_snapshot()
-            .map(crate::AdapterOutput::values)
-            .unwrap_or(&physical);
+            .map_or(&physical, crate::AdapterOutput::values);
         for (name, field) in fields {
             _ = view.remove(name);
             if field.returned

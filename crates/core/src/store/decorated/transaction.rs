@@ -1,4 +1,16 @@
-use super::*;
+use crate::store::{
+    AdapterEvent, BoxedTransactionValue, PluginStore, TransactionStore, TransactionWork,
+    UserCreateTransform, UserCreationDefaults, create_data,
+};
+use crate::types::AddTeamMemberResult;
+use crate::user_validation::{PreparedUserCreation, UserValidationSource, prepare_creation};
+use crate::verification::{VerificationCreation, VerificationPublication, VerificationSnapshot};
+use crate::{
+    AuthError, AuthResult, AuthSchema, AuthTransaction, CreateAccount, CreateJwk, CreateMember,
+    CreatePasskey, CreateSession, CreateUser, CreateVerification, Jwk, Member, Passkey, Team,
+};
+use async_trait::async_trait;
+use std::sync::Arc;
 pub(in crate::store) struct PluginTransaction<'a, S: AuthSchema> {
     pub(in crate::store) inner: &'a dyn AuthTransaction<S>,
     pub(in crate::store) config: Arc<crate::AuthConfig>,

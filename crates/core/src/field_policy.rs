@@ -371,7 +371,7 @@ impl FieldConfig {
     }
 
     /// A Promise-style validator is invoked but rejected by endpoint parsing,
-    /// matching the published ASYNC_VALIDATION_NOT_SUPPORTED contract.
+    /// matching the published `ASYNC_VALIDATION_NOT_SUPPORTED` contract.
     #[must_use]
     pub fn validate_async<F, Fut>(mut self, validate: F) -> Self
     where

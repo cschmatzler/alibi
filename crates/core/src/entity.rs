@@ -10,8 +10,7 @@
 
 use crate::types::InvitationStatus;
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
 /// Conversion between an application timestamp field and the auth UTC clock.
@@ -39,7 +38,7 @@ impl AuthTimestamp for chrono::NaiveDateTime {
 
 impl<Tz: chrono::TimeZone> AuthTimestamp for DateTime<Tz>
 where
-    DateTime<Tz>: From<DateTime<Utc>>,
+    Self: From<DateTime<Utc>>,
 {
     type UtcValue = DateTime<Utc>;
     fn from_utc(value: Self::UtcValue) -> Self {

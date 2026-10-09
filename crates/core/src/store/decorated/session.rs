@@ -1,4 +1,6 @@
-use super::*;
+use crate::store::{AdapterEvent, PluginStore, SessionStore};
+use crate::{AuthError, AuthResult, AuthSchema, CreateSession};
+use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn get_session_user_record(

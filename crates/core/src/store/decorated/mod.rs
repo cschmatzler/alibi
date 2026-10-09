@@ -1,4 +1,8 @@
-use super::*;
+use crate::store::{
+    AdapterAfterHook, AdapterEvent, SessionCreatedHook, UserCreateTransform, UserCreationDefaults,
+};
+use crate::{AuthError, AuthResult, AuthSchema, AuthStore, UpdateUser};
+use std::sync::Arc;
 mod account;
 mod extensions;
 mod session;
@@ -87,15 +91,17 @@ impl<S: AuthSchema> PluginStore<S> {
         self.projection_context
             .extensions
             .get::<crate::field_policy::AdapterFieldPolicies>()
-            .map(|fields| (*fields).clone())
-            .unwrap_or_else(|| crate::field_policy::AdapterFieldPolicies {
-                user: crate::field_policy::SessionAdapterFields(Arc::new(
-                    self.config.user.additional_fields.clone(),
-                )),
-                account: crate::field_policy::SessionAdapterFields(Arc::new(
-                    self.config.account.additional_fields.clone(),
-                )),
-            })
+            .map_or_else(
+                || crate::field_policy::AdapterFieldPolicies {
+                    user: crate::field_policy::SessionAdapterFields(Arc::new(
+                        self.config.user.additional_fields.clone(),
+                    )),
+                    account: crate::field_policy::SessionAdapterFields(Arc::new(
+                        self.config.account.additional_fields.clone(),
+                    )),
+                },
+                |fields| (*fields).clone(),
+            )
     }
 
     pub(in crate::store) async fn user_record(

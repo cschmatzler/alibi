@@ -1,4 +1,6 @@
-use super::*;
+use std::any::{Any, TypeId};
+use std::collections::HashMap;
+use std::sync::Arc;
 /// Typed settings and callbacks published during plugin initialization.
 ///
 /// Registration is complete before requests begin; readers share immutable

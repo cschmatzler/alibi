@@ -1,4 +1,5 @@
-use super::*;
+use crate::{AuthError, AuthResult, AuthSchema, CreateAccount, UpdateAccount};
+use async_trait::async_trait;
 #[async_trait]
 pub trait AccountStore<S: AuthSchema>: Send + Sync {
     /// Apply the physical token TEXT column's scalar affinity before persistence.

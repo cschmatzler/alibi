@@ -1,6 +1,11 @@
 //! Instance-local API-key rows. Each Source write phase locks independently.
-use super::*;
-use crate::ApiKeyStartText;
+use crate::store::ApiKeyStore;
+use crate::store::stateless::StatelessStore;
+use crate::{
+    ApiKey, ApiKeyStartText, AuthError, AuthResult, ConsumeApiKeyResult, CreateApiKey, UpdateApiKey,
+};
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 
 #[async_trait]
 impl ApiKeyStore for StatelessStore {
@@ -266,7 +271,7 @@ fn consume_rate(
     match elapsed {
         None if current_previous.is_none() => current.request_count = Some(1.0),
         Some(elapsed) if elapsed > window && guard.is_some_and(|last| last <= window_start) => {
-            current.request_count = Some(1.0)
+            current.request_count = Some(1.0);
         }
         Some(elapsed) if elapsed <= window => {
             if observed.request_count.unwrap_or(0.0) >= max {

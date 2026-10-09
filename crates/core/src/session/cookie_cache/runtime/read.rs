@@ -1,4 +1,14 @@
-use super::*;
+use crate::entity::AuthSession;
+use crate::session::SessionRequest;
+use crate::session::cookie_cache::CacheValidation;
+use crate::session::cookie_cache::runtime::{
+    AuthenticatedRead, EstablishedSession, SessionHookCache, SessionHookCacheMetadata,
+    build_headers, cache_value, cookie_values, cookies, emit_issuance, establish, existing_names,
+    session_cleanup_headers, stored_read_headers,
+};
+use crate::utils::cookie_utils::{related_cookie_name, sign_cookie_value};
+use crate::{AuthContext, AuthError, AuthResult, AuthSchema, CacheVersionContext};
+use std::sync::Arc;
 /// Try the authenticated compact cache before any physical session lookup.
 /// Missing or invalid cache data can only produce a storage fallback.
 pub async fn read<S: AuthSchema>(
@@ -347,7 +357,7 @@ pub(in crate::session::cookie_cache::runtime) fn cleanup<S: AuthSchema>(
     request: &impl SessionRequest,
 ) -> AuthResult<()> {
     let cache_name = related_cookie_name(&ctx.config, "session_data");
-    let mut names = vec![ctx.config.session.cookie_name.clone(), cache_name.clone()];
+    let mut names = vec![ctx.config.session.cookie_name.clone(), cache_name];
     if ctx.config.account.store_account_cookie {
         names.push(related_cookie_name(&ctx.config, "account_data"));
     }

@@ -1,4 +1,6 @@
-use super::*;
+use crate::verification::{VerificationCreation, VerificationPublication, VerificationSnapshot};
+use crate::{AuthError, AuthResult, AuthSchema, CreateVerification};
+use async_trait::async_trait;
 #[async_trait]
 pub trait VerificationStore<S: AuthSchema>: Send + Sync {
     /// Create through before hooks, optional physical persistence, secondary

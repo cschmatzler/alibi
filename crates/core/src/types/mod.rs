@@ -1,43 +1,17 @@
 mod http;
 mod inputs;
-mod responses;
-
-pub use http::AuthRequest;
-pub use http::AuthResponse;
-pub use http::Headers;
-pub use http::HttpMethod;
-pub use http::MultipartFile;
-pub use http::MultipartFiles;
-pub use http::ParsedRequestBody;
-pub use http::RequestExtensions;
-pub use http::RequestMeta;
-pub use inputs::CreateAccount;
-pub use inputs::CreateSession;
-pub use inputs::CreateUser;
-pub use inputs::CreateVerification;
-pub use inputs::ListUsersParams;
-pub use inputs::UpdateAccount;
-pub use inputs::UpdateUser;
-pub use inputs::UpdateUserRequest;
-pub use inputs::UpdateUserResponse;
-pub use inputs::UpdateVerification;
-pub use inputs::UserFilterValue;
-pub use responses::CodeMessageResponse;
-pub use responses::ErrorCodeMessageResponse;
-pub use responses::ErrorMessageResponse;
-pub use responses::HealthCheckResponse;
-pub use responses::OkResponse;
-pub use responses::RateLimitErrorResponse;
-pub use responses::StatusMessageResponse;
-pub use responses::StatusResponse;
-pub use responses::SuccessMessageResponse;
-pub use responses::SuccessResponse;
-pub use responses::ValidationErrorResponse;
 mod organization;
 mod plugin;
-// Re-export organization types
-use crate::utils::normalize_user_email;
-use chrono::{DateTime, Utc};
+mod responses;
+
+pub use http::{
+    AuthRequest, AuthResponse, Headers, HttpMethod, MultipartFile, MultipartFiles,
+    ParsedRequestBody, RequestExtensions, RequestMeta,
+};
+pub use inputs::{
+    CreateAccount, CreateSession, CreateUser, CreateVerification, ListUsersParams, UpdateAccount,
+    UpdateUser, UpdateUserRequest, UpdateUserResponse, UpdateVerification, UserFilterValue,
+};
 pub use organization::{
     AddTeamMemberResult, CreateInvitation, CreateMember, CreateOrganization,
     CreateOrganizationRole, CreateTeam, Invitation, InvitationStatus, Member, Organization,
@@ -51,16 +25,19 @@ pub use plugin::{
     UpdateApiKey, UpdateDeviceCode, UpdatePasskey, UpdatePasskeyAuthentication, UpdateTwoFactor,
     WalletAddress,
 };
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::ops::Index;
-use std::sync::{Arc, Mutex};
-use validator::Validate;
+pub use responses::{
+    CodeMessageResponse, ErrorCodeMessageResponse, ErrorMessageResponse, HealthCheckResponse,
+    OkResponse, RateLimitErrorResponse, StatusMessageResponse, StatusResponse,
+    SuccessMessageResponse, SuccessResponse, ValidationErrorResponse,
+};
 
 // LCOV_EXCL_START
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
+    use serde::Serialize;
+    use std::collections::HashMap;
 
     // Rust-specific surface: Rust request/response/type helpers are public library behavior with no direct TS analogue.
     #[test]

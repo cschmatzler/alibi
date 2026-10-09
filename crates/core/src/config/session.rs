@@ -1,4 +1,6 @@
-use super::*;
+use crate::SameSite;
+use chrono::Duration;
+use std::sync::Arc;
 /// Session-specific configuration
 #[derive(Clone)]
 #[expect(

@@ -1,4 +1,8 @@
-use super::*;
+use crate::store::SessionStore;
+use crate::store::stateless::{StatelessSchema, StatelessStore};
+use crate::{AuthError, AuthResult, CreateSession, SessionView};
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 #[async_trait]
 impl SessionStore<StatelessSchema> for StatelessStore {
     async fn prepare_secondary_session_creation(
@@ -53,7 +57,7 @@ impl SessionStore<StatelessSchema> for StatelessStore {
         for (key, value) in &fields {
             match key.as_str() {
                 "activeOrganizationId" => {
-                    session.active_organization_id = value.as_str().map(str::to_owned)
+                    session.active_organization_id = value.as_str().map(str::to_owned);
                 }
                 "activeTeamId" => session.active_team_id = value.as_str().map(str::to_owned),
                 "impersonatedBy" => session.impersonated_by = value.as_str().map(str::to_owned),
