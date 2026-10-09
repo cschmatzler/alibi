@@ -1,7 +1,7 @@
 pub mod bucket;
 
 use super::Middleware;
-use crate::error::AuthResult;
+use crate::error::{AuthError, AuthResult};
 use crate::types::{AuthRequest, AuthResponse};
 use async_trait::async_trait;
 use indexmap::IndexMap;
@@ -29,9 +29,7 @@ impl PathPattern {
         match self {
             Self::Exact => Ok(pattern == path),
             Self::Glob(compiled) => Ok(compiled.is_match(path)),
-            Self::Invalid => Err(crate::error::AuthError::internal(
-                "Invalid rate-limit path pattern",
-            )),
+            Self::Invalid => Err(AuthError::internal("Invalid rate-limit path pattern")),
         }
     }
 }
@@ -80,7 +78,7 @@ impl MemoryRateLimitStorage {
         let mut state = self
             .state
             .lock()
-            .map_err(|_| crate::error::AuthError::internal("Rate-limit lock poisoned"))?;
+            .map_err(|_| AuthError::internal("Rate-limit lock poisoned"))?;
         while state
             .expirations
             .first()
@@ -174,17 +172,12 @@ impl CacheRateLimitStorage {
 impl RateLimitStorage for CacheRateLimitStorage {
     async fn consume(&self, key: &str, rule: &EndpointRateLimit) -> AuthResult<RateLimitDecision> {
         let ttl = Duration::try_from_secs_f64(rule.window_seconds)
-            .map_err(|_| crate::error::AuthError::internal("Invalid shared rate-limit window"))?;
+            .map_err(|_| AuthError::internal("Invalid shared rate-limit window"))?;
         let count = self
             .cache
             .increment(key, ttl)
             .await
-            .map_err(|error| match error {
-                error @ (crate::AuthError::Api { .. }
-                | crate::AuthError::Upstream { .. }
-                | crate::AuthError::CallbackFailure(_)) => error,
-                error => crate::AuthError::CallbackFailure(Box::new(error)),
-            })?;
+            .map_err(AuthError::into_callback_failure)?;
         Ok(if count <= rule.max_requests {
             RateLimitDecision::Allowed
         } else {

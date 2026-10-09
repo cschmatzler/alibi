@@ -10,10 +10,7 @@ mod user;
 mod verification;
 
 pub use account::AccountView;
-pub use plugins::ApiKeyView;
-pub use plugins::InvitationView;
-pub use plugins::OrganizationView;
-pub use plugins::PasskeyView;
+pub use plugins::{ApiKeyView, InvitationView, OrganizationView, PasskeyView};
 pub use session::SessionView;
 pub use user::UserView;
 pub use verification::VerificationView;

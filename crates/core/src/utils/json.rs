@@ -93,6 +93,17 @@ impl JsValue {
     pub fn get(&self, key: &str) -> Option<&Self> {
         self.as_object()?.get(key)
     }
+    /// JavaScript truthiness.
+    #[must_use]
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            Self::Null => false,
+            Self::Bool(value) => *value,
+            Self::Number(value) => *value != 0.0 && !value.is_nan(),
+            Self::String(value) => !value.is_empty(),
+            Self::Array(_) | Self::Object(_) => true,
+        }
+    }
     #[must_use]
     pub const fn is_null(&self) -> bool {
         matches!(self, Self::Null)

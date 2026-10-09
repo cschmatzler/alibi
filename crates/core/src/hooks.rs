@@ -108,13 +108,7 @@ impl CallbackContext {
                 .cloned(),
             request_hook,
             endpoint,
-            context: std::sync::Arc::new(crate::AuthContext::<S> {
-                config: context.config.clone(),
-                database: context.database.clone(),
-                email_provider: context.email_provider.clone(),
-                metadata: context.metadata.clone(),
-                extensions: context.extensions.clone(),
-            }),
+            context: std::sync::Arc::new(context.clone()),
         }
     }
 

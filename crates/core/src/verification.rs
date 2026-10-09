@@ -226,7 +226,7 @@ impl VerificationSnapshot {
     }
     fn cached(raw: &str) -> Option<Self> {
         let mut data = json::parse_value(raw).ok()?;
-        if !truthy(&data) {
+        if !data.is_truthy() {
             return None;
         }
         let expiry = data
@@ -534,15 +534,6 @@ fn date_json(date: DateTime<Utc>) -> String {
 }
 fn key(identifier: &str) -> String {
     format!("verification:{identifier}")
-}
-fn truthy(value: &JsValue) -> bool {
-    match value {
-        JsValue::Null => false,
-        JsValue::Bool(value) => *value,
-        JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
-        JsValue::String(value) => !value.is_empty(),
-        JsValue::Array(_) | JsValue::Object(_) => true,
-    }
 }
 fn number(value: Option<&JsValue>) -> f64 {
     match value {

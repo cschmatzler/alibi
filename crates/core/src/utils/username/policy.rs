@@ -120,15 +120,19 @@ impl UsernameConfig {
         match &self.normalization {
             UsernameNormalization::Lowercase => Ok(value.to_lowercase()),
             UsernameNormalization::Preserve => Ok(value.to_owned()),
-            UsernameNormalization::Custom(normalizer) => {
-                normalizer.normalize(value).map_err(callback_error)
-            }
+            UsernameNormalization::Custom(normalizer) => normalizer
+                .normalize(value)
+                .map_err(AuthError::into_callback_failure),
         }
     }
     pub fn normalize_display(&self, value: &str) -> AuthResult<String> {
         self.display_normalizer.as_ref().map_or_else(
             || Ok(value.to_owned()),
-            |normalizer| normalizer.normalize(value).map_err(callback_error),
+            |normalizer| {
+                normalizer
+                    .normalize(value)
+                    .map_err(AuthError::into_callback_failure)
+            },
         )
     }
     pub async fn value_error(&self, value: &str) -> AuthResult<Option<UsernameValidationError>> {
@@ -150,7 +154,10 @@ impl UsernameConfig {
             return Ok(Some(UsernameValidationError::TooLong));
         }
         let valid = if let Some(validator) = &self.validator {
-            validator.validate(value).await.map_err(callback_error)?
+            validator
+                .validate(value)
+                .await
+                .map_err(AuthError::into_callback_failure)?
         } else {
             super::valid_default_characters(value)
         };
@@ -183,7 +190,11 @@ impl UsernameConfig {
             } else {
                 value
             };
-            if !validator.validate(input).await.map_err(callback_error)? {
+            if !validator
+                .validate(input)
+                .await
+                .map_err(AuthError::into_callback_failure)?
+            {
                 return Err(AuthError::Upstream {
                     status: 400,
                     code: "INVALID_DISPLAY_USERNAME",
@@ -265,12 +276,5 @@ impl UsernameConfig {
             *display = None;
         }
         Ok(())
-    }
-}
-
-fn callback_error(error: AuthError) -> AuthError {
-    match error {
-        AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => error,
-        error => AuthError::CallbackFailure(Box::new(error)),
     }
 }

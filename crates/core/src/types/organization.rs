@@ -65,10 +65,10 @@ impl From<String> for InvitationStatus {
 impl std::fmt::Display for InvitationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Pending => write!(f, "pending"),
-            Self::Accepted => write!(f, "accepted"),
-            Self::Rejected => write!(f, "rejected"),
-            Self::Canceled => write!(f, "canceled"),
+            Self::Pending => f.write_str("pending"),
+            Self::Accepted => f.write_str("accepted"),
+            Self::Rejected => f.write_str("rejected"),
+            Self::Canceled => f.write_str("canceled"),
         }
     }
 }

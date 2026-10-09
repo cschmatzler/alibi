@@ -171,6 +171,15 @@ impl AuthError {
         }
     }
 
+    /// Mark an ordinary application callback failure, whose HTTP contract is an
+    /// empty 500. Explicit API errors keep their own public response.
+    pub(crate) fn into_callback_failure(self) -> Self {
+        match self {
+            Self::Api { .. } | Self::Upstream { .. } | Self::CallbackFailure(_) => self,
+            other => Self::CallbackFailure(Box::new(other)),
+        }
+    }
+
     /// Resolve the wire error code for a message, if upstream defines one.
     ///
     /// better-auth 1.5 replaced message-derived codes with explicit constants,

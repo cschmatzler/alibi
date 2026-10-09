@@ -22,6 +22,18 @@ fn insert_null(fields: &mut BTreeMap<String, serde_json::Value>, name: &str) {
     _ = fields.insert(name.to_owned(), serde_json::Value::Null);
 }
 
+impl<S: AuthSchema> Clone for AuthContext<S> {
+    fn clone(&self) -> Self {
+        Self {
+            config: Arc::clone(&self.config),
+            database: Arc::clone(&self.database),
+            email_provider: self.email_provider.clone(),
+            metadata: self.metadata.clone(),
+            extensions: self.extensions.clone(),
+        }
+    }
+}
+
 impl<S: AuthSchema> AuthContext<S> {
     /// Parse configured user fields at the endpoint boundary before creation
     /// validation or adapter hooks. Unknown fields are ignored by this policy.

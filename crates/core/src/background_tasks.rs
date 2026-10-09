@@ -28,16 +28,9 @@ pub async fn start_background_task(
 ) -> AuthResult<BackgroundTaskCompletion> {
     use tracing::{Instrument, instrument::WithSubscriber};
     let request_context = crate::hooks::current_request_hook_context();
-    let work = async move {
-        match request_context {
-            Some(context) => {
-                crate::hooks::with_request_hook_context_value(context, operation).await
-            }
-            None => operation.await,
-        }
-    }
-    .instrument(tracing::Span::current())
-    .with_current_subscriber();
+    let work = crate::hooks::with_optional_request_hook_context(request_context, operation)
+        .instrument(tracing::Span::current())
+        .with_current_subscriber();
     let mut work: BackgroundTaskCompletion = Box::pin(work);
     match std::future::poll_fn(|context| std::task::Poll::Ready(work.as_mut().poll(context))).await
     {
