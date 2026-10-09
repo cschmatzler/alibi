@@ -1,3 +1,4 @@
+use super::endpoint::merge_headers;
 use super::http_hooks::apply_http_endpoint_input;
 use super::{
     Arc, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
@@ -105,7 +106,7 @@ impl<S: AuthSchema> BetterAuth<S> {
                     run_after_hooks = false;
                 }
                 let mut nested_headers = req.take_response_headers();
-                merge_response_headers(&mut nested_headers, response.headers);
+                merge_headers(&mut nested_headers, response.headers);
                 for header in cache_headers {
                     nested_headers.append("Set-Cookie", header);
                 }
@@ -177,7 +178,7 @@ impl<S: AuthSchema> BetterAuth<S> {
                             rejected
                         }
                     };
-                    merge_response_headers(&mut response.headers, req.take_response_headers());
+                    merge_headers(&mut response.headers, req.take_response_headers());
                 }
                 let mut response = middleware::run_after(&self.middlewares, &req, response).await?;
                 for plugin in &self.plugins {
@@ -474,20 +475,6 @@ fn unwrap_callback_failure(error: AuthError) -> AuthError {
     match error {
         AuthError::CallbackFailure(cause) => *cause,
         error => error,
-    }
-}
-
-/// Fold `source` into `target`: cookies accumulate, other headers replace.
-fn merge_response_headers(
-    target: &mut alibi_core::Headers,
-    source: impl IntoIterator<Item = (String, String)>,
-) {
-    for (name, value) in source {
-        if name.eq_ignore_ascii_case("set-cookie") {
-            target.append(name, value);
-        } else {
-            _ = target.insert(name, value);
-        }
     }
 }
 

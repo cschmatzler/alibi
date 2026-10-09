@@ -6,6 +6,9 @@ use alibi_core::endpoint::{
 };
 use alibi_core::{AuthError, AuthSchema, Headers};
 
+const HOOK_MATCHER_FAILURE: &str =
+    "An error occurred during hook matcher execution. Check the logs for more details.";
+
 impl<S: AuthSchema> BetterAuth<S> {
     /// Dispatch a trusted operation through configured hooks and its installed plugin.
     ///
@@ -62,9 +65,17 @@ impl<S: AuthSchema> BetterAuth<S> {
         let mut before_headers = Headers::new();
         let mut outer = call.clone();
         for hook in &hooks {
-            let matched = with_endpoint_call_context(call.clone(), async { hook.matches_before(&call, &self.context) }).await.map_err(|error| {
+            let matched = with_endpoint_call_context(call.clone(), async {
+                hook.matches_before(&call, &self.context)
+            })
+            .await
+            .map_err(|error| {
                 tracing::error!(%error, "Endpoint before-hook matcher failed");
-                AuthError::Api { status: 500, code: None, message: "An error occurred during hook matcher execution. Check the logs for more details.".into() }
+                AuthError::Api {
+                    status: 500,
+                    code: None,
+                    message: HOOK_MATCHER_FAILURE.into(),
+                }
             })?;
             if !matched {
                 continue;
