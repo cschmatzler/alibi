@@ -1,4 +1,18 @@
-use super::*;
+use super::DEVICE_STATUS_PENDING;
+use super::DeviceAuthorizationPlugin;
+use super::INVALID_CLIENT_ID;
+use super::build_verification_uris;
+use super::device_callback_error;
+use super::device_error_response;
+use super::duration_seconds_floor;
+use super::is_unique_constraint_error;
+use super::types::DeviceCodeRequest;
+use super::types::DeviceCodeResponse;
+use alibi_core::AuthContext;
+use alibi_core::AuthResponse;
+use alibi_core::AuthResult;
+use alibi_core::CreateDeviceCode;
+use chrono::Utc;
 impl DeviceAuthorizationPlugin {
     pub(in crate::device_authorization) async fn issue_device_code(
         &self,

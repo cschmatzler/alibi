@@ -1,4 +1,33 @@
-use super::*;
+use super::AUTHENTICATION_REQUIRED;
+use super::DEVICE_CODE_ALREADY_PROCESSED;
+use super::DEVICE_CODE_NOT_CLAIMED;
+use super::DEVICE_STATUS_PENDING;
+use super::DeviceAuthorizationPlugin;
+use super::DeviceDecision;
+use super::DeviceGrantRecord;
+use super::DeviceRequestKind;
+use super::EXPIRED_USER_CODE;
+use super::INVALID_REQUEST;
+use super::INVALID_USER_CODE;
+use super::deserialize_device_body;
+use super::device_error_response;
+use super::find_device_code_by_user_code;
+use super::parse_device_body;
+use super::set_device_no_store_headers;
+use super::types::DeviceActionRequest;
+use super::types::DeviceActionResponse;
+use super::types::DeviceCodeRequest;
+use super::types::DeviceTokenRequest;
+use super::types::DeviceVerifyResponse;
+use super::validate_device_media;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
+use alibi_core::AuthRequest;
+use alibi_core::AuthResponse;
+use alibi_core::AuthResult;
+use alibi_core::UpdateDeviceCode;
+use alibi_core::entity::AuthUser;
+use chrono::Utc;
 impl DeviceAuthorizationPlugin {
     pub(in crate::device_authorization) async fn handle_device_code(
         &self,

@@ -97,7 +97,7 @@ pub async fn set_password<S: AuthSchema>(
         _ = context
             .database
             .create_account_record(CreateAccount {
-                additional_fields: Default::default(),
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
                 user_id: user.id().into_owned(),
                 account_id: user.id().into_owned(),
                 provider_id: "credential".to_owned(),

@@ -415,12 +415,9 @@ impl SessionManagementPlugin {
                 message: "Session is not fresh",
             });
         }
-        let mut sessions = match list_sessions_core(user.id(), ctx).await {
-            Ok(sessions) => sessions,
-            Err(_) => {
-                tracing::error!("Session listing failed");
-                return Ok(AuthResponse::new(500).with_header("content-type", "application/json"));
-            }
+        let Ok(mut sessions) = list_sessions_core(user.id(), ctx).await else {
+            tracing::error!("Session listing failed");
+            return Ok(AuthResponse::new(500).with_header("content-type", "application/json"));
         };
         if admin_plugin_enabled(ctx) {
             sessions.retain(|session_2| session_2.impersonated_by.is_none());
@@ -587,6 +584,10 @@ pub(crate) async fn revoke_other_sessions_core(
     Ok(StatusResponse { status: true })
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "used by value as a `map_err` callback"
+)]
 fn revocation_storage_error(error: AuthError) -> AuthError {
     tracing::error!(error = %error, "Session revocation failed");
     AuthError::Upstream {

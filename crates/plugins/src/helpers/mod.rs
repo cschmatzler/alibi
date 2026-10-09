@@ -5,8 +5,7 @@ mod api_key_authorization;
 mod credentials;
 mod sessions;
 
-use alibi_core::entity::{AuthAccount, AuthUser};
-use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResult, CreateUser, UpdateUser};
+use alibi_core::{AuthContext, AuthError, CreateUser};
 pub use api_key_authorization::get_owned_api_key;
 pub use api_key_authorization::require_org_api_key_permission;
 pub use credentials::get_credential_account;
@@ -43,7 +42,6 @@ pub(crate) fn auth_base_url(config: &alibi_core::AuthConfig) -> String {
         format!("{origin}/{path}")
     }
 }
-use chrono::Utc;
 
 /// Result of issuing a real session for a user.
 pub struct IssuedSession<S: alibi_core::AuthSchema> {

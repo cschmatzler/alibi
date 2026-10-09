@@ -402,7 +402,7 @@ mod tests {
         _ = ctx
             .database
             .create_account(CreateAccount {
-                additional_fields: Default::default(),
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
                 user_id: user.id.clone(),
                 account_id: user.id.clone(),
                 provider_id: "credential".to_owned(),
@@ -434,7 +434,7 @@ mod tests {
         _ = ctx
             .database
             .create_account(CreateAccount {
-                additional_fields: Default::default(),
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
                 user_id: user.id.clone(),
                 account_id: "google-account-id".to_owned(),
                 provider_id: "google".to_owned(),

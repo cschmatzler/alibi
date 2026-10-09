@@ -191,11 +191,13 @@ impl LastLoginMethodPlugin {
         let domain = overrides
             .and_then(|attrs| attrs.domain.as_deref())
             .or(defaults.domain.as_deref())
-            .or(config
-                .advanced
-                .cross_sub_domain_cookies
-                .as_ref()
-                .map(|cross| cross.domain.as_str()));
+            .or_else(|| {
+                config
+                    .advanced
+                    .cross_sub_domain_cookies
+                    .as_ref()
+                    .map(|cross| cross.domain.as_str())
+            });
         let value = urlencoding::encode(method)
             .replace("%21", "!")
             .replace("%27", "'")
@@ -391,7 +393,7 @@ impl<S: AuthSchema> alibi_core::store::SessionCreatedHook<S> for LastLoginSessio
 /// server managed. Call after the endpoint's ordinary admission validation.
 ///
 /// # Errors
-/// Returns the published FIELD_NOT_ALLOWED response for truthy supplied values.
+/// Returns the published `FIELD_NOT_ALLOWED` response for truthy supplied values.
 pub fn reject_last_login_method_input<S: AuthSchema>(
     ctx: &AuthContext<S>,
     value: Option<&alibi_core::utils::json::JsValue>,

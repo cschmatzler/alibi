@@ -1,8 +1,30 @@
 //! Application-owned issuance and redemption of durable device grants.
-use super::*;
+use super::ACCESS_DENIED;
+use super::AUTHORIZATION_PENDING;
+use super::DEVICE_STATUS_APPROVED;
+use super::DEVICE_STATUS_DENIED;
+use super::DEVICE_STATUS_PENDING;
+use super::DeviceAuthorizationPlugin;
+use super::EXPIRED_DEVICE_CODE;
+use super::INVALID_DEVICE_CODE;
+use super::INVALID_DEVICE_CODE_STATUS;
+use super::POLLING_TOO_FREQUENTLY;
+use super::USER_NOT_FOUND;
+use super::device_callback_error;
+use super::device_error_response;
+use super::types::DeviceCodeRequest;
+use super::validate_device_media;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
+use alibi_core::AuthRequest;
+use alibi_core::AuthResponse;
+use alibi_core::AuthResult;
+use alibi_core::UpdateDeviceCode;
 use alibi_core::{AuthSchema, DeviceCode};
 use async_trait::async_trait;
+use chrono::Utc;
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum DeviceGrantFailure {
@@ -239,7 +261,9 @@ impl DeviceAuthorizationPlugin {
         for (name, schema) in &fields {
             let value = request.get(name).and_then(Value::as_str);
             let minimum = schema.get("minLength").and_then(Value::as_u64).unwrap_or(0);
-            if value.is_none_or(|value| value.encode_utf16().count() < minimum as usize) {
+            if value.is_none_or(|value| {
+                value.encode_utf16().count() < usize::try_from(minimum).unwrap_or(usize::MAX)
+            }) {
                 issues.push(name.clone());
             }
         }

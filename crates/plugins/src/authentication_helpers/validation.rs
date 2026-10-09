@@ -1,4 +1,5 @@
-use super::*;
+use alibi_core::{AuthError, AuthRequest, AuthResponse, AuthResult};
+use serde::de::DeserializeOwned;
 #[derive(Clone, Copy)]
 pub(crate) enum JsonFieldKind {
     String,
@@ -116,7 +117,7 @@ pub(in crate::authentication_helpers) fn parse_body_with_fields_and_ignored<
         .get::<alibi_core::types::ParsedRequestBody>()
         .is_some_and(|body| matches!(&*body, alibi_core::types::ParsedRequestBody::Opaque(_)));
     let mut value: alibi_core::utils::json::JsValue = if opaque {
-        alibi_core::utils::json::JsValue::Object(Default::default())
+        alibi_core::utils::json::JsValue::Object(indexmap::IndexMap::default())
     } else {
         req.body_as_json().map_err(|_error| {
             AuthResponse::json(
@@ -157,8 +158,7 @@ pub(in crate::authentication_helpers) fn parse_body_with_fields_and_ignored<
                 if !field_value.is_some_and(alibi_core::utils::json::JsValue::is_string) =>
             {
                 Some(format!(
-                    "Invalid input: expected string, received {}",
-                    received_type
+                    "Invalid input: expected string, received {received_type}"
                 ))
             }
             JsonFieldKind::NonEmptyString
@@ -172,8 +172,7 @@ pub(in crate::authentication_helpers) fn parse_body_with_fields_and_ignored<
                 if !field_value.is_some_and(alibi_core::utils::json::JsValue::is_boolean) =>
             {
                 Some(format!(
-                    "Invalid input: expected boolean, received {}",
-                    received_type
+                    "Invalid input: expected boolean, received {received_type}"
                 ))
             }
             JsonFieldKind::Email
@@ -201,8 +200,7 @@ pub(in crate::authentication_helpers) fn parse_body_with_fields_and_ignored<
                 if !field_value.is_some_and(alibi_core::utils::json::JsValue::is_object) =>
             {
                 Some(format!(
-                    "Invalid input: expected record, received {}",
-                    received_type
+                    "Invalid input: expected record, received {received_type}"
                 ))
             }
             JsonFieldKind::String

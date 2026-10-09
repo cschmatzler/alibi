@@ -280,8 +280,8 @@ impl UserManagementPlugin {
             return Ok(AuthResponse::new(404).with_header("Content-Type", "application/json"));
         }
         let response = delete_user_core(&body, &user, &session, req, &self.config, ctx).await?;
-        let deleted = response.message == "User deleted"
-            && !body.token.as_deref().is_some_and(|token| !token.is_empty());
+        let deleted =
+            response.message == "User deleted" && body.token.as_deref().is_none_or(str::is_empty);
         let mut response = AuthResponse::json(200, &response)?;
         if deleted {
             append_clear_session_cookies(&mut response, &ctx.config)?;

@@ -85,7 +85,7 @@ impl SiteKeyCaptchaConfig {
     }
 }
 
-/// Full BotID result retained for an application's trusted validation callback.
+/// Full `BotID` result retained for an application's trusted validation callback.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BotIdVerification {
@@ -406,7 +406,7 @@ impl<S: AuthSchema> AuthPlugin<S> for CaptchaPlugin {
         context: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
         let path = normalized_path(
-            request.url().map_or(request.path(), url::Url::path),
+            request.url().map_or_else(|| request.path(), url::Url::path),
             &context.config.base_path,
         );
         let protected = if self.config.endpoints.is_empty() {

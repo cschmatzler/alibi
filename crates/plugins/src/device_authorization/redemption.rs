@@ -1,4 +1,31 @@
-use super::*;
+use super::ACCESS_DENIED;
+use super::AUTHORIZATION_PENDING;
+use super::CLIENT_ID_MISMATCH;
+use super::DEVICE_STATUS_APPROVED;
+use super::DEVICE_STATUS_DENIED;
+use super::DEVICE_STATUS_PENDING;
+use super::DeviceAuthorizationPlugin;
+use super::DeviceGrantRecord;
+use super::EXPIRED_DEVICE_CODE;
+use super::FAILED_TO_CREATE_SESSION;
+use super::INVALID_CLIENT_ID;
+use super::INVALID_DEVICE_CODE;
+use super::INVALID_DEVICE_CODE_STATUS;
+use super::POLLING_TOO_FREQUENTLY;
+use super::USER_NOT_FOUND;
+use super::device_error_response;
+use super::types::DeviceTokenRequest;
+use super::types::DeviceTokenResponse;
+use crate::helpers::SessionIssueError;
+use crate::helpers::create_user_session_record;
+use alibi_core::AuthContext;
+use alibi_core::AuthRequest;
+use alibi_core::AuthResponse;
+use alibi_core::AuthResult;
+use alibi_core::RequestMeta;
+use alibi_core::UpdateDeviceCode;
+use alibi_core::entity::{AuthSession, AuthUser};
+use chrono::Utc;
 impl DeviceAuthorizationPlugin {
     pub(in crate::device_authorization) async fn redeem_device_token(
         &self,

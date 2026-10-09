@@ -1,4 +1,6 @@
-use super::*;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
+use alibi_core::AuthResult;
 /// Fetch an API key by ID and verify that it belongs to the given user.
 ///
 /// Returns `AuthError::not_found` if the key does not exist or belongs to

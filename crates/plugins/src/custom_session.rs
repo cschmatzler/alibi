@@ -334,7 +334,6 @@ mod tests {
         _ = req
             .headers
             .insert("x-application".into(), "original".into());
-        use alibi_core::utils::cookie_utils::sign_cookie_value;
         let cookies = [&reject_session.token, &slow_session.token]
             .into_iter()
             .map(|token| {
@@ -342,7 +341,10 @@ mod tests {
                     "{}_multi-{}={}",
                     ctx.config.session.cookie_name,
                     token.to_lowercase(),
-                    sign_cookie_value(token, ctx.config.current_secret())
+                    alibi_core::utils::cookie_utils::sign_cookie_value(
+                        token,
+                        ctx.config.current_secret()
+                    )
                 )
             })
             .collect::<Vec<_>>();

@@ -5,6 +5,7 @@ use alibi_core::{
 };
 use async_trait::async_trait;
 use sha1::{Digest, Sha1};
+use std::fmt::Write as _;
 use std::sync::Arc;
 
 const DEFAULT_MESSAGE: &str =
@@ -57,10 +58,13 @@ impl PwnedPasswordClient {
     /// Returns the published provider status or generic retry error when the
     /// response cannot be checked, including a malformed matching count.
     pub async fn is_password_compromised(&self, password: &str) -> AuthResult<bool> {
-        let digest = Sha1::digest(password.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02X}"))
-            .collect::<String>();
+        let digest =
+            Sha1::digest(password.as_bytes())
+                .iter()
+                .fold(String::new(), |mut digest, byte| {
+                    _ = write!(digest, "{byte:02X}");
+                    digest
+                });
         let (prefix, suffix) = digest.split_at(5);
         let endpoint = self
             .range_api

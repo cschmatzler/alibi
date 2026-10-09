@@ -132,7 +132,7 @@ pub(crate) async fn reset_password_core(
         _ = ctx
             .database
             .create_account_record(CreateAccount {
-                additional_fields: Default::default(),
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
                 user_id: user_id.clone(),
                 account_id: user_id.clone(),
                 provider_id: "credential".to_owned(),
@@ -182,7 +182,7 @@ pub(crate) async fn reset_password_token_core(
 
     if verification
         .as_ref()
-        .is_none_or(|verification| verification.is_expired())
+        .is_none_or(alibi_core::verification::VerificationSnapshot::is_expired)
     {
         return Ok(ResetPasswordTokenResult::Redirect(build_redirect_url(
             &ctx.config.base_url,
@@ -383,7 +383,7 @@ fn build_redirect_url(
             if replaced {
                 return false;
             }
-            *previous = (*value).to_owned();
+            (*value).clone_into(previous);
             replaced = true;
             true
         });

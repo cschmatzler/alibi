@@ -108,6 +108,10 @@ pub(super) fn validate_fields(
     ))
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "used by value as a `map_err` callback"
+)]
 pub(super) fn error_response(response: AuthResponse) -> AuthError {
     let body = alibi_core::utils::json::from_slice::<JsValue>(&response.body).ok();
     AuthError::Api {

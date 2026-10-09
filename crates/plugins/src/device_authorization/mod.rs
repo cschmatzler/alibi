@@ -1,26 +1,22 @@
 mod grant;
-pub use grant::*;
+pub use grant::{
+    DeviceAuthorizationGrant, DeviceGrantAuthorization, DeviceGrantFailure, DeviceGrantRecord,
+    DeviceRedemptionAuthorization, DeviceRedemptionPolicy, DeviceRedemptionResult,
+    redeem_device_code,
+};
 mod http;
 mod issuance;
 mod redemption;
 pub(super) mod types;
 
-use crate::helpers::{SessionIssueError, create_user_session_record};
-use alibi_core::entity::{AuthSession, AuthUser};
-use alibi_core::{
-    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateDeviceCode, RequestMeta,
-    UpdateDeviceCode,
-};
-use chrono::{Duration, Utc};
+use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult};
+use chrono::Duration;
 use rand::distr::{Alphanumeric, SampleString};
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use types::{
-    DeviceActionRequest, DeviceActionResponse, DeviceCodeRequest, DeviceCodeResponse,
-    DeviceErrorResponse, DeviceTokenRequest, DeviceTokenResponse, DeviceVerifyResponse,
-};
+use types::DeviceErrorResponse;
 use url::Url;
 
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
@@ -129,7 +125,7 @@ impl fmt::Debug for DeviceAuthorizationConfig {
                 &self.on_device_auth_request.as_ref().map(|_| "custom"),
             )
             .field("verification_uri", &self.verification_uri)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
