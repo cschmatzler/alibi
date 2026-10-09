@@ -345,7 +345,7 @@ mod tests {
             "cookie".into(),
             format!("{ordinary}; {}", cookies.join("; ")),
         );
-        let response = super::super::multi_session::MultiSessionPlugin::new()
+        let response = crate::multi_session::MultiSessionPlugin::new()
             .on_request(&req, &ctx)
             .await
             .expect("real list")

@@ -1,5 +1,5 @@
 //! Trusted server-only passwordless-to-credential operation.
-use super::super::email_password::EmailPasswordConfig;
+use crate::email_password::EmailPasswordConfig;
 use alibi_core::{
     AuthAccount, AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, AuthUser,
     CreateAccount, UpdateAccount,

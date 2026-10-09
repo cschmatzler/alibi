@@ -181,7 +181,7 @@ pub(crate) async fn resolve_admin_banned_user_message<S: alibi_core::AuthSchema>
 ) -> AuthResult<String> {
     if let Some(policy) = ctx
         .extensions
-        .get::<super::super::admin::BannedUserMessagePolicy>()
+        .get::<crate::admin::BannedUserMessagePolicy>()
     {
         return policy.message(user).await;
     }

@@ -1,19 +1,18 @@
-mod update;
-pub use update::handle_update_user;
-
 pub(super) mod handlers;
-
 pub(super) mod types;
+mod update;
 
 use alibi_core::wire::UserView;
-use alibi_core::{AuthContext, AuthPlugin, AuthRoute};
-use alibi_core::{AuthError, AuthResult};
-use alibi_core::{AuthRequest, AuthResponse, HttpMethod};
+use alibi_core::{
+    AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
+    HttpMethod,
+};
 use async_trait::async_trait;
 use chrono::Duration;
 use handlers::{change_email_core, delete_user_callback_core, delete_user_core};
 use std::sync::Arc;
 use types::{ChangeEmailRequest, DeleteUserRequest, TokenQuery};
+pub use update::handle_update_user;
 
 /// The initialized user's full snapshot passed to application lifecycle hooks.
 pub type UserInfo = UserView;
@@ -140,6 +139,7 @@ pub struct UserManagementConfig {
 }
 
 /// User self-service management plugin (change email & delete account).
+#[derive(Default)]
 pub struct UserManagementPlugin {
     config: UserManagementConfig,
 }
@@ -154,9 +154,7 @@ impl std::fmt::Debug for UserManagementPlugin {
 impl UserManagementPlugin {
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            config: UserManagementConfig::default(),
-        }
+        Self::default()
     }
 
     #[must_use]
@@ -222,12 +220,6 @@ impl UserManagementPlugin {
     pub fn after_delete(mut self, hook: Arc<dyn AfterDeleteUser>) -> Self {
         self.config.delete_user.after_delete = Some(hook);
         self
-    }
-}
-
-impl Default for UserManagementPlugin {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -303,15 +295,15 @@ impl UserManagementPlugin {
             delete_user_callback_core(&query.token, &user, req, true, &self.config, ctx).await?;
         if let Some(callback_url) = query.callback_url.filter(|url| !url.is_empty()) {
             let mut headers = alibi_core::Headers::new();
-            _ = headers.insert("Location".to_owned(), callback_url);
-            _ = headers.insert("Content-Type".to_owned(), "application/json".to_owned());
-            let mut response_2 = AuthResponse {
+            _ = headers.insert("Location", callback_url);
+            _ = headers.insert("Content-Type", "application/json");
+            let mut redirect = AuthResponse {
                 status: 302,
                 headers,
                 body: Vec::new(),
             };
-            append_clear_session_cookies(&mut response_2, &ctx.config)?;
-            return Ok(response_2);
+            append_clear_session_cookies(&mut redirect, &ctx.config)?;
+            return Ok(redirect);
         }
 
         let mut response = AuthResponse::json(200, &response)?;
@@ -357,18 +349,15 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
-        match (req.method(), req.path()) {
-            (HttpMethod::Post, "/change-email") => {
-                Ok(Some(self.handle_change_email(req, ctx).await?))
-            }
-            (HttpMethod::Post, "/delete-user") => {
-                Ok(Some(self.handle_delete_user(req, ctx).await?))
-            }
+        let response = match (req.method(), req.path()) {
+            (HttpMethod::Post, "/change-email") => self.handle_change_email(req, ctx).await?,
+            (HttpMethod::Post, "/delete-user") => self.handle_delete_user(req, ctx).await?,
             (HttpMethod::Get, "/delete-user/callback") => {
-                Ok(Some(self.handle_delete_user_callback(req, ctx).await?))
+                self.handle_delete_user_callback(req, ctx).await?
             }
-            _ => Ok(None),
-        }
+            _ => return Ok(None),
+        };
+        Ok(Some(response))
     }
 }
 
