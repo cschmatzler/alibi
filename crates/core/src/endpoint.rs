@@ -1,6 +1,7 @@
 //! Trusted endpoint calls keep logical input separate from an optional HTTP request.
 
 use crate::types::RequestExtensions;
+use crate::utils::LockUnpoisoned;
 use crate::utils::json::JsValue;
 use crate::wire::{SessionView, UserView};
 use crate::{AuthError, AuthRequest, AuthResult, AuthSchema, Headers, HttpMethod};
@@ -337,11 +338,7 @@ impl EndpointCall {
 
     #[must_use]
     pub fn virtual_session(&self) -> Option<SessionView> {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .session
-            .clone()
+        self.state.lock_unpoisoned().session.clone()
     }
 
     /// Retain the actual model and snapshot after a trusted hook has authenticated them.
@@ -358,10 +355,7 @@ impl EndpointCall {
             config: context.config.clone(),
             database: context.database.clone(),
         });
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut state = self.state.lock_unpoisoned();
         state.principal = Some((user_view, session.clone()));
         state.session = Some(session);
     }
@@ -369,18 +363,11 @@ impl EndpointCall {
     /// Callback-visible authenticated data. This observation does not confer authority.
     #[must_use]
     pub fn session(&self) -> Option<(UserView, SessionView)> {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .principal
-            .clone()
+        self.state.lock_unpoisoned().principal.clone()
     }
 
     pub fn record_authenticated_session(&self, user: UserView, session: SessionView) {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .principal = Some((user, session));
+        self.state.lock_unpoisoned().principal = Some((user, session));
     }
 
     #[must_use]
@@ -400,44 +387,29 @@ impl EndpointCall {
     pub fn set_response_header(&self, name: impl Into<String>, value: impl Into<String>) {
         _ = self
             .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .lock_unpoisoned()
             .response_headers
             .insert(name, value);
     }
 
     pub fn queue_response_header(&self, name: impl Into<String>, value: impl Into<String>) {
         self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .lock_unpoisoned()
             .response_headers
             .append(name, value);
     }
 
     pub fn take_response_headers(&self) -> Headers {
-        std::mem::take(
-            &mut self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .response_headers,
-        )
+        std::mem::take(&mut self.state.lock_unpoisoned().response_headers)
     }
 
     pub fn set_session_hook_snapshot(&self, user: UserView, session: SessionView) {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .session_observation = Some((user, session));
+        self.state.lock_unpoisoned().session_observation = Some((user, session));
     }
 
     #[must_use]
     pub fn session_hook_snapshot(&self) -> Option<(UserView, SessionView)> {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .session_observation
-            .clone()
+        self.state.lock_unpoisoned().session_observation.clone()
     }
 
     /// # Errors

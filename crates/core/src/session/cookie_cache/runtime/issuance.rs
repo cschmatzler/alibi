@@ -3,6 +3,7 @@ use crate::session::cookie_cache::runtime::{
     chunked_cookie_headers, record_publication,
 };
 use crate::types::RequestExtensions;
+use crate::utils::LockUnpoisoned;
 use crate::utils::cookie_utils::{related_cookie_name, sign_cookie_value};
 use crate::{
     AuthContext, AuthError, AuthResult, AuthSchema, AuthSession, AuthUser, CacheVersionContext,
@@ -247,10 +248,7 @@ pub(in crate::session::cookie_cache::runtime) async fn emit_snapshot_inner<S: Au
                 .flatten(),
             &ctx.config,
         )?;
-        let mut data = pending
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut data = pending.0.lock_unpoisoned();
         data.prior_headers.push(token_header);
         if dont_remember {
             data.prior_headers.push(super::super::cookie_header(
@@ -268,10 +266,7 @@ pub(in crate::session::cookie_cache::runtime) async fn emit_snapshot_inner<S: Au
     match build_headers(ctx, context, &headers, dont_remember, transaction).await {
         Ok(cache_headers) => {
             if let Some(pending) = pending {
-                let mut data = pending
-                    .0
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let mut data = pending.0.lock_unpoisoned();
                 data.prior_headers.clear();
                 data.cache_headers.extend(cache_headers);
             }
@@ -280,11 +275,7 @@ pub(in crate::session::cookie_cache::runtime) async fn emit_snapshot_inner<S: Au
         }
         Err(error) => {
             if let Some(pending) = pending {
-                pending
-                    .0
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .ordinary_error =
+                pending.0.lock_unpoisoned().ordinary_error =
                     !matches!(error, AuthError::Api { .. } | AuthError::Upstream { .. });
             }
             Err(error)
@@ -298,12 +289,7 @@ pub fn take_issuance(extensions: &RequestExtensions) -> (Vec<String>, bool) {
     let Some(pending) = extensions.get::<PendingIssuance>() else {
         return (Vec::new(), false);
     };
-    let mut data = std::mem::take(
-        &mut *pending
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner),
-    );
+    let mut data = std::mem::take(&mut *pending.0.lock_unpoisoned());
     if data.ordinary_error {
         return (Vec::new(), true);
     }

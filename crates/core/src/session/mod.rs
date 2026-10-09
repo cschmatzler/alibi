@@ -39,6 +39,16 @@ pub struct SessionRead<T> {
     pub refreshed: bool,
 }
 
+impl<T> SessionRead<T> {
+    const fn absent() -> Self {
+        Self {
+            session: None,
+            needs_refresh: false,
+            refreshed: false,
+        }
+    }
+}
+
 /// Session manager handles session creation, validation, and cleanup
 pub struct SessionManager<S: AuthSchema> {
     config: Arc<AuthConfig>,
@@ -134,11 +144,7 @@ impl<S: AuthSchema> SessionManager<S> {
         options: SessionReadOptions,
     ) -> AuthResult<SessionRead<S::Session>> {
         let Some(session) = self.database.get_session(token).await? else {
-            return Ok(SessionRead {
-                session: None,
-                needs_refresh: false,
-                refreshed: false,
-            });
+            return Ok(SessionRead::absent());
         };
         self.read_loaded_session(session, options).await
     }
@@ -194,11 +200,7 @@ impl<S: AuthSchema> SessionManager<S> {
             if options.cleanup_expired {
                 self.database.delete_session(token).await?;
             }
-            return Ok(SessionRead {
-                session: None,
-                needs_refresh: false,
-                refreshed: false,
-            });
+            return Ok(SessionRead::absent());
         }
         let needs_refresh = !self.config.session.disable_session_refresh
             && self.config.session.update_age.is_none_or(|age| {
@@ -226,10 +228,7 @@ impl<S: AuthSchema> SessionManager<S> {
     /// including `false`, disables refreshing.
     #[must_use]
     pub fn request_disables_refresh(&self, request: &impl SessionRequest) -> bool {
-        if request.session_query_truthy("disableRefresh") {
-            return true;
-        }
-        self.has_dont_remember_cookie(request)
+        request.session_query_truthy("disableRefresh") || self.has_dont_remember_cookie(request)
     }
 
     /// The independently signed browser session preference.
@@ -259,8 +258,7 @@ impl<S: AuthSchema> SessionManager<S> {
     ///
     /// Propagates errors from the session store.
     pub async fn delete_session(&self, token: &str) -> AuthResult<()> {
-        self.database.delete_session(token).await?;
-        Ok(())
+        self.database.delete_session(token).await
     }
 
     /// Delete all sessions for a user
@@ -269,8 +267,7 @@ impl<S: AuthSchema> SessionManager<S> {
     ///
     /// Propagates errors from the session store.
     pub async fn delete_user_sessions(&self, user_id: impl AsRef<str>) -> AuthResult<()> {
-        self.database.delete_user_sessions(user_id.as_ref()).await?;
-        Ok(())
+        self.database.delete_user_sessions(user_id.as_ref()).await
     }
 
     /// Get all active sessions for a user
@@ -284,14 +281,10 @@ impl<S: AuthSchema> SessionManager<S> {
     ) -> AuthResult<Vec<S::Session>> {
         let sessions = self.database.get_user_sessions(user_id.as_ref()).await?;
         let now = Utc::now();
-
-        // Filter out expired sessions
-        let active_sessions = sessions
+        Ok(sessions
             .into_iter()
             .filter(|session| session.expires_at() > now && session.active())
-            .collect();
-
-        Ok(active_sessions)
+            .collect())
     }
 
     /// Revoke a specific session by token
@@ -300,15 +293,11 @@ impl<S: AuthSchema> SessionManager<S> {
     ///
     /// Propagates errors from the session store.
     pub async fn revoke_session(&self, token: &str) -> AuthResult<bool> {
-        // Check if session exists before trying to delete
-        let session_exists = self.get_session(token).await?.is_some();
-
-        if session_exists {
-            self.delete_session(token).await?;
-            Ok(true)
-        } else {
-            Ok(false)
+        if self.get_session(token).await?.is_none() {
+            return Ok(false);
         }
+        self.delete_session(token).await?;
+        Ok(true)
     }
 
     /// Revoke all sessions for a user
@@ -317,11 +306,8 @@ impl<S: AuthSchema> SessionManager<S> {
     ///
     /// Propagates errors from the session store.
     pub async fn revoke_all_user_sessions(&self, user_id: impl AsRef<str>) -> AuthResult<usize> {
-        // Get count of sessions before deletion for return value
         let user_id = user_id.as_ref();
-        let sessions = self.list_user_sessions(user_id).await?;
-        let count = sessions.len();
-
+        let count = self.list_user_sessions(user_id).await?.len();
         self.delete_user_sessions(user_id).await?;
         Ok(count)
     }
@@ -346,16 +332,6 @@ impl<S: AuthSchema> SessionManager<S> {
             }
         }
 
-        Ok(count)
-    }
-
-    /// Cleanup expired sessions
-    ///
-    /// # Errors
-    ///
-    /// Propagates errors from the session store.
-    pub async fn cleanup_expired_sessions(&self) -> AuthResult<usize> {
-        let count = self.database.delete_expired_sessions().await?;
         Ok(count)
     }
 

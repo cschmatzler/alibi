@@ -1,4 +1,5 @@
 //! Request-local cache cookies and genuine stored/cached snapshot transitions.
+use crate::utils::LockUnpoisoned;
 mod cookies;
 mod issuance;
 mod read;
@@ -94,10 +95,7 @@ pub fn published_session_snapshot(
 pub fn discard_issuance(request: &impl SessionRequest) {
     request.extensions().insert(PublishedSession(None));
     if let Some(pending) = request.extensions().get::<PendingIssuance>() {
-        *pending
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = PendingData::default();
+        *pending.0.lock_unpoisoned() = PendingData::default();
     }
 }
 

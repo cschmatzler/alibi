@@ -1,3 +1,4 @@
+use crate::utils::LockUnpoisoned;
 // LCOV_EXCL_START
 #[cfg(test)]
 mod factor_extension_contract_tests {
@@ -175,9 +176,7 @@ impl MemoryStore {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.state.lock_unpoisoned()
     }
 }
 

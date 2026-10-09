@@ -1,3 +1,4 @@
+use crate::utils::LockUnpoisoned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Index;
@@ -73,17 +74,11 @@ impl std::fmt::Debug for RequestExtensions {
 
 impl RequestExtensions {
     pub fn insert<T: std::any::Any + Send + Sync>(&self, value: T) {
-        self.0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(value);
+        self.0.lock_unpoisoned().insert(value);
     }
 
     pub fn get<T: std::any::Any + Send + Sync>(&self) -> Option<Arc<T>> {
-        self.0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get()
+        self.0.lock_unpoisoned().get()
     }
 }
 
@@ -359,20 +354,12 @@ impl AuthRequest {
     /// normalize a route. Dispatch starts with a fresh accumulator, so values
     /// supplied by an external caller cannot become response headers.
     pub fn queue_response_header(&self, name: impl Into<String>, value: impl Into<String>) {
-        self.response_headers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .append(name, value);
+        self.response_headers.lock_unpoisoned().append(name, value);
     }
 
     /// Drain headers accumulated by trusted handlers for this request.
     pub fn take_response_headers(&self) -> Headers {
-        std::mem::take(
-            &mut *self
-                .response_headers
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        )
+        std::mem::take(&mut *self.response_headers.lock_unpoisoned())
     }
 
     /// Record the original store snapshot observed by a trusted session handler.
@@ -386,10 +373,7 @@ impl AuthRequest {
         user: crate::wire::UserView,
         session: crate::wire::SessionView,
     ) {
-        *self
-            .session_hook_snapshot
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((user, session));
+        *self.session_hook_snapshot.lock_unpoisoned() = Some((user, session));
     }
 
     /// Return the handler's original session context for completed-response hooks.
@@ -397,10 +381,7 @@ impl AuthRequest {
     pub fn session_hook_snapshot(
         &self,
     ) -> Option<(crate::wire::UserView, crate::wire::SessionView)> {
-        self.session_hook_snapshot
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
+        self.session_hook_snapshot.lock_unpoisoned().clone()
     }
 
     /// Return the user ID authenticated by a trusted plugin hook.
