@@ -27,17 +27,10 @@ fn has_role(member: &impl AuthMember, role: &str) -> bool {
         .any(|candidate| candidate == role)
 }
 
-// ---------------------------------------------------------------------------
-// Core functions
-// ---------------------------------------------------------------------------
-
 #[expect(
     clippy::too_many_lines,
     reason = "Keep organization quotas, creation callbacks, and initial membership in request order"
 )]
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn create_organization_core(
     body: &CreateOrganizationRequest,
     user: &impl AuthUser,
@@ -226,9 +219,6 @@ pub(crate) async fn activate_created_organization(
     Ok(())
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn update_organization_core(
     body: &UpdateOrganizationRequest,
     raw_metadata: Option<indexmap::IndexMap<String, alibi_core::utils::json::JsValue>>,
@@ -329,9 +319,6 @@ pub(crate) async fn update_organization_core(
         .map(CreatedOrganizationResponse::from_organization))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn delete_organization_core(
     body: &DeleteOrganizationRequest,
     user: &impl AuthUser,
@@ -421,9 +408,6 @@ pub(crate) async fn delete_organization_core(
     Ok(Some(original))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn list_organizations_core(
     user: &impl AuthUser,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -436,9 +420,6 @@ pub(crate) async fn list_organizations_core(
     Ok(responses)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 #[expect(
     clippy::as_conversions,
     clippy::cast_precision_loss,
@@ -552,9 +533,6 @@ pub(crate) async fn get_full_organization_core(
     Ok(Some(response))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn check_slug_core(
     body: &CheckSlugRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -571,9 +549,6 @@ pub(crate) async fn check_slug_core(
     Ok(CheckSlugResponse { status: true })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn set_active_organization_core(
     body: &SetActiveOrganizationRequest,
     user: &impl AuthUser,
@@ -660,9 +635,6 @@ pub(crate) async fn set_active_organization_core(
     )?))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn leave_organization_core(
     body: &LeaveOrganizationRequest,
     user: &impl AuthUser,
@@ -706,10 +678,6 @@ pub(crate) async fn leave_organization_core(
 
     Ok(response)
 }
-
-// ---------------------------------------------------------------------------
-// Old handlers (rewritten to call core)
-// ---------------------------------------------------------------------------
 
 /// Handle create organization request
 ///

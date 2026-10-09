@@ -1,7 +1,4 @@
 use super::*;
-// ---------------------------------------------------------------------------
-// Configuration
-// ---------------------------------------------------------------------------
 
 /// Which kind of entity a configuration's keys belong to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

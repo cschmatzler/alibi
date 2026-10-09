@@ -26,10 +26,6 @@ impl RoleInput {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Request types
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Deserialize)]
 pub(crate) struct SetRoleRequest {
     #[serde(rename = "userId")]
@@ -115,10 +111,6 @@ impl HasPermissionRequest {
         self.permissions.as_ref().or(self.permission.as_ref())
     }
 }
-
-// ---------------------------------------------------------------------------
-// Response types
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize)]
 pub(crate) struct PhysicalAdminUserView {

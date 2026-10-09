@@ -48,9 +48,6 @@ pub(crate) fn read_page_limit(policy: Option<&MembershipLimit>) -> f64 {
     }
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn admission_limit(
     policy: Option<&MembershipLimit>,
     user: &UserView,

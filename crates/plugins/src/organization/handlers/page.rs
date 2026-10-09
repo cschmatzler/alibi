@@ -11,9 +11,6 @@ impl From<AuthError> for OrganizationPageError {
     }
 }
 impl OrganizationPageError {
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn response(self) -> AuthResult<AuthResponse> {
         match self {
             Self::MissingUser | Self::Auth(AuthError::Database(_)) => Ok(AuthResponse::new(500)),

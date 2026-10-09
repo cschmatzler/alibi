@@ -40,9 +40,6 @@ impl std::fmt::Debug for TwoFactorOtpStorage {
 }
 
 impl TwoFactorOtpStorage {
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn store(
         &self,
         otp: &str,
@@ -57,9 +54,6 @@ impl TwoFactorOtpStorage {
         }
     }
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn verify(
         &self,
         stored: &str,

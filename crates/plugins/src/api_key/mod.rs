@@ -40,10 +40,6 @@ pub use verification::{
     VerifyApiKey,
 };
 
-// ---------------------------------------------------------------------------
-// Error codes -- mirrors the TypeScript `API_KEY_ERROR_CODES`
-// ---------------------------------------------------------------------------
-
 /// Dedicated API Key error codes aligned with the TypeScript `API_KEY_ERROR_CODES`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApiKeyErrorCode {
@@ -193,9 +189,6 @@ impl ApiKeyPlugin {
     /// Pick the configuration a request addressed, mirroring upstream's
     /// `resolveConfiguration`: an unknown or absent `config_id` falls back to
     /// the default one, and a missing default is a client error.
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn resolve_configuration(
         &self,
         config_id: Option<&str>,
@@ -215,10 +208,6 @@ impl ApiKeyPlugin {
             .ok_or_else(|| api_key_error(ApiKeyErrorCode::NoDefaultConfiguration))
     }
 }
-
-// ---------------------------------------------------------------------------
-// Plugin implementation
-// ---------------------------------------------------------------------------
 
 /// Builder for [`ApiKeyPlugin`] powered by the `bon` crate.
 ///
@@ -393,9 +382,6 @@ impl ApiKeyPlugin {
 
     // -- Validation helpers --
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn validate_prefix(config: &ApiKeyConfig, prefix: Option<&str>) -> AuthResult<()> {
         if let Some(p) = prefix.filter(|prefix| !prefix.is_empty()) {
             let len = f64::from(
@@ -414,9 +400,6 @@ impl ApiKeyPlugin {
     /// When `is_create` is true, `require_name` is enforced (name must be
     /// present).  On updates `require_name` is **not** enforced -- the
     /// caller may be updating unrelated fields without resending the name.
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn validate_name(
         config: &ApiKeyConfig,
         name: Option<&str>,
@@ -437,9 +420,6 @@ impl ApiKeyPlugin {
         Ok(())
     }
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn validate_expires_in(
         config: &ApiKeyConfig,
         expires_in: Option<f64>,
@@ -463,9 +443,6 @@ impl ApiKeyPlugin {
         }
     }
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn validate_metadata(
         config: &ApiKeyConfig,
         metadata: Option<&alibi_core::utils::json::JsValue>,
@@ -488,9 +465,6 @@ impl ApiKeyPlugin {
         Ok(())
     }
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn validate_refill(
         refill_interval: Option<f64>,
         refill_amount: Option<f64>,
@@ -508,10 +482,6 @@ impl ApiKeyPlugin {
             _ => Ok(()),
         }
     }
-
-    // -----------------------------------------------------------------------
-    // Route handlers
-    // -----------------------------------------------------------------------
 
     async fn handle_create(
         &self,
@@ -695,10 +665,6 @@ fn key_json_response<T: serde::Serialize>(result: AuthResult<T>) -> AuthResult<A
         Err(error) => Err(error),
     }
 }
-
-// ---------------------------------------------------------------------------
-// AuthPlugin trait implementation
-// ---------------------------------------------------------------------------
 
 alibi_core::impl_auth_plugin! {
     ApiKeyPlugin, "api-key";
@@ -1063,10 +1029,6 @@ mod tests {
         )
     }
 
-    // -----------------------------------------------------------------------
-    // Existing tests (kept)
-    // -----------------------------------------------------------------------
-
     // Upstream reference: packages/better-auth/src/plugins/api-key/api-key.test.ts :: describe("api-key"); adapted to the Rust API key plugin handlers.
     #[tokio::test]
     async fn test_create_and_get_do_not_expose_hash() {
@@ -1265,10 +1227,6 @@ mod tests {
         let deleted = ctx.database.get_api_key_by_id(&key_id).await.unwrap();
         assert!(deleted.is_none());
     }
-
-    // -----------------------------------------------------------------------
-    // New tests: verify, rate-limit, remaining/refill, delete expired, config
-    // -----------------------------------------------------------------------
 
     // Upstream reference: packages/better-auth/src/plugins/api-key/api-key.test.ts :: describe("api-key"); adapted to the Rust API key plugin handlers.
     #[tokio::test]
@@ -1709,10 +1667,6 @@ mod tests {
 
     mod session_tests {
         use super::*;
-
-        // =======================================================================
-        // Comprehensive integration tests (9 scenarios from the test plan)
-        // =======================================================================
 
         #[tokio::test]
         async fn test_virtual_session_answers_get_and_post_get_session() {

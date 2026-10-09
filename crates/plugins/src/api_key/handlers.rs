@@ -8,10 +8,6 @@ use super::types::{
 use crate::helpers;
 use alibi_core::{ApiKey, AuthContext, AuthResult, CreateApiKey, UpdateApiKey};
 
-// ---------------------------------------------------------------------------
-// Core functions -- framework-agnostic business logic
-// ---------------------------------------------------------------------------
-
 impl ApiKeyPlugin {
     /// Create a key on behalf of `body.user_id` from trusted server code.
     /// Organization configurations still require the user's organization permission.
@@ -57,10 +53,6 @@ impl ApiKeyPlugin {
         update_key_for_user(body, user_id, self, ctx).await
     }
 }
-
-// ---------------------------------------------------------------------------
-// Permissions verification helper (RBAC)
-// ---------------------------------------------------------------------------
 
 /// Check whether `key_permissions` (JSON object mapping role->actions) covers
 /// all of the `required_permissions`.
@@ -158,9 +150,6 @@ fn revived_permission_date(value: &str) -> bool {
     alibi_core::utils::datetime::normalize_json_date(value).is_some()
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn create_key_core(
     body: &CreateKeyRequest,
     user_id: impl AsRef<str>,
@@ -338,9 +327,6 @@ fn expiration_date(seconds: Option<f64>) -> AuthResult<Option<String>> {
     ))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn get_key_core(
     id: &str,
     config_id: Option<&str>,
@@ -354,9 +340,6 @@ pub(crate) async fn get_key_core(
     Ok(ApiKeyView::from(&api_key))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn list_keys_core(
     user_id: impl AsRef<str>,
     query: &ListKeysQuery,
@@ -543,9 +526,6 @@ pub(super) fn sort_keys(
     Ok(())
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn update_key_core(
     body: &UpdateKeyRequest,
     user_id: impl AsRef<str>,
@@ -649,9 +629,6 @@ pub(super) async fn update_key_for_user(
     Ok(ApiKeyView::from(&updated))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn delete_key_core(
     body: &DeleteKeyRequest,
     user_id: impl AsRef<str>,

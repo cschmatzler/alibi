@@ -31,9 +31,6 @@ pub use member::*;
 pub use org::*;
 
 /// Helper function to require authenticated session
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn require_session<S: alibi_core::AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
@@ -45,9 +42,6 @@ pub(crate) async fn require_session<S: alibi_core::AuthSchema>(
 }
 
 /// Helper function to get organization ID from request or session
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn resolve_organization_id(
     org_id: Option<&str>,
     org_slug: Option<&str>,
@@ -72,13 +66,6 @@ pub(crate) async fn resolve_organization_id(
         .ok_or_else(|| AuthError::bad_request("No active organization"))
 }
 
-// ---------------------------------------------------------------------------
-// Core function
-// ---------------------------------------------------------------------------
-
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn has_permission_core(
     body: &HasPermissionRequest,
     user: &impl AuthUser,
@@ -115,10 +102,6 @@ pub(crate) async fn has_permission_core(
         error: None,
     })
 }
-
-// ---------------------------------------------------------------------------
-// Old handler (rewritten to call core)
-// ---------------------------------------------------------------------------
 
 /// Handle has-permission request
 ///

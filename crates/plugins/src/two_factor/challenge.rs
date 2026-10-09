@@ -1,7 +1,4 @@
 use super::*;
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn inspect_trusted_device(
     req: &AuthRequest,
     user: &impl AuthUser,
@@ -72,9 +69,6 @@ pub(crate) async fn inspect_trusted_device(
     })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn begin_sign_in_challenge(
     user: &impl AuthUser,
     remember_me: Option<bool>,

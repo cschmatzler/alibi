@@ -332,18 +332,11 @@ fn append_dont_remember_cookie(
     })
 }
 
-// ---------------------------------------------------------------------------
-// Core functions — framework-agnostic business logic
-// ---------------------------------------------------------------------------
-
 /// Core sign-up logic.
 ///
 /// Returns the response and optional rendered session headers. Real automatic
 /// sign-in renders once inside the signup transaction; synthetic duplicates
 /// return no headers.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 #[expect(
     clippy::too_many_lines,
     reason = "Keep signup validation, persistence, and provider callbacks in compatibility order"

@@ -234,9 +234,6 @@ pub async fn organization_roles<S: AuthSchema>(
     Ok(roles)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn cached_has_permissions(
     role: &str,
     required: &OrganizationPermissions,

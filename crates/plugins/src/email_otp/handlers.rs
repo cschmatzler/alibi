@@ -35,9 +35,6 @@ impl From<PreparationError> for AuthError {
 }
 
 impl EmailOtpPlugin {
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn prepare_code(
         &self,
         ctx: &AuthContext<impl AuthSchema>,
@@ -75,9 +72,6 @@ impl EmailOtpPlugin {
         Ok((otp, verification))
     }
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn issue_code(
         &self,
         ctx: &AuthContext<impl AuthSchema>,
@@ -153,9 +147,6 @@ impl EmailOtpPlugin {
         Ok(otp)
     }
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn deliver(
         &self,
         ctx: &AuthContext<impl AuthSchema>,
@@ -230,9 +221,6 @@ impl EmailOtpPlugin {
         Ok(())
     }
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn send_verification(
         &self,
         req: &AuthRequest,
@@ -284,9 +272,6 @@ impl EmailOtpPlugin {
         AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
     }
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn check_verification(
         &self,
         req: &AuthRequest,
@@ -341,9 +326,6 @@ impl EmailOtpPlugin {
         AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
     }
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn verify_email(
         &self,
         req: &AuthRequest,
@@ -397,9 +379,6 @@ impl EmailOtpPlugin {
         .map_err(AuthError::from)
     }
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn sign_in(
         &self,
         req: &AuthRequest,
@@ -453,9 +432,6 @@ impl EmailOtpPlugin {
             .map(|(_, response)| response)
     }
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn request_password_reset(
         &self,
         req: &AuthRequest,
@@ -490,9 +466,6 @@ impl EmailOtpPlugin {
         AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
     }
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn reset_password(
         &self,
         req: &AuthRequest,
@@ -579,9 +552,6 @@ impl EmailOtpPlugin {
         AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
     }
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn request_email_change(
         &self,
         req: &AuthRequest,
@@ -641,9 +611,6 @@ impl EmailOtpPlugin {
         AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
     }
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn change_email(
         &self,
         req: &AuthRequest,

@@ -106,9 +106,6 @@ impl PhoneNumberPlugin {
         }
         Ok(())
     }
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn verify_and_consume(
         &self,
         ctx: &AuthContext<impl AuthSchema>,
@@ -185,9 +182,6 @@ impl PhoneNumberPlugin {
         }
         Ok(())
     }
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn send_otp(
         &self,
         req: &AuthRequest,
@@ -229,9 +223,6 @@ impl PhoneNumberPlugin {
         clippy::too_many_lines,
         reason = "Keep phone proof validation, verification policy, and session issuance in request order"
     )]
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn sign_in(
         &self,
         req: &AuthRequest,
@@ -360,9 +351,6 @@ impl PhoneNumberPlugin {
         clippy::too_many_lines,
         reason = "Keep proof validation, identity updates, and session callbacks in their protocol order"
     )]
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn verify(
         &self,
         req: &AuthRequest,
@@ -501,9 +489,6 @@ impl PhoneNumberPlugin {
         )?;
         Ok(response)
     }
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn request_password_reset(
         &self,
         req: &AuthRequest,
@@ -548,9 +533,6 @@ impl PhoneNumberPlugin {
         }
         AuthResponse::json(200, &json!({"status":true})).map_err(AuthError::from)
     }
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn reset_password(
         &self,
         req: &AuthRequest,

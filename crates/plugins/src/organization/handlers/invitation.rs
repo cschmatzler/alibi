@@ -44,9 +44,6 @@ fn requested_roles(input: &crate::organization::types::RoleInput) -> Vec<&str> {
     input.roles()
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn require_verified_invitation_email<S: alibi_core::AuthSchema>(
     user: &impl AuthUser,
     config: &OrganizationConfig,
@@ -62,17 +59,10 @@ pub(super) fn require_verified_invitation_email<S: alibi_core::AuthSchema>(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Core functions
-// ---------------------------------------------------------------------------
-
 #[expect(
     clippy::too_many_lines,
     reason = "Keep invitation authorization, quota checks, and delivery callbacks in their required order"
 )]
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 #[expect(
     clippy::cast_precision_loss,
     clippy::as_conversions,
@@ -386,9 +376,6 @@ pub(crate) async fn invite_member_core(
     Ok(invitation)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn get_invitation_core(
     query: &GetInvitationQuery,
     user: &impl AuthUser,
@@ -444,9 +431,6 @@ pub(crate) async fn get_invitation_core(
     })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn list_invitations_core(
     query: &ListInvitationsQuery,
     user: &impl AuthUser,
@@ -470,9 +454,6 @@ pub(crate) async fn list_invitations_core(
         .collect())
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn list_user_invitations_core(
     user: &impl AuthUser,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -525,9 +506,6 @@ pub(in crate::organization) async fn list_user_invitations_for_email_core(
         .collect())
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn reject_invitation_core(
     body: &RejectInvitationRequest,
     user: &impl AuthUser,
@@ -589,9 +567,6 @@ pub(crate) async fn reject_invitation_core(
     })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn cancel_invitation_core(
     body: &CancelInvitationRequest,
     user: &impl AuthUser,
@@ -651,10 +626,6 @@ pub(crate) async fn cancel_invitation_core(
     }
     Ok(hook_context.invitation)
 }
-
-// ---------------------------------------------------------------------------
-// Handlers
-// ---------------------------------------------------------------------------
 
 ///
 /// # Errors

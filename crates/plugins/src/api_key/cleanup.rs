@@ -1,9 +1,6 @@
 use super::*;
 impl ApiKeyPlugin {
     /// Start automatic cleanup without awaiting its deletion.
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn maybe_delete_expired(
         &self,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -12,9 +9,6 @@ impl ApiKeyPlugin {
         Ok(())
     }
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn register_expired_cleanup(
         &self,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -28,9 +22,6 @@ impl ApiKeyPlugin {
         }
     }
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn start_configured_cleanup(
         &self,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -60,9 +51,6 @@ impl ApiKeyPlugin {
 
     // Both automatic bulk cleanup and deferred single-row rejection own their
     // work before application completion registration, preserving hook context.
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn start_background_work(
         operation: impl Future<Output = AuthResult<()>> + Send + 'static,
     ) -> AuthResult<alibi_core::BackgroundTaskCompletion> {

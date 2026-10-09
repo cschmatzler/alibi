@@ -110,9 +110,6 @@ fn acceptance_error(status: u16, code: &'static str) -> AuthError {
     }
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 #[expect(
     clippy::as_conversions,
     clippy::cast_precision_loss,

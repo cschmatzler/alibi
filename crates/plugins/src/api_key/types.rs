@@ -167,9 +167,6 @@ impl ListKeysQuery {
         clippy::cast_sign_loss,
         reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
     )]
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(crate) fn from_request(req: &AuthRequest) -> Result<Self, AuthResponse> {
         let number = |key: &str| -> Result<Option<usize>, AuthResponse> {
             let Some(value) = req.query.get(key) else {
@@ -252,9 +249,6 @@ pub struct DeleteExpiredApiKeysResponse {
 }
 
 /// Parse with the DTO schema and retain the field path in upstream validation errors.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) fn parse_api_key_body<T>(request: &AuthRequest) -> Result<T, AuthResponse>
 where
     T: serde::de::DeserializeOwned + Validate,

@@ -5,9 +5,6 @@ use alibi_core::{
 };
 use std::{future::Future, sync::Arc};
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn deliver(
     sender: Arc<dyn SendTwoFactorOtp>,
     user: UserView,

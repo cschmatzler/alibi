@@ -453,9 +453,6 @@ impl CreatedOrganizationResponse {
 }
 
 impl OrganizationResponse {
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(crate) fn from_stored_organization(
         organization: &impl AuthOrganization,
     ) -> Result<Self, serde_json::Error> {
@@ -544,9 +541,6 @@ pub(super) fn undefined_string() -> String {
 }
 
 /// The pinned membership endpoints use JavaScript's `String` coercion for IDs.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn deserialize_coercible_string<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -696,9 +690,6 @@ fn radix_number(digits: &str, radix: u32, bits_per_digit: usize) -> Option<f64> 
     Some(mantissa as f64 * 2.0f64.powi(i32::try_from(bit_length - 53).ok()?))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn deserialize_nullable_string_field<'de, D>(
     deserializer: D,
 ) -> Result<NullableStringField, D::Error>

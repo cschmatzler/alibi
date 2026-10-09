@@ -1,7 +1,4 @@
 use super::*;
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn sign_in_core(
     req: &AuthRequest,
     body: &SignInRequest,
@@ -92,9 +89,6 @@ pub(crate) async fn sign_in_core(
 }
 
 /// Core sign-in by username.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn sign_in_username_core(
     req: &AuthRequest,
     body: &SignInUsernameRequest,

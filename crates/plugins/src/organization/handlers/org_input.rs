@@ -136,9 +136,6 @@ fn validate(issues: &[String]) -> Result<(), AuthResponse> {
     }
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn create(req: &AuthRequest) -> Result<CreateOrganizationRequest, AuthResponse> {
     create_value(decode(req)?)
 }
@@ -184,9 +181,6 @@ pub(in crate::organization) fn create_value(
     })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn update(
     req: &AuthRequest,
 ) -> Result<
@@ -282,9 +276,6 @@ pub(in crate::organization) fn update_value(
     ))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn delete(req: &AuthRequest) -> Result<DeleteOrganizationRequest, AuthResponse> {
     let decoded = decode(req)?;
     object(decoded.as_ref(), "body")
@@ -307,9 +298,6 @@ pub(super) fn delete(req: &AuthRequest) -> Result<DeleteOrganizationRequest, Aut
     })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn set_active(req: &AuthRequest) -> Result<SetActiveOrganizationRequest, AuthResponse> {
     set_active_value(decode(req)?)
 }
@@ -346,9 +334,6 @@ pub(in crate::organization) fn set_active_value(
     })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::organization) fn validate_trusted_create(
     body: &CreateOrganizationRequest,
 ) -> Result<(), AuthError> {
@@ -377,9 +362,6 @@ pub(in crate::organization) fn validate_trusted_create(
     }
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn member_role_update(
     req: &AuthRequest,
 ) -> Result<UpdateMemberRoleRequest, AuthResponse> {
@@ -438,9 +420,6 @@ pub(in crate::organization) fn member_role_update_value(
     })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn member_remove(req: &AuthRequest) -> Result<RemoveMemberRequest, AuthResponse> {
     let decoded = decode(req)?;
     object(decoded.as_ref(), "body")

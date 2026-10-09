@@ -23,9 +23,6 @@ pub(crate) fn verification_url(
     )
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn send_verification_email_core<U: AuthUser>(
     body: &SendVerificationEmailRequest,
     current_user: Option<&U>,
@@ -181,9 +178,6 @@ fn verification_error(
         )
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 #[expect(
     clippy::too_many_lines,
     reason = "Keep verification ownership, account transitions, and callback ordering together"

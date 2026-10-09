@@ -46,13 +46,6 @@ fn normalized_update_roles(role: &super::super::types::RoleInput) -> Vec<&str> {
         .collect()
 }
 
-// ---------------------------------------------------------------------------
-// Core functions
-// ---------------------------------------------------------------------------
-
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn get_active_member_core(
     user: &impl AuthUser,
     session: &impl AuthSession,
@@ -71,9 +64,6 @@ pub(crate) async fn get_active_member_core(
     Ok(MemberResponse::from_member_and_user(&member, user))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 #[expect(
     clippy::as_conversions,
     clippy::cast_precision_loss,
@@ -150,9 +140,6 @@ pub(crate) async fn list_members_core(
     Ok(ListMembersResponse { members, total })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn get_active_member_role_core(
     query: &GetActiveMemberRoleQuery,
     user: &impl AuthUser,
@@ -196,9 +183,6 @@ pub(crate) async fn get_active_member_role_core(
     clippy::too_many_lines,
     reason = "Keep ownership checks and membership removal callbacks adjacent to their writes"
 )]
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn remove_member_core(
     body: &RemoveMemberRequest,
     user: &impl AuthUser,
@@ -360,9 +344,6 @@ pub(crate) async fn remove_member_core(
     clippy::too_many_lines,
     reason = "Keep role authorization and before/after callbacks adjacent to the membership write"
 )]
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn update_member_role_core(
     body: &UpdateMemberRoleRequest,
     organization_id: &str,
@@ -511,10 +492,6 @@ pub(crate) async fn update_member_role_core(
 
     Ok(BasicMemberResponse::from_member(&updated))
 }
-
-// ---------------------------------------------------------------------------
-// Old handlers (rewritten to call core)
-// ---------------------------------------------------------------------------
 
 /// Handle get active member request
 ///

@@ -13,9 +13,6 @@ use alibi_core::{
 };
 use std::collections::HashMap;
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn add_member<S: AuthSchema>(
     body: &AddOrganizationMemberRequest,
     headers: &HashMap<String, String>,
