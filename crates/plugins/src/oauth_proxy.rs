@@ -662,69 +662,13 @@ impl OAuthProxyPlugin {
                         AuthError::Upstream { code, message, .. } => {
                             error_redirect(error_url, code, Some(message))
                         }
-                        error @ (AuthError::Api { .. }
-                        | AuthError::BadRequest(_)
-                        | AuthError::InvalidRequest(_)
-                        | AuthError::Validation(_)
-                        | AuthError::InvalidCredentials
-                        | AuthError::Unauthenticated
-                        | AuthError::AuthenticationFailed(_)
-                        | AuthError::SessionNotFound
-                        | AuthError::Forbidden(_)
-                        | AuthError::UserCreationCancelled
-                        | AuthError::BannedUser(_)
-                        | AuthError::Unauthorized
-                        | AuthError::UserNotFound
-                        | AuthError::NotFound(_)
-                        | AuthError::Conflict(_)
-                        | AuthError::MethodNotAllowed(_)
-                        | AuthError::PayloadTooLarge(_)
-                        | AuthError::UnprocessableEntity(_)
-                        | AuthError::RateLimited { .. }
-                        | AuthError::NotImplemented(_)
-                        | AuthError::Config(_)
-                        | AuthError::Database(_)
-                        | AuthError::Serialization(_)
-                        | AuthError::Plugin { .. }
-                        | AuthError::CallbackFailure(_)
-                        | AuthError::Internal(_)
-                        | AuthError::Encryption(_)
-                        | AuthError::PasswordHash(_)
-                        | AuthError::Jwt(_))
+                        error
                             if error.status_code() < 500
                                 || matches!(error, AuthError::Api { .. }) =>
                         {
                             Err(error)
                         }
-                        _error @ (AuthError::Api { .. }
-                        | AuthError::BadRequest(_)
-                        | AuthError::InvalidRequest(_)
-                        | AuthError::Validation(_)
-                        | AuthError::InvalidCredentials
-                        | AuthError::Unauthenticated
-                        | AuthError::AuthenticationFailed(_)
-                        | AuthError::SessionNotFound
-                        | AuthError::Forbidden(_)
-                        | AuthError::UserCreationCancelled
-                        | AuthError::BannedUser(_)
-                        | AuthError::Unauthorized
-                        | AuthError::UserNotFound
-                        | AuthError::NotFound(_)
-                        | AuthError::Conflict(_)
-                        | AuthError::MethodNotAllowed(_)
-                        | AuthError::PayloadTooLarge(_)
-                        | AuthError::UnprocessableEntity(_)
-                        | AuthError::RateLimited { .. }
-                        | AuthError::NotImplemented(_)
-                        | AuthError::Config(_)
-                        | AuthError::Database(_)
-                        | AuthError::Serialization(_)
-                        | AuthError::Plugin { .. }
-                        | AuthError::CallbackFailure(_)
-                        | AuthError::Internal(_)
-                        | AuthError::Encryption(_)
-                        | AuthError::PasswordHash(_)
-                        | AuthError::Jwt(_)) => {
+                        _ => {
                             // Source's ordinary exception response discards the
                             // accumulated endpoint headers; APIError redirects
                             // above retain the state-cookie cleanup instead.
