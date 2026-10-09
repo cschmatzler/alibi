@@ -139,6 +139,6 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SqlxStore<S> {
         self.exec()
             .execute(model::delete_by_id::<Model>(self.exec(), id))
             .await
-            .map(drop)
+            .map(|_| ())
     }
 }

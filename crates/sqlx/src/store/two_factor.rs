@@ -275,6 +275,6 @@ where
         sql.ident(Model::TABLE);
         sql.push(" WHERE ");
         sql.compare(Model::TABLE, "user_id", " = ", user_id);
-        self.exec().execute(sql).await.map(drop)
+        self.exec().execute(sql).await.map(|_| ())
     }
 }

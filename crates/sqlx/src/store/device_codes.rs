@@ -255,7 +255,7 @@ where
         self.exec()
             .execute(model::delete_by_id::<Model>(self.exec(), id))
             .await
-            .map(drop)
+            .map(|_| ())
     }
 
     async fn delete_device_code_if_status(&self, id: &str, status: &str) -> AuthResult<bool> {

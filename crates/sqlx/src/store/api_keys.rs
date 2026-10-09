@@ -260,7 +260,7 @@ where
         self.exec()
             .execute(model::delete_by_id::<Model>(self.exec(), id))
             .await
-            .map(drop)
+            .map(|_| ())
     }
 
     async fn delete_expired_api_keys(&self) -> AuthResult<usize> {
