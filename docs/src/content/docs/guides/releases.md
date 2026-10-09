@@ -11,13 +11,15 @@ Alibi uses ordinary [Semantic Versioning](https://semver.org/) independently of 
 - **Minor:** backward-compatible additions, including compatible upstream-target upgrades.
 - **Major:** breaking changes to public Rust APIs, generated schemas, or supported contracts, including breaking upstream-target upgrades.
 
+Before `1.0.0`, breaking public API changes advance the minor version.
+
 Choose the bump by the effect on our users. An upstream version change does not automatically determine our version bump.
 
 For example, hypothetical Rust releases `1.0.0` and `1.0.1` could both target Better Auth `1.7.7`, with `1.0.1` fixing a Rust implementation bug. A compatible upgrade to Better Auth `1.7.8` could then ship as Rust `1.1.0`.
 
 Stable releases have no suffix. Reserve `-alpha.N`, `-beta.N`, and `-rc.N` for actual prereleases. Never reuse a published version or move its Git tag. Release tags use `v` followed by the Rust version, for example `v1.0.1`.
 
-The current release is **Alibi `0.3.0`**, targeting **Better Auth `1.7.7`**. The version examples above illustrate the policy for future releases.
+The current release is **Alibi `0.4.0`**, targeting **Better Auth `1.7.7`**. The version examples above illustrate the policy for future releases.
 
 ## Compatibility rules
 
@@ -45,6 +47,14 @@ The upstream compatibility target is separate release information. Do not encode
 4. Run `devenv shell -- ./scripts/check.sh`, `devenv shell -- ./scripts/compat.sh`, `bun run docs:check`, and `bun run docs:build`. Require CI to pass on the release commit and the differential compatibility suite to pass locally.
 5. Verify the packaged workspace with `devenv shell -- ./scripts/publish.sh`. Cargo stages the unpublished workspace dependencies together and verifies the archives with the default TLS backend and all framework, store and cache integrations enabled.
 6. Publish from the reviewed release commit with `devenv shell -- ./scripts/publish.sh --publish`, then create its immutable `v{rust-version}` tag and release notes. Cargo uploads the crates in dependency order. If publication is interrupted, resume with the same commit and version for unpublished crates; never overwrite an already published crate.
+
+## Release 0.4.0
+
+All eleven first-party crates advance together to `0.4.0`, targeting Better Auth `1.7.7`.
+
+The public Rust authentication runtime is now `Alibi<S>`, replacing `BetterAuth<S>` without a compatibility alias. Update imports and type references from `alibi::BetterAuth` to `alibi::Alibi`; construction now uses `Alibi::<AppAuthSchema>::new(config)`. `AuthBuilder` and runtime behavior are unchanged.
+
+Update library dependencies and the matching `alibi-cli` to `0.4.0`. The upstream compatibility target, encryption labels, cookie formats, and database migration ledgers remain unchanged.
 
 ## Release 0.3.0
 
