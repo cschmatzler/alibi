@@ -2,21 +2,14 @@ mod seaorm;
 mod selection;
 mod sqlx;
 
-use alibi_schema_registry::{self as registry, EntityRole, ExtraEntitySchema, FieldDef};
+use alibi_schema_registry::FieldDef;
 use clap::{Parser, Subcommand, ValueEnum};
-use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
 use seaorm::seaorm_schema;
-use selection::CORE_ENTITIES;
-use selection::Selection;
-use selection::entity_fields;
-use selection::list_plugins;
-use selection::role_name;
-use selection::select;
+use selection::{list_plugins, select};
 use sqlx::sqlx_schema;
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 #[derive(Parser)]
@@ -64,59 +57,47 @@ enum Command {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-
-    match cli.command {
-        Command::Generate {
-            backend,
-            output,
-            plugins,
-        } => {
-            let plugins = if plugins.iter().any(|p| p == "all") {
-                list_plugins().into_iter().map(String::from).collect()
-            } else {
-                plugins
-            };
-
-            let schema = generate_schema(&plugins, backend);
-
-            match output {
-                Some(path) => {
-                    if let Some(parent) = path.parent()
-                        && !parent.exists()
-                        && let Err(e) = fs::create_dir_all(parent)
-                    {
-                        _ = writeln!(
-                            std::io::stderr().lock(),
-                            "failed to create directory {}: {e}",
-                            parent.display()
-                        );
-                        return ExitCode::FAILURE;
-                    }
-                    if let Err(e) = fs::write(&path, &schema) {
-                        _ = writeln!(
-                            std::io::stderr().lock(),
-                            "failed to write {}: {e}",
-                            path.display()
-                        );
-                        return ExitCode::FAILURE;
-                    }
-                    _ = writeln!(
-                        std::io::stderr().lock(),
-                        "wrote auth schema to {}",
-                        path.display()
-                    );
-                }
-                None => {
-                    if let Err(error) = std::io::stdout().lock().write_all(schema.as_bytes()) {
-                        _ = writeln!(std::io::stderr().lock(), "failed to write stdout: {error}");
-                        return ExitCode::FAILURE;
-                    }
-                }
-            }
+    let Command::Generate {
+        backend,
+        output,
+        plugins,
+    } = Cli::parse().command;
+    let plugins = if plugins.iter().any(|p| p == "all") {
+        list_plugins().into_iter().map(String::from).collect()
+    } else {
+        plugins
+    };
+    let schema = generate_schema(&plugins, backend);
+    match write_schema(output.as_deref(), &schema) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(message) => {
+            _ = writeln!(std::io::stderr().lock(), "{message}");
+            ExitCode::FAILURE
         }
     }
-    ExitCode::SUCCESS
+}
+
+fn write_schema(output: Option<&Path>, schema: &str) -> Result<(), String> {
+    let Some(path) = output else {
+        return std::io::stdout()
+            .lock()
+            .write_all(schema.as_bytes())
+            .map_err(|error| format!("failed to write stdout: {error}"));
+    };
+    if let Some(parent) = path.parent()
+        && !parent.exists()
+    {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("failed to create directory {}: {error}", parent.display()))?;
+    }
+    fs::write(path, schema)
+        .map_err(|error| format!("failed to write {}: {error}", path.display()))?;
+    _ = writeln!(
+        std::io::stderr().lock(),
+        "wrote auth schema to {}",
+        path.display()
+    );
+    Ok(())
 }
 
 fn generate_schema(plugins: &[String], backend: Backend) -> String {
