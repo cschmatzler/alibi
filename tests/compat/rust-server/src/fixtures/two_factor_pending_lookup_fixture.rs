@@ -1,5 +1,9 @@
 //! Application-owned database metrics and physical state for pending challenges.
 use crate::TestSchema;
+use alibi::seaorm::{
+    DatabaseConnection,
+    sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
@@ -10,13 +14,9 @@ use alibi::{
     },
     wire::UserView,
 };
-use alibi_core::{
+use alibi::{
     CreateVerification, UpdateUser,
     store::{UserStore, VerificationStore},
-};
-use alibi_seaorm::{
-    DatabaseConnection,
-    sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use axum::{Json, Router, routing::post};
 use chrono::{DateTime, SecondsFormat, Utc};

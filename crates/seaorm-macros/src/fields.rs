@@ -1,4 +1,7 @@
-use super::*;
+use alibi_entity_codegen as codegen;
+use proc_macro2::Ident;
+use syn::{FieldsNamed, LitStr};
+
 /// One model field with its `Column` variant and explicitly renamed column.
 pub(crate) struct Field {
     pub(crate) ident: Ident,
@@ -46,11 +49,10 @@ pub(crate) fn model_fields(fields: &FieldsNamed) -> syn::Result<Vec<Field>> {
                         physical = Some(meta.value()?.parse::<LitStr>()?.value());
                     } else {
                         // Consume other SeaORM values while preserving bare flags.
-                        drop(
-                            meta.value()
-                                .and_then(syn::parse::ParseBuffer::parse::<syn::Expr>)
-                                .ok(),
-                        );
+                        _ = meta
+                            .value()
+                            .and_then(syn::parse::ParseBuffer::parse::<syn::Expr>)
+                            .ok();
                     }
                     Ok(())
                 })?;

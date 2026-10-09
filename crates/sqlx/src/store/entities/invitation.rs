@@ -1,6 +1,8 @@
+use crate::SqlxModel;
+use alibi_core::Invitation;
 use chrono::{DateTime, Utc};
 
-#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, crate::SqlxModel)]
+#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, SqlxModel)]
 #[auth(table = "invitation")]
 pub struct Model {
     pub id: String,
@@ -14,7 +16,7 @@ pub struct Model {
     pub created_at: DateTime<Utc>,
 }
 
-impl From<&Model> for alibi_core::Invitation {
+impl From<&Model> for Invitation {
     fn from(model: &Model) -> Self {
         Self {
             id: model.id.clone(),

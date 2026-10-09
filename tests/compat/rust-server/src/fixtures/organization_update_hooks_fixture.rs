@@ -7,15 +7,15 @@ use alibi::plugins::organization::{
     OrganizationUpdatePatch, OrganizationUpdatedContext,
 };
 use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
+use alibi::seaorm::{
+    DatabaseConnection,
+    sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi_core::{
+use alibi::{
     Member, UpdateUser,
     store::{MemberStore, OrganizationStore, UserStore},
     wire::UserView,
-};
-use alibi_seaorm::{
-    DatabaseConnection,
-    sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use axum::{
     Json, Router,
@@ -119,7 +119,7 @@ impl OrganizationUpdateHooks for Hooks {
         if let Some(value) = &context.organization.metadata {
             let _ = input.insert(
                 "metadata".into(),
-                alibi_core::utils::json::JsValue::Object(value.clone()).to_json_value()?,
+                alibi::utils::json::JsValue::Object(value.clone()).to_json_value()?,
             );
         }
         self.note(
@@ -141,7 +141,7 @@ impl OrganizationUpdateHooks for Hooks {
                 .as_ref()
                 .and_then(|map| map.get("n"))
                 .cloned()
-                .unwrap_or(alibi_core::utils::json::JsValue::Null);
+                .unwrap_or(alibi::utils::json::JsValue::Null);
             let numeric = n.as_f64();
             let negative_zero =
                 numeric.is_some_and(|value| value == 0.0 && value.is_sign_negative());
@@ -162,7 +162,7 @@ impl OrganizationUpdateHooks for Hooks {
                         ("patched".into(), n),
                         (
                             "negativeZero".into(),
-                            alibi_core::utils::json::JsValue::Bool(negative_zero),
+                            alibi::utils::json::JsValue::Bool(negative_zero),
                         ),
                     ]
                     .into_iter()

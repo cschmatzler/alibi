@@ -1,0 +1,1183 @@
+[
+  {
+    "no active organization": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": null
+    }
+  },
+  {
+    "/organization/create []": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/organization/create {\"name\":\"\",\"slug\":\"\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Too small: expected string to have >=1 characters; [body.slug] Too small: expected string to have >=1 characters"
+      }
+    }
+  },
+  {
+    "/organization/create {\"name\":\"Dup\",\"slug\":\"matrix\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "ORGANIZATION_ALREADY_EXISTS",
+        "message": "Organization already exists"
+      }
+    }
+  },
+  {
+    "/organization/create {\"name\":\"Meta\",\"slug\":\"meta\",\"metadata\":\"text\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.metadata] Invalid input: expected record, received string"
+      }
+    }
+  },
+  {
+    "/organization/create {\"name\":5,\"slug\":null}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received number; [body.slug] Invalid input: expected string, received null"
+      }
+    }
+  },
+  {
+    "/organization/update {\"data\":{\"slug\":\"other\"}}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "ORGANIZATION_SLUG_ALREADY_TAKEN",
+        "message": "Organization slug already taken"
+      }
+    }
+  },
+  {
+    "/organization/update {\"data\":{\"name\":\"Renamed\",\"slug\":\"matrix\"}}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<m3>",
+        "name": "Renamed",
+        "slug": "matrix",
+        "logo": null,
+        "createdAt": "<date>"
+      }
+    }
+  },
+  {
+    "/organization/update {\"data\":[]}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.data] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "/organization/update {\"data\":{\"name\":1}}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.data.name] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "/organization/invite-member {\"email\":\"invitee@example.com\",\"role\":\"member\",\"resend\":\"yes\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.resend] Invalid input: expected boolean, received string"
+      }
+    }
+  },
+  {
+    "/organization/invite-member {\"email\":\"invitee@example.com\",\"role\":[\"member\",1]}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.role] Invalid input"
+      }
+    }
+  },
+  {
+    "/organization/invite-member {\"email\":\"invitee@example.com\",\"role\":\"member\",\"teamId\":[1]}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.teamId] Invalid input"
+      }
+    }
+  },
+  {
+    "/organization/invite-member {\"email\":\"invitee@example.com\",\"role\":\"member\",\"teamId\":[\"missing\"]}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "TEAM_NOT_FOUND",
+        "message": "Team not found"
+      }
+    }
+  },
+  {
+    "/organization/invite-member {\"email\":\"invitee@example.com\",\"role\":\"ghost\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "ROLE_NOT_FOUND: ghost"
+      }
+    }
+  },
+  {
+    "/organization/set-active {\"organizationSlug\":\"missing\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "ORGANIZATION_NOT_FOUND",
+        "message": "Organization not found"
+      }
+    }
+  },
+  {
+    "/organization/set-active-team {\"teamId\":\"missing\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "TEAM_NOT_FOUND",
+        "message": "Team not found"
+      }
+    }
+  },
+  {
+    "/organization/update-member-role {\"memberId\":\"missing\",\"role\":\"admin\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "MEMBER_NOT_FOUND",
+        "message": "Member not found"
+      }
+    }
+  },
+  {
+    "/organization/remove-member {\"memberIdOrEmail\":\"nobody@example.com\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "MEMBER_NOT_FOUND",
+        "message": "Member not found"
+      }
+    }
+  },
+  {
+    "/organization/leave {\"organizationId\":\"missing\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "MEMBER_NOT_FOUND",
+        "message": "Member not found"
+      }
+    }
+  },
+  {
+    "/organization/has-permission {\"permissions\":{\"member\":[\"create\"]}}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true,
+        "error": null
+      }
+    }
+  },
+  {
+    "/organization/has-permission {\"permission\":{\"member\":[\"create\"]},\"permissions\":{\"member\":[\"create\"]}}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: more than one option matched"
+      }
+    }
+  },
+  {
+    "add to missing team": {
+      "error": "Team not found",
+      "status": 400
+    }
+  },
+  {
+    "add to team": {
+      "added": true
+    }
+  },
+  {
+    "team at capacity": {
+      "error": "Team member limit reached",
+      "status": 403
+    }
+  },
+  {
+    "add without team": {
+      "added": true
+    }
+  },
+  {
+    "membership limit": {
+      "error": "Organization membership limit reached",
+      "status": 403
+    }
+  },
+  {
+    "list-members [(\"limit\", \"0x2\")]": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "members": [
+          {
+            "id": "<v6>",
+            "organizationId": "<m3>",
+            "userId": "<v7>",
+            "role": "owner",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<v7>",
+              "email": "org-owner@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v8>",
+            "organizationId": "<m3>",
+            "userId": "<m1>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m1>",
+              "email": "org-member@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          }
+        ],
+        "total": 3
+      }
+    }
+  },
+  {
+    "list-members [(\"limit\", \"0b11\"), (\"offset\", \"0o1\")]": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "members": [
+          {
+            "id": "<v8>",
+            "organizationId": "<m3>",
+            "userId": "<m1>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m1>",
+              "email": "org-member@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v9>",
+            "organizationId": "<m3>",
+            "userId": "<m2>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m2>",
+              "email": "org-extra@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          }
+        ],
+        "total": 3
+      }
+    }
+  },
+  {
+    "list-members [(\"limit\", \" 2e0 \")]": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "members": [
+          {
+            "id": "<v6>",
+            "organizationId": "<m3>",
+            "userId": "<v7>",
+            "role": "owner",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<v7>",
+              "email": "org-owner@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v8>",
+            "organizationId": "<m3>",
+            "userId": "<m1>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m1>",
+              "email": "org-member@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          }
+        ],
+        "total": 3
+      }
+    }
+  },
+  {
+    "list-members [(\"limit\", \"Infinity\")]": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "list-members [(\"limit\", \"-Infinity\")]": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "list-members [(\"limit\", \"\")]": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "members": [
+          {
+            "id": "<v6>",
+            "organizationId": "<m3>",
+            "userId": "<v7>",
+            "role": "owner",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<v7>",
+              "email": "org-owner@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v8>",
+            "organizationId": "<m3>",
+            "userId": "<m1>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m1>",
+              "email": "org-member@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v9>",
+            "organizationId": "<m3>",
+            "userId": "<m2>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m2>",
+              "email": "org-extra@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          }
+        ],
+        "total": 3
+      }
+    }
+  },
+  {
+    "list-members [(\"limit\", \"0x\")]": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "members": [
+          {
+            "id": "<v6>",
+            "organizationId": "<m3>",
+            "userId": "<v7>",
+            "role": "owner",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<v7>",
+              "email": "org-owner@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v8>",
+            "organizationId": "<m3>",
+            "userId": "<m1>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m1>",
+              "email": "org-member@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v9>",
+            "organizationId": "<m3>",
+            "userId": "<m2>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m2>",
+              "email": "org-extra@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          }
+        ],
+        "total": 3
+      }
+    }
+  },
+  {
+    "list-members [(\"limit\", \"0xZZ\")]": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "members": [
+          {
+            "id": "<v6>",
+            "organizationId": "<m3>",
+            "userId": "<v7>",
+            "role": "owner",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<v7>",
+              "email": "org-owner@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v8>",
+            "organizationId": "<m3>",
+            "userId": "<m1>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m1>",
+              "email": "org-member@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v9>",
+            "organizationId": "<m3>",
+            "userId": "<m2>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m2>",
+              "email": "org-extra@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          }
+        ],
+        "total": 3
+      }
+    }
+  },
+  {
+    "list-members [(\"limit\", \"1_000\")]": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "members": [
+          {
+            "id": "<v6>",
+            "organizationId": "<m3>",
+            "userId": "<v7>",
+            "role": "owner",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<v7>",
+              "email": "org-owner@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v8>",
+            "organizationId": "<m3>",
+            "userId": "<m1>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m1>",
+              "email": "org-member@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v9>",
+            "organizationId": "<m3>",
+            "userId": "<m2>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m2>",
+              "email": "org-extra@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          }
+        ],
+        "total": 3
+      }
+    }
+  },
+  {
+    "list-members [(\"limit\", \"0x1fffffffffffff1\")]": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "members": [
+          {
+            "id": "<v6>",
+            "organizationId": "<m3>",
+            "userId": "<v7>",
+            "role": "owner",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<v7>",
+              "email": "org-owner@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v8>",
+            "organizationId": "<m3>",
+            "userId": "<m1>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m1>",
+              "email": "org-member@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v9>",
+            "organizationId": "<m3>",
+            "userId": "<m2>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m2>",
+              "email": "org-extra@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          }
+        ],
+        "total": 3
+      }
+    }
+  },
+  {
+    "list-members [(\"sortBy\", \"createdAt\"), (\"sortDirection\", \"desc\")]": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "members": [
+          {
+            "id": "<v9>",
+            "organizationId": "<m3>",
+            "userId": "<m2>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m2>",
+              "email": "org-extra@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v8>",
+            "organizationId": "<m3>",
+            "userId": "<m1>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m1>",
+              "email": "org-member@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v6>",
+            "organizationId": "<m3>",
+            "userId": "<v7>",
+            "role": "owner",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<v7>",
+              "email": "org-owner@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          }
+        ],
+        "total": 3
+      }
+    }
+  },
+  {
+    "get-full-organization [(\"membersLimit\", \"0x1\")]": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<m3>",
+        "name": "Renamed",
+        "slug": "matrix",
+        "logo": null,
+        "createdAt": "<date>",
+        "metadata": null,
+        "members": [
+          {
+            "id": "<v6>",
+            "organizationId": "<m3>",
+            "userId": "<v7>",
+            "role": "owner",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<v7>",
+              "email": "org-owner@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          }
+        ],
+        "invitations": [],
+        "teams": [
+          {
+            "id": "<v10>",
+            "name": "Matrix",
+            "organizationId": "<m3>",
+            "createdAt": "<date>",
+            "updatedAt": null,
+            "memberCount": 1
+          },
+          {
+            "id": "<m5>",
+            "name": "Core",
+            "organizationId": "<m3>",
+            "createdAt": "<date>",
+            "updatedAt": "<date>",
+            "memberCount": 1
+          }
+        ]
+      }
+    }
+  },
+  {
+    "get-full-organization [(\"membersLimit\", \"-0x1\")]": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<m3>",
+        "name": "Renamed",
+        "slug": "matrix",
+        "logo": null,
+        "createdAt": "<date>",
+        "metadata": null,
+        "members": [
+          {
+            "id": "<v6>",
+            "organizationId": "<m3>",
+            "userId": "<v7>",
+            "role": "owner",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<v7>",
+              "email": "org-owner@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v8>",
+            "organizationId": "<m3>",
+            "userId": "<m1>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m1>",
+              "email": "org-member@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v9>",
+            "organizationId": "<m3>",
+            "userId": "<m2>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m2>",
+              "email": "org-extra@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          }
+        ],
+        "invitations": [],
+        "teams": [
+          {
+            "id": "<v10>",
+            "name": "Matrix",
+            "organizationId": "<m3>",
+            "createdAt": "<date>",
+            "updatedAt": null,
+            "memberCount": 1
+          },
+          {
+            "id": "<m5>",
+            "name": "Core",
+            "organizationId": "<m3>",
+            "createdAt": "<date>",
+            "updatedAt": "<date>",
+            "memberCount": 1
+          }
+        ]
+      }
+    }
+  },
+  {
+    "get-full-organization [(\"membersLimit\", \"+2abc\")]": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<m3>",
+        "name": "Renamed",
+        "slug": "matrix",
+        "logo": null,
+        "createdAt": "<date>",
+        "metadata": null,
+        "members": [
+          {
+            "id": "<v6>",
+            "organizationId": "<m3>",
+            "userId": "<v7>",
+            "role": "owner",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<v7>",
+              "email": "org-owner@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v8>",
+            "organizationId": "<m3>",
+            "userId": "<m1>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m1>",
+              "email": "org-member@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          }
+        ],
+        "invitations": [],
+        "teams": [
+          {
+            "id": "<v10>",
+            "name": "Matrix",
+            "organizationId": "<m3>",
+            "createdAt": "<date>",
+            "updatedAt": null,
+            "memberCount": 1
+          },
+          {
+            "id": "<m5>",
+            "name": "Core",
+            "organizationId": "<m3>",
+            "createdAt": "<date>",
+            "updatedAt": "<date>",
+            "memberCount": 1
+          }
+        ]
+      }
+    }
+  },
+  {
+    "get-full-organization [(\"organizationSlug\", \"missing\")]": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "ORGANIZATION_NOT_FOUND",
+        "message": "Organization not found"
+      }
+    }
+  },
+  {
+    "get-full-organization [(\"organizationSlug\", \"other\")]": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<m4>",
+        "name": "Other",
+        "slug": "other",
+        "logo": null,
+        "createdAt": "<date>",
+        "metadata": null,
+        "members": [
+          {
+            "id": "<v11>",
+            "organizationId": "<m4>",
+            "userId": "<v7>",
+            "role": "owner",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<v7>",
+              "email": "org-owner@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          }
+        ],
+        "invitations": [],
+        "teams": [
+          {
+            "id": "<v12>",
+            "name": "Other",
+            "organizationId": "<m4>",
+            "createdAt": "<date>",
+            "updatedAt": null,
+            "memberCount": 1
+          }
+        ]
+      }
+    }
+  },
+  {
+    "outsider full organization": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<m3>",
+        "name": "Renamed",
+        "slug": "matrix",
+        "logo": null,
+        "createdAt": "<date>",
+        "metadata": null,
+        "members": [
+          {
+            "id": "<v6>",
+            "organizationId": "<m3>",
+            "userId": "<v7>",
+            "role": "owner",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<v7>",
+              "email": "org-owner@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v8>",
+            "organizationId": "<m3>",
+            "userId": "<m1>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m1>",
+              "email": "org-member@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          },
+          {
+            "id": "<v9>",
+            "organizationId": "<m3>",
+            "userId": "<m2>",
+            "role": "member",
+            "createdAt": "<date>",
+            "user": {
+              "id": "<m2>",
+              "email": "org-extra@example.com",
+              "name": "Native owner",
+              "image": null
+            }
+          }
+        ],
+        "invitations": [],
+        "teams": [
+          {
+            "id": "<v10>",
+            "name": "Matrix",
+            "organizationId": "<m3>",
+            "createdAt": "<date>",
+            "updatedAt": null,
+            "memberCount": 1
+          },
+          {
+            "id": "<m5>",
+            "name": "Core",
+            "organizationId": "<m3>",
+            "createdAt": "<date>",
+            "updatedAt": "<date>",
+            "memberCount": 1
+          }
+        ]
+      }
+    }
+  },
+  {
+    "unauthenticated check slug": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "clear active organization": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": null
+    }
+  },
+  {
+    "list user teams": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": [
+        {
+          "id": "<v10>",
+          "name": "Matrix",
+          "organizationId": "<m3>",
+          "createdAt": "<date>",
+          "updatedAt": null
+        },
+        {
+          "id": "<v12>",
+          "name": "Other",
+          "organizationId": "<m4>",
+          "createdAt": "<date>",
+          "updatedAt": null
+        }
+      ]
+    }
+  }
+]

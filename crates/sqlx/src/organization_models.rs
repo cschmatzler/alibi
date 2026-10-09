@@ -6,7 +6,8 @@ use crate::pool::Exec;
 use crate::sql::Sql;
 use crate::store::entities::{invitation, member, organization};
 use crate::value::{ColumnKind, SqlValue};
-use alibi_core::{AuthError, AuthResult};
+use alibi_core::field_policy::FieldValues;
+use alibi_core::{AuthError, AuthResult, Invitation, Member, Organization};
 use async_trait::async_trait;
 use std::{marker::PhantomData, sync::Arc};
 
@@ -133,7 +134,7 @@ impl<T: SqlxModel> Binding<T> {
         &self,
         exec: Exec<'_>,
         active: &mut ActiveRow,
-        fields: &mut alibi_core::field_policy::FieldValues,
+        fields: &mut FieldValues,
     ) -> AuthResult<()> {
         fields.apply_adapter_transforms_async().await?;
         for (name, value) in &*fields {
@@ -223,7 +224,7 @@ impl<T: SqlxModel> Binding<T> {
         }
         Ok(physical)
     }
-    fn row(&self, physical: ActiveRow) -> AuthResult<Row<T>> {
+    fn row(&self, physical: &ActiveRow) -> AuthResult<Row<T>> {
         let mut active = ActiveRow::new();
         for (column, value) in physical.present() {
             let field = self.logical(column);
@@ -347,7 +348,7 @@ impl<T: SqlxModel> Binding<T> {
             .fetch(exec, sql)
             .await?
             .into_iter()
-            .map(|active| self.row(active))
+            .map(|active| self.row(&active))
             .collect()
     }
     pub(crate) async fn fetch_optional(
@@ -358,7 +359,7 @@ impl<T: SqlxModel> Binding<T> {
         Ok(self.fetch_all(exec, sql).await?.into_iter().next())
     }
     pub(crate) async fn insert(&self, exec: Exec<'_>, active: &ActiveRow) -> AuthResult<Row<T>> {
-        self.row(self.backend.insert(exec, &self.stage(active)?).await?)
+        self.row(&self.backend.insert(exec, &self.stage(active)?).await?)
     }
     pub(crate) async fn update(
         &self,
@@ -368,12 +369,12 @@ impl<T: SqlxModel> Binding<T> {
         self.backend
             .update(exec, &self.stage(active)?)
             .await?
-            .map(|active| self.row(active))
+            .map(|active| self.row(&active))
             .transpose()
     }
 }
 
-impl From<&Row<organization::Model>> for alibi_core::Organization {
+impl From<&Row<organization::Model>> for Organization {
     fn from(row: &Row<organization::Model>) -> Self {
         let mut organization = Self::from(&row.value);
         for (field, value) in row.active.present() {
@@ -389,12 +390,12 @@ impl From<&Row<organization::Model>> for alibi_core::Organization {
         organization
     }
 }
-impl From<&Row<member::Model>> for alibi_core::Member {
+impl From<&Row<member::Model>> for Member {
     fn from(row: &Row<member::Model>) -> Self {
         Self::from(&row.value)
     }
 }
-impl From<&Row<invitation::Model>> for alibi_core::Invitation {
+impl From<&Row<invitation::Model>> for Invitation {
     fn from(row: &Row<invitation::Model>) -> Self {
         let mut invitation = Self::from(&row.value);
         if row

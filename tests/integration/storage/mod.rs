@@ -17,6 +17,7 @@
     clippy::panic_in_result_fn,
     clippy::indexing_slicing,
     clippy::too_many_lines,
+    clippy::type_complexity,
     reason = "storage contract tests fail fast on setup and assert persisted invariants directly"
 )]
 
@@ -27,6 +28,7 @@ mod api_keys;
 #[cfg(all(feature = "sqlx", feature = "seaorm"))]
 mod character_ids;
 mod database_callbacks;
+mod decorated_store;
 mod http_composition;
 mod id_strategies;
 mod invitations;
@@ -52,12 +54,12 @@ pub(crate) mod users;
 mod verifications;
 mod wallets;
 
-use alibi::{AuthConfig, AuthSchema};
-use alibi_core::RateLimitStorage;
-use alibi_core::store::{AuthStore, DatabaseHooks, HookBackend, SchemaMigrator};
-use alibi_sqlx::sqlx::{
+use alibi::RateLimitStorage;
+use alibi::sqlx::sqlx::{
     self, PgPool, Row, SqlitePool, postgres::PgPoolOptions, sqlite::SqlitePoolOptions,
 };
+use alibi::store::{AuthStore, DatabaseHooks, HookBackend, SchemaMigrator};
+use alibi::{AuthConfig, AuthSchema};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::path::PathBuf;
@@ -304,26 +306,26 @@ pub(crate) struct SeaOrm;
 
 #[async_trait]
 impl Backend for SeaOrm {
-    type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
-    type Hooks = alibi_seaorm::SeaOrmBackend;
-    type Connection = alibi_seaorm::DatabaseConnection;
-    type Store = alibi_seaorm::SeaOrmStore<Self::Schema>;
-    type RateLimit = alibi_seaorm::SeaOrmRateLimitStorage;
+    type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    type Hooks = alibi::seaorm::SeaOrmBackend;
+    type Connection = alibi::seaorm::DatabaseConnection;
+    type Store = alibi::seaorm::SeaOrmStore<Self::Schema>;
+    type RateLimit = alibi::seaorm::SeaOrmRateLimitStorage;
     type UuidSchema = verifications::seaorm_uuid::Schema;
-    type UuidStore = alibi_seaorm::SeaOrmStore<Self::UuidSchema>;
+    type UuidStore = alibi::seaorm::SeaOrmStore<Self::UuidSchema>;
 
     async fn connect(url: &str, connections: Option<u32>) -> TestResult<Self::Connection> {
-        let mut options = alibi_seaorm::sea_orm::ConnectOptions::new(url.to_owned());
+        let mut options = alibi::seaorm::sea_orm::ConnectOptions::new(url.to_owned());
         if let Some(connections) = connections {
             _ = options
                 .max_connections(connections)
                 .min_connections(connections);
         }
-        Ok(alibi_seaorm::Database::connect(options).await?)
+        Ok(alibi::seaorm::Database::connect(options).await?)
     }
 
     fn store(config: Arc<AuthConfig>, connection: &Self::Connection) -> Self::Store {
-        alibi_seaorm::SeaOrmStore::new(config, connection.clone())
+        alibi::seaorm::SeaOrmStore::new(config, connection.clone())
     }
 
     fn hook<H: DatabaseHooks<Self::Schema, Self::Hooks> + 'static>(
@@ -334,11 +336,11 @@ impl Backend for SeaOrm {
     }
 
     fn rate_limit(connection: &Self::Connection) -> Self::RateLimit {
-        alibi_seaorm::SeaOrmRateLimitStorage::new(connection.clone())
+        alibi::seaorm::SeaOrmRateLimitStorage::new(connection.clone())
     }
 
     fn uuid_store(config: Arc<AuthConfig>, connection: &Self::Connection) -> Self::UuidStore {
-        alibi_seaorm::SeaOrmStore::new(config, connection.clone())
+        alibi::seaorm::SeaOrmStore::new(config, connection.clone())
     }
 
     async fn close(connection: Self::Connection) -> TestResult {
@@ -350,13 +352,13 @@ pub(crate) struct Sqlx;
 
 #[async_trait]
 impl Backend for Sqlx {
-    type Schema = alibi_sqlx::store::__private_test_support::bundled_schema::BundledSchema;
-    type Hooks = alibi_sqlx::SqlxBackend;
-    type Connection = alibi_sqlx::SqlxPool;
-    type Store = alibi_sqlx::SqlxStore<Self::Schema>;
-    type RateLimit = alibi_sqlx::SqlxRateLimitStorage;
+    type Schema = alibi::sqlx::store::__private_test_support::bundled_schema::BundledSchema;
+    type Hooks = alibi::sqlx::SqlxBackend;
+    type Connection = alibi::sqlx::SqlxPool;
+    type Store = alibi::sqlx::SqlxStore<Self::Schema>;
+    type RateLimit = alibi::sqlx::SqlxRateLimitStorage;
     type UuidSchema = verifications::sqlx_uuid::Schema;
-    type UuidStore = alibi_sqlx::SqlxStore<Self::UuidSchema>;
+    type UuidStore = alibi::sqlx::SqlxStore<Self::UuidSchema>;
 
     async fn connect(url: &str, connections: Option<u32>) -> TestResult<Self::Connection> {
         if url.starts_with("postgres") {
@@ -378,7 +380,7 @@ impl Backend for Sqlx {
     }
 
     fn store(config: Arc<AuthConfig>, connection: &Self::Connection) -> Self::Store {
-        alibi_sqlx::SqlxStore::new(config, connection.clone())
+        alibi::sqlx::SqlxStore::new(config, connection.clone())
     }
 
     fn hook<H: DatabaseHooks<Self::Schema, Self::Hooks> + 'static>(
@@ -389,11 +391,11 @@ impl Backend for Sqlx {
     }
 
     fn rate_limit(connection: &Self::Connection) -> Self::RateLimit {
-        alibi_sqlx::SqlxRateLimitStorage::new(connection.clone())
+        alibi::sqlx::SqlxRateLimitStorage::new(connection.clone())
     }
 
     fn uuid_store(config: Arc<AuthConfig>, connection: &Self::Connection) -> Self::UuidStore {
-        alibi_sqlx::SqlxStore::new(config, connection.clone())
+        alibi::sqlx::SqlxStore::new(config, connection.clone())
     }
 
     async fn close(connection: Self::Connection) -> TestResult {

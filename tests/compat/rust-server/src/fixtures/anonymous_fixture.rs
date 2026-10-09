@@ -1,5 +1,10 @@
 //! Application-owned anonymous identity/link handlers and actual stored-state observer.
 use crate::anonymous_user_model::{ApplicationSchema as TestSchema, Model as ApplicationUser};
+use alibi::seaorm::{
+    DatabaseConnection, DatabaseHooks, HookControl,
+    sea_orm::{EntityTrait, QueryOrder},
+    store::entities::{account, session},
+};
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult,
     integrations::axum::AxumIntegration,
@@ -19,12 +24,7 @@ use alibi::{
         },
     },
 };
-use alibi_core::{AuthRequest, AuthSession, CreateSession, CreateUser};
-use alibi_seaorm::{
-    DatabaseConnection, DatabaseHooks, HookControl,
-    sea_orm::{EntityTrait, QueryOrder},
-    store::entities::{account, session},
-};
+use alibi::{AuthRequest, AuthSession, CreateSession, CreateUser};
 use async_trait::async_trait;
 use axum::{
     Json, Router,
@@ -75,7 +75,7 @@ impl SendMagicLink for Application {
     async fn send(
         &self,
         value: &MagicLinkDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         self.deliver(format!("magic:{}", value.email), json!({"email":value.email,"url":value.url,"token":value.token,"metadata":value.metadata}));
         Ok(())
@@ -86,7 +86,7 @@ impl SendEmailOtp for Application {
     async fn send(
         &self,
         value: &EmailOtpDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         self.deliver(
             format!("{}:{}", value.otp_type.as_str(), value.email),
@@ -100,7 +100,7 @@ impl SendPhoneOtp for Application {
     async fn send(
         &self,
         value: &PhoneOtpDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         self.deliver(
             format!("phone:{}", value.phone_number),
@@ -119,12 +119,7 @@ impl PhoneSignupIdentity for Application {
 }
 #[async_trait]
 impl SendVerificationEmail for Application {
-    async fn send(
-        &self,
-        user: &alibi_core::wire::UserView,
-        url: &str,
-        token: &str,
-    ) -> AuthResult<()> {
+    async fn send(&self, user: &alibi::wire::UserView, url: &str, token: &str) -> AuthResult<()> {
         if let Some(email) = user.email.as_ref() {
             self.deliver(
                 format!("verification:{email}"),
@@ -188,7 +183,7 @@ impl LinkAnonymousAccount for Application {
             self.mode,
             "custom" | "custom-cache" | "recovery" | "recovery-disabled"
         ) {
-            use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+            use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
             self.database
                 .execute_raw(Statement::from_sql_and_values(
                     DbBackend::Sqlite,
@@ -259,7 +254,7 @@ impl DatabaseHooks<TestSchema, crate::backend::Backend> for Hooks {
     }
     async fn after_create_session(
         &self,
-        session: &<TestSchema as alibi_core::AuthSchema>::Session,
+        session: &<TestSchema as alibi::AuthSchema>::Session,
         context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<()> {
         if (self.mode == "snapshot" || self.mode.starts_with("custom"))
@@ -300,7 +295,7 @@ pub(crate) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
 ) -> AuthResult<(Router, Fixture)> {
-    use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+    use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
     for column in ["cargo_label", "cargo_hidden"] {
         database
             .execute_raw(Statement::from_string(
@@ -347,7 +342,7 @@ pub(crate) async fn router(
                 FieldConfig::new(json!({"type":"string"}))
                     .field_name("cargo_label")
                     .default_callback(|| {
-                        alibi_core::utils::json::JsValue::String("Application Original".into())
+                        alibi::utils::json::JsValue::String("Application Original".into())
                     }),
             );
             settings.user.additional_fields.insert(
@@ -359,7 +354,7 @@ pub(crate) async fn router(
             );
         }
         if mode == "custom-cache" {
-            settings.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
+            settings.session.cookie_cache = Some(alibi::CookieCacheConfig {
                 enabled: true,
                 ..Default::default()
             });
@@ -432,7 +427,7 @@ pub(crate) async fn router(
         post(move |Json(value): Json<Value>| {
             let controls = controls.clone();
             async move {
-                use alibi_core::store::{AccountStore, SessionStore};
+                use alibi::store::{AccountStore, SessionStore};
                 let user_id = value["userId"]
                     .as_str()
                     .ok_or(axum::http::StatusCode::BAD_REQUEST)?;
@@ -477,7 +472,7 @@ pub(crate) async fn router(
                         .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
                 }
                 controls
-                    .create_account(alibi_core::CreateAccount {
+                    .create_account(alibi::CreateAccount {
                         additional_fields: Default::default(),
                         user_id: user_id.into(),
                         account_id: "anonymous-application-account".into(),

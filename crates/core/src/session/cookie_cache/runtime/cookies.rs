@@ -1,4 +1,8 @@
-use super::*;
+use crate::AuthConfig;
+use crate::session::cookie_cache as cache;
+use crate::utils::cookie_utils::{related_cookie_name, verify_cookie_value};
+use crate::{AuthError, AuthResult};
+use indexmap::IndexMap;
 // Better Call reads the first base cookie. Better Auth's session-store reader
 // uses the last valid duplicate for chunks, with its stricter octet grammar.
 pub(in crate::session::cookie_cache::runtime) fn cookies<H: std::hash::BuildHasher + Sync>(
@@ -42,9 +46,9 @@ pub(in crate::session::cookie_cache::runtime) fn cookie_values<H: std::hash::Bui
             }
             let decoded = percent_encoding::percent_decode_str(value)
                 .decode_utf8()
-                .map_or_else(|_| value.to_owned(), |decoded| decoded.into_owned());
+                .map_or_else(|_| value.to_owned(), std::borrow::Cow::into_owned);
             if chunks {
-                drop(values.insert(name.to_owned(), decoded));
+                _ = values.insert(name.to_owned(), decoded);
             } else {
                 _ = values.entry(name.to_owned()).or_insert(decoded);
             }
@@ -93,7 +97,7 @@ pub(in crate::session::cookie_cache::runtime) fn existing_names(
 
 pub(in crate::session::cookie_cache) fn browser_preference(
     headers: &std::collections::HashMap<String, String>,
-    config: &crate::AuthConfig,
+    config: &AuthConfig,
 ) -> bool {
     cookies(headers)
         .get(&related_cookie_name(config, "dont_remember"))
@@ -103,8 +107,8 @@ pub(in crate::session::cookie_cache) fn browser_preference(
 
 /// Read a base cookie or numerically ordered canonical chunks.
 #[must_use]
-pub fn chunked_cookie_value(
-    headers: &std::collections::HashMap<String, String>,
+pub fn chunked_cookie_value<H: std::hash::BuildHasher + Sync>(
+    headers: &std::collections::HashMap<String, String, H>,
     name: &str,
 ) -> Option<String> {
     cache_value(&cookies(headers), &cookie_values(headers, true), name)
@@ -119,7 +123,7 @@ pub fn chunked_cookie_headers<H: std::hash::BuildHasher + Sync>(
     name: &str,
     value: &str,
     max_age: Option<f64>,
-    config: &crate::AuthConfig,
+    config: &AuthConfig,
     headers: &std::collections::HashMap<String, String, H>,
     account: bool,
 ) -> AuthResult<Vec<String>> {
@@ -133,7 +137,7 @@ pub fn chunked_cookie_headers<H: std::hash::BuildHasher + Sync>(
                 config,
             )
         } else {
-            super::super::cookie_header(part, value, age, config)
+            cache::cookie_header(part, value, age, config)
         }
     };
     let empty_header = render(&format!("{name}.99"), "", max_age)?;
@@ -145,17 +149,17 @@ pub fn chunked_cookie_headers<H: std::hash::BuildHasher + Sync>(
     };
     let mut output = IndexMap::new();
     for old in existing_names(&cookie_values(headers, true), name) {
-        drop(output.insert(old.clone(), render(&old, "", Some(0.0))?));
+        _ = output.insert(old.clone(), render(&old, "", Some(0.0))?);
     }
     if count <= 1 {
-        drop(output.insert(name.to_owned(), render(name, value, max_age)?));
+        _ = output.insert(name.to_owned(), render(name, value, max_age)?);
     } else if count <= 100 {
         // Encoded compact values are ASCII, so byte chunking matches JS strings.
         for (index, chunk) in value.as_bytes().chunks(capacity).enumerate() {
             let chunk = std::str::from_utf8(chunk)
-                .map_err(|_error| AuthError::internal("Invalid compact cache encoding"))?;
+                .map_err(|_| AuthError::internal("Invalid compact cache encoding"))?;
             let part = format!("{name}.{index}");
-            drop(output.insert(part.clone(), render(&part, chunk, max_age)?));
+            _ = output.insert(part.clone(), render(&part, chunk, max_age)?);
         }
     }
     Ok(output.into_values().collect())
@@ -166,9 +170,9 @@ pub fn chunked_cookie_headers<H: std::hash::BuildHasher + Sync>(
 ///
 /// # Errors
 /// Propagates invalid configured cookie attributes.
-pub fn session_cleanup_headers(
-    config: &crate::AuthConfig,
-    headers: &std::collections::HashMap<String, String>,
+pub fn session_cleanup_headers<H: std::hash::BuildHasher + Sync>(
+    config: &AuthConfig,
+    headers: &std::collections::HashMap<String, String, H>,
     skip_remember: bool,
 ) -> AuthResult<Vec<String>> {
     let cache_name = related_cookie_name(config, "session_data");
@@ -190,6 +194,6 @@ pub fn session_cleanup_headers(
     }
     names
         .into_iter()
-        .map(|name| super::super::cookie_header(&name, "", Some(0.0), config))
+        .map(|name| cache::cookie_header(&name, "", Some(0.0), config))
         .collect()
 }

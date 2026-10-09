@@ -6,9 +6,9 @@
 )]
 use super::super::{SeaOrm, Sqlx};
 use super::*;
-use alibi_core::config::CookieCacheConfig;
-use alibi_core::field_policy::FieldConfig;
-use alibi_core::utils::json::JsValue;
+use alibi::config::CookieCacheConfig;
+use alibi::field_policy::FieldConfig;
+use alibi::utils::json::JsValue;
 use chrono::{DateTime, Utc};
 
 mod sqlx_model {
@@ -129,7 +129,7 @@ fn config() -> (AuthConfig, AsyncObservation) {
             FieldConfig::new(json!({"type":"string"})).transform(|value| {
                 let Some(value) = value else { return Ok(None) };
                 if value.as_str() == Some("reject") {
-                    return Err(alibi_core::AuthError::internal("private transform failure"));
+                    return Err(alibi::AuthError::internal("private transform failure"));
                 }
                 if value.as_str() == Some("reject-at-binding") {
                     return Ok(Some(JsValue::String("reject".into())));
@@ -147,7 +147,7 @@ fn config() -> (AuthConfig, AsyncObservation) {
                     let Some(value) = value else { return Ok(None) };
                     let value = value.as_str().unwrap();
                     if value.ends_with("adapter-reject") {
-                        return Err(alibi_core::AuthError::internal("adapter callback veto"));
+                        return Err(alibi::AuthError::internal("adapter callback veto"));
                     }
                     tokio::task::yield_now().await;
                     Ok(Some(JsValue::String(format!("adapter:{value}"))))
@@ -420,7 +420,7 @@ async fn exercise<S: AuthSchema>(
             "temporary",
             format!(
                 "; better-auth.dont_remember={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value("true", SECRET)
+                alibi::utils::cookie_utils::sign_cookie_value("true", SECRET)
             ),
             true,
         ),
@@ -543,4 +543,185 @@ async fn exercise<S: AuthSchema>(
         "application-update-default"
     );
     Ok(())
+}
+
+struct SessionHooks {
+    before: Arc<std::sync::atomic::AtomicUsize>,
+    after: Arc<std::sync::atomic::AtomicUsize>,
+}
+#[async_trait::async_trait]
+impl<S: AuthSchema, H: alibi::store::HookBackend> alibi::store::DatabaseHooks<S, H>
+    for SessionHooks
+{
+    async fn before_update_session(
+        &self,
+        _: &str,
+        fields: &mut alibi::field_policy::FieldValues,
+        _: &alibi::store::DatabaseHookContext<'_, H>,
+    ) -> alibi::AuthResult<alibi::store::HookControl> {
+        let _ = self
+            .before
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(
+            if fields.get("label").and_then(JsValue::as_str) == Some("cancel") {
+                alibi::store::HookControl::Cancel
+            } else {
+                alibi::store::HookControl::Continue
+            },
+        )
+    }
+    async fn after_update_session(
+        &self,
+        _: &S::Session,
+        _: &alibi::store::DatabaseHookContext<'_, H>,
+    ) -> alibi::AuthResult<()> {
+        let _ = self.after.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+fn secondary_config() -> AuthConfig {
+    let (mut config, _) = config();
+    config.session.secondary_storage = Some(Arc::new(alibi::store::MemoryCacheAdapter::new()));
+    config.session.store_in_database = false;
+    config.session.cookie_cache = None;
+    config
+}
+
+async fn secondary_exercise<S: AuthSchema>(
+    auth: BetterAuth<S>,
+    db: &Db,
+    hooks: &SessionHooks,
+) -> TestResult {
+    use std::sync::atomic::Ordering::SeqCst;
+    let owner = signup(&auth, "secondary-fields@example.test").await;
+    assert_eq!(db.count("sessions").await?, 0);
+    let cookie = cookies(&owner);
+    let updated = call(
+        &auth,
+        request("/update-session", Some(json!({"label":"changed"})), &cookie),
+        200,
+    )
+    .await;
+    assert_eq!(body(&updated)["session"]["label"], "changed");
+    assert_eq!(
+        (hooks.before.load(SeqCst), hooks.after.load(SeqCst)),
+        (1, 1)
+    );
+    let read = call(&auth, request("/get-session", None, &cookie), 200).await;
+    assert_eq!(body(&read)["session"]["label"], "changed");
+    let cancelled = Box::pin(auth.handle_request(request(
+        "/update-session",
+        Some(json!({"label":"cancel"})),
+        &cookie,
+    )))
+    .await?;
+    assert_ne!(
+        cancelled.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&cancelled.body)
+    );
+    assert_eq!(
+        (hooks.before.load(SeqCst), hooks.after.load(SeqCst)),
+        (2, 1)
+    );
+    let read = call(&auth, request("/get-session", None, &cookie), 200).await;
+    assert_eq!(body(&read)["session"]["label"], "changed");
+    Ok(())
+}
+
+#[tokio::test]
+async fn secondary_sessions_run_update_hooks_sqlx_sqlite() -> TestResult {
+    let db = Db::sqlite().await?;
+    let (connection, _) = db.migrated::<Sqlx>(SECRET).await?;
+    columns(&db).await?;
+    let config = secondary_config();
+    let hooks = SessionHooks {
+        before: Arc::default(),
+        after: Arc::default(),
+    };
+    let observed = SessionHooks {
+        before: hooks.before.clone(),
+        after: hooks.after.clone(),
+    };
+    let auth = AuthBuilder::new(config.clone())
+        .store(
+            alibi::sqlx::SqlxStore::<sqlx_model::Schema>::new(config, connection.clone())
+                .hook(observed),
+        )
+        .plugin(EmailPasswordPlugin::new())
+        .plugin(SessionManagementPlugin::new())
+        .build()
+        .await?;
+    secondary_exercise(auth, &db, &hooks).await?;
+    Sqlx::close(connection).await
+}
+
+#[tokio::test]
+async fn secondary_sessions_run_update_hooks_seaorm_sqlite() -> TestResult {
+    let db = Db::sqlite().await?;
+    let (connection, _) = db.migrated::<SeaOrm>(SECRET).await?;
+    columns(&db).await?;
+    let config = secondary_config();
+    let hooks = SessionHooks {
+        before: Arc::default(),
+        after: Arc::default(),
+    };
+    let observed = SessionHooks {
+        before: hooks.before.clone(),
+        after: hooks.after.clone(),
+    };
+    let auth = AuthBuilder::new(config.clone())
+        .store(
+            alibi::seaorm::SeaOrmStore::<seaorm_model::Schema>::new(config, connection.clone())
+                .hook(observed),
+        )
+        .plugin(EmailPasswordPlugin::new())
+        .plugin(SessionManagementPlugin::new())
+        .build()
+        .await?;
+    secondary_exercise(auth, &db, &hooks).await?;
+    SeaOrm::close(connection).await
+}
+
+struct TransactionProbe;
+#[async_trait::async_trait]
+impl<S: AuthSchema> alibi::store::DatabaseHooks<S, alibi::sqlx::SqlxBackend> for TransactionProbe {
+    async fn before_create_account(
+        &self,
+        _: &mut alibi::CreateAccount,
+        ctx: &alibi::store::DatabaseHookContext<'_, alibi::sqlx::SqlxBackend>,
+    ) -> alibi::AuthResult<alibi::store::HookControl> {
+        let transaction = ctx.tx.expect("signup writes inside one transaction");
+        let mut guard = transaction.lock().await;
+        let connection = guard.sqlite().expect("SQLite transaction");
+        _ = alibi::sqlx::sqlx::query("UPDATE users SET name = 'rewritten-by-hook'")
+            .execute(connection)
+            .await
+            .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
+        Ok(alibi::store::HookControl::Continue)
+    }
+}
+
+#[tokio::test]
+async fn sqlx_hooks_run_statements_inside_the_auth_transaction() -> TestResult {
+    let db = Db::sqlite().await?;
+    let (connection, _) = db.migrated::<Sqlx>(SECRET).await?;
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let store = Sqlx::hook(
+        Sqlx::store(Arc::new(config.clone()), &connection),
+        TransactionProbe,
+    );
+    let auth = AuthBuilder::new(config)
+        .store(store)
+        .plugin(EmailPasswordPlugin::new())
+        .build()
+        .await?;
+    let _ = signup(&auth, "probe@example.test").await;
+    assert_eq!(
+        db.text("SELECT name FROM users", &[]).await?.as_deref(),
+        Some("rewritten-by-hook")
+    );
+    Sqlx::close(connection).await
 }

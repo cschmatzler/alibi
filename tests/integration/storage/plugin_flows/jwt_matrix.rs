@@ -1,0 +1,428 @@
+//! JWT remote-signer claim defaults and managed session-cache authentication.
+use super::*;
+use crate::snapshot::Trace;
+use alibi::plugins::jwt::{
+    DefineJwtPayload, JwtAudience, JwtClaimsConfig, JwtExpiration, JwtPlugin, JwtPluginConfig,
+    JwtSession, JwtSignOptions, RemoteJwtClaim, RemoteJwtPayload, SignRemoteJwt,
+};
+use alibi::utils::json::{JsValue, parse_value};
+use alibi::{AuthError, AuthResult, CookieCacheConfig, CookieCacheStrategy, CookieCacheVersion};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use serde_json::Map;
+
+backend_tests!(
+    jwt_remote_signer_observes_raw_claims_and_defaults,
+    jwt_session_cache_accepts_only_matching_managed_tokens,
+    jwt_server_endpoint_overrides_and_reference_nonce
+);
+
+#[derive(Default)]
+struct Signer(Mutex<Vec<(Vec<String>, Value)>>);
+
+fn capture(value: &JsValue) -> Value {
+    match value {
+        JsValue::Number(number) if !number.is_finite() => {
+            json!({"$number": format!("{number}")})
+        }
+        JsValue::Array(values) => values.iter().map(capture).collect(),
+        JsValue::Object(values) => Value::Object(
+            values
+                .iter()
+                .map(|(key, value)| (key.clone(), capture(value)))
+                .collect(),
+        ),
+        value => value.to_json_value().unwrap(),
+    }
+}
+
+#[async_trait::async_trait]
+impl SignRemoteJwt for Signer {
+    async fn sign(&self, payload: &RemoteJwtPayload, _: &JwtSignOptions) -> AuthResult<String> {
+        let mut seen = Map::new();
+        for key in payload.own_keys() {
+            let value = match payload.claim(key) {
+                RemoteJwtClaim::Undefined => json!("<undefined>"),
+                RemoteJwtClaim::Value(value) => capture(value),
+                RemoteJwtClaim::Absent => json!("<absent>"),
+            };
+            _ = seen.insert(key.clone(), value);
+        }
+        if payload.raw_claims().get("fail").is_some() {
+            return Err(AuthError::internal("signer unavailable"));
+        }
+        self.0
+            .lock()
+            .unwrap()
+            .push((payload.own_keys().to_vec(), Value::Object(seen)));
+        Ok("signed".into())
+    }
+}
+
+struct Claims;
+#[async_trait::async_trait]
+impl DefineJwtPayload for Claims {
+    async fn define_payload(&self, _: &JwtSession) -> AuthResult<Map<String, Value>> {
+        Ok(Map::new())
+    }
+}
+
+/// Replace values equal to the signing clock plus a known lifetime with a label.
+fn stamp(value: &mut Value, start: f64, end: f64) {
+    match value {
+        Value::Number(number) => {
+            let n = number.as_f64().unwrap();
+            for lifetime in [0.0, 1.5, 60.0, 900.0] {
+                if (start..=end).contains(&(n - lifetime)) {
+                    *value = json!(format!("now+{lifetime}"));
+                    return;
+                }
+            }
+        }
+        Value::Array(values) => values.iter_mut().for_each(|value| stamp(value, start, end)),
+        Value::Object(values) => values
+            .values_mut()
+            .for_each(|value| stamp(value, start, end)),
+        _ => {}
+    }
+}
+
+async fn jwt_remote_signer_observes_raw_claims_and_defaults<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let signer = Arc::new(Signer::default());
+    let jwt = JwtPlugin::with_config(JwtPluginConfig {
+        remote_url: Some("https://keys.example.test/jwks".into()),
+        remote_signer: Some(signer.clone()),
+        define_payload: Some(Arc::new(Claims)),
+        ..Default::default()
+    });
+    let auth = builder::<B>(&connection)
+        .plugin(jwt.clone())
+        .build()
+        .await?;
+    let mut trace = Trace::default();
+    let literals = [
+        r#"{"10":"ten","2":"two","custom":{"nested":[null,false,"literal"]}}"#,
+        r#"{"exp":1e400,"iat":-0,"nbf":false,"sub":0,"jti":false}"#,
+        r#"{"iat":1e400,"nbf":1e400}"#,
+        r#"{"iat":100}"#,
+        r#"{"iat":1.5}"#,
+        r#"{"iat":true}"#,
+        r#"{"iat":false}"#,
+        r#"{"iat":null,"exp":null,"iss":null,"aud":null}"#,
+        r#"{"iat":"100"}"#,
+        r#"{"iat":"1e3","exp":"1 hour","nbf":"-5 seconds","aud":["a","b"]}"#,
+        r#"{"iat":["7",null,false],"nbf":[],"sub":[],"jti":{}}"#,
+        r#"{"iat":{"custom":true}}"#,
+        r#"{"iat":-1e400,"nbf":-1e400}"#,
+    ];
+    let lifetimes = [
+        ("default", JwtClaimsConfig::default()),
+        (
+            "seconds",
+            JwtClaimsConfig {
+                expiration: JwtExpiration::After(chrono::Duration::seconds(60)),
+                issuer: Some("issuer".into()),
+                audience: Some(JwtAudience::Many(vec!["one".into(), "two".into()])),
+            },
+        ),
+        (
+            "fractional",
+            JwtClaimsConfig {
+                expiration: JwtExpiration::AfterSeconds(1.5),
+                ..Default::default()
+            },
+        ),
+        (
+            "absolute",
+            JwtClaimsConfig {
+                expiration: JwtExpiration::At(
+                    chrono::DateTime::from_timestamp(2_000_000_000, 0).unwrap(),
+                ),
+                ..Default::default()
+            },
+        ),
+        (
+            "numeric",
+            JwtClaimsConfig {
+                expiration: JwtExpiration::Numeric(7.0),
+                ..Default::default()
+            },
+        ),
+    ];
+    for (name, claims) in &lifetimes {
+        for literal in literals {
+            let start = chrono::Utc::now().timestamp() as f64;
+            let options = JwtSignOptions {
+                claims: Some(claims.clone()),
+                ..Default::default()
+            };
+            let token = jwt
+                .sign_jwt_json(&parse_value(literal)?, &options, None, auth.context())
+                .await?;
+            assert_eq!(token, "signed");
+            let end = chrono::Utc::now().timestamp() as f64;
+            let (keys, mut seen) = signer.0.lock().unwrap().pop().unwrap();
+            stamp(&mut seen, start, end);
+            trace.value(
+                &format!("{name} {literal}"),
+                json!({"ownKeys": keys, "payload": seen}),
+            );
+        }
+    }
+    let mut nan = parse_value(r#"{"iat":123}"#)?;
+    if let JsValue::Object(fields) = &mut nan {
+        _ = fields.insert("iat".into(), JsValue::Number(f64::NAN));
+    }
+    let _ = jwt
+        .sign_jwt_json(&nan, &JwtSignOptions::default(), None, auth.context())
+        .await?;
+    trace.value(
+        "nan iat",
+        json!(signer.0.lock().unwrap().pop().unwrap().1["exp"]),
+    );
+
+    let failed = jwt
+        .sign_jwt_json(
+            &parse_value(r#"{"fail":true}"#)?,
+            &JwtSignOptions::default(),
+            None,
+            auth.context(),
+        )
+        .await;
+    assert!(
+        matches!(failed, Err(AuthError::CallbackFailure(_))),
+        "{failed:?}"
+    );
+    let scalar = jwt
+        .sign_jwt_json(
+            &json!([1]).into(),
+            &JwtSignOptions::default(),
+            None,
+            auth.context(),
+        )
+        .await;
+    assert!(
+        matches!(scalar, Err(AuthError::BadRequest(_))),
+        "{scalar:?}"
+    );
+    trace.assert("jwt/remote-signer-raw-claims");
+    B::close(connection).await
+}
+
+async fn jwt_session_cache_accepts_only_matching_managed_tokens<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET)
+        .base_url(ORIGIN)
+        .session_cookie_cache(CookieCacheConfig {
+            enabled: true,
+            strategy: CookieCacheStrategy::Jwt,
+            max_age: 300.0,
+            version: Some(CookieCacheVersion::Literal("1".into())),
+        });
+    let jwt = JwtPlugin::with_config(JwtPluginConfig {
+        session_cookie_cache: true,
+        ..Default::default()
+    });
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(EmailPasswordPlugin::new())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(jwt.clone())
+        .build()
+        .await?;
+    let signup = signup(&auth, "cache@example.test").await;
+    let jar = cookies(&signup);
+    let cached = jar
+        .split("; ")
+        .find_map(|cookie| cookie.strip_prefix("better-auth.session_data="))
+        .unwrap()
+        .to_owned();
+    let session = jar
+        .split("; ")
+        .find(|cookie| cookie.starts_with("better-auth.session_token="))
+        .unwrap()
+        .to_owned();
+    let claims: Value =
+        serde_json::from_slice(&URL_SAFE_NO_PAD.decode(cached.split('.').nth(1).unwrap())?)?;
+    assert_eq!(claims["aud"], "better-auth:session-cache");
+    assert_eq!(claims["iss"], ORIGIN);
+    assert_eq!(claims["sub"], claims["user"]["id"]);
+    assert_eq!(claims["sid"], claims["session"]["token"]);
+
+    let forged = async |mutate: &dyn Fn(&mut Map<String, Value>), typ: &str| {
+        let mut payload = claims.as_object().unwrap().clone();
+        payload["user"]["name"] = json!("Forged name");
+        mutate(&mut payload);
+        let options = JwtSignOptions {
+            header: Some(json!({"typ":typ}).as_object().unwrap().clone()),
+            ..Default::default()
+        };
+        let token = jwt
+            .sign_jwt(payload, &options, None, auth.context())
+            .await
+            .unwrap();
+        let response = call(
+            &auth,
+            request(
+                "/get-session",
+                None,
+                &format!("{session}; better-auth.session_data={token}"),
+            ),
+            200,
+        )
+        .await;
+        body(&response)["user"]["name"].clone()
+    };
+    let good = "better-auth.session-cache+jwt";
+    assert_eq!(forged(&|_| {}, good).await, "Forged name");
+    assert_eq!(forged(&|_| {}, "JWT").await, "Native owner");
+    assert_eq!(
+        forged(
+            &|payload| _ = payload.insert("sub".into(), json!("someone-else")),
+            good
+        )
+        .await,
+        "Native owner"
+    );
+    assert_eq!(
+        forged(
+            &|payload| _ = payload.insert("sid".into(), json!("another-token")),
+            good
+        )
+        .await,
+        "Native owner"
+    );
+    assert_eq!(
+        forged(
+            &|payload| _ = payload.insert("aud".into(), json!("elsewhere")),
+            good
+        )
+        .await,
+        "Native owner"
+    );
+    assert_eq!(
+        forged(
+            &|payload| _ = payload.insert("iss".into(), json!("https://other.example")),
+            good
+        )
+        .await,
+        "Native owner"
+    );
+    for garbage in ["not-a-token", "e30.e30.sig", "!!!.e30.sig"] {
+        let response = call(
+            &auth,
+            request(
+                "/get-session",
+                None,
+                &format!("{session}; better-auth.session_data={garbage}"),
+            ),
+            200,
+        )
+        .await;
+        assert_eq!(body(&response)["user"]["name"], "Native owner");
+    }
+    B::close(connection).await
+}
+
+async fn jwt_server_endpoint_overrides_and_reference_nonce<B: Backend>(db: Db) -> TestResult {
+    use alibi::endpoint::{EndpointOptions, ServerEndpoint};
+    use alibi::plugins::{OpenApiConfig, OpenApiPlugin};
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(OpenApiPlugin::with_config(
+            OpenApiConfig::default().nonce("page-nonce"),
+        ))
+        .build()
+        .await?;
+    let mut trace = crate::snapshot::Trace::default();
+    let overrides = [
+        ("none", json!(null)),
+        (
+            "claims",
+            json!({"jwt":{"issuer":"i","audience":"a","expirationTime":"1h"}}),
+        ),
+        (
+            "audience list",
+            json!({"jwt":{"audience":["a","b"],"expirationTime":90}}),
+        ),
+        ("issuer type", json!({"jwt":{"issuer":5}})),
+        ("expiration type", json!({"jwt":{"expirationTime":true}})),
+        ("expiration text", json!({"jwt":{"expirationTime":"soon"}})),
+        (
+            "expiration ago",
+            json!({"jwt":{"expirationTime":"2 days ago"}}),
+        ),
+        (
+            "signed expiration ago",
+            json!({"jwt":{"expirationTime":"-2 days ago"}}),
+        ),
+        (
+            "expiration units",
+            json!({"jwt":{"expirationTime":"+1.5 weeks"}}),
+        ),
+        (
+            "expiration decimal",
+            json!({"jwt":{"expirationTime":"1.s"}}),
+        ),
+        (
+            "expiration unit",
+            json!({"jwt":{"expirationTime":"3 fortnights"}}),
+        ),
+        (
+            "expiration from now",
+            json!({"jwt":{"expirationTime":"5 minutes from now"}}),
+        ),
+        (
+            "keys",
+            json!({"jwks":{"keyPairConfig":{"alg":"ES256"},"keyPairConfigs":[{"alg":"RS256","modulusLength":2048}],"rotationInterval":0,"gracePeriod":10,"disablePrivateKeyEncryption":true}}),
+        ),
+        (
+            "rotation",
+            json!({"jwks":{"rotationInterval":3600,"remoteUrl":"https://keys.example.test/jwks"}}),
+        ),
+        (
+            "bad algorithm",
+            json!({"jwks":{"keyPairConfig":{"alg":"HS256"}}}),
+        ),
+        (
+            "bad modulus",
+            json!({"jwks":{"keyPairConfig":{"alg":"RS256","modulusLength":-1}}}),
+        ),
+        ("bad grace", json!({"jwks":{"gracePeriod":1e300}})),
+        ("adapter", json!({"adapter":{}})),
+    ];
+    for (label, overrides) in overrides {
+        let mut body = serde_json::Map::new();
+        _ = body.insert("payload".into(), json!({"sub":"subject"}));
+        if !overrides.is_null() {
+            _ = body.insert("overrideOptions".into(), overrides);
+        }
+        let start = chrono::Utc::now().timestamp() as f64;
+        let endpoint = ServerEndpoint::<alibi::plugins::jwt::JwtTokenOutput>::new("jwt", "signJWT")
+            .with_body_value(JsValue::from(Value::Object(body)));
+        let result = auth
+            .dispatch_endpoint(endpoint, EndpointOptions::default())
+            .await
+            .and_then(|response| Ok(response.decode()?.token));
+        let shown = match result {
+            Ok(token) => {
+                let claims: Value = serde_json::from_slice(
+                    &URL_SAFE_NO_PAD.decode(token.split('.').nth(1).unwrap())?,
+                )?;
+                json!({
+                    "iss": claims["iss"],
+                    "aud": claims["aud"],
+                    "lifetime": ((claims["exp"].as_f64().unwrap() - start) / 10.0).round() * 10.0,
+                })
+            }
+            Err(error) => json!(error.to_string()),
+        };
+        trace.value(label, shown);
+    }
+    let page = call(&auth, request("/reference", None, ""), 200).await;
+    assert!(String::from_utf8_lossy(&page.body).contains("nonce=\"page-nonce\""));
+    trace.assert("jwt/server-endpoint-overrides");
+    B::close(connection).await
+}

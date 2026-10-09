@@ -1,7 +1,7 @@
 //! Application key generation, permission defaults and lookup own real credentials.
 use super::*;
 use alibi::plugins::api_key::*;
-use alibi_core::{AuthError, AuthResult};
+use alibi::{AuthError, AuthResult};
 use async_trait::async_trait;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -110,7 +110,7 @@ async fn application_api_key_callbacks_preserve_delivery_authority_and_failure_e
             input["userId"] = body(&owner)["user"]["id"].clone();
             let created = Box::pin(auth.dispatch_endpoint(
                 ApiKeyPlugin::create_endpoint(&serde_json::from_value::<CreateKeyRequest>(input)?)?,
-                alibi_core::endpoint::EndpointOptions::default(),
+                alibi::endpoint::EndpointOptions::default(),
             ))
             .await?
             .decode()?;

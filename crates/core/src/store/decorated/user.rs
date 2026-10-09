@@ -1,4 +1,8 @@
-use super::*;
+use crate::AdapterRecord;
+use crate::store::{AdapterEvent, NumericTextInput, PluginStore, UserStore, create_data};
+use crate::user_validation::{PreparedUserCreation, UserValidationSource, prepare_creation};
+use crate::{AuthResult, AuthSchema, CreateUser, ListUsersParams, UpdateUser};
+use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
     async fn provider_verification_output(
@@ -11,7 +15,7 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
     async fn create_user_record(
         &self,
         create_user: CreateUser,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+    ) -> AuthResult<AdapterRecord<S::User>> {
         let record = self
             .user_record(self.create_user(create_user).await?)
             .await?;
@@ -24,7 +28,7 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
         &self,
         create_user: CreateUser,
         source: UserValidationSource,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+    ) -> AuthResult<AdapterRecord<S::User>> {
         let record = self
             .user_record(self.create_user_with_source(create_user, source).await?)
             .await?;
@@ -36,7 +40,7 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
     async fn create_user_prepared_record(
         &self,
         prepared: PreparedUserCreation,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+    ) -> AuthResult<AdapterRecord<S::User>> {
         let record = self
             .user_record(self.create_user_prepared(prepared).await?)
             .await?;
@@ -45,78 +49,57 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
         Ok(record)
     }
 
-    async fn get_user_by_id_record(
-        &self,
-        id: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
-        let Some(model) = self.get_user_by_id(id).await? else {
-            return Ok(None);
-        };
-        let record = self.user_record(model).await?;
-        Ok(Some(record))
+    async fn get_user_by_id_record(&self, id: &str) -> AuthResult<Option<AdapterRecord<S::User>>> {
+        let user = self.get_user_by_id(id).await?;
+        self.optional_user_record(user).await
     }
 
     async fn get_user_by_email_record(
         &self,
         email: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
-        let Some(model) = self.get_user_by_email(email).await? else {
-            return Ok(None);
-        };
-        let record = self.user_record(model).await?;
-        Ok(Some(record))
+    ) -> AuthResult<Option<AdapterRecord<S::User>>> {
+        let user = self.get_user_by_email(email).await?;
+        self.optional_user_record(user).await
     }
 
     async fn get_user_by_username_record(
         &self,
         username: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
-        let Some(model) = self.get_user_by_username(username).await? else {
-            return Ok(None);
-        };
-        let record = self.user_record(model).await?;
-        Ok(Some(record))
+    ) -> AuthResult<Option<AdapterRecord<S::User>>> {
+        let user = self.get_user_by_username(username).await?;
+        self.optional_user_record(user).await
     }
 
     async fn get_user_by_phone_number_record(
         &self,
         phone_number: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
-        let Some(model) = self.get_user_by_phone_number(phone_number).await? else {
-            return Ok(None);
-        };
-        let record = self.user_record(model).await?;
-        Ok(Some(record))
+    ) -> AuthResult<Option<AdapterRecord<S::User>>> {
+        let user = self.get_user_by_phone_number(phone_number).await?;
+        self.optional_user_record(user).await
     }
 
     async fn list_users_by_ids_record(
         &self,
         ids: &[String],
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::User>>> {
-        let mut records = Vec::new();
-        for model in self.list_users_by_ids(ids).await? {
-            records.push(self.user_record(model).await?);
-        }
-        Ok(records)
+    ) -> AuthResult<Vec<AdapterRecord<S::User>>> {
+        let users = self.list_users_by_ids(ids).await?;
+        self.user_records(users).await
     }
 
     async fn list_users_by_ids_page_record(
         &self,
         ids: &[String],
         limit: f64,
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::User>>> {
-        let mut records = Vec::new();
-        for model in self.list_users_by_ids_page(ids, limit).await? {
-            records.push(self.user_record(model).await?);
-        }
-        Ok(records)
+    ) -> AuthResult<Vec<AdapterRecord<S::User>>> {
+        let users = self.list_users_by_ids_page(ids, limit).await?;
+        self.user_records(users).await
     }
 
     async fn update_user_record(
         &self,
         id: &str,
         update: UpdateUser,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+    ) -> AuthResult<AdapterRecord<S::User>> {
         let record = self
             .user_record(self.update_user(id, update).await?)
             .await?;
@@ -128,13 +111,9 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
     async fn list_users_record(
         &self,
         params: ListUsersParams,
-    ) -> AuthResult<(Vec<crate::AdapterRecord<S::User>>, usize)> {
-        let (models, count) = self.list_users(params).await?;
-        let mut records = Vec::new();
-        for model in models {
-            records.push(self.user_record(model).await?);
-        }
-        Ok((records, count))
+    ) -> AuthResult<(Vec<AdapterRecord<S::User>>, usize)> {
+        let (users, count) = self.list_users(params).await?;
+        Ok((self.user_records(users).await?, count))
     }
 
     async fn create_user(&self, mut create_user: CreateUser) -> AuthResult<S::User> {

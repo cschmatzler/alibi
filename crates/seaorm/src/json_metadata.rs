@@ -6,6 +6,7 @@
 //! [`MetadataBinding::prepare`] on Set metadata after application hooks and
 //! before the store write; manual models can override
 //! `SeaOrmUserModel::prepare_json_metadata` to choose their binding policy.
+use alibi_core::AuthResult;
 
 /// JSON storage preserving every application object key.
 ///
@@ -75,35 +76,7 @@ impl sea_orm::sea_query::ValueType for JsonMetadata {
                     .map(Self::from)
                     .map_err(|_error| sea_orm::sea_query::ValueTypeErr)
             }
-            sea_orm::Value::Bool(_)
-            | sea_orm::Value::TinyInt(_)
-            | sea_orm::Value::SmallInt(_)
-            | sea_orm::Value::Int(_)
-            | sea_orm::Value::BigInt(_)
-            | sea_orm::Value::TinyUnsigned(_)
-            | sea_orm::Value::SmallUnsigned(_)
-            | sea_orm::Value::Unsigned(_)
-            | sea_orm::Value::BigUnsigned(_)
-            | sea_orm::Value::Float(_)
-            | sea_orm::Value::Double(_)
-            | sea_orm::Value::String(_)
-            | sea_orm::Value::Char(_)
-            | sea_orm::Value::Bytes(_)
-            | sea_orm::Value::Json(_)
-            | sea_orm::Value::ChronoDate(_)
-            | sea_orm::Value::ChronoTime(_)
-            | sea_orm::Value::ChronoDateTime(_)
-            | sea_orm::Value::ChronoDateTimeUtc(_)
-            | sea_orm::Value::ChronoDateTimeLocal(_)
-            | sea_orm::Value::ChronoDateTimeWithTimeZone(_)
-            | sea_orm::Value::TimeDate(_)
-            | sea_orm::Value::TimeTime(_)
-            | sea_orm::Value::TimeDateTime(_)
-            | sea_orm::Value::TimeDateTimeWithTimeZone(_)
-            | sea_orm::Value::Uuid(_)
-            | sea_orm::Value::Decimal(_)
-            | sea_orm::Value::Enum(_)
-            | sea_orm::Value::Array(..) => Err(sea_orm::sea_query::ValueTypeErr),
+            _ => Err(sea_orm::sea_query::ValueTypeErr),
         }
     }
     fn type_name() -> String {
@@ -143,24 +116,24 @@ pub trait MetadataBinding: Sized {
     /// # Errors
     ///
     /// Returns an error if the value cannot be serialized for `backend`.
-    fn prepare(self, backend: sea_orm::DbBackend) -> alibi_core::AuthResult<Self>;
+    fn prepare(self, backend: sea_orm::DbBackend) -> AuthResult<Self>;
 }
 
 impl MetadataBinding for serde_json::Value {
-    fn prepare(self, _backend: sea_orm::DbBackend) -> alibi_core::AuthResult<Self> {
+    fn prepare(self, _backend: sea_orm::DbBackend) -> AuthResult<Self> {
         Ok(alibi_core::utils::json::to_value(&self)?)
     }
 }
 
 impl MetadataBinding for JsonMetadata {
-    fn prepare(self, backend: sea_orm::DbBackend) -> alibi_core::AuthResult<Self> {
+    fn prepare(self, backend: sea_orm::DbBackend) -> AuthResult<Self> {
         let value = alibi_core::utils::json::to_value(&self.0)?;
         Ok(Self::for_backend(value, backend)?)
     }
 }
 
 impl<T: MetadataBinding> MetadataBinding for Option<T> {
-    fn prepare(self, backend: sea_orm::DbBackend) -> alibi_core::AuthResult<Self> {
+    fn prepare(self, backend: sea_orm::DbBackend) -> AuthResult<Self> {
         self.map(|value| value.prepare(backend)).transpose()
     }
 }

@@ -11,9 +11,26 @@ permissions:
 
 jobs:
   check:
-    name: Complete test gate
+    name: Native checks
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: native
+          POSTGRES_PASSWORD: native
+          POSTGRES_DB: native
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U native"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      redis:
+        image: redis:8
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 12
     env:
       CARGO_TERM_COLOR: always
       CARGO_PROFILE_DEV_DEBUG: 0
@@ -23,11 +40,6 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - name: Reserve disk for the complete test gate
-        run: |
-          df -h /
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android
-          df -h /
       - uses: cachix/install-nix-action@b85815f71a6de0ddee80b8a80a98d43f4bcc66c7 # v31
       - name: Fetch the private Rust style
         env:
@@ -48,15 +60,26 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: rust-sources-v2-${{ runner.os }}-${{ hashFiles('devenv.nix', 'devenv.lock', 'Cargo.lock', 'tests/compat/rust-server/Cargo.lock') }}
-          restore-keys: rust-sources-v2-${{ runner.os }}-
-      - name: Run the complete test gate
+          key: rust-sources-v3-${{ runner.os }}-${{ hashFiles('devenv.nix', 'devenv.lock', 'Cargo.lock', 'tests/compat/rust-server/Cargo.lock') }}
+          restore-keys: rust-sources-v3-${{ runner.os }}-
+      - name: Format, lint, test and document
         run: devenv shell -- ./scripts/check.sh
+      - name: Run PostgreSQL contracts for both adapters
+        env:
+          BETTER_AUTH_TEST_POSTGRES_URL: postgres://native:native@localhost:5432/native
+        run: devenv shell -- cargo nextest run --locked --profile postgres --run-ignored only -E 'test(postgres)'
+      - name: Run exact-clock admin regression proofs
+        run: |
+          devenv shell -- cc -shared -fPIC -o "$RUNNER_TEMP/native-clock.so" tests/compat/support/realtime-clock.c -ldl
+          devenv shell -- env BETTER_AUTH_PROOF_CLOCK_MS=1893456000000 LD_PRELOAD="$RUNNER_TEMP/native-clock.so" cargo nextest run --locked --profile clock --run-ignored only -E 'test(strict_expiry)'
+      - name: Run Redis persistence and atomic rate-limit contracts
+        env:
+          BETTER_AUTH_TEST_REDIS_URL: redis://localhost:6379/0
+          TEST_RATE_LIMIT_REDIS_URL: redis://localhost:6379/0
+        run: devenv shell -- cargo nextest run --locked --features redis-cache --profile redis --run-ignored only -E 'test(redis)'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: test-reports
-          path: |
-            coverage/lcov.info
-            tests/compat/client-tests/artifacts/
+          name: native-test-report
+          path: target/nextest/*/junit.xml
           if-no-files-found: warn

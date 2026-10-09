@@ -3,6 +3,7 @@ use crate::model::{self, SqlxModel};
 use crate::pool::{Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxVerificationModel};
 use crate::sql::Sql;
+use crate::value::SqlValue;
 use alibi_core::entity::AuthVerification;
 use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::store::adapter::cancelled_by_hook;
@@ -21,6 +22,15 @@ where
 {
     fn verification_table() -> &'static str {
         <S::Verification as SqlxModel>::TABLE
+    }
+
+    /// `newest_generation` filter keeping only unexpired rows.
+    fn unexpired() -> (&'static str, &'static str, SqlValue) {
+        (
+            S::Verification::expires_at_column(),
+            " > ",
+            S::Verification::timestamp_value(S::Verification::expires_at_column(), Utc::now()),
+        )
     }
 
     pub(crate) async fn create_verification_record_with_connection(
@@ -46,7 +56,7 @@ where
                     .generated_id(
                         exec,
                         "verification",
-                        <S::Verification as SqlxModel>::TABLE,
+                        Self::verification_table(),
                         S::Verification::id_column(),
                     )
                     .await?;
@@ -110,7 +120,7 @@ where
             .generated_id(
                 exec,
                 "verification",
-                <S::Verification as SqlxModel>::TABLE,
+                Self::verification_table(),
                 S::Verification::id_column(),
             )
             .await?;
@@ -134,14 +144,14 @@ where
         tx: &SqlxTransaction,
         verification: CreateVerification,
     ) -> AuthResult<S::Verification> {
-        self.create_verification_with_connection(Exec::Tx(tx), Some(tx), verification)
+        self.create_verification_with_connection(Exec::tx(tx), Some(tx), verification)
             .await
     }
 
     /// `SELECT ... WHERE identifier = ? [AND ...] ORDER BY created_at DESC LIMIT 1`.
     fn newest_generation(
         exec: Exec<'_>,
-        filters: &[(&'static str, &'static str, crate::SqlValue)],
+        filters: &[(&'static str, &'static str, SqlValue)],
     ) -> Sql {
         let table = Self::verification_table();
         let mut sql = model::select_model::<S::Verification>(exec);
@@ -168,7 +178,7 @@ where
         // protects against another consumer using a separate store/process.
         let transaction = self.begin(true).await?;
         let outcome = async {
-            let exec = Exec::Tx(&transaction);
+            let exec = Exec::tx(&transaction);
             let mut select = Self::newest_generation(
                 exec,
                 &[(
@@ -249,7 +259,7 @@ where
     /// is captured by the update itself, not a later read.
     async fn update_verifications_returning(
         &self,
-        filters: &[(&'static str, crate::SqlValue)],
+        filters: &[(&'static str, SqlValue)],
         value: Option<String>,
         expires_at: Option<DateTime<Utc>>,
         updated_at_column: &'static str,
@@ -281,7 +291,6 @@ where
             sql.compare_model::<S::Verification>(table, column, " = ", value.clone());
         }
         model::returning::<S::Verification>(&mut sql);
-        // The statement updates every matching row; the first returned row is the snapshot.
         self.exec().fetch_optional::<S::Verification>(sql).await
     }
 }
@@ -323,14 +332,7 @@ where
                     identifier.into(),
                 ),
                 (S::Verification::value_column(), " = ", value.into()),
-                (
-                    S::Verification::expires_at_column(),
-                    " > ",
-                    S::Verification::timestamp_value(
-                        S::Verification::expires_at_column(),
-                        Utc::now(),
-                    ),
-                ),
+                Self::unexpired(),
             ],
         );
         self.exec().fetch_optional(sql).await
@@ -341,14 +343,7 @@ where
             self.exec(),
             &[
                 (S::Verification::value_column(), " = ", value.into()),
-                (
-                    S::Verification::expires_at_column(),
-                    " > ",
-                    S::Verification::timestamp_value(
-                        S::Verification::expires_at_column(),
-                        Utc::now(),
-                    ),
-                ),
+                Self::unexpired(),
             ],
         );
         self.exec().fetch_optional(sql).await
@@ -366,14 +361,7 @@ where
                     " = ",
                     identifier.into(),
                 ),
-                (
-                    S::Verification::expires_at_column(),
-                    " > ",
-                    S::Verification::timestamp_value(
-                        S::Verification::expires_at_column(),
-                        Utc::now(),
-                    ),
-                ),
+                Self::unexpired(),
             ],
         );
         self.exec().fetch_optional(sql).await
@@ -495,9 +483,8 @@ where
                 return Ok(false);
             }
         }
-        // RETURNING preserves the winning snapshot in the update itself. A
-        // second SELECT can lose the row to consumption or observe a later
-        // mutation, including changes made by application database triggers.
+        // RETURNING captures the winning snapshot; a second SELECT could lose
+        // the row to consumption or observe a later mutation.
         let Some(model) = self
             .update_verifications_returning(
                 &[

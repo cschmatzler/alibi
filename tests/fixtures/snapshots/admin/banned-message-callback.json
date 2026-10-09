@@ -1,0 +1,70 @@
+[
+  {
+    "sign-in ok": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "BANNED_USER",
+        "message": "banned: <m2>"
+      }
+    }
+  },
+  {
+    "impersonate ok": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "BANNED_USER",
+        "message": "banned: <m2>"
+      }
+    }
+  },
+  {
+    "sign-in fail": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "impersonate fail": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "sign-in api": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "custom denial"
+      }
+    }
+  },
+  {
+    "impersonate api": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "custom denial"
+      }
+    }
+  }
+]

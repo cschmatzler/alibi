@@ -46,7 +46,7 @@ where
             return Err(AuthError::bad_request("Wallet chain ID must be finite"));
         }
         self.in_transaction(true, async move |tx| {
-            let exec = Exec::Tx(tx);
+            let exec = Exec::tx(tx);
             let owner = super::users::find_user_by_id::<S::User>(
                 exec,
                 &data.user_id,
@@ -77,7 +77,7 @@ where
 }
 
 pub(super) async fn remove_owned_wallets(tx: &SqlxTransaction, user_id: &str) -> AuthResult<()> {
-    let exec = Exec::Tx(tx);
+    let exec = Exec::tx(tx);
     if !super::migrator::has_table(exec, "wallet_address").await? {
         return Ok(());
     }

@@ -1,14 +1,14 @@
 //! Transport ownership is independent of plugin lifecycle ordering, proved by the SDK owners.
 
 use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::{BodyLimitConfig, CsrfConfig, Middleware, RateLimitConfig};
+use alibi::seaorm::{Database, SeaOrmStore};
+use alibi::store::UserStore;
 use alibi::{AuthBuilder, AuthConfig, BetterAuth};
-use alibi_core::middleware::{BodyLimitConfig, CsrfConfig, Middleware, RateLimitConfig};
-use alibi_core::store::UserStore;
-use alibi_core::{
+use alibi::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, CreateUser,
     UpdateUser,
 };
-use alibi_seaorm::{Database, SeaOrmStore};
 use async_trait::async_trait;
 use axum::{
     Router,
@@ -33,7 +33,7 @@ use tokio::{
 use tower::ServiceExt;
 use tracing::{Instrument, instrument::WithSubscriber};
 
-type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 #[derive(Default)]
 struct Observations {
@@ -78,7 +78,7 @@ impl AuthPlugin<Schema> for Application {
             self.0.entered.notify_one();
             self.0.release.notified().await;
         }
-        let context = alibi_core::hooks::current_request_hook_context().unwrap();
+        let context = alibi::hooks::current_request_hook_context().unwrap();
         self.0.contexts.lock().unwrap().push((
             context.path,
             (*(context.headers)
@@ -142,7 +142,7 @@ impl Middleware for OrderedMiddleware {
                     ));
                 }
                 Some("before-error") => {
-                    return Err(alibi_core::AuthError::forbidden("middleware denied"));
+                    return Err(alibi::AuthError::forbidden("middleware denied"));
                 }
                 _ => {}
             }
@@ -158,7 +158,7 @@ impl Middleware for OrderedMiddleware {
         if self.after == "second-after"
             && req.header("x-middleware-policy").map(String::as_str) == Some("after-error")
         {
-            return Err(alibi_core::AuthError::forbidden("middleware after failed"));
+            return Err(alibi::AuthError::forbidden("middleware after failed"));
         }
         response.headers.append("x-middleware", self.after);
         Ok(response)
@@ -190,9 +190,9 @@ async fn auth(
 
 async fn auth_with_database(
     observations: Arc<Observations>,
-    database: alibi_seaorm::DatabaseConnection,
+    database: alibi::seaorm::DatabaseConnection,
 ) -> (Arc<BetterAuth<Schema>>, Arc<SeaOrmStore<Schema>>) {
-    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+    alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .unwrap();
     let config =
@@ -581,7 +581,7 @@ mod tests {
 
     #[tokio::test]
     async fn native_request_cancellation_and_detached_observer_preserve_actual_ownership() {
-        use alibi_core::HttpMethod;
+        use alibi::HttpMethod;
 
         for mode in ["cancel", "detach", "connected"] {
             let observations = Arc::new(Observations::default());

@@ -3,8 +3,10 @@
 use crate::model::{ActiveRow, SqlxModel};
 use crate::pool::Engine;
 use crate::value::SqlValue;
+use alibi_core::AuthError;
 use alibi_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
 use alibi_core::error::AuthResult;
+use alibi_core::field_policy::FieldValues;
 pub use alibi_core::schema::AuthSchema;
 use alibi_core::types::{
     CreateAccount, CreateSession, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
@@ -18,7 +20,7 @@ pub trait SqlxUserModel: AuthUser + SqlxModel {
     ///
     /// Returns an error if configured additional fields cannot be bound to model columns.
     fn additional_field_bindings(
-        fields: &alibi_core::field_policy::FieldValues,
+        fields: &FieldValues,
         _backend: Engine,
     ) -> AuthResult<Vec<(&'static str, SqlValue)>> {
         if fields.is_empty() {
@@ -29,7 +31,6 @@ pub trait SqlxUserModel: AuthUser + SqlxModel {
         ))
     }
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the field value is unsupported by the model column.
@@ -78,7 +79,6 @@ pub trait SqlxUserModel: AuthUser + SqlxModel {
         }
     }
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the identifier is invalid for this model's ID type.
@@ -107,7 +107,7 @@ pub trait SqlxSessionModel: AuthSession + SqlxModel {
     ///
     /// Returns `NotImplemented` unless the schema supports secondary sessions.
     fn materialize_secondary(_active: ActiveRow) -> AuthResult<Self> {
-        Err(alibi_core::AuthError::NotImplemented(
+        Err(AuthError::NotImplemented(
             "Secondary session materialization is unsupported".into(),
         ))
     }
@@ -118,7 +118,7 @@ pub trait SqlxSessionModel: AuthSession + SqlxModel {
     ///
     /// Returns an error if configured additional fields cannot be bound to model columns.
     fn additional_field_bindings(
-        fields: &alibi_core::field_policy::FieldValues,
+        fields: &FieldValues,
         _backend: Engine,
     ) -> AuthResult<Vec<(&'static str, SqlValue)>> {
         if fields.is_empty() {
@@ -129,7 +129,6 @@ pub trait SqlxSessionModel: AuthSession + SqlxModel {
         ))
     }
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the field value is unsupported by the model column.
@@ -156,13 +155,11 @@ pub trait SqlxSessionModel: AuthSession + SqlxModel {
 
     fn created_at_column() -> &'static str;
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the identifier is invalid for this model's ID type.
     fn parse_id(id: &str) -> AuthResult<SqlValue>;
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the user identifier is invalid for this model's ID type.
@@ -181,12 +178,10 @@ pub trait SqlxSessionModel: AuthSession + SqlxModel {
 
     fn set_active_organization_id(active: &mut ActiveRow, organization_id: Option<String>);
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the configured model does not support an active-team field.
-    fn set_active_team_id(active: &mut ActiveRow, team_id: Option<String>) -> AuthResult<()> {
-        drop((active, team_id));
+    fn set_active_team_id(_active: &mut ActiveRow, _team_id: Option<String>) -> AuthResult<()> {
         Err(alibi_core::AuthError::internal(
             "the session schema has no active-team field",
         ))
@@ -200,7 +195,7 @@ pub trait SqlxAccountModel: AuthAccount + SqlxModel {
     ///
     /// Returns an error if configured additional fields cannot be bound to model columns.
     fn additional_field_bindings(
-        fields: &alibi_core::field_policy::FieldValues,
+        fields: &FieldValues,
         _backend: Engine,
     ) -> AuthResult<Vec<(&'static str, SqlValue)>> {
         if fields.is_empty() {
@@ -211,7 +206,6 @@ pub trait SqlxAccountModel: AuthAccount + SqlxModel {
         ))
     }
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the field value is unsupported by the model column.
@@ -237,13 +231,11 @@ pub trait SqlxAccountModel: AuthAccount + SqlxModel {
     fn account_id_column() -> &'static str;
     fn user_id_column() -> &'static str;
     fn created_at_column() -> &'static str;
-    ///
     /// # Errors
     ///
     /// Returns an error if the identifier is invalid for this model's ID type.
     fn parse_id(id: &str) -> AuthResult<SqlValue>;
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the user identifier is invalid for this model's ID type.
@@ -267,7 +259,6 @@ pub trait SqlxVerificationModel: AuthVerification + SqlxModel {
     fn updated_at_column() -> Option<&'static str> {
         None
     }
-    ///
     /// # Errors
     ///
     /// Returns an error if the identifier is invalid for this model's ID type.

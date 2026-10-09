@@ -1,0 +1,38 @@
+[
+  {
+    "forwarded": {
+      "status": 302,
+      "location": "http://localhost:43219/api/auth/callback/google/oauth-proxy?callbackURL=http%3A%2F%2Flocalhost%3A43219%2Fdest&profile=%3Cprofile%3E"
+    }
+  },
+  {
+    "registered": {
+      "status": 302,
+      "location": "http://localhost:43219/welcome"
+    }
+  },
+  {
+    "returning": {
+      "status": 302,
+      "location": "http://localhost:43219/dest"
+    }
+  },
+  {
+    "body parameters": {
+      "status": 302,
+      "location": "http://localhost:43219/api/auth/callback/google/oauth-proxy?callbackURL=http%3A%2F%2Flocalhost%3A43219%2Fdest&profile=%3Cprofile%3E"
+    }
+  },
+  {
+    "completed from body": {
+      "status": 302,
+      "location": "http://localhost:43219/dest"
+    }
+  },
+  {
+    "inferred current origin": {
+      "redirect_uri": "http://127.0.0.1:43219/api/auth/callback/google",
+      "state_is_package": true
+    }
+  }
+]

@@ -1,7 +1,9 @@
 use super::SqlxStore;
 use super::entities::organization::{JsonMetadata, Model};
+use crate::SqlValue;
 use crate::error::record_not_updated;
 use crate::model::{self, ActiveRow};
+use crate::organization_models::Row;
 use crate::pool::{Engine, Exec};
 use crate::schema::AuthSchema;
 use crate::sql::Sql;
@@ -149,7 +151,7 @@ where
             .organization
             .update(self.exec(), &active)
             .await?
-            .map(|model_2| Organization::from(&model_2))
+            .map(|model| Organization::from(&model))
             .ok_or_else(record_not_updated)
     }
 
@@ -159,7 +161,7 @@ where
         mut update: UpdateOrganization,
     ) -> AuthResult<Option<Organization>> {
         let backend = self.exec().engine();
-        let mut assignments: Vec<(&str, crate::SqlValue)> = Vec::new();
+        let mut assignments: Vec<(&str, SqlValue)> = Vec::new();
         if let Some(name) = update.name {
             assignments.push(("name", name.into()));
         }
@@ -239,13 +241,13 @@ where
             .organization
             .update(self.exec(), &active)
             .await?
-            .map(|model_2| Organization::from(&model_2)))
+            .map(|model| Organization::from(&model)))
     }
 
     async fn delete_organization(&self, id: &str) -> AuthResult<()> {
         let id = id.to_owned();
         self.in_transaction(false, async move |tx| {
-            let exec = Exec::Tx(tx);
+            let exec = Exec::tx(tx);
             for query in [
                 self.organization_models
                     .member
@@ -307,10 +309,8 @@ where
             .into_iter()
             .map(|model| (model.id.clone(), Organization::from(&model)))
             .collect();
-        // The source maps the member page's joined organizations. Repeated
-        // memberships repeat the organization; organization creation order
-        // cannot reorder this page. Missing joins retain the existing store's
-        // omission behavior, rather than inventing a nullable public result.
+        // Source maps the member page's joined organizations: repeated
+        // memberships repeat the organization, and missing joins are omitted.
         Ok(member_models
             .into_iter()
             .filter_map(|member| organizations.get(&member.organization_id).cloned())
@@ -319,7 +319,7 @@ where
 }
 
 fn apply_organization_update(
-    model: crate::organization_models::Row<Model>,
+    model: Row<Model>,
     update: UpdateOrganization,
     backend: Engine,
 ) -> AuthResult<ActiveRow> {

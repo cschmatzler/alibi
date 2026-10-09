@@ -71,7 +71,7 @@ type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 #[cfg(any(feature = "sqlx", feature = "seaorm"))]
 async fn exercise<S: alibi::AuthSchema>(store: &dyn alibi::store::AuthStore<S>) -> TestResult {
     use alibi::prelude::{AuthSession, AuthUser, AuthVerification};
-    use alibi_core::{CreateAccount, CreateSession, CreateUser, CreateVerification};
+    use alibi::{CreateAccount, CreateSession, CreateUser, CreateVerification};
     let user = store
         .create_user(CreateUser::new().with_email("generated@fixture.test"))
         .await?;
@@ -79,7 +79,7 @@ async fn exercise<S: alibi::AuthSchema>(store: &dyn alibi::store::AuthStore<S>) 
     let expires_at = chrono::Utc::now() + chrono::Duration::hours(1);
     let session = store
         .create_session(CreateSession {
-            additional_fields: alibi_core::field_policy::FieldValues::default(),
+            additional_fields: alibi::field_policy::FieldValues::default(),
             token: None,
             user_id: user_id.clone(),
             expires_at,

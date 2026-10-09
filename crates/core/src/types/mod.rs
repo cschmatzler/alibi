@@ -1,43 +1,17 @@
 mod http;
 mod inputs;
-mod responses;
-
-pub use http::AuthRequest;
-pub use http::AuthResponse;
-pub use http::Headers;
-pub use http::HttpMethod;
-pub use http::MultipartFile;
-pub use http::MultipartFiles;
-pub use http::ParsedRequestBody;
-pub use http::RequestExtensions;
-pub use http::RequestMeta;
-pub use inputs::CreateAccount;
-pub use inputs::CreateSession;
-pub use inputs::CreateUser;
-pub use inputs::CreateVerification;
-pub use inputs::ListUsersParams;
-pub use inputs::UpdateAccount;
-pub use inputs::UpdateUser;
-pub use inputs::UpdateUserRequest;
-pub use inputs::UpdateUserResponse;
-pub use inputs::UpdateVerification;
-pub use inputs::UserFilterValue;
-pub use responses::CodeMessageResponse;
-pub use responses::ErrorCodeMessageResponse;
-pub use responses::ErrorMessageResponse;
-pub use responses::HealthCheckResponse;
-pub use responses::OkResponse;
-pub use responses::RateLimitErrorResponse;
-pub use responses::StatusMessageResponse;
-pub use responses::StatusResponse;
-pub use responses::SuccessMessageResponse;
-pub use responses::SuccessResponse;
-pub use responses::ValidationErrorResponse;
 mod organization;
 mod plugin;
-// Re-export organization types
-use crate::utils::normalize_user_email;
-use chrono::{DateTime, Utc};
+mod responses;
+
+pub use http::{
+    AuthRequest, AuthResponse, Headers, HttpMethod, MultipartFile, MultipartFiles,
+    ParsedRequestBody, RequestExtensions, RequestMeta,
+};
+pub use inputs::{
+    CreateAccount, CreateSession, CreateUser, CreateVerification, ListUsersParams, UpdateAccount,
+    UpdateUser, UpdateUserRequest, UpdateUserResponse, UpdateVerification, UserFilterValue,
+};
 pub use organization::{
     AddTeamMemberResult, CreateInvitation, CreateMember, CreateOrganization,
     CreateOrganizationRole, CreateTeam, Invitation, InvitationStatus, Member, Organization,
@@ -51,18 +25,19 @@ pub use plugin::{
     UpdateApiKey, UpdateDeviceCode, UpdatePasskey, UpdatePasskeyAuthentication, UpdateTwoFactor,
     WalletAddress,
 };
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::ops::Index;
-use std::sync::{Arc, Mutex};
-use validator::Validate;
+pub use responses::{
+    CodeMessageResponse, ErrorCodeMessageResponse, ErrorMessageResponse, HealthCheckResponse,
+    OkResponse, RateLimitErrorResponse, StatusMessageResponse, StatusResponse,
+    SuccessMessageResponse, SuccessResponse, ValidationErrorResponse,
+};
 
 // LCOV_EXCL_START
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ── AuthRequest ─────────────────────────────────────────────────────
+    use chrono::Utc;
+    use serde::Serialize;
+    use std::collections::HashMap;
 
     // Rust-specific surface: Rust request/response/type helpers are public library behavior with no direct TS analogue.
     #[test]
@@ -79,7 +54,7 @@ mod tests {
     #[test]
     fn auth_request_from_parts() {
         let mut headers = HashMap::new();
-        drop(headers.insert("host".to_owned(), "localhost".to_owned()));
+        _ = headers.insert("host".to_owned(), "localhost".to_owned());
         let req = AuthRequest::from_parts(
             HttpMethod::Post,
             "/login".into(),
@@ -158,8 +133,6 @@ mod tests {
         });
         assert_eq!(req.virtual_user_id(), Some("user-123"));
     }
-
-    // ── AuthResponse ────────────────────────────────────────────────────
 
     // Rust-specific surface: Rust request/response/type helpers are public library behavior with no direct TS analogue.
     #[test]
@@ -256,17 +229,14 @@ mod tests {
         assert_eq!(resp.headers.get("x-custom").unwrap(), "val");
     }
 
-    // ── RequestMeta ─────────────────────────────────────────────────────
-
     // Rust-specific surface: Rust request/response/type helpers are public library behavior with no direct TS analogue.
     #[test]
     fn request_meta_extracts_from_headers() {
         let mut req = AuthRequest::new(HttpMethod::Get, "/test");
-        drop(
-            req.headers
-                .insert("x-forwarded-for".into(), "1.2.3.4".into()),
-        );
-        drop(req.headers.insert("user-agent".into(), "TestAgent".into()));
+        _ = req
+            .headers
+            .insert("x-forwarded-for".into(), "1.2.3.4".into());
+        _ = req.headers.insert("user-agent".into(), "TestAgent".into());
         let meta = RequestMeta::from_request(&req);
         assert_eq!(meta.ip_address.as_deref(), Some("1.2.3.4"));
         assert_eq!(meta.user_agent.as_deref(), Some("TestAgent"));
@@ -276,7 +246,7 @@ mod tests {
     #[test]
     fn request_meta_ignores_unconfigured_real_ip() {
         let mut req = AuthRequest::new(HttpMethod::Get, "/test");
-        drop(req.headers.insert("x-real-ip".into(), "5.6.7.8".into()));
+        _ = req.headers.insert("x-real-ip".into(), "5.6.7.8".into());
         let meta = RequestMeta::from_request(&req);
         assert!(meta.ip_address.is_none());
     }
@@ -289,8 +259,6 @@ mod tests {
         assert!(meta.ip_address.is_none());
         assert!(meta.user_agent.is_none());
     }
-
-    // ── CreateUser builder ──────────────────────────────────────────────
 
     // Rust-specific surface: Rust request/response/type helpers are public library behavior with no direct TS analogue.
     #[test]

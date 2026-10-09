@@ -10,30 +10,12 @@ mod fields;
 mod secondary;
 mod writes;
 
-pub use accessors::auth_account_impl;
-pub use accessors::auth_session_impl;
-pub use accessors::auth_user_impl;
-pub use accessors::auth_verification_impl;
-use alibi_schema_registry as registry;
+pub use accessors::{auth_account_impl, auth_session_impl, auth_user_impl, auth_verification_impl};
 pub use alibi_schema_registry::EntityRole;
-pub use attributes::AuthAttributes;
-pub use attributes::named_fields;
-pub use attributes::parse_auth_attributes;
-pub use attributes::validate_core_fields;
-pub use fields::EntityField;
-pub use fields::additional_output;
-pub use fields::camel_case;
-pub use fields::has_field;
-pub use fields::is_auth_timestamp;
-pub use fields::is_known_field;
-pub use fields::is_option;
-pub use fields::optional_field;
-use proc_macro2::{Ident, Span, TokenStream};
-use quote::quote;
+pub use attributes::{AuthAttributes, named_fields, parse_auth_attributes, validate_core_fields};
+pub use fields::{
+    EntityField, additional_output, camel_case, has_field, is_auth_timestamp, is_known_field,
+    is_option, optional_field,
+};
 pub use secondary::secondary_codec;
-use syn::{Data, DeriveInput, Fields, FieldsNamed, LitStr, Type};
-pub use writes::Insert;
-pub use writes::SetField;
-pub use writes::generated_id;
-pub use writes::insert_values;
-pub use writes::update_statements;
+pub use writes::{Insert, SetField, generated_id, insert_values, update_statements};

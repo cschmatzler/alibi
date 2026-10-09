@@ -8,7 +8,10 @@ use crate::{
     UpdateVerification,
     config::VerificationConfig,
     store::{AuthStore, AuthTransaction, CacheAdapter},
-    utils::json::{self, JsValue},
+    utils::{
+        javascript::{number_from_i64, string_to_number},
+        json::{self, JsValue},
+    },
 };
 use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -119,7 +122,7 @@ impl VerificationCreation {
     pub fn snapshot(&self) -> VerificationSnapshot {
         let mut fields = IndexMap::new();
         if let Some(id) = &self.id {
-            drop(fields.insert("id".into(), JsValue::String(id.clone())));
+            _ = fields.insert("id".into(), JsValue::String(id.clone()));
         }
         for (key, value) in [
             ("identifier", self.identifier.clone()),
@@ -128,7 +131,7 @@ impl VerificationCreation {
             ("createdAt", date_json(self.created_at)),
             ("updatedAt", date_json(self.updated_at)),
         ] {
-            drop(fields.insert(key.into(), JsValue::String(value)));
+            _ = fields.insert(key.into(), JsValue::String(value));
         }
         VerificationSnapshot {
             data: JsValue::Object(fields),
@@ -154,7 +157,7 @@ impl fmt::Debug for VerificationSnapshot {
         f.debug_struct("VerificationSnapshot")
             .field("data", &self.data)
             .field("physical", &self.original_model.is_some())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 impl VerificationSnapshot {
@@ -216,15 +219,14 @@ impl VerificationSnapshot {
     /// revived; other strings retain their numeric relational coercion.
     #[must_use]
     pub fn is_expired(&self) -> bool {
-        let expiry = self.expiry.map_or_else(
-            || number(self.data.get("expiresAt")),
-            |millis| millis as f64,
-        );
-        expiry < Utc::now().timestamp_millis() as f64
+        let expiry = self
+            .expiry
+            .map_or_else(|| number(self.data.get("expiresAt")), number_from_i64);
+        expiry < number_from_i64(Utc::now().timestamp_millis())
     }
     fn cached(raw: &str) -> Option<Self> {
         let mut data = json::parse_value(raw).ok()?;
-        if !truthy(&data) {
+        if !data.is_truthy() {
             return None;
         }
         let expiry = data
@@ -246,10 +248,10 @@ impl VerificationSnapshot {
             .or_else(|| date_value(self.data.get("expiresAt")))?;
         self.expiry = Some(expiry);
         if let JsValue::Object(fields) = &mut self.data {
-            drop(fields.insert(
+            _ = fields.insert(
                 "expiresAt".into(),
                 JsValue::String(crate::utils::datetime::json_date_millis(expiry)),
-            ));
+            );
         }
         Some(self)
     }
@@ -302,11 +304,19 @@ impl<S: AuthSchema> VerificationService<'_, S> {
     fn physical(&self) -> bool {
         self.config.secondary_storage.is_none() || self.config.store_in_database
     }
+    async fn stored_identifier(&self, identifier: &str) -> AuthResult<String> {
+        self.config
+            .store_identifier
+            .strategy(identifier)
+            .process(identifier)
+            .await
+    }
     async fn identifiers(&self, identifier: &str) -> AuthResult<Vec<String>> {
-        let strategy = self.config.store_identifier.strategy(identifier);
-        let stored = strategy.process(identifier).await?;
-        let mut identifiers = vec![stored];
-        if !matches!(strategy, VerificationIdentifierStrategy::Plain) {
+        let mut identifiers = vec![self.stored_identifier(identifier).await?];
+        if !matches!(
+            self.config.store_identifier.strategy(identifier),
+            VerificationIdentifierStrategy::Plain
+        ) {
             identifiers.push(identifier.to_owned());
         }
         Ok(identifiers)
@@ -315,12 +325,7 @@ impl<S: AuthSchema> VerificationService<'_, S> {
         &self,
         mut data: VerificationCreation,
     ) -> AuthResult<(VerificationCreation, VerificationPublication)> {
-        data.identifier = self
-            .config
-            .store_identifier
-            .strategy(&data.identifier)
-            .process(&data.identifier)
-            .await?;
+        data.identifier = self.stored_identifier(&data.identifier).await?;
         let publication = VerificationPublication {
             store_in_database: self.physical(),
             secondary_storage: self.config.secondary_storage.clone(),
@@ -373,17 +378,12 @@ impl<S: AuthSchema> VerificationService<'_, S> {
             }
         }
         if !self.config.disable_cleanup {
-            let _deleted = self.database.delete_expired_verifications().await?;
+            _ = self.database.delete_expired_verifications().await?;
         }
         Ok(found.as_ref().map(VerificationSnapshot::from_model))
     }
     pub async fn delete(&self, identifier: &str) -> AuthResult<()> {
-        let stored = self
-            .config
-            .store_identifier
-            .strategy(identifier)
-            .process(identifier)
-            .await?;
+        let stored = self.stored_identifier(identifier).await?;
         if let Some(cache) = &self.config.secondary_storage {
             cache.delete(&key(&stored)).await?;
         }
@@ -461,12 +461,7 @@ impl<S: AuthSchema> VerificationService<'_, S> {
         identifier: &str,
         data: UpdateVerification,
     ) -> AuthResult<Option<VerificationSnapshot>> {
-        let stored = self
-            .config
-            .store_identifier
-            .strategy(identifier)
-            .process(identifier)
-            .await?;
+        let stored = self.stored_identifier(identifier).await?;
         if let Some(cache) = &self.config.secondary_storage
             && let Some(mut snapshot) = cache
                 .get(&key(&stored))
@@ -505,12 +500,7 @@ impl<S: AuthSchema> VerificationService<'_, S> {
     }
     pub async fn reserve(&self, mut data: CreateVerification) -> AuthResult<bool> {
         let logical = data.identifier.clone();
-        data.identifier = self
-            .config
-            .store_identifier
-            .strategy(&logical)
-            .process(&logical)
-            .await?;
+        data.identifier = self.stored_identifier(&logical).await?;
         if !self.physical() {
             return Err(AuthError::internal(
                 "reserveVerificationValue requires database-backed verification storage. Set verification.storeInDatabase to true for flows that reserve verification values.",
@@ -525,8 +515,8 @@ impl<S: AuthSchema> VerificationService<'_, S> {
         };
         let mut snapshot = VerificationSnapshot::from_model(&model);
         if let JsValue::Object(fields) = &mut snapshot.data {
-            drop(fields.shift_remove("createdAt"));
-            drop(fields.shift_remove("updatedAt"));
+            _ = fields.shift_remove("createdAt");
+            _ = fields.shift_remove("updatedAt");
         }
         VerificationPublication {
             store_in_database: true,
@@ -545,26 +535,13 @@ fn date_json(date: DateTime<Utc>) -> String {
 fn key(identifier: &str) -> String {
     format!("verification:{identifier}")
 }
-fn truthy(value: &JsValue) -> bool {
-    match value {
-        JsValue::Null => false,
-        JsValue::Bool(value) => *value,
-        JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
-        JsValue::String(value) => !value.is_empty(),
-        JsValue::Array(_) | JsValue::Object(_) => true,
-    }
-}
 fn number(value: Option<&JsValue>) -> f64 {
     match value {
         Some(JsValue::Null) => 0.0,
         Some(JsValue::Bool(value)) => f64::from(u8::from(*value)),
         Some(JsValue::Number(value)) => *value,
-        Some(JsValue::String(value)) => {
-            crate::utils::javascript::string_to_number(value).unwrap_or(f64::NAN)
-        }
-        Some(JsValue::Array(values)) => {
-            crate::utils::javascript::string_to_number(&array_string(values)).unwrap_or(f64::NAN)
-        }
+        Some(JsValue::String(value)) => string_to_number(value).unwrap_or(f64::NAN),
+        Some(JsValue::Array(values)) => string_to_number(&array_string(values)).unwrap_or(f64::NAN),
         _ => f64::NAN,
     }
 }
@@ -622,9 +599,9 @@ fn spread(value: &JsValue) -> IndexMap<String, JsValue> {
 }
 fn patch(fields: &mut IndexMap<String, JsValue>, data: &UpdateVerification) {
     if let Some(value) = &data.value {
-        drop(fields.insert("value".into(), JsValue::String(value.clone())));
+        _ = fields.insert("value".into(), JsValue::String(value.clone()));
     }
     if let Some(expires) = data.expires_at {
-        drop(fields.insert("expiresAt".into(), JsValue::String(date_json(expires))));
+        _ = fields.insert("expiresAt".into(), JsValue::String(date_json(expires)));
     }
 }

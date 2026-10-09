@@ -1,10 +1,14 @@
-use super::*;
+use crate::AdapterRecord;
+use crate::field_policy::FieldValues;
+use crate::store::{AdapterEvent, PluginStore, SessionStore};
+use crate::{AuthError, AuthResult, AuthSchema, AuthSession, CreateSession};
+use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn get_session_user_record(
         &self,
         token: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+    ) -> AuthResult<Option<AdapterRecord<S::User>>> {
         let Some(user) = self.get_session_user(token).await? else {
             return Ok(None);
         };
@@ -13,7 +17,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn create_session_record(
         &self,
         create_session: CreateSession,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         let record = self
             .session_record(self.create_session(create_session).await?)
             .await?;
@@ -25,7 +29,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn get_session_record(
         &self,
         token: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<Option<AdapterRecord<S::Session>>> {
         let Some(model) = self.get_session(token).await? else {
             return Ok(None);
         };
@@ -36,7 +40,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn get_sessions_by_tokens_record(
         &self,
         tokens: &[String],
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<Vec<AdapterRecord<S::Session>>> {
         let mut records = Vec::new();
         for model in self.get_sessions_by_tokens(tokens).await? {
             records.push(self.session_record(model).await?);
@@ -47,7 +51,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn get_user_sessions_record(
         &self,
         user_id: &str,
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<Vec<AdapterRecord<S::Session>>> {
         self.session_records(self.get_user_sessions(user_id).await?)
             .await
     }
@@ -55,8 +59,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn get_active_user_sessions_record(
         &self,
         user_id: &str,
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
-        use crate::AuthSession;
+    ) -> AuthResult<Vec<AdapterRecord<S::Session>>> {
         let now = chrono::Utc::now();
         let models = self
             .get_user_sessions(user_id)
@@ -71,7 +74,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         &self,
         token: &str,
         expires_at: chrono::DateTime<chrono::Utc>,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<Option<AdapterRecord<S::Session>>> {
         let Some(model) = self.refresh_session(token, expires_at).await? else {
             return Ok(None);
         };
@@ -84,8 +87,8 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn update_session_fields_record(
         &self,
         token: &str,
-        fields: crate::field_policy::FieldValues,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::Session>>> {
+        fields: FieldValues,
+    ) -> AuthResult<Option<AdapterRecord<S::Session>>> {
         let Some(model) = self.update_session_fields(token, fields).await? else {
             return Ok(None);
         };
@@ -99,7 +102,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         &self,
         token: &str,
         organization_id: Option<&str>,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         let record = self
             .session_record(
                 self.update_session_active_organization(token, organization_id)
@@ -115,7 +118,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         &self,
         token: &str,
         team_id: Option<&str>,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         let record = self
             .session_record(self.update_session_active_team(token, team_id).await?)
             .await?;
@@ -127,7 +130,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn update_session_fields(
         &self,
         token: &str,
-        mut fields: crate::field_policy::FieldValues,
+        mut fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         self.adapter_fields.attach(&mut fields, false);
         if self.config.session.stateless {
@@ -168,12 +171,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     }
     async fn get_session(&self, token: &str) -> AuthResult<Option<S::Session>> {
         if self.config.session.stateless {
-            return Ok(self
-                .ephemeral_sessions
-                .lock()
-                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
-                .get(token)
-                .cloned());
+            return Ok(self.ephemeral()?.get(token).cloned());
         }
         if self.secondary().is_some() {
             if let Some((session, _)) = self.cached_session(token).await? {
@@ -197,17 +195,10 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     }
     async fn get_sessions_by_tokens(&self, tokens: &[String]) -> AuthResult<Vec<S::Session>> {
         if self.config.session.stateless {
-            let sessions = self
-                .ephemeral_sessions
-                .lock()
-                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?;
+            let sessions = self.ephemeral()?;
             return Ok(sessions
                 .values()
-                .filter(|session| {
-                    tokens
-                        .iter()
-                        .any(|token| token == crate::AuthSession::token(*session))
-                })
+                .filter(|session| tokens.iter().any(|token| token == session.token()))
                 .cloned()
                 .collect());
         }
@@ -225,11 +216,9 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn get_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>> {
         if self.config.session.stateless {
             return Ok(self
-                .ephemeral_sessions
-                .lock()
-                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
+                .ephemeral()?
                 .values()
-                .filter(|session| crate::AuthSession::user_id(*session).as_ref() == user_id)
+                .filter(|session| session.user_id().as_ref() == user_id)
                 .cloned()
                 .collect());
         }
@@ -254,7 +243,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         &self,
         token: &str,
         expires_at: chrono::DateTime<chrono::Utc>,
-        mut fields: crate::field_policy::FieldValues,
+        mut fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         self.adapter_fields.attach(&mut fields, false);
         if self.config.session.stateless {
@@ -283,12 +272,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     }
     async fn delete_session(&self, token: &str) -> AuthResult<()> {
         if self.config.session.stateless {
-            drop(
-                self.ephemeral_sessions
-                    .lock()
-                    .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
-                    .shift_remove(token),
-            );
+            _ = self.ephemeral()?.shift_remove(token);
             return Ok(());
         }
         self.remove_cached_session(token).await?;
@@ -302,13 +286,11 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     }
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
         if self.config.session.stateless {
-            self.ephemeral_sessions
-                .lock()
-                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
-                .retain(|_, session| crate::AuthSession::user_id(session).as_ref() != user_id);
+            self.ephemeral()?
+                .retain(|_, session| session.user_id().as_ref() != user_id);
             return Ok(());
         }
-        drop(self.get_user_sessions_record(user_id).await);
+        _ = self.get_user_sessions_record(user_id).await;
         let tokens = self.cached_user_tokens(user_id).await?;
         if self.session_uses_database() {
             if self.secondary().is_some() && self.config.session.preserve_in_database {
@@ -321,13 +303,9 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     }
     async fn delete_expired_sessions(&self) -> AuthResult<usize> {
         if self.config.session.stateless {
-            let mut sessions = self
-                .ephemeral_sessions
-                .lock()
-                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?;
+            let mut sessions = self.ephemeral()?;
             let before = sessions.len();
-            sessions
-                .retain(|_, session| crate::AuthSession::expires_at(session) >= chrono::Utc::now());
+            sessions.retain(|_, session| session.expires_at() >= chrono::Utc::now());
             return Ok(before - sessions.len());
         }
         if self.secondary().is_some()
@@ -344,19 +322,9 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         organization_id: Option<&str>,
     ) -> AuthResult<S::Session> {
         if self.config.session.stateless || self.secondary().is_some() {
-            let mut fields = crate::field_policy::FieldValues::new();
-            drop(fields.insert(
-                "activeOrganizationId".into(),
-                organization_id.map_or(crate::utils::json::JsValue::Null, |value| {
-                    crate::utils::json::JsValue::String(value.to_owned())
-                }),
-            ));
-            let updated = if self.config.session.stateless {
-                self.update_ephemeral_session(token, None, fields).await?
-            } else {
-                self.update_secondary_session(token, None, fields).await?
-            };
-            return updated.ok_or(AuthError::SessionNotFound);
+            return self
+                .update_session_scope(token, "activeOrganizationId", organization_id)
+                .await;
         }
         self.inner
             .update_session_active_organization(token, organization_id)
@@ -368,19 +336,9 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         team_id: Option<&str>,
     ) -> AuthResult<S::Session> {
         if self.config.session.stateless || self.secondary().is_some() {
-            let mut fields = crate::field_policy::FieldValues::new();
-            drop(fields.insert(
-                "activeTeamId".into(),
-                team_id.map_or(crate::utils::json::JsValue::Null, |value| {
-                    crate::utils::json::JsValue::String(value.to_owned())
-                }),
-            ));
-            let updated = if self.config.session.stateless {
-                self.update_ephemeral_session(token, None, fields).await?
-            } else {
-                self.update_secondary_session(token, None, fields).await?
-            };
-            return updated.ok_or(AuthError::SessionNotFound);
+            return self
+                .update_session_scope(token, "activeTeamId", team_id)
+                .await;
         }
         self.inner.update_session_active_team(token, team_id).await
     }

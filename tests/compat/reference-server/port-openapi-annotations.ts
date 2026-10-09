@@ -114,8 +114,8 @@ try {
   }
   endpoints += "_=>return None,})}\n";
   models += "_=>return None,})}\n";
-  await writeFile(new URL("crates/api/src/metadata/source_endpoints.rs", root), endpoints);
-  await writeFile(new URL("crates/api/src/metadata/source_models.rs", root), models);
+  await writeFile(new URL("crates/plugins/src/metadata/source_endpoints.rs", root), endpoints);
+  await writeFile(new URL("crates/plugins/src/metadata/source_models.rs", root), models);
   console.log(
     `Ported ${count} endpoint declarations and ${factories.length} plugin schemas from pinned factories.`,
   );

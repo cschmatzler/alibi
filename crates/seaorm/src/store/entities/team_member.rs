@@ -1,3 +1,4 @@
+use alibi_core::types::TeamMember;
 use sea_orm::entity::prelude::*;
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "team_member")]
@@ -14,7 +15,7 @@ pub struct Model {
 pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}
 
-impl From<Model> for alibi_core::types::TeamMember {
+impl From<Model> for TeamMember {
     fn from(model: Model) -> Self {
         Self {
             id: model.id,

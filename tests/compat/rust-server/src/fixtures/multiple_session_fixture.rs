@@ -5,9 +5,9 @@ use alibi::middleware::RateLimitConfig;
 use alibi::plugins::{
     EmailPasswordPlugin, MultiSessionConfig, MultiSessionPlugin, SessionManagementPlugin,
 };
+use alibi::seaorm::sea_orm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthResult, prelude::CreateSession};
-use alibi_core::{CookieAttributes, CookieOverride, SameSite};
-use alibi_seaorm::sea_orm::DatabaseConnection;
+use alibi::{CookieAttributes, CookieOverride, SameSite};
 use axum::Router;
 use std::sync::{
     Arc,
@@ -16,12 +16,12 @@ use std::sync::{
 
 struct TokenHook(Arc<AtomicUsize>);
 #[async_trait::async_trait]
-impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
+impl alibi::seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
     async fn before_create_session(
         &self,
         session: &mut CreateSession,
         _: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<alibi_seaorm::HookControl> {
+    ) -> AuthResult<alibi::seaorm::HookControl> {
         let count = self.0.fetch_add(1, Ordering::SeqCst) + 1;
         let rank = match count % 3 {
             1 => 3,
@@ -29,7 +29,7 @@ impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenH
             _ => 2,
         };
         session.token = Some(format!("{rank:04}{count:028}"));
-        Ok(alibi_seaorm::HookControl::Continue)
+        Ok(alibi::seaorm::HookControl::Continue)
     }
 }
 pub(crate) async fn router(
@@ -94,16 +94,15 @@ pub(crate) async fn router(
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
     let path = "/__test/profiles/multi-session-stateless/api/auth";
-    let config =
-        config
-            .clone()
-            .base_path(path)
-            .session_cookie_cache(alibi_core::CookieCacheConfig {
-                enabled: true,
-                strategy: alibi_core::CookieCacheStrategy::Jwe,
-                max_age: 300.0,
-                ..Default::default()
-            });
+    let config = config
+        .clone()
+        .base_path(path)
+        .session_cookie_cache(alibi::CookieCacheConfig {
+            enabled: true,
+            strategy: alibi::CookieCacheStrategy::Jwe,
+            max_age: 300.0,
+            ..Default::default()
+        });
     let auth = Arc::new(
         AuthBuilder::without_database(config)
             .rate_limit(RateLimitConfig::new().enabled(false))

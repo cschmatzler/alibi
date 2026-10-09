@@ -10,8 +10,8 @@ use alibi::plugins::magic_link::{
 use alibi::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin, SessionManagementPlugin,
 };
+use alibi::seaorm::sea_orm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_seaorm::sea_orm::DatabaseConnection;
 use async_trait::async_trait;
 use axum::{
     Json, Router,
@@ -81,7 +81,7 @@ impl SendMagicLink for Sender {
     async fn send(
         &self,
         delivery: &MagicLinkDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         let auth = _context.context::<TestSchema>().unwrap();
         let identifier = if auth.config.base_path.contains("magic-link-custom-hasher") {
@@ -171,7 +171,7 @@ pub(super) async fn router(
                 .plugin(SessionManagementPlugin::new())
                 .plugin(MagicLinkPlugin::new(MagicLinkConfig {
                     rate_limit: if name == "magic-link-rate-policy" {
-                        alibi_core::EndpointRateLimit {
+                        alibi::EndpointRateLimit {
                             window_seconds: 1.0,
                             max_requests: 2.0,
                         }

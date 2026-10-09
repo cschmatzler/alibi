@@ -2,7 +2,9 @@
 
 use crate::pool::{Engine, Exec, SqlxPool};
 use crate::sql::Sql;
+use alibi_core::config::AuthConfig;
 use alibi_core::error::{AuthError, AuthResult, DatabaseError};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// One named schema change, as SQL for each backend.
@@ -39,7 +41,7 @@ pub(crate) async fn apply(
 
 pub(crate) async fn run_migrations_scoped(
     pool: &SqlxPool,
-    config: &std::sync::Arc<alibi_core::config::AuthConfig>,
+    config: &Arc<AuthConfig>,
 ) -> AuthResult<()> {
     apply_scoped(pool, "better_auth_migrations", &[AUTH_SCHEMA], Some(config)).await
 }
@@ -48,9 +50,9 @@ async fn apply_scoped(
     pool: &SqlxPool,
     ledger: &'static str,
     migrations: &[Migration],
-    config: Option<&std::sync::Arc<alibi_core::config::AuthConfig>>,
+    config: Option<&Arc<AuthConfig>>,
 ) -> AuthResult<()> {
-    let mut exec = Exec::Pool(pool);
+    let mut exec = Exec::pool(pool);
     if let Some(config) = config {
         if pool.engine() == Engine::Postgres
             && let Some(schema) = &config.advanced.database.schema_name
@@ -97,7 +99,7 @@ async fn apply_scoped(
     {
         let mut transaction = pool.begin(false).await?;
         transaction.config = config.cloned();
-        let exec = Exec::Tx(&transaction);
+        let exec = Exec::tx(&transaction);
         exec.execute_script(match backend {
             Engine::Sqlite => migration.sqlite,
             Engine::Postgres => migration.postgres,
@@ -129,10 +131,14 @@ pub(crate) async fn has_table(exec: Exec<'_>, table: &str) -> AuthResult<bool> {
         ),
         Engine::Postgres => {
             sql.push("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ");
-            if let Some(schema) = exec.schema_name() { sql.bind(schema); } else {sql.push("CURRENT_SCHEMA()");}
+            if let Some(schema) = exec.schema_name() {
+                sql.bind(schema);
+            } else {
+                sql.push("CURRENT_SCHEMA()");
+            }
             sql.push(" AND table_type = 'BASE TABLE' AND table_name = ");
-        },
-    };
+        }
+    }
     sql.bind(table);
     Ok(exec.fetch_scalar::<i64>(sql).await?.unwrap_or_default() > 0)
 }

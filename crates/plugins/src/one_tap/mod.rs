@@ -1,0 +1,359 @@
+//! Google One Tap authentication with verified Google ID tokens.
+use crate::authentication_helpers::{JsonField, RequestBody, parse_body};
+use crate::oauth::{
+    OAuthConfig, OAuthProcessPolicy, OAuthSignInError, OAuthTokenSet, OAuthUserInfo,
+    process_oauth_sign_in,
+};
+use alibi_core::utils::json::JsValue;
+use alibi_core::{
+    AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
+    HttpMethod,
+};
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use serde_json::Map;
+use serde_json::json;
+use std::sync::Arc;
+
+const MISSING_CLIENT: &str = "Google client ID is required for One Tap. Set it on the oneTap plugin (clientId) or on socialProviders.google.";
+
+/// Google client IDs accepted as the ID-token audience.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum OneTapClientId {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+impl From<String> for OneTapClientId {
+    fn from(value: String) -> Self {
+        Self::Single(value)
+    }
+}
+
+impl From<&str> for OneTapClientId {
+    fn from(value: &str) -> Self {
+        Self::Single(value.into())
+    }
+}
+
+impl From<Vec<String>> for OneTapClientId {
+    fn from(value: Vec<String>) -> Self {
+        Self::Multiple(value)
+    }
+}
+
+pub use crate::oauth::OAuthJwksSource;
+
+#[derive(Clone, Default)]
+pub struct OneTapConfig {
+    /// Overrides the registered Google provider's client IDs when truthy.
+    pub client_id: Option<OneTapClientId>,
+    pub disable_signup: bool,
+    /// Optional application transport/cache; defaults to Google's official JWKS endpoint.
+    pub jwks_source: Option<Arc<dyn OAuthJwksSource>>,
+}
+
+impl std::fmt::Debug for OneTapConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OneTapConfig").finish_non_exhaustive()
+    }
+}
+
+pub struct OneTapPlugin {
+    config: OneTapConfig,
+    keys: Arc<dyn OAuthJwksSource>,
+}
+
+impl std::fmt::Debug for OneTapPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OneTapPlugin").finish_non_exhaustive()
+    }
+}
+
+impl Default for OneTapPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl OneTapPlugin {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::with_config(OneTapConfig::default())
+    }
+    #[must_use]
+    pub fn with_config(config: OneTapConfig) -> Self {
+        let keys = config.jwks_source.clone().unwrap_or_else(|| {
+            Arc::new(crate::oauth::HttpOAuthJwksSource::new(
+                "https://www.googleapis.com/oauth2/v3/certs",
+            ))
+        });
+        Self { config, keys }
+    }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep provider token validation, account linking policy, and session issuance in their request order"
+    )]
+    async fn callback<S: AuthSchema>(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<AuthResponse> {
+        use alibi_core::utils::cookie_utils::{
+            create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
+            sign_cookie_value, verify_cookie_value,
+        };
+
+        let content_type = req.headers.get("content-type");
+        let media = content_type.map(|value| {
+            value
+                .split(';')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase()
+        });
+        if media.as_deref() != Some("application/json") {
+            let message = media.map_or_else(
+                || "Content-Type is required. Allowed types: application/json".to_owned(),
+                |media| {
+                    format!(
+                        "Content-Type \"{media}\" is not allowed. Allowed types: application/json"
+                    )
+                },
+            );
+            return AuthResponse::json(
+                415,
+                &json!({"code":"UNSUPPORTED_MEDIA_TYPE","message":message}),
+            )
+            .map_err(Into::into);
+        }
+        let body: CallbackBody = match parse_body(req) {
+            Ok(body) => body,
+            Err(response) => return Ok(response),
+        };
+        if !ctx.config.current_origin_check_disabled()
+            && body
+                .callback_url
+                .as_deref()
+                .is_some_and(|url| !ctx.config.is_redirect_target_trusted(url))
+        {
+            return AuthResponse::json(
+                403,
+                &json!({"code":"INVALID_CALLBACK_URL","message":"Invalid callbackURL"}),
+            )
+            .map_err(Into::into);
+        }
+        let oauth = ctx.extensions.get::<OAuthConfig>();
+        let provider = oauth
+            .as_ref()
+            .and_then(|config| config.providers.get("google"));
+        let audiences = match &self.config.client_id {
+            Some(OneTapClientId::Single(value)) if !value.is_empty() => vec![value.clone()],
+            Some(OneTapClientId::Multiple(values)) => values.clone(),
+            _ => provider
+                .map(|provider| {
+                    let mut values = vec![provider.client_id.clone()];
+                    values.extend(provider.additional_client_ids.clone());
+                    values
+                })
+                .unwrap_or_default(),
+        };
+        if audiences.is_empty()
+            || !matches!(&self.config.client_id, Some(OneTapClientId::Multiple(_)))
+                && audiences.len() == 1
+                && audiences.first().is_some_and(String::is_empty)
+        {
+            return message(400, MISSING_CLIENT);
+        }
+        let Some(payload) = self.verify(&body.id_token, &audiences).await else {
+            return message(400, "invalid id token");
+        };
+        if !payload.get("sub").is_some_and(js_truthy) {
+            return message(400, "invalid id token");
+        }
+        let hosted_domain = provider
+            .and_then(|provider| provider.hosted_domain.as_deref())
+            .filter(|domain| !domain.is_empty());
+        if let Some(domain) = hosted_domain {
+            let token_domain = payload
+                .get("hd")
+                .and_then(JsValue::as_str)
+                .filter(|value| !value.is_empty());
+            if token_domain.is_none() || domain != "*" && token_domain != Some(domain) {
+                return message(400, "invalid id token");
+            }
+        }
+        let Some(email) = payload
+            .get("email")
+            .and_then(JsValue::as_str)
+            .filter(|value| !value.is_empty())
+        else {
+            return message(400, "Email not available in token");
+        };
+        let Some(sub) = payload
+            .get("sub")
+            .and_then(JsValue::as_str)
+            .filter(|value| !value.is_empty())
+        else {
+            return message(400, "invalid id token");
+        };
+        let user = OAuthUserInfo {
+            additional_fields: Map::default(),
+            id: sub.into(),
+            email: email.to_lowercase(),
+            name: Some(
+                payload
+                    .get("name")
+                    .and_then(JsValue::as_str)
+                    .unwrap_or_default()
+                    .into(),
+            ),
+            image: payload
+                .get("picture")
+                .and_then(JsValue::as_str)
+                .map(str::to_owned),
+            email_verified: payload.get("email_verified").is_some_and(|value| {
+                value.as_bool() == Some(true) || value.as_str() == Some("true")
+            }),
+        };
+        let policy = OAuthProcessPolicy {
+            override_user_info: false,
+            require_email_verification: provider
+                .is_some_and(|provider| provider.require_email_verification),
+            callback_url: None,
+            use_updated_user: false,
+        };
+        let tokens = OAuthTokenSet {
+            id_token: Some(body.id_token),
+            scopes: vec!["openid".into(), "profile".into(), "email".into()],
+            ..Default::default()
+        };
+        let result = process_oauth_sign_in(
+            super::oauth::handlers::OAuthIdentity {
+                provider_name: "google",
+                user: &user,
+                profile: &payload.to_json_value()?,
+            },
+            &policy,
+            &tokens,
+            self.config.disable_signup || provider.is_some_and(|provider| provider.disable_sign_up),
+            &alibi_core::RequestMeta::from_request(req),
+            ctx,
+        )
+        .await;
+        let outcome = match result {
+            Ok(outcome) => outcome,
+            Err(OAuthSignInError::IdentityDenied { code, message }) => {
+                return AuthResponse::json(403, &json!({"code":code,"message":message}))
+                    .map_err(Into::into);
+            }
+            Err(OAuthSignInError::AccountLookup(_)) => {
+                return Ok(crate::oauth::handlers::ambiguous_account_sign_in_response(
+                    ctx,
+                ));
+            }
+            Err(OAuthSignInError::Generic(error)) => return message(401, &error),
+            Err(OAuthSignInError::SessionAuth(error)) => return message(401, &error.to_string()),
+            Err(OAuthSignInError::Banned(error)) => {
+                return AuthResponse::json(403, &json!({"code":"BANNED_USER","message":error}))
+                    .map_err(Into::into);
+            }
+            Err(OAuthSignInError::EmailNotVerified) => {
+                return AuthResponse::json(
+                    403,
+                    &json!({"code":"EMAIL_NOT_VERIFIED","message":"Email not verified"}),
+                )
+                .map_err(Into::into);
+            }
+        };
+
+        let dont_remember_name = related_cookie_name(&ctx.config, "dont_remember");
+        let dont_remember = crate::helpers::get_cookie(req, &dont_remember_name)
+            .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
+            .is_some_and(|value| !value.is_empty());
+        let max_age = (!dont_remember).then(|| ctx.config.session.expires_in.num_seconds());
+        let mut response = AuthResponse::json(
+            200,
+            &json!({"token":outcome.session.token,"user":outcome.user}),
+        )?
+        .with_appended_header(
+            "Set-Cookie",
+            create_session_cookie_with_max_age(Some(&outcome.session.token), max_age, &ctx.config)?,
+        );
+        if dont_remember {
+            response = response.with_appended_header(
+                "Set-Cookie",
+                create_session_like_cookie(
+                    &dont_remember_name,
+                    &sign_cookie_value("true", ctx.config.current_secret()),
+                    None,
+                    &ctx.config,
+                )?,
+            );
+        }
+        if let Some(cookie) = outcome.account_cookie.as_ref() {
+            for header in crate::oauth::create_account_cookie_headers(&ctx.config, cookie, req)? {
+                response.headers.append("Set-Cookie", header);
+            }
+        }
+        Ok(response)
+    }
+    async fn verify(&self, token: &str, audience: &[String]) -> Option<JsValue> {
+        let mut policy = crate::oauth::OAuthIdTokenConfig::google();
+        policy.selection = crate::oauth::OAuthJwksSelection::AllMatching;
+        policy.jwks_source = self.keys.clone();
+        crate::oauth::id_token::verify_jwks_token(token, audience, None, &policy).await
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CallbackBody {
+    id_token: String,
+    callback_url: Option<String>,
+}
+
+impl RequestBody for CallbackBody {
+    const FIELDS: &'static [JsonField] = &[
+        JsonField::string("idToken", true),
+        JsonField::string("callbackURL", false),
+    ];
+}
+
+#[async_trait]
+impl<S: AuthSchema> AuthPlugin<S> for OneTapPlugin {
+    route_openapi_metadata!(S);
+
+    fn name(&self) -> &'static str {
+        "one-tap"
+    }
+    fn routes(&self) -> Vec<AuthRoute> {
+        vec![AuthRoute::post("/one-tap/callback", "one_tap_callback")]
+    }
+    async fn on_request(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<AuthResponse>> {
+        if req.method() == &HttpMethod::Post && req.path() == "/one-tap/callback" {
+            return self.callback(req, ctx).await.map(Some);
+        }
+        Ok(None)
+    }
+}
+
+fn js_truthy(value: &JsValue) -> bool {
+    match value {
+        JsValue::Null => false,
+        JsValue::Bool(value) => *value,
+        JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
+        JsValue::String(value) => !value.is_empty(),
+        JsValue::Array(_) | JsValue::Object(_) => true,
+    }
+}
+
+fn message(status: u16, message: &str) -> AuthResult<AuthResponse> {
+    AuthResponse::json(status, &json!({"message":message})).map_err(Into::into)
+}

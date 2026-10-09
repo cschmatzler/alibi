@@ -3,13 +3,13 @@ title: "Workspace crates"
 description: "The crates that make up Alibi and what each one is for."
 ---
 
-Depend on **one** library crate, `alibi`. Its public modules re-export the APIs you need from the workspace crates. The table below describes implementation ownership, not additional application dependencies.
+Depend on **one** library crate, `alibi`. It re-exports the complete public API of the workspace crates: `alibi-core` at the same paths, and the plugin and store crates as `alibi::plugins`, `alibi::sqlx` and `alibi::seaorm`. The table below describes implementation ownership, not additional application dependencies.
 
 | Crate | Description | Depend on it directly when… |
 | --- | --- | --- |
 | [`alibi`](https://github.com/cschmatzler/better-auth-rs/tree/main) | Composition and public facade: `BetterAuth`, `AuthBuilder`, request dispatch, plugins, stores and framework integrations | Always |
-| [`alibi-core`](https://github.com/cschmatzler/better-auth-rs/tree/main/crates/core) | Shared contracts and services: configuration, sessions, middleware, store decoration, plugin/endpoint contracts and errors | Never — use `alibi::config`, `alibi::session`, `alibi::user_validation`, and `alibi::utils` |
-| [`alibi-api`](https://github.com/cschmatzler/better-auth-rs/tree/main/crates/api) | Built-in plugin implementations and their OpenAPI metadata | Never — use `alibi::plugins` |
+| [`alibi-core`](https://github.com/cschmatzler/better-auth-rs/tree/main/crates/core) | Shared contracts and services: configuration, sessions, middleware, store decoration, plugin/endpoint contracts and errors | Never — every item is available at the same path under `alibi` (for example `alibi::config`, `alibi::store`, `alibi::utils`) |
+| [`alibi-plugins`](https://github.com/cschmatzler/better-auth-rs/tree/main/crates/plugins) | Built-in plugin implementations and their OpenAPI metadata | Never — use `alibi::plugins` |
 | [`alibi-sqlx`](https://github.com/cschmatzler/better-auth-rs/tree/main/crates/sqlx) | SQLx store, `AuthEntity` and `SqlxModel` derives, rate-limit storage, bundled migrations | Never — use `alibi::sqlx` |
 | [`alibi-seaorm`](https://github.com/cschmatzler/better-auth-rs/tree/main/crates/seaorm) | SeaORM store, entities, `AuthEntity` derive, rate-limit storage | Never — use `alibi::seaorm` |
 | [`alibi-cli`](https://github.com/cschmatzler/better-auth-rs/tree/main/crates/cli) | The `alibi` binary (`generate`) | Install it as a tool; see the [CLI reference](/reference/cli/) |

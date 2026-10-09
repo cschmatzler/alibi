@@ -14,9 +14,9 @@ use alibi::plugins::{
     UserManagementPlugin,
 };
 use alibi::prelude::{AuthRequest, HttpMethod};
+use alibi::seaorm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi_core::{AuthContext, AuthPlugin, AuthResponse, AuthRoute};
-use alibi_seaorm::DatabaseConnection;
+use alibi::{AuthContext, AuthPlugin, AuthResponse, AuthRoute};
 use axum::{
     Json, Router,
     http::{HeaderMap, StatusCode},
@@ -78,30 +78,30 @@ impl AnonymousIdentity for ComposedIdentity {
     }
 }
 #[async_trait::async_trait]
-impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for CustomCallbacks {
+impl alibi::seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for CustomCallbacks {
     async fn before_create_session(
         &self,
-        session: &mut alibi_core::CreateSession,
+        session: &mut alibi::CreateSession,
         _: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<alibi_seaorm::HookControl> {
+    ) -> AuthResult<alibi::seaorm::HookControl> {
         let mut state = self.0.lock().unwrap();
         state.serial += 1;
         session.token = Some(format!("{:032}", state.serial));
-        Ok(alibi_seaorm::HookControl::Continue)
+        Ok(alibi::seaorm::HookControl::Continue)
     }
     async fn before_create_verification(
         &self,
-        verification: &mut alibi_core::CreateVerification,
+        verification: &mut alibi::CreateVerification,
         _: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<alibi_seaorm::HookControl> {
+    ) -> AuthResult<alibi::seaorm::HookControl> {
         let mut state = self.0.lock().unwrap();
         if verification.identifier.starts_with("one-time-token:")
             && state.mode == "verification-cancel"
         {
             state.events.push(json!({"stage":"verification-cancel", "identifier":verification.identifier, "value":verification.value}));
-            Ok(alibi_seaorm::HookControl::Cancel)
+            Ok(alibi::seaorm::HookControl::Cancel)
         } else {
-            Ok(alibi_seaorm::HookControl::Continue)
+            Ok(alibi::seaorm::HookControl::Continue)
         }
     }
 }
@@ -250,7 +250,7 @@ pub(crate) async fn router(
         config.session.disable_session_refresh = *name == "ott-refresh-disabled";
         config.session.defer_session_refresh = *name == "ott-refresh-deferred";
         if *name == "ott-composed" {
-            config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
+            config.session.cookie_cache = Some(alibi::CookieCacheConfig {
                 enabled: true,
                 ..Default::default()
             });

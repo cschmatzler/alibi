@@ -5,7 +5,7 @@ use crate::storage::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use alibi::plugins::AnonymousPlugin;
 use alibi::plugins::anonymous::AnonymousConfig;
 use alibi::{AuthBuilder, AuthConfig};
-use alibi_core::{AuthRequest, AuthSession, AuthUser, HttpMethod};
+use alibi::{AuthRequest, AuthSession, AuthUser, HttpMethod};
 use serde_json::{Value, json};
 use std::sync::Arc;
 

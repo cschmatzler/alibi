@@ -9,12 +9,12 @@ use alibi::plugins::organization::{
     extensions::TeamHookContext, types::CreatedOrganizationResponse,
 };
 use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi_core::{CreateTeam, Organization, Team, store::MemberStore, wire::UserView};
-use alibi_seaorm::{
+use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{CreateTeam, Organization, Team, store::MemberStore, wire::UserView};
 use axum::{
     Json, Router,
     extract::Query,

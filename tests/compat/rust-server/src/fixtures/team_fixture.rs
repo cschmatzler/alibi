@@ -1,6 +1,7 @@
 //! Private fixture configuration and server-side organization team operations.
 
 use crate::TestSchema;
+use alibi::AuthUser;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::organization::{
@@ -11,17 +12,16 @@ use alibi::plugins::{
     AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, EmailPasswordPlugin,
     EmailVerificationPlugin, OrganizationPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi_core::AuthUser;
-use alibi_core::types::{
-    CreateMember, CreateOrganizationRole, CreateTeam, CreateUser, OrganizationPermissions,
-};
-use alibi_seaorm::sea_orm::{
+use alibi::seaorm::sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
 };
-use alibi_seaorm::store::entities::{
+use alibi::seaorm::store::entities::{
     invitation, member, organization, organization_role, team, team_member,
 };
+use alibi::types::{
+    CreateMember, CreateOrganizationRole, CreateTeam, CreateUser, OrganizationPermissions,
+};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use axum::{
     Json, Router,
     extract::Query,
@@ -103,7 +103,7 @@ impl OrganizationLimitResolver for NumericLimits {
         {
             for i in 0..2 {
                 team::ActiveModel {
-                    id: Set(alibi_core::utils::id::generate_id(32)),
+                    id: Set(alibi::utils::id::generate_id(32)),
                     organization_id: Set(context.organization_id.clone()),
                     name: Set(format!("Callback team {i}")),
                     member_count: Set(0),
@@ -140,7 +140,7 @@ impl OrganizationLimitResolver for NumericLimits {
         if organization.name == "Callback writes roles" {
             for i in 0..2 {
                 organization_role::ActiveModel {
-                    id: Set(alibi_core::utils::id::generate_id(32)),
+                    id: Set(alibi::utils::id::generate_id(32)),
                     organization_id: Set(organization_id.to_owned()),
                     role: Set(format!("callback{i}")),
                     permission: Set("{}".into()),
@@ -171,12 +171,12 @@ impl alibi::plugins::organization::OrganizationTeamHooks for NumericHooks {
     }
     async fn before_add_member(
         &self,
-        team: &alibi_core::types::Team,
-        user: &alibi_core::wire::UserView,
+        team: &alibi::types::Team,
+        user: &alibi::wire::UserView,
         context: &alibi::plugins::organization::extensions::TeamHookContext,
     ) -> AuthResult<()> {
         if context.organization.name == "Legacy seats" {
-            use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+            use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
             self.0
                 .execute_raw(Statement::from_sql_and_values(
                     DbBackend::Sqlite,
@@ -193,9 +193,9 @@ impl alibi::plugins::organization::OrganizationTeamHooks for NumericHooks {
     }
     async fn after_add_member(
         &self,
-        _: &alibi_core::types::TeamMember,
-        team: &alibi_core::types::Team,
-        user: &alibi_core::wire::UserView,
+        _: &alibi::types::TeamMember,
+        team: &alibi::types::Team,
+        user: &alibi::wire::UserView,
         context: &alibi::plugins::organization::extensions::TeamHookContext,
     ) -> AuthResult<()> {
         numeric_event(
@@ -728,17 +728,17 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                             // A controlled legacy-row fixture operation; never return a
                             // connection with altered enforcement after failure/cancellation.
                             connection.close_on_drop();
-                            let enabled: i64 = alibi_seaorm::sea_orm::sqlx::query_scalar(
+                            let enabled: i64 = alibi::seaorm::sea_orm::sqlx::query_scalar(
                                 "PRAGMA foreign_keys",
                             ).fetch_one(&mut *connection).await
                                 .map_err(|error| AuthError::internal(error.to_string()))?;
-                            let _ = alibi_seaorm::sea_orm::sqlx::query("PRAGMA foreign_keys=OFF")
+                            let _ = alibi::seaorm::sea_orm::sqlx::query("PRAGMA foreign_keys=OFF")
                                 .execute(&mut *connection).await
                                 .map_err(|error| AuthError::internal(error.to_string()))?;
-                            let result = alibi_seaorm::sea_orm::sqlx::query(
+                            let result = alibi::seaorm::sea_orm::sqlx::query(
                                 "DELETE FROM organization WHERE id=?",
                             ).bind(&organization_id).execute(&mut *connection).await;
-                            let _ = alibi_seaorm::sea_orm::sqlx::query(
+                            let _ = alibi::seaorm::sea_orm::sqlx::query(
                                 if enabled == 0 { "PRAGMA foreign_keys=OFF" } else { "PRAGMA foreign_keys=ON" },
                             ).execute(&mut *connection).await
                                 .map_err(|error| AuthError::internal(error.to_string()))?;
@@ -839,7 +839,7 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                     for parent in &teams {
                         team_members.extend(team_member::Entity::find().filter(team_member::Column::TeamId.eq(&parent.id)).order_by_asc(team_member::Column::CreatedAt).all(&database).await?);
                     }
-                    Ok::<_, alibi_seaorm::sea_orm::DbErr>(json!({
+                    Ok::<_, alibi::seaorm::sea_orm::DbErr>(json!({
                         "teams":teams.into_iter().map(|team|json!({"id":team.id,"name":team.name,"organizationId":team.organization_id,"createdAt":timestamp(team.created_at),"updatedAt":team.updated_at.map(timestamp),"memberCount":team.member_count})).collect::<Vec<_>>(),
                         "teamMembers":team_members.into_iter().map(|member|json!({"id":member.id,"teamId":member.team_id,"userId":member.user_id,"createdAt":timestamp(member.created_at)})).collect::<Vec<_>>(),
                         "roles":roles.into_iter().map(|role|json!({"id":role.id,"organizationId":role.organization_id,"role":role.role,"permission":role.permission,"createdAt":timestamp(role.created_at),"updatedAt":role.updated_at.map(timestamp)})).collect::<Vec<_>>(),

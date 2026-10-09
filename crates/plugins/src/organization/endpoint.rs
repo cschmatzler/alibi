@@ -1,0 +1,321 @@
+use super::{OrganizationPlugin, handlers, hooks, types};
+use crate::authentication_helpers::JsonField;
+use crate::endpoint::{definition, error_response, validate_fields, validation};
+use alibi_core::endpoint::{
+    EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
+};
+use alibi_core::session::SessionRequest;
+use alibi_core::utils::json::JsValue;
+use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod};
+
+pub(super) fn definitions() -> Vec<EndpointDefinition> {
+    let mut endpoints = vec![
+        definition("addMember", "addMember", None, HttpMethod::Post),
+        definition(
+            "removeMember",
+            "removeMember",
+            Some("/organization/remove-member"),
+            HttpMethod::Post,
+        ),
+        definition(
+            "createOrganization",
+            "createOrganization",
+            Some("/organization/create"),
+            HttpMethod::Post,
+        ),
+        definition(
+            "deleteOrganization",
+            "deleteOrganization",
+            Some("/organization/delete"),
+            HttpMethod::Post,
+        ),
+    ];
+    endpoints.extend(super::native::definitions());
+    endpoints
+}
+
+pub(super) fn validate(
+    call: &EndpointCall,
+    organization_fields: &alibi_core::field_policy::SessionFields,
+) -> AuthResult<EndpointInput> {
+    let mut body = call.body().cloned();
+    match call.operation_id() {
+        "createOrganization" => {
+            let _validated =
+                handlers::org_input::create_value(body.as_ref()).map_err(error_response)?;
+            if let Some(JsValue::Object(body)) = &mut body {
+                // Configured additional fields belong to the body schema, as upstream.
+                body.retain(|key, _| {
+                    [
+                        "name",
+                        "slug",
+                        "userId",
+                        "logo",
+                        "metadata",
+                        "keepCurrentActiveOrganization",
+                    ]
+                    .contains(&key.as_str())
+                        || organization_fields.0.contains_key(key)
+                });
+                if let Some(value) = body.get("userId") {
+                    let value = value.coerce_string().map_err(validation)?;
+                    _ = body.insert("userId".into(), JsValue::String(value));
+                }
+            }
+        }
+        "addMember" => {
+            let Some(JsValue::Object(input)) = &mut body else {
+                return Err(validation(format!(
+                    "[body] Invalid input: expected object, received {}",
+                    crate::authentication_helpers::json_type(body.as_ref())
+                )));
+            };
+            let user_id = input
+                .get("userId")
+                .map_or_else(|| Ok("undefined".into()), JsValue::coerce_string)
+                .map_err(validation)?;
+            _ = input.insert("userId".into(), JsValue::String(user_id));
+            _ = validate_fields(
+                body.as_ref(),
+                "body",
+                &[
+                    JsonField::string("userId", true),
+                    JsonField::string("organizationId", false),
+                    JsonField::string("teamId", false),
+                ],
+            )?;
+            let role = body.as_ref().and_then(|body| body.get("role"));
+            if !role.is_some_and(|role| {
+                role.is_string()
+                    || role
+                        .as_array()
+                        .is_some_and(|values| values.iter().all(JsValue::is_string))
+            }) {
+                return Err(validation("[body.role] Invalid input"));
+            }
+            if let Some(JsValue::Object(body)) = &mut body {
+                body.retain(|key, _| {
+                    ["userId", "role", "organizationId", "teamId"].contains(&key.as_str())
+                });
+            }
+        }
+        "removeMember" => {
+            body = Some(validate_fields(
+                body.as_ref(),
+                "body",
+                &[
+                    JsonField::string("memberIdOrEmail", true),
+                    JsonField::string("organizationId", false),
+                ],
+            )?);
+        }
+        "deleteOrganization" => {
+            body = Some(validate_fields(
+                body.as_ref(),
+                "body",
+                &[JsonField::string("organizationId", true)],
+            )?);
+        }
+        _ => return super::native::validate(call),
+    }
+    Ok(EndpointInput {
+        body,
+        query: call.query().cloned(),
+    })
+}
+
+impl OrganizationPlugin {
+    /// Privileged server-only admission through actual installed hooks.
+    /// # Errors
+    /// Returns an error if serialization fails.
+    pub fn add_member_endpoint(
+        body: &types::AddOrganizationMemberRequest,
+    ) -> AuthResult<ServerEndpoint<types::BasicMemberResponse>> {
+        ServerEndpoint::new("organization", "addMember").with_body(body)
+    }
+
+    /// Remove a member using genuine verified credentials and installed hooks.
+    /// # Errors
+    /// Returns an error if serialization fails.
+    pub fn remove_member_endpoint(
+        body: &types::RemoveMemberRequest,
+    ) -> AuthResult<
+        ServerEndpoint<types::RemovedMemberResponse<types::OrganizationMemberRemovalSnapshot>>,
+    > {
+        ServerEndpoint::new("organization", "removeMember").with_body(body)
+    }
+
+    /// Create through logical dispatch; an explicit user ID is a trusted server option.
+    /// # Errors
+    /// Returns an error if serialization fails.
+    pub fn create_endpoint(
+        body: &types::CreateOrganizationRequest,
+        user_id: Option<&str>,
+    ) -> AuthResult<
+        ServerEndpoint<
+            types::CreateOrganizationResponse<
+                types::CreatedOrganizationResponse,
+                types::BasicMemberResponse,
+            >,
+        >,
+    > {
+        let mut value =
+            alibi_core::utils::json::parse_value(&alibi_core::utils::json::to_string(body)?)?;
+        if let Some(user_id) = user_id
+            && let JsValue::Object(body) = &mut value
+        {
+            _ = body.insert("userId".into(), JsValue::String(user_id.into()));
+        }
+        Ok(ServerEndpoint::new("organization", "createOrganization").with_body_value(value))
+    }
+
+    /// Delete through installed hooks and scoped organization authority.
+    /// # Errors
+    /// Returns an error if serialization fails.
+    pub fn delete_endpoint(
+        body: &types::DeleteOrganizationRequest,
+    ) -> AuthResult<ServerEndpoint<Option<types::OrganizationResponse>>> {
+        ServerEndpoint::new("organization", "deleteOrganization").with_body(body)
+    }
+
+    pub(super) async fn call_endpoint<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        match call.operation_id() {
+            "addMember" => {
+                let body: types::AddOrganizationMemberRequest = call.body_as()?;
+                let session = if body.user_id.is_empty() {
+                    None
+                } else {
+                    ctx.require_cached_session(call).await.ok()
+                };
+                EndpointResponse::json(
+                    &handlers::member_addition::add_member_with_session(
+                        &body,
+                        session,
+                        call.request(),
+                        &self.config,
+                        ctx,
+                    )
+                    .await?,
+                )
+            }
+            "removeMember" => {
+                let body: types::RemoveMemberRequest = call.body_as()?;
+                let (user, session) = ctx.require_cached_session(call).await.map_err(|error| {
+                    if matches!(error, AuthError::Unauthenticated) {
+                        handlers::extension_common::org_error(401, "UNAUTHORIZED")
+                    } else {
+                        error
+                    }
+                })?;
+                EndpointResponse::json(
+                    &handlers::member::remove_member_core(
+                        &body,
+                        &user,
+                        &session,
+                        &self.config,
+                        ctx,
+                    )
+                    .await?,
+                )
+            }
+            "deleteOrganization" => {
+                let body: types::DeleteOrganizationRequest = call.body_as()?;
+                if self.config.disable_organization_deletion {
+                    return Err(handlers::extension_common::org_error(
+                        404,
+                        "ORGANIZATION_DELETION_DISABLED",
+                    ));
+                }
+                let (user, session) = ctx.require_cached_session(call).await.map_err(|error| {
+                    if matches!(error, AuthError::Unauthenticated) {
+                        handlers::extension_common::org_error(401, "UNAUTHORIZED")
+                    } else {
+                        error
+                    }
+                })?;
+                EndpointResponse::json(
+                    &handlers::org::delete_organization_core(
+                        &body,
+                        &user,
+                        &session,
+                        hooks::organization::DeleteInvocation {
+                            headers: call.session_headers(),
+                            request: call.request(),
+                        },
+                        &self.config,
+                        ctx,
+                    )
+                    .await?,
+                )
+            }
+            "createOrganization" => {
+                let body: types::CreateOrganizationRequest = call.body_as()?;
+                let session = ctx.require_cached_session(call).await.ok();
+                if session.is_none() && (call.request().is_some() || call.headers().is_some()) {
+                    return Err(AuthError::Api {
+                        status: 401,
+                        code: None,
+                        message: String::new(),
+                    });
+                }
+                if let Some((user, session)) = session {
+                    let response = handlers::org::create_organization_core(
+                        &body,
+                        &user,
+                        call.request(),
+                        Some(&session),
+                        &self.config,
+                        ctx,
+                    )
+                    .await?;
+                    if !body.keep_current_active_organization.unwrap_or(false) {
+                        handlers::org::activate_created_organization(
+                            &response,
+                            &session.token,
+                            ctx,
+                        )
+                        .await?;
+                    }
+                    EndpointResponse::json(&response)
+                } else {
+                    let user_id = call
+                        .body()
+                        .and_then(|body| body.get("userId"))
+                        .and_then(JsValue::as_str)
+                        .filter(|id| !id.is_empty())
+                        .ok_or(AuthError::Api {
+                            status: 401,
+                            code: None,
+                            message: String::new(),
+                        })?;
+                    let user =
+                        ctx.database
+                            .get_user_by_id(user_id)
+                            .await?
+                            .ok_or(AuthError::Api {
+                                status: 401,
+                                code: None,
+                                message: String::new(),
+                            })?;
+                    EndpointResponse::json(
+                        &handlers::org::create_organization_core(
+                            &body,
+                            &user,
+                            None,
+                            None,
+                            &self.config,
+                            ctx,
+                        )
+                        .await?,
+                    )
+                }
+            }
+            // Keep the extended operation state out of every dispatcher caller's future.
+            _ => Box::pin(super::native::execute(self, call, ctx)).await,
+        }
+    }
+}

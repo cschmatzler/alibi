@@ -14,21 +14,21 @@ backend_tests!(provider_profile_protocols_preserve_raw_identity);
 postgres_tests!(provider_profile_protocols_preserve_raw_identity);
 
 #[derive(Clone)]
-struct ProfileCase {
-    variant: &'static str,
-    name: &'static str,
-    basic_auth: bool,
-    authorization_pkce: bool,
-    grant_pkce: bool,
-    factory: fn(&str) -> OAuthProvider,
-    profile: Value,
-    subject_pointer: &'static str,
-    account: &'static str,
-    email: &'static str,
-    display: &'static str,
-    image: &'static str,
-    verified: bool,
-    method: &'static str,
+pub(super) struct ProfileCase {
+    pub(super) variant: &'static str,
+    pub(super) name: &'static str,
+    pub(super) basic_auth: bool,
+    pub(super) authorization_pkce: bool,
+    pub(super) grant_pkce: bool,
+    pub(super) factory: fn(&str) -> OAuthProvider,
+    pub(super) profile: Value,
+    pub(super) subject_pointer: &'static str,
+    pub(super) account: &'static str,
+    pub(super) email: &'static str,
+    pub(super) display: &'static str,
+    pub(super) image: &'static str,
+    pub(super) verified: bool,
+    pub(super) method: &'static str,
 }
 
 // Options are passed before construction: dedicated handlers capture their
@@ -43,7 +43,7 @@ macro_rules! factory {
     };
 }
 
-fn profiles() -> Vec<ProfileCase> {
+pub(super) fn profiles() -> Vec<ProfileCase> {
     let mut cases = vec![
         ProfileCase {
             variant: "default",
@@ -620,7 +620,7 @@ impl OAuthProfileMapper for PartialProfileMapper {
     async fn map_profile(
         &self,
         profile: Value,
-    ) -> Result<alibi_core::field_policy::FieldOutput, String> {
+    ) -> Result<alibi::field_policy::FieldOutput, String> {
         self.0.lock().unwrap().push(profile);
         Ok([
             ("id".into(), json!("application-presentation-id")),
@@ -634,7 +634,7 @@ impl OAuthProfileMapper for PartialProfileMapper {
 pub(super) struct FailedMapper;
 #[async_trait::async_trait]
 impl OAuthProfileMapper for FailedMapper {
-    async fn map_profile(&self, _: Value) -> Result<alibi_core::field_policy::FieldOutput, String> {
+    async fn map_profile(&self, _: Value) -> Result<alibi::field_policy::FieldOutput, String> {
         Err("Application profile rejected".into())
     }
 }

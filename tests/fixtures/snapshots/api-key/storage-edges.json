@@ -1,0 +1,104 @@
+[
+  {
+    "single use first": {
+      "valid": true,
+      "error": null
+    }
+  },
+  {
+    "single use second": {
+      "valid": false,
+      "error": {
+        "code": "USAGE_EXCEEDED",
+        "message": "API Key has reached its usage limit"
+      }
+    }
+  },
+  {
+    "single use third": {
+      "valid": false,
+      "error": {
+        "code": "INVALID_API_KEY",
+        "message": "Invalid API key."
+      }
+    }
+  },
+  {
+    "list without any key": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "apiKeys": [],
+        "total": 0
+      }
+    }
+  },
+  {
+    "refill not yet due": {
+      "valid": false,
+      "error": {
+        "code": "USAGE_EXCEEDED",
+        "message": "API Key has reached its usage limit"
+      }
+    }
+  },
+  {
+    "unknown": {
+      "valid": false
+    }
+  },
+  {
+    "stored after exhaustion": 0
+  },
+  {
+    "stored start": "EDA0BD"
+  },
+  {
+    "first request": {
+      "valid": true,
+      "error": null
+    }
+  },
+  {
+    "rate limited": {
+      "valid": false,
+      "error": {
+        "code": "RATE_LIMITED",
+        "message": "Rate limit exceeded.",
+        "details": {
+          "tryAgainIn": "<elapsed>"
+        }
+      }
+    }
+  },
+  {
+    "window elapsed": {
+      "valid": true,
+      "count": 1.0
+    }
+  },
+  {
+    "disable": {
+      "enabled": false,
+      "permissions": null,
+      "metadata": null
+    }
+  },
+  {
+    "permissions and metadata": {
+      "enabled": true,
+      "permissions": {
+        "files": [
+          "read"
+        ]
+      },
+      "metadata": {
+        "a": 1
+      }
+    }
+  }
+]

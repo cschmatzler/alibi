@@ -1,18 +1,18 @@
 //! Creation persists selection; explicit selection publishes a readable cache.
+use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::organization::{OrganizationConfig, TeamsConfig};
 use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin};
+use alibi::seaorm::{Database, SeaOrmStore};
 use alibi::{AuthBuilder, AuthConfig, BetterAuth};
-use alibi_core::endpoint::{EndpointOptions, ServerEndpoint};
-use alibi_core::{AuthRequest, CookieCacheConfig, CookieCacheStrategy, HttpMethod};
-use alibi_seaorm::{Database, SeaOrmStore};
+use alibi::{AuthRequest, CookieCacheConfig, CookieCacheStrategy, HttpMethod};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
-type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 async fn build(config: AuthConfig) -> BetterAuth<Schema> {
     let database = Database::connect("sqlite::memory:").await.unwrap();
-    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+    alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .unwrap();
     AuthBuilder::new(config.clone())

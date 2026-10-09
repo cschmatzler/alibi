@@ -1,0 +1,155 @@
+[
+  {
+    "unsigned": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.two_factor=<cookie>; Max-Age=600; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "twoFactorRedirect": true,
+        "twoFactorMethods": [
+          "totp"
+        ]
+      }
+    }
+  },
+  {
+    "empty token": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.trust_device=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.two_factor=<cookie>; Max-Age=600; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "twoFactorRedirect": true,
+        "twoFactorMethods": [
+          "totp"
+        ]
+      }
+    }
+  },
+  {
+    "empty identifier": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.trust_device=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.two_factor=<cookie>; Max-Age=600; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "twoFactorRedirect": true,
+        "twoFactorMethods": [
+          "totp"
+        ]
+      }
+    }
+  },
+  {
+    "wrong token": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.trust_device=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.two_factor=<cookie>; Max-Age=600; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "twoFactorRedirect": true,
+        "twoFactorMethods": [
+          "totp"
+        ]
+      }
+    }
+  },
+  {
+    "missing record": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.trust_device=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.two_factor=<cookie>; Max-Age=600; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "twoFactorRedirect": true,
+        "twoFactorMethods": [
+          "totp"
+        ]
+      }
+    }
+  },
+  {
+    "foreign owner": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.trust_device=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.two_factor=<cookie>; Max-Age=600; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "twoFactorRedirect": true,
+        "twoFactorMethods": [
+          "totp"
+        ]
+      }
+    }
+  },
+  {
+    "expired record": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.trust_device=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.two_factor=<cookie>; Max-Age=600; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "twoFactorRedirect": true,
+        "twoFactorMethods": [
+          "totp"
+        ]
+      }
+    }
+  }
+]

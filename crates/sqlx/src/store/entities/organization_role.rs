@@ -1,6 +1,9 @@
+use crate::SqlxModel;
+use alibi_core::AuthError;
+use alibi_core::types::OrganizationRole;
 use chrono::{DateTime, Utc};
 
-#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, crate::SqlxModel)]
+#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, SqlxModel)]
 #[auth(table = "organization_role")]
 pub struct Model {
     pub id: String,
@@ -11,8 +14,8 @@ pub struct Model {
     pub updated_at: Option<DateTime<Utc>>,
 }
 
-impl TryFrom<Model> for alibi_core::types::OrganizationRole {
-    type Error = alibi_core::AuthError;
+impl TryFrom<Model> for OrganizationRole {
+    type Error = AuthError;
     fn try_from(model: Model) -> Result<Self, Self::Error> {
         Ok(Self {
             id: model.id,

@@ -537,7 +537,7 @@ construct an HTTP request or flatten numeric query fields into strings.
 use alibi::plugins::organization::{OrganizationPlugin, types::{
     SetActiveOrganizationRequest, NullableStringField,
 }};
-use alibi_core::endpoint::EndpointOptions;
+use alibi::endpoint::EndpointOptions;
 
 let output = auth.dispatch_endpoint(
     OrganizationPlugin::set_active_endpoint(&SetActiveOrganizationRequest {

@@ -1,0 +1,261 @@
+[
+  {
+    "impersonate": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.admin_session=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "session": {
+          "id": "<v3>",
+          "expiresAt": "<date>",
+          "token": "<g4>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<m2>",
+          "impersonatedBy": "<m1>"
+        },
+        "user": {
+          "id": "<m2>",
+          "name": "Native owner",
+          "email": "impersonated@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "role": "user",
+          "banned": false,
+          "banExpires": null,
+          "banReason": null,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "impersonated session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "session": {
+          "id": "<v3>",
+          "expiresAt": "<date>",
+          "token": "<g4>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<m2>",
+          "impersonatedBy": "<m1>"
+        },
+        "user": {
+          "id": "<m2>",
+          "name": "Native owner",
+          "email": "impersonated@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "role": "user",
+          "banned": false,
+          "banExpires": null,
+          "banReason": null,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "stop": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.admin_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "session": {
+          "id": "<v5>",
+          "expiresAt": "<date>",
+          "token": "<g6>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<m1>",
+          "impersonatedBy": null
+        },
+        "user": {
+          "id": "<m1>",
+          "name": "Native owner",
+          "email": "impersonator@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "role": "admin",
+          "banned": false,
+          "banExpires": null,
+          "banReason": null,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "stop without impersonation": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "You are not impersonating anyone"
+      }
+    }
+  },
+  {
+    "impersonate banned": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "BANNED_USER",
+        "message": "You have been banned from this application. Please contact support if you believe this is an error."
+      }
+    }
+  },
+  {
+    "banned sign in": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "BANNED_USER",
+        "message": "You have been banned from this application. Please contact support if you believe this is an error."
+      }
+    }
+  },
+  {
+    "expired ban sign in": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "redirect": false,
+        "token": "<g7>",
+        "user": {
+          "id": "<m2>",
+          "name": "Native owner",
+          "email": "impersonated@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "role": "user",
+          "banned": true,
+          "banReason": "Spam",
+          "banExpires": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "impersonate expired ban": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.admin_session=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "session": {
+          "id": "<v8>",
+          "expiresAt": "<date>",
+          "token": "<g9>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<m2>",
+          "impersonatedBy": "<m1>"
+        },
+        "user": {
+          "id": "<m2>",
+          "name": "Native owner",
+          "email": "impersonated@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "role": "user",
+          "banned": true,
+          "banReason": "No reason",
+          "banExpires": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "remove self": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_CANNOT_REMOVE_YOURSELF",
+        "message": "You cannot remove yourself"
+      }
+    }
+  }
+]

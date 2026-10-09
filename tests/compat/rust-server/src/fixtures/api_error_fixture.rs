@@ -1,8 +1,8 @@
 //! Observe actual public HTTP handler return/error results at the host boundary.
 use crate::TestSchema;
+use alibi::seaorm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi_core::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, HttpMethod};
-use alibi_seaorm::DatabaseConnection;
+use alibi::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, HttpMethod};
 use axum::{Json, Router, routing::post};
 use serde_json::{Value, json};
 use std::{

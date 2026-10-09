@@ -472,7 +472,7 @@ async fn typed_organization_calls(
     use alibi::plugins::organization::types::{
         CreateOrganizationRequest, UpdateOrganizationData, UpdateOrganizationRequest,
     };
-    let credentials = || alibi_core::endpoint::EndpointOptions {
+    let credentials = || alibi::endpoint::EndpointOptions {
         headers: Some([("cookie".into(), cookie.into())].into()),
         ..Default::default()
     };

@@ -10,14 +10,12 @@ use alibi::plugins::email_otp::{
 use alibi::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin, SessionManagementPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi_core::{
-    AuthRequest, CreateVerification, DatabaseError, HttpMethod, wire::VerificationView,
-};
-use alibi_seaorm::{
+use alibi::seaorm::{
     sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder},
     store::entities::verification,
 };
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{AuthRequest, CreateVerification, DatabaseError, HttpMethod, wire::VerificationView};
 use async_trait::async_trait;
 use axum::{
     Json, Router,
@@ -38,7 +36,7 @@ fn email_change_hook(
     stage: &'static str,
 ) -> alibi::plugins::email_verification::EmailVerificationHook {
     Arc::new(move |user| {
-        let request=alibi_core::hooks::current_request_hook_context().map(|request| json!({"path":request.url.as_ref().map(|url|url.path().to_owned()).unwrap_or(request.path),"method":format!("{:?}",request.method).to_uppercase(),"marker":request.headers.get("x-email-change-marker")}));
+        let request=alibi::hooks::current_request_hook_context().map(|request| json!({"path":request.url.as_ref().map(|url|url.path().to_owned()).unwrap_or(request.path),"method":format!("{:?}",request.method).to_uppercase(),"marker":request.headers.get("x-email-change-marker")}));
         EMAIL_CHANGE_HOOK_EVENTS.lock().unwrap().push(json!({"stage":stage,"user":{"id":user.id,"email":user.email,"emailVerified":user.email_verified},"request":request}));
         let (selected, error) = EMAIL_CHANGE_HOOK_MODE.lock().unwrap().clone();
         Box::pin(async move {
@@ -127,7 +125,7 @@ impl SendEmailOtp for Sender {
     async fn send(
         &self,
         delivery: &EmailOtpDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         let identifier = if delivery.otp_type == EmailOtpType::ChangeEmail
             && _context.request.as_ref().is_some_and(|request| {
@@ -142,7 +140,7 @@ impl SendEmailOtp for Sender {
                 .get_verification_by_value(&format!("{}:0", delivery.otp))
                 .await?
                 .ok_or_else(|| AuthError::internal("missing issued change proof"))?;
-            alibi_core::AuthVerification::identifier(&proof).to_string()
+            alibi::AuthVerification::identifier(&proof).to_string()
         } else {
             format!("{}-otp-{}", delivery.otp_type.as_str(), delivery.email)
         };
@@ -176,7 +174,7 @@ impl alibi::plugins::email_otp::EmailOtpGenerator for Sender {
         &self,
         email: &str,
         kind: EmailOtpType,
-        context: &alibi_core::CallbackContext,
+        context: &alibi::CallbackContext,
     ) -> AuthResult<Option<String>> {
         if let Some(mut snapshot) = crate::fixtures::passwordless_context::snapshot(
             context,
@@ -316,12 +314,12 @@ pub(super) async fn router(
         config.verification.disable_cleanup = name == "verification-no-cleanup";
         let otp = EmailOtpPlugin::new(EmailOtpConfig {
             rate_limit: if name == "passwordless-rate-policy" {
-                alibi_core::EndpointRateLimit {
+                alibi::EndpointRateLimit {
                     window_seconds: 1.0,
                     max_requests: 2.0,
                 }
             } else if name.starts_with("passwordless-custom-") {
-                alibi_core::EndpointRateLimit {
+                alibi::EndpointRateLimit {
                     window_seconds: 1.0,
                     max_requests: 3.0,
                 }
@@ -427,7 +425,7 @@ pub(super) async fn router(
             if body.action=="seed" {
                 let _=auth.store().create_verification(CreateVerification {identifier:body.identifier,value:body.value.ok_or_else(||AuthError::bad_request("value is required"))?,expires_at}).await?;
             } else if body.action=="expire" {
-                use alibi_seaorm::sea_orm::sea_query::Expr;
+                use alibi::seaorm::sea_orm::sea_query::Expr;
                 let _=verification::Entity::update_many().col_expr(verification::Column::ExpiresAt,Expr::value(expires_at)).col_expr(verification::Column::UpdatedAt,Expr::value(Utc::now())).filter(verification::Column::Identifier.eq(body.identifier)).exec(&database).await.map_err(|error|DatabaseError::Query(error.to_string()))?;
             } else {return Err(AuthError::bad_request("unknown verification action"));}
             Ok(json!({"status":true}))

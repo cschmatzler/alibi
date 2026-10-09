@@ -1,12 +1,12 @@
 //! Record observers receive transformed snapshots only after successful persistence.
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use alibi::AuthConfig;
-use alibi_core::field_policy::{FieldConfig, FieldValues};
-use alibi_core::store::{
+use alibi::field_policy::{FieldConfig, FieldValues};
+use alibi::store::{
     AccountStore, AdapterAfterHook, AdapterEvent, AuthStore, SessionStore, UserStore, transaction,
 };
-use alibi_core::utils::json::JsValue;
-use alibi_core::{
+use alibi::utils::json::JsValue;
+use alibi::{
     AuthAccount, AuthError, AuthInitContext, AuthResult, AuthSession, AuthUser, CreateAccount,
     CreateSession, CreateUser, UpdateAccount, UpdateUser,
 };

@@ -1,0 +1,164 @@
+[
+  {
+    "invalid token": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "missing email": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_EMAIL_NOT_FOUND",
+        "message": "User email not found"
+      }
+    }
+  },
+  {
+    "unverified": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "LINKING_NOT_ALLOWED",
+        "message": "Account not linked - linking not allowed"
+      }
+    }
+  },
+  {
+    "different email": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "LINKING_DIFFERENT_EMAILS_NOT_ALLOWED",
+        "message": "Account not linked - different emails not allowed"
+      }
+    }
+  },
+  {
+    "linked": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "url": "",
+        "redirect": false,
+        "status": true
+      }
+    }
+  },
+  {
+    "already linked": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "url": "",
+        "redirect": false,
+        "status": true
+      }
+    }
+  },
+  {
+    "accounts": [
+      "credential",
+      "google"
+    ]
+  },
+  {
+    "linked elsewhere": {
+      "status": 409,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "SOCIAL_ACCOUNT_ALREADY_LINKED",
+        "message": "Social account already linked"
+      }
+    }
+  },
+  {
+    "unauthenticated": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "trusted and updated": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "url": "",
+        "redirect": false,
+        "status": true
+      }
+    }
+  },
+  {
+    "updated user": {
+      "id": "<v1>",
+      "name": "Provider trusted-sub",
+      "email": "token-other@example.com",
+      "emailVerified": false,
+      "image": "https://images.example/trusted-sub",
+      "createdAt": "<date>",
+      "updatedAt": "<date>",
+      "displayUsername": null,
+      "username": null
+    }
+  },
+  {
+    "id token disabled": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "ID_TOKEN_NOT_SUPPORTED",
+        "message": "id_token not supported"
+      }
+    }
+  }
+]

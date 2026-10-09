@@ -1,0 +1,158 @@
+[
+  {
+    "signed only: signed cookie value": {
+      "status": 200,
+      "user": true
+    }
+  },
+  {
+    "signed only: decoded signed value": {
+      "status": 200,
+      "user": true
+    }
+  },
+  {
+    "signed only: lowercase scheme": {
+      "status": 200,
+      "user": true
+    }
+  },
+  {
+    "signed only: padded token": {
+      "status": 200,
+      "user": true
+    }
+  },
+  {
+    "signed only: unsigned token": {
+      "status": 200,
+      "user": false
+    }
+  },
+  {
+    "signed only: empty token": {
+      "status": 200,
+      "user": false
+    }
+  },
+  {
+    "signed only: blank token": {
+      "status": 200,
+      "user": false
+    }
+  },
+  {
+    "signed only: wrong scheme": {
+      "status": 200,
+      "user": false
+    }
+  },
+  {
+    "signed only: no scheme": {
+      "status": 200,
+      "user": false
+    }
+  },
+  {
+    "signed only: malformed escape": {
+      "status": 200,
+      "user": false
+    }
+  },
+  {
+    "signed only: tampered signature": {
+      "status": 200,
+      "user": false
+    }
+  },
+  {
+    "signed only: url-safe signature": {
+      "status": 200,
+      "user": false
+    }
+  },
+  {
+    "signed only: padded signature": {
+      "status": 200,
+      "user": false
+    }
+  },
+  {
+    "signature optional: signed cookie value": {
+      "status": 200,
+      "user": true
+    }
+  },
+  {
+    "signature optional: decoded signed value": {
+      "status": 200,
+      "user": true
+    }
+  },
+  {
+    "signature optional: lowercase scheme": {
+      "status": 200,
+      "user": true
+    }
+  },
+  {
+    "signature optional: padded token": {
+      "status": 200,
+      "user": true
+    }
+  },
+  {
+    "signature optional: unsigned token": {
+      "status": 200,
+      "user": true
+    }
+  },
+  {
+    "signature optional: empty token": {
+      "status": 200,
+      "user": false
+    }
+  },
+  {
+    "signature optional: blank token": {
+      "status": 200,
+      "user": false
+    }
+  },
+  {
+    "signature optional: wrong scheme": {
+      "status": 200,
+      "user": false
+    }
+  },
+  {
+    "signature optional: no scheme": {
+      "status": 200,
+      "user": false
+    }
+  },
+  {
+    "signature optional: malformed escape": {
+      "status": 200,
+      "user": false
+    }
+  },
+  {
+    "signature optional: tampered signature": {
+      "status": 200,
+      "user": false
+    }
+  },
+  {
+    "signature optional: url-safe signature": {
+      "status": 200,
+      "user": false
+    }
+  },
+  {
+    "signature optional: padded signature": {
+      "status": 200,
+      "user": false
+    }
+  }
+]

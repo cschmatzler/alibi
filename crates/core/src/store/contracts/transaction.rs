@@ -1,4 +1,15 @@
-use super::*;
+use crate::AdapterRecord;
+use crate::field_policy::FieldValues;
+use crate::types::AddTeamMemberResult;
+use crate::user_validation::{PreparedUserCreation, UserValidationSource};
+use crate::verification::{VerificationCreation, VerificationPublication, VerificationSnapshot};
+use crate::{
+    AuthError, AuthResult, AuthSchema, AuthStore, CreateAccount, CreateJwk, CreateMember,
+    CreatePasskey, CreateSession, CreateUser, CreateVerification, Jwk, Member, Passkey, Team,
+};
+use async_trait::async_trait;
+use std::any::Any;
+use std::pin::Pin;
 pub type BoxedTransactionValue = Box<dyn Any + Send>;
 
 pub type TransactionFuture<'a> =
@@ -37,8 +48,8 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         _session: S::Session,
         _expires_at: Option<chrono::DateTime<chrono::Utc>>,
-        _fields: crate::field_policy::FieldValues,
-    ) -> AuthResult<Option<(S::Session, crate::field_policy::FieldValues)>> {
+        _fields: FieldValues,
+    ) -> AuthResult<Option<(S::Session, FieldValues)>> {
         Err(AuthError::NotImplemented(
             "Transactional secondary session updates are unsupported".into(),
         ))
@@ -48,7 +59,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         _session: S::Session,
         _expires_at: Option<chrono::DateTime<chrono::Utc>>,
-        _fields: crate::field_policy::FieldValues,
+        _fields: FieldValues,
         _persist: bool,
     ) -> AuthResult<Option<S::Session>> {
         Err(AuthError::NotImplemented(
@@ -58,19 +69,19 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
 
     /// Read the managed signing keyring on this transaction's connection.
     async fn list_jwks(&self) -> AuthResult<Vec<Jwk>> {
-        Err(crate::AuthError::config(
+        Err(AuthError::config(
             "Transactional JWKS reads are unsupported by this store",
         ))
     }
     /// Find a managed signing key on this transaction's connection.
     async fn get_jwk_by_id(&self, _id: &str) -> AuthResult<Option<Jwk>> {
-        Err(crate::AuthError::config(
+        Err(AuthError::config(
             "Transactional JWKS reads are unsupported by this store",
         ))
     }
     /// Persist a newly generated managed signing key in this transaction.
     async fn create_jwk(&self, _data: CreateJwk) -> AuthResult<Jwk> {
-        Err(crate::AuthError::config(
+        Err(AuthError::config(
             "Transactional JWKS writes are unsupported by this store",
         ))
     }
@@ -80,8 +91,8 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     async fn create_user_record(
         &self,
         create_user: CreateUser,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
-        crate::AdapterRecord::physical(self.create_user(create_user).await?)
+    ) -> AuthResult<AdapterRecord<S::User>> {
+        AdapterRecord::physical(self.create_user(create_user).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -90,8 +101,8 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         create_user: CreateUser,
         source: UserValidationSource,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
-        crate::AdapterRecord::physical(self.create_user_with_source(create_user, source).await?)
+    ) -> AuthResult<AdapterRecord<S::User>> {
+        AdapterRecord::physical(self.create_user_with_source(create_user, source).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -99,19 +110,16 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     async fn create_user_prepared_record(
         &self,
         prepared: PreparedUserCreation,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
-        crate::AdapterRecord::physical(self.create_user_prepared(prepared).await?)
+    ) -> AuthResult<AdapterRecord<S::User>> {
+        AdapterRecord::physical(self.create_user_prepared(prepared).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
     /// serialized snapshot; initialized stores apply their declared output policy.
-    async fn get_user_by_id_record(
-        &self,
-        id: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+    async fn get_user_by_id_record(&self, id: &str) -> AuthResult<Option<AdapterRecord<S::User>>> {
         self.get_user_by_id(id)
             .await?
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .transpose()
     }
 
@@ -120,8 +128,8 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     async fn create_account_record(
         &self,
         create_account: CreateAccount,
-    ) -> AuthResult<crate::AdapterRecord<S::Account>> {
-        crate::AdapterRecord::physical(self.create_account(create_account).await?)
+    ) -> AuthResult<AdapterRecord<S::Account>> {
+        AdapterRecord::physical(self.create_account(create_account).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -129,8 +137,8 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     async fn create_session_record(
         &self,
         create_session: CreateSession,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
-        crate::AdapterRecord::physical(self.create_session(create_session).await?)
+    ) -> AuthResult<AdapterRecord<S::Session>> {
+        AdapterRecord::physical(self.create_session(create_session).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -139,8 +147,8 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         token: &str,
         organization_id: Option<&str>,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
-        crate::AdapterRecord::physical(
+    ) -> AuthResult<AdapterRecord<S::Session>> {
+        AdapterRecord::physical(
             self.update_session_active_organization(token, organization_id)
                 .await?,
         )
@@ -152,8 +160,8 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         token: &str,
         team_id: Option<&str>,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
-        crate::AdapterRecord::physical(self.update_session_active_team(token, team_id).await?)
+    ) -> AuthResult<AdapterRecord<S::Session>> {
+        AdapterRecord::physical(self.update_session_active_team(token, team_id).await?)
     }
 
     /// Create through before hooks, optional physical persistence, secondary
@@ -257,7 +265,6 @@ pub trait TransactionStore<S: AuthSchema>: Send + Sync {
     ) -> AuthResult<BoxedTransactionValue>;
 }
 
-///
 /// # Errors
 ///
 /// Propagates transaction or callback errors; also rejects an unexpected transaction result type.
@@ -281,5 +288,5 @@ where
     value
         .downcast::<T>()
         .map(|boxed| *boxed)
-        .map_err(|_error| AuthError::internal("store returned an invalid transaction payload"))
+        .map_err(|_| AuthError::internal("store returned an invalid transaction payload"))
 }

@@ -1,0 +1,209 @@
+[
+  {
+    "disabled: request same": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Change email with OTP is disabled"
+      }
+    }
+  },
+  {
+    "disabled: request missing current proof": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Change email with OTP is disabled"
+      }
+    }
+  },
+  {
+    "disabled: request to taken": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Change email with OTP is disabled"
+      }
+    }
+  },
+  {
+    "disabled: confirm same": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Change email with OTP is disabled"
+      }
+    }
+  },
+  {
+    "disabled: confirm unknown": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Change email with OTP is disabled"
+      }
+    }
+  },
+  {
+    "disabled: verifications": 0
+  },
+  {
+    "enabled: request same": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Email is the same"
+      }
+    }
+  },
+  {
+    "enabled: request missing current proof": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "enabled: request to taken": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "enabled: confirm same": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Email is the same"
+      }
+    }
+  },
+  {
+    "enabled: confirm unknown": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "enabled: verifications": 1
+  },
+  {
+    "verify-current: request same": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Email is the same"
+      }
+    }
+  },
+  {
+    "verify-current: request missing current proof": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "OTP is required to verify current email"
+      }
+    }
+  },
+  {
+    "verify-current: request to taken": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "verify-current: confirm same": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Email is the same"
+      }
+    }
+  },
+  {
+    "verify-current: confirm unknown": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_OTP",
+        "message": "Invalid OTP"
+      }
+    }
+  },
+  {
+    "verify-current: verifications": 0
+  }
+]

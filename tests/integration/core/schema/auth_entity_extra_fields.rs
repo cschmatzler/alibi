@@ -143,8 +143,8 @@ mod tests {
                 ActiveModelTrait, ActiveValue::Set, ConnectionTrait, Database, EntityTrait, Schema,
             },
         };
-        use alibi_core::{CreateUser, ListUsersParams, store::UserStore};
-        type Bundled = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+        use alibi::{CreateUser, ListUsersParams, store::UserStore};
+        type Bundled = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
         struct ApplicationSchema;
         impl AuthSchema for ApplicationSchema {
             type User = user_with_extras::Model;

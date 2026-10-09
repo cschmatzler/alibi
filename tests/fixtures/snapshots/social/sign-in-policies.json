@@ -1,0 +1,74 @@
+[
+  {
+    "unverified new user": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/api/auth/error?error=email_not_verified"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "unverified returning user": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/api/auth/error?error=email_not_verified"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "verification mail": 2
+  },
+  {
+    "implicit sign up disabled": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/api/auth/error?error=signup_disabled"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "requested sign up": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "/home"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  }
+]

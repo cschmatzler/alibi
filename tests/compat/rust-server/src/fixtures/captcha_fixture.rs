@@ -7,11 +7,9 @@ use alibi::plugins::captcha::{
     RecaptchaConfig, SiteKeyCaptchaConfig, TurnstileConfig, ValidateBotIdRequest,
 };
 use alibi::plugins::{EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin};
+use alibi::seaorm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi_core::{
-    AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, BeforeRequestAction,
-};
-use alibi_seaorm::DatabaseConnection;
+use alibi::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, BeforeRequestAction};
 use async_trait::async_trait;
 use axum::{
     Json, Router,

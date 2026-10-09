@@ -134,7 +134,7 @@ impl SiweNonceProvider for RejectedWalletNonce {
         use alibi::plugins::siwe::SiweCallbackError;
         match self.0 {
             "invalid" => Ok("not valid".into()),
-            "api" => Err(SiweCallbackError::Api(alibi_core::AuthResponse::new(418))),
+            "api" => Err(SiweCallbackError::Api(alibi::AuthResponse::new(418))),
             _ => Err(SiweCallbackError::Failed(
                 "nonce service unavailable".into(),
             )),
@@ -217,7 +217,7 @@ async fn wallet_email_policy<B: Backend>(parent: &Db) -> TestResult {
             assert!(
                 auth.context()
                     .verifications()
-                    .reserve(alibi_core::CreateVerification {
+                    .reserve(alibi::CreateVerification {
                         identifier: "siwe-email-claim-claimed@example.test".into(),
                         value: "another-wallet".into(),
                         expires_at: chrono::Utc::now() + chrono::Duration::minutes(1)
@@ -335,8 +335,8 @@ impl alibi::plugins::passkey::PasskeyAuthenticationAfterVerification for Passkey
         &self,
         context: &alibi::plugins::passkey::PasskeyAuthenticationContext<'_>,
         verification: &alibi::plugins::passkey::VerifiedPasskeyAuthentication,
-        client: &alibi_core::utils::json::JsValue,
-    ) -> alibi_core::AuthResult<()> {
+        client: &alibi::utils::json::JsValue,
+    ) -> alibi::AuthResult<()> {
         assert!(
             context
                 .request
@@ -361,7 +361,7 @@ impl alibi::plugins::passkey::PasskeyAuthenticationAfterVerification for Passkey
             .deny_authentication
             .load(std::sync::atomic::Ordering::SeqCst)
         {
-            return Err(alibi_core::AuthError::forbidden("Application veto"));
+            return Err(alibi::AuthError::forbidden("Application veto"));
         }
         Ok(())
     }
@@ -373,9 +373,9 @@ impl alibi::plugins::passkey::PasskeyRegistrationAfterVerification for PasskeyPo
         context: &alibi::plugins::passkey::PasskeyRegistrationContext<'_>,
         verification: &alibi::plugins::passkey::VerifiedPasskeyRegistration,
         user: &alibi::plugins::passkey::PasskeyRegistrationUser,
-        client: &alibi_core::utils::json::JsValue,
+        client: &alibi::utils::json::JsValue,
         stored_context: Option<&str>,
-    ) -> alibi_core::AuthResult<Option<alibi::plugins::passkey::PasskeyRegistrationOverride>> {
+    ) -> alibi::AuthResult<Option<alibi::plugins::passkey::PasskeyRegistrationOverride>> {
         assert!(
             context
                 .request
@@ -401,7 +401,7 @@ impl alibi::plugins::passkey::PasskeyRegistrationAfterVerification for PasskeyPo
         assert!(client.as_object().is_some());
         self.registrations.lock().unwrap().push(user.id.clone());
         match self.registration.load(std::sync::atomic::Ordering::SeqCst) {
-            0 => Err(alibi_core::AuthError::forbidden("Registration veto")),
+            0 => Err(alibi::AuthError::forbidden("Registration veto")),
             1 => Ok(Some(alibi::plugins::passkey::PasskeyRegistrationOverride {
                 user_id: Some("foreign-user".into()),
                 name: None,
@@ -416,14 +416,14 @@ impl alibi::plugins::passkey::PasskeyRegistrationAfterVerification for PasskeyPo
 
 struct RegistrationSessionPolicy(Arc<PasskeyPolicy>);
 #[async_trait]
-impl<S: AuthSchema, H: alibi_core::store::HookBackend> alibi_core::store::DatabaseHooks<S, H>
+impl<S: AuthSchema, H: alibi::store::HookBackend> alibi::store::DatabaseHooks<S, H>
     for RegistrationSessionPolicy
 {
     async fn before_create_session(
         &self,
-        _: &mut alibi_core::CreateSession,
-        context: &alibi_core::store::DatabaseHookContext<'_, H>,
-    ) -> alibi_core::AuthResult<alibi_core::store::HookControl> {
+        _: &mut alibi::CreateSession,
+        context: &alibi::store::DatabaseHookContext<'_, H>,
+    ) -> alibi::AuthResult<alibi::store::HookControl> {
         if context
             .request
             .as_ref()
@@ -439,10 +439,10 @@ impl<S: AuthSchema, H: alibi_core::store::HookBackend> alibi_core::store::Databa
                 .load(std::sync::atomic::Ordering::SeqCst)
                 == 2
             {
-                return Ok(alibi_core::store::HookControl::Cancel);
+                return Ok(alibi::store::HookControl::Cancel);
             }
         }
-        Ok(alibi_core::store::HookControl::Continue)
+        Ok(alibi::store::HookControl::Continue)
     }
 }
 struct RegistrationResolver(String);
@@ -452,7 +452,7 @@ impl alibi::plugins::passkey::PasskeyUserResolver for RegistrationResolver {
         &self,
         context: &alibi::plugins::passkey::PasskeyRegistrationContext<'_>,
         requested: Option<&str>,
-    ) -> alibi_core::AuthResult<Option<alibi::plugins::passkey::PasskeyRegistrationUser>> {
+    ) -> alibi::AuthResult<Option<alibi::plugins::passkey::PasskeyRegistrationUser>> {
         assert!(
             context
                 .request

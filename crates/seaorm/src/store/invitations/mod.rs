@@ -3,13 +3,14 @@ use super::{SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmSessionModel, SeaOrmUserModel};
 use alibi_core::entity::AuthUser;
 use alibi_core::error::{AuthError, AuthResult};
-use alibi_core::store::InvitationStore;
+use alibi_core::store::{InvitationCreateOptions, InvitationStore};
+use alibi_core::types::{AddTeamMemberResult, Member};
 use alibi_core::{CreateInvitation, Invitation, InvitationStatus};
 use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
-    QuerySelect, Set, TransactionTrait,
+    QuerySelect, Set,
 };
 use uuid::Uuid;
 
@@ -30,7 +31,7 @@ where
     async fn create_invitation_with_options(
         &self,
         invitation: CreateInvitation,
-        options: alibi_core::store::InvitationCreateOptions,
+        options: InvitationCreateOptions,
     ) -> AuthResult<Invitation> {
         ActiveModel {
             id: Set(match options.id {
@@ -78,7 +79,7 @@ where
         active
             .update(self.scoped_connection())
             .await
-            .map(|row_2| Invitation::from(&row_2))
+            .map(|row| Invitation::from(&row))
             .map_err(map_db_err)
     }
 
@@ -93,17 +94,10 @@ where
         session_token: &str,
         team_limits: &[(String, Option<f64>)],
         membership_limit: Option<usize>,
-    ) -> AuthResult<Option<(Invitation, alibi_core::types::Member)>> {
+    ) -> AuthResult<Option<(Invitation, Member)>> {
         use super::entities::{member, organization};
         use alibi_core::error::AuthError;
-        let transaction = self
-            .scoped_connection()
-            .begin_with_options(sea_orm::TransactionOptions {
-                sqlite_transaction_mode: Some(sea_orm::SqliteTransactionMode::Immediate),
-                ..Default::default()
-            })
-            .await
-            .map_err(map_db_err)?;
+        let transaction = self.scoped_connection().begin_immediate().await?;
         let outcome = async {
             let Some(invitation) = Entity::find_by_id(invitation_id.to_owned())
                 .lock_exclusive()
@@ -144,14 +138,12 @@ where
             if alibi_core::AuthSession::expires_at(&session) < Utc::now() {
                 return Err(AuthError::SessionNotFound);
             }
-            drop(
-                organization::Entity::find_by_id(invitation.organization_id.clone())
-                    .lock_exclusive()
-                    .one(&transaction)
-                    .await
-                    .map_err(map_db_err)?
-                    .ok_or_else(|| AuthError::bad_request("Organization not found"))?,
-            );
+            _ = organization::Entity::find_by_id(invitation.organization_id.clone())
+                .lock_exclusive()
+                .one(&transaction)
+                .await
+                .map_err(map_db_err)?
+                .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
             if let Some(limit) = membership_limit
                 && member::Entity::find()
                     .filter(member::Column::OrganizationId.eq(&invitation.organization_id))
@@ -190,7 +182,7 @@ where
                 if matches!(
                     self.add_team_member_in_tx(&transaction, team_id, user_id, maximum)
                         .await?,
-                    alibi_core::types::AddTeamMemberResult::LimitReached
+                    AddTeamMemberResult::LimitReached
                 ) {
                     return Err(AuthError::Upstream {
                         status: 403,
@@ -224,7 +216,7 @@ where
                 )?;
             }
             S::Session::set_updated_at(&mut active, Utc::now());
-            drop(active.update(&transaction).await.map_err(map_db_err)?);
+            _ = active.update(&transaction).await.map_err(map_db_err)?;
             let changed = Entity::update_many()
                 .filter(Column::Id.eq(invitation_id))
                 .filter(Column::Status.eq("pending"))
@@ -354,7 +346,7 @@ where
         active
             .update(self.scoped_connection())
             .await
-            .map(|model_2| Invitation::from(&model_2))
+            .map(|model| Invitation::from(&model))
             .map_err(map_db_err)
     }
 

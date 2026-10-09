@@ -1,6 +1,8 @@
+use crate::SqlxModel;
+use alibi_core::types::Team;
 use chrono::{DateTime, Utc};
 
-#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, crate::SqlxModel)]
+#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, SqlxModel)]
 #[auth(table = "team")]
 pub struct Model {
     pub id: String,
@@ -11,7 +13,7 @@ pub struct Model {
     pub updated_at: Option<DateTime<Utc>>,
 }
 
-impl From<Model> for alibi_core::types::Team {
+impl From<Model> for Team {
     fn from(model: Model) -> Self {
         Self {
             id: model.id,

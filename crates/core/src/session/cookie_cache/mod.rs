@@ -3,6 +3,8 @@
 //! The codec authenticates data; storage bypass and authoritative-read policy
 //! belong to the session resolver. No database model is reconstructed here.
 
+use crate::utils::json::JsValue;
+use crate::{AdapterOutput, AdapterRecord};
 pub(crate) mod date;
 
 pub mod jwt;
@@ -38,8 +40,8 @@ pub struct CacheVersionContext {
     originals: Option<(Arc<dyn Any + Send + Sync>, Arc<dyn Any + Send + Sync>)>,
     source: CacheVersionSource,
     public_projection: Option<(UserView, SessionView)>,
-    user_output: Option<crate::AdapterOutput>,
-    session_output: Option<crate::AdapterOutput>,
+    user_output: Option<AdapterOutput>,
+    session_output: Option<AdapterOutput>,
 }
 
 impl fmt::Debug for CacheVersionContext {
@@ -86,8 +88,8 @@ impl CacheVersionContext {
     pub(crate) fn stored(
         user: UserView,
         session: SessionView,
-        user_output: Option<crate::AdapterOutput>,
-        session_output: Option<crate::AdapterOutput>,
+        user_output: Option<AdapterOutput>,
+        session_output: Option<AdapterOutput>,
     ) -> Self {
         Self {
             user,
@@ -128,11 +130,11 @@ impl CacheVersionContext {
     /// Actual callback-stage adapter values. Cache hits have no retained record;
     /// their exact values remain available through `user()` and `session()`.
     #[must_use]
-    pub const fn user_output(&self) -> Option<&crate::AdapterOutput> {
+    pub const fn user_output(&self) -> Option<&AdapterOutput> {
         self.user_output.as_ref()
     }
     #[must_use]
-    pub const fn session_output(&self) -> Option<&crate::AdapterOutput> {
+    pub const fn session_output(&self) -> Option<&AdapterOutput> {
         self.session_output.as_ref()
     }
     #[must_use]
@@ -140,8 +142,8 @@ impl CacheVersionContext {
         let original = &self.originals.as_ref()?.0;
         original.downcast_ref().or_else(|| {
             original
-                .downcast_ref::<crate::AdapterRecord<T>>()
-                .map(crate::AdapterRecord::stored)
+                .downcast_ref::<AdapterRecord<T>>()
+                .map(AdapterRecord::stored)
         })
     }
     #[must_use]
@@ -149,8 +151,8 @@ impl CacheVersionContext {
         let original = &self.originals.as_ref()?.1;
         original.downcast_ref().or_else(|| {
             original
-                .downcast_ref::<crate::AdapterRecord<T>>()
-                .map(crate::AdapterRecord::stored)
+                .downcast_ref::<AdapterRecord<T>>()
+                .map(AdapterRecord::stored)
         })
     }
 }
@@ -178,9 +180,6 @@ impl fmt::Debug for CookieCacheVersion {
 }
 
 impl CookieCacheVersion {
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub async fn resolve(&self, context: &CacheVersionContext) -> AuthResult<String> {
         match self {
             Self::Literal(value) => Ok(if value.is_empty() {
@@ -223,18 +222,15 @@ pub fn effective_max_age(max_age: f64) -> f64 {
 
 /// Encode the already-filtered canonical output.
 ///
-/// Infinite or out-of-range
-/// expiry becomes JSON null, as for an invalid JavaScript Date; the reader
-/// rejects that envelope instead of pretending that it expires normally.
+/// Infinite or out-of-range expiry becomes JSON null, as for an invalid
+/// JavaScript Date; the reader rejects that envelope instead of pretending
+/// that it expires normally.
 #[expect(
     clippy::as_conversions,
     clippy::cast_precision_loss,
     clippy::suboptimal_flops,
     reason = "Match JavaScript Number arithmetic and its separate rounding steps for cookie expiry"
 )]
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub fn encode_compact(
     user: &UserView,
     session: &SessionView,
@@ -244,7 +240,7 @@ pub fn encode_compact(
     dont_remember: bool,
     secret: &str,
 ) -> AuthResult<String> {
-    let payload = json!({"session":session,"user":user,"updatedAt":now_ms,"version":version});
+    let payload = jwt::payload(user, session, version, now_ms);
     let expiry = now_ms as f64
         + if dont_remember {
             60.0
@@ -257,7 +253,7 @@ pub fn encode_compact(
         Value::Null
     };
     let mut signed = payload.as_object().cloned().unwrap_or_default();
-    drop(signed.insert("expiresAt".into(), expiry.clone()));
+    _ = signed.insert("expiresAt".into(), expiry.clone());
     let signature = signature(secret, crate::utils::json::to_string(&signed)?.as_bytes());
     let envelope = json!({"session":payload,"expiresAt":expiry,"signature":signature});
     Ok(URL_SAFE_NO_PAD.encode(crate::utils::json::to_string(&envelope)?))
@@ -321,9 +317,7 @@ pub(crate) fn decode_compact_http(value: &str, secret: &str) -> AuthResult<Optio
     ))
 }
 
-fn compact_envelope(
-    parsed: &crate::utils::json::JsValue,
-) -> Option<(&crate::utils::json::JsValue, f64, &str)> {
+fn compact_envelope(parsed: &JsValue) -> Option<(&JsValue, f64, &str)> {
     let expires_at = parsed
         .get("expiresAt")?
         .as_f64()
@@ -335,7 +329,7 @@ fn compact_envelope(
 }
 
 fn authenticate_compact(
-    original_payload: &crate::utils::json::JsValue,
+    original_payload: &JsValue,
     expires_at: f64,
     signature: &[u8],
     secret: &str,
@@ -343,10 +337,7 @@ fn authenticate_compact(
     let mut normalized = original_payload.clone();
     date::revive(&mut normalized);
     let mut signed = normalized.as_object()?.clone();
-    drop(signed.insert(
-        "expiresAt".into(),
-        crate::utils::json::JsValue::Number(expires_at),
-    ));
+    _ = signed.insert("expiresAt".into(), JsValue::Number(expires_at));
     let message = crate::utils::json::to_string(&signed).ok()?;
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).ok()?;
     mac.update(message.as_bytes());
@@ -355,10 +346,7 @@ fn authenticate_compact(
 }
 
 /// Validate and revive an authenticated session snapshot without granting storage authority.
-pub(crate) fn parse_payload(
-    original_payload: &crate::utils::json::JsValue,
-    expires_at: f64,
-) -> Option<CompactCache> {
+pub(crate) fn parse_payload(original_payload: &JsValue, expires_at: f64) -> Option<CompactCache> {
     // Revived dates are runtime Date objects in the source. Required string
     // fields reject them even when their canonical JSON text did not change.
     for (object, required, optional) in [
@@ -374,23 +362,23 @@ pub(crate) fn parse_payload(
         ),
     ] {
         for field in required {
-            let text_2 = object.get(*field)?.as_str()?;
-            if date::parse(text_2).is_some() {
+            let text = object.get(*field)?.as_str()?;
+            if date::parse(text).is_some() {
                 return None;
             }
         }
         for field in optional {
             if object
                 .get(*field)
-                .and_then(crate::utils::json::JsValue::as_str)
-                .is_some_and(|text_3| date::parse(text_3).is_some())
+                .and_then(JsValue::as_str)
+                .is_some_and(|text| date::parse(text).is_some())
             {
                 return None;
             }
         }
         for field in ["createdAt", "updatedAt"] {
-            if let Some(value_3) = object.get(field) {
-                _ = date::parse(value_3.as_str()?)?;
+            if let Some(value) = object.get(field) {
+                _ = date::parse(value.as_str()?)?;
             }
         }
     }
@@ -402,49 +390,47 @@ pub(crate) fn parse_payload(
     )?;
     if original_payload
         .get("version")
-        .and_then(crate::utils::json::JsValue::as_str)
-        .is_some_and(|text_4| date::parse(text_4).is_some())
+        .and_then(JsValue::as_str)
+        .is_some_and(|text| date::parse(text).is_some())
     {
         return None;
     }
     let mut normalized = original_payload.clone();
     date::revive_parsed(&mut normalized);
-    let payload_2 = normalized.as_object()?;
-    let updated_at = payload_2
+    let payload = normalized.as_object()?;
+    let updated_at = payload
         .get("updatedAt")?
         .as_f64()
-        .filter(|value_4| value_4.is_finite())?;
-    let version = match payload_2.get("version") {
+        .filter(|value| value.is_finite())?;
+    let version = match payload.get("version") {
         None => None,
-        Some(value_5) => Some(value_5.as_str()?.to_owned()),
+        Some(value) => Some(value.as_str()?.to_owned()),
     };
-    let mut user = payload_2.get("user")?.to_json_value().ok()?;
-    let mut session = payload_2.get("session")?.to_json_value().ok()?;
+    let mut user = payload.get("user")?.to_json_value().ok()?;
+    let mut session = payload.get("session")?.to_json_value().ok()?;
     let user_id = date::coerce_id(original_payload.get("session")?.get("userId")?)?;
-    drop(
-        session
-            .as_object_mut()?
-            .insert("userId".into(), Value::String(user_id)),
-    );
+    _ = session
+        .as_object_mut()?
+        .insert("userId".into(), Value::String(user_id));
     // The source schemas supply absent creation/update dates and a false
     // emailVerified value. Producer dates are canonical JavaScript Date JSON.
     for object in [&mut user, &mut session] {
         let map = object.as_object_mut()?;
         for key in ["createdAt", "updatedAt"] {
             if !map.contains_key(key) {
-                drop(map.insert(
+                _ = map.insert(
                     key.into(),
                     json!(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)),
-                ));
+                );
             }
         }
     }
     let map = user.as_object_mut()?;
     let email = map.get("email")?.as_str()?.to_lowercase();
-    drop(map.insert("email".into(), Value::String(email)));
+    _ = map.insert("email".into(), Value::String(email));
     _ = map.get("name")?.as_str()?;
     if !map.contains_key("emailVerified") {
-        drop(map.insert("emailVerified".into(), Value::Bool(false)));
+        _ = map.insert("emailVerified".into(), Value::Bool(false));
     }
     let null_user_extensions: Vec<_> = [
         "username",
@@ -467,7 +453,7 @@ pub(crate) fn parse_payload(
         _ = user.omitted_fields.insert("image".into());
     }
     for name in null_user_extensions {
-        drop(user.extension_fields.insert(name.into(), Value::Null));
+        _ = user.extension_fields.insert(name.into(), Value::Null);
     }
     let null_extensions: Vec<_> = ["activeOrganizationId", "activeTeamId", "impersonatedBy"]
         .into_iter()
@@ -480,7 +466,7 @@ pub(crate) fn parse_payload(
         }
     }
     for name in null_extensions {
-        drop(session.extension_fields.insert(name.into(), Value::Null));
+        _ = session.extension_fields.insert(name.into(), Value::Null);
     }
     Some(CompactCache {
         user,
@@ -494,9 +480,6 @@ pub(crate) fn parse_payload(
 /// Check the token binding, version callback, and source expiry guards.
 ///
 /// Callback errors propagate; invalid envelopes permit storage fallback.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 #[expect(
     clippy::as_conversions,
     clippy::cast_precision_loss,
@@ -542,26 +525,12 @@ pub async fn validate_compact(
 /// Negative and NaN ages omit Max-Age; nonnegative ages are floored, and
 /// values above the cookie serializer's 400-day ceiling fail rather than
 /// saturating. No Expires attribute is synthesized.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub fn cookie_header(
     name: &str,
     value: &str,
     max_age: Option<f64>,
     config: &crate::AuthConfig,
 ) -> AuthResult<String> {
-    const COMPONENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
-        .remove(b'-')
-        .remove(b'_')
-        .remove(b'.')
-        .remove(b'!')
-        .remove(b'~')
-        .remove(b'*')
-        .remove(b'\'')
-        .remove(b'(')
-        .remove(b')');
-
     let bases = ["session_data", "account_data"]
         .map(|logical| crate::utils::cookie_utils::related_cookie_name(config, logical));
     let base = (!bases.iter().any(|base| base == name))
@@ -571,7 +540,9 @@ pub fn cookie_header(
                 .find(|base| runtime::chunk_index(name, base).is_some())
         })
         .flatten();
-    let encoded = percent_encoding::utf8_percent_encode(value, COMPONENT).to_string();
+    let encoded =
+        percent_encoding::utf8_percent_encode(value, crate::utils::cookie_utils::URI_COMPONENT)
+            .to_string();
     crate::utils::cookie_utils::create_numeric_cookie_header(
         name,
         base.map_or(name, String::as_str),

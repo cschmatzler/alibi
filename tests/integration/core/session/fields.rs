@@ -7,16 +7,16 @@ use super::application_model::ApplicationSchema;
 use alibi::plugins::{
     EmailPasswordPlugin, OpenApiPlugin, OrganizationPlugin, SessionManagementPlugin,
 };
+use alibi::seaorm::sea_orm::{ConnectionTrait, Statement};
+use alibi::seaorm::store::__private_test_support::migrator::run_migrations;
+use alibi::seaorm::{
+    Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
+};
 use alibi::{
     AuthBuilder, AuthConfig,
     field_policy::{FieldConfig, FieldValues},
 };
-use alibi_core::{AuthRequest, AuthResult, CreateSession, HttpMethod, utils::json::JsValue};
-use alibi_seaorm::sea_orm::{ConnectionTrait, Statement};
-use alibi_seaorm::store::__private_test_support::migrator::run_migrations;
-use alibi_seaorm::{
-    Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
-};
+use alibi::{AuthRequest, AuthResult, CreateSession, HttpMethod, utils::json::JsValue};
 use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::{
@@ -57,7 +57,7 @@ impl DatabaseHooks<ApplicationSchema, SeaOrmBackend> for ApplicationHook {
                     [token.into()],
                 ))
                 .await
-                .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?;
+                .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
         }
         Ok(HookControl::Continue)
     }
@@ -106,7 +106,7 @@ impl DatabaseHooks<ApplicationSchema, SeaOrmBackend> for InitialSessionFieldsHoo
     }
 }
 
-async fn session_fields_database() -> alibi_seaorm::DatabaseConnection {
+async fn session_fields_database() -> alibi::seaorm::DatabaseConnection {
     let db = Database::connect("sqlite::memory:").await.unwrap();
     run_migrations(&db).await.unwrap();
     for sql in [
@@ -152,11 +152,11 @@ mod tests {
 
     #[tokio::test]
     async fn public_issuance_inserts_explicit_session_fields_before_creation_hooks() {
+        use alibi::CreateUser;
         use alibi::prelude::{AuthSession, AuthUser};
         use alibi::session::{
             SessionOverrides, issue_user_session_with_fields, issue_user_session_with_fields_record,
         };
-        use alibi_core::CreateUser;
 
         let db = session_fields_database().await;
         for sql in [
@@ -354,7 +354,7 @@ mod tests {
         let token = body["token"].as_str().unwrap();
         let cookie = format!(
             "better-auth.session_token={}",
-            alibi_core::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
+            alibi::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
         );
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         let documentation = AuthRequest::new(HttpMethod::Get, "/api/auth/open-api/generate-schema");
@@ -384,7 +384,7 @@ mod tests {
             ))
             .await
             .unwrap();
-        let manual_context = alibi_core::AuthContext::<ApplicationSchema>::new(
+        let manual_context = alibi::AuthContext::<ApplicationSchema>::new(
             Arc::new(auth.config().clone()),
             Arc::clone(auth.store()),
         );
@@ -426,7 +426,7 @@ mod tests {
             assert_eq!(stored_2.label.as_deref(), Some(expected));
             assert_eq!(stored_2.hidden, initial.hidden);
             assert_eq!(
-                alibi_core::AuthSession::additional_fields(&stored_2).get("validated"),
+                alibi::AuthSession::additional_fields(&stored_2).get("validated"),
                 Some(&json!("unregistered-storage-secret"))
             );
         }

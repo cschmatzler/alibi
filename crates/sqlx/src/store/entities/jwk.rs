@@ -1,6 +1,8 @@
+use crate::SqlxModel;
+use alibi_core::types::Jwk;
 use chrono::{DateTime, Utc};
 
-#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, crate::SqlxModel)]
+#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, SqlxModel)]
 #[auth(table = "jwks")]
 pub struct Model {
     pub id: String,
@@ -12,7 +14,7 @@ pub struct Model {
     pub crv: Option<String>,
 }
 
-impl From<Model> for alibi_core::types::Jwk {
+impl From<Model> for Jwk {
     fn from(row: Model) -> Self {
         Self {
             id: row.id,

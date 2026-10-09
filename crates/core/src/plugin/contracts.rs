@@ -1,4 +1,10 @@
-use super::*;
+use crate::{
+    AuthContext, AuthError, AuthInitContext, AuthRequest, AuthResponse, AuthResult, AuthRoute,
+    AuthSchema,
+};
+use async_trait::async_trait;
+use std::collections::HashMap;
+use std::sync::Arc;
 /// A plugin override for delivery of the core email-verification challenge.
 #[async_trait]
 pub trait VerificationEmailOverride<S: AuthSchema>: Send + Sync {
@@ -61,7 +67,6 @@ pub enum HttpEndpointResponse {
 }
 
 /// Plugin trait that all authentication plugins must implement.
-///
 #[async_trait]
 pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
     /// Plugin name - should be unique

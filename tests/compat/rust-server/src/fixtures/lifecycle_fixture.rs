@@ -1,9 +1,9 @@
 use crate::TestSchema;
-use alibi::{AuthError, BetterAuth};
-use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
-use alibi_core::{
+use alibi::entity::{AuthAccount, AuthSession, AuthUser};
+use alibi::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, BeforeRequestAction,
 };
+use alibi::{AuthError, BetterAuth};
 use async_trait::async_trait;
 use axum::{
     Json, Router,

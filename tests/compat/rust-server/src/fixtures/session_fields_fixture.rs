@@ -9,10 +9,10 @@ use alibi::plugins::{
     OAuthPlugin, OpenApiPlugin, OrganizationPlugin, PasswordManagementPlugin,
     SessionManagementPlugin, UserManagementPlugin,
 };
+use alibi::seaorm::sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Statement};
+use alibi::seaorm::store::entities::user;
+use alibi::seaorm::{DatabaseConnection, DatabaseHooks, HookControl};
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_seaorm::sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Statement};
-use alibi_seaorm::store::entities::user;
-use alibi_seaorm::{DatabaseConnection, DatabaseHooks, HookControl};
 use axum::{Json, Router, extract::Query, routing::get};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -80,7 +80,7 @@ pub(crate) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthR
         let mut config = config.clone().base_path(&path);
         if name == "session-fields-secondary" {
             config.session.secondary_storage =
-                Some(Arc::new(alibi_core::store::MemoryCacheAdapter::new()));
+                Some(Arc::new(alibi::store::MemoryCacheAdapter::new()));
         }
         let fields = &mut config.session.additional_fields;
         _ = fields.insert(

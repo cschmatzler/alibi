@@ -1,4 +1,8 @@
-use super::*;
+use alibi_schema_registry::{self as registry, EntityRole};
+use proc_macro2::{Ident, TokenStream};
+use quote::quote;
+use syn::{FieldsNamed, Type};
+
 #[must_use]
 pub fn has_field(fields: &FieldsNamed, name: &str) -> bool {
     fields
@@ -77,7 +81,7 @@ pub fn additional_output(
         if physical_output {
             output.push(quote! {
                 if let Ok(value) = #core_root::utils::json::to_value(&self.#name) {
-                    let _ = fields.insert(#camel.into(), value);
+                    _ = fields.insert(#camel.into(), value);
                 }
             });
         }
@@ -89,7 +93,7 @@ pub fn additional_output(
         {
             output.push(quote! {
                 if let Ok(value) = #core_root::utils::json::to_value(&self.#name) {
-                    let _ = fields.insert(#physical.into(), value);
+                    _ = fields.insert(#physical.into(), value);
                 }
             });
         }

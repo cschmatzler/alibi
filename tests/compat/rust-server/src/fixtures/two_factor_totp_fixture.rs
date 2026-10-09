@@ -1,25 +1,25 @@
 use crate::TestSchema;
 use alibi::plugins::two_factor::TwoFactorConfig;
+use alibi::seaorm::DatabaseConnection;
+use alibi::utils::json::{self, JsValue};
 use alibi::{
     AuthBuilder, AuthConfig, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin},
 };
-use alibi_core::utils::json::{self, JsValue};
-use alibi_seaorm::DatabaseConnection;
 use axum::{Json, Router, body::Bytes, http::StatusCode, response::IntoResponse, routing::post};
 use serde_json::json;
 use std::{collections::HashMap, sync::Arc};
 type Auth = Arc<BetterAuth<TestSchema>>;
 struct SessionFailure;
 #[async_trait::async_trait]
-impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for SessionFailure {
+impl alibi::seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for SessionFailure {
     async fn before_create_session(
         &self,
-        _session: &mut alibi_core::CreateSession,
+        _session: &mut alibi::CreateSession,
         context: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<alibi_seaorm::HookControl> {
+    ) -> AuthResult<alibi::seaorm::HookControl> {
         if let Some(request) = context
             .request
             .as_ref()
@@ -27,14 +27,14 @@ impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for Sessio
         {
             if let Some(failure) = request.headers.get("x-two-factor-session") {
                 if failure == "cancel" {
-                    return Ok(alibi_seaorm::HookControl::Cancel);
+                    return Ok(alibi::seaorm::HookControl::Cancel);
                 }
-                return Err(alibi_core::AuthError::forbidden(
+                return Err(alibi::AuthError::forbidden(
                     "session creation cancelled by database hook",
                 ));
             }
         }
-        Ok(alibi_seaorm::HookControl::Continue)
+        Ok(alibi::seaorm::HookControl::Continue)
     }
 }
 

@@ -1,14 +1,14 @@
 //! Application storage hooks observe admitted mutations and committed snapshots.
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use alibi::AuthSchema;
-use alibi_core::field_policy::FieldValues;
-use alibi_core::store::{
+use alibi::field_policy::FieldValues;
+use alibi::store::{
     AccountStore, DatabaseHookContext, DatabaseHooks, HookBackend, HookControl, SessionStore,
     UserStore,
 };
-use alibi_core::utils::json::JsValue;
-use alibi_core::verification::{VerificationCreation, VerificationSnapshot};
-use alibi_core::{
+use alibi::utils::json::JsValue;
+use alibi::verification::{VerificationCreation, VerificationSnapshot};
+use alibi::{
     AuthAccount, AuthError, AuthResult, AuthSession, AuthUser, CreateAccount, CreateSession,
     CreateUser, CreateVerification, UpdateAccount, UpdateVerification,
 };

@@ -1,0 +1,562 @@
+//! An application grant layered over the device-code lifecycle: request
+//! validation, OpenAPI extension, review context and atomic redemption.
+use super::*;
+use alibi::plugins::device_authorization::{
+    DeviceAuthorizationGrant, DeviceGrantAuthorization, DeviceGrantFailure, DeviceGrantRecord,
+    DeviceRedemptionAuthorization, DeviceRedemptionPolicy, redeem_device_code,
+};
+use alibi::plugins::{DeviceAuthorizationPlugin, OpenApiPlugin};
+use alibi::{AuthContext, AuthPlugin, AuthRoute, AuthUser};
+use alibi::{AuthError, AuthResult};
+use serde_json::Map;
+
+backend_tests!(
+    application_grant_lifecycle,
+    device_decision_and_issuance_edges
+);
+
+type Events = Arc<Mutex<Vec<Value>>>;
+
+fn object(value: Value) -> Map<String, Value> {
+    value.as_object().cloned().unwrap()
+}
+
+struct Grant(Events);
+
+#[async_trait::async_trait]
+impl DeviceAuthorizationGrant for Grant {
+    fn request_schema_fields(&self) -> Map<String, Value> {
+        object(json!({
+            "audience": {"type": "string", "minLength": 1},
+            "nonce": {"type": "string", "minLength": 1},
+        }))
+    }
+
+    fn on_request_validation_error(&self, issues: &[String]) -> DeviceGrantFailure {
+        self.0
+            .lock()
+            .unwrap()
+            .push(json!({"phase": "validation", "issueCount": issues.len()}));
+        DeviceGrantFailure::oauth(
+            400,
+            "application_invalid_request",
+            "Application audience and nonce are required",
+        )
+    }
+
+    async fn authorize_request(
+        &self,
+        request: &Map<String, Value>,
+        _: &AuthRequest,
+    ) -> Result<DeviceGrantAuthorization, DeviceGrantFailure> {
+        self.0.lock().unwrap().push(json!({"phase": "authorize"}));
+        if request["audience"] != "application-api" {
+            return Err(DeviceGrantFailure::oauth(
+                422,
+                "invalid_audience",
+                "Audience is not allowed",
+            ));
+        }
+        Ok(DeviceGrantAuthorization {
+            client_id: "application-client".into(),
+            user_id: None,
+            fields: object(
+                json!({"grantAudience": request["audience"], "grantNonce": request["nonce"]}),
+            ),
+        })
+    }
+
+    async fn assert_session_redemption(
+        &self,
+        _: &DeviceGrantRecord,
+    ) -> Result<(), DeviceGrantFailure> {
+        self.0
+            .lock()
+            .unwrap()
+            .push(json!({"phase": "session-redemption"}));
+        Err(DeviceGrantFailure::oauth(
+            400,
+            "invalid_grant",
+            "Application grant cannot issue a standalone session",
+        ))
+    }
+
+    async fn verification_context(
+        &self,
+        record: &DeviceGrantRecord,
+    ) -> AuthResult<Map<String, Value>> {
+        self.0
+            .lock()
+            .unwrap()
+            .push(json!({"phase": "verification"}));
+        Ok(object(json!({
+            "audience": record.fields["grantAudience"],
+            "nonce": record.fields["grantNonce"],
+        })))
+    }
+
+    fn device_code_schema_fields(&self) -> Vec<alibi::OpenApiField> {
+        vec![alibi::OpenApiField::new(
+            "grantAudience",
+            json!({"type": "string"}),
+            false,
+        )]
+    }
+
+    fn request_error_codes(&self) -> Vec<String> {
+        vec!["invalid_audience".into()]
+    }
+
+    fn request_openapi_responses(&self) -> Map<String, Value> {
+        object(json!({"422": {"description": "Application audience rejected"}}))
+    }
+
+    fn verification_openapi_properties(&self) -> Map<String, Value> {
+        object(json!({"audience": {"type": "string"}, "nonce": {"type": "string"}}))
+    }
+}
+
+struct Policy {
+    nonce: Value,
+    reject_preparation: bool,
+}
+
+#[async_trait::async_trait]
+impl DeviceRedemptionPolicy for Policy {
+    async fn authorize(
+        &self,
+        record: &DeviceGrantRecord,
+    ) -> AuthResult<DeviceRedemptionAuthorization> {
+        Ok(DeviceRedemptionAuthorization {
+            ownership: object(json!({"grantNonce": self.nonce})),
+            context: json!({"nonce": record.fields["grantNonce"]}),
+        })
+    }
+
+    async fn prepare(&self, record: &DeviceGrantRecord, _: &Value) -> AuthResult<Value> {
+        if self.reject_preparation {
+            return Err(AuthError::Api {
+                status: 403,
+                code: Some("APPLICATION_PREPARE_REJECTED".into()),
+                message: "Application preparation rejected".into(),
+            });
+        }
+        Ok(json!({"audience": record.fields["grantAudience"]}))
+    }
+}
+
+/// Redeems an approved grant on behalf of the application.
+struct ApplicationToken;
+
+#[async_trait::async_trait]
+impl<S: AuthSchema> AuthPlugin<S> for ApplicationToken {
+    fn name(&self) -> &'static str {
+        "application-token"
+    }
+
+    fn routes(&self) -> Vec<AuthRoute> {
+        vec![AuthRoute::post(
+            "/device/application-token",
+            "application_token",
+        )]
+    }
+
+    async fn on_request(
+        &self,
+        request: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<AuthResponse>> {
+        let input: Value = request.body_as_json()?;
+        let policy = Policy {
+            nonce: input["claimNonce"].clone(),
+            reject_preparation: input["prepareFailure"] == true,
+        };
+        let code = input["device_code"].as_str().unwrap_or_default();
+        match redeem_device_code(ctx, code, &policy).await {
+            Ok(result) => Ok(Some(AuthResponse::json(
+                200,
+                &json!({
+                    "userId": result.user.id(),
+                    "audience": result.redemption_context["audience"],
+                    "nonce": result.authorization_context["nonce"],
+                }),
+            )?)),
+            Err(failure) => failure.into_response().map(Some),
+        }
+    }
+}
+
+fn get(path: &str, query: &[(&str, &str)], cookie: &str) -> AuthRequest {
+    let mut request = request(path, None, cookie);
+    request.set_query_pairs(query.iter().copied());
+    request
+}
+
+async fn rows(db: &Db, code: &str) -> TestResult<i64> {
+    db.count_where(
+        "SELECT COUNT(*) FROM device_code WHERE device_code = $1",
+        &[code],
+    )
+    .await
+}
+
+async fn application_grant_lifecycle<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let events = Events::default();
+    let auth = builder::<B>(&connection)
+        .plugin(
+            DeviceAuthorizationPlugin::new()
+                .interval(chrono::Duration::zero())
+                .grant(Grant(Arc::clone(&events))),
+        )
+        .plugin(ApplicationToken)
+        .plugin(OpenApiPlugin::new())
+        .build()
+        .await?;
+
+    let missing = call(
+        &auth,
+        request("/device/code", Some(json!({"nonce": "n"})), ""),
+        400,
+    )
+    .await;
+    assert_eq!(body(&missing)["error"], "application_invalid_request");
+    let wrong_type = call(
+        &auth,
+        request(
+            "/device/code",
+            Some(json!({"audience": "application-api", "nonce": "n", "scope": 1})),
+            "",
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&wrong_type)["error"], "application_invalid_request");
+    let denied = call(
+        &auth,
+        request(
+            "/device/code",
+            Some(json!({"audience": "foreign-api", "nonce": "n"})),
+            "",
+        ),
+        422,
+    )
+    .await;
+    assert_eq!(body(&denied)["error"], "invalid_audience");
+    assert_eq!(
+        denied.headers.get("cache-control").map(String::as_str),
+        Some("no-store")
+    );
+    assert_eq!(db.count("device_code").await?, 0);
+    assert_eq!(
+        *events.lock().unwrap(),
+        [
+            json!({"phase": "validation", "issueCount": 1}),
+            json!({"phase": "validation", "issueCount": 1}),
+            json!({"phase": "authorize"}),
+        ]
+    );
+
+    let schema = body(&call(&auth, get("/open-api/generate-schema", &[], ""), 200).await);
+    let issuance = &schema["paths"]["/device/code"]["post"];
+    assert_eq!(
+        issuance["responses"]["422"]["description"],
+        "Application audience rejected"
+    );
+    let properties = &issuance["requestBody"]["content"]["application/json"]["schema"];
+    for field in ["audience", "nonce", "scope", "client_id", "user_id"] {
+        assert!(properties["properties"].get(field).is_some(), "{field}");
+    }
+    assert_eq!(properties["required"], json!(["audience", "nonce"]));
+    let review_properties = &schema["paths"]["/device"]["get"]["responses"]["200"]["content"]["application/json"]
+        ["schema"]["properties"];
+    assert!(review_properties.get("audience").is_some());
+    assert!(review_properties.get("nonce").is_some());
+
+    let owner = cookies(&signup(&auth, "grant-owner@example.com").await);
+    let user_id =
+        body(&call(&auth, request("/get-session", None, &owner), 200).await)["user"]["id"].clone();
+    let issue = async |nonce: &str| {
+        let issued = call(
+            &auth,
+            request(
+                "/device/code",
+                Some(json!({"audience": "application-api", "nonce": nonce, "scope": "read"})),
+                &owner,
+            ),
+            200,
+        )
+        .await;
+        assert_eq!(
+            issued.headers.get("pragma").map(String::as_str),
+            Some("no-cache")
+        );
+        let issued = body(&issued);
+        (
+            issued["device_code"].as_str().unwrap().to_owned(),
+            issued["user_code"].as_str().unwrap().to_owned(),
+        )
+    };
+    let decide = async |decision: &str, user_code: &str| {
+        _ = call(
+            &auth,
+            get("/device", &[("user_code", user_code)], &owner),
+            200,
+        )
+        .await;
+        call(
+            &auth,
+            request(
+                &format!("/device/{decision}"),
+                Some(json!({"userCode": user_code})),
+                &owner,
+            ),
+            200,
+        )
+        .await
+    };
+    let redeem = async |code: &str, nonce: &str, prepare_failure: bool, status: u16| {
+        body(
+            &call(
+                &auth,
+                request(
+                    "/device/application-token",
+                    Some(json!({
+                        "device_code": code,
+                        "claimNonce": nonce,
+                        "prepareFailure": prepare_failure,
+                    })),
+                    "",
+                ),
+                status,
+            )
+            .await,
+        )
+    };
+
+    events.lock().unwrap().clear();
+    let issued = call(
+        &auth,
+        request(
+            "/device/code",
+            Some(json!({"audience": "application-api", "nonce": "owned", "scope": "read"})),
+            &owner,
+        ),
+        200,
+    )
+    .await;
+    let issued = body(&issued);
+    let code = issued["device_code"].as_str().unwrap();
+    let user_code = issued["user_code"].as_str().unwrap();
+    assert_eq!(
+        db.text(
+            "SELECT client_id FROM device_code WHERE device_code = $1",
+            &[code]
+        )
+        .await?
+        .as_deref(),
+        Some("application-client")
+    );
+    let guest_view = body(&call(&auth, get("/device", &[("user_code", user_code)], ""), 200).await);
+    assert!(guest_view.get("audience").is_none());
+    let review = body(
+        &call(
+            &auth,
+            get("/device", &[("user_code", user_code)], &owner),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(review["audience"], "application-api");
+    assert_eq!(review["nonce"], "owned");
+    _ = decide("approve", user_code).await;
+    let standalone = call(
+        &auth,
+        request(
+            "/device/token",
+            Some(json!({
+                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                "device_code": code,
+                "client_id": "application-client",
+            })),
+            "",
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&standalone)["error"], "invalid_grant");
+    assert_eq!(rows(&db, code).await?, 1);
+    assert_eq!(
+        redeem(code, "owned", false, 200).await,
+        json!({"userId": user_id, "audience": "application-api", "nonce": "owned"})
+    );
+    assert_eq!(rows(&db, code).await?, 0);
+    assert_eq!(
+        redeem(code, "owned", false, 400).await["error"],
+        "invalid_grant"
+    );
+    assert_eq!(
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|event| event["phase"].clone())
+            .collect::<Vec<_>>(),
+        [
+            "authorize",
+            "verification",
+            "verification",
+            "session-redemption"
+        ]
+    );
+
+    let (code, user_code) = issue("denial").await;
+    assert_eq!(
+        redeem(&code, "denial", false, 400).await["error"],
+        "authorization_pending"
+    );
+    _ = decide("approve", &user_code).await;
+    let rejected = redeem(&code, "denial", true, 403).await;
+    assert_eq!(rejected["code"], "APPLICATION_PREPARE_REJECTED");
+    assert_eq!(rows(&db, &code).await?, 1);
+    assert_eq!(
+        redeem(&code, "foreign-owner", false, 400).await["error"],
+        "invalid_grant"
+    );
+    assert_eq!(rows(&db, &code).await?, 1);
+    db.set_timestamp(
+        "device_code",
+        "expires_at",
+        ("device_code", &code),
+        chrono::Utc::now() - chrono::Duration::minutes(1),
+    )
+    .await?;
+    assert_eq!(
+        redeem(&code, "denial", false, 400).await["error"],
+        "expired_token"
+    );
+    assert_eq!(rows(&db, &code).await?, 0);
+    assert_eq!(
+        redeem("unknown", "denial", false, 400).await["error"],
+        "invalid_grant"
+    );
+
+    let (code, user_code) = issue("declined").await;
+    _ = decide("deny", &user_code).await;
+    assert_eq!(
+        redeem(&code, "declined", false, 400).await["error"],
+        "access_denied"
+    );
+    assert_eq!(rows(&db, &code).await?, 0);
+    B::close(connection).await
+}
+
+async fn device_decision_and_issuance_edges<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = builder::<B>(&connection)
+        .plugin(
+            DeviceAuthorizationPlugin::new()
+                .interval(chrono::Duration::zero())
+                .device_code_length(12)
+                .user_code_length(6)
+                .verification_uri("https://app.example/device?user_code=old&x=1&user_code=dup"),
+        )
+        .build()
+        .await?;
+    for (value, received) in [(json!(null), "null"), (json!(true), "boolean")] {
+        let rejected = call(
+            &auth,
+            request("/device/code", Some(json!({"client_id": value})), ""),
+            400,
+        )
+        .await;
+        assert_eq!(
+            body(&rejected)["error_description"],
+            format!("[body.client_id] Invalid input: expected string, received {received}")
+        );
+    }
+    let issued = body(
+        &call(
+            &auth,
+            request("/device/code", Some(json!({"client_id": "edge"})), ""),
+            200,
+        )
+        .await,
+    );
+    let code = issued["device_code"].as_str().unwrap().to_owned();
+    let user_code = issued["user_code"].as_str().unwrap().to_owned();
+    assert_eq!((code.len(), user_code.len()), (12, 6));
+    assert_eq!(
+        issued["verification_uri_complete"],
+        format!("https://app.example/device?user_code={user_code}&x=1")
+    );
+
+    let owner = cookies(&signup(&auth, "device-edges@example.com").await);
+    let mut wrong_media = request(
+        "/device/approve",
+        Some(json!({"userCode": user_code})),
+        &owner,
+    );
+    _ = wrong_media
+        .headers
+        .insert("content-type".into(), "text/plain".into());
+    let wrong_media = call(&auth, wrong_media, 415).await;
+    assert_eq!(body(&wrong_media)["code"], "UNSUPPORTED_MEDIA_TYPE");
+    let mut review = request("/device", None, &owner);
+    review.set_query_pairs([("user_code", user_code.as_str())]);
+    _ = call(&auth, review, 200).await;
+    _ = call(
+        &auth,
+        request(
+            "/device/approve",
+            Some(json!({"userCode": user_code})),
+            &owner,
+        ),
+        200,
+    )
+    .await;
+    _ = db.execute("DELETE FROM sessions", &[]).await?;
+    _ = db.execute("DELETE FROM accounts", &[]).await?;
+    _ = db.execute("DELETE FROM users", &[]).await?;
+    let orphaned = call(
+        &auth,
+        request(
+            "/device/token",
+            Some(json!({
+                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                "device_code": code,
+                "client_id": "edge",
+            })),
+            "",
+        ),
+        500,
+    )
+    .await;
+    assert_eq!(body(&orphaned)["error"], "server_error");
+
+    let owner = cookies(&signup(&auth, "device-expiry@example.com").await);
+    let issued = body(
+        &call(
+            &auth,
+            request("/device/code", Some(json!({"client_id": "edge"})), ""),
+            200,
+        )
+        .await,
+    );
+    let user_code = issued["user_code"].as_str().unwrap();
+    db.set_timestamp(
+        "device_code",
+        "expires_at",
+        ("user_code", user_code),
+        chrono::Utc::now() - chrono::Duration::minutes(1),
+    )
+    .await?;
+    let expired = call(
+        &auth,
+        request("/device/deny", Some(json!({"userCode": user_code})), &owner),
+        400,
+    )
+    .await;
+    assert_eq!(body(&expired)["error"], "expired_token");
+    B::close(connection).await
+}

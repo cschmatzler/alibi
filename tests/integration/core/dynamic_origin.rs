@@ -10,7 +10,7 @@ use alibi::config::{BaseUrlProtocol, DynamicBaseUrl, TrustedOriginsResolver};
 use alibi::plugins::magic_link::MagicLinkDelivery;
 use alibi::plugins::{EmailPasswordPlugin, MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
 use alibi::{AuthBuilder, AuthConfig};
-use alibi_core::{
+use alibi::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
     BeforeRequestAction, CallbackContext, HttpMethod,
 };
@@ -37,14 +37,12 @@ impl TrustedOriginsResolver for ClientOrigin {
         assert!(request.url().is_some());
         match request.header("x-origin-error").map(String::as_str) {
             Some("ordinary") => {
-                return Err(alibi_core::AuthError::internal(
+                return Err(alibi::AuthError::internal(
                     "private origin resolver failure",
                 ));
             }
             Some("api") => {
-                return Err(alibi_core::AuthError::forbidden(
-                    "origin policy unavailable",
-                ));
+                return Err(alibi::AuthError::forbidden("origin policy unavailable"));
             }
             _ => {}
         }

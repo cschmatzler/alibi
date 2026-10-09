@@ -14,8 +14,12 @@ use alibi::plugins::one_time_token::{
 use alibi::plugins::password_management::{PasswordManagementConfig, SendResetPassword};
 use alibi::plugins::two_factor::{SendTwoFactorOtp, TwoFactorPlugin};
 use alibi::plugins::{EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin};
+use alibi::seaorm::{
+    DatabaseConnection, DatabaseHooks, HookControl,
+    sea_orm::{ActiveModelTrait, Set},
+};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi_core::{
+use alibi::{
     AuthRequest, UpdateVerification,
     store::{CacheAdapter, transaction},
     verification::{
@@ -23,10 +27,6 @@ use alibi_core::{
         VerificationSnapshot,
     },
     wire::{AccountView, UserView, VerificationView},
-};
-use alibi_seaorm::{
-    DatabaseConnection, DatabaseHooks, HookControl,
-    sea_orm::{ActiveModelTrait, Set},
 };
 use async_trait::async_trait;
 use axum::{
@@ -62,7 +62,7 @@ const PROFILES: [&str; 11] = [
 fn hash(value: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(value.as_bytes()))
 }
-fn error(error: alibi_seaorm::sea_orm::DbErr) -> AuthError {
+fn error(error: alibi::seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
 fn decoded(raw: &str) -> Value {
@@ -159,11 +159,11 @@ impl Application {
         self.requests.lock().unwrap().clear();
     }
     fn current_frame(&self) -> Option<Arc<Mutex<PublicationFrame>>> {
-        let context = alibi_core::hooks::current_request_hook_context()?;
+        let context = alibi::hooks::current_request_hook_context()?;
         let path = context.url?.path().to_owned();
         let method = match context.method {
-            alibi_core::HttpMethod::Post => "POST",
-            alibi_core::HttpMethod::Get => "GET",
+            alibi::HttpMethod::Post => "POST",
+            alibi::HttpMethod::Get => "GET",
             _ => return None,
         };
         let cookie = json!(context.headers.get("cookie"));
@@ -468,7 +468,7 @@ impl SendEmailOtp for Application {
     async fn send(
         &self,
         data: &EmailOtpDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         if let Some(pending) = self.pending_publication() {
             pending.lock().unwrap()["delivery"] =
@@ -485,7 +485,7 @@ impl SendMagicLink for Application {
     async fn send(
         &self,
         data: &MagicLinkDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         if let Some(pending) = self.pending_publication() {
             pending.lock().unwrap()["delivery"] = json!(data);
@@ -801,9 +801,9 @@ pub(crate) async fn router(
                         }
                         "seed" => {
                             let data = creation(&body)?;
-                            let seeded = alibi_seaorm::store::entities::verification::ActiveModel {
+                            let seeded = alibi::seaorm::store::entities::verification::ActiveModel {
                                 id: Set(data.id.unwrap_or_else(|| {
-                                    alibi_core::utils::id::generate_id(32)
+                                    alibi::utils::id::generate_id(32)
                                 })),
                                 identifier: Set(data.identifier),
                                 value: Set(data.value),

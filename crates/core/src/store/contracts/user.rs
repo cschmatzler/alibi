@@ -1,4 +1,7 @@
-use super::*;
+use crate::AdapterRecord;
+use crate::user_validation::{PreparedUserCreation, UserValidationSource};
+use crate::{AuthError, AuthResult, AuthSchema, CreateUser, ListUsersParams, UpdateUser};
+use async_trait::async_trait;
 /// Numeric binding used when a registered user text field accepts a JSON number.
 /// The HTTP caller first rounds it to a JavaScript number, preserving negative zero.
 #[derive(Clone, Copy, Debug)]
@@ -24,8 +27,8 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
     async fn create_user_record(
         &self,
         create_user: CreateUser,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
-        crate::AdapterRecord::physical(self.create_user(create_user).await?)
+    ) -> AuthResult<AdapterRecord<S::User>> {
+        AdapterRecord::physical(self.create_user(create_user).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -34,8 +37,8 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
         &self,
         create_user: CreateUser,
         source: UserValidationSource,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
-        crate::AdapterRecord::physical(self.create_user_with_source(create_user, source).await?)
+    ) -> AuthResult<AdapterRecord<S::User>> {
+        AdapterRecord::physical(self.create_user_with_source(create_user, source).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -43,19 +46,16 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
     async fn create_user_prepared_record(
         &self,
         prepared: PreparedUserCreation,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
-        crate::AdapterRecord::physical(self.create_user_prepared(prepared).await?)
+    ) -> AuthResult<AdapterRecord<S::User>> {
+        AdapterRecord::physical(self.create_user_prepared(prepared).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
     /// serialized snapshot; initialized stores apply their declared output policy.
-    async fn get_user_by_id_record(
-        &self,
-        id: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+    async fn get_user_by_id_record(&self, id: &str) -> AuthResult<Option<AdapterRecord<S::User>>> {
         self.get_user_by_id(id)
             .await?
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .transpose()
     }
 
@@ -64,10 +64,10 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
     async fn get_user_by_email_record(
         &self,
         email: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+    ) -> AuthResult<Option<AdapterRecord<S::User>>> {
         self.get_user_by_email(email)
             .await?
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .transpose()
     }
 
@@ -76,10 +76,10 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
     async fn get_user_by_username_record(
         &self,
         username: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+    ) -> AuthResult<Option<AdapterRecord<S::User>>> {
         self.get_user_by_username(username)
             .await?
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .transpose()
     }
 
@@ -88,10 +88,10 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
     async fn get_user_by_phone_number_record(
         &self,
         phone_number: &str,
-    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+    ) -> AuthResult<Option<AdapterRecord<S::User>>> {
         self.get_user_by_phone_number(phone_number)
             .await?
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .transpose()
     }
 
@@ -100,11 +100,11 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
     async fn list_users_by_ids_record(
         &self,
         ids: &[String],
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::User>>> {
+    ) -> AuthResult<Vec<AdapterRecord<S::User>>> {
         self.list_users_by_ids(ids)
             .await?
             .into_iter()
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .collect()
     }
 
@@ -114,11 +114,11 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
         &self,
         ids: &[String],
         limit: f64,
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::User>>> {
+    ) -> AuthResult<Vec<AdapterRecord<S::User>>> {
         self.list_users_by_ids_page(ids, limit)
             .await?
             .into_iter()
-            .map(crate::AdapterRecord::physical)
+            .map(AdapterRecord::physical)
             .collect()
     }
 
@@ -128,8 +128,8 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
         &self,
         id: &str,
         update: UpdateUser,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
-        crate::AdapterRecord::physical(self.update_user(id, update).await?)
+    ) -> AuthResult<AdapterRecord<S::User>> {
+        AdapterRecord::physical(self.update_user(id, update).await?)
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -137,12 +137,12 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
     async fn list_users_record(
         &self,
         params: ListUsersParams,
-    ) -> AuthResult<(Vec<crate::AdapterRecord<S::User>>, usize)> {
+    ) -> AuthResult<(Vec<AdapterRecord<S::User>>, usize)> {
         let (models, count) = self.list_users(params).await?;
         Ok((
             models
                 .into_iter()
-                .map(crate::AdapterRecord::physical)
+                .map(AdapterRecord::physical)
                 .collect::<AuthResult<Vec<_>>>()?,
             count,
         ))

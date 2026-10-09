@@ -1,0 +1,456 @@
+[
+  {
+    "unlisted origin": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "not present": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "backed up without eligibility": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "ed25519 on the wrong curve": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v1>",
+        "name": "matrix key",
+        "credentialID": "<v2>",
+        "userId": "<v3>",
+        "publicKey": "<v4>",
+        "counter": 1,
+        "deviceType": "singleDevice",
+        "backedUp": false,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v5>"
+      }
+    }
+  },
+  {
+    "token binding null": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v6>",
+        "name": "matrix key",
+        "credentialID": "<v7>",
+        "userId": "<v3>",
+        "publicKey": "<v8>+<v9>",
+        "counter": 1,
+        "deviceType": "singleDevice",
+        "backedUp": false,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v5>"
+      }
+    }
+  },
+  {
+    "token binding false": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v10>",
+        "name": "matrix key",
+        "credentialID": "<v11>",
+        "userId": "<v3>",
+        "publicKey": "<v12>/<v13>",
+        "counter": 1,
+        "deviceType": "singleDevice",
+        "backedUp": false,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v5>"
+      }
+    }
+  },
+  {
+    "token binding \"bound\"": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "token binding {\"status\":\"present\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v14>",
+        "name": "matrix key",
+        "credentialID": "<v15>",
+        "userId": "<v3>",
+        "publicKey": "<v16>/<v17>/",
+        "counter": 1,
+        "deviceType": "singleDevice",
+        "backedUp": false,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v5>"
+      }
+    }
+  },
+  {
+    "token binding {\"status\":\"unknown\"}": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "token binding []": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "registered": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v18>",
+        "name": "matrix key",
+        "credentialID": "<v19>",
+        "userId": "<v3>",
+        "publicKey": "pAEBAycgBiFYIGa+<v20>",
+        "counter": 1,
+        "deviceType": "singleDevice",
+        "backedUp": false,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v5>"
+      }
+    }
+  },
+  {
+    "multi-device from second origin": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "multi-device": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v21>",
+        "name": "matrix key",
+        "credentialID": "<v22>",
+        "userId": "<v3>",
+        "publicKey": "<v23>",
+        "counter": 1,
+        "deviceType": "multiDevice",
+        "backedUp": true,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v5>"
+      }
+    }
+  },
+  {
+    "listed keys": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": [
+        {
+          "id": "<v1>",
+          "name": "matrix key",
+          "credentialID": "<v2>",
+          "userId": "<v3>",
+          "publicKey": "<v4>",
+          "counter": 1,
+          "deviceType": "singleDevice",
+          "backedUp": false,
+          "transports": "internal",
+          "createdAt": "<date>",
+          "aaguid": "<v5>"
+        },
+        {
+          "id": "<v6>",
+          "name": "matrix key",
+          "credentialID": "<v7>",
+          "userId": "<v3>",
+          "publicKey": "<v8>+<v9>",
+          "counter": 1,
+          "deviceType": "singleDevice",
+          "backedUp": false,
+          "transports": "internal",
+          "createdAt": "<date>",
+          "aaguid": "<v5>"
+        },
+        {
+          "id": "<v10>",
+          "name": "matrix key",
+          "credentialID": "<v11>",
+          "userId": "<v3>",
+          "publicKey": "<v12>/<v13>",
+          "counter": 1,
+          "deviceType": "singleDevice",
+          "backedUp": false,
+          "transports": "internal",
+          "createdAt": "<date>",
+          "aaguid": "<v5>"
+        },
+        {
+          "id": "<v14>",
+          "name": "matrix key",
+          "credentialID": "<v15>",
+          "userId": "<v3>",
+          "publicKey": "<v16>/<v17>/",
+          "counter": 1,
+          "deviceType": "singleDevice",
+          "backedUp": false,
+          "transports": "internal",
+          "createdAt": "<date>",
+          "aaguid": "<v5>"
+        },
+        {
+          "id": "<v18>",
+          "name": "matrix key",
+          "credentialID": "<v19>",
+          "userId": "<v3>",
+          "publicKey": "pAEBAycgBiFYIGa+<v20>",
+          "counter": 1,
+          "deviceType": "singleDevice",
+          "backedUp": false,
+          "transports": "internal",
+          "createdAt": "<date>",
+          "aaguid": "<v5>"
+        },
+        {
+          "id": "<v21>",
+          "name": "matrix key",
+          "credentialID": "<v22>",
+          "userId": "<v3>",
+          "publicKey": "<v23>",
+          "counter": 1,
+          "deviceType": "multiDevice",
+          "backedUp": true,
+          "transports": "internal",
+          "createdAt": "<date>",
+          "aaguid": "<v5>"
+        }
+      ]
+    }
+  },
+  {
+    "assertion wrong origin": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "AUTHENTICATION_FAILED",
+        "message": "Authentication failed"
+      }
+    }
+  },
+  {
+    "assertion not present": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "AUTHENTICATION_FAILED",
+        "message": "Authentication failed"
+      }
+    }
+  },
+  {
+    "assertion bad binding": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "AUTHENTICATION_FAILED",
+        "message": "Authentication failed"
+      }
+    }
+  },
+  {
+    "assertion backed up": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "AUTHENTICATION_FAILED",
+        "message": "Authentication failed"
+      }
+    }
+  },
+  {
+    "assertion": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "session": {
+          "id": "<v24>",
+          "expiresAt": "<date>",
+          "token": "<g25>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<v3>"
+        },
+        "user": {
+          "id": "<v3>",
+          "name": "Native owner",
+          "email": "passkey-matrix@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "synced assertion": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "session": {
+          "id": "<v26>",
+          "expiresAt": "<date>",
+          "token": "<g27>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<v3>"
+        },
+        "user": {
+          "id": "<v3>",
+          "name": "Native owner",
+          "email": "passkey-matrix@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  }
+]

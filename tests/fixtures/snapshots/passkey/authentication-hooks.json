@@ -1,0 +1,220 @@
+[
+  {
+    "core hook denies": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "authentication denied"
+      }
+    }
+  },
+  {
+    "core hook fails": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "AUTHENTICATION_FAILED",
+        "message": "Authentication failed"
+      }
+    }
+  },
+  {
+    "raw hook denies": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "authentication denied"
+      }
+    }
+  },
+  {
+    "raw hook fails": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "AUTHENTICATION_FAILED",
+        "message": "Authentication failed"
+      }
+    }
+  },
+  {
+    "raw hook observes": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "session": {
+          "id": "<v2>",
+          "expiresAt": "<date>",
+          "token": "<g3>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<m1>"
+        },
+        "user": {
+          "id": "<m1>",
+          "name": "Native owner",
+          "email": "hooks-owner@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "core hook observes": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "session": {
+          "id": "<v4>",
+          "expiresAt": "<date>",
+          "token": "<g5>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<m1>"
+        },
+        "user": {
+          "id": "<m1>",
+          "name": "Native owner",
+          "email": "hooks-owner@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "raw hook removes the row": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "session": {
+          "id": "<v6>",
+          "expiresAt": "<date>",
+          "token": "<g7>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<m1>"
+        },
+        "user": {
+          "id": "<m1>",
+          "name": "Native owner",
+          "email": "hooks-owner@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "observed": [
+      [
+        10,
+        2,
+        true,
+        false,
+        false
+      ],
+      [
+        10,
+        3,
+        false,
+        false,
+        false
+      ],
+      [
+        9,
+        4,
+        false,
+        false,
+        false
+      ],
+      [
+        9,
+        5,
+        false,
+        false,
+        false
+      ],
+      [
+        9,
+        6,
+        true,
+        true,
+        false
+      ],
+      [
+        10,
+        7,
+        true,
+        true,
+        false
+      ],
+      [
+        9,
+        8,
+        false,
+        false,
+        false
+      ]
+    ]
+  },
+  {
+    "rows left": 0
+  }
+]

@@ -1,7 +1,7 @@
 //! A configured `__Secure-` cookie name prefix is applied once, by the cookie policy.
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::{AuthBuilder, AuthConfig};
-use alibi_core::{AuthRequest, HttpMethod};
+use alibi::{AuthRequest, HttpMethod};
 use serde_json::json;
 
 async fn issued_cookie_names(base_url: &str, cookie_name: &str) -> Vec<String> {

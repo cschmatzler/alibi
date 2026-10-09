@@ -1,4 +1,5 @@
-use super::*;
+use crate::AuthError;
+use crate::config::{DatabaseIdStrategy, HashMap};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SameSite {
     Strict,
@@ -15,8 +16,6 @@ impl std::fmt::Display for SameSite {
         }
     }
 }
-
-// ── Advanced configuration ──────────────────────────────────────────────
 
 /// Advanced configuration options (mirrors TS `advanced` block).
 #[derive(Debug, Clone, Default)]
@@ -70,10 +69,6 @@ pub struct AdvancedConfig {
 
     /// Database-related advanced options.
     pub database: AdvancedDatabaseConfig,
-
-    /// List of header names the framework trusts for extracting the
-    /// client's real IP when behind a proxy (e.g. `X-Forwarded-For`).
-    pub trusted_proxy_headers: Vec<String>,
 }
 
 /// IP-address extraction configuration.
@@ -95,7 +90,7 @@ pub struct IpAddressConfig {
     pub ipv6_subnet: f64,
 
     /// Fall back to localhost when no configured header resolves an address.
-    /// Defaults to true for NODE_ENV dev/development/test or a truthy TEST
+    /// Defaults to true for `NODE_ENV` dev/development/test or a truthy TEST
     /// environment flag. Applications may configure this explicitly.
     pub localhost_fallback: bool,
 
@@ -126,7 +121,7 @@ pub struct CookieAttributes {
     pub max_age: Option<f64>,
     /// Explicit expiry, checked at emission against the published 400-day limit.
     pub expires: Option<chrono::DateTime<chrono::Utc>>,
-    /// Emit the published `Partitioned` attribute after SameSite.
+    /// Emit the published `Partitioned` attribute after `SameSite`.
     pub partitioned: Option<bool>,
     /// Override cookie `Domain`.
     pub domain: Option<String>,
@@ -145,7 +140,7 @@ pub struct CookieOverride {
 #[derive(Debug, Clone)]
 pub struct TwoFactorDatabaseConfig {
     pub table_name: String,
-    /// Canonical snake_case column names mapped to application-owned columns.
+    /// Canonical ``snake_case`` column names mapped to application-owned columns.
     pub columns: std::collections::HashMap<String, String>,
 }
 
@@ -155,7 +150,7 @@ pub struct AdvancedDatabaseConfig {
     /// Default `LIMIT` for "find many" queries.
     pub default_find_many_limit: usize,
 
-    /// PostgreSQL namespace for every auth relation; does not change search_path.
+    /// PostgreSQL namespace for every auth relation; does not change ``search_path``.
     pub schema_name: Option<String>,
 
     /// Optional physical table and column mapping for two-factor credentials.

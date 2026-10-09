@@ -1,0 +1,587 @@
+[
+  {
+    "packed mismatched key": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v1>",
+        "name": "packed mismatched key",
+        "credentialID": "YXR0ZXN0LTYw",
+        "userId": "<v2>",
+        "publicKey": "<v3>/<v4>+O5/a7Zxg",
+        "counter": 1,
+        "deviceType": "singleDevice",
+        "backedUp": false,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v5>"
+      }
+    }
+  },
+  {
+    "packed statement alg -7": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v6>",
+        "name": "packed statement alg -7",
+        "credentialID": "YXR0ZXN0LTYx",
+        "userId": "<v2>",
+        "publicKey": "<v7>",
+        "counter": 1,
+        "deviceType": "singleDevice",
+        "backedUp": false,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v5>"
+      }
+    }
+  },
+  {
+    "packed unsupported statement alg": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "packed missing statement alg": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "packed corrupt signature": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "packed missing signature": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "packed non-map statement": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "packed with certificate chain": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "none on curve 8": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v8>",
+        "name": "none on curve 8",
+        "credentialID": "YXR0ZXN0LTY4",
+        "userId": "<v2>",
+        "publicKey": "<v9>+<v10>",
+        "counter": 1,
+        "deviceType": "singleDevice",
+        "backedUp": false,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v5>"
+      }
+    }
+  },
+  {
+    "none with a statement": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "none with a null statement": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "unsupported key algorithm": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "key is not a map": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "wrong relying party": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "attested flag missing": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "extensions map": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "extensions array": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v11>",
+        "name": "extensions array",
+        "credentialID": "YXR0ZXN0LTc2",
+        "userId": "<v2>",
+        "publicKey": "<v12>+j5hEL9tUMQC3",
+        "counter": 1,
+        "deviceType": "singleDevice",
+        "backedUp": false,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v5>"
+      }
+    }
+  },
+  {
+    "extensions text": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v13>",
+        "name": "extensions text",
+        "credentialID": "YXR0ZXN0LTc3",
+        "userId": "<v2>",
+        "publicKey": "<v14>+",
+        "counter": 1,
+        "deviceType": "singleDevice",
+        "backedUp": false,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v5>"
+      }
+    }
+  },
+  {
+    "extensions scalar": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "extensions array with scalar": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "extensions float and tag": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "trailing authenticator bytes": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "extension flag without extension": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "wrong client type": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "wrong challenge": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "token binding unsupported status": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "token binding string": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "token binding supported": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v15>",
+        "name": "token binding supported",
+        "credentialID": "YXR0ZXN0LTEwNA",
+        "userId": "<v2>",
+        "publicKey": "<v16>/jNeF+31+apbsFB0",
+        "counter": 1,
+        "deviceType": "singleDevice",
+        "backedUp": false,
+        "transports": "internal",
+        "createdAt": "<date>",
+        "aaguid": "<v5>"
+      }
+    }
+  },
+  {
+    "raw id differs": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "empty id": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "not a public key": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "attestation is not CBOR": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "transports not a list": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_VERIFY_REGISTRATION",
+        "message": "Failed to verify registration"
+      }
+    }
+  },
+  {
+    "transports null": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v17>",
+        "name": "transports null",
+        "credentialID": "YXR0ZXN0LTEyNQ",
+        "userId": "<v2>",
+        "publicKey": "<v18>+nI6z8ArGcNalu+<v19>",
+        "counter": 1,
+        "deviceType": "singleDevice",
+        "backedUp": false,
+        "transports": "",
+        "createdAt": "<date>",
+        "aaguid": "<v5>"
+      }
+    }
+  },
+  {
+    "transports with a null": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v20>",
+        "name": "transports with a null",
+        "credentialID": "YXR0ZXN0LTEyNg",
+        "userId": "<v2>",
+        "publicKey": "pAEBAycgBiFYIFG/rn+<v21>",
+        "counter": 1,
+        "deviceType": "singleDevice",
+        "backedUp": false,
+        "transports": "usb,",
+        "createdAt": "<date>",
+        "aaguid": "<v5>"
+      }
+    }
+  },
+  {
+    "transports with an object": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v22>",
+        "name": "transports with an object",
+        "credentialID": "YXR0ZXN0LTEyNw",
+        "userId": "<v2>",
+        "publicKey": "<v23>/<v24>/7",
+        "counter": 1,
+        "deviceType": "singleDevice",
+        "backedUp": false,
+        "transports": "[object Object]",
+        "createdAt": "<date>",
+        "aaguid": "<v5>"
+      }
+    }
+  }
+]

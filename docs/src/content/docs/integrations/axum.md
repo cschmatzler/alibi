@@ -16,7 +16,7 @@ axum = "0.8"
 use crate::auth_schema::AppAuthSchema;
 use axum::{Router, routing::get};
 use alibi::BetterAuth;
-use alibi::integrations::axum::{AxumIntegration, CurrentSession};
+use alibi::integrations::{CurrentSession, axum::AxumIntegration};
 use alibi::prelude::AuthUser;
 use std::sync::Arc;
 
@@ -48,7 +48,7 @@ Both expose the session as `S::User` and `S::Session`, i.e. **your** model types
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use axum::Json;
-use alibi::integrations::axum::{CurrentSession, OptionalSession};
+use alibi::integrations::{CurrentSession, OptionalSession};
 use alibi::prelude::{AuthSession, AuthUser};
 use serde_json::{Value, json};
 
@@ -78,7 +78,7 @@ Extractors only authenticate. Check roles and ownership in the handler or in you
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use axum::http::StatusCode;
-use alibi::integrations::axum::CurrentSession;
+use alibi::integrations::CurrentSession;
 use alibi::prelude::AuthUser;
 
 async fn admin_dashboard(

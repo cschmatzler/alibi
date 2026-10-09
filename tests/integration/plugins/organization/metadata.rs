@@ -2,12 +2,12 @@
 //! Preserve that pinned-runtime request contract at the real SQL-backed handler.
 
 use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin};
+use alibi::seaorm::{Database, SeaOrmStore};
 use alibi::{AuthBuilder, AuthConfig};
-use alibi_core::{AuthRequest, AuthSession, HttpMethod};
-use alibi_seaorm::{Database, SeaOrmStore};
+use alibi::{AuthRequest, AuthSession, HttpMethod};
 use serde_json::{Value, json};
 
-type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 #[cfg(test)]
 mod tests {
@@ -23,7 +23,7 @@ mod tests {
         let config = AuthConfig::new("organization-selector-fixture-secret-at-least-32-characters")
             .base_url(origin);
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let auth = AuthBuilder::new(config.clone())

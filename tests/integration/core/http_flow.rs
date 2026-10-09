@@ -12,16 +12,16 @@
 
 use crate::contract::helpers::*;
 use alibi::BetterAuth;
-use alibi_core::entity::AuthUser;
-use alibi_core::store::UserStore;
+use alibi::entity::AuthUser;
+use alibi::store::UserStore;
 use std::sync::Arc;
 
-type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type TestSchema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 fn test_session_cookie(token: &str, auth: &BetterAuth<TestSchema>) -> String {
     format!(
         "better-auth.session_token={}",
-        alibi_core::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
+        alibi::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
     )
 }
 
@@ -427,7 +427,7 @@ mod tests {
         let user = auth.store().create_user(create_user).await.unwrap();
 
         let create_session = CreateSession {
-            additional_fields: alibi_core::field_policy::FieldValues::default(),
+            additional_fields: alibi::field_policy::FieldValues::default(),
             token: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
@@ -541,14 +541,11 @@ mod tests {
             "cookie".to_owned(),
             format!(
                 "{}; other=value",
-                alibi_core::utils::cookie_utils::create_session_cookie(
-                    &session_token,
-                    auth.config()
-                )
-                .unwrap()
-                .split(';')
-                .next()
-                .unwrap()
+                alibi::utils::cookie_utils::create_session_cookie(&session_token, auth.config())
+                    .unwrap()
+                    .split(';')
+                    .next()
+                    .unwrap()
             ),
         );
 
@@ -658,7 +655,7 @@ mod tests {
         use std::collections::HashMap;
 
         let mut config = test_config();
-        config.email_provider = Some(Arc::new(alibi_core::email::ConsoleEmailProvider));
+        config.email_provider = Some(Arc::new(alibi::email::ConsoleEmailProvider));
         let auth = TestHarness::minimal_with_config(config).await.into_arc();
         let (_user_id, session_token) = create_test_user_and_session(Arc::clone(&auth)).await;
 
@@ -697,7 +694,7 @@ mod tests {
         use std::collections::HashMap;
 
         let mut config = test_config();
-        config.email_provider = Some(Arc::new(alibi_core::email::ConsoleEmailProvider));
+        config.email_provider = Some(Arc::new(alibi::email::ConsoleEmailProvider));
         let auth = TestHarness::minimal_with_config(config).await.into_arc();
 
         // Create first user
@@ -1389,9 +1386,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_user_by_username_adapter() {
         use alibi::prelude::CreateUser;
-        use alibi_seaorm::{Database, SeaOrmStore};
+        use alibi::seaorm::{Database, SeaOrmStore};
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let db = SeaOrmStore::<TestSchema>::new(

@@ -9,7 +9,7 @@ use alibi::plugins::{
     },
 };
 use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use alibi_core::{AuthRequest, AuthResponse, HttpMethod};
+use alibi::{AuthRequest, AuthResponse, HttpMethod};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -173,10 +173,7 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
     .await?;
     assert!(
         auth.store()
-            .get_organization_role(
-                &org,
-                &alibi_core::types::OrganizationRoleSelector::Id(temporary)
-            )
+            .get_organization_role(&org, &alibi::types::OrganizationRoleSelector::Id(temporary))
             .await?
             .is_none()
     );
@@ -439,7 +436,7 @@ async fn native_organization_workflow<B: Backend>(db: Db) -> TestResult {
             .store()
             .get_organization_role(
                 &retained.organization,
-                &alibi_core::types::OrganizationRoleSelector::Id(retained.role)
+                &alibi::types::OrganizationRoleSelector::Id(retained.role)
             )
             .await?
             .is_some()
@@ -492,7 +489,7 @@ async fn without_database_native_organization_workflow() -> TestResult {
     // Session scopes belong to the initialized wrapper and must not publish on abort.
     let original = auth.store().get_session(&retained.token).await?.unwrap();
     let token = retained.token.clone();
-    let aborted = alibi_core::store::transaction::<alibi::store::StatelessSchema, (), _>(
+    let aborted = alibi::store::transaction::<alibi::store::StatelessSchema, (), _>(
         auth.store().as_ref(),
         move |tx| {
             Box::pin(async move {
@@ -504,7 +501,7 @@ async fn without_database_native_organization_workflow() -> TestResult {
                     tx.update_session_active_organization(&token, Some("uncommitted"))
                         .await?,
                 );
-                Err(alibi_core::AuthError::bad_request("abort scope change"))
+                Err(alibi::AuthError::bad_request("abort scope change"))
             })
         },
     )
@@ -548,7 +545,7 @@ async fn without_database_native_organization_workflow() -> TestResult {
         auth.store()
             .get_organization_role(
                 &retained.organization,
-                &alibi_core::types::OrganizationRoleSelector::Id(retained.role)
+                &alibi::types::OrganizationRoleSelector::Id(retained.role)
             )
             .await?
             .is_some()
@@ -559,12 +556,12 @@ async fn without_database_native_organization_workflow() -> TestResult {
 /// Snapshot reconciliation must preserve concurrent untouched rows and deletion.
 #[tokio::test]
 async fn native_organization_transaction_merge_and_rollback() -> TestResult {
-    use alibi_core::store::{
+    use alibi::store::{
         MemberStore, TeamStore,
         stateless::{StatelessSchema, StatelessStore},
         transaction,
     };
-    use alibi_core::{AuthError, CreateMember, CreateTeam};
+    use alibi::{AuthError, CreateMember, CreateTeam};
     let store = Arc::new(StatelessStore::default());
     let team = store
         .create_team(CreateTeam {
@@ -633,9 +630,9 @@ async fn native_organization_transaction_merge_and_rollback() -> TestResult {
 
 #[tokio::test]
 async fn native_organization_pages_keep_source_slice_and_empty_patch_semantics() -> TestResult {
-    use alibi_core::store::MemberPageQuery;
-    use alibi_core::store::{MemberStore, OrganizationStore, stateless::StatelessStore};
-    use alibi_core::{CreateMember, CreateOrganization, UpdateOrganization};
+    use alibi::store::MemberPageQuery;
+    use alibi::store::{MemberStore, OrganizationStore, stateless::StatelessStore};
+    use alibi::{CreateMember, CreateOrganization, UpdateOrganization};
     let store = StatelessStore::with_find_many_limit(2);
     let organization = store
         .create_organization(

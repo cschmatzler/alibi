@@ -1,0 +1,376 @@
+[
+  {
+    "disabled: same email": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "CHANGE_EMAIL_DISABLED",
+        "message": "Change email is disabled"
+      }
+    }
+  },
+  {
+    "disabled: invalid body": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.new_email] Invalid email address"
+      }
+    }
+  },
+  {
+    "disabled: taken": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "CHANGE_EMAIL_DISABLED",
+        "message": "Change email is disabled"
+      }
+    }
+  },
+  {
+    "disabled: new": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "CHANGE_EMAIL_DISABLED",
+        "message": "Change email is disabled"
+      }
+    }
+  },
+  {
+    "disabled: emails": "owner@example.test"
+  },
+  {
+    "disabled: mail": 0
+  },
+  {
+    "no-delivery: same email": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Email is the same"
+      }
+    }
+  },
+  {
+    "no-delivery: invalid body": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.new_email] Invalid email address"
+      }
+    }
+  },
+  {
+    "no-delivery: taken": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Verification email isn't enabled"
+      }
+    }
+  },
+  {
+    "no-delivery: new": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Verification email isn't enabled"
+      }
+    }
+  },
+  {
+    "no-delivery: emails": "owner@example.test"
+  },
+  {
+    "no-delivery: mail": 0
+  },
+  {
+    "update-and-notify: same email": {
+      "status": 400,
+      "headers": {
+        "set-cookie": [
+          "better-auth.session_data=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Email is the same"
+      }
+    }
+  },
+  {
+    "update-and-notify: invalid body": {
+      "status": 400,
+      "headers": {
+        "set-cookie": [
+          "better-auth.session_data=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.new_email] Invalid email address"
+      }
+    }
+  },
+  {
+    "update-and-notify: taken": {
+      "status": 200,
+      "headers": {
+        "set-cookie": [
+          "better-auth.session_data=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "update-and-notify: new": {
+      "status": 200,
+      "headers": {
+        "set-cookie": [
+          "better-auth.session_data=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "update-and-notify: emails": "fresh@example.test"
+  },
+  {
+    "update-and-notify: mail": 1
+  },
+  {
+    "update-only: same email": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Email is the same"
+      }
+    }
+  },
+  {
+    "update-only: invalid body": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.new_email] Invalid email address"
+      }
+    }
+  },
+  {
+    "update-only: taken": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "update-only: new": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "update-only: emails": "fresh@example.test"
+  },
+  {
+    "update-only: mail": 0
+  },
+  {
+    "confirmation: same email": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Email is the same"
+      }
+    }
+  },
+  {
+    "confirmation: invalid body": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.new_email] Invalid email address"
+      }
+    }
+  },
+  {
+    "confirmation: taken": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "confirmation: new": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "confirmation: emails": "owner@example.test"
+  },
+  {
+    "confirmation: mail": 1
+  },
+  {
+    "verification-mail: same email": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Email is the same"
+      }
+    }
+  },
+  {
+    "verification-mail: invalid body": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.new_email] Invalid email address"
+      }
+    }
+  },
+  {
+    "verification-mail: taken": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "verification-mail: new": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "verification-mail: emails": "owner@example.test"
+  },
+  {
+    "verification-mail: mail": 1
+  }
+]

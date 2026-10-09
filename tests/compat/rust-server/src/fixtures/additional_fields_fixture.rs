@@ -13,14 +13,14 @@ use alibi::plugins::{
     AccountManagementPlugin, EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin,
     OpenApiPlugin, PasswordManagementPlugin, SessionManagementPlugin, UserManagementPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi_core::{
+use alibi::seaorm::sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
+use alibi::seaorm::{DatabaseHooks, HookControl};
+use alibi::{
     AuthAccount, AuthInitContext, AuthPlugin, AuthRoute, AuthSession, AuthUser,
     store::{AdapterAfterHook, AdapterEvent, AuthStore},
     utils::json::JsValue,
 };
-use alibi_seaorm::sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
-use alibi_seaorm::{DatabaseHooks, HookControl};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use axum::{
     Json, Router,
     extract::Query,
@@ -46,7 +46,7 @@ impl SendMagicLink for Application {
     async fn send(
         &self,
         delivery: &MagicLinkDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         self.events.lock().expect("application delivery").push(json!({
             "phase":"delivery", "delivery":delivery, "metadataPresent":delivery.metadata.is_some()
@@ -81,7 +81,7 @@ impl Fixture {
         Ok(())
     }
 }
-fn db_error(error: alibi_seaorm::sea_orm::DbErr) -> AuthError {
+fn db_error(error: alibi::seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
 fn fields(
@@ -158,7 +158,7 @@ fn fields(
                     if entity == "session" && name == "label" && matches!(value.as_ref().and_then(Value::as_str), Some("collection-slow" | "collection-slower")) {
                         let delay = if value.as_ref().and_then(Value::as_str) == Some("collection-slower") { 400 } else { 200 };
                         tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
-                        let request = alibi_core::hooks::current_request_hook_context();
+                        let request = alibi::hooks::current_request_hook_context();
                         let mut receipt = json!({"phase":"settled","entity":entity,"field":name,"value":value,"requestScoped":request.as_ref().is_some_and(|context| context.path.ends_with("/change-password"))});
                         if request.as_ref().is_some_and(|context| context.path.ends_with("/list-sessions")) {
                             receipt["requestPath"] = json!(request.as_ref().map(|context| context.path.rsplit("/api/auth").next().unwrap_or(&context.path)));
@@ -170,7 +170,7 @@ fn fields(
                         && value.as_ref().and_then(Value::as_str) == Some("collection-coordinated-slow")
                     {
                         pending.notified().await;
-                        let request = alibi_core::hooks::current_request_hook_context();
+                        let request = alibi::hooks::current_request_hook_context();
                         events.lock().expect("application receipts").push(json!({
                             "phase": "settled", "entity": entity, "field": name, "value": value,
                             "requestScoped": request.as_ref().is_some_and(|context| context.path.ends_with("/change-password")),
@@ -366,20 +366,20 @@ impl AuthPlugin<ApplicationSchema> for Application {
     }
     async fn on_request(
         &self,
-        _: &alibi_core::AuthRequest,
-        _: &alibi_core::AuthContext<ApplicationSchema>,
-    ) -> AuthResult<Option<alibi_core::AuthResponse>> {
+        _: &alibi::AuthRequest,
+        _: &alibi::AuthContext<ApplicationSchema>,
+    ) -> AuthResult<Option<alibi::AuthResponse>> {
         Ok(None)
     }
     async fn after_request(
         &self,
-        request: &alibi_core::AuthRequest,
-        _: &alibi_core::AuthContext<ApplicationSchema>,
-        response: alibi_core::AuthResponse,
-    ) -> AuthResult<alibi_core::AuthResponse> {
+        request: &alibi::AuthRequest,
+        _: &alibi::AuthContext<ApplicationSchema>,
+        response: alibi::AuthResponse,
+    ) -> AuthResult<alibi::AuthResponse> {
         if self.mode == "cached" {
             let snapshot =
-                alibi_core::session::cookie_cache::runtime::published_session_snapshot(request);
+                alibi::session::cookie_cache::runtime::published_session_snapshot(request);
             let record = snapshot
                 .as_ref()
                 .map(|snapshot| json!({"user":snapshot.user(),"session":snapshot.session()}));
@@ -405,8 +405,8 @@ impl AuthPlugin<ApplicationSchema> for Application {
     }
 }
 #[async_trait::async_trait]
-impl alibi_core::CookieCacheVersionResolver for Application {
-    async fn resolve(&self, context: &alibi_core::CacheVersionContext) -> AuthResult<String> {
+impl alibi::CookieCacheVersionResolver for Application {
+    async fn resolve(&self, context: &alibi::CacheVersionContext) -> AuthResult<String> {
         let user_output = context.user_output();
         let session_output = context.session_output();
         let user = serde_json::to_value(context.user())?;
@@ -587,19 +587,19 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
     settings.account.store_account_cookie = mode == "provider";
     if mode == "provider" {
         settings.account.cookie_max_age = Some(1.75);
-        settings.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
+        settings.session.cookie_cache = Some(alibi::CookieCacheConfig {
             enabled: false,
             max_age: 1.75,
             ..Default::default()
         });
         settings.advanced.cookies.insert(
             "account_data".into(),
-            alibi_core::config::CookieOverride {
+            alibi::config::CookieOverride {
                 name: None,
-                attributes: alibi_core::config::CookieAttributes {
+                attributes: alibi::config::CookieAttributes {
                     max_age: None,
                     http_only: Some(false),
-                    same_site: Some(alibi_core::config::SameSite::Strict),
+                    same_site: Some(alibi::config::SameSite::Strict),
                     ..Default::default()
                 },
             },
@@ -638,9 +638,9 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
         &application.drained,
     );
     if mode == "cached" {
-        settings.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
+        settings.session.cookie_cache = Some(alibi::CookieCacheConfig {
             enabled: true,
-            version: Some(alibi_core::CookieCacheVersion::Resolver(Arc::new(
+            version: Some(alibi::CookieCacheVersion::Resolver(Arc::new(
                 application.clone(),
             ))),
             ..Default::default()

@@ -1,10 +1,6 @@
-use super::*;
+use crate::config::TrustedProvidersResolver;
 /// Account-level configuration: linking, token encryption, sign-in behavior.
 #[derive(Debug, Clone)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
-)]
 pub struct AccountConfig {
     pub additional_fields: crate::field_policy::FieldConfigs,
     /// Update OAuth tokens on every sign-in (default: true)
@@ -16,7 +12,7 @@ pub struct AccountConfig {
     /// Store account data in an account cookie for OAuth-backed access token flows.
     pub store_account_cookie: bool,
     /// Override the account cookie lifetime in seconds, including fractional
-    /// and nonfinite values. Equivalent to the published account_data cookie's
+    /// and nonfinite values. Equivalent to the published ``account_data`` cookie's
     /// maxAge attribute; takes precedence over the integer advanced override.
     /// None inherits the session cache lifetime (or 300 seconds).
     pub cookie_max_age: Option<f64>,
@@ -31,10 +27,6 @@ pub struct AccountConfig {
 
 /// Settings that control how OAuth accounts are linked to existing users.
 #[derive(Debug, Clone)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
-)]
 pub struct AccountLinkingConfig {
     /// Enable account linking (default: true)
     pub enabled: bool,

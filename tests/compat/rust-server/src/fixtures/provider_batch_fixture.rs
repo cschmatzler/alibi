@@ -4,8 +4,8 @@ use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::oauth::*;
 use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
+use alibi::seaorm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_seaorm::DatabaseConnection;
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
@@ -432,7 +432,7 @@ impl OAuthProfileMapper for Mapper {
     async fn map_profile(
         &self,
         profile: Value,
-    ) -> Result<alibi_core::field_policy::FieldOutput, String> {
+    ) -> Result<alibi::field_policy::FieldOutput, String> {
         self.fixture
             .callbacks
             .lock()
@@ -596,8 +596,8 @@ async fn transport(
 
 // Read every physical column and row. No model bool decoder or expected outcome
 // supplies observations; both backend builds inspect the actual committed SQLite.
-async fn raw_sql_state(db: &DatabaseConnection) -> Result<Value, alibi_seaorm::sea_orm::DbErr> {
-    use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+async fn raw_sql_state(db: &DatabaseConnection) -> Result<Value, alibi::seaorm::sea_orm::DbErr> {
+    use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
     let mut state = serde_json::Map::new();
     for table in ["users", "accounts", "sessions", "verifications"] {
         let columns = db
@@ -632,7 +632,7 @@ async fn raw_sql_state(db: &DatabaseConnection) -> Result<Value, alibi_seaorm::s
             .map(|row| {
                 let raw = row.try_get::<String>("", "row")?;
                 serde_json::from_str::<Value>(&raw)
-                    .map_err(|error| alibi_seaorm::sea_orm::DbErr::Custom(error.to_string()))
+                    .map_err(|error| alibi::seaorm::sea_orm::DbErr::Custom(error.to_string()))
             })
             .collect::<Result<Vec<_>, _>>()?;
         state.insert(table.into(), Value::Array(rows));

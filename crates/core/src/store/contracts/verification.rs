@@ -1,4 +1,6 @@
-use super::*;
+use crate::verification::{VerificationCreation, VerificationPublication, VerificationSnapshot};
+use crate::{AuthError, AuthResult, AuthSchema, CreateVerification};
+use async_trait::async_trait;
 #[async_trait]
 pub trait VerificationStore<S: AuthSchema>: Send + Sync {
     /// Create through before hooks, optional physical persistence, secondary
@@ -103,8 +105,7 @@ pub trait VerificationStore<S: AuthSchema>: Send + Sync {
     }
     /// Insert a deterministic reservation exactly once. An expired marker
     /// remains reserved until it is cleaned up or explicitly consumed.
-    async fn reserve_verification(&self, verification: CreateVerification) -> AuthResult<bool> {
-        drop(verification);
+    async fn reserve_verification(&self, _verification: CreateVerification) -> AuthResult<bool> {
         Err(AuthError::internal(
             "verification reservation is not supported by this store",
         ))

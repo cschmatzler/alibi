@@ -8,9 +8,9 @@
     reason = "SeaORM requires public entity types in private fixtures"
 )]
 use alibi::plugins::{AdminConfig, AdminPlugin, RolePermissions};
+use alibi::store::AuthStore;
 use alibi::{AuthBuilder, AuthConfig, AuthSchema};
-use alibi_core::store::AuthStore;
-use alibi_core::{
+use alibi::{
     AuthRequest, AuthResult, AuthSession, AuthUser, CreateSession, CreateUser, UpdateUser,
 };
 use chrono::Utc;
@@ -21,7 +21,7 @@ type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 macro_rules! user_contract {
     () => {
         impl AuthUser for Model {
-            fn additional_fields(&self) -> alibi_core::field_policy::FieldOutput {
+            fn additional_fields(&self) -> alibi::field_policy::FieldOutput {
                 serde_json::json!({"score":self.score,"reviewedAt":self.reviewed_at.to_rfc3339_opts(chrono::SecondsFormat::Millis,true),"profile":self.profile}).as_object().cloned().unwrap_or_default()
             }
             fn id(&self) -> Cow<'_, str> {
@@ -117,7 +117,7 @@ mod sqlx_numeric {
         }
         fn parse_id(id: &str) -> AuthResult<SqlValue> {
             Ok(SqlValue::BigInt(Some(id.parse().map_err(|_| {
-                alibi_core::AuthError::bad_request("invalid numeric ID")
+                alibi::AuthError::bad_request("invalid numeric ID")
             })?)))
         }
         fn new_active(
@@ -164,15 +164,15 @@ mod sqlx_numeric {
     struct Schema;
     impl AuthSchema for Schema {
         type User = Model;
-        type Session = alibi_sqlx::store::entities::session::Model;
-        type Account = alibi_sqlx::store::entities::account::Model;
-        type Verification = alibi_sqlx::store::entities::verification::Model;
+        type Session = alibi::sqlx::store::entities::session::Model;
+        type Account = alibi::sqlx::store::entities::account::Model;
+        type Verification = alibi::sqlx::store::entities::verification::Model;
     }
     #[tokio::test]
     #[ignore = "requires CLOCK_REALTIME proof clock; see admin closure audit"]
     async fn strict_expiry_and_mutation_hook_order() -> TestResult {
         let pool = SqlxPool::connect("sqlite::memory:").await?;
-        alibi_sqlx::store::__private_test_support::migrator::run_migrations(&pool).await?;
+        alibi::sqlx::store::__private_test_support::migrator::run_migrations(&pool).await?;
         let raw = pool.as_sqlite().ok_or("not SQLite")?.clone();
         install(&raw).await?;
         let hooks = Arc::new(AdmissionEvents::default());
@@ -186,7 +186,7 @@ mod sqlx_numeric {
     #[tokio::test]
     async fn configured_scalar_filters_and_physical_paging() -> TestResult {
         let pool = SqlxPool::connect("sqlite::memory:").await?;
-        alibi_sqlx::store::__private_test_support::migrator::run_migrations(&pool).await?;
+        alibi::sqlx::store::__private_test_support::migrator::run_migrations(&pool).await?;
         let raw = pool.as_sqlite().ok_or("not SQLite")?.clone();
         install(&raw).await?;
         exercise_custom_query(Arc::new(SqlxStore::<Schema>::new(config(), pool)), &raw).await
@@ -194,7 +194,7 @@ mod sqlx_numeric {
     #[tokio::test]
     async fn date_sort_default_pages_ascending() -> TestResult {
         let pool = SqlxPool::connect("sqlite::memory:").await?;
-        alibi_sqlx::store::__private_test_support::migrator::run_migrations(&pool).await?;
+        alibi::sqlx::store::__private_test_support::migrator::run_migrations(&pool).await?;
         let raw = pool.as_sqlite().ok_or("not SQLite")?.clone();
         install(&raw).await?;
         exercise_query(Arc::new(SqlxStore::<Schema>::new(config(), pool)), &raw).await
@@ -202,7 +202,7 @@ mod sqlx_numeric {
     #[tokio::test]
     async fn canonical_admin_identity() -> TestResult {
         let pool = SqlxPool::connect("sqlite::memory:").await?;
-        alibi_sqlx::store::__private_test_support::migrator::run_migrations(&pool).await?;
+        alibi::sqlx::store::__private_test_support::migrator::run_migrations(&pool).await?;
         let raw = pool.as_sqlite().ok_or("not SQLite")?.clone();
         install(&raw).await?;
         exercise(Arc::new(SqlxStore::<Schema>::new(config(), pool)), &raw).await
@@ -266,7 +266,7 @@ mod seaorm_numeric {
         }
         fn parse_id(id: &str) -> AuthResult<i64> {
             id.parse()
-                .map_err(|_| alibi_core::AuthError::bad_request("invalid numeric ID"))
+                .map_err(|_| alibi::AuthError::bad_request("invalid numeric ID"))
         }
         fn new_active(
             id: Option<i64>,
@@ -313,15 +313,15 @@ mod seaorm_numeric {
     struct Schema;
     impl AuthSchema for Schema {
         type User = Model;
-        type Session = alibi_seaorm::store::entities::session::Model;
-        type Account = alibi_seaorm::store::entities::account::Model;
-        type Verification = alibi_seaorm::store::entities::verification::Model;
+        type Session = alibi::seaorm::store::entities::session::Model;
+        type Account = alibi::seaorm::store::entities::account::Model;
+        type Verification = alibi::seaorm::store::entities::verification::Model;
     }
     #[tokio::test]
     #[ignore = "requires CLOCK_REALTIME proof clock; see admin closure audit"]
     async fn strict_expiry_and_mutation_hook_order() -> TestResult {
         let database = alibi::seaorm::Database::connect("sqlite::memory:").await?;
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
         let raw = database.get_sqlite_connection_pool().clone();
         install(&raw).await?;
         let hooks = Arc::new(AdmissionEvents::default());
@@ -337,7 +337,7 @@ mod seaorm_numeric {
     #[tokio::test]
     async fn configured_scalar_filters_and_physical_paging() -> TestResult {
         let database = alibi::seaorm::Database::connect("sqlite::memory:").await?;
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
         let raw = database.get_sqlite_connection_pool().clone();
         install(&raw).await?;
         exercise_custom_query(
@@ -349,7 +349,7 @@ mod seaorm_numeric {
     #[tokio::test]
     async fn date_sort_default_pages_ascending() -> TestResult {
         let database = alibi::seaorm::Database::connect("sqlite::memory:").await?;
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
         let raw = database.get_sqlite_connection_pool().clone();
         install(&raw).await?;
         exercise_query(
@@ -361,7 +361,7 @@ mod seaorm_numeric {
     #[tokio::test]
     async fn canonical_admin_identity() -> TestResult {
         let database = alibi::seaorm::Database::connect("sqlite::memory:").await?;
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
         let raw = database.get_sqlite_connection_pool().clone();
         install(&raw).await?;
         exercise(
@@ -383,7 +383,7 @@ fn config() -> AuthConfig {
         ),
         ("profile", serde_json::json!({"type":"object"}), "profile"),
     ] {
-        let mut field = alibi_core::field_policy::FieldConfig::new(schema);
+        let mut field = alibi::field_policy::FieldConfig::new(schema);
         field.field_name = Some(column.into());
         _ = config.user.additional_fields.insert(name.into(), field);
     }
@@ -497,11 +497,11 @@ async fn exercise<S: AuthSchema>(
         let count: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe("SELECT COUNT(*) FROM sessions"))
             .fetch_one(raw)
             .await?;
-        let cookie = alibi_core::utils::cookie_utils::sign_cookie_value(
+        let cookie = alibi::utils::cookie_utils::sign_cookie_value(
             original.token(),
             config().current_secret(),
         );
-        let mut request = AuthRequest::new(alibi_core::HttpMethod::Post, "/admin/impersonate-user");
+        let mut request = AuthRequest::new(alibi::HttpMethod::Post, "/admin/impersonate-user");
         _ = request
             .headers
             .insert("origin".into(), config().base_url.clone());
@@ -605,10 +605,8 @@ async fn exercise<S: AuthSchema>(
             additional_fields: Default::default(),
         })
         .await?;
-    let cookie = alibi_core::utils::cookie_utils::sign_cookie_value(
-        session.token(),
-        config().current_secret(),
-    );
+    let cookie =
+        alibi::utils::cookie_utils::sign_cookie_value(session.token(), config().current_secret());
     for (input, status) in [
         (
             serde_json::json!({"name":"must-not-persist","score":99}),
@@ -617,7 +615,7 @@ async fn exercise<S: AuthSchema>(
         (serde_json::json!({"name":"Supported mutation"}), 200),
     ] {
         let before = rows(raw, "users").await?;
-        let mut request = AuthRequest::new(alibi_core::HttpMethod::Post, "/update-user");
+        let mut request = AuthRequest::new(alibi::HttpMethod::Post, "/update-user");
         request.headers.extend([
             ("origin".into(), config().base_url.clone()),
             (
@@ -695,12 +693,12 @@ async fn exercise_query<S: AuthSchema>(
         (Some("asc"), vec!["42", "3"]),
         (Some("desc"), vec!["3", "42"]),
     ] {
-        let mut request = AuthRequest::new(alibi_core::HttpMethod::Get, "/admin/list-users");
+        let mut request = AuthRequest::new(alibi::HttpMethod::Get, "/admin/list-users");
         _ = request.headers.insert(
             "cookie".into(),
             format!(
                 "better-auth.session_token={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value(
+                alibi::utils::cookie_utils::sign_cookie_value(
                     session.token(),
                     config().current_secret()
                 )
@@ -833,12 +831,12 @@ async fn exercise_custom_query<S: AuthSchema>(
         ("score", "gte", "3", "profile", "asc", vec!["2", "42"], 3),
         ("score", "lt", "3", "id", "desc", vec!["1"], 2),
     ] {
-        let mut request = AuthRequest::new(alibi_core::HttpMethod::Get, "/admin/list-users");
+        let mut request = AuthRequest::new(alibi::HttpMethod::Get, "/admin/list-users");
         _ = request.headers.insert(
             "cookie".into(),
             format!(
                 "better-auth.session_token={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value(
+                alibi::utils::cookie_utils::sign_cookie_value(
                     session.token(),
                     config().current_secret()
                 )
@@ -892,7 +890,7 @@ impl AdmissionEvents {
         self.events.lock().await.push(event.into());
         let mode = self.mode.load(std::sync::atomic::Ordering::SeqCst);
         if mode == failure {
-            return Err(alibi_core::AuthError::Upstream {
+            return Err(alibi::AuthError::Upstream {
                 status: 409,
                 code: "HOOK_REFUSED",
                 message: "configured hook refused",
@@ -903,33 +901,33 @@ impl AdmissionEvents {
             || (mode == 9 && event == "user-after")
             || (mode == 10 && event == "session-after")
         {
-            return Err(alibi_core::AuthError::internal("ordinary hook failure"));
+            return Err(alibi::AuthError::internal("ordinary hook failure"));
         }
         Ok(())
     }
 }
 #[async_trait::async_trait]
-impl<S: AuthSchema, B: alibi_core::store::HookBackend> alibi_core::store::DatabaseHooks<S, B>
+impl<S: AuthSchema, B: alibi::store::HookBackend> alibi::store::DatabaseHooks<S, B>
     for AdmissionEvents
 {
     async fn before_create_session(
         &self,
         input: &mut CreateSession,
-        _: &alibi_core::store::DatabaseHookContext<'_, B>,
-    ) -> AuthResult<alibi_core::store::HookControl> {
+        _: &alibi::store::DatabaseHookContext<'_, B>,
+    ) -> AuthResult<alibi::store::HookControl> {
         self.event("session-before", 1).await?;
         if self.mode.load(std::sync::atomic::Ordering::SeqCst) == 5 {
             input.user_id = "42".into();
         }
         if self.mode.load(std::sync::atomic::Ordering::SeqCst) == 6 {
-            return Ok(alibi_core::store::HookControl::Cancel);
+            return Ok(alibi::store::HookControl::Cancel);
         }
-        Ok(alibi_core::store::HookControl::Continue)
+        Ok(alibi::store::HookControl::Continue)
     }
     async fn after_create_session(
         &self,
         _: &S::Session,
-        _: &alibi_core::store::DatabaseHookContext<'_, B>,
+        _: &alibi::store::DatabaseHookContext<'_, B>,
     ) -> AuthResult<()> {
         self.event("session-after", 7).await
     }
@@ -937,15 +935,15 @@ impl<S: AuthSchema, B: alibi_core::store::HookBackend> alibi_core::store::Databa
         &self,
         _: &str,
         _: &mut UpdateUser,
-        _: &alibi_core::store::DatabaseHookContext<'_, B>,
-    ) -> AuthResult<alibi_core::store::HookControl> {
+        _: &alibi::store::DatabaseHookContext<'_, B>,
+    ) -> AuthResult<alibi::store::HookControl> {
         self.event("user-before", 3).await?;
-        Ok(alibi_core::store::HookControl::Continue)
+        Ok(alibi::store::HookControl::Continue)
     }
     async fn after_update_user(
         &self,
         _: &S::User,
-        _: &alibi_core::store::DatabaseHookContext<'_, B>,
+        _: &alibi::store::DatabaseHookContext<'_, B>,
     ) -> AuthResult<()> {
         self.event("user-after", 4).await
     }
@@ -1107,7 +1105,7 @@ async fn exercise_admission<S: AuthSchema>(
             rows(raw, "accounts").await?,
             rows(raw, "sessions").await?,
         ];
-        let mut request = AuthRequest::new(alibi_core::HttpMethod::Post, "/admin/impersonate-user");
+        let mut request = AuthRequest::new(alibi::HttpMethod::Post, "/admin/impersonate-user");
         _ = request
             .headers
             .insert("origin".into(), config().base_url.clone());
@@ -1118,7 +1116,7 @@ async fn exercise_admission<S: AuthSchema>(
             "cookie".into(),
             format!(
                 "better-auth.session_token={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value(
+                alibi::utils::cookie_utils::sign_cookie_value(
                     original.token(),
                     config().current_secret()
                 )
@@ -1216,7 +1214,7 @@ async fn no_database_strict_expiry() -> TestResult {
         })
         .await?;
     let _account = store
-        .create_account(alibi_core::CreateAccount {
+        .create_account(alibi::CreateAccount {
             user_id: target.id().into_owned(),
             account_id: target.id().into_owned(),
             provider_id: "credential".into(),
@@ -1259,7 +1257,7 @@ async fn no_database_strict_expiry() -> TestResult {
                     .await?,
             );
             let before = serde_json::json!({"actor":store.get_user_by_id(actor.id().as_ref()).await?,"target":store.get_user_by_id(target.id().as_ref()).await?,"accounts":store.get_user_accounts(target.id().as_ref()).await?,"actorSessions":store.get_user_sessions(actor.id().as_ref()).await?,"targetSessions":store.get_user_sessions(target.id().as_ref()).await?});
-            let mut request = AuthRequest::new(alibi_core::HttpMethod::Post, path);
+            let mut request = AuthRequest::new(alibi::HttpMethod::Post, path);
             _ = request
                 .headers
                 .insert("origin".into(), auth.config().base_url.clone());
@@ -1270,7 +1268,7 @@ async fn no_database_strict_expiry() -> TestResult {
                 "cookie".into(),
                 format!(
                     "better-auth.session_token={}",
-                    alibi_core::utils::cookie_utils::sign_cookie_value(
+                    alibi::utils::cookie_utils::sign_cookie_value(
                         original.token(),
                         auth.config().current_secret()
                     )
@@ -1315,7 +1313,7 @@ async fn no_database_strict_expiry() -> TestResult {
 mod postgres_numeric_columns {
     use super::*;
     use crate::storage::Db;
-    use alibi_core::{ListUsersParams, UserFilterValue, store::UserStore};
+    use alibi::{ListUsersParams, UserFilterValue, store::UserStore};
 
     macro_rules! model_fields {
         (sqlx) => {
@@ -1368,20 +1366,20 @@ mod postgres_numeric_columns {
         };
     }
     macro_rules! schema {
-        ($backend:ident) => {
+        ($($backend:ident)::+) => {
             struct Schema;
             impl AuthSchema for Schema {
                 type User = Model;
-                type Session = $backend::store::entities::session::Model;
-                type Account = $backend::store::entities::account::Model;
-                type Verification = $backend::store::entities::verification::Model;
+                type Session = $($backend)::+::store::entities::session::Model;
+                type Account = $($backend)::+::store::entities::account::Model;
+                type Verification = $($backend)::+::store::entities::verification::Model;
             }
         };
     }
     mod sqlx_model {
         use super::*;
         model_fields!(sqlx);
-        schema!(alibi_sqlx);
+        schema!(alibi::sqlx);
         #[tokio::test]
         #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
         async fn declared_numeric_filters_preserve_rows_types_and_index() -> TestResult {
@@ -1403,7 +1401,7 @@ mod postgres_numeric_columns {
     mod seaorm_model {
         use super::*;
         model_fields!(seaorm);
-        schema!(alibi_seaorm);
+        schema!(alibi::seaorm);
         #[tokio::test]
         #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
         async fn declared_numeric_filters_preserve_rows_types_and_index() -> TestResult {
@@ -1533,7 +1531,7 @@ mod postgres_numeric_columns {
                             ..Default::default()
                         })
                         .await,
-                    Err(alibi_core::AuthError::Database(_))
+                    Err(alibi::AuthError::Database(_))
                 ),
                 "Source PostgreSQL rejects IN ()"
             );
@@ -1557,7 +1555,7 @@ mod postgres_numeric_columns {
                             ..Default::default()
                         })
                         .await,
-                    Err(alibi_core::AuthError::Database(_))
+                    Err(alibi::AuthError::Database(_))
                 ),
                 "{field}: {value}"
             );
@@ -1575,7 +1573,7 @@ mod postgres_numeric_columns {
                     ..Default::default()
                 })
                 .await,
-            Err(alibi_core::AuthError::Database(_))
+            Err(alibi::AuthError::Database(_))
         ));
         let array_error = store
             .list_users(ListUsersParams {
@@ -1596,7 +1594,7 @@ mod postgres_numeric_columns {
                     ..Default::default()
                 })
                 .await,
-            Err(alibi_core::AuthError::BadRequest(_))
+            Err(alibi::AuthError::BadRequest(_))
         ));
         // Explain the real prepared statement, with the actual bound value,
         // on the same one-connection native pool that executed it.

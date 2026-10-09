@@ -10,7 +10,7 @@ use alibi::plugins::{
     EmailPasswordPlugin, OAuthPlugin, OAuthProxyConfig, OAuthProxyPlugin, SessionManagementPlugin,
 };
 use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use alibi_core::{AuthRequest, AuthResponse, AuthSession, AuthUser, HttpMethod};
+use alibi::{AuthRequest, AuthResponse, AuthSession, AuthUser, HttpMethod};
 use axum::{
     Json, Router,
     extract::{Form, State},
@@ -48,8 +48,18 @@ struct Fixture<B: Backend> {
     task: tokio::task::JoinHandle<()>,
 }
 
+#[derive(Clone, Copy, Default)]
+struct Options {
+    cookie_state: bool,
+    shared_secret: bool,
+}
+
 impl<B: Backend> Fixture<B> {
     async fn new(preview_db: Db) -> Self {
+        Self::with(preview_db, Options::default()).await
+    }
+
+    async fn with(preview_db: Db, options: Options) -> Self {
         let provider = Arc::new(Mutex::new(Provider::default()));
         let router = Router::new().route("/oauth/token", post(|State(state): State<Arc<Mutex<Provider>>>, Form(form): Form<HashMap<String, String>>| async move {
             let mut provider_2 = state.lock().unwrap(); provider_2.receipts.push(json!({"stage":"token", "form":form}));
@@ -72,8 +82,15 @@ impl<B: Backend> Fixture<B> {
         let (preview_connection, _) = preview_db.migrated::<B>(SECRET).await.unwrap();
         let (production_connection, _) = production_db.migrated::<B>(SECRET).await.unwrap();
         let enabled = std::env::var_os("OAUTH_PROXY_BASELINE").is_none();
-        let preview = build::<B>(PREVIEW, &issuer, &preview_connection, enabled).await;
-        let production = build::<B>(PRODUCTION, &issuer, &production_connection, enabled).await;
+        let preview = build::<B>(PREVIEW, &issuer, &preview_connection, enabled, options).await;
+        let production = build::<B>(
+            PRODUCTION,
+            &issuer,
+            &production_connection,
+            enabled,
+            options,
+        )
+        .await;
         Self {
             preview,
             production,
@@ -85,7 +102,23 @@ impl<B: Backend> Fixture<B> {
         }
     }
     async fn issue(&self, endpoint: &str, cookie: Option<&str>) -> (url::Url, Value) {
-        let issued = request(&self.preview, endpoint, Some(json!({"provider":"gitlab", "callbackURL":format!("{PREVIEW}/complete?application=kept"), "newUserCallbackURL":format!("{PREVIEW}/new-owner"), "errorCallbackURL":format!("{PREVIEW}/failure"), "disableRedirect":true, "additionalData":{"serverContext":{"anonymousUserId":"forged-foreign"},"application":{"kept":true}}})), cookie).await;
+        let (url, state, _) = self.issue_with(endpoint, cookie, json!({})).await;
+        (url, state)
+    }
+
+    /// Also returns the cookies the authorization response set.
+    async fn issue_with(
+        &self,
+        endpoint: &str,
+        cookie: Option<&str>,
+        extra: Value,
+    ) -> (url::Url, Value, String) {
+        let mut input = json!({"provider":"gitlab", "callbackURL":format!("{PREVIEW}/complete?application=kept"), "newUserCallbackURL":format!("{PREVIEW}/new-owner"), "errorCallbackURL":format!("{PREVIEW}/failure"), "disableRedirect":true, "additionalData":{"serverContext":{"anonymousUserId":"forged-foreign"},"application":{"kept":true}}});
+        input
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        let issued = request(&self.preview, endpoint, Some(input), cookie).await;
         assert_eq!(issued.status, 200);
         let body: Value = serde_json::from_slice(&issued.body).unwrap();
         let url = url::Url::parse(
@@ -105,11 +138,24 @@ impl<B: Backend> Fixture<B> {
         );
         let raw = self
             .preview_db
-            .text("SELECT value FROM verifications", &[])
+            .text(
+                "SELECT value FROM verifications WHERE identifier LIKE 'auth-state:%'",
+                &[],
+            )
             .await
-            .unwrap()
             .unwrap();
-        let state: Value = serde_json::from_str(&raw).unwrap();
+        let state: Value = match raw {
+            Some(raw) => serde_json::from_str(&raw).unwrap(),
+            None => {
+                let cookie = issued
+                    .headers
+                    .get_all("set-cookie")
+                    .find(|cookie| cookie.starts_with("better-auth.oauth_state="))
+                    .unwrap();
+                let value = cookie.split(';').next().unwrap().split_once('=').unwrap().1;
+                open(value, SECRET, "oauth-state-cookie")
+            }
+        };
         assert_eq!(
             state
                 .get("application")
@@ -127,7 +173,7 @@ impl<B: Backend> Fixture<B> {
             .unwrap()
             .to_owned();
         drop(provider);
-        (url, state)
+        (url, state, cookies(&issued))
     }
     async fn forward(&self, authorization: &url::Url) -> (AuthResponse, url::Url) {
         let query: HashMap<_, _> = authorization.query_pairs().into_owned().collect();
@@ -236,11 +282,15 @@ async fn build<B: Backend>(
     issuer: &str,
     database: &B::Connection,
     proxy: bool,
+    options: Options,
 ) -> BetterAuth<B::Schema> {
-    let config = AuthConfig::new(SECRET)
+    let mut config = AuthConfig::new(SECRET)
         .base_url(origin)
         .trusted_origin(PREVIEW)
         .trusted_origin(PRODUCTION);
+    if options.cookie_state {
+        config.account.store_state_strategy = alibi::config::OAuthStateStrategy::Cookie;
+    }
     let builder = AuthBuilder::<B::Schema>::new(config.clone())
         .store(B::store(Arc::new(config), database))
         .plugin(EmailPasswordPlugin::new().enable_username(false))
@@ -254,7 +304,7 @@ async fn build<B: Backend>(
             .plugin(OAuthProxyPlugin::with_config(OAuthProxyConfig {
                 current_url: Some(origin.into()),
                 production_url: Some(PRODUCTION.into()),
-                secret: Some(PROXY_SECRET.into()),
+                secret: (!options.shared_secret).then(|| PROXY_SECRET.into()),
                 ..Default::default()
             }))
             .build()
@@ -265,11 +315,55 @@ async fn build<B: Backend>(
     }
 }
 
+fn cipher(secret: &str, purpose: &str) -> chacha20poly1305::XChaCha20Poly1305 {
+    use chacha20poly1305::KeyInit;
+    use sha2::{Digest, Sha256};
+    let mut key = [0_u8; 32];
+    hkdf::Hkdf::<Sha256>::new(Some(b"better-auth:oauth-encryption:v1"), secret.as_bytes())
+        .expand(format!("better-auth:{purpose}:v1").as_bytes(), &mut key)
+        .unwrap();
+    let hex = key
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    chacha20poly1305::XChaCha20Poly1305::new(&Sha256::digest(hex.as_bytes()))
+}
+
+/// The pinned symmetric encryption under a purpose-derived key.
+fn seal(plain: &str, secret: &str, purpose: &str) -> String {
+    use chacha20poly1305::aead::Aead;
+    let nonce = [7_u8; 24];
+    let sealed = cipher(secret, purpose)
+        .encrypt(&chacha20poly1305::XNonce::from(nonce), plain.as_bytes())
+        .unwrap();
+    [nonce.as_slice(), &sealed]
+        .concat()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn open(sealed: &str, secret: &str, purpose: &str) -> Value {
+    use chacha20poly1305::aead::Aead;
+    let bytes = (0..sealed.len())
+        .step_by(2)
+        .map(|index| u8::from_str_radix(&sealed[index..index + 2], 16).unwrap())
+        .collect::<Vec<_>>();
+    let (nonce, ciphertext) = bytes.split_at(24);
+    let plain = cipher(secret, purpose)
+        .decrypt(
+            &chacha20poly1305::XNonce::try_from(nonce).unwrap(),
+            ciphertext,
+        )
+        .unwrap();
+    serde_json::from_slice(&plain).unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Write;
-    backend_tests!(production_exchange_preserves_rows_then_preview_consumes_state_and_issues_only_the_actual_owner,completion_rejects_foreign_origin_provider_tampering_and_expired_state_before_any_principal_write);
+    backend_tests!(production_exchange_preserves_rows_then_preview_consumes_state_and_issues_only_the_actual_owner,completion_rejects_foreign_origin_provider_tampering_and_expired_state_before_any_principal_write,crafted_profiles_and_forward_errors_redirect_without_principal_writes,proxied_link_social_links_the_signed_in_owner,cookie_state_completion_requires_the_originating_browser,proxied_link_with_a_different_email_redirects_with_the_link_error);
     postgres_tests!(production_exchange_preserves_rows_then_preview_consumes_state_and_issues_only_the_actual_owner,completion_rejects_foreign_origin_provider_tampering_and_expired_state_before_any_principal_write);
 
     #[expect(
@@ -507,6 +601,254 @@ mod tests {
                 .get("verifications")
                 .expect("provider fixture contains this parameter"),
             &json!([])
+        );
+        Ok(())
+    }
+
+    fn with_profile(bridge: &url::Url, profile: Option<&str>) -> String {
+        let mut url = bridge.clone();
+        let callback = bridge
+            .query_pairs()
+            .find(|(key, _)| key == "callbackURL")
+            .unwrap()
+            .1
+            .into_owned();
+        url.set_query(None);
+        _ = url.query_pairs_mut().append_pair("callbackURL", &callback);
+        if let Some(profile) = profile {
+            _ = url.query_pairs_mut().append_pair("profile", profile);
+        }
+        target(&url)
+    }
+
+    async fn crafted_profiles_and_forward_errors_redirect_without_principal_writes<B: Backend>(
+        db: Db,
+    ) -> TestResult {
+        let fixture = Fixture::<B>::new(db).await;
+        let (authorization, _) = fixture.issue("/api/auth/sign-in/social", None).await;
+        let (_, bridge) = fixture.forward(&authorization).await;
+        let issued = rows(&fixture.preview_db).await;
+        let profile = bridge
+            .query_pairs()
+            .find(|(key, _)| key == "profile")
+            .unwrap()
+            .1
+            .into_owned();
+        let payload = open(&profile, PROXY_SECRET, "oauth-proxy-profile");
+        let mutate = |change: &dyn Fn(&mut Value)| {
+            let mut payload = payload.clone();
+            change(&mut payload);
+            seal(&payload.to_string(), PROXY_SECRET, "oauth-proxy-profile")
+        };
+        let cases: Vec<(&str, Option<String>)> = vec![
+            ("missing_profile", None),
+            (
+                "invalid_payload",
+                Some(seal("not json", PROXY_SECRET, "oauth-proxy-profile")),
+            ),
+            (
+                "invalid_payload",
+                Some(mutate(&|payload| payload["profile"] = json!("text"))),
+            ),
+            (
+                "invalid_payload",
+                Some(mutate(&|payload| payload["scopes"] = json!([1]))),
+            ),
+            (
+                "invalid_payload",
+                Some(mutate(&|payload| payload["errorURL"] = json!(5))),
+            ),
+            (
+                "invalid_payload",
+                Some(mutate(&|payload| payload["disableSignUp"] = json!("yes"))),
+            ),
+            (
+                "invalid_payload",
+                Some(mutate(&|payload| payload["state"] = json!(""))),
+            ),
+            (
+                "invalid_payload",
+                Some(mutate(&|payload| payload["userInfo"] = json!(null))),
+            ),
+            (
+                "payload_expired",
+                Some(mutate(&|payload| payload["timestamp"] = json!(1_000))),
+            ),
+            (
+                "payload_expired",
+                Some(mutate(&|payload| {
+                    payload["timestamp"] = json!(chrono::Utc::now().timestamp_millis() + 60_000);
+                })),
+            ),
+            (
+                "state_mismatch",
+                Some(mutate(&|payload| payload["state"] = json!("unknown"))),
+            ),
+        ];
+        for (error, profile) in cases {
+            let response = request(
+                &fixture.preview,
+                &with_profile(&bridge, profile.as_deref()),
+                None,
+                None,
+            )
+            .await;
+            assert_eq!(response.status, 302, "{error}");
+            assert!(
+                location(&response)
+                    .as_str()
+                    .contains(&format!("error={error}")),
+                "{error}: {}",
+                location(&response)
+            );
+        }
+        assert_eq!(rows(&fixture.preview_db).await, issued);
+
+        let (authorization, _) = fixture.issue("/api/auth/sign-in/social", None).await;
+        let query: HashMap<_, _> = authorization.query_pairs().into_owned().collect();
+        let callback = |extra: &[(&str, &str)]| {
+            let mut url = url::Url::parse(query.get("redirect_uri").unwrap()).unwrap();
+            _ = url
+                .query_pairs_mut()
+                .append_pair("state", query.get("state").unwrap());
+            for (key, value) in extra {
+                _ = url.query_pairs_mut().append_pair(key, value);
+            }
+            target(&url)
+        };
+        for (extra, error) in [
+            (vec![("error", "access_denied")], "access_denied"),
+            (vec![], "no_code"),
+            (vec![("code", "wrong-code")], "invalid_code"),
+        ] {
+            let response = request(&fixture.production, &callback(&extra), None, None).await;
+            assert_eq!(response.status, 302);
+            assert!(
+                location(&response)
+                    .as_str()
+                    .contains(&format!("error={error}")),
+                "{error}: {}",
+                location(&response)
+            );
+        }
+        Ok(())
+    }
+
+    async fn proxied_link_social_links_the_signed_in_owner<B: Backend>(db: Db) -> TestResult {
+        let fixture = Fixture::<B>::new(db).await;
+        let signup = request(
+            &fixture.preview,
+            "/api/auth/sign-up/email",
+            Some(
+                json!({"email":"proxy-owner@fixture.test","name":"Owner","password":"password123"}),
+            ),
+            None,
+        )
+        .await;
+        assert_eq!(signup.status, 200);
+        let session = cookies(&signup);
+        let (authorization, _) = fixture.issue("/api/auth/link-social", Some(&session)).await;
+        let (_, bridge) = fixture.forward(&authorization).await;
+        let linked = request(&fixture.preview, &target(&bridge), None, Some(&session)).await;
+        assert_eq!(linked.status, 302);
+        assert_eq!(
+            location(&linked).as_str(),
+            &format!("{PREVIEW}/complete?application=kept")
+        );
+        let accounts: Value = serde_json::from_str(&fixture.preview_db.table("accounts").await?)?;
+        let providers = accounts
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|account| account["provider_id"].as_str().unwrap().to_owned())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            providers,
+            ["credential".to_owned(), "gitlab".to_owned()].into()
+        );
+        Ok(())
+    }
+
+    async fn cookie_state_completion_requires_the_originating_browser<B: Backend>(
+        db: Db,
+    ) -> TestResult {
+        let fixture = Fixture::<B>::with(
+            db,
+            Options {
+                cookie_state: true,
+                shared_secret: true,
+            },
+        )
+        .await;
+        let (authorization, _, browser) = fixture
+            .issue_with("/api/auth/sign-in/social", None, json!({}))
+            .await;
+        let (_, bridge) = fixture.forward(&authorization).await;
+        let (_, _, other_browser) = fixture
+            .issue_with("/api/auth/sign-in/social", None, json!({}))
+            .await;
+        for (cookie, label) in [
+            (None, "missing cookie"),
+            (Some("better-auth.oauth_state=00"), "unreadable cookie"),
+            (Some(other_browser.as_str()), "another authorization"),
+        ] {
+            let denied = request(&fixture.preview, &target(&bridge), None, cookie).await;
+            assert!(
+                location(&denied).as_str().contains("error=state_mismatch"),
+                "{label}: {}",
+                location(&denied)
+            );
+        }
+        let dont_remember = format!(
+            "{browser}; better-auth.dont_remember={}",
+            alibi::utils::cookie_utils::sign_cookie_value("true", SECRET)
+        );
+        let completed = request(
+            &fixture.preview,
+            &target(&bridge),
+            None,
+            Some(&dont_remember),
+        )
+        .await;
+        assert_eq!(completed.status, 302);
+        assert_eq!(
+            location(&completed).as_str(),
+            &format!("{PREVIEW}/new-owner")
+        );
+        let set_cookies = completed.headers.get_all("set-cookie").collect::<Vec<_>>();
+        assert!(
+            set_cookies
+                .iter()
+                .any(|cookie| cookie.starts_with("better-auth.dont_remember="))
+        );
+        assert!(
+            set_cookies
+                .iter()
+                .any(|cookie| cookie.starts_with("better-auth.session_token=")
+                    && !cookie.contains("Max-Age"))
+        );
+        Ok(())
+    }
+
+    async fn proxied_link_with_a_different_email_redirects_with_the_link_error<B: Backend>(
+        db: Db,
+    ) -> TestResult {
+        let fixture = Fixture::<B>::new(db).await;
+        let signup = request(
+            &fixture.preview,
+            "/api/auth/sign-up/email",
+            Some(json!({"email":"someone-else@fixture.test","name":"Other","password":"password123"})),
+            None,
+        )
+        .await;
+        let session = cookies(&signup);
+        let (authorization, _) = fixture.issue("/api/auth/link-social", Some(&session)).await;
+        let (_, bridge) = fixture.forward(&authorization).await;
+        let denied = request(&fixture.preview, &target(&bridge), None, Some(&session)).await;
+        assert_eq!(denied.status, 302);
+        assert_eq!(
+            location(&denied).as_str(),
+            &format!("{PREVIEW}/failure?error=email_does_not_match")
         );
         Ok(())
     }

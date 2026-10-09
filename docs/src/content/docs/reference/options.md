@@ -99,7 +99,6 @@ Instance-level middleware and features are registered on `AuthBuilder` ([below](
 | `database.default_find_many_limit` | `100` | Default page size |
 | `database.use_number_id` | `false` | Select serial IDs when `generate_id` is unset; require verified email for numeric invitations by default |
 | `database.generate_id` | none | `DatabaseIdStrategy::Uuid`, `Serial`, or `Custom(Arc<dyn DatabaseIdGenerator>)` |
-| `trusted_proxy_headers` | none | Headers trusted for the client IP behind a proxy |
 
 The default ID strategy uses each application model's generator. Explicit strategies apply to all records created by SQLx and SeaORM, while caller-supplied IDs remain authoritative. Serial IDs use the persistent `alibi_id_sequences` table, initialized by `SchemaMigrator::migrate`; the sequence starts after existing numeric IDs and survives deletion and process restarts. IDs retain the type declared by the application schema and appear as strings in public auth responses. A custom generator receives the logical model name and optional size; returning `None` or an error rejects creation without a fallback ID.
 

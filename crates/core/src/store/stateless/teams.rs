@@ -1,4 +1,10 @@
-use super::*;
+use crate::store::stateless::{OrganizationState, StatelessStore};
+use crate::store::{TeamStore, team_membership_key};
+use crate::types::AddTeamMemberResult;
+use crate::utils::javascript::number_from_i64;
+use crate::{AuthError, AuthResult, CreateTeam, InvitationStatus, Team, TeamMember, UpdateTeam};
+use async_trait::async_trait;
+use chrono::Utc;
 
 impl OrganizationState {
     pub(super) fn remove_team_members(&mut self, team_id: &str, user_id: &str) -> usize {
@@ -25,11 +31,10 @@ impl TeamStore for StatelessStore {
             updated_at: data.updated_at,
             member_count: 0,
         };
-        drop(
-            self.organization_state()?
-                .teams
-                .insert(row.id.clone(), row.clone()),
-        );
+        _ = self
+            .organization_state()?
+            .teams
+            .insert(row.id.clone(), row.clone());
         Ok(row)
     }
     async fn get_team(&self, organization_id: Option<&str>, id: &str) -> AuthResult<Option<Team>> {
@@ -77,7 +82,7 @@ impl TeamStore for StatelessStore {
         {
             return Ok(false);
         }
-        drop(state.teams.shift_remove(id));
+        _ = state.teams.shift_remove(id);
         state.team_members.retain(|_, row| row.team_id != id);
         for invite in state
             .invitations
@@ -147,7 +152,8 @@ impl TeamStore for StatelessStore {
         team.member_count = team.member_count.max(count);
         // Keep the raw Number predicate, including fractions, NaN and infinities.
         if maximum.is_some_and(|maximum| {
-            (team.member_count as f64).partial_cmp(&maximum) != Some(std::cmp::Ordering::Less)
+            number_from_i64(team.member_count).partial_cmp(&maximum)
+                != Some(std::cmp::Ordering::Less)
         }) {
             return Ok(AddTeamMemberResult::LimitReached);
         }
@@ -162,7 +168,7 @@ impl TeamStore for StatelessStore {
             created_at: Utc::now(),
             membership_key: Some(key),
         };
-        drop(state.team_members.insert(row.id.clone(), row.clone()));
+        _ = state.team_members.insert(row.id.clone(), row.clone());
         Ok(AddTeamMemberResult::Added(row))
     }
     async fn remove_team_member(&self, team_id: &str, user_id: &str) -> AuthResult<usize> {

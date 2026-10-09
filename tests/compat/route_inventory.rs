@@ -45,14 +45,14 @@ mod tests {
         assert!(
             registered
                 .iter()
-                .any(|route| route.method == alibi_core::HttpMethod::Get
-                    && route.path == alibi_core::core_paths::OPENAPI_SPEC)
+                .any(|route| route.method == alibi::HttpMethod::Get
+                    && route.path == alibi::core_paths::OPENAPI_SPEC)
         );
         let actual: BTreeSet<String> = registered
             .into_iter()
             .filter(|route| {
-                !(route.method == alibi_core::HttpMethod::Get
-                    && route.path == alibi_core::core_paths::OPENAPI_SPEC)
+                !(route.method == alibi::HttpMethod::Get
+                    && route.path == alibi::core_paths::OPENAPI_SPEC)
             })
             .map(|route| {
                 format!(

@@ -9,10 +9,10 @@ use alibi::plugin::{
     PluginOpenApiMetadata,
 };
 use alibi::plugins::{OpenApiConfig, OpenApiPlugin};
+use alibi::seaorm::store::entities::{account, session, user, verification};
+use alibi::seaorm::{Database, SeaOrmStore};
 use alibi::{AuthBuilder, AuthConfig, AuthResult, AuthSchema, BetterAuth};
-use alibi_core::{AuthRequest, AuthResponse, HttpMethod};
-use alibi_seaorm::store::entities::{account, session, user, verification};
-use alibi_seaorm::{Database, SeaOrmStore};
+use alibi::{AuthRequest, AuthResponse, HttpMethod};
 use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -25,7 +25,7 @@ impl AuthSchema for AppSchema {
     type Account = account::Model;
     type Verification = verification::Model;
     fn openapi_models() -> Vec<OpenApiModel> {
-        let mut models = alibi_core::openapi::annotations::core_models();
+        let mut models = alibi::openapi::annotations::core_models();
         // This schema's concrete User has a metadata JSON field. Declaring its
         // documentation does not install a request parser or alter its persistence.
         models[0].fields.push(
@@ -420,7 +420,7 @@ mod tests {
 
 #[test]
 fn embedded_builder_uses_plugin_owned_metadata_without_initialization() {
-    let document = alibi_core::openapi::OpenApiBuilder::new("Application", "1")
+    let document = alibi::openapi::OpenApiBuilder::new("Application", "1")
         .plugin(&AppPlugin)
         .build()
         .to_value()

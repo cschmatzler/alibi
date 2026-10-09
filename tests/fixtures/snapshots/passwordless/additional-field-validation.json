@@ -1,0 +1,59 @@
+[
+  {
+    "signup rejected": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "Nickname is not allowed"
+      }
+    }
+  },
+  {
+    "update {\"nickname\":\"bad\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "Nickname is not allowed"
+      }
+    }
+  },
+  {
+    "update {\"username\":\"ignored\",\"displayUsername\":\"Ignored\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "No fields to update"
+      }
+    }
+  },
+  {
+    "update {\"username\":\"ignored\",\"displayUsername\":\"Ignored\",\"name\":\"Renamed\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  }
+]

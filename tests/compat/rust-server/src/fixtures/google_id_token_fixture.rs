@@ -7,8 +7,8 @@ use alibi::plugins::{
     AdminPlugin, EmailPasswordPlugin, EmailVerificationPlugin, OrganizationPlugin,
     SessionManagementPlugin, TwoFactorPlugin,
 };
+use alibi::seaorm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_seaorm::DatabaseConnection;
 use async_trait::async_trait;
 use axum::Router;
 use std::sync::Arc;

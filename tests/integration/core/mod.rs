@@ -10,10 +10,15 @@ mod media;
 mod oauth_account_transaction;
 mod oauth_client_assertions;
 mod oauth_state;
+mod openapi_fields;
+mod policies;
+mod runtime_dispatch;
 mod rust_surface_auth;
 mod schema;
 mod session;
+mod trusted_endpoint;
 mod user_json;
+mod utilities;
 
 mod dynamic_origin;
 

@@ -1,0 +1,66 @@
+[
+  {
+    "without data": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "user": {
+          "id": "<m2>",
+          "name": "One",
+          "email": "validated-one@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "role": "user",
+          "banned": false,
+          "isAnonymous": false,
+          "banExpires": null,
+          "banReason": null,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "with data": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "user": {
+          "id": "<m3>",
+          "name": "Two",
+          "email": "validated-two@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "role": "user",
+          "banned": false,
+          "isAnonymous": false,
+          "banExpires": null,
+          "banReason": null,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "anonymity of listed users": [
+      "anonymous.placeholder.invalid=true",
+      "example.com=false",
+      "example.com=false",
+      "example.com=false"
+    ]
+  }
+]

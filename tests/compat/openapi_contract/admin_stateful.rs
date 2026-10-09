@@ -14,7 +14,7 @@ use alibi::prelude::{AuthUser, UpdateUser};
 use chrono::{Duration, Utc};
 use serde_json::json;
 
-type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type TestSchema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 async fn setup_admin(auth: &alibi::BetterAuth<TestSchema>) -> String {
     let (token, _) = signup_user(auth, "admin-stateful@test.com", "password123", "Admin").await;

@@ -1,0 +1,101 @@
+[
+  {
+    "no-auto-sign-in: anonymous browser": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true,
+        "user": null
+      }
+    }
+  },
+  {
+    "no-auto-sign-in: matching session": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "/done"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "no-auto-sign-in: other session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true,
+        "user": null
+      }
+    }
+  },
+  {
+    "sessions": 3
+  },
+  {
+    "auto-sign-in: anonymous browser": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "status": true,
+        "user": null
+      }
+    }
+  },
+  {
+    "auto-sign-in: matching session": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "/done"
+        ],
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "auto-sign-in: other session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "status": true,
+        "user": null
+      }
+    }
+  },
+  {
+    "sessions": 5
+  }
+]

@@ -6,10 +6,7 @@ use alibi::plugins::password_management::set_password;
 use alibi::plugins::{
     EmailPasswordConfig, EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi_core::utils::password::{PasswordHasher, ScryptHasher};
-use alibi_core::{AuthRequest, CookieCacheConfig, HttpMethod};
-use alibi_seaorm::{
+use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{
         ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, IntoActiveModel,
@@ -17,6 +14,9 @@ use alibi_seaorm::{
     },
     store::entities::{account, session, user},
 };
+use alibi::utils::password::{PasswordHasher, ScryptHasher};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{AuthRequest, CookieCacheConfig, HttpMethod};
 use async_trait::async_trait;
 use axum::{
     Json, Router,
@@ -105,7 +105,7 @@ impl PasswordHasher for Application {
         ScryptHasher.verify(hash, password).await
     }
 }
-fn database_error(error: alibi_seaorm::sea_orm::DbErr) -> AuthError {
+fn database_error(error: alibi::seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
 fn failure(error: AuthError) -> axum::response::Response {
@@ -183,7 +183,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
    let users=user::Entity::find().order_by_asc(user::Column::CreatedAt).all(&db).await.map_err(database_error)?;
    let accounts=account::Entity::find().order_by_asc(account::Column::CreatedAt).all(&db).await.map_err(database_error)?;
    let sessions=session::Entity::find().order_by_asc(session::Column::CreatedAt).all(&db).await.map_err(database_error)?;
-   let accounts=accounts.iter().map(|row|{let mut value=serde_json::to_value(alibi_core::wire::AccountView::from(row)).unwrap();value["password"]=json!(row.password);value}).collect::<Vec<_>>();
+   let accounts=accounts.iter().map(|row|{let mut value=serde_json::to_value(alibi::wire::AccountView::from(row)).unwrap();value["password"]=json!(row.password);value}).collect::<Vec<_>>();
    Ok(json!({"users":users.iter().map(|row|auth.context().user_view(row)).collect::<Vec<_>>(),"accounts":accounts,"sessions":sessions.iter().map(|row|auth.context().session_view(row)).collect::<Vec<_>>(),"events":*app.events.lock().unwrap()}))
   }.await;match result{Ok(value)=>Json(value).into_response(),Err(error)=>failure(error)}
  }}));

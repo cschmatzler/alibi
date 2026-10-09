@@ -1,5 +1,9 @@
 //! Real removal callbacks, SQLite observations and signed-cookie server calls.
 use crate::{TestSchema, organization_update_hooks_fixture::snapshot as base_snapshot};
+use alibi::seaorm::{
+    DatabaseConnection,
+    sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
@@ -10,13 +14,9 @@ use alibi::{
     },
     plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin},
 };
-use alibi_core::{
+use alibi::{
     UpdateUser,
     store::{MemberStore, UserStore},
-};
-use alibi_seaorm::{
-    DatabaseConnection,
-    sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use axum::{
     Json, Router,

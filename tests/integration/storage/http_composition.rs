@@ -1,13 +1,13 @@
 //! Real HTTP plugin composition over both stores, with independent physical observers.
 use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, AuthSchema};
-use alibi_core::endpoint::{
+use alibi::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointHook, EndpointResponse,
 };
-use alibi_core::entity::AuthUser;
-use alibi_core::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
-use alibi_core::{
+use alibi::entity::AuthUser;
+use alibi::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, AuthSchema};
+use alibi::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute,
     BeforeRequestAction, HttpEndpointResponse, HttpMethod, HttpRequestAction, UpdateUser,
 };
@@ -76,18 +76,14 @@ impl<S: AuthSchema> EndpointHook<S> for Global {
                 EndpointContextPatch {
                     request: Some(request),
                     path: Some("/logical-patched".into()),
-                    body: Some(alibi_core::utils::json::parse_value(
-                        "{\"name\":\"patched\"}",
-                    )?),
+                    body: Some(alibi::utils::json::parse_value("{\"name\":\"patched\"}")?),
                     ..Default::default()
                 },
             ))));
         }
         Ok(Some(BeforeEndpointAction::Patch(Box::new(
             EndpointContextPatch {
-                body: Some(alibi_core::utils::json::parse_value(
-                    "{\"name\":\"patched\"}",
-                )?),
+                body: Some(alibi::utils::json::parse_value("{\"name\":\"patched\"}")?),
                 headers: Some(std::collections::HashMap::from([
                     ("x-winner".into(), "global".into()),
                     ("x-global-input".into(), "yes".into()),
@@ -351,7 +347,7 @@ impl<S: AuthSchema, B: HookBackend> DatabaseHooks<S, B> for StorageObserver {
     ) -> AuthResult<HookControl> {
         record(
             &self.0,
-            json!({"stage":"db-before","principal":id,"physical":c.request.as_ref().map(|r|r.path.as_str()),"url":c.request.as_ref().and_then(|r|r.url.as_ref()).map(url::Url::as_str),"authority":c.request.as_ref().and_then(|r|r.extensions.get::<Authority>()).is_some(),"logical":alibi_core::endpoint::current_endpoint_call_context().and_then(|c|c.body().cloned())}),
+            json!({"stage":"db-before","principal":id,"physical":c.request.as_ref().map(|r|r.path.as_str()),"url":c.request.as_ref().and_then(|r|r.url.as_ref()).map(url::Url::as_str),"authority":c.request.as_ref().and_then(|r|r.extensions.get::<Authority>()).is_some(),"logical":alibi::endpoint::current_endpoint_call_context().and_then(|c|c.body().cloned())}),
         );
         Ok(HookControl::Continue)
     }
@@ -648,7 +644,7 @@ async fn physical_http_composition_preserves_principals_and_committed_rows<B: Ba
     let config = AuthConfig::new(secret).base_url("http://original.test");
     let cors_auth = AuthBuilder::<B::Schema>::new(config.clone())
         .store(B::store(Arc::new(config), &connection))
-        .cors(alibi_core::middleware::CorsConfig::new().allowed_origin("http://original.test"))
+        .cors(alibi::middleware::CorsConfig::new().allowed_origin("http://original.test"))
         .plugin(Physical {
             events: events.clone(),
             cookie_b: cookie_b.clone(),
@@ -686,7 +682,7 @@ async fn physical_http_composition_preserves_principals_and_committed_rows<B: Ba
     // Upstream CAPTCHA admission precedes CORS, including protected preflights.
     let config = AuthConfig::new(secret).base_url("http://original.test");
     let mut captcha_cors =
-        alibi_core::middleware::CorsConfig::new().allowed_origin("http://original.test");
+        alibi::middleware::CorsConfig::new().allowed_origin("http://original.test");
     captcha_cors
         .allowed_headers
         .push("x-captcha-response".into());

@@ -1,32 +1,36 @@
-use super::*;
-pub(crate) fn seaorm_schema(selection: &Selection) -> TokenStream {
-    let extra_user = &selection.user;
-    let extra_session = &selection.session;
-    let extra_entities = &selection.extra;
+use crate::parse_type;
+use crate::selection::{CORE_ENTITIES, Selection, entity_fields, role_name};
+use alibi_schema_registry::{EntityRole, FieldDef};
+use proc_macro2::TokenStream;
+use quote::{format_ident, quote};
 
-    let imports = quote! {
+pub(crate) fn seaorm_schema(selection: &Selection) -> TokenStream {
+    let core_entities = CORE_ENTITIES.iter().map(|(module, table, role)| {
+        seaorm_entity(module, table, Some(*role), &entity_fields(selection, *role))
+    });
+    let extra_entities = selection.extra.iter().map(|entity| {
+        seaorm_entity(
+            entity.mod_name,
+            entity.table_name,
+            entity.role,
+            &entity.fields.iter().collect::<Vec<_>>(),
+        )
+    });
+    let extra_migration_statements = selection.extra.iter().map(|entity| {
+        let module = format_ident!("{}", entity.mod_name);
+        quote! { schema.create_table_from_entity(#module::Entity).if_not_exists().to_owned() }
+    });
+
+    quote! {
         use alibi::AuthSchema;
         use alibi::seaorm::sea_orm;
         use alibi::seaorm::sea_orm::entity::prelude::*;
         use alibi::seaorm::sea_orm::{ConnectionTrait, Schema};
         use alibi::seaorm::{AuthEntity, DatabaseConnection};
-    };
 
-    let user_entity = gen_entity("user", "users", EntityRole::User, extra_user);
-    let session_entity = gen_entity("session", "sessions", EntityRole::Session, extra_session);
-    let account_entity = gen_entity("account", "accounts", EntityRole::Account, &[]);
-    let verification_entity = gen_entity(
-        "verification",
-        "verifications",
-        EntityRole::Verification,
-        &[],
-    );
-    let extra_entity_tokens: Vec<TokenStream> = extra_entities
-        .iter()
-        .map(|entity| gen_extra_entity(entity))
-        .collect();
+        #(#core_entities)*
+        #(#extra_entities)*
 
-    let schema_impl = quote! {
         pub struct AppAuthSchema;
 
         impl AuthSchema for AppAuthSchema {
@@ -35,17 +39,7 @@ pub(crate) fn seaorm_schema(selection: &Selection) -> TokenStream {
             type Account = account::Model;
             type Verification = verification::Model;
         }
-    };
 
-    let extra_migration_statements: Vec<TokenStream> = extra_entities
-        .iter()
-        .map(|entity| {
-            let mod_ident = format_ident!("{}", entity.mod_name);
-            quote! { schema.create_table_from_entity(#mod_ident::Entity).if_not_exists().to_owned() }
-        })
-        .collect();
-
-    let migration_fn = quote! {
         pub async fn run_app_migrations(
             database: &DatabaseConnection,
         ) -> Result<(), sea_orm::DbErr> {
@@ -61,150 +55,53 @@ pub(crate) fn seaorm_schema(selection: &Selection) -> TokenStream {
             }
             Ok(())
         }
-    };
-
-    quote! {
-        #imports
-        #user_entity
-        #session_entity
-        #account_entity
-        #verification_entity
-        #(#extra_entity_tokens)*
-        #schema_impl
-        #migration_fn
     }
 }
 
-pub(crate) fn gen_entity(
-    mod_name: &str,
-    table_name: &str,
-    role: EntityRole,
-    plugin_fields: &[FieldDef],
+fn seaorm_entity(
+    module: &str,
+    table: &str,
+    role: Option<EntityRole>,
+    fields: &[&FieldDef],
 ) -> TokenStream {
-    let mod_ident = format_ident!("{}", mod_name);
-    let role_str = mod_name;
-
-    let core = registry::core_fields(role);
-    let all_fields: Vec<&FieldDef> = core.iter().chain(plugin_fields.iter()).collect();
-
-    let field_tokens: Vec<TokenStream> = all_fields
-        .iter()
-        .map(|f| {
-            let name = format_ident!("{}", f.name);
-            #[expect(
-                clippy::panic,
-                reason = "type strings come from hardcoded registry; parse failure is a bug"
-            )]
-            let ty: syn::Type = syn::parse_str(f.ty)
-                .unwrap_or_else(|e| panic!("invalid type `{}` for field `{}`: {e}", f.ty, f.name));
-            let column_attr = f.column_name.map(|column_name| {
-                quote! { #[sea_orm(column_name = #column_name)] }
-            });
-            let default_attr = f.default_value.map(|value| {
-                quote! { #[sea_orm(default_value = #value)] }
-            });
-            if f.is_primary_key {
-                quote! {
-                    #column_attr
-                    #default_attr
-                    #[sea_orm(primary_key, auto_increment = false)]
-                    pub #name: #ty,
-                }
-            } else {
-                quote! {
-                    #column_attr
-                    #default_attr
-                    pub #name: #ty,
-                }
-            }
-        })
-        .collect();
-
-    quote! {
-        mod #mod_ident {
-            use super::*;
-
-            #[derive(Clone, Debug, serde::Serialize, DeriveEntityModel, AuthEntity)]
-            #[auth(role = #role_str)]
-            #[sea_orm(table_name = #table_name)]
-            pub struct Model {
-                #(#field_tokens)*
-            }
-
-            #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-            pub enum Relation {}
-
-            impl ActiveModelBehavior for ActiveModel {}
+    let module = format_ident!("{}", module);
+    let fields = fields.iter().map(|field| {
+        let name = format_ident!("{}", field.name);
+        let ty = parse_type(field, field.ty);
+        let column_attr = field
+            .column_name
+            .map(|column| quote! { #[sea_orm(column_name = #column)] });
+        let default_attr = field
+            .default_value
+            .map(|value| quote! { #[sea_orm(default_value = #value)] });
+        let primary_key = field
+            .is_primary_key
+            .then(|| quote! { #[sea_orm(primary_key, auto_increment = false)] });
+        quote! {
+            #column_attr
+            #default_attr
+            #primary_key
+            pub #name: #ty,
         }
-    }
-}
-
-pub(crate) fn gen_extra_entity(entity: &ExtraEntitySchema) -> TokenStream {
-    let mod_ident = format_ident!("{}", entity.mod_name);
-    let table_name = entity.table_name;
-
-    let field_tokens: Vec<TokenStream> = entity
-        .fields
-        .iter()
-        .map(|f| {
-            let name = format_ident!("{}", f.name);
-            #[expect(
-                clippy::panic,
-                reason = "type strings come from hardcoded registry; parse failure is a bug"
-            )]
-            let ty: syn::Type = syn::parse_str(f.ty)
-                .unwrap_or_else(|e| panic!("invalid type `{}` for field `{}`: {e}", f.ty, f.name));
-            let column_attr = f.column_name.map(|column_name| {
-                quote! { #[sea_orm(column_name = #column_name)] }
-            });
-            let default_attr = f.default_value.map(|value| {
-                quote! { #[sea_orm(default_value = #value)] }
-            });
-            if f.is_primary_key {
-                quote! {
-                    #column_attr
-                    #default_attr
-                    #[sea_orm(primary_key, auto_increment = false)]
-                    pub #name: #ty,
-                }
-            } else {
-                quote! {
-                    #column_attr
-                    #default_attr
-                    pub #name: #ty,
-                }
-            }
-        })
-        .collect();
-
-    let derive_attrs = entity.role.map_or_else(
-        || {
-            quote! {
-                #[derive(Clone, Debug, serde::Serialize, DeriveEntityModel)]
-            }
-        },
+    });
+    let derive = role.map_or_else(
+        || quote! { #[derive(Clone, Debug, serde::Serialize, DeriveEntityModel)] },
         |role| {
-            let role_str = match role {
-                EntityRole::User => "user",
-                EntityRole::Session => "session",
-                EntityRole::Account => "account",
-                EntityRole::Verification => "verification",
-            };
+            let role = role_name(role);
             quote! {
                 #[derive(Clone, Debug, serde::Serialize, DeriveEntityModel, AuthEntity)]
-                #[auth(role = #role_str)]
+                #[auth(role = #role)]
             }
         },
     );
-
     quote! {
-        mod #mod_ident {
+        mod #module {
             use super::*;
 
-            #derive_attrs
-            #[sea_orm(table_name = #table_name)]
+            #derive
+            #[sea_orm(table_name = #table)]
             pub struct Model {
-                #(#field_tokens)*
+                #(#fields)*
             }
 
             #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

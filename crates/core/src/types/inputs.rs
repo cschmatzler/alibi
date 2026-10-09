@@ -1,6 +1,10 @@
-use super::*;
+use crate::field_policy::FieldValues;
+use crate::utils::normalize_user_email;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use validator::Validate;
 /// User creation data
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CreateUser {
     /// Trusted provider value before boolean storage conversion. HTTP input
     /// cannot populate this; native accessors retain their boolean interface.
@@ -12,7 +16,7 @@ pub struct CreateUser {
     #[serde(skip)]
     pub provider_image: Option<serde_json::Value>,
     #[serde(flatten, default)]
-    pub additional_fields: crate::field_policy::FieldValues,
+    pub additional_fields: FieldValues,
     pub id: Option<String>,
     /// Trusted creation timestamps; omitted values use the adapter's clock.
     pub created_at: Option<DateTime<Utc>>,
@@ -51,7 +55,7 @@ pub struct UpdateUser {
     #[serde(skip)]
     pub provider_image: Option<serde_json::Value>,
     #[serde(flatten, default)]
-    pub additional_fields: crate::field_policy::FieldValues,
+    pub additional_fields: FieldValues,
     pub email: Option<String>,
     pub name: Option<String>,
     pub image: Option<String>,
@@ -85,7 +89,7 @@ pub struct UpdateUser {
 /// Session creation data
 #[derive(Debug, Clone)]
 pub struct CreateSession {
-    pub additional_fields: crate::field_policy::FieldValues,
+    pub additional_fields: FieldValues,
     /// Optional token override for trusted database hooks and server-side creation.
     /// Stores generate a secure 32-character alphanumeric token when omitted.
     pub token: Option<String>,
@@ -101,7 +105,7 @@ pub struct CreateSession {
 /// Account creation data
 #[derive(Debug, Clone)]
 pub struct CreateAccount {
-    pub additional_fields: crate::field_policy::FieldValues,
+    pub additional_fields: FieldValues,
     pub user_id: String,
     pub account_id: String,
     pub provider_id: String,
@@ -120,7 +124,7 @@ pub struct UpdateAccount {
     /// Trusted OAuth writes distinguish an explicit token null from omission.
     /// Order: access token, refresh token, ID token. Defaults retain omission.
     pub provider_token_nulls: [bool; 3],
-    pub additional_fields: crate::field_policy::FieldValues,
+    pub additional_fields: FieldValues,
     pub access_token: Option<String>,
     pub refresh_token: Option<String>,
     pub id_token: Option<String>,
@@ -147,29 +151,7 @@ pub struct UpdateVerification {
 impl CreateUser {
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            additional_fields: crate::field_policy::FieldValues::new(),
-            id: None,
-            created_at: None,
-            updated_at: None,
-            email: None,
-            name: None,
-            image: None,
-            email_verified: None,
-            provider_email_verified: None,
-            provider_name: None,
-            provider_image: None,
-            username: None,
-            display_username: None,
-            two_factor_enabled: None,
-            role: None,
-            banned: None,
-            metadata: None,
-            is_anonymous: None,
-            phone_number: None,
-            phone_number_verified: None,
-            last_login_method: None,
-        }
+        Self::default()
     }
 
     #[must_use]
@@ -206,12 +188,6 @@ impl CreateUser {
     pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
         self.metadata = Some(metadata);
         self
-    }
-}
-
-impl Default for CreateUser {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

@@ -1,4 +1,6 @@
-use super::*;
+use crate::{AuthApiKey, AuthInvitation, AuthOrganization, AuthPasskey, InvitationStatus};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize, Serializer};
 /// Public organization response shape.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OrganizationView {
@@ -252,9 +254,7 @@ pub(in crate::wire) fn normalize_api_key_permission_dates(value: &mut serde_json
     }
 }
 
-// ---------------------------------------------------------------------------
 // Plugin entity views
-// ---------------------------------------------------------------------------
 
 #[expect(
     clippy::ref_option,

@@ -9,21 +9,21 @@
     reason = "oauth integration tests intentionally discard setup return values from inserts and config mutation helpers"
 )]
 
-use alibi_api::AccountManagementPlugin;
-use alibi_api::OAuthPlugin;
-use alibi_api::plugins::oauth::encryption::{decrypt_token, encrypt_token, maybe_encrypt};
-use alibi_api::plugins::oauth::{
+use alibi::entity::{AuthAccount, AuthSession, AuthUser};
+use alibi::plugins::AccountManagementPlugin;
+use alibi::plugins::OAuthPlugin;
+use alibi::plugins::oauth::encryption::{decrypt_token, encrypt_token, maybe_encrypt};
+use alibi::plugins::oauth::{
     OAuthConfig, OAuthProvider, OAuthRefreshTokenHandler, OAuthTokenSet, OAuthUserInfo,
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
-use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
-use alibi_core::store::AuthStore;
-use alibi_core::{
+use alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema as TestSchema;
+use alibi::seaorm::{Database, SeaOrmStore};
+use alibi::store::AuthStore;
+use alibi::{
     AccountConfig, AccountLinkingConfig, AuthConfig, AuthContext, AuthPlugin, AuthRequest,
     CreateAccount, CreateUser, CreateVerification, HttpMethod, SessionManager,
 };
-use alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema as TestSchema;
-use alibi_seaorm::{Database, SeaOrmStore};
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use serde_json::json;
@@ -126,7 +126,7 @@ fn test_config_with_account_cookie() -> AuthConfig {
 }
 
 /// Helper: create a user + OAuth account + session, returning (`user_id`, `session_token`, `account_id`).
-async fn setup_user_with_account<S: alibi_core::AuthSchema>(
+async fn setup_user_with_account<S: alibi::AuthSchema>(
     db: &Arc<dyn AuthStore<S>>,
     config: &Arc<AuthConfig>,
     email: &str,
@@ -176,7 +176,7 @@ async fn setup_user_with_account<S: alibi_core::AuthSchema>(
 
 async fn create_test_database() -> Arc<dyn AuthStore<TestSchema>> {
     let database = Database::connect("sqlite::memory:").await.unwrap();
-    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+    alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .unwrap();
     Arc::new(SeaOrmStore::<TestSchema>::new(
@@ -186,7 +186,7 @@ async fn create_test_database() -> Arc<dyn AuthStore<TestSchema>> {
 }
 
 /// Issue the production encrypted cookie through the OAuth callback lifecycle.
-async fn issue_account_cookie<S: alibi_core::AuthSchema>(
+async fn issue_account_cookie<S: alibi::AuthSchema>(
     account: &impl AuthAccount,
     db: &Arc<dyn AuthStore<S>>,
     config: &Arc<AuthConfig>,
@@ -283,7 +283,7 @@ fn set_session_and_account_cookies(
         "cookie".to_owned(),
         format!(
             "better-auth.session_token={}; better-auth.account_data={}",
-            alibi_core::utils::cookie_utils::sign_cookie_value(session_token, TEST_SECRET),
+            alibi::utils::cookie_utils::sign_cookie_value(session_token, TEST_SECRET),
             account_cookie
         ),
     );
@@ -472,7 +472,7 @@ mod tests {
             "cookie".to_owned(),
             format!(
                 "better-auth.session_token={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+                alibi::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
             ),
         );
 
@@ -657,8 +657,7 @@ mod tests {
         // The issuer must produce a valid authenticated, canonical cookie, so a
         // foreign-owner denial cannot pass because of malformed fixture data.
         let issued =
-            alibi_core::utils::jwe::decode(TEST_SECRET, "better-auth-account", &account_cookie)
-                .unwrap();
+            alibi::utils::jwe::decode(TEST_SECRET, "better-auth-account", &account_cookie).unwrap();
         assert_eq!(issued.get("userId"), Some(&json!(user_id)));
         assert_eq!(issued.get("id"), Some(&json!(account.id())));
         assert_eq!(issued.get("providerId"), Some(&json!("google")));
@@ -796,7 +795,7 @@ mod tests {
             })
             .expect("refresh must renew the account cookie");
         let renewed =
-            alibi_core::utils::jwe::decode(TEST_SECRET, "better-auth-account", renewed).unwrap();
+            alibi::utils::jwe::decode(TEST_SECRET, "better-auth-account", renewed).unwrap();
         assert_eq!(renewed.get("id"), Some(&json!(account.id())));
         assert_eq!(renewed.get("userId"), Some(&json!(user_id)));
         assert_eq!(
@@ -843,7 +842,7 @@ mod tests {
             "cookie".to_owned(),
             format!(
                 "better-auth.session_token={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+                alibi::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
             ),
         );
 
@@ -940,7 +939,7 @@ mod tests {
             "cookie".to_owned(),
             format!(
                 "better-auth.session_token={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+                alibi::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
             ),
         );
 
@@ -1067,7 +1066,7 @@ mod tests {
             "cookie".to_owned(),
             format!(
                 "better-auth.session_token={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+                alibi::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
             ),
         );
 
@@ -1121,7 +1120,7 @@ mod tests {
             "cookie".to_owned(),
             format!(
                 "better-auth.session_token={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+                alibi::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
             ),
         );
 
@@ -1171,7 +1170,7 @@ mod tests {
             "cookie".to_owned(),
             format!(
                 "better-auth.session_token={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+                alibi::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
             ),
         );
 
@@ -1224,7 +1223,7 @@ mod tests {
             "cookie".to_owned(),
             format!(
                 "better-auth.session_token={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+                alibi::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
             ),
         );
 
@@ -1321,7 +1320,7 @@ mod tests {
             "cookie".to_owned(),
             format!(
                 "better-auth.session_token={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value(session.token(), TEST_SECRET)
+                alibi::utils::cookie_utils::sign_cookie_value(session.token(), TEST_SECRET)
             ),
         );
 
@@ -1411,7 +1410,7 @@ mod tests {
             "cookie".into(),
             format!(
                 "better-auth.state={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value(state, TEST_SECRET)
+                alibi::utils::cookie_utils::sign_cookie_value(state, TEST_SECRET)
             ),
         );
 
@@ -1493,7 +1492,7 @@ mod tests {
             "cookie".to_owned(),
             format!(
                 "better-auth.session_token={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+                alibi::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
             ),
         );
 
@@ -1656,7 +1655,7 @@ mod tests {
             "cookie".to_owned(),
             format!(
                 "better-auth.session_token={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+                alibi::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
             ),
         );
 
@@ -1718,7 +1717,7 @@ mod tests {
             "cookie".to_owned(),
             format!(
                 "better-auth.session_token={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+                alibi::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
             ),
         );
 

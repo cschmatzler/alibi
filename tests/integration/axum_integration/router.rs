@@ -1,11 +1,11 @@
-use alibi::integrations::axum::{AxumIntegration, CurrentSession, OptionalSession};
+use alibi::integrations::{CurrentSession, OptionalSession, axum::AxumIntegration};
 use alibi::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin,
     SessionManagementPlugin, UserManagementPlugin, password_management::SendResetPassword,
 };
 use alibi::prelude::AuthUser;
+use alibi::seaorm::{Database, DatabaseConnection, SeaOrmStore};
 use alibi::{AuthBuilder, AuthConfig, BetterAuth};
-use alibi_seaorm::{Database, DatabaseConnection, SeaOrmStore};
 use axum::{
     body::Body,
     extract::{FromRef, State},
@@ -29,12 +29,12 @@ impl FromRef<AppState> for Arc<BetterAuth<TestSchema>> {
     }
 }
 
-type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type TestSchema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 fn test_session_cookie(token: &str) -> String {
     format!(
         "better-auth.session_token={}",
-        alibi_core::utils::cookie_utils::sign_cookie_value(
+        alibi::utils::cookie_utils::sign_cookie_value(
             token,
             "test-secret-key-that-is-at-least-32-characters-long"
         )
@@ -44,7 +44,7 @@ fn test_session_cookie(token: &str) -> String {
 /// Helper to create test `BetterAuth` instance with all plugins
 async fn test_database() -> DatabaseConnection {
     let database = Database::connect("sqlite::memory:").await.unwrap();
-    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+    alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .unwrap();
     database

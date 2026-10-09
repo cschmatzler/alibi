@@ -1,0 +1,2660 @@
+[
+  {
+    "limits create {\"name\":\"x\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_NAME_LENGTH",
+        "message": "The name length is either too large or too small."
+      }
+    }
+  },
+  {
+    "limits create {\"name\":\"toolong\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_NAME_LENGTH",
+        "message": "The name length is either too large or too small."
+      }
+    }
+  },
+  {
+    "limits create {\"name\":\"ok\",\"expiresIn\":3600}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EXPIRES_IN_IS_TOO_SMALL",
+        "message": "The expiresIn is smaller than the predefined minimum value."
+      }
+    }
+  },
+  {
+    "limits create {\"name\":\"ok\",\"expiresIn\":259200}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EXPIRES_IN_IS_TOO_LARGE",
+        "message": "The expiresIn is larger than the predefined maximum value."
+      }
+    }
+  },
+  {
+    "limits create {\"name\":\"ok\",\"metadata\":{\"a\":1}}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "METADATA_DISABLED",
+        "message": "Metadata is disabled."
+      }
+    }
+  },
+  {
+    "limits {\"expiresIn\":129600} key": {
+      "length": 64,
+      "prefix": false
+    }
+  },
+  {
+    "limits create {\"expiresIn\":129600}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g1>",
+        "id": "<v2>",
+        "name": null,
+        "start": "<g3>",
+        "prefix": null,
+        "referenceId": "<v4>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "limits {\"name\":\"ok\",\"expiresIn\":129600} key": {
+      "length": 64,
+      "prefix": false
+    }
+  },
+  {
+    "limits create {\"name\":\"ok\",\"expiresIn\":129600}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g5>",
+        "id": "<v6>",
+        "name": "ok",
+        "start": "<g7>",
+        "prefix": null,
+        "referenceId": "<v4>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "limits create {\"name\":1e999}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received Infinity"
+      }
+    }
+  },
+  {
+    "limits create {\"name\":-1e999}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received -Infinity"
+      }
+    }
+  },
+  {
+    "limits {\"metadata\":null} key": {
+      "length": 64,
+      "prefix": false
+    }
+  },
+  {
+    "limits create {\"metadata\":null}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g8>",
+        "id": "<v9>",
+        "name": null,
+        "start": "<g10>",
+        "prefix": null,
+        "referenceId": "<v4>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "limits create {\"expiresIn\":1e300}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EXPIRES_IN_IS_TOO_LARGE",
+        "message": "The expiresIn is larger than the predefined maximum value."
+      }
+    }
+  },
+  {
+    "limits update \"expiresIn\":3600": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EXPIRES_IN_IS_TOO_SMALL",
+        "message": "The expiresIn is smaller than the predefined minimum value."
+      }
+    }
+  },
+  {
+    "limits update \"expiresIn\":null": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v9>",
+        "name": null,
+        "start": "<g10>",
+        "prefix": null,
+        "referenceId": "<v4>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "limits update \"expiresIn\":129600": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v9>",
+        "name": null,
+        "start": "<g10>",
+        "prefix": null,
+        "referenceId": "<v4>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "limits update \"name\":\"toolong\"": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_NAME_LENGTH",
+        "message": "The name length is either too large or too small."
+      }
+    }
+  },
+  {
+    "limits update \"remaining\":1e999": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.remaining] Invalid input: expected number, received Infinity"
+      }
+    }
+  },
+  {
+    "limits update \"refillAmount\":-1e999": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v11>] Invalid input: expected number, received -Infinity"
+      }
+    }
+  },
+  {
+    "limits update \"enabled\":false,\"metadata\":{\"b\":2},\"permissions\":null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "SERVER_ONLY_PROPERTY",
+        "message": "The property you're trying to set can only be set from the server auth instance only."
+      }
+    }
+  },
+  {
+    "custom expiry disabled {\"name\":\"x\"} key": {
+      "length": 64,
+      "prefix": false
+    }
+  },
+  {
+    "custom expiry disabled create {\"name\":\"x\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g12>",
+        "id": "<v13>",
+        "name": "x",
+        "start": "<g14>",
+        "prefix": null,
+        "referenceId": "<v15>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "custom expiry disabled {\"name\":\"toolong\"} key": {
+      "length": 64,
+      "prefix": false
+    }
+  },
+  {
+    "custom expiry disabled create {\"name\":\"toolong\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g16>",
+        "id": "<v17>",
+        "name": "toolong",
+        "start": "<g18>",
+        "prefix": null,
+        "referenceId": "<v15>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "custom expiry disabled create {\"name\":\"ok\",\"expiresIn\":3600}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "KEY_DISABLED_EXPIRATION",
+        "message": "Custom key expiration values are disabled."
+      }
+    }
+  },
+  {
+    "custom expiry disabled create {\"name\":\"ok\",\"expiresIn\":259200}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "KEY_DISABLED_EXPIRATION",
+        "message": "Custom key expiration values are disabled."
+      }
+    }
+  },
+  {
+    "custom expiry disabled create {\"name\":\"ok\",\"metadata\":{\"a\":1}}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "METADATA_DISABLED",
+        "message": "Metadata is disabled."
+      }
+    }
+  },
+  {
+    "custom expiry disabled create {\"expiresIn\":129600}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "KEY_DISABLED_EXPIRATION",
+        "message": "Custom key expiration values are disabled."
+      }
+    }
+  },
+  {
+    "custom expiry disabled create {\"name\":\"ok\",\"expiresIn\":129600}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "KEY_DISABLED_EXPIRATION",
+        "message": "Custom key expiration values are disabled."
+      }
+    }
+  },
+  {
+    "custom expiry disabled create {\"name\":1e999}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received Infinity"
+      }
+    }
+  },
+  {
+    "custom expiry disabled create {\"name\":-1e999}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received -Infinity"
+      }
+    }
+  },
+  {
+    "custom expiry disabled {\"metadata\":null} key": {
+      "length": 64,
+      "prefix": false
+    }
+  },
+  {
+    "custom expiry disabled create {\"metadata\":null}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g19>",
+        "id": "<v20>",
+        "name": null,
+        "start": "<g21>",
+        "prefix": null,
+        "referenceId": "<v15>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "custom expiry disabled create {\"expiresIn\":1e300}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "KEY_DISABLED_EXPIRATION",
+        "message": "Custom key expiration values are disabled."
+      }
+    }
+  },
+  {
+    "custom expiry disabled update \"expiresIn\":3600": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "KEY_DISABLED_EXPIRATION",
+        "message": "Custom key expiration values are disabled."
+      }
+    }
+  },
+  {
+    "custom expiry disabled update \"expiresIn\":null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "KEY_DISABLED_EXPIRATION",
+        "message": "Custom key expiration values are disabled."
+      }
+    }
+  },
+  {
+    "custom expiry disabled update \"expiresIn\":129600": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "KEY_DISABLED_EXPIRATION",
+        "message": "Custom key expiration values are disabled."
+      }
+    }
+  },
+  {
+    "custom expiry disabled update \"name\":\"toolong\"": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v20>",
+        "name": "toolong",
+        "start": "<g21>",
+        "prefix": null,
+        "referenceId": "<v15>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "custom expiry disabled update \"remaining\":1e999": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.remaining] Invalid input: expected number, received Infinity"
+      }
+    }
+  },
+  {
+    "custom expiry disabled update \"refillAmount\":-1e999": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v11>] Invalid input: expected number, received -Infinity"
+      }
+    }
+  },
+  {
+    "custom expiry disabled update \"enabled\":false,\"metadata\":{\"b\":2},\"permissions\":null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "SERVER_ONLY_PROPERTY",
+        "message": "The property you're trying to set can only be set from the server auth instance only."
+      }
+    }
+  },
+  {
+    "default key length {\"name\":\"x\"} key": {
+      "length": 68,
+      "prefix": true
+    }
+  },
+  {
+    "default key length create {\"name\":\"x\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g22>",
+        "id": "<v23>",
+        "name": "x",
+        "start": "<g24>",
+        "prefix": "pre_",
+        "referenceId": "<v25>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "default key length {\"name\":\"toolong\"} key": {
+      "length": 68,
+      "prefix": true
+    }
+  },
+  {
+    "default key length create {\"name\":\"toolong\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g26>",
+        "id": "<v27>",
+        "name": "toolong",
+        "start": "<g28>",
+        "prefix": "pre_",
+        "referenceId": "<v25>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "default key length create {\"name\":\"ok\",\"expiresIn\":3600}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EXPIRES_IN_IS_TOO_SMALL",
+        "message": "The expiresIn is smaller than the predefined minimum value."
+      }
+    }
+  },
+  {
+    "default key length {\"name\":\"ok\",\"expiresIn\":259200} key": {
+      "length": 68,
+      "prefix": true
+    }
+  },
+  {
+    "default key length create {\"name\":\"ok\",\"expiresIn\":259200}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g29>",
+        "id": "<v30>",
+        "name": "ok",
+        "start": "<g31>",
+        "prefix": "pre_",
+        "referenceId": "<v25>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "default key length create {\"name\":\"ok\",\"metadata\":{\"a\":1}}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "METADATA_DISABLED",
+        "message": "Metadata is disabled."
+      }
+    }
+  },
+  {
+    "default key length {\"expiresIn\":129600} key": {
+      "length": 68,
+      "prefix": true
+    }
+  },
+  {
+    "default key length create {\"expiresIn\":129600}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g32>",
+        "id": "<v33>",
+        "name": null,
+        "start": "<g34>",
+        "prefix": "pre_",
+        "referenceId": "<v25>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "default key length {\"name\":\"ok\",\"expiresIn\":129600} key": {
+      "length": 68,
+      "prefix": true
+    }
+  },
+  {
+    "default key length create {\"name\":\"ok\",\"expiresIn\":129600}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g35>",
+        "id": "<v36>",
+        "name": "ok",
+        "start": "<g37>",
+        "prefix": "pre_",
+        "referenceId": "<v25>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "default key length create {\"name\":1e999}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received Infinity"
+      }
+    }
+  },
+  {
+    "default key length create {\"name\":-1e999}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received -Infinity"
+      }
+    }
+  },
+  {
+    "default key length {\"metadata\":null} key": {
+      "length": 68,
+      "prefix": true
+    }
+  },
+  {
+    "default key length create {\"metadata\":null}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g38>",
+        "id": "<v39>",
+        "name": null,
+        "start": "<g40>",
+        "prefix": "pre_",
+        "referenceId": "<v25>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "default key length create {\"expiresIn\":1e300}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EXPIRES_IN_IS_TOO_LARGE",
+        "message": "The expiresIn is larger than the predefined maximum value."
+      }
+    }
+  },
+  {
+    "default key length update \"expiresIn\":3600": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EXPIRES_IN_IS_TOO_SMALL",
+        "message": "The expiresIn is smaller than the predefined minimum value."
+      }
+    }
+  },
+  {
+    "default key length update \"expiresIn\":null": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v39>",
+        "name": null,
+        "start": "<g40>",
+        "prefix": "pre_",
+        "referenceId": "<v25>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "default key length update \"expiresIn\":129600": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v39>",
+        "name": null,
+        "start": "<g40>",
+        "prefix": "pre_",
+        "referenceId": "<v25>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "default key length update \"name\":\"toolong\"": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v39>",
+        "name": "toolong",
+        "start": "<g40>",
+        "prefix": "pre_",
+        "referenceId": "<v25>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "default key length update \"remaining\":1e999": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.remaining] Invalid input: expected number, received Infinity"
+      }
+    }
+  },
+  {
+    "default key length update \"refillAmount\":-1e999": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v11>] Invalid input: expected number, received -Infinity"
+      }
+    }
+  },
+  {
+    "default key length update \"enabled\":false,\"metadata\":{\"b\":2},\"permissions\":null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "SERVER_ONLY_PROPERTY",
+        "message": "The property you're trying to set can only be set from the server auth instance only."
+      }
+    }
+  },
+  {
+    "invalid key length create {\"name\":\"x\"}": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "invalid key length create {\"name\":\"toolong\"}": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "invalid key length create {\"name\":\"ok\",\"expiresIn\":3600}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EXPIRES_IN_IS_TOO_SMALL",
+        "message": "The expiresIn is smaller than the predefined minimum value."
+      }
+    }
+  },
+  {
+    "invalid key length create {\"name\":\"ok\",\"expiresIn\":259200}": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "invalid key length create {\"name\":\"ok\",\"metadata\":{\"a\":1}}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "METADATA_DISABLED",
+        "message": "Metadata is disabled."
+      }
+    }
+  },
+  {
+    "invalid key length create {\"expiresIn\":129600}": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "invalid key length create {\"name\":\"ok\",\"expiresIn\":129600}": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "invalid key length create {\"name\":1e999}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received Infinity"
+      }
+    }
+  },
+  {
+    "invalid key length create {\"name\":-1e999}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received -Infinity"
+      }
+    }
+  },
+  {
+    "invalid key length create {\"metadata\":null}": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "invalid key length create {\"expiresIn\":1e300}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EXPIRES_IN_IS_TOO_LARGE",
+        "message": "The expiresIn is larger than the predefined maximum value."
+      }
+    }
+  },
+  {
+    "required name {\"name\":\"x\"} key": {
+      "length": 64,
+      "prefix": false
+    }
+  },
+  {
+    "required name create {\"name\":\"x\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g41>",
+        "id": "<v42>",
+        "name": "x",
+        "start": "<g43>",
+        "prefix": null,
+        "referenceId": "<v44>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "required name {\"name\":\"toolong\"} key": {
+      "length": 64,
+      "prefix": false
+    }
+  },
+  {
+    "required name create {\"name\":\"toolong\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g45>",
+        "id": "<v46>",
+        "name": "toolong",
+        "start": "<g47>",
+        "prefix": null,
+        "referenceId": "<v44>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "required name create {\"name\":\"ok\",\"expiresIn\":3600}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EXPIRES_IN_IS_TOO_SMALL",
+        "message": "The expiresIn is smaller than the predefined minimum value."
+      }
+    }
+  },
+  {
+    "required name {\"name\":\"ok\",\"expiresIn\":259200} key": {
+      "length": 64,
+      "prefix": false
+    }
+  },
+  {
+    "required name create {\"name\":\"ok\",\"expiresIn\":259200}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g48>",
+        "id": "<v49>",
+        "name": "ok",
+        "start": "<g50>",
+        "prefix": null,
+        "referenceId": "<v44>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "required name create {\"name\":\"ok\",\"metadata\":{\"a\":1}}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "METADATA_DISABLED",
+        "message": "Metadata is disabled."
+      }
+    }
+  },
+  {
+    "required name create {\"expiresIn\":129600}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "NAME_REQUIRED",
+        "message": "API Key name is required."
+      }
+    }
+  },
+  {
+    "required name {\"name\":\"ok\",\"expiresIn\":129600} key": {
+      "length": 64,
+      "prefix": false
+    }
+  },
+  {
+    "required name create {\"name\":\"ok\",\"expiresIn\":129600}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g51>",
+        "id": "<v52>",
+        "name": "ok",
+        "start": "<g53>",
+        "prefix": null,
+        "referenceId": "<v44>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "required name create {\"name\":1e999}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received Infinity"
+      }
+    }
+  },
+  {
+    "required name create {\"name\":-1e999}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received -Infinity"
+      }
+    }
+  },
+  {
+    "required name create {\"metadata\":null}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "NAME_REQUIRED",
+        "message": "API Key name is required."
+      }
+    }
+  },
+  {
+    "required name create {\"expiresIn\":1e300}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EXPIRES_IN_IS_TOO_LARGE",
+        "message": "The expiresIn is larger than the predefined maximum value."
+      }
+    }
+  },
+  {
+    "required name update \"expiresIn\":3600": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EXPIRES_IN_IS_TOO_SMALL",
+        "message": "The expiresIn is smaller than the predefined minimum value."
+      }
+    }
+  },
+  {
+    "required name update \"expiresIn\":null": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v52>",
+        "name": "ok",
+        "start": "<g53>",
+        "prefix": null,
+        "referenceId": "<v44>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "required name update \"expiresIn\":129600": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v52>",
+        "name": "ok",
+        "start": "<g53>",
+        "prefix": null,
+        "referenceId": "<v44>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "required name update \"name\":\"toolong\"": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v52>",
+        "name": "toolong",
+        "start": "<g53>",
+        "prefix": null,
+        "referenceId": "<v44>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "required name update \"remaining\":1e999": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.remaining] Invalid input: expected number, received Infinity"
+      }
+    }
+  },
+  {
+    "required name update \"refillAmount\":-1e999": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v11>] Invalid input: expected number, received -Infinity"
+      }
+    }
+  },
+  {
+    "required name update \"enabled\":false,\"metadata\":{\"b\":2},\"permissions\":null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "SERVER_ONLY_PROPERTY",
+        "message": "The property you're trying to set can only be set from the server auth instance only."
+      }
+    }
+  },
+  {
+    "unbounded expiry {\"name\":\"x\"} key": {
+      "length": 64,
+      "prefix": false
+    }
+  },
+  {
+    "unbounded expiry create {\"name\":\"x\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g54>",
+        "id": "<v55>",
+        "name": "x",
+        "start": "<g56>",
+        "prefix": null,
+        "referenceId": "<v57>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unbounded expiry {\"name\":\"toolong\"} key": {
+      "length": 64,
+      "prefix": false
+    }
+  },
+  {
+    "unbounded expiry create {\"name\":\"toolong\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g58>",
+        "id": "<v59>",
+        "name": "toolong",
+        "start": "<g60>",
+        "prefix": null,
+        "referenceId": "<v57>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unbounded expiry create {\"name\":\"ok\",\"expiresIn\":3600}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EXPIRES_IN_IS_TOO_SMALL",
+        "message": "The expiresIn is smaller than the predefined minimum value."
+      }
+    }
+  },
+  {
+    "unbounded expiry {\"name\":\"ok\",\"expiresIn\":259200} key": {
+      "length": 64,
+      "prefix": false
+    }
+  },
+  {
+    "unbounded expiry create {\"name\":\"ok\",\"expiresIn\":259200}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g61>",
+        "id": "<v62>",
+        "name": "ok",
+        "start": "<g63>",
+        "prefix": null,
+        "referenceId": "<v57>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unbounded expiry {\"name\":\"ok\",\"metadata\":{\"a\":1}} key": {
+      "length": 64,
+      "prefix": false
+    }
+  },
+  {
+    "unbounded expiry create {\"name\":\"ok\",\"metadata\":{\"a\":1}}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g64>",
+        "id": "<v65>",
+        "name": "ok",
+        "start": "<g66>",
+        "prefix": null,
+        "referenceId": "<v57>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": {
+          "a": 1
+        }
+      }
+    }
+  },
+  {
+    "unbounded expiry {\"expiresIn\":129600} key": {
+      "length": 64,
+      "prefix": false
+    }
+  },
+  {
+    "unbounded expiry create {\"expiresIn\":129600}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g67>",
+        "id": "<v68>",
+        "name": null,
+        "start": "<g69>",
+        "prefix": null,
+        "referenceId": "<v57>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unbounded expiry {\"name\":\"ok\",\"expiresIn\":129600} key": {
+      "length": 64,
+      "prefix": false
+    }
+  },
+  {
+    "unbounded expiry create {\"name\":\"ok\",\"expiresIn\":129600}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g70>",
+        "id": "<v71>",
+        "name": "ok",
+        "start": "<g72>",
+        "prefix": null,
+        "referenceId": "<v57>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unbounded expiry create {\"name\":1e999}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received Infinity"
+      }
+    }
+  },
+  {
+    "unbounded expiry create {\"name\":-1e999}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received -Infinity"
+      }
+    }
+  },
+  {
+    "unbounded expiry {\"metadata\":null} key": {
+      "length": 64,
+      "prefix": false
+    }
+  },
+  {
+    "unbounded expiry create {\"metadata\":null}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g73>",
+        "id": "<v74>",
+        "name": null,
+        "start": "<g75>",
+        "prefix": null,
+        "referenceId": "<v57>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unbounded expiry create {\"expiresIn\":1e300}": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "unbounded expiry update \"expiresIn\":3600": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EXPIRES_IN_IS_TOO_SMALL",
+        "message": "The expiresIn is smaller than the predefined minimum value."
+      }
+    }
+  },
+  {
+    "unbounded expiry update \"expiresIn\":null": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v74>",
+        "name": null,
+        "start": "<g75>",
+        "prefix": null,
+        "referenceId": "<v57>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unbounded expiry update \"expiresIn\":129600": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v74>",
+        "name": null,
+        "start": "<g75>",
+        "prefix": null,
+        "referenceId": "<v57>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unbounded expiry update \"name\":\"toolong\"": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v74>",
+        "name": "toolong",
+        "start": "<g75>",
+        "prefix": null,
+        "referenceId": "<v57>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unbounded expiry update \"remaining\":1e999": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.remaining] Invalid input: expected number, received Infinity"
+      }
+    }
+  },
+  {
+    "unbounded expiry update \"refillAmount\":-1e999": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v11>] Invalid input: expected number, received -Infinity"
+      }
+    }
+  },
+  {
+    "unbounded expiry update \"enabled\":false,\"metadata\":{\"b\":2},\"permissions\":null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "SERVER_ONLY_PROPERTY",
+        "message": "The property you're trying to set can only be set from the server auth instance only."
+      }
+    }
+  },
+  {
+    "unhashed generated keys {\"name\":\"x\"} key": {
+      "length": 25,
+      "prefix": false
+    }
+  },
+  {
+    "unhashed generated keys create {\"name\":\"x\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g76>",
+        "id": "<v77>",
+        "name": "x",
+        "start": "<g78>",
+        "prefix": null,
+        "referenceId": "<v79>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unhashed generated keys {\"name\":\"toolong\"} key": {
+      "length": 25,
+      "prefix": false
+    }
+  },
+  {
+    "unhashed generated keys create {\"name\":\"toolong\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g80>",
+        "id": "<v81>",
+        "name": "toolong",
+        "start": "<g78>",
+        "prefix": null,
+        "referenceId": "<v79>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unhashed generated keys create {\"name\":\"ok\",\"expiresIn\":3600}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EXPIRES_IN_IS_TOO_SMALL",
+        "message": "The expiresIn is smaller than the predefined minimum value."
+      }
+    }
+  },
+  {
+    "unhashed generated keys {\"name\":\"ok\",\"expiresIn\":259200} key": {
+      "length": 25,
+      "prefix": false
+    }
+  },
+  {
+    "unhashed generated keys create {\"name\":\"ok\",\"expiresIn\":259200}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g82>",
+        "id": "<v83>",
+        "name": "ok",
+        "start": "<g78>",
+        "prefix": null,
+        "referenceId": "<v79>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unhashed generated keys create {\"name\":\"ok\",\"metadata\":{\"a\":1}}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "METADATA_DISABLED",
+        "message": "Metadata is disabled."
+      }
+    }
+  },
+  {
+    "unhashed generated keys {\"expiresIn\":129600} key": {
+      "length": 25,
+      "prefix": false
+    }
+  },
+  {
+    "unhashed generated keys create {\"expiresIn\":129600}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g84>",
+        "id": "<v85>",
+        "name": null,
+        "start": "<g78>",
+        "prefix": null,
+        "referenceId": "<v79>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unhashed generated keys {\"name\":\"ok\",\"expiresIn\":129600} key": {
+      "length": 25,
+      "prefix": false
+    }
+  },
+  {
+    "unhashed generated keys create {\"name\":\"ok\",\"expiresIn\":129600}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g86>",
+        "id": "<v87>",
+        "name": "ok",
+        "start": "<g78>",
+        "prefix": null,
+        "referenceId": "<v79>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unhashed generated keys create {\"name\":1e999}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "<g78>[body.name]<g78> Invalid input:<g78> expected string,<g78> received Infinity"
+      }
+    }
+  },
+  {
+    "unhashed generated keys create {\"name\":-1e999}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "<g78>[body.name]<g78> Invalid input:<g78> expected string,<g78> received -Infinity"
+      }
+    }
+  },
+  {
+    "unhashed generated keys {\"metadata\":null} key": {
+      "length": 25,
+      "prefix": false
+    }
+  },
+  {
+    "unhashed generated keys create {\"metadata\":null}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g88>",
+        "id": "<v89>",
+        "name": null,
+        "start": "<g78>",
+        "prefix": null,
+        "referenceId": "<v79>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unhashed generated keys create {\"expiresIn\":1e300}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EXPIRES_IN_IS_TOO_LARGE",
+        "message": "The expiresIn is larger than the predefined maximum value."
+      }
+    }
+  },
+  {
+    "unhashed generated keys update \"expiresIn\":3600": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EXPIRES_IN_IS_TOO_SMALL",
+        "message": "The expiresIn is smaller than the predefined minimum value."
+      }
+    }
+  },
+  {
+    "unhashed generated keys update \"expiresIn\":null": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v89>",
+        "name": null,
+        "start": "<g78>",
+        "prefix": null,
+        "referenceId": "<v79>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unhashed generated keys update \"expiresIn\":129600": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v89>",
+        "name": null,
+        "start": "<g78>",
+        "prefix": null,
+        "referenceId": "<v79>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unhashed generated keys update \"name\":\"toolong\"": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v89>",
+        "name": "toolong",
+        "start": "<g78>",
+        "prefix": null,
+        "referenceId": "<v79>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": "<date>",
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "unhashed generated keys update \"remaining\":1e999": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "<g78>[body.remaining]<g78> Invalid input:<g78> expected number,<g78> received Infinity"
+      }
+    }
+  },
+  {
+    "unhashed generated keys update \"refillAmount\":-1e999": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "<g78>[<v11>]<g78> Invalid input:<g78> expected number,<g78> received -Infinity"
+      }
+    }
+  },
+  {
+    "unhashed generated keys update \"enabled\":false,\"metadata\":{\"b\":2},\"permissions\":null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "SERVER_ONLY_PROPERTY",
+        "message": "The property you're trying to set can only be set from the server auth instance only."
+      }
+    }
+  }
+]

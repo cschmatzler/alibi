@@ -11,8 +11,8 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
 };
 use alibi::plugins::oauth_token_conversion::*;
+use alibi::{AuthAccount, AuthUser, CreateAccount, CreateUser, store::AuthStore};
 use alibi::{AuthConfig, AuthSchema, ManagedSecrets};
-use alibi_core::{AuthAccount, AuthUser, CreateAccount, CreateUser, store::AuthStore};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use hkdf::Hkdf;

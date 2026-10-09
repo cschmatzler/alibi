@@ -1,9 +1,9 @@
 //! Initialized verification policy across physical and secondary storage.
 use super::*;
-use alibi_core::store::{
+use alibi::store::{
     CacheAdapter, DatabaseHookContext, DatabaseHooks, HookBackend, MemoryCacheAdapter,
 };
-use alibi_core::verification::VerificationSnapshot;
+use alibi::verification::VerificationSnapshot;
 use chrono::Duration;
 use std::sync::atomic::AtomicUsize;
 

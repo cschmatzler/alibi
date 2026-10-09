@@ -1,4 +1,10 @@
-use super::*;
+use crate::AdapterRecord;
+use crate::store::{
+    AdapterAfterHook, AdapterEvent, SessionCreatedHook, UserCreateTransform, UserCreationDefaults,
+};
+use crate::{AuthAccount, AuthSession, AuthUser};
+use crate::{AuthError, AuthResult, AuthSchema, AuthStore, UpdateUser};
+use std::sync::Arc;
 mod account;
 mod extensions;
 mod session;
@@ -83,26 +89,35 @@ impl<S: AuthSchema> PluginStore<S> {
         }
     }
 
+    pub(in crate::store) fn ephemeral(
+        &self,
+    ) -> AuthResult<std::sync::MutexGuard<'_, indexmap::IndexMap<String, S::Session>>> {
+        self.ephemeral_sessions
+            .lock()
+            .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))
+    }
+
     pub(in crate::store) fn field_policies(&self) -> crate::field_policy::AdapterFieldPolicies {
         self.projection_context
             .extensions
             .get::<crate::field_policy::AdapterFieldPolicies>()
-            .map(|fields| (*fields).clone())
-            .unwrap_or_else(|| crate::field_policy::AdapterFieldPolicies {
-                user: crate::field_policy::SessionAdapterFields(Arc::new(
-                    self.config.user.additional_fields.clone(),
-                )),
-                account: crate::field_policy::SessionAdapterFields(Arc::new(
-                    self.config.account.additional_fields.clone(),
-                )),
-            })
+            .map_or_else(
+                || crate::field_policy::AdapterFieldPolicies {
+                    user: crate::field_policy::SessionAdapterFields(Arc::new(
+                        self.config.user.additional_fields.clone(),
+                    )),
+                    account: crate::field_policy::SessionAdapterFields(Arc::new(
+                        self.config.account.additional_fields.clone(),
+                    )),
+                },
+                |fields| (*fields).clone(),
+            )
     }
 
     pub(in crate::store) async fn user_record(
         &self,
         user: S::User,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
-        use crate::AuthUser;
+    ) -> AuthResult<AdapterRecord<S::User>> {
         let verification = self.inner.provider_verification_output(&user.id()).await?;
         let mut record = self.projection_context.user_adapter_record(user).await?;
         if let Some(value) = verification {
@@ -111,11 +126,41 @@ impl<S: AuthSchema> PluginStore<S> {
         Ok(record)
     }
 
+    pub(in crate::store) async fn optional_user_record(
+        &self,
+        user: Option<S::User>,
+    ) -> AuthResult<Option<AdapterRecord<S::User>>> {
+        match user {
+            Some(user) => self.user_record(user).await.map(Some),
+            None => Ok(None),
+        }
+    }
+
+    pub(in crate::store) async fn user_records(
+        &self,
+        users: Vec<S::User>,
+    ) -> AuthResult<Vec<AdapterRecord<S::User>>> {
+        let mut records = Vec::with_capacity(users.len());
+        for user in users {
+            records.push(self.user_record(user).await?);
+        }
+        Ok(records)
+    }
+
+    pub(in crate::store) async fn optional_account_record(
+        &self,
+        account: Option<S::Account>,
+    ) -> AuthResult<Option<AdapterRecord<S::Account>>> {
+        match account {
+            Some(account) => self.account_record(account).await.map(Some),
+            None => Ok(None),
+        }
+    }
+
     pub(in crate::store) async fn session_record(
         &self,
         session: S::Session,
-    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
-        use crate::AuthSession;
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         let absent = self.secondary_absent_fields(session.token()).await?;
         let mut public = serde_json::to_value(crate::SessionView::from(&session))?;
         let mut physical =
@@ -123,24 +168,24 @@ impl<S: AuthSchema> PluginStore<S> {
         let mut additional = session.additional_fields();
         for name in absent {
             if let Some(object) = public.as_object_mut() {
-                drop(object.remove(&name));
+                _ = object.remove(&name);
             }
             if let Some(object) = physical.as_object_mut() {
-                drop(object.remove(&name));
+                _ = object.remove(&name);
             }
-            drop(additional.remove(&name));
+            _ = additional.remove(&name);
         }
         let output = self
             .adapter_fields
             .record_output(public, additional, physical)
             .await?;
-        Ok(crate::AdapterRecord::with_output(session, output))
+        Ok(AdapterRecord::with_output(session, output))
     }
 
     pub(in crate::store) async fn session_records(
         &self,
         models: Vec<S::Session>,
-    ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
+    ) -> AuthResult<Vec<AdapterRecord<S::Session>>> {
         if models.is_empty() {
             return Ok(Vec::new());
         }
@@ -151,21 +196,19 @@ impl<S: AuthSchema> PluginStore<S> {
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         // Like Promise.all, reject the aggregate immediately but keep every
         // launched row projection alive. Retain its actual request context.
-        drop(tokio::spawn(async move {
+        _ = tokio::spawn(async move {
             let project = async {
-                drop(
-                    futures_util::future::join_all(models.into_iter().enumerate().map(
-                        |(index, model)| {
-                            let sender = &sender;
-                            let store = &store;
-                            async move {
-                                let result = store.session_record(model).await;
-                                let _ignored_closed_receiver = sender.send((index, result));
-                            }
-                        },
-                    ))
-                    .await,
-                );
+                _ = futures_util::future::join_all(models.into_iter().enumerate().map(
+                    |(index, model)| {
+                        let sender = &sender;
+                        let store = &store;
+                        async move {
+                            let result = store.session_record(model).await;
+                            _ = sender.send((index, result));
+                        }
+                    },
+                ))
+                .await;
             };
             if let Some(endpoint) = endpoint {
                 crate::endpoint::with_endpoint_call_context(
@@ -176,7 +219,7 @@ impl<S: AuthSchema> PluginStore<S> {
             } else {
                 crate::hooks::with_optional_request_hook_context(request, project).await;
             }
-        }));
+        });
         for _ in 0..records.len() {
             let (index, record) = receiver
                 .recv()
@@ -193,19 +236,18 @@ impl<S: AuthSchema> PluginStore<S> {
     pub(in crate::store) async fn account_record(
         &self,
         account: S::Account,
-    ) -> AuthResult<crate::AdapterRecord<S::Account>> {
-        use crate::AuthAccount;
+    ) -> AuthResult<AdapterRecord<S::Account>> {
         let serde_json::Value::Object(mut canonical) =
             serde_json::to_value(crate::AccountView::from(&account))?
         else {
             return Err(AuthError::internal("Account output must be an object"));
         };
-        drop(canonical.insert(
+        _ = canonical.insert(
             "password".into(),
             account.password().map_or(serde_json::Value::Null, |value| {
                 serde_json::Value::String(value.into())
             }),
-        ));
+        );
         let output = self
             .field_policies()
             .account
@@ -215,7 +257,7 @@ impl<S: AuthSchema> PluginStore<S> {
                 serde_json::Value::Object(canonical),
             )
             .await?;
-        Ok(crate::AdapterRecord::with_output(account, output))
+        Ok(AdapterRecord::with_output(account, output))
     }
 
     pub(in crate::store) async fn observe(&self, event: AdapterEvent<S>) -> AuthResult<()> {

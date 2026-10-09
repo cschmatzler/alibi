@@ -1,13 +1,13 @@
 //! Actual application grant callbacks, durable receipts, and trusted database controls.
 use crate::TestSchema;
 use alibi::plugins::device_authorization::*;
-use alibi::{AuthError, AuthResult};
-use alibi_core::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, AuthUser};
-use alibi_seaorm::store::entities::device_code;
-use alibi_seaorm::{
+use alibi::seaorm::store::entities::device_code;
+use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Statement, sea_query::Expr},
 };
+use alibi::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, AuthUser};
+use alibi::{AuthError, AuthResult};
 use axum::{Json, Router, extract::Query, routing::get};
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
@@ -77,10 +77,10 @@ impl DeviceAuthorizationGrant for Grant {
                 .clone(),
         )
     }
-    fn device_code_schema_fields(&self) -> Vec<alibi_core::OpenApiField> {
+    fn device_code_schema_fields(&self) -> Vec<alibi::OpenApiField> {
         vec![
-            alibi_core::OpenApiField::new("grantAudience", json!({"type":"string"}), false),
-            alibi_core::OpenApiField::new("grantNonce", json!({"type":"string"}), false),
+            alibi::OpenApiField::new("grantAudience", json!({"type":"string"}), false),
+            alibi::OpenApiField::new("grantNonce", json!({"type":"string"}), false),
         ]
     }
     fn request_error_codes(&self) -> Vec<String> {
@@ -140,8 +140,8 @@ impl DeviceRedemptionPolicy for Policy {
 pub struct ApplicationToken(pub DatabaseConnection);
 #[async_trait::async_trait]
 impl AuthPlugin<TestSchema> for ApplicationToken {
-    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
-        alibi_core::PluginOpenApiMetadata::default().endpoint(alibi_core::HttpMethod::Post,"/device/application-token",alibi_core::OpenApiEndpoint { request_body:Some(json!({"required":true,"content":{"application/json":{"schema":{"type":"object","properties":{"device_code":{"type":"string"},"claimNonce":{"type":"string"},"prepareFailure":{"type":"boolean"}},"required":["device_code","claimNonce"]}}}})),..Default::default() })
+    fn static_openapi_metadata(&self) -> alibi::PluginOpenApiMetadata {
+        alibi::PluginOpenApiMetadata::default().endpoint(alibi::HttpMethod::Post,"/device/application-token",alibi::OpenApiEndpoint { request_body:Some(json!({"required":true,"content":{"application/json":{"schema":{"type":"object","properties":{"device_code":{"type":"string"},"claimNonce":{"type":"string"},"prepareFailure":{"type":"boolean"}},"required":["device_code","claimNonce"]}}}})),..Default::default() })
     }
 
     fn name(&self) -> &'static str {

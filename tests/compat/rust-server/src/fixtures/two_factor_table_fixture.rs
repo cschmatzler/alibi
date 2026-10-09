@@ -1,5 +1,9 @@
 //! An application-owned factor table exercised through configured stores.
 use crate::TestSchema;
+use alibi::seaorm::{
+    DatabaseConnection,
+    sea_orm::{ConnectionTrait, Statement},
+};
 use alibi::{
     AuthBuilder, AuthConfig, AuthResult,
     integrations::axum::AxumIntegration,
@@ -8,10 +12,6 @@ use alibi::{
         two_factor::{SendTwoFactorOtp, TwoFactorConfig},
     },
     wire::UserView,
-};
-use alibi_seaorm::{
-    DatabaseConnection,
-    sea_orm::{ConnectionTrait, Statement},
 };
 use axum::{Json, Router, extract::Query, routing::get};
 use serde_json::json;
@@ -32,13 +32,13 @@ impl SendTwoFactorOtp for Delivery {
 }
 pub(crate) async fn router(base: &AuthConfig, _database: DatabaseConnection) -> AuthResult<Router> {
     let delivery = Delivery::default();
-    let database = alibi_seaorm::sea_orm::Database::connect("sqlite::memory:")
+    let database = alibi::seaorm::sea_orm::Database::connect("sqlite::memory:")
         .await
         .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
     let mut config = base
         .clone()
         .base_path("/__test/profiles/two-factor-custom-table/api/auth");
-    config.advanced.database.two_factor = Some(alibi_core::config::TwoFactorDatabaseConfig {
+    config.advanced.database.two_factor = Some(alibi::config::TwoFactorDatabaseConfig {
         table_name: "application_second_factor".into(),
         columns: [
             ("secret", "application_secret"),
@@ -50,7 +50,7 @@ pub(crate) async fn router(base: &AuthConfig, _database: DatabaseConnection) -> 
         .collect(),
     });
     let store = crate::backend::store::<TestSchema>(config.clone(), database.clone());
-    alibi_core::store::SchemaMigrator::migrate(&store).await?;
+    alibi::store::SchemaMigrator::migrate(&store).await?;
     let auth = Arc::new(
         AuthBuilder::<TestSchema>::new(config.clone())
             .store(store)

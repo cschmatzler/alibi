@@ -1,11 +1,11 @@
 //! A configured PostgreSQL namespace with an unchanged runtime search path.
 use crate::TestSchema;
+use alibi::seaorm::sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
 use alibi::{
     AuthBuilder, AuthConfig, AuthResult,
     integrations::axum::AxumIntegration,
     plugins::{EmailPasswordPlugin, SessionManagementPlugin, UserManagementPlugin},
 };
-use alibi_seaorm::sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
 use axum::{Json, Router, routing::get};
 use serde_json::json;
 use std::sync::Arc;
@@ -22,7 +22,7 @@ pub(crate) async fn router(base: &AuthConfig) -> AuthResult<Router> {
         .base_path("/__test/profiles/postgres-schema/api/auth");
     config.advanced.database.schema_name = Some(namespace.clone());
     #[cfg(feature = "seaorm")]
-    let store = alibi_seaorm::SeaOrmStore::<TestSchema>::new(config.clone(), database.clone());
+    let store = alibi::seaorm::SeaOrmStore::<TestSchema>::new(config.clone(), database.clone());
     #[cfg(not(feature = "seaorm"))]
     let store = {
         let runtime = sqlx::postgres::PgPoolOptions::new()
@@ -30,9 +30,9 @@ pub(crate) async fn router(base: &AuthConfig) -> AuthResult<Router> {
             .connect(&connection_url)
             .await
             .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
-        alibi_sqlx::SqlxStore::<TestSchema>::new(config.clone(), runtime)
+        alibi::sqlx::SqlxStore::<TestSchema>::new(config.clone(), runtime)
     };
-    alibi_core::store::SchemaMigrator::migrate(&store).await?;
+    alibi::store::SchemaMigrator::migrate(&store).await?;
     let auth = Arc::new(
         AuthBuilder::<TestSchema>::new(config)
             .store(store)

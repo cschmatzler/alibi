@@ -1,20 +1,30 @@
 //! Session persistence through an application-owned secondary backend.
 use super::PluginStore;
+use crate::field_policy::FieldValues;
 use crate::{AuthError, AuthResult, AuthSchema, AuthSession, AuthUser};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 #[derive(Serialize, Deserialize)]
 struct CachedSession {
     session: serde_json::Value,
     user: serde_json::Value,
-    absent_fields: std::collections::BTreeSet<String>,
+    absent_fields: BTreeSet<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 struct Reference {
     token: String,
     expires_at: DateTime<Utc>,
+}
+
+impl CachedSession {
+    fn absent_fields(raw: &str) -> BTreeSet<String> {
+        serde_json::from_str::<Self>(raw)
+            .map(|cached| cached.absent_fields)
+            .unwrap_or_default()
+    }
 }
 
 impl<S: AuthSchema> PluginStore<S> {
@@ -29,28 +39,42 @@ impl<S: AuthSchema> PluginStore<S> {
 
     pub(super) fn remember_ephemeral_session(&self, session: &S::Session) -> AuthResult<()> {
         if self.config.session.stateless {
-            drop(
-                self.ephemeral_sessions
-                    .lock()
-                    .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
-                    .insert(session.token().to_owned(), session.clone()),
-            );
+            _ = self
+                .ephemeral()?
+                .insert(session.token().to_owned(), session.clone());
         }
         Ok(())
+    }
+
+    /// Set one nullable session scope field (`activeOrganizationId`, `activeTeamId`).
+    pub(super) async fn update_session_scope(
+        &self,
+        token: &str,
+        field: &str,
+        value: Option<&str>,
+    ) -> AuthResult<S::Session> {
+        let mut fields = FieldValues::new();
+        _ = fields.insert(
+            field.into(),
+            value.map_or(crate::utils::json::JsValue::Null, |value| {
+                crate::utils::json::JsValue::String(value.to_owned())
+            }),
+        );
+        let updated = if self.config.session.stateless {
+            self.update_ephemeral_session(token, None, fields).await?
+        } else {
+            self.update_secondary_session(token, None, fields).await?
+        };
+        updated.ok_or(AuthError::SessionNotFound)
     }
 
     pub(super) async fn update_ephemeral_session(
         &self,
         token: &str,
         expires_at: Option<DateTime<Utc>>,
-        fields: crate::field_policy::FieldValues,
+        fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
-        let original = self
-            .ephemeral_sessions
-            .lock()
-            .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
-            .get(token)
-            .cloned();
+        let original = self.ephemeral()?.get(token).cloned();
         let Some(original) = original else {
             return Ok(None);
         };
@@ -63,10 +87,7 @@ impl<S: AuthSchema> PluginStore<S> {
         };
         // Never resurrect a session concurrently removed while hooks awaited.
         {
-            let mut sessions = self
-                .ephemeral_sessions
-                .lock()
-                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?;
+            let mut sessions = self.ephemeral()?;
             let Some(destination) = sessions.get_mut(token) else {
                 return Ok(None);
             };
@@ -155,7 +176,7 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         session: &S::Session,
         user: &S::User,
-        updated_fields: Option<&crate::field_policy::FieldValues>,
+        updated_fields: Option<&FieldValues>,
     ) -> AuthResult<()> {
         let Some(cache) = self.secondary() else {
             return Ok(());
@@ -177,18 +198,16 @@ impl<S: AuthSchema> PluginStore<S> {
         let ttl = Duration::seconds((session.expires_at() - now).num_seconds());
         if ttl > Duration::zero() {
             let mut absent_fields = if let Some(raw) = cache.get(session.token()).await? {
-                serde_json::from_str::<CachedSession>(&raw)
-                    .map(|cached| cached.absent_fields)
-                    .unwrap_or_default()
+                CachedSession::absent_fields(&raw)
             } else if !self.config.session.store_in_database {
-                let mut absent = std::collections::BTreeSet::new();
+                let mut absent = BTreeSet::new();
                 for (name, value) in [
                     ("impersonatedBy", session.impersonated_by()),
                     ("activeOrganizationId", session.active_organization_id()),
                     ("activeTeamId", session.active_team_id()),
                 ] {
                     if value.is_none() {
-                        let _inserted = absent.insert(name.to_owned());
+                        _ = absent.insert(name.to_owned());
                     }
                 }
                 for (name, value) in session.additional_fields() {
@@ -200,16 +219,16 @@ impl<S: AuthSchema> PluginStore<S> {
                             .get(&name)
                             .is_none_or(|field| field.default.is_none())
                     {
-                        let _inserted = absent.insert(name);
+                        _ = absent.insert(name);
                     }
                 }
                 absent
             } else {
-                std::collections::BTreeSet::new()
+                BTreeSet::new()
             };
             if let Some(fields) = updated_fields {
                 for name in fields.keys() {
-                    let _removed = absent_fields.remove(name);
+                    _ = absent_fields.remove(name);
                 }
             }
             let snapshot = CachedSession {
@@ -231,16 +250,14 @@ impl<S: AuthSchema> PluginStore<S> {
     pub(super) async fn secondary_absent_fields(
         &self,
         token: &str,
-    ) -> AuthResult<std::collections::BTreeSet<String>> {
+    ) -> AuthResult<BTreeSet<String>> {
         let Some(cache) = self.secondary() else {
-            return Ok(std::collections::BTreeSet::new());
+            return Ok(BTreeSet::new());
         };
         let Some(raw) = cache.get(token).await? else {
-            return Ok(std::collections::BTreeSet::new());
+            return Ok(BTreeSet::new());
         };
-        Ok(serde_json::from_str::<CachedSession>(&raw)
-            .map(|cached| cached.absent_fields)
-            .unwrap_or_default())
+        Ok(CachedSession::absent_fields(&raw))
     }
 
     pub(super) async fn mirror_created_session(&self, session: &S::Session) -> AuthResult<()> {
@@ -258,7 +275,7 @@ impl<S: AuthSchema> PluginStore<S> {
     pub(super) async fn cached_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>> {
         let now = Utc::now();
         let mut sessions = Vec::new();
-        let mut seen = std::collections::BTreeSet::new();
+        let mut seen = BTreeSet::new();
         for reference in self.references(user_id).await? {
             if reference.expires_at <= now || !seen.insert(reference.token.clone()) {
                 continue;
@@ -298,7 +315,7 @@ impl<S: AuthSchema> PluginStore<S> {
             }
         }
         let mut current = self.references(user_id).await?;
-        let removed = std::collections::BTreeSet::from_iter(tokens);
+        let removed = BTreeSet::from_iter(tokens);
         current.retain(|reference| !removed.contains(&reference.token));
         self.write_references(user_id, current).await
     }
@@ -343,7 +360,7 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         token: &str,
         expires_at: Option<DateTime<Utc>>,
-        fields: crate::field_policy::FieldValues,
+        fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         let Some((session, user)) = self.cached_session(token).await? else {
             // A combined database write may still occur, but it must not revive

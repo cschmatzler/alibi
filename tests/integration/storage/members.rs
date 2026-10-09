@@ -2,12 +2,12 @@
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use alibi::AuthConfig;
-use alibi_core::store::SchemaMigrator;
-use alibi_core::store::{
+use alibi::store::SchemaMigrator;
+use alibi::store::{
     ListOrganizationMembersParams, MemberPageQuery, MemberStore, OrganizationStore, TeamStore,
     UserStore,
 };
-use alibi_core::{AuthError, AuthUser, CreateMember, CreateOrganization, CreateTeam, CreateUser};
+use alibi::{AuthError, AuthUser, CreateMember, CreateOrganization, CreateTeam, CreateUser};
 use std::sync::Arc;
 
 backend_tests!(

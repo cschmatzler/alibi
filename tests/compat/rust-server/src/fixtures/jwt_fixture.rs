@@ -10,11 +10,11 @@ use alibi::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, OrganizationPlugin, PasskeyPlugin,
     PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
 };
+use alibi::seaorm::DatabaseConnection;
+use alibi::seaorm::sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+use alibi::seaorm::store::entities::jwk;
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi_core::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, AuthSession};
-use alibi_seaorm::DatabaseConnection;
-use alibi_seaorm::sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
-use alibi_seaorm::store::entities::jwk;
+use alibi::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, AuthSession};
 use axum::{
     Json, Router,
     body::Bytes,
@@ -89,7 +89,7 @@ impl AuthPlugin<TestSchema> for EarlierExposedHeaders {
 struct ServerOperation {
     operation: String,
     profile: Option<String>,
-    payload: Option<alibi_core::utils::json::JsValue>,
+    payload: Option<alibi::utils::json::JsValue>,
     token: Option<String>,
     issuer: Option<String>,
 }
@@ -192,7 +192,7 @@ pub(crate) async fn router(
     router = router.route("/__test/jwt", post(move |body: Bytes| {
         let profiles = profiles.clone();
         async move {
-            let body: ServerOperation = match alibi_core::utils::json::from_slice(&body) {
+            let body: ServerOperation = match alibi::utils::json::from_slice(&body) {
                 Ok(body) => body,
                 Err(error) => return failure(error),
             };
@@ -237,7 +237,7 @@ pub(crate) async fn router(
                     .filter(jwk::Column::Id.eq(body.id))
                     .col_expr(
                         jwk::Column::ExpiresAt,
-                        alibi_seaorm::sea_orm::sea_query::Expr::value(body.expires_at),
+                        alibi::seaorm::sea_orm::sea_query::Expr::value(body.expires_at),
                     )
                     .exec(&database)
                     .await

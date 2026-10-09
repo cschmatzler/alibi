@@ -1,4 +1,7 @@
-use super::*;
+use crate::store::{PluginStore, VerificationStore};
+use crate::verification::{VerificationCreation, VerificationPublication, VerificationSnapshot};
+use crate::{AuthResult, AuthSchema, CreateVerification};
+use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> VerificationStore<S> for PluginStore<S> {
     async fn create_verification_record(

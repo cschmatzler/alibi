@@ -1,0 +1,259 @@
+[
+  {
+    "organization key without organization": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "ORGANIZATION_ID_REQUIRED",
+        "message": "Organization ID is required for organization-owned API keys."
+      }
+    }
+  },
+  {
+    "outsider creates organization key": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_NOT_MEMBER_OF_ORGANIZATION",
+        "message": "You are not a member of the organization that owns this API key."
+      }
+    }
+  },
+  {
+    "owner creates organization key": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g2>",
+        "id": "<v3>",
+        "name": "org",
+        "start": "<g4>",
+        "prefix": null,
+        "referenceId": "<m1>",
+        "configId": "organization",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "outsider lists organization keys": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_NOT_MEMBER_OF_ORGANIZATION",
+        "message": "You are not a member of the organization that owns this API key."
+      }
+    }
+  },
+  {
+    "owner lists organization keys": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "apiKeys": [
+          {
+            "id": "<v3>",
+            "name": "org",
+            "start": "<g4>",
+            "prefix": null,
+            "referenceId": "<m1>",
+            "configId": "organization",
+            "refillInterval": null,
+            "refillAmount": null,
+            "lastRefillAt": null,
+            "enabled": true,
+            "rateLimitEnabled": true,
+            "rateLimitTimeWindow": 86400000,
+            "rateLimitMax": 10,
+            "requestCount": 0,
+            "remaining": null,
+            "lastRequest": null,
+            "expiresAt": null,
+            "createdAt": "<date>",
+            "updatedAt": "<date>",
+            "permissions": null,
+            "metadata": null
+          }
+        ],
+        "total": 1
+      }
+    }
+  },
+  {
+    "outsider reads organization key": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_NOT_MEMBER_OF_ORGANIZATION",
+        "message": "You are not a member of the organization that owns this API key."
+      }
+    }
+  },
+  {
+    "owner reads organization key": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v3>",
+        "name": "org",
+        "start": "<g4>",
+        "prefix": null,
+        "referenceId": "<m1>",
+        "configId": "organization",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "owner updates organization key": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<v3>",
+        "name": "renamed",
+        "start": "<g4>",
+        "prefix": null,
+        "referenceId": "<m1>",
+        "configId": "organization",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "organization key as a session": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_REFERENCE_ID_FROM_API_KEY",
+        "message": "The reference id from the API key is invalid."
+      }
+    }
+  },
+  {
+    "outsider deletes organization key": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_NOT_MEMBER_OF_ORGANIZATION",
+        "message": "You are not a member of the organization that owns this API key."
+      }
+    }
+  },
+  {
+    "banned owner deletes organization key": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_BANNED",
+        "message": "User is banned"
+      }
+    }
+  },
+  {
+    "list with unavailable storage": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "read with unavailable storage": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "create with unavailable storage": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  }
+]

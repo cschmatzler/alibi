@@ -1,0 +1,81 @@
+[
+  {
+    "configured plugin: registration": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=email_not_verified"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "configured plugin: returning": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=email_not_verified"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "configured plugin: codes sent": [
+      "otp@example.com",
+      "otp@example.com"
+    ]
+  },
+  {
+    "no plugin: registration": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=email_not_verified"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "no plugin: returning": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=email_not_verified"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "no plugin: codes sent": [
+      "otp@example.com"
+    ]
+  }
+]

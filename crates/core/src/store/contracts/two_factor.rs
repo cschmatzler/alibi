@@ -1,4 +1,5 @@
-use super::*;
+use crate::{AuthError, AuthResult, CreateTwoFactor, TwoFactor, UpdateTwoFactor};
+use async_trait::async_trait;
 #[async_trait]
 pub trait TwoFactorStore: Send + Sync {
     async fn create_two_factor(&self, two_factor: CreateTwoFactor) -> AuthResult<TwoFactor>;
@@ -11,10 +12,9 @@ pub trait TwoFactorStore: Send + Sync {
     async fn delete_two_factor(&self, user_id: &str) -> AuthResult<()>;
     async fn update_two_factor(
         &self,
-        id: &str,
-        update: UpdateTwoFactor,
+        _id: &str,
+        _update: UpdateTwoFactor,
     ) -> AuthResult<Option<TwoFactor>> {
-        drop((id, update));
         Err(AuthError::not_implemented(
             "Exact factor updates are not supported by this store",
         ))

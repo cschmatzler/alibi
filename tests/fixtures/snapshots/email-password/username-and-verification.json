@@ -1,0 +1,794 @@
+[
+  {
+    "display-only: signup display only": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g1>",
+        "user": {
+          "id": "<v2>",
+          "name": "User",
+          "email": "user@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": "fancy_name",
+          "displayUsername": "Fancy_Name"
+        }
+      }
+    }
+  },
+  {
+    "display-only: signup both": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g3>",
+        "user": {
+          "id": "<v4>",
+          "name": "Both",
+          "email": "both@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": "both_user",
+          "displayUsername": "Both User"
+        }
+      }
+    }
+  },
+  {
+    "display-only: signup taken": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USERNAME_IS_ALREADY_TAKEN",
+        "message": "Username is already taken. Please try another."
+      }
+    }
+  },
+  {
+    "display-only: sign in empty": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME_OR_PASSWORD",
+        "message": "Invalid username or password"
+      }
+    }
+  },
+  {
+    "display-only: sign in invalid characters": {
+      "status": 422,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME",
+        "message": "Username is invalid"
+      }
+    }
+  },
+  {
+    "display-only: sign in unknown": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME_OR_PASSWORD",
+        "message": "Invalid username or password"
+      }
+    }
+  },
+  {
+    "display-only: sign in wrong password": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME_OR_PASSWORD",
+        "message": "Invalid username or password"
+      }
+    }
+  },
+  {
+    "display-only: sign in valid": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ],
+        "location": [
+          "/home"
+        ]
+      },
+      "body": {
+        "redirect": true,
+        "token": "<g5>",
+        "url": "/home",
+        "user": {
+          "id": "<v4>",
+          "name": "Both",
+          "email": "both@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": "both_user",
+          "displayUsername": "Both User"
+        }
+      }
+    }
+  },
+  {
+    "display-only: sign in display as username": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ],
+        "location": [
+          "/home"
+        ]
+      },
+      "body": {
+        "redirect": true,
+        "token": "<g6>",
+        "url": "/home",
+        "user": {
+          "id": "<v2>",
+          "name": "User",
+          "email": "user@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": "fancy_name",
+          "displayUsername": "Fancy_Name"
+        }
+      }
+    }
+  },
+  {
+    "display-only: availability empty": {
+      "status": 422,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME",
+        "message": "Username is invalid"
+      }
+    }
+  },
+  {
+    "display-only: availability invalid": {
+      "status": 422,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USERNAME_TOO_SHORT",
+        "message": "Username is too short"
+      }
+    }
+  },
+  {
+    "display-only: sent": 0
+  },
+  {
+    "no-display: signup display only": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g7>",
+        "user": {
+          "id": "<v8>",
+          "name": "User",
+          "email": "user@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": "fancy_name"
+        }
+      }
+    }
+  },
+  {
+    "no-display: signup both": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g9>",
+        "user": {
+          "id": "<v10>",
+          "name": "Both",
+          "email": "both@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": "both_user"
+        }
+      }
+    }
+  },
+  {
+    "no-display: signup taken": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USERNAME_IS_ALREADY_TAKEN",
+        "message": "Username is already taken. Please try another."
+      }
+    }
+  },
+  {
+    "no-display: sign in empty": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME_OR_PASSWORD",
+        "message": "Invalid username or password"
+      }
+    }
+  },
+  {
+    "no-display: sign in invalid characters": {
+      "status": 422,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME",
+        "message": "Username is invalid"
+      }
+    }
+  },
+  {
+    "no-display: sign in unknown": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME_OR_PASSWORD",
+        "message": "Invalid username or password"
+      }
+    }
+  },
+  {
+    "no-display: sign in wrong password": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME_OR_PASSWORD",
+        "message": "Invalid username or password"
+      }
+    }
+  },
+  {
+    "no-display: sign in valid": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ],
+        "location": [
+          "/home"
+        ]
+      },
+      "body": {
+        "redirect": true,
+        "token": "<g11>",
+        "url": "/home",
+        "user": {
+          "id": "<v10>",
+          "name": "Both",
+          "email": "both@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": "both_user"
+        }
+      }
+    }
+  },
+  {
+    "no-display: sign in display as username": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+        ],
+        "location": [
+          "/home"
+        ]
+      },
+      "body": {
+        "redirect": true,
+        "token": "<g12>",
+        "url": "/home",
+        "user": {
+          "id": "<v8>",
+          "name": "User",
+          "email": "user@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": "fancy_name"
+        }
+      }
+    }
+  },
+  {
+    "no-display: availability empty": {
+      "status": 422,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME",
+        "message": "Username is invalid"
+      }
+    }
+  },
+  {
+    "no-display: availability invalid": {
+      "status": 422,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USERNAME_TOO_SHORT",
+        "message": "Username is too short"
+      }
+    }
+  },
+  {
+    "no-display: sent": 0
+  },
+  {
+    "verification: signup display only": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": null,
+        "user": {
+          "id": "<v13>",
+          "name": "User",
+          "email": "user@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": "fancy_name",
+          "displayUsername": "Fancy_Name"
+        }
+      }
+    }
+  },
+  {
+    "verification: signup both": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": null,
+        "user": {
+          "id": "<v14>",
+          "name": "Both",
+          "email": "both@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": "both_user",
+          "displayUsername": "Both User"
+        }
+      }
+    }
+  },
+  {
+    "verification: signup taken": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USERNAME_IS_ALREADY_TAKEN",
+        "message": "Username is already taken. Please try another."
+      }
+    }
+  },
+  {
+    "verification: sign in empty": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME_OR_PASSWORD",
+        "message": "Invalid username or password"
+      }
+    }
+  },
+  {
+    "verification: sign in invalid characters": {
+      "status": 422,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME",
+        "message": "Username is invalid"
+      }
+    }
+  },
+  {
+    "verification: sign in unknown": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME_OR_PASSWORD",
+        "message": "Invalid username or password"
+      }
+    }
+  },
+  {
+    "verification: sign in wrong password": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME_OR_PASSWORD",
+        "message": "Invalid username or password"
+      }
+    }
+  },
+  {
+    "verification: sign in valid": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_NOT_VERIFIED",
+        "message": "Email not verified"
+      }
+    }
+  },
+  {
+    "verification: sign in display as username": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_NOT_VERIFIED",
+        "message": "Email not verified"
+      }
+    }
+  },
+  {
+    "verification: availability empty": {
+      "status": 422,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME",
+        "message": "Username is invalid"
+      }
+    }
+  },
+  {
+    "verification: availability invalid": {
+      "status": 422,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USERNAME_TOO_SHORT",
+        "message": "Username is too short"
+      }
+    }
+  },
+  {
+    "verification: sent": 0
+  },
+  {
+    "sender: signup display only": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": null,
+        "user": {
+          "id": "<v15>",
+          "name": "User",
+          "email": "user@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": "fancy_name",
+          "displayUsername": "Fancy_Name"
+        }
+      }
+    }
+  },
+  {
+    "sender: signup both": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "token": null,
+        "user": {
+          "id": "<v16>",
+          "name": "Both",
+          "email": "both@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "username": "both_user",
+          "displayUsername": "Both User"
+        }
+      }
+    }
+  },
+  {
+    "sender: signup taken": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USERNAME_IS_ALREADY_TAKEN",
+        "message": "Username is already taken. Please try another."
+      }
+    }
+  },
+  {
+    "sender: sign in empty": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME_OR_PASSWORD",
+        "message": "Invalid username or password"
+      }
+    }
+  },
+  {
+    "sender: sign in invalid characters": {
+      "status": 422,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME",
+        "message": "Username is invalid"
+      }
+    }
+  },
+  {
+    "sender: sign in unknown": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME_OR_PASSWORD",
+        "message": "Invalid username or password"
+      }
+    }
+  },
+  {
+    "sender: sign in wrong password": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME_OR_PASSWORD",
+        "message": "Invalid username or password"
+      }
+    }
+  },
+  {
+    "sender: sign in valid": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_NOT_VERIFIED",
+        "message": "Email not verified"
+      }
+    }
+  },
+  {
+    "sender: sign in display as username": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_NOT_VERIFIED",
+        "message": "Email not verified"
+      }
+    }
+  },
+  {
+    "sender: availability empty": {
+      "status": 422,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_USERNAME",
+        "message": "Username is invalid"
+      }
+    }
+  },
+  {
+    "sender: availability invalid": {
+      "status": 422,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USERNAME_TOO_SHORT",
+        "message": "Username is too short"
+      }
+    }
+  },
+  {
+    "sender: sent": 4
+  }
+]

@@ -1,0 +1,422 @@
+[
+  {
+    "missing hosted domain": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "invalid id token"
+      }
+    }
+  },
+  {
+    "wrong hosted domain": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "invalid id token"
+      }
+    }
+  },
+  {
+    "empty hosted domain": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "invalid id token"
+      }
+    }
+  },
+  {
+    "second audience": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g1>",
+        "user": {
+          "id": "<v2>",
+          "name": "Tap User",
+          "email": "second@example.test",
+          "emailVerified": true,
+          "image": "https://images.example/tap",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "role": "user",
+          "banned": false,
+          "banExpires": null,
+          "banReason": null,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "provider audience ignored": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "invalid id token"
+      }
+    }
+  },
+  {
+    "missing email": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Email not available in token"
+      }
+    }
+  },
+  {
+    "empty email": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Email not available in token"
+      }
+    }
+  },
+  {
+    "wildcard without domain": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "invalid id token"
+      }
+    }
+  },
+  {
+    "wildcard with domain": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g3>",
+        "user": {
+          "id": "<v4>",
+          "name": "Tap User",
+          "email": "wild@example.test",
+          "emailVerified": true,
+          "image": "https://images.example/tap",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "role": "user",
+          "banned": false,
+          "banExpires": null,
+          "banReason": null,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "number subject": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "invalid id token"
+      }
+    }
+  },
+  {
+    "boolean subject": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "invalid id token"
+      }
+    }
+  },
+  {
+    "array subject": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "invalid id token"
+      }
+    }
+  },
+  {
+    "object subject": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "invalid id token"
+      }
+    }
+  },
+  {
+    "zero subject": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "invalid id token"
+      }
+    }
+  },
+  {
+    "empty subject": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "invalid id token"
+      }
+    }
+  },
+  {
+    "garbage token": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "invalid id token"
+      }
+    }
+  },
+  {
+    "missing token": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.idToken] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "provider audience": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g5>",
+        "user": {
+          "id": "<v6>",
+          "name": "Tap User",
+          "email": "derived@example.test",
+          "emailVerified": true,
+          "image": "https://images.example/tap",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "role": "user",
+          "banned": false,
+          "banExpires": null,
+          "banReason": null,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "provider additional audience": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g7>",
+        "user": {
+          "id": "<v8>",
+          "name": "Tap User",
+          "email": "extra@example.test",
+          "emailVerified": true,
+          "image": "https://images.example/tap",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "role": "user",
+          "banned": false,
+          "banExpires": null,
+          "banReason": null,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "foreign audience": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "invalid id token"
+      }
+    }
+  },
+  {
+    "unexpected algorithm": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "invalid id token"
+      }
+    }
+  },
+  {
+    "no client configured": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Google client ID is required for One Tap. Set it on the oneTap plugin (clientId) or on <v9>"
+      }
+    }
+  },
+  {
+    "sign up disabled": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "signup disabled"
+      }
+    }
+  },
+  {
+    "unverified email required": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "EMAIL_NOT_VERIFIED",
+        "message": "Email not verified"
+      }
+    }
+  },
+  {
+    "string-verified email": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g10>",
+        "user": {
+          "id": "<v11>",
+          "name": "Tap User",
+          "email": "string@example.test",
+          "emailVerified": true,
+          "image": "https://images.example/tap",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "role": "user",
+          "banned": false,
+          "banExpires": null,
+          "banReason": null,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "accounts": 6
+  }
+]

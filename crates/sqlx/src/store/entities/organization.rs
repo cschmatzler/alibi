@@ -1,7 +1,9 @@
+use crate::SqlxModel;
 pub use crate::json_metadata::JsonMetadata;
+use alibi_core::Organization;
 use chrono::{DateTime, Utc};
 
-#[derive(Clone, Debug, PartialEq, sqlx::FromRow, crate::SqlxModel)]
+#[derive(Clone, Debug, PartialEq, sqlx::FromRow, SqlxModel)]
 #[auth(table = "organization")]
 pub struct Model {
     pub id: String,
@@ -13,10 +15,10 @@ pub struct Model {
     pub updated_at: DateTime<Utc>,
 }
 
-impl From<&Model> for alibi_core::Organization {
+impl From<&Model> for Organization {
     fn from(model: &Model) -> Self {
         Self {
-            additional_fields: Default::default(),
+            additional_fields: std::collections::BTreeMap::default(),
             id: model.id.clone(),
             name: model.name.clone(),
             slug: model.slug.clone(),

@@ -116,10 +116,10 @@ fn assert_source(source: Option<&UserValidationSource>) -> AuthResult<()> {
         ));
     };
     if source.method == "oauth"
-        && !source
+        && source
             .oauth
             .as_ref()
-            .is_some_and(|provider| !provider.provider_id.is_empty())
+            .is_none_or(|provider| provider.provider_id.is_empty())
     {
         return Err(denial(
             "validation_source_missing",
@@ -127,10 +127,10 @@ fn assert_source(source: Option<&UserValidationSource>) -> AuthResult<()> {
         ));
     }
     if matches!(source.method.as_str(), "sso-oidc" | "sso-saml")
-        && !source
+        && source
             .sso
             .as_ref()
-            .is_some_and(|provider| !provider.provider_id.is_empty())
+            .is_none_or(|provider| provider.provider_id.is_empty())
     {
         return Err(denial(
             "validation_source_missing",

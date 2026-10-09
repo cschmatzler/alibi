@@ -1,10 +1,10 @@
-use super::ScopedTransaction;
-use super::{SeaOrmStore, map_db_err};
+use super::{ScopedTransaction, SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmAccountModel};
 use alibi_core::error::AuthResult;
 use alibi_core::store::AccountStore;
 use alibi_core::store::adapter::cancelled_by_hook;
 use alibi_core::types::{CreateAccount, UpdateAccount};
+use alibi_core::{AuthError, DatabaseError};
 use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
@@ -40,13 +40,10 @@ where
         let mut fields = std::mem::take(&mut create_account.additional_fields);
         fields.apply_adapter_transforms_async().await?;
         let generated_id = self
-            .generated_id(
+            .generated_entity_id::<<S::Account as SeaOrmAccountModel>::Entity, _>(
                 db,
                 "account",
-                <<S::Account as SeaOrmAccountModel>::Entity as sea_orm::EntityName>::table_name(
-                    &Default::default(),
-                ),
-                &sea_orm::Iden::to_string(&S::Account::id_column()),
+                S::Account::id_column(),
             )
             .await?;
         let id = generated_id
@@ -114,11 +111,9 @@ where
             .await
             .map_err(map_db_err)?;
         if accounts.len() > 1 {
-            return Err(alibi_core::AuthError::Database(
-                alibi_core::DatabaseError::AmbiguousAccount {
-                    provider: provider.to_owned(),
-                },
-            ));
+            return Err(AuthError::Database(DatabaseError::AmbiguousAccount {
+                provider: provider.to_owned(),
+            }));
         }
         Ok(accounts.pop())
     }
@@ -195,7 +190,7 @@ where
                 return Ok(());
             }
         }
-        let _ignored_map_err = <S::Account as SeaOrmAccountModel>::Entity::delete_many()
+        _ = <S::Account as SeaOrmAccountModel>::Entity::delete_many()
             .filter(<S::Account as SeaOrmAccountModel>::id_column().eq(account_id))
             .exec(self.scoped_connection())
             .await

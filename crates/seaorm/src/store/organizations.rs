@@ -1,6 +1,5 @@
-use super::entities;
 use super::entities::organization::{ActiveModel, Column, Entity, JsonMetadata, Model};
-use super::{SeaOrmStore, map_db_err};
+use super::{SeaOrmStore, entities, map_db_err};
 use crate::schema::AuthSchema;
 use alibi_core::error::AuthResult;
 use alibi_core::store::OrganizationStore;
@@ -105,7 +104,7 @@ where
         active
             .update(self.scoped_connection())
             .await
-            .map(|model_2| Organization::from(&model_2))
+            .map(|model| Organization::from(&model))
             .map_err(map_db_err)
     }
 
@@ -117,30 +116,30 @@ where
         use sea_orm::sea_query::{Expr, ExprTrait, Query};
         let backend = self.scoped_connection().get_database_backend();
         let mut query = Query::update();
-        let _ = query.table(Entity).and_where(Expr::col(Column::Id).eq(id));
+        _ = query.table(Entity).and_where(Expr::col(Column::Id).eq(id));
         if let Some(name) = update.name {
-            let _ = query.value(Column::Name, name);
+            _ = query.value(Column::Name, name);
         }
         if let Some(slug) = update.slug {
-            let _ = query.value(Column::Slug, slug);
+            _ = query.value(Column::Slug, slug);
         }
         if let Some(logo) = update.logo {
-            let _ = query.value(Column::Logo, logo);
+            _ = query.value(Column::Logo, logo);
         }
         if let Some(metadata) = update.metadata {
             let metadata =
                 JsonMetadata::for_backend(alibi_core::utils::json::to_value(&metadata)?, backend)?;
-            let _ = query.value(Column::Metadata, metadata);
+            _ = query.value(Column::Metadata, metadata);
         }
         if self.scoped_connection().support_returning() {
-            let _ = query.returning(Query::returning().columns(Column::iter()));
+            _ = query.returning(Query::returning().columns(Column::iter()));
             return Model::find_by_statement(StatementBuilder::build(&query, &backend))
                 .one(self.scoped_connection())
                 .await
                 .map(|row| row.as_ref().map(Organization::from))
                 .map_err(map_db_err);
         }
-        let _ = self
+        _ = self
             .scoped_connection()
             .execute_raw(StatementBuilder::build(&query, &backend))
             .await
@@ -169,7 +168,7 @@ where
             self.scoped_connection().get_database_backend(),
         )?;
         match active.update(self.scoped_connection()).await {
-            Ok(model_2) => Ok(Some(Organization::from(&model_2))),
+            Ok(model) => Ok(Some(Organization::from(&model))),
             Err(DbErr::RecordNotUpdated) => Ok(None),
             Err(error) => Err(map_db_err(error)),
         }
@@ -177,17 +176,17 @@ where
 
     async fn delete_organization(&self, id: &str) -> AuthResult<()> {
         let transaction = self.scoped_connection().begin().await.map_err(map_db_err)?;
-        let _ignored_map_err = entities::member::Entity::delete_many()
+        _ = entities::member::Entity::delete_many()
             .filter(entities::member::Column::OrganizationId.eq(id))
             .exec(&transaction)
             .await
             .map_err(map_db_err)?;
-        let _ignored_map_err_2 = entities::invitation::Entity::delete_many()
+        _ = entities::invitation::Entity::delete_many()
             .filter(entities::invitation::Column::OrganizationId.eq(id))
             .exec(&transaction)
             .await
             .map_err(map_db_err)?;
-        let _ignored_map_err_3 = Entity::delete_by_id(id.to_owned())
+        _ = Entity::delete_by_id(id.to_owned())
             .exec(&transaction)
             .await
             .map_err(map_db_err)?;
@@ -219,10 +218,8 @@ where
             .into_iter()
             .map(|model| (model.id.clone(), Organization::from(&model)))
             .collect();
-        // The source maps the member page's joined organizations. Repeated
-        // memberships repeat the organization; organization creation order
-        // cannot reorder this page. Missing joins retain the existing store's
-        // omission behavior, rather than inventing a nullable public result.
+        // Source maps the member page's joined organizations: repeated
+        // memberships repeat the organization, and missing joins are omitted.
         Ok(member_models
             .into_iter()
             .filter_map(|member| organizations.get(&member.organization_id).cloned())

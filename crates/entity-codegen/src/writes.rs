@@ -1,4 +1,8 @@
-use super::*;
+use crate::{AuthAttributes, EntityRole, has_field, optional_field};
+use proc_macro2::{Ident, Span, TokenStream};
+use quote::quote;
+use syn::FieldsNamed;
+
 /// What a fresh row stores in one declared field.
 #[derive(Clone)]
 pub enum Insert {

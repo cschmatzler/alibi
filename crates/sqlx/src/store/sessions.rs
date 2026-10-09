@@ -1,12 +1,14 @@
 use super::SqlxStore;
 use crate::error::record_not_updated;
-use crate::model::{self, SqlxModel};
+use crate::model::{self, ActiveRow, SqlxModel};
 use crate::pool::{Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxSessionModel};
 use crate::sql::Sql;
 use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::field_policy::FieldValues;
 use alibi_core::store::SessionStore;
 use alibi_core::types::CreateSession;
+use alibi_core::utils::json::JsValue;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
@@ -71,10 +73,7 @@ where
         ];
         for (name, destination) in &mut typed_fields {
             if let Some(value) = destination.as_ref() {
-                fields.preserve_creation_value(
-                    name,
-                    alibi_core::utils::json::JsValue::String(value.clone()),
-                );
+                fields.preserve_creation_value(name, JsValue::String(value.clone()));
             }
             // Configured values now belong to the adapter input. A transform
             // that omits one must also omit its original typed creation value.
@@ -110,15 +109,7 @@ where
             .transpose()?;
         let mut active = S::Session::new_active(id, token, create_session, now);
         if !fields.is_empty() {
-            for (column, value) in S::Session::additional_field_bindings(&fields, exec.engine())? {
-                let value = crate::additional_fields::prepare_value(
-                    exec,
-                    <S::Session as SqlxModel>::column_kind(column),
-                    value,
-                )
-                .await?;
-                S::Session::set_additional_field(&mut active, column, value, exec.engine())?;
-            }
+            stage_additional_fields::<S::Session>(exec, &mut active, &fields).await?;
         }
         let session = if persist {
             model::insert::<S::Session>(exec, &active).await?
@@ -141,8 +132,8 @@ where
         tx: Option<&SqlxTransaction>,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        mut fields: alibi_core::field_policy::FieldValues,
-    ) -> AuthResult<Option<(S::Session, alibi_core::field_policy::FieldValues)>> {
+        mut fields: FieldValues,
+    ) -> AuthResult<Option<(S::Session, FieldValues)>> {
         use alibi_core::AuthSession;
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
@@ -156,16 +147,7 @@ where
         }
         // The cache stores hook output before SQL adapter input transformations.
         let mut active = session.into_active();
-        let backend = exec.engine();
-        for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
-            let value = crate::additional_fields::prepare_value(
-                exec,
-                <S::Session as SqlxModel>::column_kind(column),
-                value,
-            )
-            .await?;
-            S::Session::set_additional_field(&mut active, column, value, backend)?;
-        }
+        stage_additional_fields::<S::Session>(exec, &mut active, &fields).await?;
         if let Some(expiry) = expires_at {
             S::Session::set_expires_at(&mut active, expiry);
         }
@@ -180,7 +162,7 @@ where
         tx: Option<&SqlxTransaction>,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        mut fields: alibi_core::field_policy::FieldValues,
+        mut fields: FieldValues,
         persist: bool,
     ) -> AuthResult<Option<S::Session>> {
         use alibi_core::AuthSession;
@@ -198,16 +180,7 @@ where
                 return Ok(None);
             };
             let mut active = current.into_active();
-            let backend = exec.engine();
-            for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
-                let value = crate::additional_fields::prepare_value(
-                    exec,
-                    <S::Session as SqlxModel>::column_kind(column),
-                    value,
-                )
-                .await?;
-                S::Session::set_additional_field(&mut active, column, value, backend)?;
-            }
+            stage_additional_fields::<S::Session>(exec, &mut active, &fields).await?;
             if let Some(expiry) = expires_at {
                 S::Session::set_expires_at(&mut active, expiry);
             }
@@ -236,7 +209,7 @@ where
         input: CreateSession,
         persist: bool,
     ) -> AuthResult<S::Session> {
-        self.create_session_with_connection(Exec::Tx(tx), Some(tx), input, persist, false)
+        self.create_session_with_connection(Exec::tx(tx), Some(tx), input, persist, false)
             .await
     }
 
@@ -245,9 +218,24 @@ where
         tx: &SqlxTransaction,
         create_session: CreateSession,
     ) -> AuthResult<S::Session> {
-        self.create_session_with_connection(Exec::Tx(tx), Some(tx), create_session, true, true)
+        self.create_session_with_connection(Exec::tx(tx), Some(tx), create_session, true, true)
             .await
     }
+}
+
+/// Stage the configured additional fields on the row, coerced to their columns.
+async fn stage_additional_fields<M: SqlxSessionModel>(
+    exec: Exec<'_>,
+    active: &mut ActiveRow,
+    fields: &FieldValues,
+) -> AuthResult<()> {
+    let backend = exec.engine();
+    for (column, value) in M::additional_field_bindings(fields, backend)? {
+        let value =
+            crate::additional_fields::prepare_value(exec, M::column_kind(column), value).await?;
+        M::set_additional_field(active, column, value, backend)?;
+    }
+    Ok(())
 }
 
 pub(super) enum SessionScope<'a> {
@@ -264,7 +252,7 @@ where
         &self,
         token: &str,
         expires_at: Option<DateTime<Utc>>,
-        mut fields: alibi_core::field_policy::FieldValues,
+        mut fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         let hook_context = self.hook_context(None);
         for hook in self.hooks() {
@@ -294,17 +282,8 @@ where
             return Ok(None);
         };
         let mut active = model.into_active();
-        let backend = self.exec().engine();
         if !fields.is_empty() {
-            for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
-                let value = crate::additional_fields::prepare_value(
-                    self.exec(),
-                    <S::Session as SqlxModel>::column_kind(column),
-                    value,
-                )
-                .await?;
-                S::Session::set_additional_field(&mut active, column, value, backend)?;
-            }
+            stage_additional_fields::<S::Session>(self.exec(), &mut active, &fields).await?;
         }
         if let Some(expires_at) = expires_at {
             S::Session::set_expires_at(&mut active, expires_at);
@@ -380,8 +359,8 @@ where
         &self,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        fields: alibi_core::field_policy::FieldValues,
-    ) -> AuthResult<Option<(S::Session, alibi_core::field_policy::FieldValues)>> {
+        fields: FieldValues,
+    ) -> AuthResult<Option<(S::Session, FieldValues)>> {
         self.prepare_secondary_update_with_connection(
             self.exec(),
             None,
@@ -395,7 +374,7 @@ where
         &self,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        fields: alibi_core::field_policy::FieldValues,
+        fields: FieldValues,
         persist: bool,
     ) -> AuthResult<Option<S::Session>> {
         self.complete_secondary_update_with_connection(
@@ -561,7 +540,7 @@ where
     async fn update_session_fields(
         &self,
         token: &str,
-        fields: alibi_core::field_policy::FieldValues,
+        fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         self.update_session_with_fields(token, None, fields).await
     }
@@ -582,7 +561,7 @@ where
         token: &str,
         expires_at: DateTime<Utc>,
     ) -> AuthResult<Option<S::Session>> {
-        self.update_session_with_fields(token, Some(expires_at), Default::default())
+        self.update_session_with_fields(token, Some(expires_at), FieldValues::default())
             .await
     }
 
@@ -590,7 +569,7 @@ where
         &self,
         token: &str,
         expires_at: DateTime<Utc>,
-        fields: alibi_core::field_policy::FieldValues,
+        fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         self.update_session_with_fields(token, Some(expires_at), fields)
             .await
@@ -631,7 +610,7 @@ where
         sql.ident(table);
         sql.push(" WHERE ");
         sql.compare_model::<S::Session>(table, S::Session::user_id_column(), " = ", user_id);
-        self.exec().execute(sql).await.map(drop)
+        self.exec().execute(sql).await.map(|_| ())
     }
 
     async fn delete_expired_sessions(&self) -> AuthResult<usize> {

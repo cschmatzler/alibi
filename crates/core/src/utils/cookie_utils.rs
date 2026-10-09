@@ -1,14 +1,24 @@
 //! Shared cookie utilities for building `Set-Cookie` headers.
-//!
-//! This module centralises the session cookie construction that was previously
-//! duplicated across every plugin (`email_password`, `passkey`, `two_factor`,
-//! `admin`, `password_management`, `session_management`, `email_verification`).
 
 use crate::config::{AuthConfig, CookieAttributes, SameSite};
+use crate::utils::javascript::number_from_i64;
+use crate::{AuthError, AuthResult};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use std::fmt::Write as _;
+
+/// The characters JavaScript's `encodeURIComponent` leaves unescaped.
+pub(crate) const URI_COMPONENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'!')
+    .remove(b'~')
+    .remove(b'*')
+    .remove(b'\'')
+    .remove(b'(')
+    .remove(b')');
 
 /// Build a `Set-Cookie` header value for an arbitrary cookie using the auth
 /// config's session cookie attributes for consistency.
@@ -17,8 +27,8 @@ pub fn create_cookie(
     value: &str,
     max_age_seconds: i64,
     config: &AuthConfig,
-) -> crate::AuthResult<String> {
-    create_cookie_with_max_age(name, value, Some(max_age_seconds as f64), config)
+) -> AuthResult<String> {
+    create_cookie_with_max_age(name, value, Some(number_from_i64(max_age_seconds)), config)
 }
 
 /// Create a factory cookie: producer attributes precede per-cookie overrides.
@@ -31,7 +41,7 @@ pub fn create_cookie_with_max_age(
     value: &str,
     producer_age: Option<f64>,
     config: &AuthConfig,
-) -> crate::AuthResult<String> {
+) -> AuthResult<String> {
     let mut attributes = cookie_attributes(name, config);
     if producer_age.is_some() {
         attributes.max_age = producer_age;
@@ -49,7 +59,7 @@ pub fn create_cookie_with_max_age(
 }
 
 /// Build a `Set-Cookie` header value for a signed session token.
-pub fn create_session_cookie(token: &str, config: &AuthConfig) -> crate::AuthResult<String> {
+pub fn create_session_cookie(token: &str, config: &AuthConfig) -> AuthResult<String> {
     create_session_cookie_with_max_age(
         Some(token),
         Some(config.session.expires_in.num_seconds()),
@@ -64,7 +74,7 @@ pub fn create_session_cookie_with_max_age(
     token: Option<&str>,
     max_age_seconds: Option<i64>,
     config: &AuthConfig,
-) -> crate::AuthResult<String> {
+) -> AuthResult<String> {
     let signed = token
         .filter(|token| !token.is_empty())
         .map(|token| sign_cookie_value(token, config.current_secret()));
@@ -81,28 +91,13 @@ pub fn create_session_cookie_with_max_age(
     clippy::expect_used,
     reason = "HMAC-SHA256 accepts keys of every length"
 )]
-#[expect(
-    clippy::missing_panics_doc,
-    reason = "HMAC accepts keys of every length, so key construction cannot fail"
-)]
 #[must_use]
 pub fn sign_cookie_value(value: &str, secret: &str) -> String {
-    const COMPONENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
-        .remove(b'-')
-        .remove(b'_')
-        .remove(b'.')
-        .remove(b'!')
-        .remove(b'~')
-        .remove(b'*')
-        .remove(b'\'')
-        .remove(b'(')
-        .remove(b')');
-
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key");
     mac.update(value.as_bytes());
     let signed = format!("{value}.{}", STANDARD.encode(mac.finalize().into_bytes()));
 
-    percent_encoding::utf8_percent_encode(&signed, COMPONENT).to_string()
+    percent_encoding::utf8_percent_encode(&signed, URI_COMPONENT).to_string()
 }
 
 /// Return a cookie's payload only when its signature verifies.
@@ -132,13 +127,13 @@ pub fn create_session_like_cookie(
     value: &str,
     max_age_seconds: Option<i64>,
     config: &AuthConfig,
-) -> crate::AuthResult<String> {
+) -> AuthResult<String> {
     let mut attributes = cookie_attributes(name, config);
     // setSessionCookie explicitly replaces the token's configured Max-Age,
     // including with undefined for a browser session. Other cookie producers
     // retain their configured age when they supply no override.
     if name == related_cookie_name(config, "session_token") || max_age_seconds.is_some() {
-        attributes.max_age = max_age_seconds.map(|age| age as f64);
+        attributes.max_age = max_age_seconds.map(number_from_i64);
     }
     render_encoded_cookie(name, value, &attributes)
 }
@@ -150,7 +145,7 @@ pub fn create_derived_session_cookie(
     value: &str,
     clear: bool,
     config: &AuthConfig,
-) -> crate::AuthResult<String> {
+) -> AuthResult<String> {
     let mut attributes = cookie_attributes(&related_cookie_name(config, "session_token"), config);
     attributes.max_age = Some(if clear {
         0.0
@@ -160,13 +155,13 @@ pub fn create_derived_session_cookie(
             .cookies
             .get("session_token")
             .and_then(|entry| entry.attributes.max_age)
-            .unwrap_or(config.session.expires_in.num_seconds() as f64)
+            .unwrap_or_else(|| number_from_i64(config.session.expires_in.num_seconds()))
     });
     render_encoded_cookie(name, value, &attributes)
 }
 
 /// Build a `Set-Cookie` header value that clears the session cookie.
-pub fn create_clear_session_cookie(config: &AuthConfig) -> crate::AuthResult<String> {
+pub fn create_clear_session_cookie(config: &AuthConfig) -> AuthResult<String> {
     create_clear_cookie(&related_cookie_name(config, "session_token"), config)
 }
 
@@ -175,7 +170,7 @@ pub fn create_clear_session_cookie(config: &AuthConfig) -> crate::AuthResult<Str
 ///
 /// Mirrors the TypeScript `expireCookie`, which clears a cookie with `Max-Age=0`
 /// while preserving its attributes, including an explicitly configured `Expires`.
-pub fn create_clear_cookie(name: &str, config: &AuthConfig) -> crate::AuthResult<String> {
+pub fn create_clear_cookie(name: &str, config: &AuthConfig) -> AuthResult<String> {
     create_session_like_cookie(name, "", Some(0), config)
 }
 
@@ -306,7 +301,7 @@ pub fn create_account_cookie_header(
     value: &str,
     max_age: f64,
     config: &AuthConfig,
-) -> crate::AuthResult<String> {
+) -> AuthResult<String> {
     create_numeric_cookie_header(name, base, value, Some(max_age), config)
 }
 
@@ -318,7 +313,7 @@ pub(crate) fn create_numeric_cookie_header(
     value: &str,
     max_age: Option<f64>,
     config: &AuthConfig,
-) -> crate::AuthResult<String> {
+) -> AuthResult<String> {
     let mut attributes = cookie_attributes(base, config);
     attributes.max_age = max_age;
     render_encoded_cookie(name, value, &attributes)
@@ -358,16 +353,14 @@ fn render_encoded_cookie(
     name: &str,
     value: &str,
     attributes: &CookieAttributes,
-) -> crate::AuthResult<String> {
+) -> AuthResult<String> {
     let host = name.starts_with("__Host-");
     let mut header = format!("{name}={value}");
     if let Some(age) = attributes.max_age.filter(|age| *age >= 0.0) {
         if age > 34_560_000.0 {
-            return Err(crate::AuthError::CallbackFailure(Box::new(
-                crate::AuthError::internal(
-                    "Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration.",
-                ),
-            )));
+            return Err(AuthError::CallbackFailure(Box::new(AuthError::internal(
+                "Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration.",
+            ))));
         }
         // JavaScript renders Math.floor(-0) as "0".
         let age = if age == 0.0 { 0.0 } else { age.floor() };
@@ -395,11 +388,9 @@ fn render_encoded_cookie(
             .num_milliseconds()
             > 34_560_000_000
         {
-            return Err(crate::AuthError::CallbackFailure(Box::new(
-                crate::AuthError::internal(
-                    "Cookies Expires SHOULD NOT be greater than 400 days (34560000 seconds) in the future.",
-                ),
-            )));
+            return Err(AuthError::CallbackFailure(Box::new(AuthError::internal(
+                "Cookies Expires SHOULD NOT be greater than 400 days (34560000 seconds) in the future.",
+            ))));
         }
         _ = write!(
             header,
@@ -429,7 +420,7 @@ fn render_encoded_cookie(
 }
 
 /// Clear all cookies associated with the current session.
-pub fn delete_session_cookie_headers(config: &AuthConfig) -> crate::AuthResult<Vec<String>> {
+pub fn delete_session_cookie_headers(config: &AuthConfig) -> AuthResult<Vec<String>> {
     let mut cookies = vec![
         create_clear_session_cookie(config)?,
         create_clear_cookie(&related_cookie_name(config, "session_data"), config)?,

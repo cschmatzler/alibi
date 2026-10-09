@@ -6,9 +6,9 @@ use alibi::plugins::jwt::JwtPlugin;
 use alibi::plugins::{
     CustomSessionPlugin, EmailPasswordPlugin, MultiSessionPlugin, SessionTransform,
 };
+use alibi::seaorm::sea_orm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi_core::{AuthContext, AuthRequest};
-use alibi_seaorm::sea_orm::DatabaseConnection;
+use alibi::{AuthContext, AuthRequest};
 use async_trait::async_trait;
 use axum::Router;
 use serde_json::{Value, json};
@@ -18,17 +18,17 @@ use std::sync::{
 };
 struct TokenHook(Arc<AtomicUsize>);
 #[async_trait]
-impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
+impl alibi::seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
     async fn before_create_session(
         &self,
         session: &mut alibi::prelude::CreateSession,
         _: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<alibi_seaorm::HookControl> {
+    ) -> AuthResult<alibi::seaorm::HookControl> {
         session.token = Some(format!(
             "custom{:027}",
             self.0.fetch_add(1, Ordering::SeqCst) + 1
         ));
-        Ok(alibi_seaorm::HookControl::Continue)
+        Ok(alibi::seaorm::HookControl::Continue)
     }
 }
 
@@ -87,11 +87,10 @@ impl DeviceListApplication {
         if token == held {
             wait_projection(&self.release).await?;
             if mode != "success" {
-                let retained =
-                    alibi_core::hooks::current_request_hook_context().ok_or_else(|| {
-                        AuthError::internal("Original device list request context was lost")
-                    })?;
-                let endpoint = alibi_core::endpoint::current_endpoint_call_context()
+                let retained = alibi::hooks::current_request_hook_context().ok_or_else(|| {
+                    AuthError::internal("Original device list request context was lost")
+                })?;
+                let endpoint = alibi::endpoint::current_endpoint_call_context()
                     .and_then(|context| context.path().map(str::to_owned))
                     .unwrap_or_else(|| retained.path.clone());
                 let marker = retained.headers.get("x-device-list-marker").cloned();
@@ -100,13 +99,13 @@ impl DeviceListApplication {
                     .database
                     .update_user(
                         user_id,
-                        alibi_core::UpdateUser {
+                        alibi::UpdateUser {
                             name: Some(name),
                             ..Default::default()
                         },
                     )
                     .await?;
-                use alibi_core::AuthUser;
+                use alibi::AuthUser;
                 self.events.lock().unwrap().push(json!({"stage":"updated","token":token,"userId":user.id(),"request":{"path":endpoint,"method":format!("{:?}",retained.method).to_uppercase(),"marker":marker},"name":user.name()}));
             } else {
                 self.events.lock().unwrap().push(

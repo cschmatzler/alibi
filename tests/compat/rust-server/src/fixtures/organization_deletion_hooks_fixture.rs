@@ -1,5 +1,6 @@
 //! Configured application callbacks, real row observations and trusted cookie calls.
 use crate::TestSchema;
+use alibi::UpdateOrganization;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::organization::{
@@ -7,13 +8,12 @@ use alibi::plugins::organization::{
     types::DeleteOrganizationRequest,
 };
 use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi_core::UpdateOrganization;
-use alibi_core::store::OrganizationStore;
-use alibi_seaorm::{
+use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
+use alibi::store::OrganizationStore;
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use axum::{
     Json, Router,
     extract::Query,

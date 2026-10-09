@@ -11,7 +11,7 @@ impl alibi::plugins::user_management::SendDeleteAccountVerification for Deletion
         user: &alibi::plugins::user_management::UserInfo,
         url: &str,
         token: &str,
-    ) -> alibi_core::AuthResult<()> {
+    ) -> alibi::AuthResult<()> {
         self.0
             .lock()
             .unwrap()

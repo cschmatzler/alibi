@@ -25,10 +25,6 @@
 //! }
 //! ```
 
-#![expect(
-    unused_crate_dependencies,
-    reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
-)]
 #![cfg_attr(
     test,
     allow(
@@ -63,12 +59,5 @@ pub mod wire;
 
 #[doc(hidden)]
 pub use alibi_core as __private_core;
-pub use alibi_core::PluginConfig;
-pub use alibi_core::{
-    AuthConfig, AuthError, AuthResult, AuthSchema, AuthenticatedUser,
-    AwaitedNotificationErrorPolicy, BackgroundTaskCompletion, BackgroundTaskHandler,
-    CallbackContext, ManagedSecrets, PasswordHashContext, PasswordHashHook, PasswordHasher,
-    ScryptHasher, hash_password, verify_password,
-};
-pub use alibi_core::{endpoint, field_policy, user_validation, utils, verification};
+pub use alibi_core::*;
 pub use runtime::{AuthBuilder, BetterAuth};

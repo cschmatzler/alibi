@@ -1,17 +1,17 @@
 //! Rust build-time admin configuration validation follows the pinned factory.
 
 use alibi::plugins::{AdminConfig, AdminPlugin, RolePermissions};
+use alibi::seaorm::{Database, SeaOrmStore};
+use alibi::store::{SessionStore, UserStore};
 use alibi::{AuthBuilder, AuthConfig};
-use alibi_core::store::{SessionStore, UserStore};
-use alibi_core::{
+use alibi::{
     AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthUser,
     CreateSession, CreateUser,
 };
-use alibi_seaorm::{Database, SeaOrmStore};
 use async_trait::async_trait;
 use std::{collections::HashMap, sync::Arc};
 
-type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 struct ApplicationBootstrap(String);
 
@@ -20,7 +20,7 @@ impl AuthPlugin<Schema> for ApplicationBootstrap {
     fn name(&self) -> &'static str {
         "application-bootstrap"
     }
-    fn routes(&self) -> Vec<alibi_core::AuthRoute> {
+    fn routes(&self) -> Vec<alibi::AuthRoute> {
         Vec::new()
     }
     async fn on_init(&self, ctx: &mut AuthInitContext<Schema>) -> AuthResult<()> {
@@ -38,7 +38,7 @@ impl AuthPlugin<Schema> for ApplicationBootstrap {
     async fn on_request(
         &self,
         _: &AuthRequest,
-        _: &alibi_core::AuthContext<Schema>,
+        _: &alibi::AuthContext<Schema>,
     ) -> AuthResult<Option<AuthResponse>> {
         Ok(None)
     }
@@ -47,12 +47,12 @@ impl AuthPlugin<Schema> for ApplicationBootstrap {
 struct StoredUserMessage;
 
 #[async_trait]
-impl alibi::plugins::AdminBannedUserMessage<alibi_seaorm::store::entities::user::Model>
+impl alibi::plugins::AdminBannedUserMessage<alibi::seaorm::store::entities::user::Model>
     for StoredUserMessage
 {
     async fn message(
         &self,
-        user: &alibi_seaorm::store::entities::user::Model,
+        user: &alibi::seaorm::store::entities::user::Model,
     ) -> AuthResult<String> {
         Ok(user.ban_reason().unwrap_or_default().to_owned())
     }
@@ -61,8 +61,8 @@ impl alibi::plugins::AdminBannedUserMessage<alibi_seaorm::store::entities::user:
 struct ProjectedUserMessage;
 
 #[async_trait]
-impl alibi::plugins::AdminBannedUserMessage<alibi_core::wire::UserView> for ProjectedUserMessage {
-    async fn message(&self, _user: &alibi_core::wire::UserView) -> AuthResult<String> {
+impl alibi::plugins::AdminBannedUserMessage<alibi::wire::UserView> for ProjectedUserMessage {
+    async fn message(&self, _user: &alibi::wire::UserView) -> AuthResult<String> {
         Ok("projected callback must not initialize".into())
     }
 }
@@ -80,7 +80,7 @@ mod tests {
      {
         let config = AuthConfig::new("admin-role-contract-secret-at-least-32-characters");
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let store = Arc::new(SeaOrmStore::<Schema>::new(config.clone(), database));
@@ -95,7 +95,7 @@ mod tests {
             .unwrap();
         let session = store
             .create_session(CreateSession {
-                additional_fields: alibi_core::field_policy::FieldValues::default(),
+                additional_fields: alibi::field_policy::FieldValues::default(),
                 token: None,
                 active_team_id: None,
                 user_id: seeded.id.clone(),
@@ -107,8 +107,8 @@ mod tests {
             })
             .await
             .unwrap();
-        let session_before = alibi_core::utils::json::to_value(&session).unwrap();
-        let seeded_before = alibi_core::utils::json::to_value(&seeded).unwrap();
+        let session_before = alibi::utils::json::to_value(&session).unwrap();
+        let seeded_before = alibi::utils::json::to_value(&seeded).unwrap();
         let custom = HashMap::from([(
             "manager".into(),
             RolePermissions::new().allow("user", ["get"]),
@@ -206,14 +206,14 @@ mod tests {
                 );
             }
             assert_eq!(
-                alibi_core::utils::json::to_value(
+                alibi::utils::json::to_value(
                     &store.get_session(&session.token).await.unwrap().unwrap()
                 )
                 .unwrap(),
                 session_before
             );
             assert_eq!(
-                alibi_core::utils::json::to_value(
+                alibi::utils::json::to_value(
                     &store.get_user_by_id(&seeded.id).await.unwrap().unwrap()
                 )
                 .unwrap(),
@@ -227,7 +227,7 @@ mod tests {
     async fn admin_message_callback_model_is_validated_before_initialization_side_effects() {
         let config = AuthConfig::new("admin-message-schema-contract-secret-0000000000");
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let store = Arc::new(SeaOrmStore::<Schema>::new(config.clone(), database));
@@ -242,7 +242,7 @@ mod tests {
             .unwrap();
         let session = store
             .create_session(CreateSession {
-                additional_fields: alibi_core::field_policy::FieldValues::default(),
+                additional_fields: alibi::field_policy::FieldValues::default(),
                 token: None,
                 active_team_id: None,
                 user_id: owner.id.clone(),
@@ -254,14 +254,13 @@ mod tests {
             })
             .await
             .unwrap();
-        let before_user = alibi_core::utils::json::to_value(&owner).unwrap();
-        let before_session = alibi_core::utils::json::to_value(&session).unwrap();
+        let before_user = alibi::utils::json::to_value(&owner).unwrap();
+        let before_session = alibi::utils::json::to_value(&session).unwrap();
         let invalid = AuthBuilder::<Schema>::new(config.clone())
             .store_arc(Arc::<SeaOrmStore<Schema>>::clone(&store))
             .plugin(
-                AdminPlugin::new().banned_user_message_callback::<alibi_core::wire::UserView, _>(
-                    ProjectedUserMessage,
-                ),
+                AdminPlugin::new()
+                    .banned_user_message_callback::<alibi::wire::UserView, _>(ProjectedUserMessage),
             )
             .plugin(ApplicationBootstrap(
                 "invalid-bootstrap@message.fixture.test".into(),
@@ -287,7 +286,7 @@ mod tests {
             .store_arc(Arc::<SeaOrmStore<Schema>>::clone(&store))
             .plugin(
                 AdminPlugin::new()
-                    .banned_user_message_callback::<alibi_seaorm::store::entities::user::Model, _>(
+                    .banned_user_message_callback::<alibi::seaorm::store::entities::user::Model, _>(
                         StoredUserMessage,
                     ),
             )
@@ -316,14 +315,12 @@ mod tests {
         assert_eq!(created.role(), Some("user"));
         assert!(!created.banned());
         assert_eq!(
-            alibi_core::utils::json::to_value(
-                &store.get_user_by_id(&owner.id).await.unwrap().unwrap()
-            )
-            .unwrap(),
+            alibi::utils::json::to_value(&store.get_user_by_id(&owner.id).await.unwrap().unwrap())
+                .unwrap(),
             before_user
         );
         assert_eq!(
-            alibi_core::utils::json::to_value(
+            alibi::utils::json::to_value(
                 &store.get_session(&session.token).await.unwrap().unwrap()
             )
             .unwrap(),

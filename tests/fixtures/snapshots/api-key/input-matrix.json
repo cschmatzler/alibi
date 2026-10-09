@@ -1,0 +1,482 @@
+[
+  {
+    "{\"name\":\"ok\",\"prefix\":\"bad prefix!\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.prefix] Invalid prefix format, must be alphanumeric and contain only underscores and hyphens."
+      }
+    }
+  },
+  {
+    "{\"name\":\"ok\",\"prefix\":\"p\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g1>",
+        "id": "<v2>",
+        "name": "ok",
+        "start": "<g3>",
+        "prefix": "p",
+        "referenceId": "<v4>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": null
+      }
+    }
+  },
+  {
+    "{\"name\":\"x\",\"expiresIn\":-1}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.expiresIn] Too small: expected number to be >=1"
+      }
+    }
+  },
+  {
+    "{\"name\":\"x\",\"expiresIn\":1e999}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.expiresIn] Invalid input: expected number, received Infinity"
+      }
+    }
+  },
+  {
+    "{\"name\":\"x\",\"expiresIn\":-1e999}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.expiresIn] Invalid input: expected number, received -Infinity"
+      }
+    }
+  },
+  {
+    "{\"name\":\"x\",\"remaining\":\"many\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.remaining] Invalid input: expected number, received string"
+      }
+    }
+  },
+  {
+    "{\"name\":\"x\",\"remaining\":-5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.remaining] Too small: expected number to be >=0"
+      }
+    }
+  },
+  {
+    "{\"name\":\"x\",\"metadata\":\"text\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_METADATA_TYPE",
+        "message": "metadata must be an object or undefined"
+      }
+    }
+  },
+  {
+    "{\"name\":\"x\",\"metadata\":[1]}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "key": "<g5>",
+        "id": "<v6>",
+        "name": "x",
+        "start": "<g7>",
+        "prefix": null,
+        "referenceId": "<v4>",
+        "configId": "default",
+        "refillInterval": null,
+        "refillAmount": null,
+        "lastRefillAt": null,
+        "enabled": true,
+        "rateLimitEnabled": true,
+        "rateLimitTimeWindow": 86400000,
+        "rateLimitMax": 10,
+        "requestCount": 0,
+        "remaining": null,
+        "lastRequest": null,
+        "expiresAt": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "permissions": null,
+        "metadata": [
+          1
+        ]
+      }
+    }
+  },
+  {
+    "{\"name\":\"x\",\"permissions\":{\"files\":\"read\"}}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.permissions.files] Invalid input: expected array, received string"
+      }
+    }
+  },
+  {
+    "{\"name\":\"x\",\"refillAmount\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "SERVER_ONLY_PROPERTY",
+        "message": "The property you're trying to set can only be set from the server auth instance only."
+      }
+    }
+  },
+  {
+    "{\"name\":\"x\",\"refillInterval\":1000}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "SERVER_ONLY_PROPERTY",
+        "message": "The property you're trying to set can only be set from the server auth instance only."
+      }
+    }
+  },
+  {
+    "{\"name\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "{\"name\":true}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received boolean"
+      }
+    }
+  },
+  {
+    "{\"name\":null}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received null"
+      }
+    }
+  },
+  {
+    "{\"name\":{\"nested\":1}}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received object"
+      }
+    }
+  },
+  {
+    "{\"name\":\"x\",\"rateLimitMax\":\"ten\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v8>] Invalid input: expected number, received string"
+      }
+    }
+  },
+  {
+    "{\"name\":\"x\",\"userId\":\"someone\"}": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED_SESSION",
+        "message": "Unauthorized or invalid session"
+      }
+    }
+  },
+  {
+    "[]": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] invalid length 5, expected struct <v9> with 14 elements"
+      }
+    }
+  },
+  {
+    "{\"name\":\"valid\",\"prefix\":\"app_\",\"remaining\":2,\"metadata\":{\"team\":\"core\"}}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "SERVER_ONLY_PROPERTY",
+        "message": "The property you're trying to set can only be set from the server auth instance only."
+      }
+    }
+  },
+  {
+    "list [(\"limit\", \"x\")]": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[query.limit] Invalid input: expected number, received NaN"
+      }
+    }
+  },
+  {
+    "list [(\"limit\", \"-1\")]": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[query.limit] Too small: expected number to be >=0"
+      }
+    }
+  },
+  {
+    "list [(\"offset\", \"NaN\")]": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[query.offset] Invalid input: expected number, received NaN"
+      }
+    }
+  },
+  {
+    "list [(\"sortBy\", \"name\"), (\"sortDirection\", \"sideways\")]": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v10>] Invalid option: expected one of \"asc\"|\"desc\""
+      }
+    }
+  },
+  {
+    "list [(\"sortBy\", \"metadata\"), (\"sortDirection\", \"desc\"), (\"limit\", \"1\")]": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "apiKeys": [
+          {
+            "id": "<v2>",
+            "name": "ok",
+            "start": "<g3>",
+            "prefix": "p",
+            "referenceId": "<v4>",
+            "configId": "default",
+            "refillInterval": null,
+            "refillAmount": null,
+            "lastRefillAt": null,
+            "enabled": true,
+            "rateLimitEnabled": true,
+            "rateLimitTimeWindow": 86400000,
+            "rateLimitMax": 10,
+            "requestCount": 0,
+            "remaining": null,
+            "lastRequest": null,
+            "expiresAt": null,
+            "createdAt": "<date>",
+            "updatedAt": "<date>",
+            "permissions": null,
+            "metadata": null
+          }
+        ],
+        "total": 2,
+        "limit": 1
+      }
+    }
+  },
+  {
+    "list [(\"sortBy\", \"remaining\"), (\"sortDirection\", \"asc\")]": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "apiKeys": [
+          {
+            "id": "<v2>",
+            "name": "ok",
+            "start": "<g3>",
+            "prefix": "p",
+            "referenceId": "<v4>",
+            "configId": "default",
+            "refillInterval": null,
+            "refillAmount": null,
+            "lastRefillAt": null,
+            "enabled": true,
+            "rateLimitEnabled": true,
+            "rateLimitTimeWindow": 86400000,
+            "rateLimitMax": 10,
+            "requestCount": 0,
+            "remaining": null,
+            "lastRequest": null,
+            "expiresAt": null,
+            "createdAt": "<date>",
+            "updatedAt": "<date>",
+            "permissions": null,
+            "metadata": null
+          },
+          {
+            "id": "<v6>",
+            "name": "x",
+            "start": "<g7>",
+            "prefix": null,
+            "referenceId": "<v4>",
+            "configId": "default",
+            "refillInterval": null,
+            "refillAmount": null,
+            "lastRefillAt": null,
+            "enabled": true,
+            "rateLimitEnabled": true,
+            "rateLimitTimeWindow": 86400000,
+            "rateLimitMax": 10,
+            "requestCount": 0,
+            "remaining": null,
+            "lastRequest": null,
+            "expiresAt": null,
+            "createdAt": "<date>",
+            "updatedAt": "<date>",
+            "permissions": null,
+            "metadata": [
+              1
+            ]
+          }
+        ],
+        "total": 2
+      }
+    }
+  }
+]

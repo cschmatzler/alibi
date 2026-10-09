@@ -1,21 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export BETTER_AUTH_REQUIRE_REFERENCE_SERVER=1
 mkdir -p coverage
 # Keep this checkout's coverage objects separate from shared build caches.
 export CARGO_LLVM_COV_TARGET_DIR="$PWD/coverage/target"
-export BETTER_AUTH_COMPAT_COVERAGE_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
 cargo llvm-cov clean --workspace
-# Preserve the native matrix and exercise every SDK owner in one fixture pool.
-# Restarting a pool for each selected directory repeats all profile construction
-# and leaves the other workers idle behind that directory's slowest file.
-# Both runs contribute real native execution to the unchanged production floor.
 cargo llvm-cov nextest --workspace --locked --features axum,seaorm,redis-cache --no-report
-cargo llvm-cov nextest --workspace --locked --features axum,seaorm,redis-cache \
-  --no-report --test compat --run-ignored only --test-threads 1 \
-  -E 'test(=sdk::tests::full_client_compat)'
-export LLVM_COV_FLAGS="${LLVM_COV_FLAGS:+$LLVM_COV_FLAGS }-object=coverage/target/debug/compat-rust-server"
 cargo llvm-cov report --locked --package '*' \
   --ignore-filename-regex '(tests/|scripts/|target/)' \
   --lcov --output-path coverage/lcov.raw.info
@@ -24,8 +14,7 @@ cargo llvm-cov report --locked --package '*' \
 lcov --add-tracefile coverage/lcov.raw.info --filter region \
   --rc c_file_extensions=rs --rc function_coverage=0 \
   --rc derive_function_end_line=0 --output-file coverage/lcov.info
-# cargo-llvm-cov 0.9's built-in floor check omits LLVM_COV_FLAGS (and therefore
-# the fixture object). Enforce the same floor on the complete LLVM report.
+# Enforce the floor on the filtered report rather than cargo-llvm-cov's raw total.
 awk -F: '
   /^SF:/ {
     if (active || $0 == "SF:") invalid = 1
@@ -46,7 +35,7 @@ awk -F: '
   }
   END {
     if (invalid || active || total == 0) { print "Coverage report is missing or invalid"; exit 1 }
-    printf "Native line coverage: %d/%d (%.6f%%); required 75%%\n", covered, total, covered * 100 / total
-    exit (covered * 100 < total * 75)
+    printf "Native line coverage: %d/%d (%.6f%%); required 88%%\n", covered, total, covered * 100 / total
+    exit (covered * 100 < total * 88)
   }
 ' coverage/lcov.info

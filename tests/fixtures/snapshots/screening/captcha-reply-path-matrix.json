@@ -1,0 +1,436 @@
+[
+  {
+    "missing header": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Missing CAPTCHA response",
+        "code": "MISSING_RESPONSE"
+      }
+    }
+  },
+  {
+    "empty header": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Missing CAPTCHA response",
+        "code": "MISSING_RESPONSE"
+      }
+    }
+  },
+  {
+    "success": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "provider 500": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Something went wrong",
+        "code": "UNKNOWN_ERROR"
+      }
+    }
+  },
+  {
+    "binary media": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Captcha verification failed",
+        "code": "VERIFICATION_FAILED"
+      }
+    }
+  },
+  {
+    "invalid json text": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Captcha verification failed",
+        "code": "VERIFICATION_FAILED"
+      }
+    }
+  },
+  {
+    "empty body": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Something went wrong",
+        "code": "UNKNOWN_ERROR"
+      }
+    }
+  },
+  {
+    "json null": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Something went wrong",
+        "code": "UNKNOWN_ERROR"
+      }
+    }
+  },
+  {
+    "json zero": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Something went wrong",
+        "code": "UNKNOWN_ERROR"
+      }
+    }
+  },
+  {
+    "json array": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Captcha verification failed",
+        "code": "VERIFICATION_FAILED"
+      }
+    }
+  },
+  {
+    "numeric success": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "empty string success": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Captcha verification failed",
+        "code": "VERIFICATION_FAILED"
+      }
+    }
+  },
+  {
+    "object success": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "string success": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "recaptcha low score": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Missing CAPTCHA response",
+        "code": "MISSING_RESPONSE"
+      }
+    }
+  },
+  {
+    "recaptcha low score with token": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Captcha verification failed",
+        "code": "VERIFICATION_FAILED"
+      }
+    }
+  },
+  {
+    "empty secret": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Something went wrong",
+        "code": "UNKNOWN_ERROR"
+      }
+    }
+  },
+  {
+    "empty secret with token": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Something went wrong",
+        "code": "UNKNOWN_ERROR"
+      }
+    }
+  },
+  {
+    "wildcard segment": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "wildcard segment with token": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "globstar descendants": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Missing CAPTCHA response",
+        "code": "MISSING_RESPONSE"
+      }
+    }
+  },
+  {
+    "globstar descendants with token": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "unprotected path": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "unprotected path with token": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "oversized pattern": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "oversized pattern with token": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "human": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "bot": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Captcha verification failed",
+        "code": "VERIFICATION_FAILED"
+      }
+    }
+  },
+  {
+    "check failure": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Something went wrong",
+        "code": "UNKNOWN_ERROR"
+      }
+    }
+  },
+  {
+    "validator accepts bot": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL_OR_PASSWORD",
+        "message": "Invalid email or password"
+      }
+    }
+  },
+  {
+    "validator rejects human": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Captcha verification failed",
+        "code": "VERIFICATION_FAILED"
+      }
+    }
+  }
+]

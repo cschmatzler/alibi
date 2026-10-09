@@ -117,7 +117,7 @@ impl<S: AuthSchema> OrganizationRoleStore for SeaOrmStore<S> {
             query = query.col_expr(Column::Permission, Expr::value(permission.clone()));
             row.permission = permission;
         }
-        let _ignored_map_err = query
+        _ = query
             .exec(self.scoped_connection())
             .await
             .map_err(map_db_err)?;

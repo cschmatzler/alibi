@@ -9,7 +9,7 @@ use alibi::plugins::anonymous::{AnonymousConfig, AnonymousLink, LinkAnonymousAcc
 use alibi::plugins::oauth::OAuthProvider;
 use alibi::plugins::{AnonymousPlugin, EmailPasswordPlugin, OAuthPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use alibi_core::{
+use alibi::{
     AuthRequest, AuthResponse, AuthResult, AuthSession, AuthUser, AuthVerification, HttpMethod,
 };
 use async_trait::async_trait;

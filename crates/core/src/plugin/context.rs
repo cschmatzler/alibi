@@ -1,4 +1,14 @@
-use super::*;
+use crate::plugin::MetadataMap;
+use crate::session::SessionRequest;
+use crate::wire::{InvitationView, SessionView, UserView};
+use crate::{
+    AdapterOutput, AdapterRecord, AuthAccount, AuthConfig, AuthError, AuthInvitation, AuthRequest,
+    AuthResult, AuthSchema, AuthSession, AuthStore, AuthUser, AuthenticatedUser, ContextExtensions,
+    EmailProvider, SessionManager, VerificationEmailOverrideHandle,
+};
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
 /// Context passed to plugin methods.
 pub struct AuthContext<S: AuthSchema> {
     pub config: Arc<AuthConfig>,
@@ -6,6 +16,22 @@ pub struct AuthContext<S: AuthSchema> {
     pub email_provider: Option<Arc<dyn EmailProvider>>,
     pub metadata: MetadataMap,
     pub extensions: ContextExtensions,
+}
+
+fn insert_null(fields: &mut BTreeMap<String, serde_json::Value>, name: &str) {
+    _ = fields.insert(name.to_owned(), serde_json::Value::Null);
+}
+
+impl<S: AuthSchema> Clone for AuthContext<S> {
+    fn clone(&self) -> Self {
+        Self {
+            config: Arc::clone(&self.config),
+            database: Arc::clone(&self.database),
+            email_provider: self.email_provider.clone(),
+            metadata: self.metadata.clone(),
+            extensions: self.extensions.clone(),
+        }
+    }
 }
 
 impl<S: AuthSchema> AuthContext<S> {
@@ -78,14 +104,7 @@ impl<S: AuthSchema> AuthContext<S> {
 
     #[must_use]
     pub fn new(config: Arc<AuthConfig>, database: Arc<dyn AuthStore<S>>) -> Self {
-        let email_provider = config.email_provider.clone();
-        Self {
-            config,
-            database,
-            email_provider,
-            metadata: MetadataMap::new(),
-            extensions: ContextExtensions::default(),
-        }
+        Self::with_metadata(config, database, MetadataMap::new())
     }
 
     #[must_use]
@@ -105,7 +124,7 @@ impl<S: AuthSchema> AuthContext<S> {
     }
 
     pub fn set_metadata(&mut self, key: impl Into<String>, value: serde_json::Value) {
-        drop(self.metadata.insert(key.into(), value));
+        _ = self.metadata.insert(key.into(), value);
     }
 
     #[must_use]
@@ -124,21 +143,21 @@ impl<S: AuthSchema> AuthContext<S> {
         self.extensions.get()
     }
 
-    pub fn user_view(&self, user: &impl crate::entity::AuthUser) -> crate::wire::UserView {
+    pub fn user_view(&self, user: &impl AuthUser) -> UserView {
         self.project_user_view(user, true)
     }
 
     /// Project trusted adapter output without removing declared hidden fields.
     /// Canonical identity accessors still refer to the physical model.
-    pub fn trusted_user_view(&self, user: &impl crate::entity::AuthUser) -> crate::wire::UserView {
+    pub fn trusted_user_view(&self, user: &impl AuthUser) -> UserView {
         self.project_user_view(user, false)
     }
 
     pub(in crate::plugin) fn project_user_view(
         &self,
-        user: &impl crate::entity::AuthUser,
+        user: &impl AuthUser,
         public: bool,
-    ) -> crate::wire::UserView {
+    ) -> UserView {
         if let Some(view) = user.retained_user_view() {
             let mut view = view.clone();
             if public {
@@ -151,17 +170,14 @@ impl<S: AuthSchema> AuthContext<S> {
             }
             return view;
         }
-        let mut view = crate::wire::UserView::from(user);
+        let mut view = UserView::from(user);
         if self.feature_enabled("username.enabled") {
             for (key, absent) in [
                 ("username", view.username.is_none()),
                 ("displayUsername", view.display_username.is_none()),
             ] {
                 if absent {
-                    drop(
-                        view.extension_fields
-                            .insert(key.into(), serde_json::Value::Null),
-                    );
+                    insert_null(&mut view.extension_fields, key);
                 }
             }
         } else {
@@ -171,10 +187,7 @@ impl<S: AuthSchema> AuthContext<S> {
         if self.feature_enabled("two_factor.enabled") {
             view.two_factor_enabled = user.two_factor_enabled_value();
             if view.two_factor_enabled.is_none() {
-                drop(
-                    view.extension_fields
-                        .insert("twoFactorEnabled".into(), serde_json::Value::Null),
-                );
+                insert_null(&mut view.extension_fields, "twoFactorEnabled");
             }
         } else {
             view.two_factor_enabled = None;
@@ -188,10 +201,7 @@ impl<S: AuthSchema> AuthContext<S> {
                 ("banExpires", view.ban_expires.is_none()),
             ] {
                 if absent {
-                    drop(
-                        view.extension_fields
-                            .insert(key.into(), serde_json::Value::Null),
-                    );
+                    insert_null(&mut view.extension_fields, key);
                 }
             }
         } else {
@@ -208,16 +218,10 @@ impl<S: AuthSchema> AuthContext<S> {
         }
         if self.feature_enabled("phone-number.enabled") {
             if view.phone_number.is_none() {
-                drop(
-                    view.extension_fields
-                        .insert("phoneNumber".into(), serde_json::Value::Null),
-                );
+                insert_null(&mut view.extension_fields, "phoneNumber");
             }
             if view.phone_number_verified.is_none() {
-                drop(
-                    view.extension_fields
-                        .insert("phoneNumberVerified".into(), serde_json::Value::Null),
-                );
+                insert_null(&mut view.extension_fields, "phoneNumberVerified");
             }
         } else {
             view.phone_number = None;
@@ -225,10 +229,7 @@ impl<S: AuthSchema> AuthContext<S> {
         }
         if self.feature_enabled("last-login-method.enabled") {
             if view.last_login_method.is_none() {
-                drop(
-                    view.extension_fields
-                        .insert("lastLoginMethod".into(), serde_json::Value::Null),
-                );
+                insert_null(&mut view.extension_fields, "lastLoginMethod");
             }
         } else {
             view.last_login_method = None;
@@ -240,10 +241,9 @@ impl<S: AuthSchema> AuthContext<S> {
         let physical = user.additional_fields();
         let values = user
             .adapter_snapshot()
-            .map(crate::AdapterOutput::values)
-            .unwrap_or(&physical);
+            .map_or(&physical, AdapterOutput::values);
         for (name, field) in fields {
-            drop(view.extension_fields.remove(name));
+            _ = view.extension_fields.remove(name);
             if (!public || field.returned)
                 && let Some(value) = values.get(name).or_else(|| {
                     field
@@ -252,7 +252,7 @@ impl<S: AuthSchema> AuthContext<S> {
                         .and_then(|physical| values.get(physical))
                 })
             {
-                drop(view.extension_fields.insert(name.clone(), value.clone()));
+                _ = view.extension_fields.insert(name.clone(), value.clone());
             }
         }
         if let Some(snapshot) = user.adapter_snapshot() {
@@ -279,7 +279,7 @@ impl<S: AuthSchema> AuthContext<S> {
                 "lastLoginMethod",
             ] {
                 if !snapshot.contains_field(name) || snapshot.field_is_undefined(name) {
-                    let _ = view.omitted_fields.insert(name.into());
+                    _ = view.omitted_fields.insert(name.into());
                 }
             }
         }
@@ -297,7 +297,7 @@ impl<S: AuthSchema> AuthContext<S> {
                         .get(name)
                         .is_none_or(serde_json::Value::is_null)
                 {
-                    let _ = view.omitted_fields.insert(name.into());
+                    _ = view.omitted_fields.insert(name.into());
                 }
             }
         }
@@ -308,7 +308,7 @@ impl<S: AuthSchema> AuthContext<S> {
     pub(crate) async fn user_adapter_record(
         &self,
         user: S::User,
-    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+    ) -> AuthResult<AdapterRecord<S::User>> {
         use crate::AuthUser;
         let registered = self
             .extensions
@@ -326,28 +326,25 @@ impl<S: AuthSchema> AuthContext<S> {
                 serde_json::to_value(
                     user.retained_user_view()
                         .cloned()
-                        .unwrap_or_else(|| crate::UserView::from(&user)),
+                        .unwrap_or_else(|| UserView::from(&user)),
                 )?,
                 user.additional_fields(),
                 serde_json::to_value(self.trusted_user_view(&user))?,
             )
             .await?;
-        Ok(crate::AdapterRecord::with_output(user, output))
+        Ok(AdapterRecord::with_output(user, output))
     }
 
     /// Preserve the initialized adapter result's physical authority and declared
     /// undefined presence while applying the public user field policy once.
     #[must_use]
-    pub fn filter_user_record(
-        &self,
-        record: crate::AdapterRecord<S::User>,
-    ) -> crate::AdapterRecord<S::User> {
+    pub fn filter_user_record(&self, record: AdapterRecord<S::User>) -> AdapterRecord<S::User> {
         let registered = self.extensions.get::<crate::field_policy::UserFields>();
         let fields = registered
             .as_ref()
             .map_or(&self.config.user.additional_fields, |fields| &fields.0.0);
         let output = record.raw_snapshot().filter_returned(fields);
-        crate::AdapterRecord::with_output(record.into_stored(), output)
+        AdapterRecord::with_output(record.into_stored(), output)
     }
 
     /// Public account output retains declared adapter projections and always
@@ -357,7 +354,7 @@ impl<S: AuthSchema> AuthContext<S> {
     /// Returns an error when the canonical account view cannot be serialized.
     pub fn account_view(
         &self,
-        account: &impl crate::entity::AuthAccount,
+        account: &impl AuthAccount,
     ) -> AuthResult<serde_json::Map<String, serde_json::Value>> {
         let serde_json::Value::Object(mut view) =
             serde_json::to_value(crate::wire::AccountView::from(account))?
@@ -371,10 +368,9 @@ impl<S: AuthSchema> AuthContext<S> {
         let physical = account.additional_fields();
         let values = account
             .adapter_snapshot()
-            .map(crate::AdapterOutput::values)
-            .unwrap_or(&physical);
+            .map_or(&physical, AdapterOutput::values);
         for (name, field) in fields {
-            drop(view.remove(name));
+            _ = view.remove(name);
             if field.returned
                 && let Some(value) = values.get(name).or_else(|| {
                     field
@@ -383,7 +379,7 @@ impl<S: AuthSchema> AuthContext<S> {
                         .and_then(|physical| values.get(physical))
                 })
             {
-                drop(view.insert(name.clone(), value.clone()));
+                _ = view.insert(name.clone(), value.clone());
             }
         }
         for credential in [
@@ -394,16 +390,16 @@ impl<S: AuthSchema> AuthContext<S> {
             "refreshTokenExpiresAt",
             "password",
         ] {
-            drop(view.remove(credential));
+            _ = view.remove(credential);
         }
         Ok(view)
     }
 
-    pub fn session_view(&self, session: &impl AuthSession) -> crate::wire::SessionView {
+    pub fn session_view(&self, session: &impl AuthSession) -> SessionView {
         self.project_session_view(session, true)
     }
 
-    pub fn trusted_session_view(&self, session: &impl AuthSession) -> crate::wire::SessionView {
+    pub fn trusted_session_view(&self, session: &impl AuthSession) -> SessionView {
         self.project_session_view(session, false)
     }
 
@@ -411,7 +407,7 @@ impl<S: AuthSchema> AuthContext<S> {
         &self,
         session: &impl AuthSession,
         public: bool,
-    ) -> crate::wire::SessionView {
+    ) -> SessionView {
         if let Some(view) = session.retained_session_view() {
             let mut view = view.clone();
             if public {
@@ -421,51 +417,45 @@ impl<S: AuthSchema> AuthContext<S> {
                     .map_or(&self.config.session.additional_fields, |fields| &fields.0);
                 for (name, field) in fields {
                     if !field.returned {
-                        let _ignored_clone = view.omitted_fields.insert(name.clone());
+                        _ = view.omitted_fields.insert(name.clone());
                     }
                 }
             }
             return view;
         }
-        let mut view = crate::wire::SessionView::from(session);
+        let mut view = SessionView::from(session);
         let registered = self.extensions.get::<crate::field_policy::SessionFields>();
         let fields = registered
             .as_ref()
             .map_or(&self.config.session.additional_fields, |fields| &fields.0);
         view.extension_fields
             .retain(|name, _| fields.contains_key(name));
-        if let Some(output) = session.adapter_snapshot().map(crate::AdapterOutput::values) {
+        if let Some(output) = session.adapter_snapshot().map(AdapterOutput::values) {
             for name in fields.keys() {
-                drop(view.extension_fields.remove(name));
+                _ = view.extension_fields.remove(name);
                 if let Some(value) = output.get(name) {
-                    drop(view.extension_fields.insert(name.clone(), value.clone()));
+                    _ = view.extension_fields.insert(name.clone(), value.clone());
                 } else {
-                    let _ignored_clone = view.omitted_fields.insert(name.clone());
+                    _ = view.omitted_fields.insert(name.clone());
                 }
             }
         }
         for (name, field) in fields {
             if public && !field.returned {
-                let _ignored_clone = view.omitted_fields.insert(name.clone());
+                _ = view.omitted_fields.insert(name.clone());
             }
         }
         let declared = |name: &str| fields.contains_key(name);
         if self.feature_enabled("admin.enabled") || declared("impersonatedBy") {
             if view.impersonated_by.is_none() {
-                drop(
-                    view.extension_fields
-                        .insert("impersonatedBy".into(), serde_json::Value::Null),
-                );
+                insert_null(&mut view.extension_fields, "impersonatedBy");
             }
         } else {
             view.impersonated_by = None;
         }
         if self.feature_enabled("organization.enabled") || declared("activeOrganizationId") {
             if view.active_organization_id.is_none() {
-                drop(
-                    view.extension_fields
-                        .insert("activeOrganizationId".into(), serde_json::Value::Null),
-                );
+                insert_null(&mut view.extension_fields, "activeOrganizationId");
             }
         } else {
             view.active_organization_id = None;
@@ -473,10 +463,7 @@ impl<S: AuthSchema> AuthContext<S> {
 
         if self.feature_enabled("organization.teams.enabled") || declared("activeTeamId") {
             if view.active_team_id.is_none() {
-                drop(
-                    view.extension_fields
-                        .insert("activeTeamId".into(), serde_json::Value::Null),
-                );
+                insert_null(&mut view.extension_fields, "activeTeamId");
             }
         } else {
             view.active_team_id = None;
@@ -495,24 +482,18 @@ impl<S: AuthSchema> AuthContext<S> {
                         .get(name)
                         .is_none_or(serde_json::Value::is_null)
                 {
-                    let _ = view.omitted_fields.insert(name.into());
+                    _ = view.omitted_fields.insert(name.into());
                 }
             }
         }
         view
     }
 
-    pub fn invitation_view(
-        &self,
-        invitation: &impl crate::entity::AuthInvitation,
-    ) -> crate::wire::InvitationView {
-        let mut view = crate::wire::InvitationView::from(invitation);
+    pub fn invitation_view(&self, invitation: &impl AuthInvitation) -> InvitationView {
+        let mut view = InvitationView::from(invitation);
         if self.feature_enabled("organization.teams.enabled") {
             if view.team_id.is_none() {
-                drop(
-                    view.extension_fields
-                        .insert("teamId".into(), serde_json::Value::Null),
-                );
+                insert_null(&mut view.extension_fields, "teamId");
             }
         } else {
             view.team_id = None;
@@ -555,8 +536,8 @@ impl<S: AuthSchema> AuthContext<S> {
     /// Returns an authentication error for a missing or invalid session, or propagates storage errors.
     pub async fn require_session(
         &self,
-        req: &impl crate::session::SessionRequest,
-    ) -> AuthResult<(S::User, crate::wire::SessionView)> {
+        req: &impl SessionRequest,
+    ) -> AuthResult<(S::User, SessionView)> {
         let (user, session, _) = self.require_session_with_refresh_state(req).await?;
         Ok((user, session))
     }
@@ -569,11 +550,11 @@ impl<S: AuthSchema> AuthContext<S> {
     /// Returns an error if the request has no valid session or session lookup fails.
     pub async fn require_cached_session(
         &self,
-        req: &impl crate::session::SessionRequest,
-    ) -> AuthResult<(crate::AuthenticatedUser<S>, crate::wire::SessionView)> {
+        req: &impl SessionRequest,
+    ) -> AuthResult<(AuthenticatedUser<S>, SessionView)> {
         let read = crate::session::cookie_cache::runtime::authenticated(self, req, false)
             .await
-            .map_err(|_error| AuthError::Unauthenticated)?
+            .map_err(|_| AuthError::Unauthenticated)?
             .ok_or(AuthError::Unauthenticated)?;
         Ok((read.user, read.session))
     }
@@ -588,8 +569,8 @@ impl<S: AuthSchema> AuthContext<S> {
     /// storage and callback errors.
     pub async fn require_cached_session_strict(
         &self,
-        req: &impl crate::session::SessionRequest,
-    ) -> AuthResult<(crate::AuthenticatedUser<S>, crate::wire::SessionView)> {
+        req: &impl SessionRequest,
+    ) -> AuthResult<(AuthenticatedUser<S>, SessionView)> {
         let read = crate::session::cookie_cache::runtime::authenticated_with(
             self,
             req,
@@ -617,8 +598,8 @@ impl<S: AuthSchema> AuthContext<S> {
     /// Returns an authentication error for a missing or invalid session, or propagates storage errors.
     pub async fn require_session_with_refresh_state(
         &self,
-        req: &impl crate::session::SessionRequest,
-    ) -> AuthResult<(S::User, crate::wire::SessionView, Option<bool>)> {
+        req: &impl SessionRequest,
+    ) -> AuthResult<(S::User, SessionView, Option<bool>)> {
         self.authenticated_session(req, true).await
     }
 
@@ -628,18 +609,9 @@ impl<S: AuthSchema> AuthContext<S> {
     pub async fn require_authoritative_cached_session(
         &self,
         req: &AuthRequest,
-    ) -> AuthResult<(crate::AuthenticatedUser<S>, crate::wire::SessionView)> {
-        crate::session::cookie_cache::runtime::clear_established_session::<S>(req);
-        let mut authoritative = req.clone();
-        authoritative.virtual_session = None;
-        if self.config.session.has_server_session_store() {
-            drop(
-                authoritative
-                    .query
-                    .insert("disableCookieCache".into(), "true".into()),
-            );
-        }
-        self.require_cached_session(&authoritative).await
+    ) -> AuthResult<(AuthenticatedUser<S>, SessionView)> {
+        self.require_cached_session(&self.physical_request(req))
+            .await
     }
 
     /// Authorize against the persisted signed-cookie session.
@@ -651,8 +623,8 @@ impl<S: AuthSchema> AuthContext<S> {
     /// Returns an authentication error if no valid persisted session exists, or propagates storage errors.
     pub async fn require_authoritative_session(
         &self,
-        req: &impl crate::session::SessionRequest,
-    ) -> AuthResult<(S::User, crate::wire::SessionView)> {
+        req: &impl SessionRequest,
+    ) -> AuthResult<(S::User, SessionView)> {
         crate::session::cookie_cache::runtime::clear_established_session::<S>(req);
         let (user, session, _) = self.authenticated_session(req, false).await?;
         Ok((user, session))
@@ -666,29 +638,20 @@ impl<S: AuthSchema> AuthContext<S> {
     pub async fn require_authoritative_session_record(
         &self,
         req: &AuthRequest,
-    ) -> AuthResult<(crate::AdapterRecord<S::User>, crate::wire::SessionView)> {
-        crate::session::cookie_cache::runtime::clear_established_session::<S>(req);
-        let mut physical = req.clone();
-        physical.virtual_session = None;
-        if self.config.session.has_server_session_store() {
-            drop(
-                physical
-                    .query
-                    .insert("disableCookieCache".into(), "true".into()),
-            );
-        }
+    ) -> AuthResult<(AdapterRecord<S::User>, SessionView)> {
+        let physical = self.physical_request(req);
         let read = crate::session::cookie_cache::runtime::authenticated(self, &physical, false)
             .await?
             .ok_or(AuthError::Unauthenticated)?;
         match read.user {
-            crate::AuthenticatedUser::Stored(user) => Ok((user, read.session)),
-            crate::AuthenticatedUser::Cached(user) if self.config.session.stateless => {
+            AuthenticatedUser::Stored(user) => Ok((user, read.session)),
+            AuthenticatedUser::Cached(user) if self.config.session.stateless => {
                 let user = S::user_from_cookie_cache(*user).ok_or_else(|| {
                     AuthError::config("This schema requires cache-aware session authority")
                 })?;
-                Ok((crate::AdapterRecord::physical(user)?, read.session))
+                Ok((AdapterRecord::physical(user)?, read.session))
             }
-            crate::AuthenticatedUser::Cached(_) => Err(AuthError::Unauthenticated),
+            AuthenticatedUser::Cached(_) => Err(AuthError::Unauthenticated),
         }
     }
 
@@ -697,10 +660,7 @@ impl<S: AuthSchema> AuthContext<S> {
     ///
     /// # Errors
     /// Propagates backend failures and rejects mismatched cached ownership.
-    pub async fn session_user(
-        &self,
-        session: &impl crate::AuthSession,
-    ) -> AuthResult<Option<S::User>> {
+    pub async fn session_user(&self, session: &impl AuthSession) -> AuthResult<Option<S::User>> {
         use crate::AuthUser;
         if let Some(user) = self.database.get_session_user(session.token()).await? {
             if user.id() != session.user_id() {
@@ -718,11 +678,25 @@ impl<S: AuthSchema> AuthContext<S> {
             .await
     }
 
+    /// A copy of `req` that ignores hook-provided virtual sessions and, with a
+    /// server session store, the cookie cache.
+    fn physical_request(&self, req: &AuthRequest) -> AuthRequest {
+        crate::session::cookie_cache::runtime::clear_established_session::<S>(req);
+        let mut physical = req.clone();
+        physical.virtual_session = None;
+        if self.config.session.has_server_session_store() {
+            _ = physical
+                .query
+                .insert("disableCookieCache".into(), "true".into());
+        }
+        physical
+    }
+
     pub(in crate::plugin) async fn authenticated_session(
         &self,
-        req: &impl crate::session::SessionRequest,
+        req: &impl SessionRequest,
         allow_virtual: bool,
-    ) -> AuthResult<(S::User, crate::wire::SessionView, Option<bool>)> {
+    ) -> AuthResult<(S::User, SessionView, Option<bool>)> {
         if allow_virtual && let Some(session) = req.virtual_session(self) {
             let user = if let Some(user) = req.authenticated_user::<S>(self) {
                 user
@@ -760,7 +734,7 @@ impl<S: AuthSchema> AuthContext<S> {
         let read = session_manager
             .read_session(&token, options)
             .await
-            .map_err(|_error| AuthError::Unauthenticated)?;
+            .map_err(|_| AuthError::Unauthenticated)?;
         let Some(session) = read.session else {
             self.queue_session_cleanup(req)?;
             return Err(AuthError::Unauthenticated);
@@ -768,7 +742,7 @@ impl<S: AuthSchema> AuthContext<S> {
         let user = self
             .session_user(&session)
             .await
-            .map_err(|_error| AuthError::Unauthenticated)?;
+            .map_err(|_| AuthError::Unauthenticated)?;
         let Some(user) = user else {
             self.queue_session_cleanup(req)?;
             return Err(AuthError::Unauthenticated);
@@ -789,7 +763,7 @@ impl<S: AuthSchema> AuthContext<S> {
 
     pub(in crate::plugin) fn queue_session_cleanup(
         &self,
-        req: &impl crate::session::SessionRequest,
+        req: &impl SessionRequest,
     ) -> AuthResult<()> {
         for cookie in crate::utils::cookie_utils::delete_session_cookie_headers(&self.config)? {
             req.queue_response_header("Set-Cookie", cookie);
@@ -806,8 +780,8 @@ impl<S: AuthSchema> AuthContext<S> {
     /// Propagates errors from session or user lookups.
     pub async fn session_without_refresh(
         &self,
-        req: &impl crate::session::SessionRequest,
-    ) -> AuthResult<Option<(S::User, crate::wire::SessionView)>> {
+        req: &impl SessionRequest,
+    ) -> AuthResult<Option<(S::User, SessionView)>> {
         if let Some(session) = req.virtual_session(self) {
             if let Some(user) = req.authenticated_user::<S>(self) {
                 return Ok(Some((user, session)));
@@ -828,8 +802,8 @@ impl<S: AuthSchema> AuthContext<S> {
     /// Propagates errors from session or user lookups.
     pub async fn persistent_session(
         &self,
-        req: &impl crate::session::SessionRequest,
-    ) -> AuthResult<Option<(S::User, crate::wire::SessionView)>> {
+        req: &impl SessionRequest,
+    ) -> AuthResult<Option<(S::User, SessionView)>> {
         if self.config.session.stateless
             && let Some(cache) = crate::session::cookie_cache::runtime::read(self, req).await?
         {

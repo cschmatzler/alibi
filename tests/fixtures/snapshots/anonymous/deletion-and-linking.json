@@ -1,0 +1,177 @@
+[
+  {
+    "upgrade by sign-up": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g2>",
+        "user": {
+          "id": "<v3>",
+          "name": "Linked",
+          "email": "linked@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "isAnonymous": false,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "delete as a regular user": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_IS_NOT_ANONYMOUS",
+        "message": "User is not anonymous"
+      }
+    }
+  },
+  {
+    "delete without a session": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "session cleanup failure": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_DELETE_ANONYMOUS_USER_SESSIONS",
+        "message": "Failed to delete anonymous user sessions"
+      }
+    }
+  },
+  {
+    "user cleanup failure": {
+      "status": 500,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "FAILED_TO_DELETE_ANONYMOUS_USER",
+        "message": "Failed to delete anonymous user"
+      }
+    }
+  },
+  {
+    "upgrade with cleanup failure": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g4>",
+        "user": {
+          "id": "<v5>",
+          "name": "U",
+          "email": "undeletable@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "isAnonymous": false,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "delete anonymous": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "deletion disabled": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "DELETE_ANONYMOUS_USER_DISABLED",
+        "message": "Deleting anonymous users is disabled"
+      }
+    }
+  },
+  {
+    "upgrade keeps the anonymous user": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "token": "<g6>",
+        "user": {
+          "id": "<v7>",
+          "name": "K",
+          "email": "kept@example.test",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "isAnonymous": false,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  }
+]

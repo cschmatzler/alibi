@@ -1,12 +1,12 @@
 //! Application admission must run with the real request and before persistence.
 use super::*;
 mod verification_modes;
-use alibi_core::hooks::RequestHookContext;
-use alibi_core::user_validation::{
+use alibi::hooks::RequestHookContext;
+use alibi::user_validation::{
     UserInfoValidator, UserValidationAction, UserValidationData, UserValidationRejection,
 };
-use alibi_core::verification::{VerificationIdentifierHasher, VerificationIdentifierStrategy};
-use alibi_core::{AuthError, AuthResult, CreateUser, CreateVerification, UpdateVerification};
+use alibi::verification::{VerificationIdentifierHasher, VerificationIdentifierStrategy};
+use alibi::{AuthError, AuthResult, CreateUser, CreateVerification, UpdateVerification};
 use async_trait::async_trait;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -39,7 +39,7 @@ impl UserInfoValidator for Admission {
         let policy = context.headers["x-admission"].clone();
         // Yield inside the callback so concurrently admitted requests interleave.
         tokio::task::yield_now().await;
-        let actual = alibi_core::hooks::current_request_hook_context().unwrap();
+        let actual = alibi::hooks::current_request_hook_context().unwrap();
         assert_eq!(actual.headers["x-admission"], policy);
         assert_eq!(actual.body, context.body);
         self.0
@@ -145,7 +145,7 @@ async fn identity_policy_admits_mutations_and_isolates_concurrent_requests<B: Ba
             .is_err()
     );
     assert_eq!(db.count("users").await?, 3);
-    assert!(alibi_core::hooks::current_request_hook_context().is_none());
+    assert!(alibi::hooks::current_request_hook_context().is_none());
     B::close(connection).await
 }
 
@@ -365,7 +365,7 @@ async fn provider_admission_distinguishes_creation_returning_and_linking<B: Back
         auth.store()
             .update_user(
                 &local_id,
-                alibi_core::UpdateUser {
+                alibi::UpdateUser {
                     email_verified: Some(true),
                     ..Default::default()
                 },

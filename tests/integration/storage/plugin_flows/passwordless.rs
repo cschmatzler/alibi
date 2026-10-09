@@ -9,7 +9,7 @@ use alibi::plugins::one_time_token::OneTimeTokenPlugin;
 use alibi::plugins::phone_number::{
     PhoneNumberConfig, PhoneNumberPlugin, PhoneOtpDelivery, PhoneSignupIdentity, SendPhoneOtp,
 };
-use alibi_core::{AuthResult, CallbackContext};
+use alibi::{AuthResult, CallbackContext};
 use async_trait::async_trait;
 
 backend_tests!(
@@ -232,7 +232,7 @@ impl alibi::plugins::phone_number::PhoneNumberValidator for PhoneAdmission {
         assert_eq!(phone, "+15551110003");
         match self.0.load(std::sync::atomic::Ordering::SeqCst) {
             1 => Ok(false),
-            2 => Err(alibi_core::AuthError::internal("phone policy failure")),
+            2 => Err(alibi::AuthError::internal("phone policy failure")),
             _ => Ok(true),
         }
     }
@@ -241,7 +241,7 @@ impl alibi::plugins::phone_number::PhoneNumberValidator for PhoneAdmission {
 async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
     db: Db,
 ) -> TestResult {
-    use alibi_core::{AuthSession, AuthUser};
+    use alibi::{AuthSession, AuthUser};
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let codes = Arc::new(Mailbox::default());
     let reset = Arc::new(Mailbox::default());

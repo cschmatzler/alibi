@@ -1,4 +1,21 @@
-use super::*;
+use crate::store::{
+    ApiKeyStore, DeviceCodeStore, InvitationCreateOptions, InvitationStore, JwkStore,
+    ListOrganizationMembersParams, MemberPageQuery, MemberStore, OrganizationRoleStore,
+    OrganizationStore, PasskeyStore, PluginStore, TeamStore, TwoFactorStore,
+};
+use crate::types::{
+    AddTeamMemberResult, CreateOrganizationRole, OrganizationRole, OrganizationRoleSelector,
+    UpdateOrganizationRole, UpdatePasskeyAuthentication,
+};
+use crate::{
+    ApiKey, AuthResult, AuthSchema, ConsumeApiKeyResult, CreateApiKey, CreateDeviceCode,
+    CreateInvitation, CreateJwk, CreateMember, CreateOrganization, CreatePasskey, CreateTeam,
+    CreateTwoFactor, CreateWalletAddress, DeviceCode, Invitation, InvitationStatus, Jwk, Member,
+    Organization, Passkey, Team, TeamMember, TwoFactor, UpdateApiKey, UpdateDeviceCode,
+    UpdateOrganization, UpdateTeam, UpdateTwoFactor, WalletAddress, WalletAddressStore,
+};
+use async_trait::async_trait;
+use std::sync::Arc;
 impl<S: AuthSchema> Clone for PluginStore<S> {
     fn clone(&self) -> Self {
         Self {
@@ -194,28 +211,28 @@ impl<S: AuthSchema> InvitationStore for PluginStore<S> {
     }
     async fn accept_invitation_with_teams(
         &self,
-        _invitation_id: &str,
-        _user_id: &str,
-        _session_token: &str,
-        _team_limits: &[(String, Option<f64>)],
-        _membership_limit: Option<usize>,
+        invitation_id: &str,
+        user_id: &str,
+        session_token: &str,
+        team_limits: &[(String, Option<f64>)],
+        membership_limit: Option<usize>,
     ) -> AuthResult<Option<(Invitation, Member)>> {
         self.inner
             .accept_invitation_with_teams(
-                _invitation_id,
-                _user_id,
-                _session_token,
-                _team_limits,
-                _membership_limit,
+                invitation_id,
+                user_id,
+                session_token,
+                team_limits,
+                membership_limit,
             )
             .await
     }
     async fn update_invitation_team_ids(
         &self,
-        _id: &str,
-        _team_ids: Option<String>,
+        id: &str,
+        team_ids: Option<String>,
     ) -> AuthResult<Invitation> {
-        self.inner.update_invitation_team_ids(_id, _team_ids).await
+        self.inner.update_invitation_team_ids(id, team_ids).await
     }
 }
 
@@ -426,57 +443,55 @@ impl<S: AuthSchema> DeviceCodeStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> TeamStore for PluginStore<S> {
-    async fn create_team(&self, _data: CreateTeam) -> AuthResult<Team> {
-        self.inner.create_team(_data).await
+    async fn create_team(&self, data: CreateTeam) -> AuthResult<Team> {
+        self.inner.create_team(data).await
     }
     async fn get_team(
         &self,
-        _organization_id: Option<&str>,
-        _team_id: &str,
+        organization_id: Option<&str>,
+        team_id: &str,
     ) -> AuthResult<Option<Team>> {
-        self.inner.get_team(_organization_id, _team_id).await
+        self.inner.get_team(organization_id, team_id).await
     }
-    async fn list_teams(&self, _organization_id: &str) -> AuthResult<Vec<Team>> {
-        self.inner.list_teams(_organization_id).await
+    async fn list_teams(&self, organization_id: &str) -> AuthResult<Vec<Team>> {
+        self.inner.list_teams(organization_id).await
     }
     async fn update_team(
         &self,
-        _organization_id: &str,
-        _team_id: &str,
-        _update: UpdateTeam,
+        organization_id: &str,
+        team_id: &str,
+        update: UpdateTeam,
     ) -> AuthResult<Team> {
         self.inner
-            .update_team(_organization_id, _team_id, _update)
+            .update_team(organization_id, team_id, update)
             .await
     }
-    async fn delete_team(&self, _organization_id: &str, _team_id: &str) -> AuthResult<bool> {
-        self.inner.delete_team(_organization_id, _team_id).await
+    async fn delete_team(&self, organization_id: &str, team_id: &str) -> AuthResult<bool> {
+        self.inner.delete_team(organization_id, team_id).await
     }
     async fn get_team_member(
         &self,
-        _team_id: &str,
-        _user_id: &str,
+        team_id: &str,
+        user_id: &str,
     ) -> AuthResult<Option<TeamMember>> {
-        self.inner.get_team_member(_team_id, _user_id).await
+        self.inner.get_team_member(team_id, user_id).await
     }
     async fn add_team_member(
         &self,
-        _team_id: &str,
-        _user_id: &str,
-        _maximum: Option<f64>,
+        team_id: &str,
+        user_id: &str,
+        maximum: Option<f64>,
     ) -> AuthResult<AddTeamMemberResult> {
-        self.inner
-            .add_team_member(_team_id, _user_id, _maximum)
-            .await
+        self.inner.add_team_member(team_id, user_id, maximum).await
     }
-    async fn remove_team_member(&self, _team_id: &str, _user_id: &str) -> AuthResult<usize> {
-        self.inner.remove_team_member(_team_id, _user_id).await
+    async fn remove_team_member(&self, team_id: &str, user_id: &str) -> AuthResult<usize> {
+        self.inner.remove_team_member(team_id, user_id).await
     }
-    async fn list_team_members(&self, _team_id: &str) -> AuthResult<Vec<TeamMember>> {
-        self.inner.list_team_members(_team_id).await
+    async fn list_team_members(&self, team_id: &str) -> AuthResult<Vec<TeamMember>> {
+        self.inner.list_team_members(team_id).await
     }
-    async fn list_user_teams(&self, _user_id: &str) -> AuthResult<Vec<Team>> {
-        self.inner.list_user_teams(_user_id).await
+    async fn list_user_teams(&self, user_id: &str) -> AuthResult<Vec<Team>> {
+        self.inner.list_user_teams(user_id).await
     }
 }
 
@@ -484,27 +499,27 @@ impl<S: AuthSchema> TeamStore for PluginStore<S> {
 impl<S: AuthSchema> OrganizationRoleStore for PluginStore<S> {
     async fn create_organization_role(
         &self,
-        _data: CreateOrganizationRole,
+        data: CreateOrganizationRole,
     ) -> AuthResult<OrganizationRole> {
-        self.inner.create_organization_role(_data).await
+        self.inner.create_organization_role(data).await
     }
     async fn get_organization_role(
         &self,
-        _organization_id: &str,
-        _selector: &OrganizationRoleSelector,
+        organization_id: &str,
+        selector: &OrganizationRoleSelector,
     ) -> AuthResult<Option<OrganizationRole>> {
         self.inner
-            .get_organization_role(_organization_id, _selector)
+            .get_organization_role(organization_id, selector)
             .await
     }
     async fn list_organization_roles(
         &self,
-        _organization_id: &str,
+        organization_id: &str,
     ) -> AuthResult<Vec<OrganizationRole>> {
-        self.inner.list_organization_roles(_organization_id).await
+        self.inner.list_organization_roles(organization_id).await
     }
-    async fn count_organization_roles(&self, _organization_id: &str) -> AuthResult<usize> {
-        self.inner.count_organization_roles(_organization_id).await
+    async fn count_organization_roles(&self, organization_id: &str) -> AuthResult<usize> {
+        self.inner.count_organization_roles(organization_id).await
     }
     async fn has_organization_role_members(
         &self,
@@ -517,21 +532,21 @@ impl<S: AuthSchema> OrganizationRoleStore for PluginStore<S> {
     }
     async fn update_organization_role(
         &self,
-        _organization_id: &str,
-        _selector: &OrganizationRoleSelector,
-        _update: UpdateOrganizationRole,
+        organization_id: &str,
+        selector: &OrganizationRoleSelector,
+        update: UpdateOrganizationRole,
     ) -> AuthResult<OrganizationRole> {
         self.inner
-            .update_organization_role(_organization_id, _selector, _update)
+            .update_organization_role(organization_id, selector, update)
             .await
     }
     async fn delete_organization_role(
         &self,
-        _organization_id: &str,
-        _selector: &OrganizationRoleSelector,
+        organization_id: &str,
+        selector: &OrganizationRoleSelector,
     ) -> AuthResult<bool> {
         self.inner
-            .delete_organization_role(_organization_id, _selector)
+            .delete_organization_role(organization_id, selector)
             .await
     }
 }
@@ -541,11 +556,11 @@ impl<S: AuthSchema> JwkStore for PluginStore<S> {
     async fn list_jwks(&self) -> AuthResult<Vec<Jwk>> {
         self.inner.list_jwks().await
     }
-    async fn get_jwk_by_id(&self, _id: &str) -> AuthResult<Option<Jwk>> {
-        self.inner.get_jwk_by_id(_id).await
+    async fn get_jwk_by_id(&self, id: &str) -> AuthResult<Option<Jwk>> {
+        self.inner.get_jwk_by_id(id).await
     }
-    async fn create_jwk(&self, _data: CreateJwk) -> AuthResult<Jwk> {
-        self.inner.create_jwk(_data).await
+    async fn create_jwk(&self, data: CreateJwk) -> AuthResult<Jwk> {
+        self.inner.create_jwk(data).await
     }
 }
 

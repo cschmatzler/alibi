@@ -1,12 +1,12 @@
 //! Phone database hooks must apply through every trusted store facade and remain local to one auth instance.
 
 use alibi::plugins::phone_number::{PhoneNumberConfig, PhoneNumberPlugin};
+use alibi::seaorm::{Database, SeaOrmStore};
+use alibi::{AuthAccount, AuthSession, AuthUser, CreateUser, UpdateUser};
 use alibi::{AuthBuilder, AuthConfig};
-use alibi_core::{AuthAccount, AuthSession, AuthUser, CreateUser, UpdateUser};
-use alibi_seaorm::{Database, SeaOrmStore};
 use std::sync::Arc;
 
-type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 #[cfg(test)]
 mod tests {
@@ -18,7 +18,7 @@ mod tests {
     async fn phone_null_update_hook_is_local_to_the_auth_instance_and_all_store_facades() {
         let config = AuthConfig::new("phone-hook-fixture-secret-minimum-32-characters");
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let store = Arc::new(SeaOrmStore::<Schema>::new(config.clone(), database));
@@ -101,12 +101,12 @@ mod tests {
     #[tokio::test]
     async fn signup_phone_fields_require_the_plugin_and_cannot_claim_verification() {
         use alibi::plugins::EmailPasswordPlugin;
-        use alibi_core::{AuthRequest, HttpMethod};
+        use alibi::{AuthRequest, HttpMethod};
         use serde_json::{Value, json};
 
         let config = AuthConfig::new("phone-signup-fixture-secret-minimum-32-characters");
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let store = Arc::new(SeaOrmStore::<Schema>::new(config.clone(), database));
@@ -202,12 +202,12 @@ mod tests {
     #[tokio::test]
     async fn numeric_phone_signup_uses_actual_adapter_text_coercion() {
         use alibi::plugins::EmailPasswordPlugin;
-        use alibi_core::store::NumericTextInput;
-        use alibi_core::{AuthRequest, HttpMethod};
+        use alibi::store::NumericTextInput;
+        use alibi::{AuthRequest, HttpMethod};
 
         let config = AuthConfig::new("phone-numeric-fixture-secret-minimum-32-characters");
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let auth = AuthBuilder::new(config.clone())

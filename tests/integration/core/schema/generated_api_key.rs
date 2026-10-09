@@ -1,6 +1,6 @@
 //! Generated application migrations must support the API key plugin's physical contract.
+use alibi::store::AuthStore;
 use alibi::{AuthConfig, AuthSchema};
-use alibi_core::store::AuthStore;
 use std::sync::Arc;
 
 type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
@@ -116,7 +116,7 @@ async fn exercise<S: AuthSchema>(store: Arc<dyn AuthStore<S>>) -> TestResult {
         .ok_or("signup lacks token")?;
     let cookie = format!(
         "better-auth.session_token={}",
-        alibi_core::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
+        alibi::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
     );
     let request = AuthRequest::from_parts(
         HttpMethod::Post,

@@ -1,4 +1,8 @@
 use crate::TestSchema;
+use alibi::seaorm::{
+    DatabaseConnection,
+    sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BackgroundTaskCompletion,
     BackgroundTaskHandler, BetterAuth,
@@ -9,10 +13,6 @@ use alibi::{
         two_factor::{SendTwoFactorOtp, TwoFactorConfig},
     },
     wire::UserView,
-};
-use alibi_seaorm::{
-    DatabaseConnection,
-    sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use axum::{Router, extract::Json, routing::post};
 use serde::Deserialize;

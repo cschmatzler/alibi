@@ -1,0 +1,76 @@
+[
+  {
+    "registered": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "/welcome"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.account_data=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "returning without refresh token": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "/home"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.account_data=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "returning without token update": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "/home"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.account_data=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "unusable account cookie lifetime": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=unable_to_create_user"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  }
+]

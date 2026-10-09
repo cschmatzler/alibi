@@ -1,0 +1,1029 @@
+[
+  {
+    "required selection register session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "rp": {
+          "name": "Better Auth",
+          "id": "localhost"
+        },
+        "user": {
+          "id": "<v1>",
+          "name": "options-0@example.com",
+          "displayName": "options-0@example.com"
+        },
+        "challenge": "<v2>",
+        "pubKeyCredParams": [
+          {
+            "alg": -8,
+            "type": "public-key"
+          },
+          {
+            "alg": -7,
+            "type": "public-key"
+          },
+          {
+            "alg": -257,
+            "type": "public-key"
+          }
+        ],
+        "timeout": 60000,
+        "excludeCredentials": [],
+        "authenticatorSelection": {
+          "residentKey": "required",
+          "requireResidentKey": true,
+          "userVerification": "required",
+          "authenticatorAttachment": "platform"
+        },
+        "attestation": "none",
+        "extensions": {
+          "credProps": true
+        },
+        "hints": []
+      }
+    }
+  },
+  {
+    "required selection authenticate session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v3>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred"
+      }
+    }
+  },
+  {
+    "required selection register anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "AUTHENTICATION_REQUIRED",
+        "message": "Authentication required"
+      }
+    }
+  },
+  {
+    "required selection authenticate anonymous": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v4>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred"
+      }
+    }
+  },
+  {
+    "discouraged selection register session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "rp": {
+          "name": "Better Auth",
+          "id": "localhost"
+        },
+        "user": {
+          "id": "<v5>",
+          "name": "options-1@example.com",
+          "displayName": "options-1@example.com"
+        },
+        "challenge": "<v6>",
+        "pubKeyCredParams": [
+          {
+            "alg": -8,
+            "type": "public-key"
+          },
+          {
+            "alg": -7,
+            "type": "public-key"
+          },
+          {
+            "alg": -257,
+            "type": "public-key"
+          }
+        ],
+        "timeout": 60000,
+        "excludeCredentials": [],
+        "authenticatorSelection": {
+          "residentKey": "discouraged",
+          "requireResidentKey": false,
+          "userVerification": "discouraged"
+        },
+        "attestation": "none",
+        "extensions": {
+          "credProps": true
+        },
+        "hints": []
+      }
+    }
+  },
+  {
+    "discouraged selection authenticate session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v7>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred"
+      }
+    }
+  },
+  {
+    "discouraged selection register anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "AUTHENTICATION_REQUIRED",
+        "message": "Authentication required"
+      }
+    }
+  },
+  {
+    "discouraged selection authenticate anonymous": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v8>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred"
+      }
+    }
+  },
+  {
+    "static extensions register session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "rp": {
+          "name": "Better Auth",
+          "id": "localhost"
+        },
+        "user": {
+          "id": "<v9>",
+          "name": "options-2@example.com",
+          "displayName": "options-2@example.com"
+        },
+        "challenge": "<v10>",
+        "pubKeyCredParams": [
+          {
+            "alg": -8,
+            "type": "public-key"
+          },
+          {
+            "alg": -7,
+            "type": "public-key"
+          },
+          {
+            "alg": -257,
+            "type": "public-key"
+          }
+        ],
+        "timeout": 60000,
+        "excludeCredentials": [],
+        "authenticatorSelection": {
+          "residentKey": "preferred",
+          "requireResidentKey": false,
+          "userVerification": "preferred"
+        },
+        "attestation": "none",
+        "extensions": {
+          "appid": "x",
+          "credProps": true
+        },
+        "hints": []
+      }
+    }
+  },
+  {
+    "static extensions authenticate session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v11>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred",
+        "extensions": {
+          "appid": "y"
+        }
+      }
+    }
+  },
+  {
+    "static extensions register anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "AUTHENTICATION_REQUIRED",
+        "message": "Authentication required"
+      }
+    }
+  },
+  {
+    "static extensions authenticate anonymous": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v12>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred",
+        "extensions": {
+          "appid": "y"
+        }
+      }
+    }
+  },
+  {
+    "resolved extensions register session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "rp": {
+          "name": "Better Auth",
+          "id": "localhost"
+        },
+        "user": {
+          "id": "<v13>",
+          "name": "options-3@example.com",
+          "displayName": "options-3@example.com"
+        },
+        "challenge": "<v14>",
+        "pubKeyCredParams": [
+          {
+            "alg": -8,
+            "type": "public-key"
+          },
+          {
+            "alg": -7,
+            "type": "public-key"
+          },
+          {
+            "alg": -257,
+            "type": "public-key"
+          }
+        ],
+        "timeout": 60000,
+        "excludeCredentials": [],
+        "authenticatorSelection": {
+          "residentKey": "preferred",
+          "requireResidentKey": false,
+          "userVerification": "preferred"
+        },
+        "attestation": "none",
+        "extensions": {
+          "user": "options-3@example.com",
+          "credProps": true
+        },
+        "hints": []
+      }
+    }
+  },
+  {
+    "resolved extensions authenticate session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v15>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred",
+        "extensions": {
+          "user": "options-3@example.com"
+        }
+      }
+    }
+  },
+  {
+    "resolved extensions register anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "AUTHENTICATION_REQUIRED",
+        "message": "Authentication required"
+      }
+    }
+  },
+  {
+    "resolved extensions authenticate anonymous": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v16>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred",
+        "extensions": {
+          "user": null
+        }
+      }
+    }
+  },
+  {
+    "scalar extensions register session": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "scalar extensions authenticate session": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "scalar extensions register anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "AUTHENTICATION_REQUIRED",
+        "message": "Authentication required"
+      }
+    }
+  },
+  {
+    "scalar extensions authenticate anonymous": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "failing extensions register session": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "failing extensions authenticate session": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "failing extensions register anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "AUTHENTICATION_REQUIRED",
+        "message": "Authentication required"
+      }
+    }
+  },
+  {
+    "failing extensions authenticate anonymous": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "denying extensions register session": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "extensions denied"
+      }
+    }
+  },
+  {
+    "denying extensions authenticate session": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "extensions denied"
+      }
+    }
+  },
+  {
+    "denying extensions register anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "AUTHENTICATION_REQUIRED",
+        "message": "Authentication required"
+      }
+    }
+  },
+  {
+    "denying extensions authenticate anonymous": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "extensions denied"
+      }
+    }
+  },
+  {
+    "static scalar extensions register session": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "static scalar extensions authenticate session": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "static scalar extensions register anonymous": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "AUTHENTICATION_REQUIRED",
+        "message": "Authentication required"
+      }
+    }
+  },
+  {
+    "static scalar extensions authenticate anonymous": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "sessionless without resolver register session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "rp": {
+          "name": "Better Auth",
+          "id": "localhost"
+        },
+        "user": {
+          "id": "<v17>",
+          "name": "options-8@example.com",
+          "displayName": "options-8@example.com"
+        },
+        "challenge": "<v18>",
+        "pubKeyCredParams": [
+          {
+            "alg": -8,
+            "type": "public-key"
+          },
+          {
+            "alg": -7,
+            "type": "public-key"
+          },
+          {
+            "alg": -257,
+            "type": "public-key"
+          }
+        ],
+        "timeout": 60000,
+        "excludeCredentials": [],
+        "authenticatorSelection": {
+          "residentKey": "preferred",
+          "requireResidentKey": false,
+          "userVerification": "preferred"
+        },
+        "attestation": "none",
+        "extensions": {
+          "credProps": true
+        },
+        "hints": []
+      }
+    }
+  },
+  {
+    "sessionless without resolver authenticate session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v19>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred"
+      }
+    }
+  },
+  {
+    "sessionless without resolver register anonymous": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "RESOLVE_USER_REQUIRED",
+        "message": "Passkey registration requires either an authenticated session or a resolveUser callback when requireSession is false"
+      }
+    }
+  },
+  {
+    "sessionless without resolver authenticate anonymous": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v20>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred"
+      }
+    }
+  },
+  {
+    "sessionless resolver register session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "rp": {
+          "name": "Better Auth",
+          "id": "localhost"
+        },
+        "user": {
+          "id": "<v21>",
+          "name": "options-9@example.com",
+          "displayName": "options-9@example.com"
+        },
+        "challenge": "<v22>",
+        "pubKeyCredParams": [
+          {
+            "alg": -8,
+            "type": "public-key"
+          },
+          {
+            "alg": -7,
+            "type": "public-key"
+          },
+          {
+            "alg": -257,
+            "type": "public-key"
+          }
+        ],
+        "timeout": 60000,
+        "excludeCredentials": [],
+        "authenticatorSelection": {
+          "residentKey": "preferred",
+          "requireResidentKey": false,
+          "userVerification": "preferred"
+        },
+        "attestation": "none",
+        "extensions": {
+          "credProps": true
+        },
+        "hints": []
+      }
+    }
+  },
+  {
+    "sessionless resolver authenticate session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v23>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred"
+      }
+    }
+  },
+  {
+    "sessionless resolver register anonymous": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "rp": {
+          "name": "Better Auth",
+          "id": "localhost"
+        },
+        "user": {
+          "id": "<v24>",
+          "name": "external",
+          "displayName": "external"
+        },
+        "challenge": "<v25>",
+        "pubKeyCredParams": [
+          {
+            "alg": -8,
+            "type": "public-key"
+          },
+          {
+            "alg": -7,
+            "type": "public-key"
+          },
+          {
+            "alg": -257,
+            "type": "public-key"
+          }
+        ],
+        "timeout": 60000,
+        "excludeCredentials": [],
+        "authenticatorSelection": {
+          "residentKey": "preferred",
+          "requireResidentKey": false,
+          "userVerification": "preferred"
+        },
+        "attestation": "none",
+        "extensions": {
+          "credProps": true
+        },
+        "hints": []
+      }
+    }
+  },
+  {
+    "sessionless resolver authenticate anonymous": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v26>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred"
+      }
+    }
+  },
+  {
+    "sessionless invalid user register session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "rp": {
+          "name": "Better Auth",
+          "id": "localhost"
+        },
+        "user": {
+          "id": "<v27>",
+          "name": "options-10@example.com",
+          "displayName": "options-10@example.com"
+        },
+        "challenge": "<v28>",
+        "pubKeyCredParams": [
+          {
+            "alg": -8,
+            "type": "public-key"
+          },
+          {
+            "alg": -7,
+            "type": "public-key"
+          },
+          {
+            "alg": -257,
+            "type": "public-key"
+          }
+        ],
+        "timeout": 60000,
+        "excludeCredentials": [],
+        "authenticatorSelection": {
+          "residentKey": "preferred",
+          "requireResidentKey": false,
+          "userVerification": "preferred"
+        },
+        "attestation": "none",
+        "extensions": {
+          "credProps": true
+        },
+        "hints": []
+      }
+    }
+  },
+  {
+    "sessionless invalid user authenticate session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v29>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred"
+      }
+    }
+  },
+  {
+    "sessionless invalid user register anonymous": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "RESOLVED_USER_INVALID",
+        "message": "Resolved user is invalid"
+      }
+    }
+  },
+  {
+    "sessionless invalid user authenticate anonymous": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v30>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred"
+      }
+    }
+  },
+  {
+    "sessionless failing resolver register session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "rp": {
+          "name": "Better Auth",
+          "id": "localhost"
+        },
+        "user": {
+          "id": "<v31>",
+          "name": "options-11@example.com",
+          "displayName": "options-11@example.com"
+        },
+        "challenge": "<v32>",
+        "pubKeyCredParams": [
+          {
+            "alg": -8,
+            "type": "public-key"
+          },
+          {
+            "alg": -7,
+            "type": "public-key"
+          },
+          {
+            "alg": -257,
+            "type": "public-key"
+          }
+        ],
+        "timeout": 60000,
+        "excludeCredentials": [],
+        "authenticatorSelection": {
+          "residentKey": "preferred",
+          "requireResidentKey": false,
+          "userVerification": "preferred"
+        },
+        "attestation": "none",
+        "extensions": {
+          "credProps": true
+        },
+        "hints": []
+      }
+    }
+  },
+  {
+    "sessionless failing resolver authenticate session": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v33>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred"
+      }
+    }
+  },
+  {
+    "sessionless failing resolver register anonymous": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "sessionless failing resolver authenticate anonymous": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v34>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred"
+      }
+    }
+  }
+]

@@ -24,10 +24,10 @@ pub struct ConsoleEmailProvider;
 #[async_trait]
 impl EmailProvider for ConsoleEmailProvider {
     async fn send(&self, to: &str, subject: &str, _html: &str, text: &str) -> AuthResult<()> {
-        drop(writeln!(
+        _ = writeln!(
             std::io::stderr().lock(),
             "[EMAIL] To: {to} | Subject: {subject} | Body: {text}"
-        ));
+        );
         Ok(())
     }
 }

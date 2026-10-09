@@ -3,8 +3,8 @@
 #[cfg(feature = "seaorm")]
 #[expect(unreachable_pub, reason = "SeaORM derive requires public model fields")]
 mod custom_user {
-    use alibi_seaorm::sea_orm::entity::prelude::*;
-    use alibi_seaorm::{AuthEntity, sea_orm};
+    use alibi::seaorm::sea_orm::entity::prelude::*;
+    use alibi::seaorm::{AuthEntity, sea_orm};
     #[derive(Clone, Debug, PartialEq, serde::Serialize, DeriveEntityModel, AuthEntity)]
     #[auth(role = "user")]
     #[sea_orm(table_name = "custom_metadata_users")]
@@ -15,7 +15,7 @@ mod custom_user {
         pub email: Option<String>,
         pub email_verified: bool,
         pub image: Option<String>,
-        pub metadata: alibi_seaorm::JsonMetadata,
+        pub metadata: alibi::seaorm::JsonMetadata,
         pub created_at: DateTimeUtc,
         pub updated_at: DateTimeUtc,
         pub tenant: Option<String>,
@@ -25,36 +25,36 @@ mod custom_user {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+use alibi::seaorm::{Database, SeaOrmStore};
 use alibi::{AuthBuilder, AuthConfig};
-use alibi_core::{AuthUser, CreateUser, UpdateUser};
-use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
-use alibi_seaorm::{Database, SeaOrmStore};
+use alibi::{AuthUser, CreateUser, UpdateUser};
 
-type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 struct MetadataHook;
 
 #[async_trait::async_trait]
-impl alibi_seaorm::DatabaseHooks<Schema, alibi_seaorm::SeaOrmBackend> for MetadataHook {
+impl alibi::seaorm::DatabaseHooks<Schema, alibi::seaorm::SeaOrmBackend> for MetadataHook {
     async fn before_create_user(
         &self,
         user: &mut CreateUser,
-        _ctx: &alibi_seaorm::SeaOrmHookContext<'_>,
-    ) -> alibi_core::AuthResult<alibi_seaorm::HookControl> {
+        _ctx: &alibi::seaorm::SeaOrmHookContext<'_>,
+    ) -> alibi::AuthResult<alibi::seaorm::HookControl> {
         user.metadata.as_mut().unwrap()["hookRounded"] =
             serde_json::Value::from(9_007_199_254_740_993_u64);
-        Ok(alibi_seaorm::HookControl::Continue)
+        Ok(alibi::seaorm::HookControl::Continue)
     }
     async fn before_update_user(
         &self,
         _id: &str,
         update: &mut UpdateUser,
-        _ctx: &alibi_seaorm::SeaOrmHookContext<'_>,
-    ) -> alibi_core::AuthResult<alibi_seaorm::HookControl> {
+        _ctx: &alibi::seaorm::SeaOrmHookContext<'_>,
+    ) -> alibi::AuthResult<alibi::seaorm::HookControl> {
         if let Some(metadata) = &mut update.metadata {
             metadata["hookRounded"] = serde_json::Value::from(9_007_199_254_740_993_u64);
         }
-        Ok(alibi_seaorm::HookControl::Continue)
+        Ok(alibi::seaorm::HookControl::Continue)
     }
 }
 
@@ -62,11 +62,11 @@ impl alibi_seaorm::DatabaseHooks<Schema, alibi_seaorm::SeaOrmBackend> for Metada
 struct CustomSchema;
 
 #[cfg(feature = "seaorm")]
-impl alibi_core::AuthSchema for CustomSchema {
+impl alibi::AuthSchema for CustomSchema {
     type User = custom_user::Model;
-    type Session = alibi_seaorm::store::entities::session::Model;
-    type Account = alibi_seaorm::store::entities::account::Model;
-    type Verification = alibi_seaorm::store::entities::verification::Model;
+    type Session = alibi::seaorm::store::entities::session::Model;
+    type Account = alibi::seaorm::store::entities::account::Model;
+    type Verification = alibi::seaorm::store::entities::verification::Model;
 }
 
 #[cfg(test)]
@@ -75,11 +75,11 @@ mod tests {
 
     #[tokio::test]
     async fn prepared_metadata_replacement_persists_the_edited_value() {
-        use alibi_seaorm::sea_orm::{ActiveModelTrait, ActiveValue::Set, IntoActiveModel};
-        use alibi_seaorm::store::entities::organization;
-        use alibi_seaorm::{JsonMetadata, json_metadata::MetadataBinding};
+        use alibi::seaorm::sea_orm::{ActiveModelTrait, ActiveValue::Set, IntoActiveModel};
+        use alibi::seaorm::store::entities::organization;
+        use alibi::seaorm::{JsonMetadata, json_metadata::MetadataBinding};
         let db = Database::connect("sqlite::memory:").await.unwrap();
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&db)
             .await
             .unwrap();
         let prepared = JsonMetadata::from(serde_json::json!({"version":"old","fixed":1e20}))
@@ -143,7 +143,7 @@ mod tests {
     #[tokio::test]
     async fn native_user_metadata_survives_storage_lookup_and_partial_update() {
         let db = Database::connect("sqlite::memory:").await.unwrap();
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&db)
             .await
             .unwrap();
         let config = AuthConfig::new("user-json-persistence-secret-minimum-32-characters");
@@ -250,7 +250,7 @@ mod tests {
     #[tokio::test]
     async fn custom_user_metadata_derive_prepares_json_without_changing_extra_fields() {
         let db = Database::connect("sqlite::memory:").await.unwrap();
-        let schema = alibi_seaorm::sea_orm::Schema::new(DbBackend::Sqlite);
+        let schema = alibi::seaorm::sea_orm::Schema::new(DbBackend::Sqlite);
         _ = db
             .execute(&schema.create_table_from_entity(custom_user::Entity))
             .await

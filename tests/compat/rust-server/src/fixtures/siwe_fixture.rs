@@ -1,5 +1,6 @@
 //! Real EIP-191 and local ERC-1271 provider configurations of the public plugin.
 use crate::TestSchema;
+use alibi::AuthResponse;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::siwe::{
@@ -8,12 +9,11 @@ use alibi::plugins::siwe::{
 };
 use alibi::plugins::{AdminPlugin, EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin};
 use alibi::prelude::{CreateUser, UpdateUser};
-use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
-use alibi_core::AuthResponse;
-use alibi_seaorm::sea_orm::{
+use alibi::seaorm::sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr,
 };
-use alibi_seaorm::store::entities::{account, session, user, verification, wallet_address};
+use alibi::seaorm::store::entities::{account, session, user, verification, wallet_address};
+use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
 use async_trait::async_trait;
 use axum::{
     Json, Router,

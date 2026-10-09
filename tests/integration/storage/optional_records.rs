@@ -2,9 +2,9 @@
 use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
 use alibi::plugins::{EmailPasswordPlugin, PasskeyPlugin, TwoFactorConfig, TwoFactorPlugin};
+use alibi::types::UpdatePasskeyAuthentication;
 use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use alibi_core::types::UpdatePasskeyAuthentication;
-use alibi_core::{
+use alibi::{
     AuthRequest, AuthResponse, CreatePasskey, CreateTwoFactor, HttpMethod, UpdateTwoFactor,
 };
 use chrono::{Duration, Utc};

@@ -7,16 +7,16 @@
 use alibi::plugin::{AuthContext, AuthPlugin, AuthRoute};
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::prelude::{AuthRequest, AuthResponse, HttpMethod};
+use alibi::seaorm::{Database, DatabaseConnection, SeaOrmStore};
 use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
-use alibi_seaorm::{Database, DatabaseConnection, SeaOrmStore};
 use async_trait::async_trait;
 
-type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type TestSchema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 struct RouteTestPlugin;
 
 #[async_trait]
-impl<S: alibi_core::AuthSchema> AuthPlugin<S> for RouteTestPlugin {
+impl<S: alibi::AuthSchema> AuthPlugin<S> for RouteTestPlugin {
     fn name(&self) -> &'static str {
         "route-test"
     }
@@ -46,7 +46,7 @@ async fn test_database() -> DatabaseConnection {
     let database = Database::connect("sqlite::memory:")
         .await
         .expect("sqlite test database should connect");
-    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+    alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .expect("sqlite test migrations should run");
     database

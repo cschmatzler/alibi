@@ -95,13 +95,13 @@ use alibi::plugins::{
     user_management::SendChangeEmailConfirmation,
 };
 use alibi::prelude::{AuthAccount, AuthUser, CreateAccount, CreateVerification, UpdateAccount};
-use alibi::wire::UserView;
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi_seaorm::sea_orm::{DatabaseConnection, DbErr, EntityTrait};
-use alibi_seaorm::store::entities::{
+use alibi::seaorm::sea_orm::{DatabaseConnection, DbErr, EntityTrait};
+use alibi::seaorm::store::entities::{
     account, api_key, device_code, invitation, member, organization, passkey, session, two_factor,
     user, verification, wallet_address,
 };
+use alibi::wire::UserView;
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use axum::{
     Json, Router,
     extract::Query,
@@ -287,10 +287,10 @@ fn default_github_profile() -> GitHubProfile {
 }
 
 async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr> {
-    alibi_seaorm::rate_limit::entity::Entity::delete_many()
+    alibi::seaorm::rate_limit::entity::Entity::delete_many()
         .exec(database)
         .await?;
-    alibi_seaorm::store::entities::jwk::Entity::delete_many()
+    alibi::seaorm::store::entities::jwk::Entity::delete_many()
         .exec(database)
         .await?;
     let _ = wallet_address::Entity::delete_many().exec(database).await?;
@@ -299,13 +299,13 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
     api_key::Entity::delete_many().exec(database).await?;
     two_factor::Entity::delete_many().exec(database).await?;
     // Dynamic roles are organization-scoped; the TypeScript reset clears them too.
-    alibi_seaorm::store::entities::organization_role::Entity::delete_many()
+    alibi::seaorm::store::entities::organization_role::Entity::delete_many()
         .exec(database)
         .await?;
-    alibi_seaorm::store::entities::team_member::Entity::delete_many()
+    alibi::seaorm::store::entities::team_member::Entity::delete_many()
         .exec(database)
         .await?;
-    alibi_seaorm::store::entities::team::Entity::delete_many()
+    alibi::seaorm::store::entities::team::Entity::delete_many()
         .exec(database)
         .await?;
     invitation::Entity::delete_many().exec(database).await?;
@@ -318,7 +318,7 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
     // Fixture-owned table: the application keys of the custom-adapter JWT
     // keyring profiles.
     {
-        use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+        use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
         for table in ["fixtureJwtKeyring", "application_delete_receipts"] {
             let _ = database
                 .execute_raw(Statement::from_string(
@@ -337,7 +337,7 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
 async fn database_residue(
     database: &DatabaseConnection,
 ) -> Result<serde_json::Map<String, serde_json::Value>, DbErr> {
-    use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+    use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
     let tables = database
         .query_all_raw(Statement::from_string(
             DbBackend::Sqlite,
@@ -1972,7 +1972,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         account.provider_id() == provider_id && account.account_id() == account_id
                     );
                     let result = if let Some(existing) = existing {
-                        auth.store().update_account(&existing.id(), alibi_core::UpdateAccount {
+                        auth.store().update_account(&existing.id(), alibi::UpdateAccount {
                             provider_token_nulls: [body.access_token.is_none(), body.refresh_token.is_none(), body.id_token.is_none()],
                             access_token: body.access_token,
                             refresh_token: body.refresh_token,
@@ -2008,7 +2008,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     };
 
                     if let Some((created, updated)) = timestamps {
-                        use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+                        use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
                         let result: AuthResult<serde_json::Value> = async {
                             db_for_oauth_seed.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,
                                 "UPDATE accounts SET created_at=?,updated_at=? WHERE id=?", [created.into(),updated.into(),account.id().into()])).await.map_err(|error| AuthError::Internal(error.to_string()))?;

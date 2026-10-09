@@ -10,8 +10,8 @@ Four tiers, each with one job. Native tests check the Rust implementation on its
 | Compat | `tests/compat/` (Cargo target `compat` plus the Bun harness) | Behavior matches the pinned upstream release | `./scripts/compat.sh` |
 
 `tests/repo/` (target `repo`) holds repository invariants: banned legacy
-symbols and README/crate consistency. `./scripts/check.sh` runs every tier and is
-the CI gate.
+symbols and README/crate consistency. `./scripts/check.sh` runs every native tier and is
+the CI gate; `./scripts/compat.sh` runs the differential suite before merging.
 
 ## Fast native feedback
 
@@ -35,8 +35,9 @@ service is needed. Tests use isolated SQLite databases and ephemeral localhost
 HTTP servers. The first run compiles the workspace; subsequent runs reuse Cargo
 artifacts. The default nextest profile runs cases concurrently, collects all
 failures and does not retry. The JUnit report is
-`target/nextest/default/junit.xml`. The **Native tests** CI workflow runs the same
-command. `./scripts/check.sh` and `./scripts/compat.sh` remain the full gate.
+`target/nextest/default/junit.xml`. CI runs the same
+command through `./scripts/check.sh`. CI does not run `./scripts/compat.sh`; run it
+before merging.
 
 ### What is skipped
 
@@ -50,7 +51,7 @@ A bare run keeps Rust's explicit `#[ignore]` decisions; no nextest default filte
 
 The fast, in-process compat contract checks run by default and launch no upstream services. Excluding their binary with a default filter would also exclude explicitly selected SDK runners in the compat script.
 
-The **Native tests** CI workflow also runs the PostgreSQL, Redis and exact-clock cases in service-backed profiles (see [Store backends](#store-backends)). The clock profile writes a separate JUnit report so it cannot overwrite the default-suite report. A filtered nextest invocation also labels nonmatching tests as skipped; those are different from `#[ignore]` cases.
+CI also runs the PostgreSQL, Redis and exact-clock cases in service-backed profiles (see [Store backends](#store-backends)). The clock profile writes a separate JUnit report so it cannot overwrite the default-suite report. A filtered nextest invocation also labels nonmatching tests as skipped; those are different from `#[ignore]` cases.
 
 ### Audited surface and coverage
 
@@ -85,7 +86,7 @@ These tests own the cross-cutting contracts below, each at the layer where its f
 | `storage/plugin_flows/providers.rs` | HIBP and all four CAPTCHA protocols gate writes; One Tap verifies real signed identity; OAuth Popup binds completion to the issued opener | Local HTTP captures provider requests; real signature verification and persistence run on both stores |
 | `storage/plugin_flows/session_plugins.rs` | Consent controls tracking, delivered device proofs restrict multi-session access, and custom projection cannot replace bearer authority | Tests plugin initialization and interaction through public routes on both stores |
 | `storage/plugin_flows/crypto.rs` | An issued SIWE nonce and a registered passkey authenticate using real signatures and persisted credentials | Independent wallet vector and simulated authenticator exercise both stores without seeded credentials |
-| `crates/api/src/plugins/passkey/source/tests.rs` | All six certificate formats bind original signed bytes and configured trust; previously issued RSA credentials survive the registry migration | Independently signed vectors and a credential serialized by the removed fork protect cryptographic and storage-format extensions; handler tests own persistence and challenge consumption |
+| `crates/plugins/src/plugins/passkey/source/tests.rs` | All six certificate formats bind original signed bytes and configured trust; previously issued RSA credentials survive the registry migration | Independently signed vectors and a credential serialized by the removed fork protect cryptographic and storage-format extensions; handler tests own persistence and challenge consumption |
 | `e2e` cookie journey | Delivered cookies authenticate separate clients; rejected cross-origin signout preserves authority; successful signout expires the cookie and invalidates replay | Existing in-process adapter tests synthesize signed cookie headers; this owns real HTTP/client cookie interoperability |
 | `e2e` reset journey | A delivered reset URL redirects to a usable token, resets credentials once, and revokes existing sessions | Exercises the application callback, redirect, client and handler composition without seeding a token |
 

@@ -1,5 +1,6 @@
-use super::*;
-/// Generates the [`AuthPlugin`] impl for a plugin with static route dispatch.
+use crate::HttpMethod;
+use std::collections::HashMap;
+/// Generates the [`AuthPlugin`](crate::AuthPlugin) impl for a plugin with static route dispatch.
 ///
 /// Eliminates the dual declaration of routes in `routes()` and `on_request()`
 /// by generating both from a single route table.

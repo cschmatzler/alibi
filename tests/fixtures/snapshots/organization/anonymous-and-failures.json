@@ -1,0 +1,245 @@
+[
+  {
+    "anonymous /organization/create": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "anonymous /organization/update": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "User not found"
+      }
+    }
+  },
+  {
+    "anonymous /organization/delete": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "anonymous /organization/set-active": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "anonymous /organization/get-organization": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "anonymous /organization/get-invitation": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Not authenticated"
+      }
+    }
+  },
+  {
+    "anonymous /organization/list-user-invitations": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Missing session headers, or email query parameter."
+      }
+    }
+  },
+  {
+    "anonymous /organization/accept-invitation": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "anonymous /organization/check-slug": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "UNAUTHORIZED",
+        "message": "Unauthorized"
+      }
+    }
+  },
+  {
+    "list user invitations with email": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "User email cannot be passed for client side API calls."
+      }
+    }
+  },
+  {
+    "get-organization no selector": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": null
+    }
+  },
+  {
+    "get-organization missing slug": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "ORGANIZATION_NOT_FOUND",
+        "message": "Organization not found"
+      }
+    }
+  },
+  {
+    "get-organization slug": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<m1>",
+        "name": "Failures",
+        "slug": "failures",
+        "logo": null,
+        "createdAt": "<date>",
+        "metadata": null
+      }
+    }
+  },
+  {
+    "get-organization outsider slug": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
+        "message": "User is not a member of the organization"
+      }
+    }
+  },
+  {
+    "get-organization outsider id": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
+        "message": "User is not a member of the organization"
+      }
+    }
+  },
+  {
+    "invite storage failure": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "reject-invitation storage failure": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "cancel-invitation storage failure": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "accept storage failure": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "update storage failure": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "accept membership failure with cookies": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  }
+]

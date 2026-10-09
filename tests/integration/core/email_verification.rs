@@ -10,11 +10,9 @@ use alibi::plugins::{
     EmailPasswordPlugin, EmailVerificationConfig, EmailVerificationPlugin, SendVerificationEmail,
     UserManagementPlugin,
 };
+use alibi::wire::UserView;
+use alibi::{AuthAccount, AuthError, AuthRequest, AuthResponse, AuthResult, AuthUser, HttpMethod};
 use alibi::{AuthBuilder, AuthConfig, BetterAuth};
-use alibi_core::wire::UserView;
-use alibi_core::{
-    AuthAccount, AuthError, AuthRequest, AuthResponse, AuthResult, AuthUser, HttpMethod,
-};
 use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -562,7 +560,7 @@ mod tests {
                 auth.store()
                     .update_user(
                         id,
-                        alibi_core::UpdateUser {
+                        alibi::UpdateUser {
                             email_verified: Some(true),
                             ..Default::default()
                         },

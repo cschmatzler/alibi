@@ -28,7 +28,7 @@ mod tests {
     )]
     async fn test_spec_driven_endpoint_validation() {
         let mut config = test_config();
-        config.email_provider = Some(std::sync::Arc::new(alibi_core::email::ConsoleEmailProvider));
+        config.email_provider = Some(std::sync::Arc::new(alibi::email::ConsoleEmailProvider));
         let auth = create_test_auth_with_config(config).await;
         let mut validator = SpecValidator::new();
 

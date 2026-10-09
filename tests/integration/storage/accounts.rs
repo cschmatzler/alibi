@@ -2,8 +2,8 @@
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use alibi::AuthConfig;
-use alibi_core::store::{AccountStore, UserStore};
-use alibi_core::{AuthError, AuthUser, CreateAccount, CreateUser, DatabaseError};
+use alibi::store::{AccountStore, UserStore};
+use alibi::{AuthError, AuthUser, CreateAccount, CreateUser, DatabaseError};
 use std::sync::Arc;
 
 backend_tests!(independent_connections_admit_duplicate_account_rows_without_selecting_an_owner);

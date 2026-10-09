@@ -6,13 +6,13 @@ use alibi::plugins::jwt::{
     JwtSignOptions,
 };
 use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::seaorm::DatabaseConnection;
+use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, QueryResult, Statement};
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
 };
-use alibi_core::{AuthRequest, CookieCacheConfig, CreateJwk, HttpMethod, Jwk};
-use alibi_seaorm::DatabaseConnection;
-use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, QueryResult, Statement};
+use alibi::{AuthRequest, CookieCacheConfig, CreateJwk, HttpMethod, Jwk};
 use axum::{
     Json, Router,
     body::Bytes,
@@ -283,7 +283,7 @@ struct Control {
     id: Option<String>,
     expires_at: Option<DateTime<Utc>>,
     field: Option<String>,
-    payload: Option<alibi_core::utils::json::JsValue>,
+    payload: Option<alibi::utils::json::JsValue>,
     override_options: Option<Value>,
     token: Option<String>,
     issuer: Option<String>,
@@ -423,7 +423,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         async move {
             let result=async {
                 let request_body=body.to_vec();
-                let body:Control=alibi_core::utils::json::from_slice(&body)?;
+                let body:Control=alibi::utils::json::from_slice(&body)?;
                 let (auth,jwt,app)=profiles.get(body.profile.as_deref().unwrap_or("jwt-keyring-standard")).ok_or_else(||AuthError::bad_request("unknown keyring profile"))?;
                 match body.operation.as_str() {
                     "reset"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"DELETE FROM fixtureJwtKeyring")).await.map_err(database_error)?;database.execute_raw(Statement::from_string(DbBackend::Sqlite,"DELETE FROM sqlite_sequence WHERE name='fixtureJwtKeyring'")).await.map_err(database_error)?;state.events.lock().map_err(database_error)?.clear();*state.failure.lock().map_err(database_error)?=None;*state.race.lock().map_err(database_error)?=None;}

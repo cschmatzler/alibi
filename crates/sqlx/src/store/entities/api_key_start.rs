@@ -17,7 +17,7 @@ pub struct ApiKeyStart {
 }
 
 impl ApiKeyStart {
-    pub(crate) fn prepare(value: ApiKeyStartingCharacters, backend: Engine) -> AuthResult<Self> {
+    pub(crate) fn prepare(value: &ApiKeyStartingCharacters, backend: Engine) -> AuthResult<Self> {
         match value.storage_text() {
             ApiKeyStartText::Utf8(text) => Ok(Self {
                 text,

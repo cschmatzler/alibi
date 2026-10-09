@@ -63,7 +63,7 @@ impl OAuthProfileMapper for Mapper {
     async fn map_profile(
         &self,
         profile: Value,
-    ) -> Result<alibi_core::field_policy::FieldOutput, String> {
+    ) -> Result<alibi::field_policy::FieldOutput, String> {
         assert_eq!(profile["id"], "raw-oauth-id");
         Ok([
             ("id".into(), json!("foreign-presentation-id")),

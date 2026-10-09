@@ -5,8 +5,8 @@ use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::oauth::OAuthPlugin;
 use alibi::plugins::{AccountManagementPlugin, EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::seaorm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_seaorm::DatabaseConnection;
 use axum::Router;
 use std::sync::Arc;
 

@@ -1,4 +1,8 @@
-use super::*;
+use crate::store::UserStore;
+use crate::store::stateless::{StatelessSchema, StatelessStore, members};
+use crate::{AuthError, AuthResult, CreateUser, ListUsersParams, UpdateUser, UserView};
+use async_trait::async_trait;
+use chrono::Utc;
 #[async_trait]
 impl UserStore<StatelessSchema> for StatelessStore {
     async fn create_user(&self, mut create_user: CreateUser) -> AuthResult<UserView> {
@@ -33,7 +37,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
             ("displayUsername", create_user.display_username.is_none()),
         ] {
             if absent && !create_user.additional_fields.contains_key(name) {
-                let _ = omitted_fields.insert(name.to_owned());
+                _ = omitted_fields.insert(name.to_owned());
             }
         }
         let username = create_user.username.map(|username| username.to_lowercase());
@@ -75,7 +79,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
         {
             return Err(AuthError::bad_request("User already exists"));
         }
-        drop(state.users.insert(id, user.clone()));
+        _ = state.users.insert(id, user.clone());
         Ok(user)
     }
 
@@ -195,28 +199,25 @@ impl UserStore<StatelessSchema> for StatelessStore {
             user.last_login_method = last_login_method;
         }
         for (key, value) in update.additional_fields {
-            drop(user.extension_fields.insert(key, value.to_json_value()?));
+            _ = user.extension_fields.insert(key, value.to_json_value()?);
         }
-        for name in ["name", "email", "image", "username", "displayUsername"] {
-            let present = match name {
-                "name" => user.name.is_some(),
-                "email" => user.email.is_some(),
-                "image" => user.image.is_some(),
-                "username" => user.username.is_some(),
-                _ => user.display_username.is_some(),
-            };
+        for (name, present) in [
+            ("name", user.name.is_some()),
+            ("email", user.email.is_some()),
+            ("image", user.image.is_some()),
+            ("username", user.username.is_some()),
+            ("displayUsername", user.display_username.is_some()),
+        ] {
             if present {
-                let _ = user.omitted_fields.remove(name);
+                _ = user.omitted_fields.remove(name);
             }
         }
         user.updated_at = Utc::now();
-        let locked_result = Ok(user.clone());
-        drop(state);
-        locked_result
+        Ok(user.clone())
     }
 
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
-        drop(self.lock()?.users.shift_remove(id));
+        _ = self.lock()?.users.shift_remove(id);
         Ok(())
     }
 

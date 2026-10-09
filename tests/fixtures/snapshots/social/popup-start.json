@@ -1,0 +1,72 @@
+[
+  {
+    "untrusted callback": {
+      "type": "better-auth:oauth-popup",
+      "targetOrigin": "http://localhost:43219",
+      "nonce": "nonce-1",
+      "error": {
+        "code": "invalid_callback_url",
+        "description": "Untrusted URL: https://evil.example/cb"
+      }
+    }
+  },
+  {
+    "untrusted error callback": {
+      "type": "better-auth:oauth-popup",
+      "targetOrigin": "http://localhost:43219",
+      "nonce": "nonce-1",
+      "error": {
+        "code": "invalid_error_callback_url",
+        "description": "Untrusted URL: https://evil.example/e"
+      }
+    }
+  },
+  {
+    "untrusted new user callback": {
+      "type": "better-auth:oauth-popup",
+      "targetOrigin": "http://localhost:43219",
+      "nonce": "nonce-1",
+      "error": {
+        "code": "invalid_new_user_callback_url",
+        "description": "Untrusted URL: https://evil.example/n"
+      }
+    }
+  },
+  {
+    "unknown provider": {
+      "type": "better-auth:oauth-popup",
+      "targetOrigin": "http://localhost:43219",
+      "nonce": "nonce-1",
+      "error": {
+        "code": "provider_not_found",
+        "description": "Unknown provider: nowhere"
+      }
+    }
+  },
+  {
+    "stored state": {
+      "callbackURL": "/after",
+      "errorURL": "/popup-error",
+      "newUserURL": "/popup-new",
+      "requestSignUp": true,
+      "keep": "yes"
+    }
+  },
+  {
+    "delivered": {
+      "nonce": "nonce-1",
+      "redirectTo": "/popup-new"
+    }
+  },
+  {
+    "provider error": {
+      "type": "better-auth:oauth-popup",
+      "targetOrigin": "http://localhost:43219",
+      "nonce": "nonce-1",
+      "error": {
+        "code": "access_denied",
+        "description": "User cancelled"
+      }
+    }
+  }
+]

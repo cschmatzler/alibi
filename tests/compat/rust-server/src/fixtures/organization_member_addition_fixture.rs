@@ -6,19 +6,19 @@ use alibi::plugins::organization::{
     extensions::{OrganizationLimitResolver, TeamLimitContext},
     types::AddOrganizationMemberRequest,
 };
+use alibi::seaorm::{
+    DatabaseConnection,
+    sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin},
 };
-use alibi_core::{
+use alibi::{
     CreateMember, CreateUser, UpdateUser,
     store::{MemberStore, OrganizationStore, UserStore},
-};
-use alibi_seaorm::{
-    DatabaseConnection,
-    sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use async_trait::async_trait;
 use axum::{

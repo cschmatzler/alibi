@@ -1,4 +1,10 @@
-use super::*;
+use crate::utils::LockUnpoisoned;
+use crate::wire::{SessionView, UserView};
+use serde::{Deserialize, Serialize};
+use std::any::Any;
+use std::collections::HashMap;
+use std::ops::Index;
+use std::sync::{Arc, Mutex};
 /// HTTP method enumeration
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HttpMethod {
@@ -26,12 +32,11 @@ pub struct AuthRequest {
     pub query: HashMap<String, String>,
     pub(in crate::types) query_values: HashMap<String, Vec<String>>,
     /// Session authenticated by a trusted plugin hook for the current request.
-    pub(crate) virtual_session: Option<crate::wire::SessionView>,
+    pub(crate) virtual_session: Option<SessionView>,
     /// Headers emitted by trusted nested handlers during this dispatch.
     pub(in crate::types) response_headers: Arc<Mutex<Headers>>,
     /// The original store snapshot retained for completed-handler hooks.
-    pub(in crate::types) session_hook_snapshot:
-        Arc<Mutex<Option<(crate::wire::UserView, crate::wire::SessionView)>>>,
+    pub(in crate::types) session_hook_snapshot: Arc<Mutex<Option<(UserView, SessionView)>>>,
     pub(in crate::types) extensions: RequestExtensions,
 }
 
@@ -53,7 +58,7 @@ pub enum ParsedRequestBody {
 
 /// Multipart file contents retained for application handlers alongside decoded fields.
 #[derive(Clone, Debug, Default)]
-pub struct MultipartFiles(pub std::collections::HashMap<String, MultipartFile>);
+pub struct MultipartFiles(pub HashMap<String, MultipartFile>);
 
 #[derive(Clone, Debug)]
 pub struct MultipartFile {
@@ -69,18 +74,12 @@ impl std::fmt::Debug for RequestExtensions {
 }
 
 impl RequestExtensions {
-    pub fn insert<T: std::any::Any + Send + Sync>(&self, value: T) {
-        self.0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(value);
+    pub fn insert<T: Any + Send + Sync>(&self, value: T) {
+        self.0.lock_unpoisoned().insert(value);
     }
 
-    pub fn get<T: std::any::Any + Send + Sync>(&self) -> Option<Arc<T>> {
-        self.0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get()
+    pub fn get<T: Any + Send + Sync>(&self) -> Option<Arc<T>> {
+        self.0.lock_unpoisoned().get()
     }
 }
 
@@ -243,19 +242,7 @@ impl Index<&str> for Headers {
 impl AuthRequest {
     #[must_use]
     pub fn new(method: HttpMethod, path: impl Into<String>) -> Self {
-        Self {
-            method,
-            path: path.into(),
-            request_url: None,
-            headers: HashMap::new(),
-            body: None,
-            query: HashMap::new(),
-            query_values: HashMap::new(),
-            virtual_session: None,
-            response_headers: Arc::new(Mutex::new(Headers::new())),
-            session_hook_snapshot: Arc::new(Mutex::new(None)),
-            extensions: RequestExtensions::default(),
-        }
+        Self::from_parts(method, path.into(), HashMap::new(), None, HashMap::new())
     }
 
     /// Construct a request from all public parts.
@@ -311,7 +298,7 @@ impl AuthRequest {
         for (key, value) in pairs {
             let key = key.into();
             let value = value.into();
-            drop(self.query.insert(key.clone(), value.clone()));
+            _ = self.query.insert(key.clone(), value.clone());
             self.query_values.entry(key).or_default().push(value);
         }
     }
@@ -356,20 +343,12 @@ impl AuthRequest {
     /// normalize a route. Dispatch starts with a fresh accumulator, so values
     /// supplied by an external caller cannot become response headers.
     pub fn queue_response_header(&self, name: impl Into<String>, value: impl Into<String>) {
-        self.response_headers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .append(name, value);
+        self.response_headers.lock_unpoisoned().append(name, value);
     }
 
     /// Drain headers accumulated by trusted handlers for this request.
     pub fn take_response_headers(&self) -> Headers {
-        std::mem::take(
-            &mut *self
-                .response_headers
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        )
+        std::mem::take(&mut *self.response_headers.lock_unpoisoned())
     }
 
     /// Record the original store snapshot observed by a trusted session handler.
@@ -378,26 +357,14 @@ impl AuthRequest {
     /// expiry cleanup. It may contain an expired or deleted session and must
     /// never authorize work; use `AuthContext::require_session` for that.
     /// Dispatch resets caller-supplied snapshots before running trusted handlers.
-    pub fn set_session_hook_snapshot(
-        &self,
-        user: crate::wire::UserView,
-        session: crate::wire::SessionView,
-    ) {
-        *self
-            .session_hook_snapshot
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((user, session));
+    pub fn set_session_hook_snapshot(&self, user: UserView, session: SessionView) {
+        *self.session_hook_snapshot.lock_unpoisoned() = Some((user, session));
     }
 
     /// Return the handler's original session context for completed-response hooks.
     /// This is an observation of a read, not an authorization result.
-    pub fn session_hook_snapshot(
-        &self,
-    ) -> Option<(crate::wire::UserView, crate::wire::SessionView)> {
-        self.session_hook_snapshot
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
+    pub fn session_hook_snapshot(&self) -> Option<(UserView, SessionView)> {
+        self.session_hook_snapshot.lock_unpoisoned().clone()
     }
 
     /// Return the user ID authenticated by a trusted plugin hook.
@@ -410,7 +377,7 @@ impl AuthRequest {
 
     /// Return the session authenticated by a trusted plugin hook.
     #[must_use]
-    pub const fn virtual_session(&self) -> Option<&crate::wire::SessionView> {
+    pub const fn virtual_session(&self) -> Option<&SessionView> {
         self.virtual_session.as_ref()
     }
 
@@ -418,11 +385,10 @@ impl AuthRequest {
     ///
     /// Call this method only from the request pipeline after a plugin returns
     /// `BeforeRequestAction::InjectSession`. Never populate the session from client input.
-    pub fn set_virtual_session(&mut self, session: crate::wire::SessionView) {
+    pub fn set_virtual_session(&mut self, session: SessionView) {
         self.virtual_session = Some(session);
     }
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the request body is missing or cannot be deserialized.
@@ -454,54 +420,37 @@ impl AuthResponse {
         }
     }
 
-    ///
+    fn with_content(status: u16, content_type: &str, body: Vec<u8>) -> Self {
+        Self {
+            status,
+            headers: Headers(vec![("content-type".to_owned(), content_type.to_owned())]),
+            body,
+        }
+    }
+
     /// # Errors
-    ///
     /// Returns an error if the response body cannot be serialized.
     pub fn json<T: Serialize>(status: u16, data: &T) -> Result<Self, serde_json::Error> {
-        let body = crate::utils::json::to_vec(data)?;
-        let mut headers = Headers::new();
-        drop(headers.insert("content-type".to_owned(), "application/json".to_owned()));
-
-        Ok(Self {
+        Ok(Self::with_content(
             status,
-            headers,
-            body,
-        })
+            "application/json",
+            crate::utils::json::to_vec(data)?,
+        ))
     }
 
     #[must_use]
     pub fn text(status: u16, text: impl Into<String>) -> Self {
-        let body = text.into().into_bytes();
-        let mut headers = Headers::new();
-        drop(headers.insert("content-type".to_owned(), "text/plain".to_owned()));
-
-        Self {
-            status,
-            headers,
-            body,
-        }
+        Self::with_content(status, "text/plain", text.into().into_bytes())
     }
 
     #[must_use]
     pub fn html(status: u16, html: impl Into<String>) -> Self {
-        let body = html.into().into_bytes();
-        let mut headers = Headers::new();
-        drop(headers.insert(
-            "content-type".to_owned(),
-            "text/html; charset=utf-8".to_owned(),
-        ));
-
-        Self {
-            status,
-            headers,
-            body,
-        }
+        Self::with_content(status, "text/html; charset=utf-8", html.into().into_bytes())
     }
 
     #[must_use]
     pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
-        drop(self.headers.insert(name.into(), value.into()));
+        _ = self.headers.insert(name.into(), value.into());
         self
     }
 
@@ -513,5 +462,31 @@ impl AuthResponse {
     ) -> Self {
         self.headers.append(name.into(), value.into());
         self
+    }
+}
+
+impl From<AuthResponse> for ::http::Response<Vec<u8>> {
+    /// Headers that are not valid HTTP names or values are dropped.
+    fn from(response: AuthResponse) -> Self {
+        let mut converted = Self::new(response.body);
+        *converted.status_mut() = ::http::StatusCode::from_u16(response.status)
+            .unwrap_or(::http::StatusCode::INTERNAL_SERVER_ERROR);
+        let headers = converted.headers_mut();
+        for (name, value) in response.headers {
+            if let (Ok(name), Ok(value)) = (
+                ::http::HeaderName::try_from(name),
+                ::http::HeaderValue::try_from(value),
+            ) {
+                _ = headers.append(name, value);
+            }
+        }
+        converted
+    }
+}
+
+#[cfg(feature = "axum")]
+impl axum::response::IntoResponse for AuthResponse {
+    fn into_response(self) -> axum::response::Response {
+        ::http::Response::from(self).map(axum::body::Body::from)
     }
 }

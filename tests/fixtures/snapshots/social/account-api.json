@@ -1,0 +1,356 @@
+[
+  {
+    "/get-access-token empty object": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input"
+      }
+    }
+  },
+  {
+    "/get-access-token array": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input"
+      }
+    }
+  },
+  {
+    "/get-access-token unknown key": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Unrecognized key: \"extra\""
+      }
+    }
+  },
+  {
+    "/get-access-token unknown keys": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Unrecognized keys: \"extra\", \"more\""
+      }
+    }
+  },
+  {
+    "/get-access-token both selectors": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input"
+      }
+    }
+  },
+  {
+    "/get-access-token foreign user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input"
+      }
+    }
+  },
+  {
+    "/get-access-token account cookie selector": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "accessToken": "provider-access",
+        "accessTokenExpiresAt": "<date>",
+        "scopes": [
+          "openid",
+          "email",
+          "profile"
+        ],
+        "idToken": "provider-id-token"
+      }
+    }
+  },
+  {
+    "/get-access-token unknown account": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "ACCOUNT_NOT_FOUND",
+        "message": "Account not found"
+      }
+    }
+  },
+  {
+    "/get-access-token unauthenticated": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "/refresh-token empty object": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input"
+      }
+    }
+  },
+  {
+    "/refresh-token array": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input"
+      }
+    }
+  },
+  {
+    "/refresh-token unknown key": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Unrecognized key: \"extra\""
+      }
+    }
+  },
+  {
+    "/refresh-token unknown keys": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Unrecognized keys: \"extra\", \"more\""
+      }
+    }
+  },
+  {
+    "/refresh-token both selectors": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input"
+      }
+    }
+  },
+  {
+    "/refresh-token foreign user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input"
+      }
+    }
+  },
+  {
+    "/refresh-token account cookie selector": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.account_data=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "accessToken": "provider-access",
+        "accessTokenExpiresAt": "<date>",
+        "refreshToken": "provider-refresh",
+        "refreshTokenExpiresAt": null,
+        "scope": "openid,email,profile",
+        "idToken": "provider-id-token",
+        "providerId": "google",
+        "accountId": "<v1>"
+      }
+    }
+  },
+  {
+    "/refresh-token unknown account": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "ACCOUNT_NOT_FOUND",
+        "message": "Account not found"
+      }
+    }
+  },
+  {
+    "/refresh-token unauthenticated": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "account-info selected": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "user": {
+          "email": "social@example.com",
+          "emailVerified": true,
+          "name": "Provider social-sub",
+          "image": "https://images.example/social-sub"
+        },
+        "data": {
+          "sub": "social-sub",
+          "email": "social@example.com",
+          "name": "Provider social-sub"
+        },
+        "account": {
+          "id": "<v1>",
+          "providerId": "google",
+          "accountId": "social-sub"
+        }
+      }
+    }
+  },
+  {
+    "account-info unknown key": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[query] Unrecognized key: \"extra\""
+      }
+    }
+  },
+  {
+    "account-info no selector": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[query] Invalid input"
+      }
+    }
+  },
+  {
+    "account-info unauthenticated": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "refresh without a new refresh token": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "accessToken": "rotated-access",
+        "accessTokenExpiresAt": "<date>",
+        "refreshToken": "provider-refresh",
+        "refreshTokenExpiresAt": null,
+        "scope": "openid,email,profile",
+        "idToken": "provider-id-token",
+        "providerId": "google",
+        "accountId": "<v1>"
+      }
+    }
+  },
+  {
+    "server call without user": "Either userId or session is required"
+  },
+  {
+    "server call without user": "Either userId or session is required"
+  }
+]

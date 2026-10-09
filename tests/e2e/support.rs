@@ -1,14 +1,14 @@
-use alibi::integrations::axum::{AxumIntegration, CurrentSession};
+use alibi::integrations::{CurrentSession, axum::AxumIntegration};
 use alibi::plugins::{
     EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin,
     password_management::SendResetPassword,
 };
+use alibi::sqlx::{SqlxStore, sqlx::sqlite::SqlitePoolOptions};
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_core::{
+use alibi::{
     AuthSchema, AuthUser,
     store::{AuthStore, SchemaMigrator},
 };
-use alibi_sqlx::{SqlxStore, sqlx::sqlite::SqlitePoolOptions};
 use async_trait::async_trait;
 use axum::{Json, Router, routing::get};
 use reqwest::{
@@ -29,8 +29,8 @@ pub(super) enum Backend {
     SeaOrm,
 }
 enum Connection {
-    Sqlx(alibi_sqlx::sqlx::SqlitePool),
-    SeaOrm(alibi_seaorm::DatabaseConnection),
+    Sqlx(alibi::sqlx::sqlx::SqlitePool),
+    SeaOrm(alibi::seaorm::DatabaseConnection),
 }
 
 pub(super) type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -72,7 +72,7 @@ impl Server {
         match backend {
             Backend::Sqlx => {
                 type Schema =
-                    alibi_sqlx::store::__private_test_support::bundled_schema::BundledSchema;
+                    alibi::sqlx::store::__private_test_support::bundled_schema::BundledSchema;
                 let pool = SqlitePoolOptions::new()
                     .max_connections(1)
                     .connect("sqlite::memory:")
@@ -83,9 +83,9 @@ impl Server {
             }
             Backend::SeaOrm => {
                 type Schema =
-                    alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
-                let pool = alibi_seaorm::Database::connect("sqlite::memory:").await?;
-                let store = alibi_seaorm::SeaOrmStore::<Schema>::new(config.clone(), pool.clone());
+                    alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+                let pool = alibi::seaorm::Database::connect("sqlite::memory:").await?;
+                let store = alibi::seaorm::SeaOrmStore::<Schema>::new(config.clone(), pool.clone());
                 store.migrate().await?;
                 Self::serve(listener, origin, config, store, Connection::SeaOrm(pool)).await
             }

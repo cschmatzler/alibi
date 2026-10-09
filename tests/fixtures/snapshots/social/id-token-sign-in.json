@@ -1,0 +1,142 @@
+[
+  {
+    "new user": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "redirect": false,
+        "token": "<g1>",
+        "user": {
+          "id": "<v2>",
+          "name": "Provider new-sub",
+          "email": "new@example.com",
+          "emailVerified": true,
+          "image": "https://images.example/new-sub",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "returning user": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "redirect": false,
+        "token": "<g3>",
+        "user": {
+          "id": "<v2>",
+          "name": "Provider new-sub",
+          "email": "new@example.com",
+          "emailVerified": true,
+          "image": "https://images.example/new-sub",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "unverified implicit link": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OAUTH_LINK_ERROR",
+        "message": "account not linked"
+      }
+    }
+  },
+  {
+    "verified implicit link": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "redirect": false,
+        "token": "<g4>",
+        "user": {
+          "id": "<v2>",
+          "name": "Provider new-sub",
+          "email": "new@example.com",
+          "emailVerified": true,
+          "image": "https://images.example/new-sub",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "sign up disabled": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "OAUTH_LINK_ERROR",
+        "message": "signup disabled"
+      }
+    }
+  },
+  {
+    "override user info": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "redirect": false,
+        "token": "<g5>",
+        "user": {
+          "id": "<v2>",
+          "name": "Renamed",
+          "email": "new@example.com",
+          "emailVerified": true,
+          "image": "https://images.example/new-sub",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  }
+]

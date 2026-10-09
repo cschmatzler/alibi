@@ -8,8 +8,8 @@ use alibi::plugins::oauth::{
     OAuthRefreshTokenParamsResolver, OAuthTokenEndpointAuth, OAuthTokenSet, OAuthUserInfo,
 };
 use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
+use alibi::seaorm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_seaorm::DatabaseConnection;
 use axum::{
     Json, Router,
     extract::State,
@@ -309,12 +309,12 @@ pub(crate) async fn router(
         let path = format!("/__test/profiles/generic-token-{mode}/api/auth");
         let mut settings = config.clone().base_path(&path);
         if mode.starts_with("base-") {
-            settings.dynamic_base_url = Some(alibi_core::config::DynamicBaseUrl {
+            settings.dynamic_base_url = Some(alibi::config::DynamicBaseUrl {
                 allowed_hosts: vec!["exact.fixture.test".into(), "*.preview.fixture.test".into()],
                 protocol: Some(match mode {
-                    "base-http" => alibi_core::config::BaseUrlProtocol::Http,
-                    "base-https" => alibi_core::config::BaseUrlProtocol::Https,
-                    _ => alibi_core::config::BaseUrlProtocol::Auto,
+                    "base-http" => alibi::config::BaseUrlProtocol::Http,
+                    "base-https" => alibi::config::BaseUrlProtocol::Https,
+                    _ => alibi::config::BaseUrlProtocol::Auto,
                 }),
                 fallback: (mode != "base-no-fallback")
                     .then(|| "http://fallback.fixture.test".into()),

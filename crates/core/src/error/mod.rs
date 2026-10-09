@@ -1,7 +1,9 @@
 mod codes;
 
-use codes::upstream_code;
 pub mod page;
+
+use crate::types::{AuthRequest, AuthResponse, ErrorCodeMessageResponse};
+use codes::upstream_code;
 use thiserror::Error;
 
 /// Authentication framework error types.
@@ -140,34 +142,23 @@ impl AuthError {
     pub const fn status_code(&self) -> u16 {
         match self {
             Self::Api { status, .. } | Self::Upstream { status, .. } => *status,
-            // 400
             Self::BadRequest(_) | Self::InvalidRequest(_) | Self::Validation(_) => 400,
-            // 401
             Self::InvalidCredentials
             | Self::Unauthenticated
             | Self::AuthenticationFailed(_)
             | Self::SessionNotFound => 401,
-            // 403
             Self::Forbidden(_)
             | Self::SessionCreationCancelled
             | Self::UserCreationCancelled
             | Self::BannedUser(_)
             | Self::Unauthorized => 403,
-            // 404
             Self::UserNotFound | Self::NotFound(_) => 404,
-            // 409
             Self::Conflict(_) => 409,
-            // 405
             Self::MethodNotAllowed(_) => 405,
-            // 413
             Self::PayloadTooLarge(_) => 413,
-            // 422
             Self::UnprocessableEntity(_) => 422,
-            // 429
             Self::RateLimited { .. } => 429,
-            // 501
             Self::NotImplemented(_) => 501,
-            // 500
             Self::Config(_)
             | Self::Database(_)
             | Self::Serialization(_)
@@ -177,6 +168,15 @@ impl AuthError {
             | Self::CallbackFailure(_)
             | Self::PasswordHash(_)
             | Self::Jwt(_) => 500,
+        }
+    }
+
+    /// Mark an ordinary application callback failure, whose HTTP contract is an
+    /// empty 500. Explicit API errors keep their own public response.
+    pub(crate) fn into_callback_failure(self) -> Self {
+        match self {
+            Self::Api { .. } | Self::Upstream { .. } | Self::CallbackFailure(_) => self,
+            other => Self::CallbackFailure(Box::new(other)),
         }
     }
 
@@ -206,34 +206,7 @@ impl AuthError {
                 (Some((*code).to_owned()), (*message).to_owned())
             }
             Self::BannedUser(message) => (Some("BANNED_USER".to_owned()), message.clone()),
-            Self::BadRequest(_)
-            | Self::InvalidRequest(_)
-            | Self::Validation(_)
-            | Self::InvalidCredentials
-            | Self::Unauthenticated
-            | Self::AuthenticationFailed(_)
-            | Self::SessionNotFound
-            | Self::Forbidden(_)
-            | Self::SessionCreationCancelled
-            | Self::UserCreationCancelled
-            | Self::Unauthorized
-            | Self::UserNotFound
-            | Self::NotFound(_)
-            | Self::Conflict(_)
-            | Self::MethodNotAllowed(_)
-            | Self::PayloadTooLarge(_)
-            | Self::UnprocessableEntity(_)
-            | Self::RateLimited { .. }
-            | Self::NotImplemented(_)
-            | Self::Config(_)
-            | Self::Database(_)
-            | Self::Serialization(_)
-            | Self::Plugin { .. }
-            | Self::Internal(_)
-            | Self::Encryption(_)
-            | Self::CallbackFailure(_)
-            | Self::PasswordHash(_)
-            | Self::Jwt(_) => {
+            _ => {
                 let message = match status {
                     500 => {
                         tracing::error!(error = %self, "Internal server error");
@@ -248,28 +221,28 @@ impl AuthError {
         (status, code, message)
     }
 
-    /// Convert this error into a standardized [`AuthResponse`](crate::types::AuthResponse) matching the
+    /// Convert this error into a standardized [`AuthResponse`] matching the
     /// better-auth spec: `{ "code": "...", "message": "..." }`.
     ///
     /// Named `to_auth_response` to avoid collision with Axum's
     /// `IntoResponse::into_response` when the `axum` feature is enabled.
     #[must_use]
-    pub fn to_auth_response(self) -> crate::types::AuthResponse {
+    pub fn to_auth_response(self) -> AuthResponse {
         if matches!(&self, Self::CallbackFailure(_) | Self::Encryption(_)) {
             tracing::error!(error = %self, "Authentication operation failed");
-            return crate::types::AuthResponse::new(500);
+            return AuthResponse::new(500);
         }
         let ordinary = self.status_code() == 500 && !crate::endpoint::is_endpoint_api_error(&self);
         let retry_after = self.retry_after_header();
         let (status, code, message) = self.error_payload();
-        let response = crate::types::AuthResponse::json(
+        let response = AuthResponse::json(
             status,
-            &crate::types::ErrorCodeMessageResponse {
+            &ErrorCodeMessageResponse {
                 code,
                 message: message.clone(),
             },
         )
-        .unwrap_or_else(|_| crate::types::AuthResponse::text(status, &message));
+        .unwrap_or_else(|_| AuthResponse::text(status, &message));
         let response = if ordinary {
             response.with_header("Content-Type", "application/json;charset=utf-8")
         } else {
@@ -399,30 +372,7 @@ pub type AuthResult<T> = Result<T, AuthError>;
 #[cfg(feature = "axum")]
 impl axum::response::IntoResponse for AuthError {
     fn into_response(self) -> axum::response::Response {
-        if matches!(&self, Self::CallbackFailure(_) | Self::Encryption(_)) {
-            tracing::error!(error = %self, "Authentication operation failed");
-            return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-        let ordinary = self.status_code() == 500 && !crate::endpoint::is_endpoint_api_error(&self);
-        let retry_after = self.retry_after_header();
-        let (status_u16, code, message) = self.error_payload();
-        let status = axum::http::StatusCode::from_u16(status_u16)
-            .unwrap_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
-        let mut response = (
-            status,
-            axum::Json(crate::types::ErrorCodeMessageResponse { code, message }),
-        )
-            .into_response();
-        if ordinary {
-            let _ = response.headers_mut().insert(
-                "content-type",
-                axum::http::HeaderValue::from_static("application/json;charset=utf-8"),
-            );
-        }
-        if let Some(value) = retry_after.and_then(|value| value.parse().ok()) {
-            drop(response.headers_mut().insert("x-retry-after", value));
-        }
-        response
+        self.to_auth_response().into_response()
     }
 }
 
@@ -431,10 +381,7 @@ impl axum::response::IntoResponse for AuthError {
 /// Returns a 400 response with `{ "code": "VALIDATION_ERROR", "message": "[body.field] ..." }`
 /// matching the TS better-auth error shape.
 #[must_use]
-pub fn validation_error_response(
-    errors: &validator::ValidationErrors,
-) -> crate::types::AuthResponse {
-    // Build a TS-compatible message: "[body.field] message; [body.field2] message2"
+pub fn validation_error_response(errors: &validator::ValidationErrors) -> AuthResponse {
     let messages: Vec<String> = errors
         .field_errors()
         .into_iter()
@@ -449,15 +396,13 @@ pub fn validation_error_response(
         })
         .collect();
     let message = messages.join("; ");
-
-    let body = crate::types::ErrorCodeMessageResponse {
+    let body = ErrorCodeMessageResponse {
         code: Some("VALIDATION_ERROR".to_owned()),
         message,
     };
 
-    // Validation errors return 400 (not 422) per the TS spec
-    crate::types::AuthResponse::json(400, &body)
-        .unwrap_or_else(|_| crate::types::AuthResponse::text(400, "Validation failed"))
+    // Upstream answers 400, not 422, for validation failures.
+    AuthResponse::json(400, &body).unwrap_or_else(|_| AuthResponse::text(400, "Validation failed"))
 }
 
 /// Validate a request body, returning a parsed + validated value or an error response.
@@ -465,26 +410,20 @@ pub fn validation_error_response(
 /// # Errors
 ///
 /// Returns an error response if the request body is missing, malformed, or fails validation.
-pub fn validate_request_body<T>(
-    req: &crate::types::AuthRequest,
-) -> Result<T, crate::types::AuthResponse>
+pub fn validate_request_body<T>(req: &AuthRequest) -> Result<T, AuthResponse>
 where
     T: serde::de::DeserializeOwned + validator::Validate + 'static,
 {
     let value: T = req.body_as_json().map_err(|e| {
         let message = format!("Invalid JSON: {e}");
         let code = AuthError::code_from_message(&message);
-        crate::types::AuthResponse::json(
-            400,
-            &crate::types::ErrorCodeMessageResponse { code, message },
-        )
-        .unwrap_or_else(|_| crate::types::AuthResponse::text(400, "Invalid JSON"))
+        AuthResponse::json(400, &ErrorCodeMessageResponse { code, message })
+            .unwrap_or_else(|_| AuthResponse::text(400, "Invalid JSON"))
     })?;
 
     value
         .validate()
         .map_err(|e| validation_error_response(&e))?;
-
     Ok(value)
 }
 
@@ -492,8 +431,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ── status_code ─────────────────────────────────────────────────────
 
     // Rust-specific surface: `AuthError` and Rust-side response/error conversion behavior are public Rust library APIs with no direct TS analogue.
     #[test]
@@ -613,8 +550,6 @@ mod tests {
         );
     }
 
-    // ── code_from_message ───────────────────────────────────────────────
-
     // Upstream reference: BASE_ERROR_CODES in @better-auth/core — a message
     // upstream defines a constant for carries that constant.
     #[test]
@@ -681,8 +616,6 @@ mod tests {
         }
     }
 
-    // ── error_payload ───────────────────────────────────────────────────
-
     // Rust-specific surface: `AuthError` and Rust-side response/error conversion behavior are public Rust library APIs with no direct TS analogue.
     #[test]
     fn error_payload_for_client_error() {
@@ -706,8 +639,6 @@ mod tests {
         assert_eq!(status, 500);
         assert_eq!(message, "Internal server error");
     }
-
-    // ── to_auth_response ────────────────────────────────────────────────
 
     // Rust-specific surface: `AuthError` and Rust-side response/error conversion behavior are public Rust library APIs with no direct TS analogue.
     #[test]
@@ -733,8 +664,6 @@ mod tests {
         );
     }
 
-    // ── constructor helpers ──────────────────────────────────────────────
-
     // Rust-specific surface: `AuthError` and Rust-side response/error conversion behavior are public Rust library APIs with no direct TS analogue.
     #[test]
     fn constructor_helpers_produce_correct_variants() {
@@ -759,8 +688,6 @@ mod tests {
         );
     }
 
-    // ── DatabaseError ───────────────────────────────────────────────────
-
     // Rust-specific surface: `AuthError` and Rust-side response/error conversion behavior are public Rust library APIs with no direct TS analogue.
     #[test]
     fn database_error_display() {
@@ -775,8 +702,6 @@ mod tests {
         let auth_err: AuthError = db_err.into();
         assert_eq!(auth_err.status_code(), 500);
     }
-
-    // ── validation_error_response ───────────────────────────────────────
 
     // Rust-specific surface: `AuthError` and Rust-side response/error conversion behavior are public Rust library APIs with no direct TS analogue.
     #[test]
@@ -799,8 +724,6 @@ mod tests {
             "[body.email] Email is invalid"
         );
     }
-
-    // ── Display for fixed-message variants ──────────────────────────────
 
     // Rust-specific surface: `AuthError` and Rust-side response/error conversion behavior are public Rust library APIs with no direct TS analogue.
     #[test]
@@ -834,7 +757,7 @@ mod tests {
         let response = AuthError::CallbackFailure(Box::new(AuthError::internal("private cause")))
             .to_auth_response();
         assert_eq!(response.status, 500);
-        assert!(response.body.is_empty());
+        assert_eq!(response.body, Vec::<u8>::new());
         assert!(response.headers.get("content-type").is_none());
 
         let internal = AuthError::internal("private cause").to_auth_response();

@@ -38,29 +38,21 @@ Keep tests focused on observable behavior and independent contracts. Comparator
 negative controls belong in the harness because they catch false passing results;
 one-off diagnostics of dependency internals and checks of comment wording do not.
 
-## Full gate
+## Running the suite
 
 ```bash
-devenv shell -- ./scripts/check.sh
-# The repository package script runs the same gate:
-bun run test
-# Equivalent inside the development shell, and in CI:
-./scripts/check.sh
+devenv shell -- ./scripts/compat.sh
+# or, from the repository root:
+bun run test:compat
 ```
 
-This runs formatting, strict Clippy, all workspace unit/integration tests,
-feature builds, TypeScript type checking, harness negative controls, the
-complete SDK scenario directory, process-environment cases, Chromium tests,
-doctests, docs, and LLVM line coverage.
-The 75% production line-coverage floor retains execution from unit, integration
-and the complete SQLx SDK suite while excluding their own source. Instrumented
-SDK owners share one fixture pool, and the complete production floor remains
-75%. The filtered LCOV artifact
-reports lines only, because LLVM does not supply function-end ranges in LCOV.
-Rust unit and integration tests run with `cargo nextest run`, including the
-compatibility server and LLVM coverage (`cargo llvm-cov nextest`). Executable
-doctests run separately with `cargo test --doc`; illustrative `ignore` examples
-remain excluded.
+CI does not run this suite; it is too slow and resource-hungry for every push.
+Native tests (`./scripts/check.sh`) protect behavior between runs, and the
+differential suite runs once before merging. It installs nothing: run
+`bun install --frozen-lockfile` in `reference-server/` and `client-tests/` first.
+It formats, lints and type-checks the Bun harness, runs the harness negative
+controls, the complete SDK scenario directory against both store adapters,
+process-environment cases and Chromium tests, then checks each adapter's evidence.
 Every dual-server comparison runs through the official client against both
 fixture servers on allocated ports started and stopped by the Rust orchestrator;
 there is no in-process shape-only comparison layer with tolerated differences. Default and `axum,seaorm,redis-cache` configurations are tested;
@@ -94,8 +86,7 @@ workers finish. A passing adapter cannot supply another adapter's receipts.
 The Rust fixture uses optimized production code and one Tokio event loop, and
 resolves its complete Axum router once before accepting connections. Scenarios
 can override that deadline; assertions about protocol timeouts and lifetimes
-remain independent. CI allows two hours for cold builds, the full SDK suite,
-browser checks, and the instrumented coverage pass.
+remain independent. A cold run builds both fixture executables first.
 
 The shared Rust style supplies nextest, Clippy, rustfmt, and Mr. Boxington.
 The style input is private and requires GitHub SSH access. `scripts/check.sh`
@@ -339,12 +330,9 @@ BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo nextest run --test compat sdk::tests::fu
 ```
 
 Review the resulting `capabilities.json` diff, especially removed requirements.
-The full gate clears the update flag and always enforces the committed inventory.
-Reports are written to `client-tests/artifacts/` and `coverage/lcov.info` and
-uploaded by CI. LLVM coverage measures production Rust source executed by native
-tests and the instrumented SDK fixture, with a 75% line floor. TypeScript source
-and browser behavior are tracked separately through capability evidence and
-their own assertions.
+`compat.sh` clears the update flag and always enforces the committed inventory.
+Reports are written to `client-tests/artifacts/`. TypeScript source and browser
+behavior are tracked through capability evidence and their own assertions.
 
 ## Focused checks
 

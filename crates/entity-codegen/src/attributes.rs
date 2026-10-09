@@ -1,4 +1,7 @@
-use super::*;
+use crate::has_field;
+use alibi_schema_registry::{self as registry, EntityRole};
+use syn::{Data, DeriveInput, Fields, FieldsNamed, LitStr};
+
 /// Parsed `#[auth(...)]` container attributes.
 #[derive(Clone, Debug)]
 pub struct AuthAttributes {
@@ -10,7 +13,7 @@ pub struct AuthAttributes {
 }
 
 /// Parse the role, optional ID factory and secondary-storage configuration.
-/// SQLx also permits an explicit table name.
+/// `SQLx` also permits an explicit table name.
 ///
 /// # Errors
 ///

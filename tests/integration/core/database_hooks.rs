@@ -7,15 +7,15 @@
 use alibi::error::{AuthResult, DatabaseError};
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::prelude::{AuthRequest, AuthUser, CreateUser, HttpMethod};
+use alibi::seaorm::sea_orm::sea_query::{Alias, ColumnDef, Expr, ExprTrait, Query, Table};
+use alibi::seaorm::sea_orm::{ConnectionTrait, Database, DatabaseConnection};
+use alibi::seaorm::{DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore};
 use alibi::{AuthBuilder, AuthConfig};
-use alibi_seaorm::sea_orm::sea_query::{Alias, ColumnDef, Expr, ExprTrait, Query, Table};
-use alibi_seaorm::sea_orm::{ConnectionTrait, Database, DatabaseConnection};
-use alibi_seaorm::{DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore};
 use async_trait::async_trait;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type TestSchema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 #[derive(Clone)]
 struct OrderingHook {
@@ -119,7 +119,7 @@ struct OnboardingHook {
 impl DatabaseHooks<TestSchema, SeaOrmBackend> for OnboardingHook {
     async fn after_create_user(
         &self,
-        user: &<TestSchema as alibi_core::AuthSchema>::User,
+        user: &<TestSchema as alibi::AuthSchema>::User,
         ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
         self.service
@@ -138,7 +138,7 @@ struct DeleteCaptureHook {
 impl DatabaseHooks<TestSchema, SeaOrmBackend> for DeleteCaptureHook {
     async fn before_delete_user(
         &self,
-        user: &<TestSchema as alibi_core::AuthSchema>::User,
+        user: &<TestSchema as alibi::AuthSchema>::User,
         _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
         self.emails
@@ -158,7 +158,7 @@ async fn test_database() -> DatabaseConnection {
     let database = Database::connect("sqlite::memory:")
         .await
         .expect("sqlite test database should connect");
-    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+    alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .expect("sqlite test migrations should run");
     database

@@ -177,7 +177,7 @@ Axum and Poem extractors give you the authenticated `user` and `session` in your
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::integrations::axum::CurrentSession;
+use alibi::integrations::CurrentSession;
 use alibi::prelude::{AuthSession, AuthUser};
 
 async fn whoami(session: CurrentSession<AppAuthSchema>) -> String {

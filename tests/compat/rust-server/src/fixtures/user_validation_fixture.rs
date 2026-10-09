@@ -1,5 +1,10 @@
 //! Trusted application identity policy at the real HTTP/store boundary.
 use crate::TestSchema;
+use alibi::seaorm::{
+    DatabaseConnection, DatabaseHooks, HookControl,
+    sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr},
+    store::entities::{account, session, user, verification, wallet_address},
+};
 use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
@@ -19,18 +24,13 @@ use alibi::{
         siwe::{Eip191Verifier, SiweCallbackResult, SiweConfig, SiweNonceProvider, SiwePlugin},
     },
 };
-use alibi_core::{
+use alibi::{
     AuthRequest, AuthUser, CreateUser, PasswordHasher, ScryptHasher,
     hooks::{RequestHookContext, TransformedRequestBody, ValidatedRequestBody},
     user_validation::{
         UserInfoValidator, UserValidationData, UserValidationRejection, UserValidationSource,
     },
     wire::{AccountView, VerificationView},
-};
-use alibi_seaorm::{
-    DatabaseConnection, DatabaseHooks, HookControl,
-    sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr},
-    store::entities::{account, session, user, verification, wallet_address},
 };
 use async_trait::async_trait;
 use axum::{
@@ -113,7 +113,7 @@ fn candidate(user: &CreateUser) -> Value {
 fn context_path(request: &RequestHookContext) -> String {
     request
         .extensions
-        .get::<alibi_core::plugin::ResolvedEndpoint>()
+        .get::<alibi::plugin::ResolvedEndpoint>()
         .map_or_else(|| request.path.clone(), |endpoint| endpoint.path.clone())
 }
 #[async_trait]
@@ -139,7 +139,7 @@ impl UserInfoValidator for Application {
                     .body
                     .as_deref()
                     .and_then(|bytes| std::str::from_utf8(bytes).ok())
-                    .and_then(|body| alibi_core::utils::json::parse_value(body).ok())
+                    .and_then(|body| alibi::utils::json::parse_value(body).ok())
             });
         self.event(json!({"stage":"validation","user":candidate(&data.user),"source":data.source,"context":{
             "path":context_path(request),"body":body.map(|body|body.to_json_value().unwrap()),
@@ -221,7 +221,7 @@ impl DatabaseHooks<TestSchema, crate::backend::Backend> for Application {
     }
     async fn after_create_user(
         &self,
-        user: &<TestSchema as alibi_core::AuthSchema>::User,
+        user: &<TestSchema as alibi::AuthSchema>::User,
         context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<()> {
         self.event(json!({"stage":"user-create-after","userId":user.id(),"path":context.request.as_ref().map(context_path)}));
@@ -229,7 +229,7 @@ impl DatabaseHooks<TestSchema, crate::backend::Backend> for Application {
     }
     async fn before_create_account(
         &self,
-        _: &mut alibi_core::CreateAccount,
+        _: &mut alibi::CreateAccount,
         context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         self.event(json!({"stage":"account-create-before","path":context.request.as_ref().map(context_path)}));
@@ -237,7 +237,7 @@ impl DatabaseHooks<TestSchema, crate::backend::Backend> for Application {
     }
     async fn before_create_session(
         &self,
-        _: &mut alibi_core::CreateSession,
+        _: &mut alibi::CreateSession,
         context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         self.event(json!({"stage":"session-create-before","path":context.request.as_ref().map(context_path)}));
@@ -261,7 +261,7 @@ impl SendMagicLink for Application {
     async fn send(
         &self,
         delivery: &MagicLinkDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         self.deliver(
             format!("magic:{}", delivery.email),
@@ -275,7 +275,7 @@ impl SendEmailOtp for Application {
     async fn send(
         &self,
         delivery: &EmailOtpDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         self.deliver(
             format!("otp:{}:{}", delivery.otp_type.as_str(), delivery.email),
@@ -289,7 +289,7 @@ impl SendPhoneOtp for Application {
     async fn send(
         &self,
         delivery: &PhoneOtpDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         self.deliver(
             format!("phone:{}", delivery.phone_number),
@@ -315,7 +315,7 @@ impl SiweNonceProvider for Application {
         ))
     }
 }
-fn db_error(error: alibi_seaorm::sea_orm::DbErr) -> AuthError {
+fn db_error(error: alibi::seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
 pub(crate) async fn router(

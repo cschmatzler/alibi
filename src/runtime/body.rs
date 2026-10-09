@@ -1,4 +1,4 @@
-use super::*;
+use super::{AuthError, AuthRequest, AuthResult};
 
 pub(in crate::runtime) async fn parse_dispatch_body(
     req: &AuthRequest,
@@ -79,7 +79,7 @@ pub(in crate::runtime) async fn parse_dispatch_body(
                 AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
             })?;
         let mut multipart = multer::Multipart::with_reader(body.as_slice(), boundary);
-        let mut fields = alibi_core::utils::json::JsValue::Object(Default::default());
+        let mut fields = empty_object();
         let mut files = alibi_core::types::MultipartFiles::default();
         while let Some(field) = multipart.next_field().await.map_err(|error| {
             AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
@@ -93,23 +93,23 @@ pub(in crate::runtime) async fn parse_dispatch_body(
                 AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
             })?;
             let value = if let Some(filename) = filename {
-                drop(files.0.insert(
+                _ = files.0.insert(
                     name.clone(),
                     alibi_core::types::MultipartFile {
                         filename,
                         content_type,
                         bytes: bytes.to_vec(),
                     },
-                ));
-                alibi_core::utils::json::JsValue::Object(Default::default())
+                );
+                empty_object()
             } else {
-                drop(files.0.remove(&name));
+                _ = files.0.remove(&name);
                 alibi_core::utils::json::JsValue::String(
                     String::from_utf8_lossy(&bytes).into_owned(),
                 )
             };
             if let alibi_core::utils::json::JsValue::Object(object) = &mut fields {
-                drop(object.insert(name, value));
+                _ = object.insert(name, value);
             }
         }
         req.extensions().insert(files);
@@ -139,4 +139,12 @@ pub(in crate::runtime) async fn parse_dispatch_body(
     };
     req.extensions().insert(decoded);
     Ok(())
+}
+
+#[expect(
+    clippy::default_trait_access,
+    reason = "the `IndexMap` type is not a direct dependency of this crate"
+)]
+fn empty_object() -> alibi_core::utils::json::JsValue {
+    alibi_core::utils::json::JsValue::Object(Default::default())
 }

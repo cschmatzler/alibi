@@ -1,3 +1,4 @@
+use crate::utils::LockUnpoisoned;
 // LCOV_EXCL_START
 #[cfg(test)]
 mod factor_extension_contract_tests {
@@ -175,9 +176,7 @@ impl MemoryStore {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.state.lock_unpoisoned()
     }
 }
 
@@ -407,11 +406,9 @@ impl SessionStore<BundledSchema> for MemoryStore {
         };
         fields.apply_adapter_transforms()?;
         for (name, value) in fields {
-            drop(
-                session
-                    .extension_fields
-                    .insert(name, value.to_json_value()?),
-            );
+            _ = session
+                .extension_fields
+                .insert(name, value.to_json_value()?);
         }
         session.updated_at = Utc::now();
         let locked_result = Ok(Some(session.clone()));
@@ -945,7 +942,7 @@ impl VerificationStore<BundledSchema> for MemoryStore {
         };
 
         let now = Utc::now();
-        let _ignored_insert = entry.insert(VerificationView {
+        _ = entry.insert(VerificationView {
             id,
             identifier: verification.identifier,
             value: verification.value,

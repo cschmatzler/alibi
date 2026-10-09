@@ -31,7 +31,7 @@
 //! IP address and user agent arguments to [`issue_user_session`] populate session
 //! metadata. [`create_session_cookie`] uses the configured name, signing secret,
 //! lifetime and cookie attributes.
-
+//!
 //! To select an organization during the initial insert, use
 //! [`issue_user_session_with_fields`] after verifying access to that organization:
 //!
@@ -59,11 +59,11 @@
 //! the returned session contains the final stored values. For callbacks that
 //! need retained adapter output, use [`issue_user_session_with_fields_record`].
 
-pub use alibi_api::plugins::helpers::{
+pub use alibi_core::session::*;
+pub use alibi_core::utils::cookie_utils::create_session_cookie;
+pub use alibi_plugins::helpers::{
     IssuedSession, IssuedSessionRecord, SessionIssueError, SessionOverrides, issue_user_session,
     issue_user_session_record, issue_user_session_with_fields,
     issue_user_session_with_fields_record, issue_user_session_with_overrides,
     issue_user_session_with_overrides_record,
 };
-pub use alibi_core::session::{SessionRefreshSuppressed, cookie_cache};
-pub use alibi_core::utils::cookie_utils::create_session_cookie;

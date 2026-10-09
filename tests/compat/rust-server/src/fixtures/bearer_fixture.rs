@@ -6,8 +6,8 @@ use alibi::plugins::{
     ApiKeyConfig, ApiKeyPlugin, BearerConfig, BearerPlugin, EmailPasswordPlugin,
     MultiSessionPlugin, SessionManagementPlugin,
 };
+use alibi::seaorm::sea_orm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthResult, prelude::CreateSession};
-use alibi_seaorm::sea_orm::DatabaseConnection;
 use axum::Router;
 use std::sync::{
     Arc,
@@ -17,26 +17,26 @@ use std::sync::{
 struct TokenHook(Arc<AtomicUsize>);
 struct ApplicationExposure;
 #[async_trait::async_trait]
-impl alibi_core::AuthPlugin<TestSchema> for ApplicationExposure {
+impl alibi::AuthPlugin<TestSchema> for ApplicationExposure {
     fn name(&self) -> &'static str {
         "application-exposure"
     }
-    fn routes(&self) -> Vec<alibi_core::AuthRoute> {
+    fn routes(&self) -> Vec<alibi::AuthRoute> {
         Vec::new()
     }
     async fn on_request(
         &self,
-        _: &alibi_core::AuthRequest,
-        _: &alibi_core::AuthContext<TestSchema>,
-    ) -> AuthResult<Option<alibi_core::AuthResponse>> {
+        _: &alibi::AuthRequest,
+        _: &alibi::AuthContext<TestSchema>,
+    ) -> AuthResult<Option<alibi::AuthResponse>> {
         Ok(None)
     }
     async fn after_request(
         &self,
-        _: &alibi_core::AuthRequest,
-        _: &alibi_core::AuthContext<TestSchema>,
-        mut response: alibi_core::AuthResponse,
-    ) -> AuthResult<alibi_core::AuthResponse> {
+        _: &alibi::AuthRequest,
+        _: &alibi::AuthContext<TestSchema>,
+        mut response: alibi::AuthResponse,
+    ) -> AuthResult<alibi::AuthResponse> {
         drop(response.headers.insert(
             "access-control-expose-headers",
             "X-First, X-First, X-Second",
@@ -45,17 +45,17 @@ impl alibi_core::AuthPlugin<TestSchema> for ApplicationExposure {
     }
 }
 #[async_trait::async_trait]
-impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
+impl alibi::seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
     async fn before_create_session(
         &self,
         session: &mut CreateSession,
         _: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<alibi_seaorm::HookControl> {
+    ) -> AuthResult<alibi::seaorm::HookControl> {
         session.token = Some(format!(
             "bearer{:026}",
             self.0.fetch_add(1, Ordering::SeqCst) + 1
         ));
-        Ok(alibi_seaorm::HookControl::Continue)
+        Ok(alibi::seaorm::HookControl::Continue)
     }
 }
 pub(crate) async fn router(
@@ -76,7 +76,7 @@ pub(crate) async fn router(
         if name == "bearer-renamed-cookie" {
             config.advanced.cookies.insert(
                 "session_token".into(),
-                alibi_core::CookieOverride {
+                alibi::CookieOverride {
                     name: Some("configured-bearer-token".into()),
                     ..Default::default()
                 },

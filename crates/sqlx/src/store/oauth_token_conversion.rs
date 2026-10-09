@@ -1,4 +1,5 @@
 use super::SqlxStore;
+use crate::pool::Engine;
 use crate::{
     model::SqlxModel,
     pool::Exec,
@@ -46,8 +47,8 @@ where
         sql.push(" WHERE ");
         // Validate application ID types, then compare their canonical physical
         // text too: an application NOCASE collation must not admit another owner.
-        drop(S::Account::parse_id(&observed.id)?);
-        drop(S::Account::parse_user_id(&observed.user_id)?);
+        _ = S::Account::parse_id(&observed.id)?;
+        _ = S::Account::parse_user_id(&observed.user_id)?;
         for (index, (column, value)) in [
             (S::Account::id_column(), &observed.id),
             (S::Account::user_id_column(), &observed.user_id),
@@ -84,7 +85,7 @@ where
             }
         }
         self.in_transaction(true, async move |tx| {
-            Ok(Exec::Tx(tx).execute(sql).await? == 1)
+            Ok(Exec::tx(tx).execute(sql).await? == 1)
         })
         .await
     }
@@ -92,7 +93,7 @@ where
 
 fn exact_collation(sql: &mut Sql) {
     match sql.engine() {
-        crate::pool::Engine::Sqlite => sql.push(" COLLATE BINARY"),
-        crate::pool::Engine::Postgres => sql.push(" COLLATE \"C\""),
+        Engine::Sqlite => sql.push(" COLLATE BINARY"),
+        Engine::Postgres => sql.push(" COLLATE \"C\""),
     }
 }

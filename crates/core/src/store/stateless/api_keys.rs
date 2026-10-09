@@ -1,6 +1,11 @@
 //! Instance-local API-key rows. Each Source write phase locks independently.
-use super::*;
-use crate::ApiKeyStartText;
+use crate::store::ApiKeyStore;
+use crate::store::stateless::StatelessStore;
+use crate::{
+    ApiKey, ApiKeyStartText, AuthError, AuthResult, ConsumeApiKeyResult, CreateApiKey, UpdateApiKey,
+};
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 
 #[async_trait]
 impl ApiKeyStore for StatelessStore {
@@ -36,7 +41,7 @@ impl ApiKeyStore for StatelessStore {
             permissions: input.permissions,
             metadata: input.metadata,
         };
-        drop(self.lock()?.api_keys.insert(row.id.clone(), row.clone()));
+        _ = self.lock()?.api_keys.insert(row.id.clone(), row.clone());
         Ok(row)
     }
     async fn get_api_key_by_id(&self, id: &str) -> AuthResult<Option<ApiKey>> {
@@ -94,7 +99,7 @@ impl ApiKeyStore for StatelessStore {
         Ok(row.clone())
     }
     async fn delete_api_key(&self, id: &str) -> AuthResult<()> {
-        drop(self.lock()?.api_keys.shift_remove(id));
+        _ = self.lock()?.api_keys.shift_remove(id);
         Ok(())
     }
     async fn delete_expired_api_keys(&self) -> AuthResult<usize> {
@@ -266,7 +271,7 @@ fn consume_rate(
     match elapsed {
         None if current_previous.is_none() => current.request_count = Some(1.0),
         Some(elapsed) if elapsed > window && guard.is_some_and(|last| last <= window_start) => {
-            current.request_count = Some(1.0)
+            current.request_count = Some(1.0);
         }
         Some(elapsed) if elapsed <= window => {
             if observed.request_count.unwrap_or(0.0) >= max {

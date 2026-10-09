@@ -1,0 +1,431 @@
+[
+  {
+    "{\"files\":[\"read\",\"write\"]} requires {\"files\":[\"read\"]}": "valid"
+  },
+  {
+    "{\"files\":[\"read\",\"write\"]} requires {\"files\":[\"read\",\"write\"]}": "valid"
+  },
+  {
+    "{\"files\":[\"read\",\"write\"]} requires {\"files\":{\"actions\":[\"read\",\"write\"],\"connector\":\"OR\"}}": "valid"
+  },
+  {
+    "{\"files\":[\"read\",\"write\"]} requires {\"files\":{\"actions\":[\"read\",\"delete\"],\"connector\":\"AND\"}}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"read\",\"write\"]} requires {\"files\":{\"actions\":[\"read\"]}}": "valid"
+  },
+  {
+    "{\"files\":[\"read\",\"write\"]} requires {\"files\":{\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"read\",\"write\"]} requires {\"files\":[]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"read\",\"write\"]} requires {\"files\":\"read\"}": "internal"
+  },
+  {
+    "{\"files\":[\"read\",\"write\"]} requires {\"files\":[5]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"read\",\"write\"]} requires {\"0\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"read\",\"write\"]} requires {\"missing\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"read\",\"write\"]} requires {}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"read\",\"write\"]} requires {\"files\":[\"2020-01-01T00:00:00.000Z\"]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":\"read,write\"} requires {\"files\":[\"read\"]}": "valid"
+  },
+  {
+    "{\"files\":\"read,write\"} requires {\"files\":[\"read\",\"write\"]}": "valid"
+  },
+  {
+    "{\"files\":\"read,write\"} requires {\"files\":{\"actions\":[\"read\",\"write\"],\"connector\":\"OR\"}}": "valid"
+  },
+  {
+    "{\"files\":\"read,write\"} requires {\"files\":{\"actions\":[\"read\",\"delete\"],\"connector\":\"AND\"}}": "KeyNotFound"
+  },
+  {
+    "{\"files\":\"read,write\"} requires {\"files\":{\"actions\":[\"read\"]}}": "valid"
+  },
+  {
+    "{\"files\":\"read,write\"} requires {\"files\":{\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "{\"files\":\"read,write\"} requires {\"files\":[]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":\"read,write\"} requires {\"files\":\"read\"}": "internal"
+  },
+  {
+    "{\"files\":\"read,write\"} requires {\"files\":[5]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":\"read,write\"} requires {\"0\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":\"read,write\"} requires {\"missing\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":\"read,write\"} requires {}": "KeyNotFound"
+  },
+  {
+    "{\"files\":\"read,write\"} requires {\"files\":[\"2020-01-01T00:00:00.000Z\"]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":5} requires {\"files\":[\"read\"]}": "internal"
+  },
+  {
+    "{\"files\":5} requires {\"files\":[\"read\",\"write\"]}": "internal"
+  },
+  {
+    "{\"files\":5} requires {\"files\":{\"actions\":[\"read\",\"write\"],\"connector\":\"OR\"}}": "internal"
+  },
+  {
+    "{\"files\":5} requires {\"files\":{\"actions\":[\"read\",\"delete\"],\"connector\":\"AND\"}}": "internal"
+  },
+  {
+    "{\"files\":5} requires {\"files\":{\"actions\":[\"read\"]}}": "internal"
+  },
+  {
+    "{\"files\":5} requires {\"files\":{\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "{\"files\":5} requires {\"files\":[]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":5} requires {\"files\":\"read\"}": "internal"
+  },
+  {
+    "{\"files\":5} requires {\"files\":[5]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":5} requires {\"0\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":5} requires {\"missing\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":5} requires {}": "KeyNotFound"
+  },
+  {
+    "{\"files\":5} requires {\"files\":[\"2020-01-01T00:00:00.000Z\"]}": "internal"
+  },
+  {
+    "[[\"read\"]] requires {\"files\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "[[\"read\"]] requires {\"files\":[\"read\",\"write\"]}": "KeyNotFound"
+  },
+  {
+    "[[\"read\"]] requires {\"files\":{\"actions\":[\"read\",\"write\"],\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "[[\"read\"]] requires {\"files\":{\"actions\":[\"read\",\"delete\"],\"connector\":\"AND\"}}": "KeyNotFound"
+  },
+  {
+    "[[\"read\"]] requires {\"files\":{\"actions\":[\"read\"]}}": "KeyNotFound"
+  },
+  {
+    "[[\"read\"]] requires {\"files\":{\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "[[\"read\"]] requires {\"files\":[]}": "KeyNotFound"
+  },
+  {
+    "[[\"read\"]] requires {\"files\":\"read\"}": "KeyNotFound"
+  },
+  {
+    "[[\"read\"]] requires {\"files\":[5]}": "KeyNotFound"
+  },
+  {
+    "[[\"read\"]] requires {\"0\":[\"read\"]}": "valid"
+  },
+  {
+    "[[\"read\"]] requires {\"missing\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "[[\"read\"]] requires {}": "KeyNotFound"
+  },
+  {
+    "[[\"read\"]] requires {\"files\":[\"2020-01-01T00:00:00.000Z\"]}": "KeyNotFound"
+  },
+  {
+    "not json requires {\"files\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "not json requires {\"files\":[\"read\",\"write\"]}": "KeyNotFound"
+  },
+  {
+    "not json requires {\"files\":{\"actions\":[\"read\",\"write\"],\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "not json requires {\"files\":{\"actions\":[\"read\",\"delete\"],\"connector\":\"AND\"}}": "KeyNotFound"
+  },
+  {
+    "not json requires {\"files\":{\"actions\":[\"read\"]}}": "KeyNotFound"
+  },
+  {
+    "not json requires {\"files\":{\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "not json requires {\"files\":[]}": "KeyNotFound"
+  },
+  {
+    "not json requires {\"files\":\"read\"}": "KeyNotFound"
+  },
+  {
+    "not json requires {\"files\":[5]}": "KeyNotFound"
+  },
+  {
+    "not json requires {\"0\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "not json requires {\"missing\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "not json requires {}": "KeyNotFound"
+  },
+  {
+    "not json requires {\"files\":[\"2020-01-01T00:00:00.000Z\"]}": "KeyNotFound"
+  },
+  {
+    "null requires {\"files\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "null requires {\"files\":[\"read\",\"write\"]}": "KeyNotFound"
+  },
+  {
+    "null requires {\"files\":{\"actions\":[\"read\",\"write\"],\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "null requires {\"files\":{\"actions\":[\"read\",\"delete\"],\"connector\":\"AND\"}}": "KeyNotFound"
+  },
+  {
+    "null requires {\"files\":{\"actions\":[\"read\"]}}": "KeyNotFound"
+  },
+  {
+    "null requires {\"files\":{\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "null requires {\"files\":[]}": "KeyNotFound"
+  },
+  {
+    "null requires {\"files\":\"read\"}": "KeyNotFound"
+  },
+  {
+    "null requires {\"files\":[5]}": "KeyNotFound"
+  },
+  {
+    "null requires {\"0\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "null requires {\"missing\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "null requires {}": "KeyNotFound"
+  },
+  {
+    "null requires {\"files\":[\"2020-01-01T00:00:00.000Z\"]}": "KeyNotFound"
+  },
+  {
+    "0 requires {\"files\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "0 requires {\"files\":[\"read\",\"write\"]}": "KeyNotFound"
+  },
+  {
+    "0 requires {\"files\":{\"actions\":[\"read\",\"write\"],\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "0 requires {\"files\":{\"actions\":[\"read\",\"delete\"],\"connector\":\"AND\"}}": "KeyNotFound"
+  },
+  {
+    "0 requires {\"files\":{\"actions\":[\"read\"]}}": "KeyNotFound"
+  },
+  {
+    "0 requires {\"files\":{\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "0 requires {\"files\":[]}": "KeyNotFound"
+  },
+  {
+    "0 requires {\"files\":\"read\"}": "KeyNotFound"
+  },
+  {
+    "0 requires {\"files\":[5]}": "KeyNotFound"
+  },
+  {
+    "0 requires {\"0\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "0 requires {\"missing\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "0 requires {}": "KeyNotFound"
+  },
+  {
+    "0 requires {\"files\":[\"2020-01-01T00:00:00.000Z\"]}": "KeyNotFound"
+  },
+  {
+    "\"\" requires {\"files\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "\"\" requires {\"files\":[\"read\",\"write\"]}": "KeyNotFound"
+  },
+  {
+    "\"\" requires {\"files\":{\"actions\":[\"read\",\"write\"],\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "\"\" requires {\"files\":{\"actions\":[\"read\",\"delete\"],\"connector\":\"AND\"}}": "KeyNotFound"
+  },
+  {
+    "\"\" requires {\"files\":{\"actions\":[\"read\"]}}": "KeyNotFound"
+  },
+  {
+    "\"\" requires {\"files\":{\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "\"\" requires {\"files\":[]}": "KeyNotFound"
+  },
+  {
+    "\"\" requires {\"files\":\"read\"}": "KeyNotFound"
+  },
+  {
+    "\"\" requires {\"files\":[5]}": "KeyNotFound"
+  },
+  {
+    "\"\" requires {\"0\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "\"\" requires {\"missing\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "\"\" requires {}": "KeyNotFound"
+  },
+  {
+    "\"\" requires {\"files\":[\"2020-01-01T00:00:00.000Z\"]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"2020-01-01T00:00:00.000Z\"]} requires {\"files\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"2020-01-01T00:00:00.000Z\"]} requires {\"files\":[\"read\",\"write\"]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"2020-01-01T00:00:00.000Z\"]} requires {\"files\":{\"actions\":[\"read\",\"write\"],\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"2020-01-01T00:00:00.000Z\"]} requires {\"files\":{\"actions\":[\"read\",\"delete\"],\"connector\":\"AND\"}}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"2020-01-01T00:00:00.000Z\"]} requires {\"files\":{\"actions\":[\"read\"]}}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"2020-01-01T00:00:00.000Z\"]} requires {\"files\":{\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"2020-01-01T00:00:00.000Z\"]} requires {\"files\":[]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"2020-01-01T00:00:00.000Z\"]} requires {\"files\":\"read\"}": "internal"
+  },
+  {
+    "{\"files\":[\"2020-01-01T00:00:00.000Z\"]} requires {\"files\":[5]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"2020-01-01T00:00:00.000Z\"]} requires {\"0\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"2020-01-01T00:00:00.000Z\"]} requires {\"missing\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"2020-01-01T00:00:00.000Z\"]} requires {}": "KeyNotFound"
+  },
+  {
+    "{\"files\":[\"2020-01-01T00:00:00.000Z\"]} requires {\"files\":[\"2020-01-01T00:00:00.000Z\"]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":\"2020-01-01T00:00:00.000Z\"} requires {\"files\":[\"read\"]}": "internal"
+  },
+  {
+    "{\"files\":\"2020-01-01T00:00:00.000Z\"} requires {\"files\":[\"read\",\"write\"]}": "internal"
+  },
+  {
+    "{\"files\":\"2020-01-01T00:00:00.000Z\"} requires {\"files\":{\"actions\":[\"read\",\"write\"],\"connector\":\"OR\"}}": "internal"
+  },
+  {
+    "{\"files\":\"2020-01-01T00:00:00.000Z\"} requires {\"files\":{\"actions\":[\"read\",\"delete\"],\"connector\":\"AND\"}}": "internal"
+  },
+  {
+    "{\"files\":\"2020-01-01T00:00:00.000Z\"} requires {\"files\":{\"actions\":[\"read\"]}}": "internal"
+  },
+  {
+    "{\"files\":\"2020-01-01T00:00:00.000Z\"} requires {\"files\":{\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "{\"files\":\"2020-01-01T00:00:00.000Z\"} requires {\"files\":[]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":\"2020-01-01T00:00:00.000Z\"} requires {\"files\":\"read\"}": "internal"
+  },
+  {
+    "{\"files\":\"2020-01-01T00:00:00.000Z\"} requires {\"files\":[5]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":\"2020-01-01T00:00:00.000Z\"} requires {\"0\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":\"2020-01-01T00:00:00.000Z\"} requires {\"missing\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "{\"files\":\"2020-01-01T00:00:00.000Z\"} requires {}": "KeyNotFound"
+  },
+  {
+    "{\"files\":\"2020-01-01T00:00:00.000Z\"} requires {\"files\":[\"2020-01-01T00:00:00.000Z\"]}": "internal"
+  },
+  {
+    "true requires {\"files\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "true requires {\"files\":[\"read\",\"write\"]}": "KeyNotFound"
+  },
+  {
+    "true requires {\"files\":{\"actions\":[\"read\",\"write\"],\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "true requires {\"files\":{\"actions\":[\"read\",\"delete\"],\"connector\":\"AND\"}}": "KeyNotFound"
+  },
+  {
+    "true requires {\"files\":{\"actions\":[\"read\"]}}": "KeyNotFound"
+  },
+  {
+    "true requires {\"files\":{\"connector\":\"OR\"}}": "KeyNotFound"
+  },
+  {
+    "true requires {\"files\":[]}": "KeyNotFound"
+  },
+  {
+    "true requires {\"files\":\"read\"}": "KeyNotFound"
+  },
+  {
+    "true requires {\"files\":[5]}": "KeyNotFound"
+  },
+  {
+    "true requires {\"0\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "true requires {\"missing\":[\"read\"]}": "KeyNotFound"
+  },
+  {
+    "true requires {}": "KeyNotFound"
+  },
+  {
+    "true requires {\"files\":[\"2020-01-01T00:00:00.000Z\"]}": "KeyNotFound"
+  }
+]

@@ -18,7 +18,7 @@ fn property(field: &OpenApiField) -> Value {
             let mut output = Map::new();
             for key in ["type", "enum", "format", "default"] {
                 if let Some(value) = field.schema.get(key) {
-                    drop(output.insert(key.into(), value.clone()));
+                    _ = output.insert(key.into(), value.clone());
                 }
             }
             Value::Object(output)
@@ -57,7 +57,7 @@ pub(super) fn apply(
         return;
     };
     for field in &writable {
-        let _ignored_or_insert_with = properties
+        _ = properties
             .entry(field.name.clone())
             .or_insert_with(|| property(field));
     }
@@ -73,7 +73,7 @@ pub(super) fn apply(
             }
         }
         if !required.is_empty() {
-            drop(schema.insert("required".into(), json!(required)));
+            _ = schema.insert("required".into(), json!(required));
         }
     }
 }

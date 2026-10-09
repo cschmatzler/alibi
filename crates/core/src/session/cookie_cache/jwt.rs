@@ -7,16 +7,13 @@ use serde_json::{Value, json};
 use sha2::{Sha256, Sha384, Sha512};
 
 /// Complete session payload before a configured signer adds protected claims.
-///
-/// # Errors
-/// Returns a serialization error for an invalid application projection.
-pub fn payload(
+pub(crate) fn payload(
     user: &crate::UserView,
     session: &crate::SessionView,
     version: &str,
     now_ms: i64,
-) -> AuthResult<Value> {
-    Ok(json!({"session":session,"user":user,"updatedAt":now_ms,"version":version}))
+) -> Value {
+    json!({"session":session,"user":user,"updatedAt":now_ms,"version":version})
 }
 
 /// Add issued-at and expiry claims with fractional seconds retained.
@@ -35,8 +32,8 @@ pub fn time_claims(mut payload: Value, max_age: f64) -> AuthResult<Value> {
     let claims = payload
         .as_object_mut()
         .ok_or_else(|| AuthError::internal("Invalid cookie-cache payload"))?;
-    drop(claims.insert("iat".into(), json!(now)));
-    drop(claims.insert("exp".into(), json!(expiry)));
+    _ = claims.insert("iat".into(), json!(now));
+    _ = claims.insert("exp".into(), json!(expiry));
     Ok(payload)
 }
 
@@ -47,7 +44,7 @@ pub(crate) fn encode(payload: Value, secret: &str, max_age: f64) -> AuthResult<S
         URL_SAFE_NO_PAD.encode(crate::utils::json::to_vec(&time_claims(payload, max_age)?)?)
     );
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
-        .map_err(|_error| AuthError::internal("Invalid signing key"))?;
+        .map_err(|_| AuthError::internal("Invalid signing key"))?;
     mac.update(input.as_bytes());
     Ok(format!(
         "{input}.{}",

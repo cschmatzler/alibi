@@ -43,7 +43,7 @@ impl SqlxRateLimitStorage {
     }
 
     const fn exec(&self) -> Exec<'_> {
-        Exec::Pool(&self.pool)
+        Exec::pool(&self.pool)
     }
 
     async fn prune(&self, now: i64) {

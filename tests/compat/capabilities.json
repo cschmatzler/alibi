@@ -4586,9 +4586,7 @@
         ],
         "rejection": [
           "OAuth form-post callback missing-state redirects to validated state-bound GET before any account write",
-          "OAuth form-post callback wrong-state redirects to validated state-bound GET before any account write",
-          "OAuth proxy form-post missing-state preserves user payload and admits only issued state",
-          "OAuth proxy form-post wrong-state preserves user payload and admits only issued state"
+          "OAuth form-post callback wrong-state redirects to validated state-bound GET before any account write"
         ],
         "authorization": "OAuth form-post callback wrong-state redirects to validated state-bound GET before any account write",
         "state": "OAuth proxy form-post valid preserves user payload and admits only issued state"

@@ -89,7 +89,7 @@ async fn supervise_dispatches<R: Send + 'static>(
             job = receive.recv(), if accepting => match job {
                 Some(job) => {
                     let id = workers.spawn(job.future).id();
-                    drop(replies.insert(id, job.reply));
+                    _ = replies.insert(id, job.reply);
                 }
                 None => accepting = false,
             },
@@ -102,7 +102,7 @@ async fn supervise_dispatches<R: Send + 'static>(
                             (error.id(), Err(AuthError::internal("Authentication request failed")))
                         }
                     };
-                    if let Some(reply) = replies.remove(&id) { drop(reply.send(render(result))); }
+                    if let Some(reply) = replies.remove(&id) { _ = reply.send(render(result)); }
                 }
             },
         }

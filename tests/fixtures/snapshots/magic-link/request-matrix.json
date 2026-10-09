@@ -1,0 +1,175 @@
+[
+  {
+    "[]": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "null": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received null"
+      }
+    }
+  },
+  {
+    "{}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "{\"email\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "{\"email\":\"not-an-email\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid email address"
+      }
+    }
+  },
+  {
+    "{\"email\":\"a@example.test\",\"name\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.name] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "{\"email\":\"a@example.test\",\"callbackURL\":5,\"newUserCallbackURL\":5,\"errorCallbackURL\":5}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "Invalid callbackURL: expected a string"
+      }
+    }
+  },
+  {
+    "{\"email\":\"a@example.test\",\"metadata\":[]}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.metadata] Invalid input: expected record, received array"
+      }
+    }
+  },
+  {
+    "{\"email\":\"a@example.test\",\"metadata\":\"text\"}": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.metadata] Invalid input: expected record, received string"
+      }
+    }
+  },
+  {
+    "{\"email\":\"a@example.test\",\"metadata\":{\"campaign\":\"spring\"},\"newUserCallbackURL\":\"/welcome\",\"errorCallbackURL\":\"/oops\",\"callbackURL\":\"/home\",\"name\":\"Ann\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "{\"email\":\"b@example.test\",\"callbackURL\":\"\",\"newUserCallbackURL\":\"\",\"errorCallbackURL\":\"\"}": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "status": true
+      }
+    }
+  },
+  {
+    "deliveries": [
+      {
+        "email": "a@example.test",
+        "metadata": {
+          "campaign": "spring"
+        },
+        "query": [
+          "callbackURL=/home",
+          "<v1>=/welcome",
+          "<v2>=/oops"
+        ]
+      },
+      {
+        "email": "b@example.test",
+        "metadata": null,
+        "query": [
+          "callbackURL=/"
+        ]
+      }
+    ]
+  }
+]
