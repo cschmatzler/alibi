@@ -76,35 +76,7 @@ impl sea_orm::sea_query::ValueType for JsonMetadata {
                     .map(Self::from)
                     .map_err(|_error| sea_orm::sea_query::ValueTypeErr)
             }
-            sea_orm::Value::Bool(_)
-            | sea_orm::Value::TinyInt(_)
-            | sea_orm::Value::SmallInt(_)
-            | sea_orm::Value::Int(_)
-            | sea_orm::Value::BigInt(_)
-            | sea_orm::Value::TinyUnsigned(_)
-            | sea_orm::Value::SmallUnsigned(_)
-            | sea_orm::Value::Unsigned(_)
-            | sea_orm::Value::BigUnsigned(_)
-            | sea_orm::Value::Float(_)
-            | sea_orm::Value::Double(_)
-            | sea_orm::Value::String(_)
-            | sea_orm::Value::Char(_)
-            | sea_orm::Value::Bytes(_)
-            | sea_orm::Value::Json(_)
-            | sea_orm::Value::ChronoDate(_)
-            | sea_orm::Value::ChronoTime(_)
-            | sea_orm::Value::ChronoDateTime(_)
-            | sea_orm::Value::ChronoDateTimeUtc(_)
-            | sea_orm::Value::ChronoDateTimeLocal(_)
-            | sea_orm::Value::ChronoDateTimeWithTimeZone(_)
-            | sea_orm::Value::TimeDate(_)
-            | sea_orm::Value::TimeTime(_)
-            | sea_orm::Value::TimeDateTime(_)
-            | sea_orm::Value::TimeDateTimeWithTimeZone(_)
-            | sea_orm::Value::Uuid(_)
-            | sea_orm::Value::Decimal(_)
-            | sea_orm::Value::Enum(_)
-            | sea_orm::Value::Array(..) => Err(sea_orm::sea_query::ValueTypeErr),
+            _ => Err(sea_orm::sea_query::ValueTypeErr),
         }
     }
     fn type_name() -> String {

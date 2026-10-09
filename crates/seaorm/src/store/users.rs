@@ -1,6 +1,7 @@
 use super::{ScopedTransaction, SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmUserModel};
 use alibi_core::AuthUser;
+use alibi_core::UserFilterValue;
 use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::store::adapter::cancelled_by_hook;
 use alibi_core::store::{NumericTextInput, UserCreationDefaults, UserStore};
@@ -281,19 +282,118 @@ where
         Ok(user)
     }
 
+    /// The condition for an admin user-list filter the shared projection cannot evaluate.
+    fn user_filter(
+        &self,
+        filter_field: Option<&str>,
+        operator: &str,
+        value: &UserFilterValue,
+    ) -> AuthResult<Expr> {
+        let field = filter_field
+            .filter(|field| !field.is_empty())
+            .unwrap_or("email");
+        let column = S::User::list_users_column(field)
+            .ok_or_else(|| AuthError::bad_request("User filter field has no configured column"))?;
+        let operands = match value {
+            UserFilterValue::Multiple(values) => values.as_slice(),
+            UserFilterValue::Scalar(value) if operator != "in" => std::slice::from_ref(value),
+            UserFilterValue::Scalar(_) => {
+                return Err(AuthError::bad_request("Value must be an array"));
+            }
+        };
+        // The upstream schema transform coerces a scalar string on a
+        // boolean field before the adapter binds it. Array operands
+        // retain their original strings. The actual model column type
+        // also supports custom boolean fields and physical renames.
+        let numeric_cast =
+            if self.scoped_connection().get_database_backend() == sea_orm::DbBackend::Postgres {
+                use sea_orm::sea_query::ColumnType;
+                match column.def().get_column_type() {
+                    ColumnType::Integer => Some("int4"),
+                    ColumnType::BigInteger => Some("int8"),
+                    ColumnType::Float => Some("float4"),
+                    ColumnType::Double => Some("float8"),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+        let bindings: Vec<sea_orm::Value> = if numeric_cast.is_some() {
+            numeric_filter_text(operands)
+                .into_iter()
+                .map(Into::into)
+                .collect()
+        } else if matches!(value, UserFilterValue::Scalar(_))
+            && matches!(
+                column.def().get_column_type(),
+                sea_orm::sea_query::ColumnType::Boolean
+            )
+        {
+            operands
+                .iter()
+                .map(|value_2| (value_2 == "true").into())
+                .collect()
+        } else {
+            operands.iter().cloned().map(Into::into).collect()
+        };
+        let tuple = || {
+            Expr::tuple(bindings.iter().map(|value| {
+                numeric_cast.map_or_else(
+                    || column.save_as(Expr::val(value.clone())),
+                    |cast| Expr::cust_with_values(format!("$1::{cast}"), [value.clone()]),
+                )
+            }))
+        };
+        Ok(match operator {
+            "in" | "not_in" if numeric_cast.is_some() && bindings.is_empty() => {
+                Expr::cust_with_exprs(
+                    if operator == "in" {
+                        "$1 IN ()"
+                    } else {
+                        "$1 NOT IN ()"
+                    },
+                    [Expr::col(column)],
+                )
+            }
+            "in" | "not_in" if numeric_cast.is_some() => {
+                let values = bindings.iter().cloned().map(|value| {
+                    Expr::cust_with_values(
+                        format!("$1::{}", numeric_cast.unwrap_or_default()),
+                        [value],
+                    )
+                });
+                if operator == "in" {
+                    Expr::col(column).is_in(values)
+                } else {
+                    Expr::col(column).is_not_in(values)
+                }
+            }
+            "in" => column.is_in(bindings.iter().cloned()),
+            "not_in" => column.is_not_in(bindings.iter().cloned()),
+            // The pinned adapter interpolates the complete array's
+            // comma-joined value into a bound LIKE pattern. Actual SQL
+            // retains backend case, wildcard and NULL semantics.
+            "contains" => column.like(format!("%{}%", operands.join(","))),
+            "starts_with" => column.like(format!("{}%", operands.join(","))),
+            "ends_with" => column.like(format!("%{}", operands.join(","))),
+            "eq" => Expr::col(column).eq(tuple()),
+            "ne" => Expr::col(column).ne(tuple()),
+            "lt" => Expr::col(column).lt(tuple()),
+            "lte" => Expr::col(column).lte(tuple()),
+            "gt" => Expr::col(column).gt(tuple()),
+            "gte" => Expr::col(column).gte(tuple()),
+            _ => return Err(AuthError::bad_request("Unsupported user filter operator")),
+        })
+    }
+
     pub(crate) async fn create_user_in_tx(
         &self,
         tx: &ScopedTransaction,
         mut create_user: CreateUser,
     ) -> AuthResult<S::User> {
         create_user.email = create_user.email.map(|email| normalize_user_email(&email));
-        self.create_user_with_connection(
-            tx,
-            Some(tx),
-            create_user,
-            alibi_core::store::UserCreationDefaults::default(),
-        )
-        .await
+        self.create_user_with_connection(tx, Some(tx), create_user, UserCreationDefaults::default())
+            .await
     }
 
     pub(crate) async fn create_user_prepared_in_tx(
@@ -326,7 +426,7 @@ where
             self.scoped_connection(),
             None,
             create_user,
-            alibi_core::store::UserCreationDefaults::default(),
+            UserCreationDefaults::default(),
         )
         .await
     }
@@ -401,11 +501,11 @@ where
             .iter()
             .map(|id| S::User::parse_id(id))
             .collect::<AuthResult<Vec<_>>>()?;
-        let query = user_query::<S::User>(self.scoped_connection().get_database_backend())
-            .filter(<S::User as SeaOrmUserModel>::id_column().is_in(user_ids));
         let backend = self.scoped_connection().get_database_backend();
+        let query = user_query::<S::User>(backend)
+            .filter(<S::User as SeaOrmUserModel>::id_column().is_in(user_ids));
         let statement = super::bind_page(query.build(backend), Some(limit), None)?;
-        user_query::<S::User>(self.scoped_connection().get_database_backend())
+        user_query::<S::User>(backend)
             .from_raw_sql(statement)
             .all(self.scoped_connection())
             .await
@@ -558,125 +658,15 @@ where
     }
 
     async fn list_users(&self, mut params: ListUsersParams) -> AuthResult<(Vec<S::User>, usize)> {
-        use alibi_core::UserFilterValue;
         let mut query = user_query::<S::User>(self.scoped_connection().get_database_backend());
         if let Some(value) = &params.filter_value {
             let operator = params.filter_operator.as_deref().unwrap_or("eq");
             if matches!(value, UserFilterValue::Multiple(_))
                 || matches!(operator, "in" | "not_in")
-                || !matches!(
-                    params.filter_field.as_deref().unwrap_or("email"),
-                    "email"
-                        | "name"
-                        | "username"
-                        | "role"
-                        | "banned"
-                        | "createdAt"
-                        | "updatedAt"
-                        | "banExpires"
-                )
+                || !is_projected_field(params.filter_field.as_deref().unwrap_or("email"))
             {
-                let field = params
-                    .filter_field
-                    .as_deref()
-                    .filter(|field| !field.is_empty())
-                    .unwrap_or("email");
-                let column = S::User::list_users_column(field).ok_or_else(|| {
-                    AuthError::bad_request("User filter field has no configured column")
-                })?;
-                let operands = match value {
-                    UserFilterValue::Multiple(values) => values.as_slice(),
-                    UserFilterValue::Scalar(value) if operator != "in" => {
-                        std::slice::from_ref(value)
-                    }
-                    UserFilterValue::Scalar(_) => {
-                        return Err(AuthError::bad_request("Value must be an array"));
-                    }
-                };
-                // The upstream schema transform coerces a scalar string on a
-                // boolean field before the adapter binds it. Array operands
-                // retain their original strings. The actual model column type
-                // also supports custom boolean fields and physical renames.
-                let numeric_cast = if self.scoped_connection().get_database_backend()
-                    == sea_orm::DbBackend::Postgres
-                {
-                    use sea_orm::sea_query::ColumnType;
-                    match column.def().get_column_type() {
-                        ColumnType::Integer => Some("int4"),
-                        ColumnType::BigInteger => Some("int8"),
-                        ColumnType::Float => Some("float4"),
-                        ColumnType::Double => Some("float8"),
-                        _ => None,
-                    }
-                } else {
-                    None
-                };
-                let bindings: Vec<sea_orm::Value> = if numeric_cast.is_some() {
-                    numeric_filter_text(operands)
-                        .into_iter()
-                        .map(Into::into)
-                        .collect()
-                } else if matches!(value, UserFilterValue::Scalar(_))
-                    && matches!(
-                        column.def().get_column_type(),
-                        sea_orm::sea_query::ColumnType::Boolean
-                    )
-                {
-                    operands
-                        .iter()
-                        .map(|value_2| (value_2 == "true").into())
-                        .collect()
-                } else {
-                    operands.iter().cloned().map(Into::into).collect()
-                };
-                let tuple = || {
-                    Expr::tuple(bindings.iter().map(|value| {
-                        numeric_cast.map_or_else(
-                            || column.save_as(Expr::val(value.clone())),
-                            |cast| Expr::cust_with_values(format!("$1::{cast}"), [value.clone()]),
-                        )
-                    }))
-                };
-                let condition = match operator {
-                    "in" | "not_in" if numeric_cast.is_some() && bindings.is_empty() => {
-                        Expr::cust_with_exprs(
-                            if operator == "in" {
-                                "$1 IN ()"
-                            } else {
-                                "$1 NOT IN ()"
-                            },
-                            [Expr::col(column)],
-                        )
-                    }
-                    "in" | "not_in" if numeric_cast.is_some() => {
-                        let values = bindings.iter().cloned().map(|value| {
-                            Expr::cust_with_values(
-                                format!("$1::{}", numeric_cast.unwrap_or_default()),
-                                [value],
-                            )
-                        });
-                        if operator == "in" {
-                            Expr::col(column).is_in(values)
-                        } else {
-                            Expr::col(column).is_not_in(values)
-                        }
-                    }
-                    "in" => column.is_in(bindings.iter().cloned()),
-                    "not_in" => column.is_not_in(bindings.iter().cloned()),
-                    // The pinned adapter interpolates the complete array's
-                    // comma-joined value into a bound LIKE pattern. Actual SQL
-                    // retains backend case, wildcard and NULL semantics.
-                    "contains" => column.like(format!("%{}%", operands.join(","))),
-                    "starts_with" => column.like(format!("{}%", operands.join(","))),
-                    "ends_with" => column.like(format!("%{}", operands.join(","))),
-                    "eq" => Expr::col(column).eq(tuple()),
-                    "ne" => Expr::col(column).ne(tuple()),
-                    "lt" => Expr::col(column).lt(tuple()),
-                    "lte" => Expr::col(column).lte(tuple()),
-                    "gt" => Expr::col(column).gt(tuple()),
-                    "gte" => Expr::col(column).gte(tuple()),
-                    _ => return Err(AuthError::bad_request("Unsupported user filter operator")),
-                };
+                let condition =
+                    self.user_filter(params.filter_field.as_deref(), operator, value)?;
                 query = query.filter(condition);
                 // Only this already executed filter is removed from the common
                 // paging/search helper; other fields and total remain intact.
@@ -685,19 +675,10 @@ where
         }
         // Numeric IDs and application fields retain physical column ordering.
         // The shared projection cannot know the application's column types.
-        let physical_sort = params.sort_by.as_deref().filter(|field| {
-            !matches!(
-                *field,
-                "email"
-                    | "name"
-                    | "username"
-                    | "role"
-                    | "banned"
-                    | "createdAt"
-                    | "updatedAt"
-                    | "banExpires"
-            )
-        });
+        let physical_sort = params
+            .sort_by
+            .as_deref()
+            .filter(|field| !is_projected_field(field));
         let presorted = if let Some(field) = physical_sort {
             let column = S::User::list_users_column(field).ok_or_else(|| {
                 AuthError::bad_request("User sort field has no configured column")
@@ -722,6 +703,21 @@ where
             alibi_core::user_query::apply_list_users(models, &params)
         })
     }
+}
+
+/// Fields the shared list-users projection filters and sorts itself.
+fn is_projected_field(field: &str) -> bool {
+    matches!(
+        field,
+        "email"
+            | "name"
+            | "username"
+            | "role"
+            | "banned"
+            | "createdAt"
+            | "updatedAt"
+            | "banExpires"
+    )
 }
 
 fn normalize_user_email(email: &str) -> String {

@@ -48,35 +48,7 @@ impl sea_orm::sea_query::ValueType for WalletChainId {
             Value::Double(Some(v)) => Ok(Self(v)),
             Value::BigInt(Some(v)) => Ok(Self(v as f64)),
             Value::Int(Some(v)) => Ok(Self(f64::from(v))),
-            Value::Bool(_)
-            | Value::TinyInt(_)
-            | Value::SmallInt(_)
-            | Value::Int(_)
-            | Value::BigInt(_)
-            | Value::TinyUnsigned(_)
-            | Value::SmallUnsigned(_)
-            | Value::Unsigned(_)
-            | Value::BigUnsigned(_)
-            | Value::Float(_)
-            | Value::Double(_)
-            | Value::String(_)
-            | Value::Char(_)
-            | Value::Bytes(_)
-            | Value::Json(_)
-            | Value::ChronoDate(_)
-            | Value::ChronoTime(_)
-            | Value::ChronoDateTime(_)
-            | Value::ChronoDateTimeUtc(_)
-            | Value::ChronoDateTimeLocal(_)
-            | Value::ChronoDateTimeWithTimeZone(_)
-            | Value::TimeDate(_)
-            | Value::TimeTime(_)
-            | Value::TimeDateTime(_)
-            | Value::TimeDateTimeWithTimeZone(_)
-            | Value::Uuid(_)
-            | Value::Decimal(_)
-            | Value::Enum(_)
-            | Value::Array(..) => Err(sea_orm::sea_query::ValueTypeErr),
+            _ => Err(sea_orm::sea_query::ValueTypeErr),
         }
     }
     fn type_name() -> String {
