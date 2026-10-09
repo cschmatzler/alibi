@@ -35,10 +35,6 @@ impl std::fmt::Debug for VerificationConfig {
 /// (`password_min_length`, `password_max_length`). Built-in hashing uses
 /// pinned scrypt parameters.
 #[derive(Debug, Clone, Default)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
-)]
 pub struct PasswordConfig {
     /// Require uppercase letters
     pub require_uppercase: bool,

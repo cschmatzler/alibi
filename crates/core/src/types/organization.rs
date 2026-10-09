@@ -480,9 +480,9 @@ where
     let value = Option::<MetadataValue>::deserialize(deserializer)?;
     value
         .map(|inner| match inner {
-            MetadataValue::Json(value_2) => Ok(value_2),
-            MetadataValue::String(value_3) => crate::utils::json::from_slice(value_3.as_bytes())
-                .map_or_else(|_| Ok(serde_json::Value::String(value_3)), Ok),
+            MetadataValue::Json(value) => Ok(value),
+            MetadataValue::String(text) => crate::utils::json::from_slice(text.as_bytes())
+                .map_or_else(|_| Ok(serde_json::Value::String(text)), Ok),
         })
         .transpose()
 }

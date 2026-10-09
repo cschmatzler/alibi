@@ -4,10 +4,6 @@ use chrono::Duration;
 use std::sync::Arc;
 /// Session-specific configuration
 #[derive(Clone)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
-)]
 pub struct SessionConfig {
     /// No durable server session authority. Session records are instance-local
     /// in memory; no SQL session rows are read or written. Captured caches remain

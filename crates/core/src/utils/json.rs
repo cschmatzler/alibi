@@ -219,24 +219,16 @@ impl IntoDeserializer<'_, serde_json::Error> for JsValue {
     }
 }
 
-macro_rules! signed_number {
-    ($($method:ident),*) => {$(
-#[expect(clippy::as_conversions, clippy::cast_possible_truncation, reason = "Finite integral values are checked against the target integer bounds before conversion")]
-        fn $method<V: Visitor<'de>>(self,visitor:V)->Result<V::Value,Self::Error> {
+/// Integral numbers within the target's range deserialize as integers; everything
+/// else defers to `deserialize_any`.
+macro_rules! integer_number {
+    ($visit:ident, $cast:ty, $range:expr, $expect:meta, $($method:ident),*) => {$(
+        #[$expect]
+        fn $method<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
             match self {
-                Self::Number(n) if n.is_finite() && n.fract()==0.0 && (-9_223_372_036_854_776_000.0..9_223_372_036_854_776_000.0).contains(&n) => visitor.visit_i64(n as i64),
-                value => value.deserialize_any(visitor),
-            }
-        }
-    )*};
-}
-
-macro_rules! unsigned_number {
-    ($($method:ident),*) => {$(
-#[expect(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "Finite integral values are checked against the target integer bounds before conversion")]
-        fn $method<V: Visitor<'de>>(self,visitor:V)->Result<V::Value,Self::Error> {
-            match self {
-                Self::Number(n) if n.is_finite() && n.fract()==0.0 && (0.0..18_446_744_073_709_552_000.0).contains(&n) => visitor.visit_u64(n as u64),
+                Self::Number(n) if n.is_finite() && n.fract() == 0.0 && $range.contains(&n) => {
+                    visitor.$visit(n as $cast)
+                }
                 value => value.deserialize_any(visitor),
             }
         }
@@ -289,14 +281,31 @@ impl<'de> Deserializer<'de> for JsValue {
             }
         }
     }
-    signed_number!(
+    integer_number!(
+        visit_i64,
+        i64,
+        (-9_223_372_036_854_776_000.0..9_223_372_036_854_776_000.0),
+        expect(
+            clippy::as_conversions,
+            clippy::cast_possible_truncation,
+            reason = "Finite integral values are checked against the target integer bounds before conversion"
+        ),
         deserialize_i8,
         deserialize_i16,
         deserialize_i32,
         deserialize_i64,
         deserialize_i128
     );
-    unsigned_number!(
+    integer_number!(
+        visit_u64,
+        u64,
+        (0.0..18_446_744_073_709_552_000.0),
+        expect(
+            clippy::as_conversions,
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "Finite integral values are checked against the target integer bounds before conversion"
+        ),
         deserialize_u8,
         deserialize_u16,
         deserialize_u32,
@@ -672,8 +681,8 @@ fn finite_value(value: &JsValue) -> Result<Value, serde_json::Error> {
             let mut entries: Vec<_> = m.iter().collect();
             entries.sort_by_key(|(name, _)| array_index(name).unwrap_or(u32::MAX));
             let mut values = serde_json::Map::new();
-            for (key, value_2) in entries {
-                _ = values.insert(key.clone(), finite_value(value_2)?);
+            for (key, value) in entries {
+                _ = values.insert(key.clone(), finite_value(value)?);
             }
             Ok(Value::Object(values))
         }
@@ -695,11 +704,11 @@ fn write_value(value: &JsValue, bytes: &mut Vec<u8>) -> Result<(), serde_json::E
         JsValue::String(s) => serde_json::to_writer(bytes, s)?,
         JsValue::Array(a) => {
             bytes.push(b'[');
-            for (index, value_2) in a.iter().enumerate() {
+            for (index, item) in a.iter().enumerate() {
                 if index != 0 {
                     bytes.push(b',');
                 }
-                write_value(value_2, bytes)?;
+                write_value(item, bytes)?;
             }
             bytes.push(b']');
         }
@@ -707,13 +716,13 @@ fn write_value(value: &JsValue, bytes: &mut Vec<u8>) -> Result<(), serde_json::E
             let mut entries: Vec<_> = m.iter().collect();
             entries.sort_by_key(|(name, _)| array_index(name).unwrap_or(u32::MAX));
             bytes.push(b'{');
-            for (index, (key, value_3)) in entries.into_iter().enumerate() {
+            for (index, (key, value)) in entries.into_iter().enumerate() {
                 if index != 0 {
                     bytes.push(b',');
                 }
                 serde_json::to_writer(&mut *bytes, key)?;
                 bytes.push(b':');
-                write_value(value_3, bytes)?;
+                write_value(value, bytes)?;
             }
             bytes.push(b'}');
         }

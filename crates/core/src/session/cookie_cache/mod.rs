@@ -368,8 +368,8 @@ pub(crate) fn parse_payload(
         ),
     ] {
         for field in required {
-            let text_2 = object.get(*field)?.as_str()?;
-            if date::parse(text_2).is_some() {
+            let text = object.get(*field)?.as_str()?;
+            if date::parse(text).is_some() {
                 return None;
             }
         }
@@ -377,14 +377,14 @@ pub(crate) fn parse_payload(
             if object
                 .get(*field)
                 .and_then(crate::utils::json::JsValue::as_str)
-                .is_some_and(|text_3| date::parse(text_3).is_some())
+                .is_some_and(|text| date::parse(text).is_some())
             {
                 return None;
             }
         }
         for field in ["createdAt", "updatedAt"] {
-            if let Some(value_3) = object.get(field) {
-                _ = date::parse(value_3.as_str()?)?;
+            if let Some(value) = object.get(field) {
+                _ = date::parse(value.as_str()?)?;
             }
         }
     }
@@ -397,23 +397,23 @@ pub(crate) fn parse_payload(
     if original_payload
         .get("version")
         .and_then(crate::utils::json::JsValue::as_str)
-        .is_some_and(|text_4| date::parse(text_4).is_some())
+        .is_some_and(|text| date::parse(text).is_some())
     {
         return None;
     }
     let mut normalized = original_payload.clone();
     date::revive_parsed(&mut normalized);
-    let payload_2 = normalized.as_object()?;
-    let updated_at = payload_2
+    let payload = normalized.as_object()?;
+    let updated_at = payload
         .get("updatedAt")?
         .as_f64()
-        .filter(|value_4| value_4.is_finite())?;
-    let version = match payload_2.get("version") {
+        .filter(|value| value.is_finite())?;
+    let version = match payload.get("version") {
         None => None,
-        Some(value_5) => Some(value_5.as_str()?.to_owned()),
+        Some(value) => Some(value.as_str()?.to_owned()),
     };
-    let mut user = payload_2.get("user")?.to_json_value().ok()?;
-    let mut session = payload_2.get("session")?.to_json_value().ok()?;
+    let mut user = payload.get("user")?.to_json_value().ok()?;
+    let mut session = payload.get("session")?.to_json_value().ok()?;
     let user_id = date::coerce_id(original_payload.get("session")?.get("userId")?)?;
     _ = session
         .as_object_mut()?

@@ -198,8 +198,8 @@ pub fn decode_parsed(secret: &str, salt: &str, token: &str) -> AuthResult<serde_
         encrypted.copy_from_slice(block);
         let block_array: &mut Array<u8, _> = block.into();
         cipher.decrypt_block(block_array);
-        for (byte, previous_2) in block.iter_mut().zip(previous) {
-            *byte ^= previous_2;
+        for (byte, previous) in block.iter_mut().zip(previous) {
+            *byte ^= previous;
         }
         previous = encrypted;
     }

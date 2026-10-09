@@ -82,10 +82,6 @@ pub fn create_session_cookie_with_max_age(
     clippy::expect_used,
     reason = "HMAC-SHA256 accepts keys of every length"
 )]
-#[expect(
-    clippy::missing_panics_doc,
-    reason = "HMAC accepts keys of every length, so key construction cannot fail"
-)]
 #[must_use]
 pub fn sign_cookie_value(value: &str, secret: &str) -> String {
     const COMPONENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
