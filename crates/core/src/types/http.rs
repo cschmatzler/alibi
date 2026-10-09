@@ -1,5 +1,7 @@
 use crate::utils::LockUnpoisoned;
+use crate::wire::{SessionView, UserView};
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 use std::collections::HashMap;
 use std::ops::Index;
 use std::sync::{Arc, Mutex};
@@ -30,12 +32,11 @@ pub struct AuthRequest {
     pub query: HashMap<String, String>,
     pub(in crate::types) query_values: HashMap<String, Vec<String>>,
     /// Session authenticated by a trusted plugin hook for the current request.
-    pub(crate) virtual_session: Option<crate::wire::SessionView>,
+    pub(crate) virtual_session: Option<SessionView>,
     /// Headers emitted by trusted nested handlers during this dispatch.
     pub(in crate::types) response_headers: Arc<Mutex<Headers>>,
     /// The original store snapshot retained for completed-handler hooks.
-    pub(in crate::types) session_hook_snapshot:
-        Arc<Mutex<Option<(crate::wire::UserView, crate::wire::SessionView)>>>,
+    pub(in crate::types) session_hook_snapshot: Arc<Mutex<Option<(UserView, SessionView)>>>,
     pub(in crate::types) extensions: RequestExtensions,
 }
 
@@ -57,7 +58,7 @@ pub enum ParsedRequestBody {
 
 /// Multipart file contents retained for application handlers alongside decoded fields.
 #[derive(Clone, Debug, Default)]
-pub struct MultipartFiles(pub std::collections::HashMap<String, MultipartFile>);
+pub struct MultipartFiles(pub HashMap<String, MultipartFile>);
 
 #[derive(Clone, Debug)]
 pub struct MultipartFile {
@@ -73,11 +74,11 @@ impl std::fmt::Debug for RequestExtensions {
 }
 
 impl RequestExtensions {
-    pub fn insert<T: std::any::Any + Send + Sync>(&self, value: T) {
+    pub fn insert<T: Any + Send + Sync>(&self, value: T) {
         self.0.lock_unpoisoned().insert(value);
     }
 
-    pub fn get<T: std::any::Any + Send + Sync>(&self) -> Option<Arc<T>> {
+    pub fn get<T: Any + Send + Sync>(&self) -> Option<Arc<T>> {
         self.0.lock_unpoisoned().get()
     }
 }
@@ -241,19 +242,7 @@ impl Index<&str> for Headers {
 impl AuthRequest {
     #[must_use]
     pub fn new(method: HttpMethod, path: impl Into<String>) -> Self {
-        Self {
-            method,
-            path: path.into(),
-            request_url: None,
-            headers: HashMap::new(),
-            body: None,
-            query: HashMap::new(),
-            query_values: HashMap::new(),
-            virtual_session: None,
-            response_headers: Arc::new(Mutex::new(Headers::new())),
-            session_hook_snapshot: Arc::new(Mutex::new(None)),
-            extensions: RequestExtensions::default(),
-        }
+        Self::from_parts(method, path.into(), HashMap::new(), None, HashMap::new())
     }
 
     /// Construct a request from all public parts.
@@ -368,19 +357,13 @@ impl AuthRequest {
     /// expiry cleanup. It may contain an expired or deleted session and must
     /// never authorize work; use `AuthContext::require_session` for that.
     /// Dispatch resets caller-supplied snapshots before running trusted handlers.
-    pub fn set_session_hook_snapshot(
-        &self,
-        user: crate::wire::UserView,
-        session: crate::wire::SessionView,
-    ) {
+    pub fn set_session_hook_snapshot(&self, user: UserView, session: SessionView) {
         *self.session_hook_snapshot.lock_unpoisoned() = Some((user, session));
     }
 
     /// Return the handler's original session context for completed-response hooks.
     /// This is an observation of a read, not an authorization result.
-    pub fn session_hook_snapshot(
-        &self,
-    ) -> Option<(crate::wire::UserView, crate::wire::SessionView)> {
+    pub fn session_hook_snapshot(&self) -> Option<(UserView, SessionView)> {
         self.session_hook_snapshot.lock_unpoisoned().clone()
     }
 
@@ -394,7 +377,7 @@ impl AuthRequest {
 
     /// Return the session authenticated by a trusted plugin hook.
     #[must_use]
-    pub const fn virtual_session(&self) -> Option<&crate::wire::SessionView> {
+    pub const fn virtual_session(&self) -> Option<&SessionView> {
         self.virtual_session.as_ref()
     }
 
@@ -402,7 +385,7 @@ impl AuthRequest {
     ///
     /// Call this method only from the request pipeline after a plugin returns
     /// `BeforeRequestAction::InjectSession`. Never populate the session from client input.
-    pub fn set_virtual_session(&mut self, session: crate::wire::SessionView) {
+    pub fn set_virtual_session(&mut self, session: SessionView) {
         self.virtual_session = Some(session);
     }
 

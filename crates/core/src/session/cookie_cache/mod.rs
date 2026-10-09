@@ -220,9 +220,9 @@ pub fn effective_max_age(max_age: f64) -> f64 {
 
 /// Encode the already-filtered canonical output.
 ///
-/// Infinite or out-of-range
-/// expiry becomes JSON null, as for an invalid JavaScript Date; the reader
-/// rejects that envelope instead of pretending that it expires normally.
+/// Infinite or out-of-range expiry becomes JSON null, as for an invalid
+/// JavaScript Date; the reader rejects that envelope instead of pretending
+/// that it expires normally.
 #[expect(
     clippy::as_conversions,
     clippy::cast_precision_loss,
@@ -537,17 +537,6 @@ pub fn cookie_header(
     max_age: Option<f64>,
     config: &crate::AuthConfig,
 ) -> AuthResult<String> {
-    const COMPONENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
-        .remove(b'-')
-        .remove(b'_')
-        .remove(b'.')
-        .remove(b'!')
-        .remove(b'~')
-        .remove(b'*')
-        .remove(b'\'')
-        .remove(b'(')
-        .remove(b')');
-
     let bases = ["session_data", "account_data"]
         .map(|logical| crate::utils::cookie_utils::related_cookie_name(config, logical));
     let base = (!bases.iter().any(|base| base == name))
@@ -557,7 +546,9 @@ pub fn cookie_header(
                 .find(|base| runtime::chunk_index(name, base).is_some())
         })
         .flatten();
-    let encoded = percent_encoding::utf8_percent_encode(value, COMPONENT).to_string();
+    let encoded =
+        percent_encoding::utf8_percent_encode(value, crate::utils::cookie_utils::URI_COMPONENT)
+            .to_string();
     crate::utils::cookie_utils::create_numeric_cookie_header(
         name,
         base.map_or(name, String::as_str),

@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 /// User creation data
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CreateUser {
     /// Trusted provider value before boolean storage conversion. HTTP input
     /// cannot populate this; native accessors retain their boolean interface.
@@ -150,29 +150,7 @@ pub struct UpdateVerification {
 impl CreateUser {
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            additional_fields: crate::field_policy::FieldValues::new(),
-            id: None,
-            created_at: None,
-            updated_at: None,
-            email: None,
-            name: None,
-            image: None,
-            email_verified: None,
-            provider_email_verified: None,
-            provider_name: None,
-            provider_image: None,
-            username: None,
-            display_username: None,
-            two_factor_enabled: None,
-            role: None,
-            banned: None,
-            metadata: None,
-            is_anonymous: None,
-            phone_number: None,
-            phone_number_verified: None,
-            last_login_method: None,
-        }
+        Self::default()
     }
 
     #[must_use]
@@ -209,12 +187,6 @@ impl CreateUser {
     pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
         self.metadata = Some(metadata);
         self
-    }
-}
-
-impl Default for CreateUser {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

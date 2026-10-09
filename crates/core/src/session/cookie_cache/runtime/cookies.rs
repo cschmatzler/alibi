@@ -1,3 +1,4 @@
+use crate::session::cookie_cache as cache;
 use crate::utils::cookie_utils::{related_cookie_name, verify_cookie_value};
 use crate::{AuthError, AuthResult};
 use indexmap::IndexMap;
@@ -135,7 +136,7 @@ pub fn chunked_cookie_headers<H: std::hash::BuildHasher + Sync>(
                 config,
             )
         } else {
-            super::super::cookie_header(part, value, age, config)
+            cache::cookie_header(part, value, age, config)
         }
     };
     let empty_header = render(&format!("{name}.99"), "", max_age)?;
@@ -192,6 +193,6 @@ pub fn session_cleanup_headers<H: std::hash::BuildHasher + Sync>(
     }
     names
         .into_iter()
-        .map(|name| super::super::cookie_header(&name, "", Some(0.0), config))
+        .map(|name| cache::cookie_header(&name, "", Some(0.0), config))
         .collect()
 }

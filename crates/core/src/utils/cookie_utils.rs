@@ -7,6 +7,18 @@ use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use std::fmt::Write as _;
 
+/// The characters JavaScript's `encodeURIComponent` leaves unescaped.
+pub(crate) const URI_COMPONENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'!')
+    .remove(b'~')
+    .remove(b'*')
+    .remove(b'\'')
+    .remove(b'(')
+    .remove(b')');
+
 /// Build a `Set-Cookie` header value for an arbitrary cookie using the auth
 /// config's session cookie attributes for consistency.
 pub fn create_cookie(
@@ -80,22 +92,11 @@ pub fn create_session_cookie_with_max_age(
 )]
 #[must_use]
 pub fn sign_cookie_value(value: &str, secret: &str) -> String {
-    const COMPONENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
-        .remove(b'-')
-        .remove(b'_')
-        .remove(b'.')
-        .remove(b'!')
-        .remove(b'~')
-        .remove(b'*')
-        .remove(b'\'')
-        .remove(b'(')
-        .remove(b')');
-
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key");
     mac.update(value.as_bytes());
     let signed = format!("{value}.{}", STANDARD.encode(mac.finalize().into_bytes()));
 
-    percent_encoding::utf8_percent_encode(&signed, COMPONENT).to_string()
+    percent_encoding::utf8_percent_encode(&signed, URI_COMPONENT).to_string()
 }
 
 /// Return a cookie's payload only when its signature verifies.

@@ -1,3 +1,4 @@
+use crate::session::cookie_cache as cache;
 use crate::session::cookie_cache::runtime::{
     IssuancePreference, PendingIssuance, PublishedSessionSnapshot, browser_preference,
     chunked_cookie_headers, record_publication,
@@ -79,10 +80,10 @@ pub(in crate::session::cookie_cache::runtime) async fn build_headers<
     let now = chrono::Utc::now().timestamp_millis();
     let configured_age = crate::utils::cookie_utils::session_cache_max_age(
         &ctx.config,
-        super::super::effective_max_age(config.max_age),
+        cache::effective_max_age(config.max_age),
     );
     let value = match config.strategy {
-        crate::CookieCacheStrategy::Compact => super::super::encode_compact(
+        crate::CookieCacheStrategy::Compact => cache::encode_compact(
             context.public_user(),
             context.public_session(),
             &version,
@@ -96,7 +97,7 @@ pub(in crate::session::cookie_cache::runtime) async fn build_headers<
             ctx.config.current_secret(),
         )?,
         crate::CookieCacheStrategy::Jwt | crate::CookieCacheStrategy::Jwe => {
-            let payload = super::super::jwt::payload(
+            let payload = cache::jwt::payload(
                 context.public_user(),
                 context.public_session(),
                 &version,
@@ -105,7 +106,7 @@ pub(in crate::session::cookie_cache::runtime) async fn build_headers<
             let max_age = if dont_remember {
                 300.0
             } else {
-                super::super::effective_max_age(configured_age)
+                cache::effective_max_age(configured_age)
             };
             if config.strategy == crate::CookieCacheStrategy::Jwe {
                 crate::utils::jwe::encode(
@@ -116,11 +117,11 @@ pub(in crate::session::cookie_cache::runtime) async fn build_headers<
                 )?
             } else if let Some(signer) = ctx
                 .extensions
-                .get::<super::super::jwt::CookieCacheSignerHandle<S>>()
+                .get::<cache::jwt::CookieCacheSignerHandle<S>>()
             {
                 signer.0.sign(payload, max_age, ctx, transaction).await?
             } else {
-                super::super::jwt::encode(payload, ctx.config.current_secret(), max_age)?
+                cache::jwt::encode(payload, ctx.config.current_secret(), max_age)?
             }
         }
     };
@@ -234,7 +235,7 @@ pub(in crate::session::cookie_cache::runtime) async fn emit_snapshot_inner<S: Au
         extensions.get::<PendingIssuance>()
     });
     if let Some(pending) = &pending {
-        let token_header = super::super::cookie_header(
+        let token_header = cache::cookie_header(
             &ctx.config.session.cookie_name,
             &percent_encoding::percent_decode_str(&sign_cookie_value(
                 &context.session().token,
@@ -251,7 +252,7 @@ pub(in crate::session::cookie_cache::runtime) async fn emit_snapshot_inner<S: Au
         let mut data = pending.0.lock_unpoisoned();
         data.prior_headers.push(token_header);
         if dont_remember {
-            data.prior_headers.push(super::super::cookie_header(
+            data.prior_headers.push(cache::cookie_header(
                 &related_cookie_name(&ctx.config, "dont_remember"),
                 &percent_encoding::percent_decode_str(&sign_cookie_value(
                     "true",

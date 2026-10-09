@@ -1,5 +1,6 @@
 use crate::entity::AuthSession;
 use crate::session::SessionRequest;
+use crate::session::cookie_cache as cache;
 use crate::session::cookie_cache::CacheValidation;
 use crate::session::cookie_cache::runtime::{
     AuthenticatedRead, EstablishedSession, SessionHookCache, SessionHookCacheMetadata,
@@ -15,7 +16,7 @@ use std::sync::Arc;
 pub async fn read<S: AuthSchema>(
     ctx: &AuthContext<S>,
     request: &impl SessionRequest,
-) -> AuthResult<Option<super::super::CompactCache>> {
+) -> AuthResult<Option<cache::CompactCache>> {
     read_cache(ctx, request, CacheDecoding::Http).await
 }
 
@@ -32,7 +33,7 @@ async fn read_cache<S: AuthSchema>(
     ctx: &AuthContext<S>,
     request: &impl SessionRequest,
     decoding: CacheDecoding,
-) -> AuthResult<Option<super::super::CompactCache>> {
+) -> AuthResult<Option<cache::CompactCache>> {
     let manager = ctx.session_manager();
     let enabled = ctx
         .config
@@ -51,7 +52,7 @@ async fn read_cache<S: AuthSchema>(
         for old in existing_names(&chunks, &name) {
             request.queue_response_header(
                 "Set-Cookie",
-                super::super::cookie_header(&old, "", Some(0.0), &ctx.config)?,
+                cache::cookie_header(&old, "", Some(0.0), &ctx.config)?,
             );
         }
         return Ok(None);
@@ -69,25 +70,23 @@ async fn read_cache<S: AuthSchema>(
         enabled.ok_or_else(|| AuthError::internal("Missing enabled cache configuration"))?;
     let decoded = match config.strategy {
         crate::CookieCacheStrategy::Compact => match decoding {
-            CacheDecoding::Http => {
-                super::super::decode_compact_http(&value, ctx.config.current_secret())?
-            }
+            CacheDecoding::Http => cache::decode_compact_http(&value, ctx.config.current_secret())?,
             CacheDecoding::MalformedIsMiss => {
-                super::super::decode_compact(&value, ctx.config.current_secret())
+                cache::decode_compact(&value, ctx.config.current_secret())
             }
         },
         crate::CookieCacheStrategy::Jwt => {
             if let Some(signer) = ctx
                 .extensions
-                .get::<super::super::jwt::CookieCacheSignerHandle<S>>()
+                .get::<cache::jwt::CookieCacheSignerHandle<S>>()
             {
                 signer
                     .0
                     .verify(&value, ctx)
                     .await?
-                    .and_then(|claims| super::super::jwt::decode_payload(&claims.into(), 15.0))
+                    .and_then(|claims| cache::jwt::decode_payload(&claims.into(), 15.0))
             } else {
-                super::super::jwt::decode(&value, ctx.config.current_secret())
+                cache::jwt::decode(&value, ctx.config.current_secret())
             }
         }
         crate::CookieCacheStrategy::Jwe => ctx
@@ -96,10 +95,10 @@ async fn read_cache<S: AuthSchema>(
             .find_map(|secret| {
                 crate::utils::jwe::decode(secret, "better-auth-session", &value).ok()
             })
-            .and_then(|claims| super::super::jwt::decode_payload(&claims.into(), 15.0)),
+            .and_then(|claims| cache::jwt::decode_payload(&claims.into(), 15.0)),
     };
     if let Some(cache) = decoded
-        && let CacheValidation::Hit(cache) = super::super::validate_compact(
+        && let CacheValidation::Hit(cache) = cache::validate_compact(
             cache,
             &token,
             config.version.as_ref(),
@@ -111,7 +110,7 @@ async fn read_cache<S: AuthSchema>(
     }
     request.queue_response_header(
         "Set-Cookie",
-        super::super::cookie_header(&name, "", Some(0.0), &ctx.config)?,
+        cache::cookie_header(&name, "", Some(0.0), &ctx.config)?,
     );
     Ok(None)
 }
@@ -120,7 +119,7 @@ async fn read_cache<S: AuthSchema>(
 pub(crate) async fn renew_cache<S: AuthSchema>(
     ctx: &AuthContext<S>,
     request: &impl SessionRequest,
-    cache: &super::super::CompactCache,
+    cache: &cache::CompactCache,
 ) -> AuthResult<()> {
     if ctx.config.session.stateless
         && request
@@ -137,7 +136,7 @@ pub(crate) async fn renew_cache<S: AuthSchema>(
         let update_age = match ctx.config.session.cookie_refresh_cache {
             crate::CookieRefreshCache::Disabled => None,
             crate::CookieRefreshCache::Automatic => {
-                Some((super::super::effective_max_age(config.max_age) * 0.2).floor())
+                Some((cache::effective_max_age(config.max_age) * 0.2).floor())
             }
             crate::CookieRefreshCache::UpdateAge(age) => Some(age),
         };
@@ -156,7 +155,7 @@ pub(crate) async fn renew_cache<S: AuthSchema>(
             let remember = ctx.session_manager().has_dont_remember_cookie(request);
             request.queue_response_header(
                 "Set-Cookie",
-                super::super::cookie_header(
+                cache::cookie_header(
                     &ctx.config.session.cookie_name,
                     &percent_encoding::percent_decode_str(&sign_cookie_value(
                         &cache.session.token,
@@ -201,11 +200,6 @@ pub(crate) async fn authenticated_with<S: AuthSchema>(
     }
 }
 
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_precision_loss,
-    reason = "Preserve JavaScript Number rounding at the compatibility boundary"
-)]
 pub(in crate::session::cookie_cache::runtime) async fn authenticated_inner<S: AuthSchema>(
     ctx: &AuthContext<S>,
     request: &impl SessionRequest,
@@ -274,20 +268,15 @@ pub(in crate::session::cookie_cache::runtime) async fn authenticated_inner<S: Au
         cleanup(ctx, request)?;
         return Ok(None);
     };
-    let user = match ctx.database.get_session_user_record(&token).await? {
-        Some(user) => Some(user),
-        None if ctx.config.session.secondary_storage.is_some()
-            && (!ctx.config.session.store_in_database
-                || ctx.config.session.preserve_in_database) =>
-        {
-            None
-        }
-        None => {
-            ctx.database
-                .get_user_by_id_record(original.user_id().as_ref())
-                .await?
-        }
-    };
+    let mut user = ctx.database.get_session_user_record(&token).await?;
+    let secondary_only = ctx.config.session.secondary_storage.is_some()
+        && (!ctx.config.session.store_in_database || ctx.config.session.preserve_in_database);
+    if user.is_none() && !secondary_only {
+        user = ctx
+            .database
+            .get_user_by_id_record(original.user_id().as_ref())
+            .await?;
+    }
     let Some(user) = user else {
         cleanup(ctx, request)?;
         return Ok(None);
@@ -323,19 +312,17 @@ pub(in crate::session::cookie_cache::runtime) async fn authenticated_inner<S: Au
     if read.refreshed {
         request.queue_response_header(
             "Set-Cookie",
-            super::super::cookie_header(
+            cache::cookie_header(
                 &ctx.config.session.cookie_name,
                 &percent_encoding::percent_decode_str(&sign_cookie_value(
                     session.token(),
                     ctx.config.current_secret(),
                 ))
                 .decode_utf8_lossy(),
-                Some(ctx.config.session.expires_in.num_seconds() as f64),
+                Some(number_from_i64(ctx.config.session.expires_in.num_seconds())),
                 &ctx.config,
             )?,
         );
-    }
-    if read.refreshed {
         let user = ctx.filter_user_record(user.clone());
         emit_issuance(ctx, &user, &session).await?;
     } else if !suppressed {
@@ -379,8 +366,9 @@ pub(in crate::session::cookie_cache::runtime) fn cleanup<S: AuthSchema>(
                 .iter()
                 .chain(std::iter::once(&remember_name))
                 .any(|cookie_name| {
-                    value.starts_with(&format!("{cookie_name}="))
-                        || value.starts_with(&format!("{cookie_name}."))
+                    value
+                        .strip_prefix(cookie_name.as_str())
+                        .is_some_and(|rest| rest.starts_with(['=', '.']))
                 });
         if !replaced {
             request.queue_response_header(name, value);
