@@ -1,4 +1,4 @@
-use super::*;
+use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfo, Value};
 impl OAuthProvider {
     /// GitLab.com social login with the published `read_user` scope and PKCE.
     #[must_use]

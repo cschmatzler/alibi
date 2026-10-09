@@ -23,7 +23,7 @@ use super::types::{
     LinkSocialRequest, OAuthIdTokenRequest, SocialSignInRequest, SocialSignInResponse,
 };
 use crate::helpers::{SessionIssueError, apply_default_role, issue_selected_user_session_record};
-use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
+use alibi_core::entity::{AuthSession, AuthUser};
 use alibi_core::user_validation::{
     UserValidationAction, UserValidationData, UserValidationSource, validate_user_info,
 };
@@ -35,7 +35,6 @@ use alibi_core::{
 use authorization::link_social_core;
 use authorization::social_sign_in_core;
 use authorization::validate_authorization_params;
-use base64::Engine;
 use chrono::{Duration, Utc};
 use cookies::account_cookie_max_age;
 use cookies::attach_cookie_state_payload;
@@ -52,7 +51,6 @@ pub(crate) use linking::complete_link_social;
 use linking::complete_link_social_with_raw_email;
 use linking::link_with_id_token_core;
 use linking::sign_in_with_id_token_core;
-use rand::RngExt;
 pub(crate) use redirects::ambiguous_account_sign_in_response;
 use redirects::auth_base_url;
 use redirects::build_default_error_url;
@@ -61,7 +59,7 @@ use redirects::callback_failure_location;
 use redirects::callback_failure_redirect;
 use redirects::redirect_response;
 use redirects::validate_redirect_target;
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use std::collections::HashMap;
 pub(crate) use token_exchange::fetch_user_info_from_provider;
 pub(super) use token_exchange::refresh_tokens_via_provider;

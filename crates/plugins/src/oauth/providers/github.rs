@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    Arc, Deserialize, DeserializeOwned, OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfo,
+    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse, Value, async_trait,
+};
 impl OAuthProvider {
     #[must_use]
     pub fn github(client_id: &str, client_secret: &str) -> Self {

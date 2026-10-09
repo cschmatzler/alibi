@@ -18,13 +18,12 @@ use super::webauthn::{
 use super::{PasskeyConfig, PasskeyRegistrationUser};
 use crate::StatusResponse;
 use crate::helpers::{SessionIssueError, issue_user_session_record};
-use alibi_core::entity::{AuthPasskey, AuthSession, AuthUser};
+use alibi_core::entity::AuthUser;
 use alibi_core::types::UpdatePasskeyAuthentication;
 use alibi_core::wire::PasskeyView;
 use alibi_core::{AuthContext, AuthError, AuthResult, CreatePasskey, CreateVerification};
 pub(super) use authentication_flow::generate_authenticate_options_core;
 pub(super) use authentication_flow::verify_authentication_core;
-use base64::Engine;
 use chrono::{Duration, Utc};
 pub(super) use management::delete_passkey_core;
 pub(super) use management::list_user_passkeys_core;

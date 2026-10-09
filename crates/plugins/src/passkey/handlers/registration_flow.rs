@@ -1,4 +1,19 @@
-use super::*;
+use super::{
+    AttestationConveyancePreference, AuthContext, AuthError, AuthResult, COSEAlgorithm,
+    CreatePasskey, CreateVerification, Duration, PasskeyConfig, PasskeyHandlerOutcome,
+    PasskeyHandlerResult, PasskeyRegistrationUser, RegisterPublicKeyCredential,
+    RequestRegistrationExtensions, StoredAuthenticationState, StoredCoreRegistrationState,
+    StoredRegistrationState, StoredRegistrationVerifier, UserVerificationPolicy, Utc, Uuid, Value,
+    VerifyRegistrationRequest, WebauthnError, build_verification_core, build_webauthn,
+    challenge_cookie_name, challenge_not_found, create_challenge_cookie, decode_challenge_cookie,
+    decode_credential_id, extract_registration_metadata, finish_core_registration,
+    generate_ts_user_handle, generation_origin, get_cookie_value, json, parse_transports_csv,
+    passkey_registration_failure, registration_options_json, registration_value, response_code,
+    response_null, snapshot_passkey, transports_to_csv,
+};
+use alibi_core::AuthPasskey;
+use alibi_core::AuthUser;
+use base64::Engine;
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.

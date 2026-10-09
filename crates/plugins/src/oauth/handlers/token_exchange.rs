@@ -1,4 +1,8 @@
-use super::*;
+use super::{
+    AuthError, AuthResult, OAuthClientAssertionContext, OAuthProvider, OAuthTokenEndpointAuth,
+    OAuthTokenGrant, OAuthTokenSet, OAuthUserInfoRequest, OAuthUserInfoResponse, Utc,
+};
+use base64::Engine;
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.

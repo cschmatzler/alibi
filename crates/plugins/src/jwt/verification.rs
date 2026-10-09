@@ -1,4 +1,9 @@
-use super::*;
+use super::{
+    AuthContext, AuthRequest, AuthResult, AuthSchema, JwtAlgorithm, JwtAudience, JwtPlugin,
+    JwtVerifyPolicy, Map, Utc, Value, crypto, decode_compact_json, decode_compact_part, js_truthy,
+    validate_critical_header,
+};
+use std::str::FromStr;
 impl JwtPlugin {
     /// Verify a token against the persisted keyring and configured claims.
     /// Invalid signatures, malformed tokens and claim failures return `None`.

@@ -1,4 +1,4 @@
-use super::*;
+use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfo, Value};
 impl OAuthProvider {
     #[must_use]
     pub fn with_hosted_domain(mut self, domain: impl Into<String>) -> Self {

@@ -40,7 +40,7 @@ use alibi_core::{
     AuthRoute, AuthSchema, CreateJwk, HttpMethod, Jwk,
 };
 use async_trait::async_trait;
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::{DateTime, Duration, Utc};
 pub use endpoint::{JwtTokenOutput, JwtVerifyOutput};
 use serde::{Deserialize, Serialize};
@@ -375,6 +375,7 @@ mod tests {
     use crate::test_helpers;
     use crate::token_crypto::{decrypt, encrypt};
     use alibi_core::CreateUser;
+    use base64::Engine;
 
     type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 

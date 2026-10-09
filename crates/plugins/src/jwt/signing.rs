@@ -1,4 +1,9 @@
-use super::*;
+use super::{
+    AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, JwtAudience, JwtClaimsConfig,
+    JwtPlugin, JwtSignOptions, Map, RemoteJwtPayload, ResolvedJwtSigningKey, URL_SAFE_NO_PAD,
+    Value, crypto, json, normalize_signing_claims, validate_critical_header, validate_numeric_date,
+};
+use base64::Engine;
 impl JwtPlugin {
     /// Sign an application-owned payload through the trusted server API.
     ///

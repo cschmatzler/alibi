@@ -1,4 +1,4 @@
-use super::*;
+use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthScopeOrder, OAuthUserInfo, Value};
 impl OAuthProvider {
     #[must_use]
     pub fn discord(client_id: &str, client_secret: &str) -> Self {

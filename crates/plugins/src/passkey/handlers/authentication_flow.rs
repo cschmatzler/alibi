@@ -1,4 +1,18 @@
-use super::*;
+use super::{
+    AuthContext, AuthError, AuthResult, AuthUser, CreateVerification, DiscoverableKey, Duration,
+    PasskeyConfig, PasskeyHandlerOutcome, PasskeyHandlerResult, PublicKeyCredential,
+    SessionIssueError, SessionResponse, StoredAuthenticationState, StoredRegistrationState,
+    UpdatePasskeyAuthentication, UserVerificationPolicy, Utc, Uuid, Value,
+    VerifyAuthenticationRequest, WebauthnError, authentication_options_json,
+    build_verification_core, build_webauthn, challenge_cookie_name, challenge_not_found,
+    create_challenge_cookie, credential_id_from_authentication, decode_challenge_cookie,
+    decode_credential_id, finish_core_authentication, generation_origin, get_cookie_value,
+    issue_user_session_record, json, parse_transports_csv, passkey_authentication_failure,
+    passkey_not_found, response_code, response_message, snapshot_passkey,
+};
+use alibi_core::AuthPasskey;
+use alibi_core::AuthSession;
+use base64::Engine;
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.

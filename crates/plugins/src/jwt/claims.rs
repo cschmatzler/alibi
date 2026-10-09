@@ -1,4 +1,5 @@
-use super::*;
+use super::{AuthError, AuthResult, Map, Utc, Value, json};
+use base64::Engine;
 pub(in crate::jwt) fn js_truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,

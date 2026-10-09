@@ -1,4 +1,4 @@
-use super::*;
+use super::{AuthContext, AuthError, AuthResponse, AuthResult};
 pub(in crate::oauth::handlers) fn redirect_response(location: &str) -> AuthResponse {
     AuthResponse::new(302)
         .with_header("content-type", "application/json")
