@@ -35,7 +35,7 @@ awk -F: '
   }
   END {
     if (invalid || active || total == 0) { print "Coverage report is missing or invalid"; exit 1 }
-    printf "Native line coverage: %d/%d (%.6f%%); required 85%%\n", covered, total, covered * 100 / total
-    exit (covered * 100 < total * 85)
+    printf "Native line coverage: %d/%d (%.6f%%); required 88%%\n", covered, total, covered * 100 / total
+    exit (covered * 100 < total * 88)
   }
 ' coverage/lcov.info
