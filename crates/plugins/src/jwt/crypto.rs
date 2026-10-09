@@ -11,9 +11,6 @@ use rsa::traits::{PrivateKeyParts, PublicKeyParts};
 use serde_json::{Value, json};
 use signature::RandomizedSigner as _;
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn generate(config: &JwtKeyPairConfig) -> AuthResult<(Value, Value)> {
     match config.algorithm {
         JwtAlgorithm::EdDsa => {
@@ -123,9 +120,6 @@ fn private_jwk<const N: usize>(public: &Value, fields: [(&str, Value); N]) -> Au
     Ok(Value::Object(private))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn sign(
     algorithm: JwtAlgorithm,
     private: &Value,
@@ -176,9 +170,6 @@ pub(super) fn sign(
     }
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn verify(
     algorithm: JwtAlgorithm,
     public: &Value,

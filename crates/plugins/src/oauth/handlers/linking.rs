@@ -9,9 +9,6 @@ use super::{
 };
 use alibi_core::AuthAccount;
 use alibi_core::AuthUser;
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn complete_link_social(
     provider_name: &str,
     user_info: &OAuthUserInfo,

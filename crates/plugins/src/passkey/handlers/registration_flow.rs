@@ -14,9 +14,6 @@ use super::{
 use alibi_core::AuthPasskey;
 use alibi_core::AuthUser;
 use base64::Engine;
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::passkey) async fn generate_register_options_core(
     user: &PasskeyRegistrationUser,
     requested_context: Option<&str>,
@@ -179,9 +176,6 @@ pub(in crate::passkey) async fn generate_register_options_core(
     clippy::too_many_lines,
     reason = "Keep challenge consumption, credential verification, and registration callbacks in protocol order"
 )]
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSchema>(
     body: &VerifyRegistrationRequest,
     req: &alibi_core::AuthRequest,

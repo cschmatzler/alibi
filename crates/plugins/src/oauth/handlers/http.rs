@@ -14,13 +14,7 @@ use super::{
     validate_authorization_params, verified_server_context,
 };
 use alibi_core::AuthSession;
-// ---------------------------------------------------------------------------
-// Old handlers (rewritten to call core)
-// ---------------------------------------------------------------------------
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn handle_social_sign_in(
     config: &OAuthConfig,
     req: &AuthRequest,
@@ -101,9 +95,6 @@ pub(crate) async fn handle_social_sign_in(
     clippy::too_many_lines,
     reason = "Keep OAuth state consumption, provider errors, and cookie cleanup in their required order"
 )]
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::oauth) async fn handle_callback(
     config: &OAuthConfig,
     provider_name: &str,
@@ -570,9 +561,6 @@ pub(in crate::oauth) async fn handle_callback(
     Ok(response)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::oauth) async fn handle_link_social(
     config: &OAuthConfig,
     req: &AuthRequest,

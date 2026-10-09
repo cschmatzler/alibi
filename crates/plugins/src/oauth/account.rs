@@ -301,9 +301,6 @@ fn token_response(
     Ok(response)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 async fn handle_get_access_token_for_user(
     config: &OAuthConfig,
     req: &AuthRequest,
@@ -337,9 +334,6 @@ async fn handle_get_access_token_for_user(
     token_response(&response, &account, refreshed, req, ctx)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 async fn handle_refresh_token_for_user(
     config: &OAuthConfig,
     req: &AuthRequest,
@@ -467,9 +461,6 @@ async fn handle_refresh_token_for_user(
     )
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 async fn handle_account_info_for_user(
     config: &OAuthConfig,
     req: &AuthRequest,

@@ -80,9 +80,6 @@ pub fn encrypt_token_with_config(
 
 /// Source recognizes even-length hexadecimal (and versioned `$ba$` envelopes)
 /// as ciphertext. Other strings, including old plaintext tokens, pass through.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub fn decrypt_token_with_config(
     stored: &str,
     secret: &alibi_core::AuthConfig,
@@ -99,9 +96,6 @@ pub fn decrypt_token_with_config(
 
 /// Conditionally encrypt a token value. Returns the original value when
 /// encryption is disabled, or the encrypted value when enabled.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub fn maybe_encrypt_with_config(
     value: Option<String>,
     encrypt: bool,
@@ -133,9 +127,6 @@ pub fn maybe_decrypt_with_config(
 
 /// Read `encrypt_oauth_tokens` and `secret` from the auth context and
 /// conditionally encrypt a full set of OAuth tokens in one call.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub fn encrypt_token_set(
     ctx: &alibi_core::AuthContext<impl alibi_core::AuthSchema>,
     access_token: Option<String>,

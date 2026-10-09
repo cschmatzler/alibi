@@ -307,10 +307,6 @@ pub(in crate::oauth::handlers) fn validate_authorization_params(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Core functions
-// ---------------------------------------------------------------------------
-
 pub(in crate::oauth::handlers) async fn social_sign_in_core(
     body: &SocialSignInRequest,
     config: &OAuthConfig,

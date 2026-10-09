@@ -44,9 +44,6 @@ pub(crate) fn create_account_cookie_headers(
     )
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::oauth) fn decode_account_cookie(
     req: &AuthRequest,
     config: &alibi_core::AuthConfig,

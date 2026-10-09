@@ -74,11 +74,7 @@ pub struct PasskeyConfig {
     pub authentication: PasskeyAuthenticationConfig,
 }
 
-// -- Plugin --
-
 impl PasskeyPlugin {
-    // -- Handlers (delegate to core functions) --
-
     /// GET /passkey/generate-register-options
     async fn handle_generate_register_options(
         &self,

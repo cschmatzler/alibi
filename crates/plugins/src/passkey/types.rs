@@ -2,8 +2,6 @@ pub(crate) use alibi_core::wire::PasskeyView;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-// -- Request types --
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct VerifyRegistrationRequest {
@@ -107,8 +105,6 @@ pub(crate) struct UpdatePasskeyRequest {
     #[validate(custom(function = "validate_trimmed_name"))]
     pub(super) name: String,
 }
-
-// -- Response helpers --
 
 #[derive(Debug, Serialize)]
 pub(crate) struct SessionResponse<S, U> {

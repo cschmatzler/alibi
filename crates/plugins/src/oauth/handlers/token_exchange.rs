@@ -3,9 +3,6 @@ use super::{
     OAuthTokenGrant, OAuthTokenSet, OAuthUserInfoRequest, OAuthUserInfoResponse, Utc,
 };
 use base64::Engine;
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::oauth) async fn refresh_tokens_via_provider(
     provider: &OAuthProvider,
     refresh_token: &str,
@@ -368,9 +365,6 @@ pub(in crate::oauth::handlers) fn parse_token_response(
     })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn validate_authorization_code_via_provider(
     provider: &OAuthProvider,
     code: &str,
@@ -454,9 +448,6 @@ pub(crate) async fn validate_authorization_code_via_provider(
     )
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn fetch_user_info_from_provider(
     provider: &OAuthProvider,
     request: OAuthUserInfoRequest,

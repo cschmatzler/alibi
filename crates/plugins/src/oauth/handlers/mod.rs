@@ -190,10 +190,6 @@ impl OAuthProcessPolicy {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Shared helpers (DRY)
-// ---------------------------------------------------------------------------
-
 /// Authenticate the current request and return the validated session.
 async fn require_session<S: alibi_core::AuthSchema>(
     req: &AuthRequest,

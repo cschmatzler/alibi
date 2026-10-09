@@ -56,9 +56,6 @@ impl RawCredential {
         let Self::SourceRawKey { aaguid, .. } = self;
         *aaguid
     }
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn snapshot(&self) -> alibi_core::AuthResult<PasskeySnapshot> {
         let Self::SourceRawKey {
             counter,
@@ -418,9 +415,6 @@ fn truthy(value: &JsValue) -> bool {
     clippy::too_many_lines,
     reason = "Keep the pinned WebAuthn validation sequence together for comparison with the reference runtime"
 )]
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn register_raw_key(
     registration: &RegisterPublicKeyCredential,
     original: &JsValue,

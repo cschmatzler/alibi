@@ -216,9 +216,6 @@ fn server_context_mac(secret: &str, state: &str, context: &Value) -> AuthResult<
     Ok(mac)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) fn capture_server_context(
     payload: &mut OAuthStatePayload,
     state: &str,
@@ -277,7 +274,6 @@ pub(super) fn create_database_state_cookie_value(secret: &str, state: &str) -> S
     sign_cookie_value(state, secret)
 }
 
-///
 /// # Errors
 /// Returns an error when the correlation cookie has no authenticated state.
 pub(super) fn decode_database_state_cookie_value(secret: &str, token: &str) -> AuthResult<String> {
@@ -286,9 +282,6 @@ pub(super) fn decode_database_state_cookie_value(secret: &str, token: &str) -> A
         .ok_or_else(|| AuthError::internal("Invalid OAuth state cookie"))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn create_cookie_state_value(
     config: &AuthConfig,
     payload: &OAuthStatePayload,
@@ -314,9 +307,6 @@ pub(crate) fn decode_cookie_state_value(
     alibi_core::utils::json::from_slice(plain.as_bytes()).map_err(AuthError::from)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) fn create_account_cookie_value(
     config: &AuthConfig,
     payload: &AccountCookiePayload,
@@ -325,9 +315,6 @@ pub(crate) fn create_account_cookie_value(
     super::account_cookie::encode(config.current_secret(), payload, max_age)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn decode_account_cookie_value(
     config: &AuthConfig,
     token: &str,

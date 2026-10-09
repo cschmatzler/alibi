@@ -4,9 +4,6 @@ use super::{
     Value, json, registration_value,
 };
 use alibi_core::AuthPasskey;
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::passkey) async fn list_user_passkeys_core(
     user: &impl AuthUser,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -27,9 +24,6 @@ pub(in crate::passkey) async fn list_user_passkeys_core(
         .collect()
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::passkey) async fn delete_passkey_core(
     body: &DeletePasskeyRequest,
     user: &impl AuthUser,
@@ -53,9 +47,6 @@ pub(in crate::passkey) async fn delete_passkey_core(
     }))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::passkey) async fn update_passkey_core(
     body: &UpdatePasskeyRequest,
     user: &impl AuthUser,
