@@ -78,7 +78,10 @@ pub(in crate::passkey) async fn update_passkey_core(
 
     let updated = ctx
         .database
-        .update_passkey_name(&body.id, super::super::registration::trim_name(&body.name))
+        .update_passkey_name(
+            &body.id,
+            crate::passkey::registration::trim_name(&body.name),
+        )
         .await?;
 
     Ok(PasskeyHandlerOutcome::Success(PasskeyResponse {

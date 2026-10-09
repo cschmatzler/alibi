@@ -129,7 +129,7 @@ fn pre_migration_rsa_credential_retains_exponent_and_authenticates() {
     let persisted = &fixture["rsa"]["storedCredential"];
     assert_eq!(persisted["cred"]["cred"]["key"]["RSA"]["e"], json!([3]));
     assert!(serde_json::from_value::<webauthn_rs::prelude::Passkey>(persisted.clone()).is_err());
-    let super::super::raw_none::StoredCredential::Core(mut key) =
+    let crate::passkey::raw_none::StoredCredential::Core(mut key) =
         serde_json::from_value(persisted.clone()).unwrap()
     else {
         panic!("existing core codec")

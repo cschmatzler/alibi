@@ -471,7 +471,7 @@ impl DiscoveryVerifier {
             return Some(false);
         }
         if matching.first()?.get("kty").and_then(Value::as_str) == Some("RSA")
-            && !super::super::id_token::remote_rsa_public_key(matching.first()?)
+            && !crate::oauth::id_token::remote_rsa_public_key(matching.first()?)
         {
             return Some(false);
         }

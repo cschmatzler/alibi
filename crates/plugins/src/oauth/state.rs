@@ -1,5 +1,5 @@
 use alibi_core::entity::AuthAccount;
-use alibi_core::utils::cookie_utils::{sign_cookie_value, verify_cookie_value};
+use alibi_core::utils::cookie_utils::verify_cookie_value;
 use alibi_core::{AuthConfig, AuthError, AuthRequest, AuthResult, OAuthStateStrategy};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
@@ -269,11 +269,6 @@ pub(super) fn account_cookie_name(config: &AuthConfig) -> String {
     alibi_core::utils::cookie_utils::related_cookie_name(config, "account_data")
 }
 
-/// Sign the database-backed state's correlation cookie using Better Call's wire format.
-pub(super) fn create_database_state_cookie_value(secret: &str, state: &str) -> String {
-    sign_cookie_value(state, secret)
-}
-
 /// # Errors
 /// Returns an error when the correlation cookie has no authenticated state.
 pub(super) fn decode_database_state_cookie_value(secret: &str, token: &str) -> AuthResult<String> {
@@ -286,10 +281,10 @@ pub(super) fn create_cookie_state_value(
     config: &AuthConfig,
     payload: &OAuthStatePayload,
 ) -> AuthResult<String> {
-    super::super::token_crypto::encrypt_with_config_for_purpose(
+    crate::token_crypto::encrypt_with_config_for_purpose(
         &alibi_core::utils::json::to_string(payload)?,
         config,
-        super::super::token_crypto::EncryptionPurpose::StateCookie,
+        crate::token_crypto::EncryptionPurpose::StateCookie,
     )
 }
 
@@ -299,10 +294,10 @@ pub(crate) fn decode_cookie_state_value(
     config: &AuthConfig,
     token: &str,
 ) -> AuthResult<OAuthStatePayload> {
-    let plain = super::super::token_crypto::decrypt_with_config_for_purpose(
+    let plain = crate::token_crypto::decrypt_with_config_for_purpose(
         token,
         config,
-        super::super::token_crypto::EncryptionPurpose::StateCookie,
+        crate::token_crypto::EncryptionPurpose::StateCookie,
     )?;
     alibi_core::utils::json::from_slice(plain.as_bytes()).map_err(AuthError::from)
 }

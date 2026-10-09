@@ -64,7 +64,7 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     (raw_email, raw_policy): (
         Option<&serde_json::Value>,
-        Option<&super::super::providers::OAuthAuthorizationPolicy>,
+        Option<&crate::oauth::providers::OAuthAuthorizationPolicy>,
     ),
 ) -> Result<LinkSocialOutcome, OAuthSignInError> {
     // Explicit linking validates fresh provider data before its trust/email
@@ -180,7 +180,7 @@ pub(in crate::oauth::handlers) async fn sign_in_with_id_token_core(
             message: "id_token not supported",
         });
     }
-    if !super::super::id_token::verify_provider_token(
+    if !crate::oauth::id_token::verify_provider_token(
         provider,
         &id_token.token,
         id_token.nonce.as_deref(),
@@ -316,7 +316,7 @@ pub(in crate::oauth::handlers) async fn link_with_id_token_core(
             message: "id_token not supported",
         });
     }
-    if !super::super::id_token::verify_provider_token(
+    if !crate::oauth::id_token::verify_provider_token(
         provider,
         &id_token.token,
         id_token.nonce.as_deref(),

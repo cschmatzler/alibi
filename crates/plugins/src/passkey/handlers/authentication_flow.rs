@@ -139,7 +139,8 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
     user_agent: Option<String>,
     ctx: &AuthContext<S>,
 ) -> PasskeyHandlerResult<(Value, String)> {
-    let Some(origin) = super::super::webauthn::ceremony_origin(config, req, body.response.as_ref())
+    let Some(origin) =
+        crate::passkey::webauthn::ceremony_origin(config, req, body.response.as_ref())
     else {
         return response_message(400, "origin missing");
     };
@@ -185,7 +186,7 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
     };
 
     let Ok(mut stored) =
-        serde_json::from_str::<super::super::raw_none::StoredCredential>(passkey.credential())
+        serde_json::from_str::<crate::passkey::raw_none::StoredCredential>(passkey.credential())
     else {
         return passkey_authentication_failure();
     };
@@ -201,14 +202,14 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
             return passkey_authentication_failure();
         };
         match &mut stored {
-            super::super::raw_none::StoredCredential::Raw(raw) => {
+            crate::passkey::raw_none::StoredCredential::Raw(raw) => {
                 raw.replace_public_key(public_key);
             }
-            super::super::raw_none::StoredCredential::Core(saved) => {
-                let Ok((key, _)) = super::super::raw_none::decode_first(&public_key) else {
+            crate::passkey::raw_none::StoredCredential::Core(saved) => {
+                let Ok((key, _)) = crate::passkey::raw_none::decode_first(&public_key) else {
                     return passkey_authentication_failure();
                 };
-                let Ok(key) = super::super::source::crypto::COSEKey::try_from(&key) else {
+                let Ok(key) = crate::passkey::source::crypto::COSEKey::try_from(&key) else {
                     return passkey_authentication_failure();
                 };
                 let mut current = saved.cred.clone();
@@ -221,21 +222,21 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
 
     let authentication_result = match (&mut stored, stored_state) {
         (
-            super::super::raw_none::StoredCredential::Raw(raw),
+            crate::passkey::raw_none::StoredCredential::Raw(raw),
             StoredAuthenticationState::CoreRaw { challenge, .. },
-        ) => super::super::raw_none::authenticate_raw(
+        ) => crate::passkey::raw_none::authenticate_raw(
             raw,
             &authentication,
             response,
             &challenge,
-            &super::super::webauthn::resolve_rp_id(config, &ctx.config)?,
+            &crate::passkey::webauthn::resolve_rp_id(config, &ctx.config)?,
             &origin,
             counter,
         ),
-        (super::super::raw_none::StoredCredential::Raw(_), _) => {
+        (crate::passkey::raw_none::StoredCredential::Raw(_), _) => {
             return passkey_authentication_failure();
         }
-        (super::super::raw_none::StoredCredential::Core(stored_passkey), state) => {
+        (crate::passkey::raw_none::StoredCredential::Core(stored_passkey), state) => {
             let Ok(webauthn) = build_webauthn(config, &ctx.config, &origin) else {
                 return passkey_authentication_failure();
             };
@@ -272,7 +273,7 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
                     )
                 }
             };
-            result.map(super::super::authentication::AuthenticationResult::Core)
+            result.map(crate::passkey::authentication::AuthenticationResult::Core)
         }
     };
     let authentication_result = match authentication_result {
@@ -289,22 +290,22 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
     let mut public_backed_up = passkey.backed_up();
     let mut public_device_type = passkey.device_type().to_owned();
     if let Some(callback) = &config.authentication.after_verification {
-        let context = super::super::PasskeyAuthenticationContext {
+        let context = crate::passkey::PasskeyAuthenticationContext {
             request: req,
             auth_config: &ctx.config,
             extensions: &ctx.extensions,
         };
-        let verified = super::super::VerifiedPasskeyAuthentication {
+        let verified = crate::passkey::VerifiedPasskeyAuthentication {
             result: authentication_result.clone(),
             origin: origin.clone(),
-            rp_id: super::super::webauthn::resolve_rp_id(config, &ctx.config)?,
+            rp_id: crate::passkey::webauthn::resolve_rp_id(config, &ctx.config)?,
         };
         match callback
             .after_verification(&context, &verified, response)
             .await
         {
             Ok(()) => {}
-            Err(error) if super::super::registration::is_application_error(&error) => {
+            Err(error) if crate::passkey::registration::is_application_error(&error) => {
                 return Err(error);
             }
             Err(_) => return passkey_authentication_failure(),
@@ -325,8 +326,8 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
 
     let snapshot = match (&mut stored, &authentication_result) {
         (
-            super::super::raw_none::StoredCredential::Core(passkey),
-            super::super::authentication::AuthenticationResult::Core(result),
+            crate::passkey::raw_none::StoredCredential::Core(passkey),
+            crate::passkey::authentication::AuthenticationResult::Core(result),
         ) => {
             if passkey.update_credential(result).is_none() {
                 return passkey_authentication_failure();
@@ -334,8 +335,8 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
             snapshot_passkey(passkey)
         }
         (
-            super::super::raw_none::StoredCredential::Raw(raw),
-            super::super::authentication::AuthenticationResult::Raw(result),
+            crate::passkey::raw_none::StoredCredential::Raw(raw),
+            crate::passkey::authentication::AuthenticationResult::Raw(result),
         ) => {
             raw.apply_authentication(result);
             raw.snapshot()
@@ -380,7 +381,7 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
     let Some(user) = ctx.database.get_user_by_id_record(&verified_owner).await? else {
         return response_message(500, "User not found");
     };
-    super::super::super::helpers::record_completed_session_user_view::<S>(
+    crate::helpers::record_completed_session_user_view::<S>(
         &user,
         &session,
         ctx.trusted_user_view(&user),

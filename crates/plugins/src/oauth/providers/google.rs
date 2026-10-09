@@ -57,7 +57,7 @@ impl OAuthProvider {
             get_user_info: None,
             refresh_access_token: None,
             verify_id_token: None,
-            id_token: Some(super::super::id_token::OAuthIdTokenConfig::google()),
+            id_token: Some(crate::oauth::id_token::OAuthIdTokenConfig::google()),
             disable_id_token_sign_in: false,
             disable_implicit_sign_up: false,
             disable_sign_up: false,

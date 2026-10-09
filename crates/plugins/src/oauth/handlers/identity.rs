@@ -229,7 +229,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     (raw_output, raw_policy): (
         Option<&alibi_core::field_policy::FieldOutput>,
-        Option<&super::super::providers::OAuthAuthorizationPolicy>,
+        Option<&crate::oauth::providers::OAuthAuthorizationPolicy>,
     ),
 ) -> Result<ProcessOAuthUserResult, OAuthSignInError> {
     let raw_verification = raw_output.and_then(|output| output.get("emailVerified"));

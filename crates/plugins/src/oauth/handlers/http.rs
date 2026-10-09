@@ -366,14 +366,12 @@ pub(in crate::oauth) async fn handle_callback(
 
     let authenticated_state_cookie = get_cookie(req, &state_cookie_name(&ctx.config));
     let context_secret = match ctx.config.account.store_state_strategy {
-        alibi_core::OAuthStateStrategy::Cookie => {
-            super::super::super::token_crypto::decryption_key(
-                authenticated_state_cookie
-                    .as_deref()
-                    .ok_or_else(|| AuthError::internal("Authenticated state cookie disappeared"))?,
-                &ctx.config,
-            )?
-        }
+        alibi_core::OAuthStateStrategy::Cookie => crate::token_crypto::decryption_key(
+            authenticated_state_cookie
+                .as_deref()
+                .ok_or_else(|| AuthError::internal("Authenticated state cookie disappeared"))?,
+            &ctx.config,
+        )?,
         alibi_core::OAuthStateStrategy::Automatic | alibi_core::OAuthStateStrategy::Database => {
             ctx.config.current_secret()
         }
@@ -415,7 +413,7 @@ pub(in crate::oauth) async fn handle_callback(
         .as_ref()
         .is_some_and(|policy| policy.verify_grant_id_token)
         && let Some(token) = tokens.id_token.as_deref().filter(|token| !token.is_empty())
-        && !super::super::id_token::verify_provider_token(
+        && !crate::oauth::id_token::verify_provider_token(
             provider,
             token,
             payload.id_token_nonce.as_deref(),

@@ -248,7 +248,7 @@ pub(in crate::oauth::handlers) fn build_authorization_url(
     if provider.authorization.as_ref().is_some_and(|policy| {
         matches!(
             policy.scope_encoding,
-            super::super::providers::OAuthScopeEncoding::UriComponent
+            crate::oauth::providers::OAuthScopeEncoding::UriComponent
         )
     }) && let Some(scope) = url
         .query_pairs()

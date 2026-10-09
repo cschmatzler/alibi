@@ -133,10 +133,10 @@ pub(in crate::passkey) async fn generate_register_options_core(
         user: Some(user.clone()),
         context: requested_context.map(str::to_owned),
         state: StoredRegistrationVerifier::Source(StoredCoreRegistrationState::CoreRawNone {
-            policy: super::super::raw_none::RawNonePolicy {
+            policy: crate::passkey::raw_none::RawNonePolicy {
                 challenge: base64::engine::general_purpose::URL_SAFE_NO_PAD
                     .encode(options.public_key.challenge.as_ref()),
-                rp_id: super::super::webauthn::resolve_rp_id(config, &ctx.config)?,
+                rp_id: crate::passkey::webauthn::resolve_rp_id(config, &ctx.config)?,
                 origin: generation_origin(config, ctx),
             },
             state,
@@ -214,7 +214,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
     config: &PasskeyConfig,
     ctx: &AuthContext<S>,
 ) -> PasskeyHandlerResult<Value> {
-    use super::super::registration::{
+    use crate::passkey::registration::{
         PasskeyRegistrationContext, VerifiedPasskeyRegistration, trim_name,
     };
 
@@ -222,7 +222,8 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
         return response_null(400);
     };
 
-    let Some(origin) = super::super::webauthn::ceremony_origin(config, req, body.response.as_ref())
+    let Some(origin) =
+        crate::passkey::webauthn::ceremony_origin(config, req, body.response.as_ref())
     else {
         return response_null(400);
     };
@@ -288,8 +289,12 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
             policy,
             ..
         }) => {
-            match super::super::raw_none::register_raw_key(&registration, response, policy, &origin)
-            {
+            match crate::passkey::raw_none::register_raw_key(
+                &registration,
+                response,
+                policy,
+                &origin,
+            ) {
                 Ok(value) => value,
                 Err(WebauthnError::AttestationStatementSigInvalid) => {
                     return response_code(
@@ -304,56 +309,56 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
         StoredRegistrationVerifier::Source(_) | StoredRegistrationVerifier::Legacy(_) => None,
     };
     let (snapshot, metadata, credential_id) = if let Some(raw) = raw_registration {
-        let metadata = super::super::webauthn::RegisteredPasskeyMetadata {
+        let metadata = crate::passkey::webauthn::RegisteredPasskeyMetadata {
             public_key: base64::engine::general_purpose::STANDARD.encode(raw.public_key()),
             aaguid: Some(Uuid::from_bytes(raw.aaguid()).to_string()),
         };
         (
             raw.snapshot()?,
             metadata,
-            super::super::raw_none::raw_credential_id(&raw),
+            crate::passkey::raw_none::raw_credential_id(&raw),
         )
     } else {
-        let verified_passkey: super::super::source::credential::Passkey = match &stored_state.state
-        {
-            StoredRegistrationVerifier::Legacy(state) => {
-                let Ok(webauthn) = build_webauthn(config, &ctx.config, &origin) else {
-                    return passkey_registration_failure();
-                };
-                match webauthn.finish_passkey_registration(&registration, state) {
-                    Ok(passkey) => passkey.into(),
-                    Err(_) => return passkey_registration_failure(),
-                }
-            }
-            StoredRegistrationVerifier::Source(
-                StoredCoreRegistrationState::Core { state }
-                | StoredCoreRegistrationState::CoreRawNone { state, .. },
-            ) => {
-                let Ok(core) = super::super::webauthn::build_registration_core(
-                    config,
-                    &ctx.config,
-                    &origin,
-                    &registration,
-                )
-                .await
-                else {
-                    return passkey_registration_failure();
-                };
-                match finish_core_registration(&core, &registration, state, &origin) {
-                    Ok(passkey) => passkey,
-                    // Source returns false for an invalid signature, including an
-                    // invalid Ed25519 length; malformed ES256 DER throws instead.
-                    Err(WebauthnError::AttestationStatementSigInvalid) => {
-                        return response_code(
-                            400,
-                            "FAILED_TO_VERIFY_REGISTRATION",
-                            "Failed to verify registration",
-                        );
+        let verified_passkey: crate::passkey::source::credential::Passkey =
+            match &stored_state.state {
+                StoredRegistrationVerifier::Legacy(state) => {
+                    let Ok(webauthn) = build_webauthn(config, &ctx.config, &origin) else {
+                        return passkey_registration_failure();
+                    };
+                    match webauthn.finish_passkey_registration(&registration, state) {
+                        Ok(passkey) => passkey.into(),
+                        Err(_) => return passkey_registration_failure(),
                     }
-                    Err(_) => return passkey_registration_failure(),
                 }
-            }
-        };
+                StoredRegistrationVerifier::Source(
+                    StoredCoreRegistrationState::Core { state }
+                    | StoredCoreRegistrationState::CoreRawNone { state, .. },
+                ) => {
+                    let Ok(core) = crate::passkey::webauthn::build_registration_core(
+                        config,
+                        &ctx.config,
+                        &origin,
+                        &registration,
+                    )
+                    .await
+                    else {
+                        return passkey_registration_failure();
+                    };
+                    match finish_core_registration(&core, &registration, state, &origin) {
+                        Ok(passkey) => passkey,
+                        // Source returns false for an invalid signature, including an
+                        // invalid Ed25519 length; malformed ES256 DER throws instead.
+                        Err(WebauthnError::AttestationStatementSigInvalid) => {
+                            return response_code(
+                                400,
+                                "FAILED_TO_VERIFY_REGISTRATION",
+                                "Failed to verify registration",
+                            );
+                        }
+                        Err(_) => return passkey_registration_failure(),
+                    }
+                }
+            };
         let Ok(snapshot) = snapshot_passkey(&verified_passkey) else {
             return passkey_registration_failure();
         };
@@ -605,7 +610,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
     };
     match outcome {
         Ok(value) => Ok(PasskeyHandlerOutcome::Success(value)),
-        Err(error) if super::super::registration::is_application_error(&error) => Err(error),
+        Err(error) if crate::passkey::registration::is_application_error(&error) => Err(error),
         Err(_) => passkey_registration_failure(),
     }
 }
