@@ -23,7 +23,7 @@ workspace = true
 
 [dependencies]
 alibi-core = { workspace = true }
-alibi-seaorm-macros = { version = "0.1.1", path = "../seaorm-macros" }
+alibi-seaorm-macros = { version = "0.2.0", path = "../seaorm-macros" }
 
 async-trait = { workspace = true }
 chrono = { workspace = true }

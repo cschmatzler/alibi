@@ -17,7 +17,7 @@ For example, hypothetical Rust releases `1.0.0` and `1.0.1` could both target Be
 
 Stable releases have no suffix. Reserve `-alpha.N`, `-beta.N`, and `-rc.N` for actual prereleases. Never reuse a published version or move its Git tag. Release tags use `v` followed by the Rust version, for example `v1.0.1`.
 
-The current release is **Alibi `0.1.1`**, targeting **Better Auth `1.7.7`**. The version examples above illustrate the policy for future releases.
+The current release is **Alibi `0.2.0`**, targeting **Better Auth `1.7.7`**. The version examples above illustrate the policy for future releases.
 
 ## Compatibility rules
 
@@ -45,6 +45,14 @@ The upstream compatibility target is separate release information. Do not encode
 4. Run `devenv shell -- ./scripts/check.sh`, `devenv shell -- ./scripts/compat.sh`, `bun run docs:check`, and `bun run docs:build`. Require CI to pass on the release commit and the differential compatibility suite to pass locally.
 5. Verify the packaged workspace with `devenv shell -- ./scripts/publish.sh`. Cargo stages the unpublished workspace dependencies together and verifies the archives with the default TLS backend and all framework, store and cache integrations enabled.
 6. Publish from the reviewed release commit with `devenv shell -- ./scripts/publish.sh --publish`, then create its immutable `v{rust-version}` tag and release notes. Cargo uploads the crates in dependency order. If publication is interrupted, resume with the same commit and version for unpublished crates; never overwrite an already published crate.
+
+## Release 0.2.0
+
+All eleven first-party crates advance together to `0.2.0`, targeting Better Auth `1.7.7`.
+
+This release includes the upstream compatibility fixes, native regression coverage, and Rust refactoring merged since `0.1.1`. It also simplifies CI around the native checks while retaining the local differential compatibility gate. See the [commit history](https://github.com/cschmatzler/better-auth-rs/commits/main/) for individual changes.
+
+Update library dependencies to `0.2.0` and install the matching `alibi-cli` version. No upstream target upgrade is included; the documented compatibility scope and exceptions continue to apply.
 
 ## First crates.io release: 0.1.1
 
