@@ -1,11 +1,52 @@
-use super::*;
-// ---------------------------------------------------------------------------
-// Old handlers (rewritten to call core)
-// ---------------------------------------------------------------------------
+use super::LinkSocialOutcome;
+use super::OAuthIdentity;
+use super::OAuthProcessPolicy;
+use super::OAuthSignInError;
+use super::ambiguous_account_sign_in_response;
+use super::authorization::link_social_core;
+use super::authorization::social_sign_in_core;
+use super::authorization::validate_authorization_params;
+use super::cookies::attach_cookie_state_payload;
+use super::cookies::attach_state_cookie;
+use super::create_account_cookie_headers;
+use super::fetch_user_info_from_provider;
+use super::linking::complete_link_social_with_raw_email;
+use super::linking::link_with_id_token_core;
+use super::linking::sign_in_with_id_token_core;
+use super::oauth_callback_path;
+use super::oauth_disable_sign_up_option;
+use super::parse_callback_user_payload;
+use super::process_oauth_sign_in_with_output;
+use super::raw_truthy;
+use super::redirects::auth_base_url;
+use super::redirects::build_default_error_url;
+use super::redirects::build_redirect_url;
+use super::redirects::callback_failure_location;
+use super::redirects::callback_failure_redirect;
+use super::redirects::redirect_response;
+use super::require_session;
+use super::resolve_oauth_account_key;
+use super::validate_authorization_code_via_provider;
+use crate::oauth::providers::OAuthConfig;
+use crate::oauth::providers::OAuthUserInfoRequest;
+use crate::oauth::state::OAuthStatePayload;
+use crate::oauth::state::RecoveredOAuthServerContext;
+use crate::oauth::state::decode_cookie_state_value;
+use crate::oauth::state::decode_database_state_cookie_value;
+use crate::oauth::state::get_cookie;
+use crate::oauth::state::state_cookie_name;
+use crate::oauth::state::state_verification_identifier;
+use crate::oauth::state::verified_server_context;
+use crate::oauth::types::LinkSocialRequest;
+use crate::oauth::types::SocialSignInRequest;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
+use alibi_core::AuthRequest;
+use alibi_core::AuthResponse;
+use alibi_core::AuthResult;
+use alibi_core::AuthSession;
+use std::collections::HashMap;
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn handle_social_sign_in(
     config: &OAuthConfig,
     req: &AuthRequest,
@@ -86,9 +127,6 @@ pub(crate) async fn handle_social_sign_in(
     clippy::too_many_lines,
     reason = "Keep OAuth state consumption, provider errors, and cookie cleanup in their required order"
 )]
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::oauth) async fn handle_callback(
     config: &OAuthConfig,
     provider_name: &str,
@@ -328,14 +366,12 @@ pub(in crate::oauth) async fn handle_callback(
 
     let authenticated_state_cookie = get_cookie(req, &state_cookie_name(&ctx.config));
     let context_secret = match ctx.config.account.store_state_strategy {
-        alibi_core::OAuthStateStrategy::Cookie => {
-            super::super::super::token_crypto::decryption_key(
-                authenticated_state_cookie
-                    .as_deref()
-                    .ok_or_else(|| AuthError::internal("Authenticated state cookie disappeared"))?,
-                &ctx.config,
-            )?
-        }
+        alibi_core::OAuthStateStrategy::Cookie => crate::token_crypto::decryption_key(
+            authenticated_state_cookie
+                .as_deref()
+                .ok_or_else(|| AuthError::internal("Authenticated state cookie disappeared"))?,
+            &ctx.config,
+        )?,
         alibi_core::OAuthStateStrategy::Automatic | alibi_core::OAuthStateStrategy::Database => {
             ctx.config.current_secret()
         }
@@ -377,7 +413,7 @@ pub(in crate::oauth) async fn handle_callback(
         .as_ref()
         .is_some_and(|policy| policy.verify_grant_id_token)
         && let Some(token) = tokens.id_token.as_deref().filter(|token| !token.is_empty())
-        && !super::super::id_token::verify_provider_token(
+        && !crate::oauth::id_token::verify_provider_token(
             provider,
             token,
             payload.id_token_nonce.as_deref(),
@@ -555,9 +591,6 @@ pub(in crate::oauth) async fn handle_callback(
     Ok(response)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::oauth) async fn handle_link_social(
     config: &OAuthConfig,
     req: &AuthRequest,
@@ -571,36 +604,7 @@ pub(in crate::oauth) async fn handle_link_social(
                 code: Some("UNAUTHORIZED".to_owned()),
                 message: "Unauthorized".to_owned(),
             },
-            error @ (AuthError::Api { .. }
-            | AuthError::Upstream { .. }
-            | AuthError::BadRequest(_)
-            | AuthError::InvalidRequest(_)
-            | AuthError::Validation(_)
-            | AuthError::InvalidCredentials
-            | AuthError::AuthenticationFailed(_)
-            | AuthError::SessionNotFound
-            | AuthError::Forbidden(_)
-            | AuthError::SessionCreationCancelled
-            | AuthError::UserCreationCancelled
-            | AuthError::BannedUser(_)
-            | AuthError::Unauthorized
-            | AuthError::UserNotFound
-            | AuthError::NotFound(_)
-            | AuthError::Conflict(_)
-            | AuthError::MethodNotAllowed(_)
-            | AuthError::PayloadTooLarge(_)
-            | AuthError::UnprocessableEntity(_)
-            | AuthError::RateLimited { .. }
-            | AuthError::NotImplemented(_)
-            | AuthError::Config(_)
-            | AuthError::Database(_)
-            | AuthError::Serialization(_)
-            | AuthError::Plugin { .. }
-            | AuthError::CallbackFailure(_)
-            | AuthError::Internal(_)
-            | AuthError::Encryption(_)
-            | AuthError::PasswordHash(_)
-            | AuthError::Jwt(_)) => error,
+            error => error,
         })?;
     let body: LinkSocialRequest = match alibi_core::validate_request_body(req) {
         Ok(v) => v,

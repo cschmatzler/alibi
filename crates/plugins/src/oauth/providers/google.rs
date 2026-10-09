@@ -1,4 +1,5 @@
-use super::*;
+use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfo, Value};
+use serde_json::Map;
 impl OAuthProvider {
     #[must_use]
     pub fn with_hosted_domain(mut self, domain: impl Into<String>) -> Self {
@@ -34,7 +35,7 @@ impl OAuthProvider {
             account_subject: None,
             map_user_info: Some(|v| {
                 Ok(OAuthUserInfo {
-                    additional_fields: Default::default(),
+                    additional_fields: Map::default(),
                     id: v
                         .get("sub")
                         .and_then(|v| v.as_str())
@@ -56,7 +57,7 @@ impl OAuthProvider {
             get_user_info: None,
             refresh_access_token: None,
             verify_id_token: None,
-            id_token: Some(super::super::id_token::OAuthIdTokenConfig::google()),
+            id_token: Some(crate::oauth::id_token::OAuthIdTokenConfig::google()),
             disable_id_token_sign_in: false,
             disable_implicit_sign_up: false,
             disable_sign_up: false,

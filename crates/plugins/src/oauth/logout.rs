@@ -59,7 +59,7 @@ pub(crate) async fn provider_logout_url<S: AuthSchema>(
         let Ok(mut url) = url::Url::parse(&logout.endpoint) else {
             continue;
         };
-        let redirect = match callback
+        let Ok(redirect) = callback
             .clone()
             .map(Ok)
             .or_else(|| {
@@ -70,16 +70,15 @@ pub(crate) async fn provider_logout_url<S: AuthSchema>(
                     .map(|value| base.join(value))
             })
             .transpose()
-        {
-            Ok(value) => value,
-            Err(_) => continue,
+        else {
+            continue;
         };
         let id_token = account.id_token().filter(|value| !value.is_empty());
         // URLSearchParams.set replaces existing values while retaining unrelated parameters.
         let mut parameters: Vec<(String, String)> = url.query_pairs().into_owned().collect();
         let mut set = |name: &str, value: &str| {
             if let Some((_, previous)) = parameters.iter_mut().find(|(key, _)| key == name) {
-                *previous = value.to_owned();
+                value.clone_into(previous);
                 let mut first = true;
                 parameters.retain(|(key, _)| {
                     if key != name {
@@ -107,7 +106,7 @@ pub(crate) async fn provider_logout_url<S: AuthSchema>(
         }
         if !parameters.is_empty() {
             let mut query = url.query_pairs_mut();
-            let _serializer = query.clear().extend_pairs(parameters);
+            _ = query.clear().extend_pairs(parameters);
         }
         return Some(url.into());
     }

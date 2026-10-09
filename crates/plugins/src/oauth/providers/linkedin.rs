@@ -1,12 +1,13 @@
-//! LinkedIn's non-PKCE grants and original subject with nullish email verification.
+//! `LinkedIn`'s non-PKCE grants and original subject with nullish email verification.
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use async_trait::async_trait;
+use serde_json::Map;
 use serde_json::Value;
 
-/// Application-owned LinkedIn configuration. Generic signup and asynchronous
+/// Application-owned `LinkedIn` configuration. Generic signup and asynchronous
 /// user-info/refresh callbacks remain configurable on the returned provider.
 #[derive(Clone)]
 pub struct LinkedInOptions {
@@ -18,7 +19,7 @@ pub struct LinkedInOptions {
     pub disable_default_scope: bool,
     pub authorization_endpoint: Option<String>,
     pub redirect_uri: Option<String>,
-    /// Trusted transport override retaining LinkedIn's actual GET and mapping.
+    /// Trusted transport override retaining `LinkedIn`'s actual GET and mapping.
     pub user_info_endpoint: Option<String>,
     /// Receives the original profile before its raw account identity is resolved.
     pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
@@ -146,18 +147,16 @@ impl OAuthUserInfoHandler for LinkedInUserInfo {
         let mut output = serde_json::Map::new();
         for (source, target) in [("name", "name"), ("email", "email"), ("picture", "image")] {
             if let Some(value) = profile.get(source) {
-                drop(output.insert(target.into(), value.clone()));
+                _ = output.insert(target.into(), value.clone());
             }
         }
-        drop(
-            output.insert(
-                "emailVerified".into(),
-                profile
-                    .get("email_verified")
-                    .filter(|value| !value.is_null())
-                    .cloned()
-                    .unwrap_or(Value::Bool(false)),
-            ),
+        _ = output.insert(
+            "emailVerified".into(),
+            profile
+                .get("email_verified")
+                .filter(|value| !value.is_null())
+                .cloned()
+                .unwrap_or(Value::Bool(false)),
         );
         if let Some(user) = &mapped {
             output.extend(user.public_profile(true));
@@ -166,7 +165,7 @@ impl OAuthUserInfoHandler for LinkedInUserInfo {
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id: scalar(profile.get("sub"))?.unwrap_or_default(),
                 name: scalar(profile.get("name"))?,
                 email: profile

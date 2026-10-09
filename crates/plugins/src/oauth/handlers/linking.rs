@@ -1,7 +1,39 @@
-use super::*;
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
+use super::LinkSocialOutcome;
+use super::OAuthIdentity;
+use super::OAuthProcessPolicy;
+use super::OAuthSignInError;
+use super::fetch_user_info_from_provider;
+use super::identity::provider_candidate;
+use super::oauth_disable_sign_up_option;
+use super::process_oauth_sign_in;
+use super::resolve_oauth_account_key;
+use crate::oauth::encryption::encrypt_provider_token_set;
+use crate::oauth::encryption::encrypt_token_set;
+use crate::oauth::encryption::provider_token_nulls;
+use crate::oauth::providers::OAuthProvider;
+use crate::oauth::providers::OAuthTokenSet;
+use crate::oauth::providers::OAuthUserInfo;
+use crate::oauth::providers::OAuthUserInfoRequest;
+use crate::oauth::state::OAuthStateLink;
+use crate::oauth::types::LinkSocialRequest;
+use crate::oauth::types::OAuthIdTokenRequest;
+use crate::oauth::types::SocialSignInRequest;
+use crate::oauth::types::SocialSignInResponse;
+use alibi_core::AuthAccount;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
+use alibi_core::AuthResult;
+use alibi_core::AuthUser;
+use alibi_core::CreateAccount;
+use alibi_core::UpdateAccount;
+use alibi_core::UpdateUser;
+use alibi_core::entity::AuthSession;
+use alibi_core::field_policy::FieldValues;
+use alibi_core::user_validation::UserValidationAction;
+use alibi_core::user_validation::UserValidationData;
+use alibi_core::user_validation::UserValidationSource;
+use alibi_core::user_validation::validate_user_info;
+use chrono::Utc;
 pub(crate) async fn complete_link_social(
     provider_name: &str,
     user_info: &OAuthUserInfo,
@@ -32,7 +64,7 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     (raw_email, raw_policy): (
         Option<&serde_json::Value>,
-        Option<&super::super::providers::OAuthAuthorizationPolicy>,
+        Option<&crate::oauth::providers::OAuthAuthorizationPolicy>,
     ),
 ) -> Result<LinkSocialOutcome, OAuthSignInError> {
     // Explicit linking validates fresh provider data before its trust/email
@@ -51,7 +83,7 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
         },
     )
     .await
-    .map_err(OAuthSignInError::from_identity_denial)?;
+    .map_err(|error| OAuthSignInError::from_identity_denial(&error))?;
     let linking = &ctx.config.account.account_linking;
     let trusted_provider = linking
         .trusted_providers
@@ -84,25 +116,24 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
             .await
             .map_err(|error| error.to_string())?;
 
-        drop(
-            ctx.database
-                .update_account_record(
-                    &existing_account.id(),
-                    UpdateAccount {
-                        provider_token_nulls: provider_token_nulls(tokens, raw_policy),
-                        access_token: token_bundle.access_token,
-                        refresh_token: token_bundle.refresh_token,
-                        id_token: token_bundle.id_token,
-                        access_token_expires_at: tokens.access_token_expires_at,
-                        refresh_token_expires_at: tokens.refresh_token_expires_at,
-                        scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
-                            .then(|| tokens.scopes.join(",")),
-                        ..Default::default()
-                    },
-                )
-                .await
-                .map_err(|error| error.to_string())?,
-        );
+        _ = ctx
+            .database
+            .update_account_record(
+                &existing_account.id(),
+                UpdateAccount {
+                    provider_token_nulls: provider_token_nulls(tokens, raw_policy),
+                    access_token: token_bundle.access_token,
+                    refresh_token: token_bundle.refresh_token,
+                    id_token: token_bundle.id_token,
+                    access_token_expires_at: tokens.access_token_expires_at,
+                    refresh_token_expires_at: tokens.refresh_token_expires_at,
+                    scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
+                        .then(|| tokens.scopes.join(",")),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|error| error.to_string())?;
 
         return Ok(LinkSocialOutcome::Linked);
     }
@@ -111,25 +142,24 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
         .await
         .map_err(|error| error.to_string())?;
 
-    drop(
-        ctx.database
-            .create_account_record(CreateAccount {
-                additional_fields: Default::default(),
-                user_id: link.user_id.clone(),
-                account_id: user_info.id.clone(),
-                provider_id: provider_name.to_owned(),
-                access_token: token_bundle.access_token,
-                refresh_token: token_bundle.refresh_token,
-                id_token: token_bundle.id_token,
-                access_token_expires_at: tokens.access_token_expires_at,
-                refresh_token_expires_at: tokens.refresh_token_expires_at,
-                scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
-                    .then(|| tokens.scopes.join(",")),
-                password: None,
-            })
-            .await
-            .map_err(|_error| "unable_to_link_account".to_owned())?,
-    );
+    _ = ctx
+        .database
+        .create_account_record(CreateAccount {
+            additional_fields: FieldValues::default(),
+            user_id: link.user_id.clone(),
+            account_id: user_info.id.clone(),
+            provider_id: provider_name.to_owned(),
+            access_token: token_bundle.access_token,
+            refresh_token: token_bundle.refresh_token,
+            id_token: token_bundle.id_token,
+            access_token_expires_at: tokens.access_token_expires_at,
+            refresh_token_expires_at: tokens.refresh_token_expires_at,
+            scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
+                .then(|| tokens.scopes.join(",")),
+            password: None,
+        })
+        .await
+        .map_err(|_error| "unable_to_link_account".to_owned())?;
 
     Ok(LinkSocialOutcome::Linked)
 }
@@ -150,7 +180,7 @@ pub(in crate::oauth::handlers) async fn sign_in_with_id_token_core(
             message: "id_token not supported",
         });
     }
-    if !super::super::id_token::verify_provider_token(
+    if !crate::oauth::id_token::verify_provider_token(
         provider,
         &id_token.token,
         id_token.nonce.as_deref(),
@@ -286,7 +316,7 @@ pub(in crate::oauth::handlers) async fn link_with_id_token_core(
             message: "id_token not supported",
         });
     }
-    if !super::super::id_token::verify_provider_token(
+    if !crate::oauth::id_token::verify_provider_token(
         provider,
         &id_token.token,
         id_token.nonce.as_deref(),
@@ -407,42 +437,40 @@ pub(in crate::oauth::handlers) async fn link_with_id_token_core(
         id_token.refresh_token.clone(),
         Some(id_token.token.clone()),
     )?;
-    drop(
-        ctx.database
-            .create_account_record(CreateAccount {
-                additional_fields: Default::default(),
-                user_id: session.user_id().to_string(),
-                provider_id: body.provider.clone(),
-                account_id: response.user.id,
-                access_token: token_bundle.access_token,
-                refresh_token: token_bundle.refresh_token,
-                id_token: token_bundle.id_token,
-                access_token_expires_at: id_token
-                    .expires_at
-                    .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
-                refresh_token_expires_at: None,
-                scope: id_token.scopes.as_ref().map(|scopes| scopes.join(",")),
-                password: None,
-            })
-            .await
-            .map_err(|_error| {
-                AuthError::bad_request("Account not linked - unable to create account")
-            })?,
-    );
+    _ = ctx
+        .database
+        .create_account_record(CreateAccount {
+            additional_fields: FieldValues::default(),
+            user_id: session.user_id().to_string(),
+            provider_id: body.provider.clone(),
+            account_id: response.user.id,
+            access_token: token_bundle.access_token,
+            refresh_token: token_bundle.refresh_token,
+            id_token: token_bundle.id_token,
+            access_token_expires_at: id_token
+                .expires_at
+                .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
+            refresh_token_expires_at: None,
+            scope: id_token.scopes.as_ref().map(|scopes| scopes.join(",")),
+            password: None,
+        })
+        .await
+        .map_err(|_error| {
+            AuthError::bad_request("Account not linked - unable to create account")
+        })?;
 
     if linking.update_user_info_on_link {
-        drop(
-            ctx.database
-                .update_user_record(
-                    &session.user_id(),
-                    UpdateUser {
-                        name: response.user.name.clone(),
-                        image: response.user.image.clone(),
-                        ..Default::default()
-                    },
-                )
-                .await,
-        );
+        _ = ctx
+            .database
+            .update_user_record(
+                &session.user_id(),
+                UpdateUser {
+                    name: response.user.name.clone(),
+                    image: response.user.image.clone(),
+                    ..Default::default()
+                },
+            )
+            .await;
     }
 
     Ok(SocialSignInResponse {

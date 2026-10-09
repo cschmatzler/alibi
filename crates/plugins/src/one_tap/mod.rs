@@ -11,6 +11,7 @@ use alibi_core::{
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use serde_json::Map;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -199,7 +200,7 @@ impl OneTapPlugin {
             return message(400, "invalid id token");
         };
         let user = OAuthUserInfo {
-            additional_fields: Default::default(),
+            additional_fields: Map::default(),
             id: sub.into(),
             email: email.to_lowercase(),
             name: Some(

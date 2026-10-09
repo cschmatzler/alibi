@@ -1,9 +1,10 @@
-//! WeChat website-app grants use GET and carry openid into userinfo.
+//! `WeChat` website-app grants use GET and carry openid into userinfo.
 use super::{
     OAuthAuthorizationCodeCallback, OAuthAuthorizationCodeContext, OAuthAuthorizationCodeHandler,
     OAuthAuthorizationPolicy, OAuthProvider, OAuthRefreshTokenHandler, OAuthTokenSet,
     OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
+use serde_json::Map;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -21,7 +22,7 @@ pub struct WeChatOptions {
     pub disable_default_scope: bool,
     pub redirect_uri: Option<String>,
     pub language: WeChatLanguage,
-    /// Trusted transport overrides retaining WeChat GET/query contracts.
+    /// Trusted transport overrides retaining `WeChat` GET/query contracts.
     pub token_endpoint: Option<String>,
     pub refresh_endpoint: Option<String>,
     pub user_info_endpoint: Option<String>,
@@ -313,36 +314,35 @@ impl OAuthUserInfoHandler for WeChatProfile {
             .transpose()
             .map_err(super::remaining_profile::profile_exception)?
             .unwrap_or(openid);
-        let email = match profile
+        let email = if let Some(value) = profile
             .get("email")
             .filter(|value| super::remaining_profile::truthy(value))
         {
-            Some(value) => value.clone(),
-            None => {
-                let email = format!("{id}@wechat.placeholder.invalid");
-                if !crate::authentication_helpers::is_valid_email(&email) {
-                    return Err(super::remaining_profile::profile_exception(
-                        "Invalid WeChat placeholder email",
-                    ));
-                }
-                Value::String(email)
+            value.clone()
+        } else {
+            let email = format!("{id}@wechat.placeholder.invalid");
+            if !crate::authentication_helpers::is_valid_email(&email) {
+                return Err(super::remaining_profile::profile_exception(
+                    "Invalid WeChat placeholder email",
+                ));
             }
+            Value::String(email)
         };
         let mut output = serde_json::Map::new();
         for (key, field) in [("name", "nickname"), ("image", "headimgurl")] {
             if let Some(value) = profile.get(field) {
-                drop(output.insert(key.into(), value.clone()));
+                _ = output.insert(key.into(), value.clone());
             }
         }
-        drop(output.insert("email".into(), email.clone()));
-        drop(output.insert("emailVerified".into(), Value::Bool(false)));
+        _ = output.insert("email".into(), email.clone());
+        _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(user) = &mapped {
             output.extend(user.public_profile(true));
         }
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id,
                 name: super::remaining_profile::scalar(
                     profile

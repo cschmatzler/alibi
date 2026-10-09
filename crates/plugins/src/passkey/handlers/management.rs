@@ -1,7 +1,18 @@
-use super::*;
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
+use super::PasskeyHandlerOutcome;
+use super::PasskeyHandlerResult;
+use super::registration_value;
+use crate::StatusResponse;
+use crate::passkey::types::DeletePasskeyRequest;
+use crate::passkey::types::PasskeyResponse;
+use crate::passkey::types::UpdatePasskeyRequest;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
+use alibi_core::AuthPasskey;
+use alibi_core::AuthResult;
+use alibi_core::entity::AuthUser;
+use alibi_core::wire::PasskeyView;
+use serde_json::Value;
+use serde_json::json;
 pub(in crate::passkey) async fn list_user_passkeys_core(
     user: &impl AuthUser,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -15,16 +26,13 @@ pub(in crate::passkey) async fn list_user_passkeys_core(
             if passkey.transports.is_none()
                 && let Some(object) = value.as_object_mut()
             {
-                drop(object.insert("transports".into(), Value::Null));
+                _ = object.insert("transports".into(), Value::Null);
             }
             Ok(value)
         })
         .collect()
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::passkey) async fn delete_passkey_core(
     body: &DeletePasskeyRequest,
     user: &impl AuthUser,
@@ -48,9 +56,6 @@ pub(in crate::passkey) async fn delete_passkey_core(
     }))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::passkey) async fn update_passkey_core(
     body: &UpdatePasskeyRequest,
     user: &impl AuthUser,
@@ -73,7 +78,10 @@ pub(in crate::passkey) async fn update_passkey_core(
 
     let updated = ctx
         .database
-        .update_passkey_name(&body.id, super::super::registration::trim_name(&body.name))
+        .update_passkey_name(
+            &body.id,
+            crate::passkey::registration::trim_name(&body.name),
+        )
         .await?;
 
     Ok(PasskeyHandlerOutcome::Success(PasskeyResponse {

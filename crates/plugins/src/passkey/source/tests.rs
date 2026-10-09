@@ -33,7 +33,7 @@ fn verifier(fixture: &Value, trusted: bool) -> Verifier {
         "android-key",
         "android-safetynet",
     ] {
-        drop(policy.roots.insert(format.into(), vec![root.clone()]));
+        _ = policy.roots.insert(format.into(), vec![root.clone()]);
     }
     let origin = Url::parse(fixture["origin"].as_str().unwrap()).unwrap();
     let rp = fixture["rpId"].as_str().unwrap();
@@ -129,7 +129,7 @@ fn pre_migration_rsa_credential_retains_exponent_and_authenticates() {
     let persisted = &fixture["rsa"]["storedCredential"];
     assert_eq!(persisted["cred"]["cred"]["key"]["RSA"]["e"], json!([3]));
     assert!(serde_json::from_value::<webauthn_rs::prelude::Passkey>(persisted.clone()).is_err());
-    let super::super::raw_none::StoredCredential::Core(mut key) =
+    let crate::passkey::raw_none::StoredCredential::Core(mut key) =
         serde_json::from_value(persisted.clone()).unwrap()
     else {
         panic!("existing core codec")
@@ -151,7 +151,7 @@ fn pre_migration_rsa_credential_retains_exponent_and_authenticates() {
             .is_err(),
         "counter replay"
     );
-    let mut bad = authentication.clone();
+    let mut bad = authentication;
     let mut signature = bad.response.signature.as_ref().to_vec();
     signature[0] ^= 1;
     bad.response.signature = signature.into();

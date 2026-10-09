@@ -11,9 +11,6 @@ use rsa::traits::{PrivateKeyParts, PublicKeyParts};
 use serde_json::{Value, json};
 use signature::RandomizedSigner as _;
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn generate(config: &JwtKeyPairConfig) -> AuthResult<(Value, Value)> {
     match config.algorithm {
         JwtAlgorithm::EdDsa => {
@@ -28,8 +25,8 @@ pub(super) fn generate(config: &JwtKeyPairConfig) -> AuthResult<(Value, Value)> 
             ec_pair(
                 "P-256",
                 key.to_bytes().as_slice(),
-                point.x().map(|x| x.as_slice()),
-                point.y().map(|x| x.as_slice()),
+                point.x().map(AsRef::<[u8]>::as_ref),
+                point.y().map(AsRef::<[u8]>::as_ref),
             )
         }
         JwtAlgorithm::Es512 => {
@@ -38,8 +35,8 @@ pub(super) fn generate(config: &JwtKeyPairConfig) -> AuthResult<(Value, Value)> 
             ec_pair(
                 "P-521",
                 key.to_bytes().as_slice(),
-                point.x().map(|x| x.as_slice()),
-                point.y().map(|x| x.as_slice()),
+                point.x().map(AsRef::<[u8]>::as_ref),
+                point.y().map(AsRef::<[u8]>::as_ref),
             )
         }
         JwtAlgorithm::Ps256 | JwtAlgorithm::Rs256 => {
@@ -118,14 +115,11 @@ fn private_jwk<const N: usize>(public: &Value, fields: [(&str, Value); N]) -> Au
         .cloned()
         .ok_or_else(|| AuthError::internal("Public JWK must be an object"))?;
     for (name, value) in fields {
-        drop(private.insert(name.to_owned(), value));
+        _ = private.insert(name.to_owned(), value);
     }
     Ok(Value::Object(private))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn sign(
     algorithm: JwtAlgorithm,
     private: &Value,
@@ -176,9 +170,6 @@ pub(super) fn sign(
     }
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn verify(
     algorithm: JwtAlgorithm,
     public: &Value,

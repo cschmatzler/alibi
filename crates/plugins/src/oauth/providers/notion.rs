@@ -4,6 +4,7 @@ use super::{
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use async_trait::async_trait;
+use serde_json::Map;
 use serde_json::Value;
 
 /// Application-owned Notion configuration. Generic signup and asynchronous
@@ -182,25 +183,23 @@ impl OAuthUserInfoHandler for NotionUserInfo {
             .map_err(super::remaining_profile::profile_exception)?;
         // Keep the published raw JSON independently from typed persistence.
         let mut output = serde_json::Map::new();
-        drop(
-            output.insert(
-                "name".into(),
-                profile
-                    .get("name")
-                    .filter(|v| truthy(v))
-                    .cloned()
-                    .unwrap_or_else(|| Value::String(String::new())),
-            ),
+        _ = output.insert(
+            "name".into(),
+            profile
+                .get("name")
+                .filter(|v| truthy(v))
+                .cloned()
+                .unwrap_or_else(|| Value::String(String::new())),
         );
         let email = profile
             .get("person")
             .and_then(|person| person.get("email"))
             .filter(|v| truthy(v));
-        drop(output.insert("email".into(), email.cloned().unwrap_or(Value::Null)));
+        _ = output.insert("email".into(), email.cloned().unwrap_or(Value::Null));
         if let Some(image) = profile.get("avatar_url") {
-            drop(output.insert("image".into(), image.clone()));
+            _ = output.insert("image".into(), image.clone());
         }
-        drop(output.insert("emailVerified".into(), Value::Bool(false)));
+        _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(user) = &mapped {
             output.extend(user.public_profile(true));
         }
@@ -208,7 +207,7 @@ impl OAuthUserInfoHandler for NotionUserInfo {
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id: profile
                     .get("id")
                     .map(super::remaining_profile::js_string)
@@ -242,13 +241,12 @@ fn truthy(value: &Value) -> bool {
 }
 fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
     match value {
-        None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) => Ok(Some(value.clone())),
         Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
             .map(Some)
             .map_err(|error| error.to_string()),
         Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        Some(Value::Array(_) | Value::Object(_)) => Ok(None),
+        None | Some(Value::Null | Value::Array(_) | Value::Object(_)) => Ok(None),
     }
 }
 fn subject(profile: &Value) -> Result<String, String> {

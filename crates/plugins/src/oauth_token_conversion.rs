@@ -93,13 +93,13 @@ impl OAuthTokenConversion {
         )?;
         let access_token = encode(
             access,
-            &observed.tokens.access_token,
+            observed.tokens.access_token.as_deref(),
             manifest.access_encoding,
             destination,
         )?;
         let refresh_token = encode(
             refresh,
-            &observed.tokens.refresh_token,
+            observed.tokens.refresh_token.as_deref(),
             manifest.refresh_encoding,
             destination,
         )?;
@@ -150,12 +150,12 @@ fn decode(
 
 fn encode(
     plain: Option<String>,
-    observed: &Option<String>,
+    observed: Option<&str>,
     encoding: TokenEncoding,
     config: &AuthConfig,
 ) -> AuthResult<Option<String>> {
     if encoding == TokenEncoding::Source {
-        return Ok(observed.clone());
+        return Ok(observed.map(str::to_owned));
     }
     plain
         .map(|plain| token_crypto::encrypt_with_config(&plain, config))

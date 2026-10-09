@@ -4,7 +4,10 @@ use serde_cbor_2::Value as Cbor;
 use webauthn_rs_core::{
     attestation::{FidoGenCeAaguid, assert_packed_attest_req, validate_extension},
     error::WebauthnError,
-    proto::*,
+    proto::{
+        AttestationMetadata, AttestedCredentialData, COSEAlgorithm, ParsedAttestationData,
+        Registration,
+    },
 };
 
 pub(super) fn packed(
@@ -19,7 +22,7 @@ pub(super) fn packed(
         return Err(WebauthnError::AttestationStatementAlgInvalid);
     };
     let algorithm =
-        COSEAlgorithm::try_from(*algorithm).map_err(|_| WebauthnError::COSEKeyInvalidAlgorithm)?;
+        COSEAlgorithm::try_from(*algorithm).map_err(|()| WebauthnError::COSEKeyInvalidAlgorithm)?;
     let Some(Cbor::Bytes(signature)) = statement.get(&Cbor::Text("sig".into())) else {
         return Err(WebauthnError::AttestationStatementSigMissing);
     };
@@ -34,7 +37,7 @@ pub(super) fn packed(
             return Err(WebauthnError::AttestationStatementSigInvalid);
         }
         assert_packed_attest_req(leaf)?;
-        drop(validate_extension::<FidoGenCeAaguid>(leaf, &acd.aaguid)?);
+        _ = validate_extension::<FidoGenCeAaguid>(leaf, &acd.aaguid)?;
         Ok((
             ParsedAttestationData::Basic(chain),
             AttestationMetadata::Packed {

@@ -1,4 +1,4 @@
-//! Opt-in Better Auth 1.7.6 / SimpleWebAuthn 13.3.3 ceremony policy.
+//! Opt-in Better Auth 1.7.6 / `SimpleWebAuthn` 13.3.3 ceremony policy.
 //! This extension is MPL-2.0, like the verifier it extends.
 use super::{crypto::COSEKey, data::AttestationObject};
 use base64::{
@@ -20,9 +20,16 @@ use std::{
     collections::BTreeMap,
     time::{SystemTime, UNIX_EPOCH},
 };
-use webauthn_rs_core::{crypto::compute_sha256, error::WebauthnError, proto::*};
+use webauthn_rs_core::{
+    crypto::compute_sha256,
+    error::WebauthnError,
+    proto::{
+        AttestationMetadata, AttestedCredentialData, COSEAlgorithm, CollectedClientData,
+        ParsedAttestationData, Registration,
+    },
+};
 
-/// Per-format trust anchors, equivalent to SimpleWebAuthn's SettingsService.
+/// Per-format trust anchors, equivalent to `SimpleWebAuthn`'s `SettingsService`.
 #[derive(Clone, Debug)]
 pub(in crate::passkey) struct SourcePolicy {
     /// PEM certificates. An empty configured list skips chain validation for
@@ -76,8 +83,8 @@ pub(super) fn client_data(
     }
     // This affects only parsed policy. The caller keeps the original byte
     // buffer, and every attestation/assertion signature covers its original hash.
-    drop(object.remove("crossOrigin"));
-    drop(object.remove("tokenBinding"));
+    _ = object.remove("crossOrigin");
+    _ = object.remove("tokenBinding");
     serde_json::from_value(parsed).map_err(WebauthnError::ParseJSONFailure)
 }
 
@@ -159,13 +166,12 @@ impl SourcePolicy {
             if usable.is_empty() {
                 return Err(WebauthnError::AttestationNotVerifiable);
             }
-            drop(self.roots.insert(object.fmt, usable));
+            _ = self.roots.insert(object.fmt, usable);
         }
         Ok(())
     }
 
     pub(super) fn check_leaf(
-        &self,
         object: &AttestationObject<Registration>,
     ) -> Result<(), WebauthnError> {
         if let Cbor::Map(statement) = &object.att_stmt
@@ -181,7 +187,7 @@ impl SourcePolicy {
             if object.fmt == "apple" {
                 check_ec_certificate(&leaf, true)?;
             } else {
-                let _ = certificate_algorithm(&leaf)?;
+                _ = certificate_algorithm(&leaf)?;
                 if object.fmt == "android-key" {
                     check_ec_certificate(&leaf, false)?;
                 }
@@ -195,11 +201,11 @@ impl SourcePolicy {
         format: &str,
         attestation: &ParsedAttestationData,
     ) -> Result<(), WebauthnError> {
-        let chain = match attestation {
-            ParsedAttestationData::Basic(chain)
-            | ParsedAttestationData::AttCa(chain)
-            | ParsedAttestationData::AnonCa(chain) => chain,
-            _ => return Ok(()),
+        let (ParsedAttestationData::Basic(chain)
+        | ParsedAttestationData::AttCa(chain)
+        | ParsedAttestationData::AnonCa(chain)) = attestation
+        else {
+            return Ok(());
         };
         if format == "android-key" {
             let (root, certificates) = chain.split_last().ok_or_else(malformed)?;
@@ -266,7 +272,6 @@ impl SourcePolicy {
     }
 
     pub(super) fn verify_u2f(
-        &self,
         acd: &AttestedCredentialData,
         object: &AttestationObject<Registration>,
         client_hash: &[u8],
@@ -295,7 +300,6 @@ impl SourcePolicy {
     }
 
     pub(super) fn verify_apple(
-        &self,
         acd: &AttestedCredentialData,
         object: &AttestationObject<Registration>,
         client_hash: &[u8],
@@ -386,7 +390,7 @@ impl SourcePolicy {
         let Some(Cbor::Integer(algorithm)) = statement.get(&Cbor::Text("alg".into())) else {
             return Err(malformed());
         };
-        let algorithm = COSEAlgorithm::try_from(*algorithm).map_err(|_| malformed())?;
+        let algorithm = COSEAlgorithm::try_from(*algorithm).map_err(|()| malformed())?;
         let Some(Cbor::Bytes(signature)) = statement.get(&Cbor::Text("sig".into())) else {
             return Err(malformed());
         };
@@ -493,7 +497,7 @@ impl SourcePolicy {
         let algorithm = match statement.get(&Cbor::Text("alg".into())) {
             None | Some(Cbor::Null | Cbor::Bool(false) | Cbor::Integer(0)) => None,
             Some(Cbor::Integer(algorithm)) => {
-                Some(COSEAlgorithm::try_from(*algorithm).map_err(|_| malformed())?)
+                Some(COSEAlgorithm::try_from(*algorithm).map_err(|()| malformed())?)
             }
             _ => return Err(malformed()),
         };
@@ -530,7 +534,8 @@ where
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| malformed())?
-        .as_secs() as i64;
+        .as_secs();
+    let now = i64::try_from(now).map_err(|_| malformed())?;
     if let Some(key) = &key {
         let cached = cache.lock().map_err(|_| malformed())?.get(key).cloned();
         if let Some(cached) = cached.filter(|list| list.next_update.is_none_or(|next| next > now)) {
@@ -573,13 +578,13 @@ where
         .and_then(|(_, crl)| crl.next_update().map(|time| time.timestamp()));
     let is_revoked = serials.contains(&serial);
     if let Some(key) = key {
-        drop(cache.lock().map_err(|_| malformed())?.insert(
+        _ = cache.lock().map_err(|_| malformed())?.insert(
             key,
             RevocationList {
                 serials,
                 next_update,
             },
-        ));
+        );
     }
     Ok(is_revoked)
 }
@@ -702,7 +707,7 @@ pub(super) fn verify_certificate_signature(
         | COSEAlgorithm::RS512
         | COSEAlgorithm::EDDSA => MessageDigest::sha512(),
         COSEAlgorithm::INSECURE_RS1 => MessageDigest::sha1(),
-        _ => return Err(malformed()),
+        COSEAlgorithm::PinUvProtocol => return Err(malformed()),
     };
     let public = certificate.public_key()?;
     let mut verifier = Verifier::new(hash, &public)?;

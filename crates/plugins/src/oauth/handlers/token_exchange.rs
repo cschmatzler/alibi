@@ -1,11 +1,18 @@
-use super::*;
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
+use crate::oauth::providers::OAuthClientAssertionContext;
+use crate::oauth::providers::OAuthProvider;
+use crate::oauth::providers::OAuthTokenEndpointAuth;
+use crate::oauth::providers::OAuthTokenGrant;
+use crate::oauth::providers::OAuthTokenSet;
+use crate::oauth::providers::OAuthUserInfoRequest;
+use crate::oauth::providers::OAuthUserInfoResponse;
+use alibi_core::AuthError;
+use alibi_core::AuthResult;
+use base64::Engine;
+use chrono::Utc;
 pub(in crate::oauth) async fn refresh_tokens_via_provider(
     provider: &OAuthProvider,
     refresh_token: &str,
-    context: Option<super::super::providers::OAuthRefreshContext<'_>>,
+    context: Option<crate::oauth::providers::OAuthRefreshContext<'_>>,
 ) -> AuthResult<OAuthTokenSet> {
     if let Some(handler) = &provider.refresh_access_token {
         return handler
@@ -129,7 +136,7 @@ pub(in crate::oauth::handlers) async fn provider_token_request(
             let value = reqwest::header::HeaderValue::from_str(value).map_err(|error| {
                 AuthError::config(format!("Invalid code grant header: {error}"))
             })?;
-            drop(headers.insert(name, value));
+            _ = headers.insert(name, value);
         }
         request = request.headers(headers);
     }
@@ -291,7 +298,7 @@ pub(in crate::oauth::handlers) fn with_default_access_expiry(
         && seconds != 0.0
         && !seconds.is_nan()
     {
-        tokens.access_token_expires_at = super::super::providers::remaining_profile::grant_expiry(
+        tokens.access_token_expires_at = crate::oauth::providers::remaining_profile::grant_expiry(
             &serde_json::json!(seconds),
             false,
         );
@@ -327,13 +334,13 @@ pub(in crate::oauth::handlers) fn parse_token_response(
         .and_then(|v| v.as_str())
         .map(String::from);
     let expiry = |field: &str| -> Option<chrono::DateTime<Utc>> {
-        super::super::providers::remaining_profile::grant_expiry(token_data.get(field)?, true)
+        crate::oauth::providers::remaining_profile::grant_expiry(token_data.get(field)?, true)
     };
     let access_token_expires_at = expiry("expires_in");
     let refresh_token_expires_at = expiry("refresh_token_expires_in");
     let scopes = match token_data.get("scope") {
         Some(serde_json::Value::String(scope)) => scope
-            .split(super::super::providers::remaining_profile::js_whitespace)
+            .split(crate::oauth::providers::remaining_profile::js_whitespace)
             .filter(|value| !value.is_empty())
             .map(String::from)
             .collect(),
@@ -341,7 +348,7 @@ pub(in crate::oauth::handlers) fn parse_token_response(
             .iter()
             .filter_map(serde_json::Value::as_str)
             .map(|value| {
-                value.trim_matches(super::super::providers::remaining_profile::js_whitespace)
+                value.trim_matches(crate::oauth::providers::remaining_profile::js_whitespace)
             })
             .filter(|value| !value.is_empty())
             .map(String::from)
@@ -364,9 +371,6 @@ pub(in crate::oauth::handlers) fn parse_token_response(
     })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn validate_authorization_code_via_provider(
     provider: &OAuthProvider,
     code: &str,
@@ -387,7 +391,7 @@ pub(crate) async fn validate_authorization_code_via_provider(
     {
         return handler
             .0
-            .validate_authorization_code(super::super::providers::OAuthAuthorizationCodeContext {
+            .validate_authorization_code(crate::oauth::providers::OAuthAuthorizationCodeContext {
                 code: code.into(),
                 redirect_uri: redirect_uri.into(),
                 code_verifier: code_verifier.map(str::to_owned),
@@ -450,9 +454,6 @@ pub(crate) async fn validate_authorization_code_via_provider(
     )
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(crate) async fn fetch_user_info_from_provider(
     provider: &OAuthProvider,
     request: OAuthUserInfoRequest,
@@ -465,7 +466,7 @@ pub(crate) async fn fetch_user_info_from_provider(
                 .is_some_and(|policy| policy.source_profile_exceptions)
                 && (handler.errors_are_exceptions()
                     || error.starts_with(
-                        super::super::providers::remaining_profile::PROFILE_EXCEPTION_PREFIX,
+                        crate::oauth::providers::remaining_profile::PROFILE_EXCEPTION_PREFIX,
                     ))
             {
                 AuthError::Api {
@@ -496,7 +497,7 @@ pub(crate) async fn fetch_user_info_from_provider(
             .map_err(|error| AuthError::internal(error.to_string()))?;
         let profile: serde_json::Value = serde_json::from_slice(&bytes)
             .map_err(|error| AuthError::internal(error.to_string()))?;
-        if !super::super::id_token::hosted_domain_allowed(
+        if !crate::oauth::id_token::hosted_domain_allowed(
             provider,
             profile.get("hd").and_then(serde_json::Value::as_str),
         ) {

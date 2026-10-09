@@ -21,6 +21,7 @@ use alibi_core::{
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Map;
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -357,7 +358,7 @@ impl OAuthProxyPlugin {
                 email: info.user.email,
                 name: info.user.name.unwrap_or_default(),
                 image: info.user.image,
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 email_verified: info.user.email_verified,
             },
             profile: Some(info.data),
@@ -661,73 +662,17 @@ impl OAuthProxyPlugin {
                         AuthError::Upstream { code, message, .. } => {
                             error_redirect(error_url, code, Some(message))
                         }
-                        error @ (AuthError::Api { .. }
-                        | AuthError::BadRequest(_)
-                        | AuthError::InvalidRequest(_)
-                        | AuthError::Validation(_)
-                        | AuthError::InvalidCredentials
-                        | AuthError::Unauthenticated
-                        | AuthError::AuthenticationFailed(_)
-                        | AuthError::SessionNotFound
-                        | AuthError::Forbidden(_)
-                        | AuthError::UserCreationCancelled
-                        | AuthError::BannedUser(_)
-                        | AuthError::Unauthorized
-                        | AuthError::UserNotFound
-                        | AuthError::NotFound(_)
-                        | AuthError::Conflict(_)
-                        | AuthError::MethodNotAllowed(_)
-                        | AuthError::PayloadTooLarge(_)
-                        | AuthError::UnprocessableEntity(_)
-                        | AuthError::RateLimited { .. }
-                        | AuthError::NotImplemented(_)
-                        | AuthError::Config(_)
-                        | AuthError::Database(_)
-                        | AuthError::Serialization(_)
-                        | AuthError::Plugin { .. }
-                        | AuthError::CallbackFailure(_)
-                        | AuthError::Internal(_)
-                        | AuthError::Encryption(_)
-                        | AuthError::PasswordHash(_)
-                        | AuthError::Jwt(_))
+                        error
                             if error.status_code() < 500
                                 || matches!(error, AuthError::Api { .. }) =>
                         {
                             Err(error)
                         }
-                        _error @ (AuthError::Api { .. }
-                        | AuthError::BadRequest(_)
-                        | AuthError::InvalidRequest(_)
-                        | AuthError::Validation(_)
-                        | AuthError::InvalidCredentials
-                        | AuthError::Unauthenticated
-                        | AuthError::AuthenticationFailed(_)
-                        | AuthError::SessionNotFound
-                        | AuthError::Forbidden(_)
-                        | AuthError::UserCreationCancelled
-                        | AuthError::BannedUser(_)
-                        | AuthError::Unauthorized
-                        | AuthError::UserNotFound
-                        | AuthError::NotFound(_)
-                        | AuthError::Conflict(_)
-                        | AuthError::MethodNotAllowed(_)
-                        | AuthError::PayloadTooLarge(_)
-                        | AuthError::UnprocessableEntity(_)
-                        | AuthError::RateLimited { .. }
-                        | AuthError::NotImplemented(_)
-                        | AuthError::Config(_)
-                        | AuthError::Database(_)
-                        | AuthError::Serialization(_)
-                        | AuthError::Plugin { .. }
-                        | AuthError::CallbackFailure(_)
-                        | AuthError::Internal(_)
-                        | AuthError::Encryption(_)
-                        | AuthError::PasswordHash(_)
-                        | AuthError::Jwt(_)) => {
+                        _ => {
                             // Source's ordinary exception response discards the
                             // accumulated endpoint headers; APIError redirects
                             // above retain the state-cookie cleanup instead.
-                            drop(req.take_response_headers());
+                            _ = req.take_response_headers();
                             req.extensions()
                                 .insert(OAuthProxyUnhandledError(AtomicBool::new(true)));
                             Ok(AuthResponse::new(500))
@@ -972,7 +917,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
         }
         response.body = alibi_core::utils::json::to_vec(&body)?;
         if response.headers.get("location").is_some() {
-            drop(response.headers.insert("Location", url.as_str()));
+            _ = response.headers.insert("Location", url.as_str());
         }
         Ok(response)
     }

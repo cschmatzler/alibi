@@ -1,4 +1,4 @@
-//! Better Auth ceremony policy layered on registry WebAuthn protocol/crypto types.
+//! Better Auth ceremony policy layered on registry `WebAuthn` protocol/crypto types.
 //! Registry code owns options and legacy ceremonies. These extensions retain
 //! original signed bytes and the persisted credential format. See README.md.
 mod attestation;
@@ -21,7 +21,18 @@ use policy::SourcePolicy;
 use serde::Deserialize;
 use std::ops::Deref;
 use url::Url;
-use webauthn_rs_core::{WebauthnCore, crypto::compute_sha256, error::WebauthnError, proto::*};
+use webauthn_rs_core::{
+    WebauthnCore,
+    crypto::compute_sha256,
+    error::WebauthnError,
+    proto::{
+        AttestationFormat, AttestationMetadata, Authentication, AuthenticationResult,
+        AuthenticationState, COSEAlgorithm, CredentialID, ExtnState, ParsedAttestation,
+        ParsedAttestationData, PublicKeyCredential, RegisterPublicKeyCredential,
+        RegisteredExtensions, Registration, RegistrationState, RequestRegistrationExtensions,
+        UserVerificationPolicy,
+    },
+};
 
 pub(super) struct Verifier {
     core: WebauthnCore,
@@ -107,17 +118,17 @@ impl Verifier {
             .acd
             .as_ref()
             .ok_or(WebauthnError::MissingAttestationCredentialData)?;
-        self.policy.check_leaf(&object)?;
+        SourcePolicy::check_leaf(&object)?;
         let hash = compute_sha256(registration.response.client_data_json.as_ref());
         let (attested, metadata) = match format {
             AttestationFormat::None => (ParsedAttestationData::None, AttestationMetadata::None),
             AttestationFormat::Packed => attestation::packed(acd, &object, &hash)?,
             AttestationFormat::Tpm => tpm::verify(acd, &object, &hash)?,
             AttestationFormat::FIDOU2F => (
-                self.policy.verify_u2f(acd, &object, &hash)?,
+                SourcePolicy::verify_u2f(acd, &object, &hash)?,
                 AttestationMetadata::None,
             ),
-            AttestationFormat::AppleAnonymous => self.policy.verify_apple(acd, &object, &hash)?,
+            AttestationFormat::AppleAnonymous => SourcePolicy::verify_apple(acd, &object, &hash)?,
             AttestationFormat::AndroidKey => self.policy.verify_android_key(acd, &object, &hash)?,
             AttestationFormat::AndroidSafetyNet => self.policy.verify_safetynet(&object, &hash)?,
         };

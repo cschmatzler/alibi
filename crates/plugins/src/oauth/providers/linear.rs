@@ -4,6 +4,7 @@ use super::{
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use async_trait::async_trait;
+use serde_json::Map;
 use serde_json::Value;
 
 /// Application-owned Linear configuration. Generic signup and asynchronous
@@ -149,10 +150,10 @@ impl OAuthUserInfoHandler for LinearUserInfo {
         let mut output = serde_json::Map::new();
         for (source, target) in [("name", "name"), ("email", "email"), ("avatarUrl", "image")] {
             if let Some(value) = profile.get(source) {
-                drop(output.insert(target.into(), value.clone()));
+                _ = output.insert(target.into(), value.clone());
             }
         }
-        drop(output.insert("emailVerified".into(), Value::Bool(false)));
+        _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(user) = &mapped {
             output.extend(user.public_profile(true));
         }
@@ -160,7 +161,7 @@ impl OAuthUserInfoHandler for LinearUserInfo {
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id: scalar(profile.get("id"))?.unwrap_or_default(),
                 name: scalar(profile.get("name"))?,
                 email: profile
@@ -214,7 +215,7 @@ fn subject(profile: &Value) -> Result<String, String> {
 }
 
 // Public factory field selection, including its actual transport whitespace.
-const USER_INFO_QUERY: &str = r#"
+const USER_INFO_QUERY: &str = r"
 							query {
 								viewer {
 									id
@@ -226,4 +227,4 @@ const USER_INFO_QUERY: &str = r#"
 									updatedAt
 								}
 							}
-						"#;
+						";

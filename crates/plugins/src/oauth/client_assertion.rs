@@ -10,6 +10,7 @@ use base64::{
 use rsa::{
     pkcs8::DecodePrivateKey,
     signature::{RandomizedSigner, SignatureEncoding, Signer},
+    traits::PublicKeyParts,
 };
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -42,7 +43,7 @@ impl OAuthPrivateKeyJwtOptions {
     /// # Errors
     /// Rejects missing key material, unsupported algorithms, and algorithm conflicts.
     pub fn into_assertion(self) -> Result<OAuthClientAssertion, String> {
-        let _algorithm = self.resolved_algorithm()?;
+        _ = self.resolved_algorithm()?;
         Ok(OAuthClientAssertion(Arc::new(self)))
     }
     fn resolved_algorithm(&self) -> Result<&str, String> {
@@ -110,7 +111,7 @@ impl OAuthPrivateKeyJwtOptions {
             let key = if let Some(jwk) = jwk {
                 // WebCrypto imports the complete two-prime private JWK.
                 for name in ["dp", "dq", "qi"] {
-                    let _component = field(jwk, name)?;
+                    _ = field(jwk, name)?;
                 }
                 rsa::RsaPrivateKey::from_components(
                     rsa::BigUint::from_bytes_be(&field(jwk, "n")?),
@@ -125,7 +126,6 @@ impl OAuthPrivateKeyJwtOptions {
             } else {
                 rsa::RsaPrivateKey::from_pkcs8_pem(pem).map_err(key_error)?
             };
-            use rsa::traits::PublicKeyParts;
             if key.n().bits() < 2048 {
                 return Err("RSA modulus length must be at least 2048 bits".into());
             }
@@ -214,9 +214,10 @@ impl OAuthClientAssertionGetter for OAuthPrivateKeyJwtOptions {
         if let Some(kid) = kid.filter(|k| !k.is_empty())
             && let Some(object) = header.as_object_mut()
         {
-            drop(object.insert("kid".into(), Value::String(kid)));
+            _ = object.insert("kid".into(), Value::String(kid));
         }
         let now = chrono::Utc::now().timestamp();
+        #[expect(clippy::cast_precision_loss, reason = "JavaScript number arithmetic")]
         let exp = now as f64 + self.expires_in.unwrap_or(120.0);
         if !exp.is_finite() {
             return Err("Invalid client assertion expiration time".into());

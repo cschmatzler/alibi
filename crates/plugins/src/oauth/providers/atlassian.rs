@@ -1,5 +1,6 @@
 //! Atlassian's published scope, PKCE, fixed audience and stable account subject.
 use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfo};
+use serde_json::Map;
 use serde_json::Value;
 
 /// Atlassian-specific configuration; callback and persistence policies remain
@@ -133,6 +134,10 @@ fn subject(profile: &Value) -> Result<String, String> {
     }
     Ok(value)
 }
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "signature fixed by the map_user_info callback type"
+)]
 fn atlassian_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
     let name = match profile.get("name") {
         Some(Value::Bool(false)) => String::new(),
@@ -140,7 +145,7 @@ fn atlassian_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
         value => string(value)?.unwrap_or_default(),
     };
     Ok(OAuthUserInfo {
-        additional_fields: Default::default(),
+        additional_fields: Map::default(),
         id: subject(&profile)?,
         name: Some(name),
         email: profile

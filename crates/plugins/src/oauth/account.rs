@@ -147,21 +147,25 @@ async fn persist_tokens(
         .authorization
         .as_ref()
         .is_some_and(|policy| policy.preserve_raw_profile_scalars);
-    let refresh_incoming = tokens.raw.as_ref().filter(|_| preserve_raw).map_or(
-        tokens
-            .refresh_token
-            .as_ref()
-            .is_some_and(|token| !token.is_empty()),
+    let refresh_incoming = tokens.raw.as_ref().filter(|_| preserve_raw).map_or_else(
+        || {
+            tokens
+                .refresh_token
+                .as_ref()
+                .is_some_and(|token| !token.is_empty())
+        },
         |raw| {
             raw.get("refresh_token")
                 .is_some_and(super::providers::remaining_profile::truthy)
         },
     );
-    let id_incoming = tokens.raw.as_ref().filter(|_| preserve_raw).map_or(
-        tokens
-            .id_token
-            .as_ref()
-            .is_some_and(|token| !token.is_empty()),
+    let id_incoming = tokens.raw.as_ref().filter(|_| preserve_raw).map_or_else(
+        || {
+            tokens
+                .id_token
+                .as_ref()
+                .is_some_and(|token| !token.is_empty())
+        },
         |raw| {
             if raw_policy.is_some_and(|policy| policy.token_response_omits_id_token) {
                 return false;
@@ -301,9 +305,6 @@ fn token_response(
     Ok(response)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 async fn handle_get_access_token_for_user(
     config: &OAuthConfig,
     req: &AuthRequest,
@@ -315,11 +316,9 @@ async fn handle_get_access_token_for_user(
         Err(message) => return invalid_selection("body", &message),
     };
     let mut session_request = req.clone();
-    drop(
-        session_request
-            .query
-            .insert("disableCookieCache".into(), "true".into()),
-    );
+    _ = session_request
+        .query
+        .insert("disableCookieCache".into(), "true".into());
     let user_id = if let Some(user_id) = server_user {
         user_id.to_owned()
     } else {
@@ -337,9 +336,6 @@ async fn handle_get_access_token_for_user(
     token_response(&response, &account, refreshed, req, ctx)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 async fn handle_refresh_token_for_user(
     config: &OAuthConfig,
     req: &AuthRequest,
@@ -351,11 +347,9 @@ async fn handle_refresh_token_for_user(
         Err(message) => return invalid_selection("body", &message),
     };
     let mut session_request = req.clone();
-    drop(
-        session_request
-            .query
-            .insert("disableCookieCache".into(), "true".into()),
-    );
+    _ = session_request
+        .query
+        .insert("disableCookieCache".into(), "true".into());
     let user_id = if let Some(user_id) = server_user {
         user_id.to_owned()
     } else {
@@ -436,14 +430,14 @@ async fn handle_refresh_token_for_user(
             .ok_or_else(|| AuthError::internal("Invalid refresh output"))?;
         match raw.get("access_token") {
             Some(value) => {
-                drop(object.insert("accessToken".into(), value.clone()));
+                _ = object.insert("accessToken".into(), value.clone());
             }
             None => {
-                drop(object.remove("accessToken"));
+                _ = object.remove("accessToken");
             }
         }
         if let Some(value) = raw.get("refresh_token").filter(|value| !value.is_null()) {
-            drop(object.insert("refreshToken".into(), value.clone()));
+            _ = object.insert("refreshToken".into(), value.clone());
         }
         if let Some(value) = raw
             .get("id_token")
@@ -455,7 +449,7 @@ async fn handle_refresh_token_for_user(
             })
             .filter(|value| super::providers::remaining_profile::truthy(value))
         {
-            drop(object.insert("idToken".into(), value.clone()));
+            _ = object.insert("idToken".into(), value.clone());
         }
     }
     token_response(
@@ -467,9 +461,6 @@ async fn handle_refresh_token_for_user(
     )
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 async fn handle_account_info_for_user(
     config: &OAuthConfig,
     req: &AuthRequest,
@@ -483,11 +474,9 @@ async fn handle_account_info_for_user(
     // Source's account helper disables browser cookie-cache reads for stateful
     // accounts while retaining a genuinely established virtual principal.
     let mut session_request = req.clone();
-    drop(
-        session_request
-            .query
-            .insert("disableCookieCache".into(), "true".into()),
-    );
+    _ = session_request
+        .query
+        .insert("disableCookieCache".into(), "true".into());
     let user_id = if let Some(user_id) = server_user {
         user_id.to_owned()
     } else {
@@ -575,8 +564,6 @@ pub(super) async fn handle_account_info(
 /// first, and cannot select a principal with a `userId` body/query field.
 pub struct OAuthAccountApi;
 impl OAuthAccountApi {
-    /// # Errors
-    /// Returns storage, provider, selection, or token errors.
     pub async fn get_access_token(
         user_id: &str,
         selection: OAuthAccountSelection,
@@ -585,8 +572,6 @@ impl OAuthAccountApi {
         let (config, req) = server_request(user_id, selection, "/get-access-token", ctx)?;
         handle_get_access_token_for_user(&config, &req, ctx, Some(user_id)).await
     }
-    /// # Errors
-    /// Returns storage, provider, selection, or refresh errors.
     pub async fn refresh_token(
         user_id: &str,
         selection: OAuthAccountSelection,
@@ -595,8 +580,6 @@ impl OAuthAccountApi {
         let (config, req) = server_request(user_id, selection, "/refresh-token", ctx)?;
         handle_refresh_token_for_user(&config, &req, ctx, Some(user_id)).await
     }
-    /// # Errors
-    /// Returns storage, provider, selection, or profile errors.
     pub async fn account_info(
         user_id: &str,
         selection: OAuthAccountSelection,
@@ -633,7 +616,7 @@ fn server_request(
     );
     match selection {
         OAuthAccountSelection::Id(id) => {
-            drop(req.query.insert("accountId".into(), id.clone()));
+            _ = req.query.insert("accountId".into(), id.clone());
             req.body = Some(
                 serde_json::to_vec(&serde_json::json!({"accountId":id}))
                     .map_err(|e| AuthError::internal(e.to_string()))?,

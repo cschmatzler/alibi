@@ -9,6 +9,7 @@ use crate::oauth::{
 };
 use async_trait::async_trait;
 use base64::Engine;
+use serde_json::Map;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -191,7 +192,7 @@ impl OAuthUserInfoHandler for CognitoUserInfo {
         {
             let name = profile_name(&profile);
             if let Some(object) = profile.as_object_mut() {
-                drop(object.insert("name".into(), name));
+                _ = object.insert("name".into(), name);
             }
             // Only decoding or the application's mapper may select the access-token
             // fallback. An invalid raw subject remains an admission failure.
@@ -276,8 +277,8 @@ fn finish_profile(
     let user = match mapped {
         Some(user) => user,
         None => OAuthUserInfo {
-            additional_fields: Default::default(),
-            id: id.clone(),
+            additional_fields: Map::default(),
+            id,
             email: profile
                 .get("email")
                 .and_then(Value::as_str)

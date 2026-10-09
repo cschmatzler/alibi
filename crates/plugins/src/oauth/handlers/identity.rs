@@ -1,4 +1,30 @@
-use super::*;
+use super::OAuthIdentity;
+use super::OAuthProcessPolicy;
+use super::OAuthSignInError;
+use super::ProcessOAuthUserResult;
+use super::cookies::account_cookie_max_age;
+use super::raw_truthy;
+use crate::helpers::apply_default_role;
+use crate::helpers::issue_selected_user_session_record;
+use crate::oauth::encryption::encrypt_provider_token_set;
+use crate::oauth::encryption::provider_token_nulls;
+use crate::oauth::providers::OAuthTokenSet;
+use crate::oauth::providers::OAuthUserInfo;
+use crate::oauth::state::AccountCookiePayload;
+use crate::oauth::state::account_cookie_name;
+use alibi_core::AuthAccount;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
+use alibi_core::CreateAccount;
+use alibi_core::CreateUser;
+use alibi_core::UpdateAccount;
+use alibi_core::UpdateUser;
+use alibi_core::entity::AuthUser;
+use alibi_core::field_policy::FieldValues;
+use alibi_core::user_validation::UserValidationAction;
+use alibi_core::user_validation::UserValidationData;
+use alibi_core::user_validation::UserValidationSource;
+use alibi_core::user_validation::validate_user_info;
 pub(in crate::oauth::handlers) async fn finish_oauth_session<S: alibi_core::AuthSchema>(
     user: &alibi_core::AdapterRecord<S::User>,
     is_register: bool,
@@ -108,7 +134,7 @@ pub(in crate::oauth::handlers) fn provider_fields(
         }
         alibi_core::field_policy::FieldInputError::Transform(error) => match error {
             AuthError::Api { .. } | AuthError::Upstream { .. } => {
-                OAuthSignInError::from_identity_denial(error)
+                OAuthSignInError::from_identity_denial(&error)
             }
             _ if creation => OAuthSignInError::Generic("unable to create user".into()),
             _ => OAuthSignInError::Generic(error.to_string()),
@@ -123,8 +149,8 @@ pub(in crate::oauth::handlers) fn provider_candidate(
     let mut candidate = CreateUser::new();
     candidate.id = Some(user_id.to_owned());
     candidate.email = Some(user_info.email.to_lowercase());
-    candidate.name = user_info.name.clone();
-    candidate.image = user_info.image.clone();
+    candidate.name.clone_from(&user_info.name);
+    candidate.image.clone_from(&user_info.image);
     candidate.email_verified = Some(user_info.email_verified);
     candidate
 }
@@ -146,7 +172,7 @@ pub(in crate::oauth::handlers) async fn validate_provider_identity(
     data.user.name = Some(user.name.as_deref().unwrap_or_default().to_owned());
     validate_user_info(&ctx.config, &mut data)
         .await
-        .map_err(OAuthSignInError::from_identity_denial)
+        .map_err(|error| OAuthSignInError::from_identity_denial(&error))
 }
 
 pub(in crate::oauth::handlers) fn verification_override(
@@ -203,7 +229,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     (raw_output, raw_policy): (
         Option<&alibi_core::field_policy::FieldOutput>,
-        Option<&super::super::providers::OAuthAuthorizationPolicy>,
+        Option<&crate::oauth::providers::OAuthAuthorizationPolicy>,
     ),
 ) -> Result<ProcessOAuthUserResult, OAuthSignInError> {
     let raw_verification = raw_output.and_then(|output| output.get("emailVerified"));
@@ -243,23 +269,22 @@ pub(crate) async fn process_oauth_sign_in_with_output(
         )
         .await?;
         if ctx.config.account.update_account_on_sign_in {
-            drop(
-                ctx.database
-                    .update_account_record(
-                        &existing_account.id(),
-                        UpdateAccount {
-                            provider_token_nulls: provider_token_nulls(tokens, raw_policy),
-                            access_token: token_bundle.access_token.clone(),
-                            refresh_token: token_bundle.refresh_token.clone(),
-                            id_token: token_bundle.id_token.clone(),
-                            access_token_expires_at: tokens.access_token_expires_at,
-                            refresh_token_expires_at: tokens.refresh_token_expires_at,
-                            ..Default::default()
-                        },
-                    )
-                    .await
-                    .map_err(|error| error.to_string())?,
-            );
+            _ = ctx
+                .database
+                .update_account_record(
+                    &existing_account.id(),
+                    UpdateAccount {
+                        provider_token_nulls: provider_token_nulls(tokens, raw_policy),
+                        access_token: token_bundle.access_token.clone(),
+                        refresh_token: token_bundle.refresh_token.clone(),
+                        id_token: token_bundle.id_token.clone(),
+                        access_token_expires_at: tokens.access_token_expires_at,
+                        refresh_token_expires_at: tokens.refresh_token_expires_at,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|error| error.to_string())?;
         }
 
         let mut user = existing_user;
@@ -404,7 +429,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
         let created_account = ctx
             .database
             .create_account_record(CreateAccount {
-                additional_fields: Default::default(),
+                additional_fields: FieldValues::default(),
                 user_id: linked_user.id().to_string(),
                 account_id: user_info.id.clone(),
                 provider_id: provider_name.to_owned(),
@@ -524,7 +549,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
         create_user.additional_fields = provider_fields(user_info, true, ctx)?;
 
         let mut create_account = CreateAccount {
-            additional_fields: Default::default(),
+            additional_fields: FieldValues::default(),
             user_id: String::new(),
             account_id: user_info.id.clone(),
             provider_id: provider_name.to_owned(),
@@ -555,7 +580,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
             .await
             .map_err(|error| {
                 if error.status_code() == 403 {
-                    OAuthSignInError::from_identity_denial(error)
+                    OAuthSignInError::from_identity_denial(&error)
                 } else {
                     OAuthSignInError::Generic("unable to create user".to_owned())
                 }

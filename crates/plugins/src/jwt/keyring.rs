@@ -1,4 +1,21 @@
-use super::*;
+use super::JwtAlgorithm;
+use super::JwtKeyPairConfig;
+use super::JwtKeyringContext;
+use super::JwtPlugin;
+use super::JwtSignOptions;
+use super::ResolvedJwtSigningKey;
+use super::crypto;
+use crate::token_crypto::decrypt_with_config;
+use crate::token_crypto::encrypt_with_config;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
+use alibi_core::AuthRequest;
+use alibi_core::AuthResult;
+use alibi_core::AuthSchema;
+use alibi_core::CreateJwk;
+use alibi_core::Jwk;
+use chrono::Utc;
+use std::str::FromStr;
 impl JwtPlugin {
     pub(in crate::jwt) async fn keys(
         &self,
@@ -50,10 +67,6 @@ impl JwtPlugin {
     }
 
     /// Provision a private signing key and its public JWK in persistent storage.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if key generation, key serialization, or JWK storage fails.
     pub async fn create_jwk<S: AuthSchema>(
         &self,
         config: Option<&JwtKeyPairConfig>,
@@ -118,10 +131,6 @@ impl JwtPlugin {
     }
 
     /// Select a live key, with explicit key or algorithm pinning when requested.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if a usable signing key cannot be loaded or generated.
     pub async fn resolve_signing_key<S: AuthSchema>(
         &self,
         options: &JwtSignOptions,

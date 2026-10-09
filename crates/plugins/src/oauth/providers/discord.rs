@@ -1,4 +1,5 @@
-use super::*;
+use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthScopeOrder, OAuthUserInfo, Value};
+use serde_json::Map;
 impl OAuthProvider {
     #[must_use]
     pub fn discord(client_id: &str, client_secret: &str) -> Self {
@@ -89,7 +90,7 @@ pub(in crate::oauth::providers) fn discord_user_info(
         format!("https://cdn.discordapp.com/avatars/{id}/{avatar}.{format}")
     };
     Ok(OAuthUserInfo {
-        additional_fields: Default::default(),
+        additional_fields: Map::default(),
         id: id.to_owned(),
         email: email.to_owned(),
         name: Some(

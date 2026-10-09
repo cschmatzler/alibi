@@ -1,5 +1,6 @@
 //! Cloudflare's API profile, scope ordering and OAuth credential transport.
 use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo};
+use serde_json::Map;
 use serde_json::Value;
 
 /// Cloudflare configuration. Generic callback/signup policies remain available
@@ -192,7 +193,7 @@ impl super::OAuthUserInfoHandler for CloudflareUserInfo {
         let user_output = mapped.as_ref().map(|user| user.public_profile(true));
         let id = subject(profile)?;
         let mut user = mapped.unwrap_or_else(|| OAuthUserInfo {
-            additional_fields: Default::default(),
+            additional_fields: Map::default(),
             id: id.clone(),
             email: email.clone(),
             name: Some(if name.is_empty() { email } else { name }),

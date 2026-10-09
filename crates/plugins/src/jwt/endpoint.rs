@@ -91,7 +91,7 @@ impl JwtPlugin {
         ServerEndpoint::new("jwt", "getJwks")
     }
 
-    /// Sign JSON through registered middleware; plain sign_jwt remains directly callable.
+    /// Sign JSON through registered middleware; plain `sign_jwt` remains directly callable.
     #[must_use]
     pub fn sign_endpoint(payload: JsValue) -> ServerEndpoint<JwtTokenOutput> {
         ServerEndpoint::new("jwt", "signJWT").with_body_value(JsValue::Object(
@@ -105,9 +105,9 @@ impl JwtPlugin {
         issuer: Option<String>,
     ) -> ServerEndpoint<JwtVerifyOutput> {
         let mut body = indexmap::IndexMap::new();
-        drop(body.insert("token".into(), JsValue::String(token.into())));
+        _ = body.insert("token".into(), JsValue::String(token.into()));
         if let Some(issuer) = issuer {
-            drop(body.insert("issuer".into(), JsValue::String(issuer)));
+            _ = body.insert("issuer".into(), JsValue::String(issuer));
         }
         ServerEndpoint::new("jwt", "verifyJWT").with_body_value(JsValue::Object(body))
     }
@@ -301,7 +301,7 @@ fn time_seconds(value: &str) -> AuthResult<f64> {
         .get(count..)
         .ok_or_else(invalid)?
         .strip_prefix(' ')
-        .unwrap_or(&text[count..]);
+        .unwrap_or_else(|| &text[count..]);
     let ago = unit.ends_with(" ago");
     let from_now = unit.ends_with(" from now");
     if (ago || from_now) && sign.is_some() {
@@ -317,9 +317,9 @@ fn time_seconds(value: &str) -> AuthResult<f64> {
         "minute" | "minutes" | "min" | "mins" | "m" => 60.0,
         "hour" | "hours" | "hr" | "hrs" | "h" => 3600.0,
         "day" | "days" | "d" => 86400.0,
-        "week" | "weeks" | "w" => 604800.0,
-        "month" | "months" | "mo" => 2592000.0,
-        "year" | "years" | "yr" | "yrs" | "y" => 31557600.0,
+        "week" | "weeks" | "w" => 604_800.0,
+        "month" | "months" | "mo" => 2_592_000.0,
+        "year" | "years" | "yr" | "yrs" | "y" => 31_557_600.0,
         _ => return Err(invalid()),
     };
     let seconds = number.parse::<f64>().map_err(|_| invalid())?

@@ -168,9 +168,6 @@ pub(super) fn challenge_cookie_name(auth_config: &AuthConfig, config: &PasskeyCo
         )
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn resolve_rp_id(
     config: &PasskeyConfig,
     auth_config: &AuthConfig,
@@ -187,16 +184,13 @@ pub(super) fn resolve_rp_id(
 
 /// Core verification for newly issued ceremonies, retaining RP configuration
 /// checks and requiring the exact configured origin in the original client data.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn build_verification_core(
     config: &PasskeyConfig,
     auth_config: &AuthConfig,
     origin: &str,
 ) -> AuthResult<Verifier> {
     // Retain the high-level builder's RP/origin configuration validation.
-    drop(build_webauthn(config, auth_config, origin)?);
+    _ = build_webauthn(config, auth_config, origin)?;
     let rp_id = resolve_rp_id(config, auth_config)?;
     let parsed_origin = Url::parse(origin)
         .map_err(|error| AuthError::bad_request(format!("Invalid passkey origin: {error}")))?;
@@ -275,9 +269,6 @@ fn validate_token_binding(
     Ok(())
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn finish_core_registration(
     core: &Verifier,
     registration: &RegisterPublicKeyCredential,
@@ -322,13 +313,10 @@ pub(super) fn finish_core_registration(
     core.register_credential(registration, state)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn finish_core_authentication(
     core: &Verifier,
     authentication: &PublicKeyCredential,
-    state: AuthenticationState,
+    state: &AuthenticationState,
     stored_passkey: &WebauthnPasskey,
     current_counter: u32,
     origin: &str,
@@ -367,12 +355,9 @@ pub(super) fn finish_core_authentication(
     credential.backup_eligible = data.backup_eligible;
     credential.counter = current_counter;
     // Verify the original signed bytes once. Parsing flags never grants authority.
-    core.authenticate_credential(authentication, &state, &credential)
+    core.authenticate_credential(authentication, state, &credential)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn build_webauthn(
     config: &PasskeyConfig,
     auth_config: &AuthConfig,
@@ -391,9 +376,6 @@ pub(super) fn build_webauthn(
         .map_err(|error| AuthError::config(format!("Invalid passkey config: {error}")))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn create_challenge_cookie(
     auth_config: &AuthConfig,
     ttl_secs: i64,
@@ -423,9 +405,6 @@ pub(super) fn create_challenge_cookie(
     )
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn decode_challenge_cookie(
     auth_config: &AuthConfig,
     raw_cookie: &str,
@@ -456,9 +435,6 @@ pub(super) fn generate_ts_user_handle() -> String {
     URL_SAFE_NO_PAD.encode(handle.as_bytes())
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn registration_options_json(
     options: CreationChallengeResponse,
     generated_user_handle: &str,
@@ -476,23 +452,23 @@ pub(super) fn registration_options_json(
             "Passkey registration options missing user object",
         ));
     };
-    drop(user.insert(
+    _ = user.insert(
         "id".to_owned(),
         Value::String(generated_user_handle.to_owned()),
-    ));
+    );
 
     if !root.contains_key("excludeCredentials") {
-        drop(root.insert("excludeCredentials".to_owned(), Value::Array(Vec::new())));
+        _ = root.insert("excludeCredentials".to_owned(), Value::Array(Vec::new()));
     }
 
-    drop(root.insert(
+    _ = root.insert(
         "pubKeyCredParams".to_owned(),
         json!([
             { "alg": -8, "type": "public-key" },
             { "alg": -7, "type": "public-key" },
             { "alg": -257, "type": "public-key" }
         ]),
-    ));
+    );
 
     let selection = root
         .entry("authenticatorSelection".to_owned())
@@ -502,34 +478,31 @@ pub(super) fn registration_options_json(
             "Passkey registration options missing authenticatorSelection object",
         ));
     };
-    drop(selection.insert(
+    _ = selection.insert(
         "userVerification".to_owned(),
         Value::String("preferred".to_owned()),
-    ));
-    drop(selection.insert(
+    );
+    _ = selection.insert(
         "residentKey".to_owned(),
         Value::String("preferred".to_owned()),
-    ));
-    drop(selection.insert("requireResidentKey".to_owned(), Value::Bool(false)));
+    );
+    _ = selection.insert("requireResidentKey".to_owned(), Value::Bool(false));
     if let Some(authenticator_attachment) = authenticator_attachment {
-        drop(selection.insert(
+        _ = selection.insert(
             "authenticatorAttachment".to_owned(),
             Value::String(authenticator_attachment.to_owned()),
-        ));
+        );
     }
 
-    drop(root.insert("hints".to_owned(), Value::Array(Vec::new())));
-    drop(root.insert("extensions".to_owned(), json!({ "credProps": true })));
-    drop(root.insert(
+    _ = root.insert("hints".to_owned(), Value::Array(Vec::new()));
+    _ = root.insert("extensions".to_owned(), json!({ "credProps": true }));
+    _ = root.insert(
         "timeout".to_owned(),
         Value::Number(OPTIONS_TIMEOUT_MS.into()),
-    ));
+    );
     Ok(value)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn authentication_options_json(options: RequestChallengeResponse) -> AuthResult<Value> {
     let mut value = serde_json::to_value(options.public_key)?;
     let Some(root) = value.as_object_mut() else {
@@ -543,25 +516,22 @@ pub(super) fn authentication_options_json(options: RequestChallengeResponse) -> 
         .and_then(Value::as_array)
         .is_some_and(Vec::is_empty)
     {
-        drop(root.remove("allowCredentials"));
+        _ = root.remove("allowCredentials");
     }
 
-    drop(root.remove("extensions"));
-    drop(root.insert(
+    _ = root.remove("extensions");
+    _ = root.insert(
         "timeout".to_owned(),
         Value::Number(OPTIONS_TIMEOUT_MS.into()),
-    ));
-    drop(root.insert(
+    );
+    _ = root.insert(
         "userVerification".to_owned(),
         Value::String("preferred".to_owned()),
-    ));
-    drop(root.remove("hints"));
+    );
+    _ = root.remove("hints");
     Ok(value)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn decode_credential_id(credential_id: &str) -> AuthResult<CredentialID> {
     let bytes = URL_SAFE_NO_PAD
         .decode(credential_id)
@@ -571,9 +541,6 @@ pub(super) fn decode_credential_id(credential_id: &str) -> AuthResult<Credential
     Ok(bytes.into())
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn extract_passkey_snapshot_fields(value: &Value) -> AuthResult<(u64, bool, bool)> {
     // webauthn-rs does not expose stable accessors for all persisted passkey
     // attributes we need at registration time. We intentionally depend on the
@@ -599,9 +566,6 @@ pub(super) fn extract_passkey_snapshot_fields(value: &Value) -> AuthResult<(u64,
     Ok((counter, backed_up, backup_eligible))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn snapshot_passkey(passkey: &impl Serialize) -> AuthResult<PasskeySnapshot> {
     let serialized = serde_json::to_string(passkey)?;
     let value: Value = serde_json::from_str(&serialized)?;
@@ -615,9 +579,6 @@ pub(super) fn snapshot_passkey(passkey: &impl Serialize) -> AuthResult<PasskeySn
     })
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn extract_registration_metadata(
     registration: &RegisterPublicKeyCredential,
 ) -> AuthResult<RegisteredPasskeyMetadata> {
@@ -667,11 +628,9 @@ pub(super) fn extract_registration_metadata(
         .get(offset..)
         .ok_or_else(|| AuthError::internal("Attestation authData missing credential public key"))?;
     let mut deserializer = serde_cbor_2::de::Deserializer::from_slice(credential_public_key);
-    drop(
-        serde_cbor_2::Value::deserialize(&mut deserializer).map_err(|error| {
-            AuthError::internal(format!("Invalid credential public key CBOR: {error}"))
-        })?,
-    );
+    _ = serde_cbor_2::Value::deserialize(&mut deserializer).map_err(|error| {
+        AuthError::internal(format!("Invalid credential public key CBOR: {error}"))
+    })?;
     let public_key_length = deserializer.byte_offset();
     let public_key = credential_public_key
         .get(..public_key_length)

@@ -64,7 +64,7 @@ pub struct PasskeyConfig {
     pub challenge_ttl_secs: i64,
     #[config(default = "better-auth-passkey".to_owned())]
     pub web_authn_challenge_cookie: String,
-    /// Per-format PEM roots, matching the verifier SettingsService.
+    /// Per-format PEM roots, matching the verifier `SettingsService`.
     /// Unspecified formats retain published defaults.
     #[config(default = None)]
     pub attestation_root_certificates: Option<std::collections::BTreeMap<String, Vec<String>>>,
@@ -74,11 +74,7 @@ pub struct PasskeyConfig {
     pub authentication: PasskeyAuthenticationConfig,
 }
 
-// -- Plugin --
-
 impl PasskeyPlugin {
-    // -- Handlers (delegate to core functions) --
-
     /// GET /passkey/generate-register-options
     async fn handle_generate_register_options(
         &self,
@@ -1072,15 +1068,14 @@ mod tests {
                     )
                 };
                 let token = uuid::Uuid::new_v4().to_string();
-                drop(
-                    ctx.verifications()
-                        .create(alibi_core::CreateVerification {
-                            identifier: token.clone(),
-                            value: serde_json::to_string(&state)?,
-                            expires_at: chrono::Utc::now() + Duration::minutes(5),
-                        })
-                        .await?,
-                );
+                _ = ctx
+                    .verifications()
+                    .create(alibi_core::CreateVerification {
+                        identifier: token.clone(),
+                        value: serde_json::to_string(&state)?,
+                        expires_at: chrono::Utc::now() + Duration::minutes(5),
+                    })
+                    .await?;
                 let cookie = webauthn::create_challenge_cookie(&ctx.config, 300, &token, config)?;
                 let client = serde_json::to_vec(
                     &serde_json::json!({"type":"webauthn.get","challenge":challenge,"origin":config.origin}),
@@ -1100,16 +1095,12 @@ mod tests {
                     Some(serde_json::to_vec(&body)?),
                     HashMap::new(),
                 );
-                drop(
-                    request
-                        .headers
-                        .insert("cookie".into(), cookie.split(';').next().unwrap().into()),
-                );
-                drop(
-                    request
-                        .headers
-                        .insert("origin".into(), config.origin.clone()),
-                );
+                _ = request
+                    .headers
+                    .insert("cookie".into(), cookie.split(';').next().unwrap().into());
+                _ = request
+                    .headers
+                    .insert("origin".into(), config.origin.clone());
                 let before = ctx
                     .database
                     .get_passkey_by_id(&persisted.id)

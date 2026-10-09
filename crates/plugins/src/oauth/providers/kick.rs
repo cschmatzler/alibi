@@ -1,9 +1,10 @@
-//! Kick's PKCE grants and first envelope profile bound by original user_id.
+//! Kick's PKCE grants and first envelope profile bound by original `user_id`.
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use async_trait::async_trait;
+use serde_json::Map;
 use serde_json::Value;
 
 /// Application-owned Kick configuration. Generic signup and asynchronous
@@ -147,7 +148,7 @@ impl OAuthUserInfoHandler for KickUserInfo {
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id: scalar(profile.get("user_id"))?.unwrap_or_default(),
                 name: scalar(profile.get("name"))?,
                 email: profile

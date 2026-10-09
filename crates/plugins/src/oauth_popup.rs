@@ -28,7 +28,7 @@ struct Marker {
     popup_nonce: String,
 }
 
-fn completion(origin: &str, message: Value) -> AuthResult<AuthResponse> {
+fn completion(origin: &str, message: &Value) -> AuthResult<AuthResponse> {
     let mut payload = json!({"type":"better-auth:oauth-popup", "targetOrigin":origin});
     if let (Some(payload), Some(message)) = (payload.as_object_mut(), message.as_object()) {
         payload.extend(message.clone());
@@ -72,7 +72,7 @@ impl OAuthPopupPlugin {
         let fail = |code: &str, description: String| {
             completion(
                 origin,
-                json!({"nonce":nonce,"error":{"code":code,"description":description}}),
+                &json!({"nonce":nonce,"error":{"code":code,"description":description}}),
             )
         };
         for (key, code) in [
@@ -97,24 +97,24 @@ impl OAuthPopupPlugin {
             );
         };
         let mut body = serde_json::Map::new();
-        drop(body.insert("provider".into(), json!(provider)));
-        drop(body.insert(
+        _ = body.insert("provider".into(), json!(provider));
+        _ = body.insert(
             "callbackURL".into(),
             json!(
-                    req.query
-                        .get("callbackURL")
-                        .filter(|v| !v.is_empty())
-                        .cloned()
-                        .unwrap_or_else(|| format!(
-                            "{}{}",
-                            ctx.config.base_url.trim_end_matches('/'),
-                            ctx.config.base_path
-                        ))
-                ),
-        ));
+                req.query
+                    .get("callbackURL")
+                    .filter(|v| !v.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| format!(
+                        "{}{}",
+                        ctx.config.base_url.trim_end_matches('/'),
+                        ctx.config.base_path
+                    ))
+            ),
+        );
         for key in ["errorCallbackURL", "newUserCallbackURL"] {
             if let Some(value) = req.query.get(key) {
-                drop(body.insert(key.into(), json!(value)));
+                _ = body.insert(key.into(), json!(value));
             }
         }
         if req
@@ -122,13 +122,13 @@ impl OAuthPopupPlugin {
             .get("requestSignUp")
             .is_some_and(|value| value == "true")
         {
-            drop(body.insert("requestSignUp".into(), json!(true)));
+            _ = body.insert("requestSignUp".into(), json!(true));
         }
         if let Some(scopes) = req.query.get("scopes").filter(|value| !value.is_empty()) {
-            drop(body.insert(
+            _ = body.insert(
                 "scopes".into(),
                 json!(scopes.split(',').collect::<Vec<_>>()),
-            ));
+            );
         }
         if let Some(data) = req
             .query
@@ -136,31 +136,29 @@ impl OAuthPopupPlugin {
             .and_then(|value| serde_json::from_str::<Value>(value).ok())
             .filter(Value::is_object)
         {
-            drop(
-                body.insert(
-                    "additionalData".into(),
-                    Value::Object(
-                        data.as_object()
-                            .into_iter()
-                            .flatten()
-                            .filter(|(key, _)| {
-                                !matches!(
-                                    key.as_str(),
-                                    "callbackURL"
-                                        | "codeVerifier"
-                                        | "errorURL"
-                                        | "newUserURL"
-                                        | "expiresAt"
-                                        | "oauthState"
-                                        | "link"
-                                        | "requestSignUp"
-                                        | "idTokenNonce"
-                                        | "serverContext"
-                                )
-                            })
-                            .map(|(key, value)| (key.clone(), value.clone()))
-                            .collect(),
-                    ),
+            _ = body.insert(
+                "additionalData".into(),
+                Value::Object(
+                    data.as_object()
+                        .into_iter()
+                        .flatten()
+                        .filter(|(key, _)| {
+                            !matches!(
+                                key.as_str(),
+                                "callbackURL"
+                                    | "codeVerifier"
+                                    | "errorURL"
+                                    | "newUserURL"
+                                    | "expiresAt"
+                                    | "oauthState"
+                                    | "link"
+                                    | "requestSignUp"
+                                    | "idTokenNonce"
+                                    | "serverContext"
+                            )
+                        })
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect(),
                 ),
             );
         }
@@ -269,7 +267,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthPopupPlugin {
                 .filter(|cookie| cookie.name() == token_name)
                 .map(|cookie| {
                     urlencoding::decode(cookie.value())
-                        .map_or_else(|_| cookie.value().to_owned(), |value| value.into_owned())
+                        .map_or_else(|_| cookie.value().to_owned(), std::borrow::Cow::into_owned)
                 })
         });
         let message = if let Some(token) = token.filter(|value| !value.is_empty()) {
@@ -294,21 +292,21 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthPopupPlugin {
                 return Ok(response);
             };
             let mut error_data = serde_json::Map::new();
-            drop(error_data.insert("code".into(), json!(error)));
+            _ = error_data.insert("code".into(), json!(error));
             if let Some(description) = url
                 .query_pairs()
                 .find(|(key, _)| key == "error_description")
                 .map(|(_, value)| value.into_owned())
             {
-                drop(error_data.insert("description".into(), json!(description)));
+                _ = error_data.insert("description".into(), json!(description));
             }
             json!({"nonce":marker.popup_nonce,"error":error_data})
         };
-        let html = completion(&marker.popup_origin, message)?;
+        let html = completion(&marker.popup_origin, &message)?;
         response.status = html.status;
         response.body = html.body;
         for (name, value) in html.headers.iter() {
-            drop(response.headers.insert(name.clone(), value.clone()));
+            _ = response.headers.insert(name.clone(), value.clone());
         }
         Ok(response)
     }

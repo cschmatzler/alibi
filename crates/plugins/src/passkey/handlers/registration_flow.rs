@@ -1,7 +1,51 @@
-use super::*;
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
+use super::PasskeyHandlerOutcome;
+use super::PasskeyHandlerResult;
+use super::challenge_not_found;
+use super::generation_origin;
+use super::passkey_registration_failure;
+use super::registration_value;
+use super::response_code;
+use super::response_null;
+use crate::passkey::PasskeyConfig;
+use crate::passkey::PasskeyRegistrationUser;
+use crate::passkey::types::VerifyRegistrationRequest;
+use crate::passkey::webauthn::StoredAuthenticationState;
+use crate::passkey::webauthn::StoredCoreRegistrationState;
+use crate::passkey::webauthn::StoredRegistrationState;
+use crate::passkey::webauthn::StoredRegistrationVerifier;
+use crate::passkey::webauthn::build_verification_core;
+use crate::passkey::webauthn::build_webauthn;
+use crate::passkey::webauthn::challenge_cookie_name;
+use crate::passkey::webauthn::create_challenge_cookie;
+use crate::passkey::webauthn::decode_challenge_cookie;
+use crate::passkey::webauthn::decode_credential_id;
+use crate::passkey::webauthn::extract_registration_metadata;
+use crate::passkey::webauthn::finish_core_registration;
+use crate::passkey::webauthn::generate_ts_user_handle;
+use crate::passkey::webauthn::get_cookie_value;
+use crate::passkey::webauthn::parse_transports_csv;
+use crate::passkey::webauthn::registration_options_json;
+use crate::passkey::webauthn::snapshot_passkey;
+use crate::passkey::webauthn::transports_to_csv;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
+use alibi_core::AuthPasskey;
+use alibi_core::AuthResult;
+use alibi_core::AuthUser;
+use alibi_core::CreatePasskey;
+use alibi_core::CreateVerification;
+use base64::Engine;
+use chrono::Duration;
+use chrono::Utc;
+use serde_json::Value;
+use serde_json::json;
+use uuid::Uuid;
+use webauthn_rs::prelude::RegisterPublicKeyCredential;
+use webauthn_rs_core::error::WebauthnError;
+use webauthn_rs_core::proto::AttestationConveyancePreference;
+use webauthn_rs_core::proto::COSEAlgorithm;
+use webauthn_rs_core::proto::RequestRegistrationExtensions;
+use webauthn_rs_core::proto::UserVerificationPolicy;
 pub(in crate::passkey) async fn generate_register_options_core(
     user: &PasskeyRegistrationUser,
     requested_context: Option<&str>,
@@ -27,7 +71,7 @@ pub(in crate::passkey) async fn generate_register_options_core(
             if let Some(transports) = passkey.transports().map(parse_transports_csv)
                 && let Some(object) = descriptor.as_object_mut()
             {
-                drop(object.insert("transports".to_owned(), json!(transports)));
+                _ = object.insert("transports".to_owned(), json!(transports));
             }
             descriptor
         })
@@ -89,24 +133,23 @@ pub(in crate::passkey) async fn generate_register_options_core(
         user: Some(user.clone()),
         context: requested_context.map(str::to_owned),
         state: StoredRegistrationVerifier::Source(StoredCoreRegistrationState::CoreRawNone {
-            policy: super::super::raw_none::RawNonePolicy {
+            policy: crate::passkey::raw_none::RawNonePolicy {
                 challenge: base64::engine::general_purpose::URL_SAFE_NO_PAD
                     .encode(options.public_key.challenge.as_ref()),
-                rp_id: super::super::webauthn::resolve_rp_id(config, &ctx.config)?,
+                rp_id: crate::passkey::webauthn::resolve_rp_id(config, &ctx.config)?,
                 origin: generation_origin(config, ctx),
             },
             state,
         }),
     })?;
-    drop(
-        ctx.verifications()
-            .create(CreateVerification {
-                identifier: token.clone(),
-                value: serialized_state,
-                expires_at,
-            })
-            .await?,
-    );
+    _ = ctx
+        .verifications()
+        .create(CreateVerification {
+            identifier: token.clone(),
+            value: serialized_state,
+            expires_at,
+        })
+        .await?;
 
     let cookie = create_challenge_cookie(&ctx.config, config.challenge_ttl_secs, &token, config)?;
     let mut response = registration_options_json(
@@ -125,14 +168,14 @@ pub(in crate::passkey) async fn generate_register_options_core(
             ("authenticatorAttachment", &policy.authenticator_attachment),
         ] {
             if let Some(value) = value {
-                drop(selection.insert(name.into(), json!(value)));
+                _ = selection.insert(name.into(), json!(value));
             }
         }
         if let Some(resident_key) = &policy.resident_key {
-            drop(selection.insert(
+            _ = selection.insert(
                 "requireResidentKey".into(),
                 json!(resident_key == "required"),
-            ));
+            );
         }
     }
     if let Some(attachment) = authenticator_attachment
@@ -140,22 +183,22 @@ pub(in crate::passkey) async fn generate_register_options_core(
             .get_mut("authenticatorSelection")
             .and_then(Value::as_object_mut)
     {
-        let _ = selection.insert("authenticatorAttachment".into(), json!(attachment));
+        _ = selection.insert("authenticatorAttachment".into(), json!(attachment));
     }
     if let Some(mut extensions) = extensions {
         let object = extensions
             .as_object_mut()
             .ok_or_else(|| AuthError::bad_request("Passkey extensions must be an object"))?;
-        let _ = object.insert("credProps".into(), json!(true));
+        _ = object.insert("credProps".into(), json!(true));
         if let Some(object) = response.as_object_mut() {
-            let _ = object.insert("extensions".into(), extensions);
+            _ = object.insert("extensions".into(), extensions);
         }
     }
     if let Some(object) = response.as_object_mut() {
-        drop(object.insert(
+        _ = object.insert(
             "excludeCredentials".to_owned(),
             Value::Array(exclude_credentials_json),
-        ));
+        );
     }
     Ok((response, cookie))
 }
@@ -164,9 +207,6 @@ pub(in crate::passkey) async fn generate_register_options_core(
     clippy::too_many_lines,
     reason = "Keep challenge consumption, credential verification, and registration callbacks in protocol order"
 )]
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSchema>(
     body: &VerifyRegistrationRequest,
     req: &alibi_core::AuthRequest,
@@ -174,7 +214,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
     config: &PasskeyConfig,
     ctx: &AuthContext<S>,
 ) -> PasskeyHandlerResult<Value> {
-    use super::super::registration::{
+    use crate::passkey::registration::{
         PasskeyRegistrationContext, VerifiedPasskeyRegistration, trim_name,
     };
 
@@ -182,7 +222,8 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
         return response_null(400);
     };
 
-    let Some(origin) = super::super::webauthn::ceremony_origin(config, req, body.response.as_ref())
+    let Some(origin) =
+        crate::passkey::webauthn::ceremony_origin(config, req, body.response.as_ref())
     else {
         return response_null(400);
     };
@@ -234,7 +275,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
             && let Some(alibi_core::utils::json::JsValue::Object(authenticator)) =
                 response.get_mut("response")
         {
-            drop(authenticator.shift_remove("transports"));
+            _ = authenticator.shift_remove("transports");
         }
     }
     let registration: RegisterPublicKeyCredential =
@@ -248,8 +289,12 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
             policy,
             ..
         }) => {
-            match super::super::raw_none::register_raw_key(&registration, response, policy, &origin)
-            {
+            match crate::passkey::raw_none::register_raw_key(
+                &registration,
+                response,
+                policy,
+                &origin,
+            ) {
                 Ok(value) => value,
                 Err(WebauthnError::AttestationStatementSigInvalid) => {
                     return response_code(
@@ -264,56 +309,56 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
         StoredRegistrationVerifier::Source(_) | StoredRegistrationVerifier::Legacy(_) => None,
     };
     let (snapshot, metadata, credential_id) = if let Some(raw) = raw_registration {
-        let metadata = super::super::webauthn::RegisteredPasskeyMetadata {
+        let metadata = crate::passkey::webauthn::RegisteredPasskeyMetadata {
             public_key: base64::engine::general_purpose::STANDARD.encode(raw.public_key()),
             aaguid: Some(Uuid::from_bytes(raw.aaguid()).to_string()),
         };
         (
             raw.snapshot()?,
             metadata,
-            super::super::raw_none::raw_credential_id(&raw),
+            crate::passkey::raw_none::raw_credential_id(&raw),
         )
     } else {
-        let verified_passkey: super::super::source::credential::Passkey = match &stored_state.state
-        {
-            StoredRegistrationVerifier::Legacy(state) => {
-                let Ok(webauthn) = build_webauthn(config, &ctx.config, &origin) else {
-                    return passkey_registration_failure();
-                };
-                match webauthn.finish_passkey_registration(&registration, state) {
-                    Ok(passkey) => passkey.into(),
-                    Err(_) => return passkey_registration_failure(),
-                }
-            }
-            StoredRegistrationVerifier::Source(
-                StoredCoreRegistrationState::Core { state }
-                | StoredCoreRegistrationState::CoreRawNone { state, .. },
-            ) => {
-                let Ok(core) = super::super::webauthn::build_registration_core(
-                    config,
-                    &ctx.config,
-                    &origin,
-                    &registration,
-                )
-                .await
-                else {
-                    return passkey_registration_failure();
-                };
-                match finish_core_registration(&core, &registration, state, &origin) {
-                    Ok(passkey) => passkey,
-                    // Source returns false for an invalid signature, including an
-                    // invalid Ed25519 length; malformed ES256 DER throws instead.
-                    Err(WebauthnError::AttestationStatementSigInvalid) => {
-                        return response_code(
-                            400,
-                            "FAILED_TO_VERIFY_REGISTRATION",
-                            "Failed to verify registration",
-                        );
+        let verified_passkey: crate::passkey::source::credential::Passkey =
+            match &stored_state.state {
+                StoredRegistrationVerifier::Legacy(state) => {
+                    let Ok(webauthn) = build_webauthn(config, &ctx.config, &origin) else {
+                        return passkey_registration_failure();
+                    };
+                    match webauthn.finish_passkey_registration(&registration, state) {
+                        Ok(passkey) => passkey.into(),
+                        Err(_) => return passkey_registration_failure(),
                     }
-                    Err(_) => return passkey_registration_failure(),
                 }
-            }
-        };
+                StoredRegistrationVerifier::Source(
+                    StoredCoreRegistrationState::Core { state }
+                    | StoredCoreRegistrationState::CoreRawNone { state, .. },
+                ) => {
+                    let Ok(core) = crate::passkey::webauthn::build_registration_core(
+                        config,
+                        &ctx.config,
+                        &origin,
+                        &registration,
+                    )
+                    .await
+                    else {
+                        return passkey_registration_failure();
+                    };
+                    match finish_core_registration(&core, &registration, state, &origin) {
+                        Ok(passkey) => passkey,
+                        // Source returns false for an invalid signature, including an
+                        // invalid Ed25519 length; malformed ES256 DER throws instead.
+                        Err(WebauthnError::AttestationStatementSigInvalid) => {
+                            return response_code(
+                                400,
+                                "FAILED_TO_VERIFY_REGISTRATION",
+                                "Failed to verify registration",
+                            );
+                        }
+                        Err(_) => return passkey_registration_failure(),
+                    }
+                }
+            };
         let Ok(snapshot) = snapshot_passkey(&verified_passkey) else {
             return passkey_registration_failure();
         };
@@ -543,11 +588,11 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                     })?;
                 let mut result = registration_value(&passkey)?;
                 if let Some(object) = result.as_object_mut() {
-                    drop(object.insert("user".into(), serde_json::to_value(ctx.user_view(&user))?));
-                    drop(object.insert(
+                    _ = object.insert("user".into(), serde_json::to_value(ctx.user_view(&user))?);
+                    _ = object.insert(
                         "session".into(),
                         serde_json::to_value(ctx.session_view(&session))?,
-                    ));
+                    );
                 }
                 Ok(result)
             }
@@ -565,7 +610,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
     };
     match outcome {
         Ok(value) => Ok(PasskeyHandlerOutcome::Success(value)),
-        Err(error) if super::super::registration::is_application_error(&error) => Err(error),
+        Err(error) if crate::passkey::registration::is_application_error(&error) => Err(error),
         Err(_) => passkey_registration_failure(),
     }
 }

@@ -1,4 +1,7 @@
 //! One-time discovery from trusted application configuration, matching genericOAuth.
+use super::OAuthTokenEndpointAuth::{
+    ClientSecretBasic, ClientSecretPost, None as Public, PrivateKeyJwt,
+};
 use super::{
     OAuthAuthorizationPolicy, OAuthIdTokenVerifier, OAuthProfileMapper, OAuthProvider,
     OAuthScopeOrder, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
@@ -8,6 +11,7 @@ use crate::oauth::{HttpOAuthJwksSource, OAuthJwksSource};
 use async_trait::async_trait;
 use base64::Engine;
 use jsonwebtoken::{Algorithm, DecodingKey};
+use serde_json::Map;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -194,9 +198,6 @@ impl GenericOAuthConfig {
                 Err(GenericOAuthError::RequiredVerificationUnavailable)
             };
         }
-        use super::OAuthTokenEndpointAuth::{
-            ClientSecretBasic, ClientSecretPost, None as Public, PrivateKeyJwt,
-        };
         if matches!(policy.token_endpoint_auth, Some(Public | PrivateKeyJwt))
             && !self.provider.client_secret.is_empty()
             || matches!(
@@ -207,11 +208,9 @@ impl GenericOAuthConfig {
             return Err(GenericOAuthError::InvalidTokenAuthentication);
         }
         // Generic OAuth merges request scopes before its configured scopes.
-        drop(
-            policy
-                .configured_scopes
-                .splice(0..0, std::mem::take(&mut self.provider.scopes)),
-        );
+        _ = policy
+            .configured_scopes
+            .splice(0..0, std::mem::take(&mut self.provider.scopes));
         policy.end_session = if self.disable_provider_logout {
             None
         } else {
@@ -316,11 +315,11 @@ impl OAuthUserInfoHandler for GenericUserInfo {
         let mut raw = if let Some(mut profile) = decoded {
             if let Some(object) = profile.as_object_mut() {
                 let id = object.get("sub").cloned().unwrap_or(Value::Null);
-                let _entry = object.entry("id").or_insert(id);
+                _ = object.entry("id").or_insert(id);
                 let verified = object.get("email_verified").cloned().unwrap_or(Value::Null);
-                let _entry = object.entry("emailVerified").or_insert(verified);
+                _ = object.entry("emailVerified").or_insert(verified);
                 if let Some(image) = object.get("picture").cloned() {
-                    let _entry = object.entry("image").or_insert(image);
+                    _ = object.entry("image").or_insert(image);
                 }
             }
             profile
@@ -341,25 +340,23 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                 .await
                 .map_err(|_| "Generic OAuth user info unavailable")?;
             if let Some(object) = profile.as_object_mut() {
-                drop(
-                    object.insert(
-                        "emailVerified".into(),
-                        object
-                            .get("email_verified")
-                            .cloned()
-                            .unwrap_or(Value::Bool(false)),
-                    ),
+                _ = object.insert(
+                    "emailVerified".into(),
+                    object
+                        .get("email_verified")
+                        .cloned()
+                        .unwrap_or(Value::Bool(false)),
                 );
                 if let Some(image) = object.get("picture").cloned() {
-                    drop(object.insert("image".into(), image));
+                    _ = object.insert("image".into(), image);
                 } else {
-                    drop(object.remove("image"));
+                    _ = object.remove("image");
                 }
             }
             profile
         };
         let user = OAuthUserInfo {
-            additional_fields: Default::default(),
+            additional_fields: Map::default(),
             id: string(&raw, "id").unwrap_or_default(),
             email: string(&raw, "email").unwrap_or_default(),
             name: string(&raw, "name"),
@@ -474,7 +471,7 @@ impl DiscoveryVerifier {
             return Some(false);
         }
         if matching.first()?.get("kty").and_then(Value::as_str) == Some("RSA")
-            && !super::super::id_token::remote_rsa_public_key(matching.first()?)
+            && !crate::oauth::id_token::remote_rsa_public_key(matching.first()?)
         {
             return Some(false);
         }

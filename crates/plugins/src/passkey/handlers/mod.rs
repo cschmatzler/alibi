@@ -2,45 +2,17 @@ mod authentication_flow;
 mod management;
 mod registration_flow;
 
-use super::types::{
-    DeletePasskeyRequest, PasskeyResponse, SessionResponse, UpdatePasskeyRequest,
-    VerifyAuthenticationRequest, VerifyRegistrationRequest,
-};
-use super::webauthn::{
-    StoredAuthenticationState, StoredCoreRegistrationState, StoredRegistrationState,
-    StoredRegistrationVerifier, authentication_options_json, build_verification_core,
-    build_webauthn, challenge_cookie_name, create_challenge_cookie,
-    credential_id_from_authentication, decode_challenge_cookie, decode_credential_id,
-    extract_registration_metadata, finish_core_authentication, finish_core_registration,
-    generate_ts_user_handle, get_cookie_value, parse_transports_csv, registration_options_json,
-    snapshot_passkey, transports_to_csv,
-};
-use super::{PasskeyConfig, PasskeyRegistrationUser};
-use crate::StatusResponse;
-use crate::helpers::{SessionIssueError, issue_user_session_record};
-use alibi_core::entity::{AuthPasskey, AuthSession, AuthUser};
-use alibi_core::types::UpdatePasskeyAuthentication;
+use super::PasskeyConfig;
 use alibi_core::wire::PasskeyView;
-use alibi_core::{AuthContext, AuthError, AuthResult, CreatePasskey, CreateVerification};
+use alibi_core::{AuthContext, AuthError, AuthResult};
 pub(super) use authentication_flow::generate_authenticate_options_core;
 pub(super) use authentication_flow::verify_authentication_core;
-use base64::Engine;
-use chrono::{Duration, Utc};
 pub(super) use management::delete_passkey_core;
 pub(super) use management::list_user_passkeys_core;
 pub(super) use management::update_passkey_core;
 pub(super) use registration_flow::generate_register_options_core;
 pub(super) use registration_flow::verify_registration_core;
 use serde_json::{Value, json};
-use uuid::Uuid;
-use webauthn_rs::prelude::{DiscoverableKey, PublicKeyCredential, RegisterPublicKeyCredential};
-use webauthn_rs_core::{
-    error::WebauthnError,
-    proto::{
-        AttestationConveyancePreference, COSEAlgorithm, RequestRegistrationExtensions,
-        UserVerificationPolicy,
-    },
-};
 
 pub(super) type PasskeyHandlerResult<T> = AuthResult<PasskeyHandlerOutcome<T>>;
 
@@ -111,7 +83,7 @@ fn registration_value(passkey: &alibi_core::Passkey) -> AuthResult<Value> {
     if passkey.name.is_none()
         && let Some(object) = value.as_object_mut()
     {
-        drop(object.insert("name".into(), Value::Null));
+        _ = object.insert("name".into(), Value::Null);
     }
     Ok(value)
 }

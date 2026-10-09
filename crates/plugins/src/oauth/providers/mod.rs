@@ -117,16 +117,16 @@ impl OAuthUserInfo {
     #[must_use]
     pub fn public_profile(&self, include_id: bool) -> alibi_core::field_policy::FieldOutput {
         let mut output = self.additional_fields.clone();
-        drop(output.insert("email".into(), Value::String(self.email.clone())));
-        drop(output.insert("emailVerified".into(), Value::Bool(self.email_verified)));
+        _ = output.insert("email".into(), Value::String(self.email.clone()));
+        _ = output.insert("emailVerified".into(), Value::Bool(self.email_verified));
         if include_id {
-            drop(output.insert("id".into(), Value::String(self.id.clone())));
+            _ = output.insert("id".into(), Value::String(self.id.clone()));
         }
         if let Some(name) = &self.name {
-            drop(output.insert("name".into(), Value::String(name.clone())));
+            _ = output.insert("name".into(), Value::String(name.clone()));
         }
         if let Some(image) = &self.image {
-            drop(output.insert("image".into(), Value::String(image.clone())));
+            _ = output.insert("image".into(), Value::String(image.clone()));
         }
         output
     }
@@ -224,11 +224,11 @@ pub(super) fn apply_application_mapping(
             "name" => {
                 response.user.name = remaining_profile::scalar(
                     Some(&value).filter(|value| remaining_profile::truthy(value)),
-                )?
+                )?;
             }
             "image" => response.user.image = remaining_profile::scalar(Some(&value))?,
             _ => {
-                drop(response.user.additional_fields.insert(key, value));
+                _ = response.user.additional_fields.insert(key, value);
             }
         }
     }
@@ -382,7 +382,7 @@ pub enum OAuthTokenEndpointAuth {
     ClientSecretPost,
     PrivateKeyJwt,
     None,
-    /// TikTok authenticates with client_key and client_secret, never client_id.
+    /// `TikTok` authenticates with `client_key` and `client_secret`, never `client_id`.
     ClientKeyPost,
 }
 
@@ -463,7 +463,7 @@ pub struct OAuthAuthorizationPolicy {
     pub client_id_parameter: String,
     /// Custom URL factories may interpolate the entire client array.
     pub literal_client_id: Option<String>,
-    /// WeChat's custom factory constructs an expiry even for zero/null seconds.
+    /// `WeChat`'s custom factory constructs an expiry even for zero/null seconds.
     pub token_expiry_always: bool,
     /// Custom factory token objects can omit returned grant ID tokens.
     pub token_response_omits_id_token: bool,
@@ -472,14 +472,14 @@ pub struct OAuthAuthorizationPolicy {
     pub authorization_fragment: Option<String>,
     /// Dedicated factories may lack a built-in refresh implementation (Vercel).
     pub supports_refresh: bool,
-    /// TikTok's published factory ignores mapProfileToUser.
+    /// `TikTok`'s published factory ignores mapProfileToUser.
     pub supports_profile_mapper: bool,
     /// Published social factories pass through omitted access tokens to userinfo.
     pub allow_missing_access_token: bool,
     /// Generic-provider fallback, applied only when a grant omits actual expiry.
     pub default_access_token_expires_in: Option<f64>,
     pub configured_scopes: Vec<String>,
-    /// Providers such as PayPal deliberately omit even configured/requested scopes.
+    /// Providers such as `PayPal` deliberately omit even configured/requested scopes.
     pub omit_scopes: bool,
     pub scope_encoding: OAuthScopeEncoding,
     /// Retain the first occurrence of each scope, as Cloudflare requires.
@@ -507,7 +507,7 @@ pub struct OAuthAuthorizationPolicy {
     /// `Ok(None)` supplies no additions; errors abort before transport/writes.
     /// Custom refresh handlers take precedence and bypass this resolver.
     pub refresh_token_params_resolver: Option<OAuthRefreshTokenParams>,
-    /// Required by private_key_jwt; invoked afresh for each real token grant.
+    /// Required by `private_key_jwt`; invoked afresh for each real token grant.
     pub client_assertion: Option<OAuthClientAssertion>,
     /// Exact configured refresh scope, including an explicitly empty value.
     pub refresh_scope: Option<String>,
@@ -734,8 +734,8 @@ mod tests {
                         body.len(),
                     );
 
-                    drop(stream.write_all(response.as_bytes()).await);
-                    drop(stream.flush().await);
+                    _ = stream.write_all(response.as_bytes()).await;
+                    _ = stream.flush().await;
                 });
             }
         });

@@ -6,40 +6,15 @@ mod linking;
 mod redirects;
 mod token_exchange;
 
-use super::encryption::{encrypt_provider_token_set, encrypt_token_set, provider_token_nulls};
 use super::providers::{
-    OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthClientAssertionContext, OAuthConfig,
-    OAuthProvider, OAuthScopeOrder, OAuthTokenEndpointAuth, OAuthTokenGrant, OAuthTokenSet,
-    OAuthUserInfo, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthProvider, OAuthTokenSet, OAuthUserInfo,
+    OAuthUserInfoResponse,
 };
-use super::state::{
-    AccountCookiePayload, OAuthStateLink, OAuthStatePayload, RecoveredOAuthServerContext,
-    account_cookie_name, capture_server_context, create_account_cookie_value,
-    create_cookie_state_value, create_database_state_cookie_value, decode_account_cookie_value,
-    decode_cookie_state_value, decode_database_state_cookie_value, filter_additional_state_data,
-    get_cookie, state_cookie_name, state_verification_identifier, verified_server_context,
-};
-use super::types::{
-    LinkSocialRequest, OAuthIdTokenRequest, SocialSignInRequest, SocialSignInResponse,
-};
-use crate::helpers::{SessionIssueError, apply_default_role, issue_selected_user_session_record};
-use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
-use alibi_core::user_validation::{
-    UserValidationAction, UserValidationData, UserValidationSource, validate_user_info,
-};
+use super::state::{AccountCookiePayload, OAuthStateLink, OAuthStatePayload};
+use super::types::SocialSignInResponse;
+use crate::helpers::SessionIssueError;
 use alibi_core::wire::{SessionView, UserView};
-use alibi_core::{
-    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateAccount, CreateUser,
-    CreateVerification, UpdateAccount, UpdateUser,
-};
-use authorization::link_social_core;
-use authorization::social_sign_in_core;
-use authorization::validate_authorization_params;
-use base64::Engine;
-use chrono::{Duration, Utc};
-use cookies::account_cookie_max_age;
-use cookies::attach_cookie_state_payload;
-use cookies::attach_state_cookie;
+use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResult};
 pub(crate) use cookies::create_account_cookie_headers;
 pub(super) use cookies::decode_account_cookie;
 pub(super) use http::handle_callback;
@@ -47,22 +22,8 @@ pub(super) use http::handle_link_social;
 pub(crate) use http::handle_social_sign_in;
 pub(crate) use identity::process_oauth_sign_in;
 pub(crate) use identity::process_oauth_sign_in_with_output;
-use identity::provider_candidate;
 pub(crate) use linking::complete_link_social;
-use linking::complete_link_social_with_raw_email;
-use linking::link_with_id_token_core;
-use linking::sign_in_with_id_token_core;
-use rand::RngExt;
 pub(crate) use redirects::ambiguous_account_sign_in_response;
-use redirects::auth_base_url;
-use redirects::build_default_error_url;
-use redirects::build_redirect_url;
-use redirects::callback_failure_location;
-use redirects::callback_failure_redirect;
-use redirects::redirect_response;
-use redirects::validate_redirect_target;
-use sha2::{Digest, Sha256};
-use std::collections::HashMap;
 pub(crate) use token_exchange::fetch_user_info_from_provider;
 pub(super) use token_exchange::refresh_tokens_via_provider;
 pub(crate) use token_exchange::validate_authorization_code_via_provider;
@@ -84,7 +45,7 @@ pub(crate) enum OAuthSignInError {
 }
 
 impl OAuthSignInError {
-    fn from_identity_denial(error: AuthError) -> Self {
+    fn from_identity_denial(error: &AuthError) -> Self {
         let (_, code, message) = error.error_payload();
         Self::IdentityDenied {
             code: code.unwrap_or_else(|| "validation_failed".into()),
@@ -192,10 +153,6 @@ impl OAuthProcessPolicy {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Shared helpers (DRY)
-// ---------------------------------------------------------------------------
-
 /// Authenticate the current request and return the validated session.
 async fn require_session<S: alibi_core::AuthSchema>(
     req: &AuthRequest,
@@ -258,7 +215,7 @@ pub fn oauth_disable_sign_up_option(provider: &OAuthProvider) -> Option<bool> {
         .authorization
         .as_ref()
         .and_then(|policy| policy.disable_sign_up_option)
-        .or(provider.disable_sign_up.then_some(true))
+        .or_else(|| provider.disable_sign_up.then_some(true))
 }
 
 pub(crate) fn parse_callback_user_payload(
@@ -312,7 +269,8 @@ enum LinkSocialOutcome {
 // LCOV_EXCL_START
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::oauth::handlers::redirects::build_redirect_url;
+    use crate::oauth::handlers::redirects::validate_redirect_target;
     use crate::test_helpers;
 
     // Upstream reference: packages/better-auth/src/api/middlewares/origin-check.ts :: originCheck respects ctx.context.skipOriginCheck.

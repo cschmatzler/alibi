@@ -1,8 +1,9 @@
-//! TikTok's client-key grants, comma-separated scopes and nested profile.
+//! `TikTok`'s client-key grants, comma-separated scopes and nested profile.
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
+use serde_json::Map;
 use serde_json::Value;
 
 #[derive(Clone)]
@@ -127,20 +128,19 @@ impl OAuthUserInfoHandler for TikTokProfile {
             .transpose()
             .map_err(super::remaining_profile::profile_exception)?
             .unwrap_or_else(|| "undefined".into());
-        let email = match data
+        let email = if let Some(email) = data
             .get("email")
             .filter(|value| super::remaining_profile::truthy(value))
         {
-            Some(email) => email.clone(),
-            None => {
-                let email = format!("{raw_id}@tiktok.placeholder.invalid");
-                if !crate::authentication_helpers::is_valid_email(&email) {
-                    return Err(super::remaining_profile::profile_exception(
-                        "Invalid TikTok placeholder email",
-                    ));
-                }
-                Value::String(email)
+            email.clone()
+        } else {
+            let email = format!("{raw_id}@tiktok.placeholder.invalid");
+            if !crate::authentication_helpers::is_valid_email(&email) {
+                return Err(super::remaining_profile::profile_exception(
+                    "Invalid TikTok placeholder email",
+                ));
             }
+            Value::String(email)
         };
         let name = data
             .get("display_name")
@@ -152,14 +152,14 @@ impl OAuthUserInfoHandler for TikTokProfile {
             .cloned()
             .unwrap_or_else(|| Value::String(String::new()));
         let mut output = serde_json::Map::new();
-        drop(output.insert("name".into(), name.clone()));
-        drop(output.insert("email".into(), email.clone()));
-        drop(output.insert("emailVerified".into(), Value::Bool(false)));
+        _ = output.insert("name".into(), name.clone());
+        _ = output.insert("email".into(), email.clone());
+        _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(image) = data.get("avatar_large_url") {
-            drop(output.insert("image".into(), image.clone()));
+            _ = output.insert("image".into(), image.clone());
         }
         let user = OAuthUserInfo {
-            additional_fields: Default::default(),
+            additional_fields: Map::default(),
             id: raw_id,
             name: super::remaining_profile::scalar(Some(&name))?,
             email: email.as_str().unwrap_or_default().into(),

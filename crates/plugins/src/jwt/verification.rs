@@ -1,11 +1,23 @@
-use super::*;
+use super::JwtAlgorithm;
+use super::JwtAudience;
+use super::JwtPlugin;
+use super::JwtVerifyPolicy;
+use super::claims::decode_compact_json;
+use super::claims::decode_compact_part;
+use super::claims::js_truthy;
+use super::claims::validate_critical_header;
+use super::crypto;
+use alibi_core::AuthContext;
+use alibi_core::AuthRequest;
+use alibi_core::AuthResult;
+use alibi_core::AuthSchema;
+use chrono::Utc;
+use serde_json::Map;
+use serde_json::Value;
+use std::str::FromStr;
 impl JwtPlugin {
     /// Verify a token against the persisted keyring and configured claims.
     /// Invalid signatures, malformed tokens and claim failures return `None`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if key loading, signature verification, or claim validation fails.
     pub async fn verify_jwt(
         &self,
         token: &str,

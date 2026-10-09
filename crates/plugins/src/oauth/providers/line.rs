@@ -5,6 +5,7 @@ use super::{
 };
 use async_trait::async_trait;
 use base64::Engine;
+use serde_json::Map;
 use serde_json::Value;
 
 /// Application-owned Line configuration. Generic signup and asynchronous
@@ -164,22 +165,20 @@ impl OAuthUserInfoHandler for LineUserInfo {
         let user_output = Some(mapped.as_ref().map_or_else(
             || {
                 let mut output = serde_json::Map::new();
-                drop(
-                    output.insert(
-                        "name".into(),
-                        profile
-                            .get("name")
-                            .filter(|value| truthy(value))
-                            .cloned()
-                            .unwrap_or_else(|| Value::String(String::new())),
-                    ),
+                _ = output.insert(
+                    "name".into(),
+                    profile
+                        .get("name")
+                        .filter(|value| truthy(value))
+                        .cloned()
+                        .unwrap_or_else(|| Value::String(String::new())),
                 );
                 for (source, target) in [("email", "email"), ("picture", "image")] {
                     if let Some(value) = profile.get(source) {
-                        drop(output.insert(target.into(), value.clone()));
+                        _ = output.insert(target.into(), value.clone());
                     }
                 }
-                drop(output.insert("emailVerified".into(), Value::Bool(false)));
+                _ = output.insert("emailVerified".into(), Value::Bool(false));
                 output
             },
             |user| user.public_profile(true),
@@ -187,7 +186,7 @@ impl OAuthUserInfoHandler for LineUserInfo {
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id: scalar(profile.get("sub"))?.unwrap_or_default(),
                 name: Some(
                     scalar(profile.get("name").filter(|value| truthy(value)))?.unwrap_or_default(),
@@ -285,9 +284,9 @@ impl OAuthIdTokenVerifier for LineVerifier {
 }
 fn decode_profile(token: &str) -> Option<Value> {
     let mut parts = token.split('.');
-    let _header = parts.next()?;
+    _ = parts.next()?;
     let payload = parts.next()?;
-    let _signature = parts.next()?;
+    _ = parts.next()?;
     if payload.is_empty() || parts.next().is_some() {
         return None;
     }

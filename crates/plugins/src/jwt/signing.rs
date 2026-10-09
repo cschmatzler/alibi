@@ -1,10 +1,25 @@
-use super::*;
+use super::JwtAudience;
+use super::JwtClaimsConfig;
+use super::JwtPlugin;
+use super::JwtSignOptions;
+use super::RemoteJwtPayload;
+use super::ResolvedJwtSigningKey;
+use super::claims::normalize_signing_claims;
+use super::claims::validate_critical_header;
+use super::claims::validate_numeric_date;
+use super::crypto;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
+use alibi_core::AuthRequest;
+use alibi_core::AuthResult;
+use alibi_core::AuthSchema;
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use serde_json::Map;
+use serde_json::Value;
+use serde_json::json;
 impl JwtPlugin {
     /// Sign an application-owned payload through the trusted server API.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if signing-key resolution or JWT encoding fails.
     pub async fn sign_jwt(
         &self,
         payload: Map<String, Value>,
@@ -28,10 +43,6 @@ impl JwtPlugin {
     /// the raw values and own-property metadata without JOSE claim validation.
     /// Local ordinary claims follow JSON.stringify, including rounding and
     /// null for nonfinite values.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if signing-key resolution, payload serialization, or JWT encoding fails.
     pub async fn sign_jwt_json(
         &self,
         payload: &alibi_core::utils::json::JsValue,
@@ -149,7 +160,7 @@ impl JwtPlugin {
                     .into(),
                     _ => continue,
                 };
-                drop(payload.insert(name.to_owned(), value));
+                _ = payload.insert(name.to_owned(), value);
             }
         }
         let payload = RemoteJwtPayload {
@@ -180,25 +191,23 @@ impl JwtPlugin {
         let config = override_claims.unwrap_or(&self.config.claims);
         if payload.get("exp").is_none_or(Value::is_null) {
             let expiration = config.expiration.timestamp(payload.get("iat"));
-            drop(payload.insert("exp".to_owned(), expiration));
+            _ = payload.insert("exp".to_owned(), expiration);
         }
         if payload.get("iss").is_none_or(Value::is_null) {
-            drop(payload.insert(
+            _ = payload.insert(
                 "iss".to_owned(),
                 json!(config.issuer.as_deref().unwrap_or(&ctx.config.base_url)),
-            ));
+            );
         }
         if payload.get("aud").is_none_or(Value::is_null) {
-            drop(
-                payload.insert(
-                    "aud".to_owned(),
-                    serde_json::to_value(
-                        config
-                            .audience
-                            .clone()
-                            .unwrap_or_else(|| JwtAudience::One(ctx.config.base_url.clone())),
-                    )?,
-                ),
+            _ = payload.insert(
+                "aud".to_owned(),
+                serde_json::to_value(
+                    config
+                        .audience
+                        .clone()
+                        .unwrap_or_else(|| JwtAudience::One(ctx.config.base_url.clone())),
+                )?,
             );
         }
         Ok(payload)
@@ -210,8 +219,8 @@ impl JwtPlugin {
         key: &ResolvedJwtSigningKey,
     ) -> AuthResult<String> {
         let mut header = options.header.clone().unwrap_or_default();
-        drop(header.insert("alg".to_owned(), json!(key.algorithm.as_str())));
-        drop(header.insert("kid".to_owned(), json!(key.key_id)));
+        _ = header.insert("alg".to_owned(), json!(key.algorithm.as_str()));
+        _ = header.insert("kid".to_owned(), json!(key.key_id));
         validate_critical_header(&header, true)?;
         normalize_signing_claims(&mut payload)?;
         let input = format!(

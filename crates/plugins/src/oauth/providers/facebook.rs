@@ -9,6 +9,7 @@ use crate::oauth::{
 };
 use async_trait::async_trait;
 use base64::Engine;
+use serde_json::Map;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -193,7 +194,7 @@ impl OAuthUserInfoHandler for FacebookUserInfo {
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id: scalar(profile.get("sub").or_else(|| profile.get("id")))?.unwrap_or_default(),
                 name: scalar(profile.get("name"))?,
                 email: profile

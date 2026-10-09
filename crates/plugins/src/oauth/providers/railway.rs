@@ -4,6 +4,7 @@ use super::{
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use async_trait::async_trait;
+use serde_json::Map;
 use serde_json::Value;
 
 /// Application-owned Railway configuration. Generic signup and asynchronous
@@ -175,16 +176,16 @@ impl OAuthUserInfoHandler for RailwayUserInfo {
         // Keep the published raw JSON independently from typed persistence.
         let mut output = serde_json::Map::new();
         if let Some(name) = profile.get("name") {
-            drop(output.insert("name".into(), name.clone()));
+            _ = output.insert("name".into(), name.clone());
         }
         let email = profile.get("email");
         if let Some(email) = email {
-            drop(output.insert("email".into(), email.clone()));
+            _ = output.insert("email".into(), email.clone());
         }
         if let Some(image) = profile.get("picture") {
-            drop(output.insert("image".into(), image.clone()));
+            _ = output.insert("image".into(), image.clone());
         }
-        drop(output.insert("emailVerified".into(), Value::Bool(false)));
+        _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(user) = &mapped {
             output.extend(user.public_profile(true));
         }
@@ -192,7 +193,7 @@ impl OAuthUserInfoHandler for RailwayUserInfo {
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id: profile
                     .get("sub")
                     .map(super::remaining_profile::js_string)
@@ -221,13 +222,12 @@ impl OAuthUserInfoHandler for RailwayUserInfo {
 }
 fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
     match value {
-        None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) => Ok(Some(value.clone())),
         Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
             .map(Some)
             .map_err(|error| error.to_string()),
         Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        Some(Value::Array(_) | Value::Object(_)) => Ok(None),
+        None | Some(Value::Null | Value::Array(_) | Value::Object(_)) => Ok(None),
     }
 }
 fn subject(profile: &Value) -> Result<String, String> {

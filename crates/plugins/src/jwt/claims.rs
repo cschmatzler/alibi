@@ -1,4 +1,10 @@
-use super::*;
+use alibi_core::AuthError;
+use alibi_core::AuthResult;
+use base64::Engine;
+use chrono::Utc;
+use serde_json::Map;
+use serde_json::Value;
+use serde_json::json;
 pub(in crate::jwt) fn js_truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,
@@ -133,7 +139,7 @@ pub(in crate::jwt) fn normalize_signing_claims(payload: &mut Map<String, Value>)
                     return Err(AuthError::internal("Invalid time period format"));
                 }
             };
-            drop(payload.insert(field.to_owned(), value));
+            _ = payload.insert(field.to_owned(), value);
         }
     }
     for field in ["iss", "sub", "jti"] {

@@ -1,4 +1,8 @@
-use super::*;
+use super::{
+    Arc, Deserialize, DeserializeOwned, OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfo,
+    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse, Value, async_trait,
+};
+use serde_json::Map;
 impl OAuthProvider {
     #[must_use]
     pub fn github(client_id: &str, client_secret: &str) -> Self {
@@ -149,7 +153,7 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
                 .is_none_or(str::is_empty)
             && !resolved_email.is_empty()
         {
-            drop(profile_object.insert("email".to_owned(), Value::String(resolved_email.clone())));
+            _ = profile_object.insert("email".to_owned(), Value::String(resolved_email.clone()));
         }
 
         let email_verified = emails
@@ -171,7 +175,7 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
         Ok(OAuthUserInfoResponse {
             user_output: None,
             user: OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id,
                 email: resolved_email,
                 name: Some(

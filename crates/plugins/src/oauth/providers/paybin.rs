@@ -5,6 +5,7 @@ use super::{
 };
 use async_trait::async_trait;
 use base64::Engine;
+use serde_json::Map;
 use serde_json::Value;
 
 /// Application-owned Paybin configuration. Generic signup and asynchronous
@@ -172,7 +173,7 @@ impl OAuthUserInfoHandler for PaybinUserInfo {
         let mut output = serde_json::Map::new();
         for (source, target) in [("email", "email"), ("picture", "image")] {
             if let Some(value) = profile.get(source) {
-                drop(output.insert(target.into(), value.clone()));
+                _ = output.insert(target.into(), value.clone());
             }
         }
         let name = profile
@@ -181,16 +182,14 @@ impl OAuthUserInfoHandler for PaybinUserInfo {
             .or_else(|| profile.get("preferred_username").filter(|v| truthy(v)))
             .cloned()
             .unwrap_or_else(|| Value::String(String::new()));
-        drop(output.insert("name".into(), name.clone()));
-        drop(
-            output.insert(
-                "emailVerified".into(),
-                profile
-                    .get("email_verified")
-                    .filter(|v| truthy(v))
-                    .cloned()
-                    .unwrap_or(Value::Bool(false)),
-            ),
+        _ = output.insert("name".into(), name.clone());
+        _ = output.insert(
+            "emailVerified".into(),
+            profile
+                .get("email_verified")
+                .filter(|v| truthy(v))
+                .cloned()
+                .unwrap_or(Value::Bool(false)),
         );
         if let Some(user) = &mapped {
             output.extend(user.public_profile(true));
@@ -199,7 +198,7 @@ impl OAuthUserInfoHandler for PaybinUserInfo {
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id: profile
                     .get("sub")
                     .map(super::remaining_profile::js_string)
@@ -236,13 +235,12 @@ fn truthy(value: &Value) -> bool {
 }
 fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
     match value {
-        None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) => Ok(Some(value.clone())),
         Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
             .map(Some)
             .map_err(|error| error.to_string()),
         Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        Some(Value::Array(_) | Value::Object(_)) => Ok(None),
+        None | Some(Value::Null | Value::Array(_) | Value::Object(_)) => Ok(None),
     }
 }
 fn subject(profile: &Value) -> Result<String, String> {
@@ -251,9 +249,9 @@ fn subject(profile: &Value) -> Result<String, String> {
 
 fn decode_profile(token: &str) -> Option<Value> {
     let mut parts = token.split('.');
-    let _header = parts.next()?;
+    _ = parts.next()?;
     let payload = parts.next()?;
-    let _signature = parts.next()?;
+    _ = parts.next()?;
     if payload.is_empty() || parts.next().is_some() {
         return None;
     }

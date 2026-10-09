@@ -11,7 +11,10 @@ use webauthn_rs_core::{
     attestation::{FidoGenCeAaguid, validate_extension},
     error::WebauthnError,
     internals::{Tpm2bName, TpmSt, TpmsAttest, TpmtSignature, TpmuAttest},
-    proto::*,
+    proto::{
+        AttestationMetadata, AttestedCredentialData, COSEAlgorithm, ECDSACurve,
+        ParsedAttestationData, Registration,
+    },
 };
 
 fn malformed() -> WebauthnError {
@@ -56,13 +59,13 @@ fn check_public(bytes: &[u8], key: &COSEKey) -> Result<(), WebauthnError> {
     ) {
         return Err(malformed());
     }
-    let _ = input.take(4)?; // objectAttributes
-    let _ = input.vector()?; // authPolicy
+    _ = input.take(4)?; // objectAttributes
+    _ = input.vector()?; // authPolicy
     input.null()?; // symmetric
     input.null()?; // scheme
     let matched = match kind {
         1 => {
-            let _ = input.take(6)?; // keyBits and exponent, ignored by pinned policy
+            _ = input.take(6)?; // keyBits and exponent, ignored by pinned policy
             let modulus = input.vector()?;
             matches!(&key.key, COSEKeyType::RSA(key) if key.n.as_slice() == modulus)
         }
@@ -100,7 +103,7 @@ pub(super) fn verify(
         return Err(WebauthnError::AttestationStatementAlgInvalid);
     };
     let algorithm =
-        COSEAlgorithm::try_from(*algorithm).map_err(|_| WebauthnError::COSEKeyInvalidAlgorithm)?;
+        COSEAlgorithm::try_from(*algorithm).map_err(|()| WebauthnError::COSEKeyInvalidAlgorithm)?;
     let bytes = |key: &str| match statement.get(&Cbor::Text(key.into())) {
         Some(Cbor::Bytes(bytes)) => Ok(bytes.as_slice()),
         _ => Err(malformed()),
@@ -150,7 +153,7 @@ pub(super) fn verify(
         return Err(WebauthnError::AttestationStatementSigInvalid);
     }
     check_certificate(leaf)?;
-    drop(validate_extension::<FidoGenCeAaguid>(leaf, &acd.aaguid)?);
+    _ = validate_extension::<FidoGenCeAaguid>(leaf, &acd.aaguid)?;
     Ok((
         ParsedAttestationData::AttCa(chain),
         AttestationMetadata::Tpm {

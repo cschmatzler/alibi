@@ -23,9 +23,6 @@ impl std::fmt::Debug for EncryptedTokenSet {
 ///
 /// Returns hexadecimal nonce/ciphertext. Use [`encrypt_token_with_config`] to
 /// write a managed key version.
-///
-/// # Errors
-/// Returns an error if token encryption fails.
 pub fn encrypt_token(plaintext: &str, secret: &str) -> Result<String, AuthError> {
     encrypt_token_with_config(plaintext, &AuthConfig::new(secret))
 }
@@ -33,17 +30,11 @@ pub fn encrypt_token(plaintext: &str, secret: &str) -> Result<String, AuthError>
 /// Decrypt a token with a single persistence key, passing through plaintext.
 ///
 /// Use [`decrypt_token_with_config`] to read managed or legacy key versions.
-///
-/// # Errors
-/// Returns an error if an encrypted token cannot be authenticated or decoded.
 pub fn decrypt_token(stored: &str, secret: &str) -> Result<String, AuthError> {
     decrypt_token_with_config(stored, &AuthConfig::new(secret))
 }
 
 /// Conditionally encrypt a token with a single persistence key.
-///
-/// # Errors
-/// Returns an error if token encryption fails.
 pub fn maybe_encrypt(
     value: Option<String>,
     encrypt: bool,
@@ -53,9 +44,6 @@ pub fn maybe_encrypt(
 }
 
 /// Conditionally decrypt a token with a single persistence key.
-///
-/// # Errors
-/// Returns an error if an encrypted token cannot be authenticated or decoded.
 pub fn maybe_decrypt(
     value: Option<&str>,
     encrypt: bool,
@@ -67,10 +55,6 @@ pub fn maybe_decrypt(
 /// Encrypt a plaintext string with the current configured persistence key.
 ///
 /// Returns hexadecimal nonce/ciphertext, inside a versioned envelope in managed mode.
-///
-/// # Errors
-///
-/// Returns an error if token encryption fails.
 pub fn encrypt_token_with_config(
     plaintext: &str,
     secret: &alibi_core::AuthConfig,
@@ -80,9 +64,6 @@ pub fn encrypt_token_with_config(
 
 /// Source recognizes even-length hexadecimal (and versioned `$ba$` envelopes)
 /// as ciphertext. Other strings, including old plaintext tokens, pass through.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub fn decrypt_token_with_config(
     stored: &str,
     secret: &alibi_core::AuthConfig,
@@ -99,9 +80,6 @@ pub fn decrypt_token_with_config(
 
 /// Conditionally encrypt a token value. Returns the original value when
 /// encryption is disabled, or the encrypted value when enabled.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub fn maybe_encrypt_with_config(
     value: Option<String>,
     encrypt: bool,
@@ -115,10 +93,6 @@ pub fn maybe_encrypt_with_config(
 
 /// Conditionally decrypt a token value. Returns the original value when
 /// encryption is disabled, or the decrypted value when enabled.
-///
-/// # Errors
-///
-/// Propagates decryption errors when token encryption is enabled.
 pub fn maybe_decrypt_with_config(
     value: Option<&str>,
     encrypt: bool,
@@ -133,9 +107,6 @@ pub fn maybe_decrypt_with_config(
 
 /// Read `encrypt_oauth_tokens` and `secret` from the auth context and
 /// conditionally encrypt a full set of OAuth tokens in one call.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub fn encrypt_token_set(
     ctx: &alibi_core::AuthContext<impl alibi_core::AuthSchema>,
     access_token: Option<String>,

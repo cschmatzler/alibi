@@ -214,7 +214,7 @@ pub(crate) async fn verify_jwks_token(
         .decode(header_encoded)
         .ok()?;
     let header = parse_value(std::str::from_utf8(&raw_header).ok()?).ok()?;
-    let _ignored_as_object = header.as_object()?;
+    _ = header.as_object()?;
     let algorithm: Algorithm =
         serde_json::from_value(header.get("alg")?.to_json_value().ok()?).ok()?;
     if matches!(
@@ -293,10 +293,9 @@ pub(crate) async fn verify_jwks_token(
                     if claim != nonce
                         && (!matches!(config.nonce_comparison, OAuthNonceComparison::ExactOrSha256)
                             || claim
-                                != Sha256::digest(nonce.as_bytes())
-                                    .iter()
-                                    .map(|byte| format!("{byte:02x}"))
-                                    .collect::<String>())
+                                != crate::token_crypto::hex_lower(&Sha256::digest(
+                                    nonce.as_bytes(),
+                                )))
                     {
                         return None;
                     }

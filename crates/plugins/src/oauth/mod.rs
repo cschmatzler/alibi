@@ -72,7 +72,7 @@ impl OAuthPlugin {
 
     #[must_use]
     pub fn add_provider(mut self, name: &str, provider: OAuthProvider) -> Self {
-        drop(self.config.providers.insert(name.to_owned(), provider));
+        _ = self.config.providers.insert(name.to_owned(), provider);
         self
     }
 }

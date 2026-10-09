@@ -117,9 +117,6 @@ fn unknown_keys(body: &Map<String, Value>, known: &[&str]) -> Option<String> {
     ))
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn nonce_body(request: &AuthRequest) -> Result<(), AuthResponse> {
     let body = body(request, true)?;
     if let Some(message) = unknown_keys(&body, &[]) {
@@ -128,9 +125,6 @@ pub(super) fn nonce_body(request: &AuthRequest) -> Result<(), AuthResponse> {
     Ok(())
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn verify_body(
     request: &AuthRequest,
     anonymous: bool,

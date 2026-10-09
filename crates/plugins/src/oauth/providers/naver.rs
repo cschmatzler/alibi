@@ -4,6 +4,7 @@ use super::{
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use async_trait::async_trait;
+use serde_json::Map;
 use serde_json::Value;
 
 /// Application-owned Naver configuration. Generic signup and asynchronous
@@ -155,11 +156,11 @@ impl OAuthUserInfoHandler for NaverUserInfo {
             })
             .cloned()
             .unwrap_or_else(|| Value::String(String::new()));
-        drop(output.insert("name".into(), name));
-        drop(output.insert("emailVerified".into(), Value::Bool(false)));
+        _ = output.insert("name".into(), name);
+        _ = output.insert("emailVerified".into(), Value::Bool(false));
         for (public, remote) in [("email", "email"), ("image", "profile_image")] {
             if let Some(value) = account.and_then(|value| value.get(remote)) {
-                drop(output.insert(public.into(), value.clone()));
+                _ = output.insert(public.into(), value.clone());
             }
         }
         if let Some(user) = &mapped {
@@ -169,7 +170,7 @@ impl OAuthUserInfoHandler for NaverUserInfo {
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id: scalar(account.and_then(|value| value.get("id")))?.unwrap_or_default(),
                 name: Some(
                     scalar(

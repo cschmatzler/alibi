@@ -9,7 +9,34 @@ const RESERVED_AUTHORIZATION_PARAMS: [&str; 8] = [
     "scope",
 ];
 
-use super::*;
+use super::FlowStartRequest;
+use super::InitiatedOAuthFlow;
+use super::oauth_callback_path;
+use super::redirects::auth_base_url;
+use super::redirects::validate_redirect_target;
+use crate::oauth::providers::OAuthConfig;
+use crate::oauth::providers::OAuthProvider;
+use crate::oauth::providers::OAuthScopeOrder;
+use crate::oauth::state::OAuthStateLink;
+use crate::oauth::state::OAuthStatePayload;
+use crate::oauth::state::capture_server_context;
+use crate::oauth::state::filter_additional_state_data;
+use crate::oauth::state::state_verification_identifier;
+use crate::oauth::types::LinkSocialRequest;
+use crate::oauth::types::SocialSignInRequest;
+use crate::oauth::types::SocialSignInResponse;
+use alibi_core::AuthContext;
+use alibi_core::AuthError;
+use alibi_core::AuthResult;
+use alibi_core::AuthUser;
+use alibi_core::CreateVerification;
+use alibi_core::entity::AuthSession;
+use base64::Engine;
+use chrono::Duration;
+use chrono::Utc;
+use rand::RngExt;
+use sha2::Digest;
+use sha2::Sha256;
 pub(in crate::oauth::handlers) fn generate_pkce() -> (String, String) {
     const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
     let mut random = rand::rng();
@@ -221,7 +248,7 @@ pub(in crate::oauth::handlers) fn build_authorization_url(
     if provider.authorization.as_ref().is_some_and(|policy| {
         matches!(
             policy.scope_encoding,
-            super::super::providers::OAuthScopeEncoding::UriComponent
+            crate::oauth::providers::OAuthScopeEncoding::UriComponent
         )
     }) && let Some(scope) = url
         .query_pairs()
@@ -296,10 +323,6 @@ pub(in crate::oauth::handlers) fn validate_authorization_params(
     }
     Ok(())
 }
-
-// ---------------------------------------------------------------------------
-// Core functions
-// ---------------------------------------------------------------------------
 
 pub(in crate::oauth::handlers) async fn social_sign_in_core(
     body: &SocialSignInRequest,
@@ -440,10 +463,10 @@ pub(in crate::oauth::handlers) async fn initiate_oauth_flow_core(
         payload.id_token_nonce = Some(alibi_core::utils::id::generate_id(32));
     }
     capture_server_context(&mut payload, &state, ctx.config.current_secret())?;
-    drop(payload.additional_data.insert(
+    _ = payload.additional_data.insert(
         "oauthState".to_owned(),
         serde_json::Value::String(state.clone()),
-    ));
+    );
     if proxy.is_some()
         && let Some(req) = alibi_core::hooks::current_request_hook_context()
     {

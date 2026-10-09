@@ -7,6 +7,7 @@ use crate::oauth::{OAuthIdTokenConfig, OAuthJwksSource};
 use alibi_core::utils::json::{JsValue, parse_value};
 use async_trait::async_trait;
 use base64::Engine;
+use serde_json::Map;
 use std::sync::Arc;
 
 /// Apple-specific immutable configuration. Generic provider policy and trusted
@@ -131,7 +132,7 @@ impl OAuthUserInfoHandler for AppleUserInfo {
         let mut profile =
             parse_value(std::str::from_utf8(&bytes).map_err(|error| error.to_string())?)
                 .map_err(|error| error.to_string())?;
-        let _ignored_as_object = profile.as_object().ok_or("Invalid Apple profile")?;
+        _ = profile.as_object().ok_or("Invalid Apple profile")?;
         let name_value = if let Some(name) = request.user.and_then(|user| user.name) {
             JsValue::String(
                 format!(
@@ -190,7 +191,7 @@ impl OAuthUserInfoHandler for AppleUserInfo {
         let JsValue::Object(object) = &mut profile else {
             return Err("Invalid Apple profile".into());
         };
-        drop(object.insert("name".into(), name_value));
+        _ = object.insert("name".into(), name_value);
         let data = profile.to_json_value().map_err(|error| error.to_string())?;
         let mut user_output = None;
         let user = if let Some(mapper) = self.map_profile_to_user {
@@ -200,7 +201,7 @@ impl OAuthUserInfoHandler for AppleUserInfo {
             mapped
         } else {
             OAuthUserInfo {
-                additional_fields: Default::default(),
+                additional_fields: Map::default(),
                 id,
                 email,
                 name: Some(name),
