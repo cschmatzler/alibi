@@ -4,12 +4,12 @@ use alibi::plugins::{
     AnonymousPlugin,
     anonymous::{AnonymousConfig, AnonymousIdentity},
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi_core::{AuthRequest, HttpMethod};
 #[cfg(feature = "seaorm")]
-use alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema as Schema;
+use alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema as Schema;
 #[cfg(not(feature = "seaorm"))]
-use alibi_sqlx::store::__private_test_support::bundled_schema::BundledSchema as Schema;
+use alibi::sqlx::store::__private_test_support::bundled_schema::BundledSchema as Schema;
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi::{AuthRequest, HttpMethod};
 use async_trait::async_trait;
 use std::sync::Arc;
 struct Identity {
@@ -50,23 +50,23 @@ async fn identity_callback_errors_keep_api_wires_and_hide_ordinary_causes_before
                 .base_url("http://localhost:42918");
             #[cfg(feature = "seaorm")]
             let store = {
-                let db = alibi_seaorm::Database::connect("sqlite::memory:")
+                let db = alibi::seaorm::Database::connect("sqlite::memory:")
                     .await
                     .unwrap();
-                alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+                alibi::seaorm::store::__private_test_support::migrator::run_migrations(&db)
                     .await
                     .unwrap();
-                alibi_seaorm::SeaOrmStore::<Schema>::new(config.clone(), db)
+                alibi::seaorm::SeaOrmStore::<Schema>::new(config.clone(), db)
             };
             #[cfg(not(feature = "seaorm"))]
             let store = {
-                let db = alibi_sqlx::SqlxPool::connect("sqlite::memory:")
+                let db = alibi::sqlx::SqlxPool::connect("sqlite::memory:")
                     .await
                     .unwrap();
-                alibi_sqlx::store::__private_test_support::migrator::run_migrations(&db)
+                alibi::sqlx::store::__private_test_support::migrator::run_migrations(&db)
                     .await
                     .unwrap();
-                alibi_sqlx::SqlxStore::<Schema>::new(config.clone(), db)
+                alibi::sqlx::SqlxStore::<Schema>::new(config.clone(), db)
             };
             let auth = AuthBuilder::<Schema>::new(config)
                 .store(store)

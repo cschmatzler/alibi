@@ -8,9 +8,9 @@ use alibi::plugins::organization::{
 };
 use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi_core::UpdateOrganization;
-use alibi_core::store::OrganizationStore;
-use alibi_seaorm::{
+use alibi::UpdateOrganization;
+use alibi::store::OrganizationStore;
+use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };

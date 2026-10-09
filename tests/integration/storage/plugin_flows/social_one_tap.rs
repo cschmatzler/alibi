@@ -1,12 +1,12 @@
 //! One Tap admission and account outcomes with signed Google ID tokens.
 use super::*;
 use crate::snapshot::Trace;
+use alibi::hooks::RequestHookContext;
 use alibi::plugins::oauth::{HttpOAuthJwksSource, OAuthProvider};
 use alibi::plugins::one_tap::{OneTapClientId, OneTapConfig, OneTapPlugin};
 use alibi::plugins::{AdminPlugin, OAuthPlugin};
-use alibi_core::hooks::RequestHookContext;
-use alibi_core::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
-use alibi_core::{AccountConfig, AuthResult};
+use alibi::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
+use alibi::{AccountConfig, AuthResult};
 
 backend_tests!(
     one_tap_token_admission_matrix,

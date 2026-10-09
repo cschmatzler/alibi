@@ -417,10 +417,8 @@ pub(in crate::oauth::handlers) async fn initiate_oauth_flow_core(
             .collect()
     };
 
-    let proxy = alibi_core::hooks::current_request_hook_context().and_then(|req| {
-        req.extensions
-            .get::<crate::oauth_proxy::OAuthProxyFlow>()
-    });
+    let proxy = alibi_core::hooks::current_request_hook_context()
+        .and_then(|req| req.extensions.get::<crate::oauth_proxy::OAuthProxyFlow>());
     let mut payload = OAuthStatePayload::new(
         proxy
             .as_ref()
@@ -449,11 +447,10 @@ pub(in crate::oauth::handlers) async fn initiate_oauth_flow_core(
     if proxy.is_some()
         && let Some(req) = alibi_core::hooks::current_request_hook_context()
     {
-        req.extensions
-            .insert(crate::oauth_proxy::IssuedProxyState {
-                state: state.clone(),
-                payload: payload.clone(),
-            });
+        req.extensions.insert(crate::oauth_proxy::IssuedProxyState {
+            state: state.clone(),
+            payload: payload.clone(),
+        });
     }
 
     match ctx.config.account.store_state_strategy {

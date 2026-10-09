@@ -10,10 +10,10 @@ use alibi::plugins::{
     EmailPasswordPlugin, OAuthPlugin, OAuthProxyConfig, OAuthProxyPlugin, SessionManagementPlugin,
 };
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi_core::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, CreateSession};
-use alibi_seaorm::sea_orm::{ConnectionTrait, EntityTrait, QueryOrder, Statement};
-use alibi_seaorm::store::entities::{account, session, user, verification};
-use alibi_seaorm::{Database, DatabaseConnection, DatabaseHooks, HookControl};
+use alibi::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, CreateSession};
+use alibi::seaorm::sea_orm::{ConnectionTrait, EntityTrait, QueryOrder, Statement};
+use alibi::seaorm::store::entities::{account, session, user, verification};
+use alibi::seaorm::{Database, DatabaseConnection, DatabaseHooks, HookControl};
 use async_trait::async_trait;
 use axum::{
     Form, Json, Router,
@@ -53,8 +53,8 @@ const OPTION_MODES: &[&str] = &[
 const SECRET: &str = "local-fixture-dedicated-oauth-proxy-secret-32";
 struct CacheFailure;
 #[async_trait]
-impl alibi_core::CookieCacheVersionResolver for CacheFailure {
-    async fn resolve(&self, _context: &alibi_core::CacheVersionContext) -> AuthResult<String> {
+impl alibi::CookieCacheVersionResolver for CacheFailure {
+    async fn resolve(&self, _context: &alibi::CacheVersionContext) -> AuthResult<String> {
         Err(AuthError::internal("private cache publication failure"))
     }
 }
@@ -290,9 +290,9 @@ async fn build_router(
                 settings = settings.base_url(&production_origin);
             }
             if mode == "dynamic" {
-                settings.dynamic_base_url = Some(alibi_core::config::DynamicBaseUrl {
+                settings.dynamic_base_url = Some(alibi::config::DynamicBaseUrl {
                     allowed_hosts: vec!["localhost:*".into(), "127.0.0.1:*".into()],
-                    protocol: Some(alibi_core::config::BaseUrlProtocol::Http),
+                    protocol: Some(alibi::config::BaseUrlProtocol::Http),
                     fallback: Some(origin.clone()),
                 });
             }
@@ -304,16 +304,16 @@ async fn build_router(
                 settings.api_error_url = Some(String::new());
             }
             if ["cache", "cache-error"].contains(&mode) {
-                settings.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
+                settings.session.cookie_cache = Some(alibi::CookieCacheConfig {
                     enabled: true,
                     max_age: 120.0,
                     version: (mode == "cache-error")
-                        .then(|| alibi_core::CookieCacheVersion::Resolver(Arc::new(CacheFailure))),
+                        .then(|| alibi::CookieCacheVersion::Resolver(Arc::new(CacheFailure))),
                     ..Default::default()
                 });
             }
             if cookie {
-                settings.account.store_state_strategy = alibi_core::OAuthStateStrategy::Cookie;
+                settings.account.store_state_strategy = alibi::OAuthStateStrategy::Cookie;
             }
             if managed {
                 const OLD: &str = "managed-old-reader-key-at-least-32-characters";
@@ -321,11 +321,11 @@ async fn build_router(
                 const LEGACY: &str = "managed-legacy-reader-key-at-least-32-characters";
                 settings.secret = LEGACY.into();
                 settings.managed_secrets = match mode {
-                    "old" => Some(alibi_core::ManagedSecrets::new(0, OLD)),
-                    "retained" => Some(alibi_core::ManagedSecrets::new(2, CURRENT).retain(0, OLD)),
-                    "retired" => Some(alibi_core::ManagedSecrets::new(2, CURRENT)),
+                    "old" => Some(alibi::ManagedSecrets::new(0, OLD)),
+                    "retained" => Some(alibi::ManagedSecrets::new(2, CURRENT).retain(0, OLD)),
+                    "retired" => Some(alibi::ManagedSecrets::new(2, CURRENT)),
                     "legacy" => Some(
-                        alibi_core::ManagedSecrets::new(2, CURRENT)
+                        alibi::ManagedSecrets::new(2, CURRENT)
                             .retain(0, OLD)
                             .legacy(LEGACY),
                     ),

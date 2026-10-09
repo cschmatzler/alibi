@@ -5,9 +5,9 @@
     reason = "tests assert independently specified wire fields and fixtures"
 )]
 use super::*;
-use alibi_core::store::CacheAdapter;
-use alibi_core::store::secondary_storage::MemoryCacheAdapter;
-use alibi_core::{AuthError, CreateVerification, UpdateVerification};
+use alibi::store::CacheAdapter;
+use alibi::store::secondary_storage::MemoryCacheAdapter;
+use alibi::{AuthError, CreateVerification, UpdateVerification};
 use chrono::{Duration, Utc};
 
 backend_tests!(

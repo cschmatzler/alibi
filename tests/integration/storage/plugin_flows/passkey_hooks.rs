@@ -13,8 +13,8 @@ use alibi::plugins::passkey::{
     PasskeyRegistrationContext, PasskeyRegistrationOverride, PasskeyRegistrationUser,
     PasskeyUserResolver, VerifiedPasskeyAuthentication, VerifiedPasskeyRegistration,
 };
-use alibi_core::utils::json::JsValue;
-use alibi_core::{AuthError, AuthResult};
+use alibi::utils::json::JsValue;
+use alibi::{AuthError, AuthResult};
 
 backend_tests!(
     passkey_registration_ownership,
@@ -107,8 +107,8 @@ impl PasskeyAuthenticationAfterVerification for Policy {
             "internal" => Err(AuthError::internal("authentication unavailable")),
             "delete" => {
                 let url = self.url.lock().unwrap().clone();
-                let pool = alibi_sqlx::sqlx::SqlitePool::connect(&url).await.unwrap();
-                _ = alibi_sqlx::sqlx::query("DELETE FROM passkeys")
+                let pool = alibi::sqlx::sqlx::SqlitePool::connect(&url).await.unwrap();
+                _ = alibi::sqlx::sqlx::query("DELETE FROM passkeys")
                     .execute(&pool)
                     .await
                     .unwrap();

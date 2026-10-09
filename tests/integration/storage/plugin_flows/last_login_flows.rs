@@ -16,7 +16,7 @@ use alibi::plugins::oauth::{
     OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use alibi::plugins::{AnonymousPlugin, PasskeyPlugin};
-use alibi_core::{AuthError, AuthResult};
+use alibi::{AuthError, AuthResult};
 
 backend_tests!(
     last_login_tracks_every_sign_in_method,
@@ -252,11 +252,10 @@ async fn last_login_resolver_and_cookie_policy<B: Backend>(db: Db) -> TestResult
     for (index, (label, login, strict)) in variants.into_iter().enumerate() {
         let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
         if strict {
-            config.session.cookie_same_site = alibi_core::config::SameSite::Strict;
-            config.advanced.cross_sub_domain_cookies =
-                Some(alibi_core::config::CrossSubDomainConfig {
-                    domain: "example.test".into(),
-                });
+            config.session.cookie_same_site = alibi::config::SameSite::Strict;
+            config.advanced.cross_sub_domain_cookies = Some(alibi::config::CrossSubDomainConfig {
+                domain: "example.test".into(),
+            });
         }
         let auth = AuthBuilder::new(config.clone())
             .store(B::store(Arc::new(config), &connection))

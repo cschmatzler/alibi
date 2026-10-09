@@ -5,14 +5,14 @@
     reason = "tests assert independently specified wire fields and fixtures"
 )]
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use alibi::{AuthBuilder, AuthConfig};
-use alibi_core::entity::AuthUser;
-use alibi_core::store::{NumericTextInput, transaction};
-use alibi_core::types::{
+use alibi::entity::AuthUser;
+use alibi::store::{NumericTextInput, transaction};
+use alibi::types::{
     CreateInvitation, CreateJwk, CreateOrganization, CreateSession, CreateTeam, CreateUser,
     CreateVerification, UpdateTeam,
 };
-use alibi_core::{AuthError, AuthSession};
+use alibi::{AuthBuilder, AuthConfig};
+use alibi::{AuthError, AuthSession};
 use chrono::{Duration, Utc};
 use std::sync::Arc;
 
@@ -128,24 +128,18 @@ async fn decorated_store_delegates_organization_verification_and_jwk_operations<
 async fn text_number_coercion_uses_the_database_cast<B: Backend>(db: Db) -> TestResult {
     let (_, store) = db.migrated::<B>(SECRET).await?;
     assert_eq!(
-        alibi_core::store::UserStore::coerce_user_text_number(
-            &store,
-            NumericTextInput::Integer(42)
-        )
-        .await?,
+        alibi::store::UserStore::coerce_user_text_number(&store, NumericTextInput::Integer(42))
+            .await?,
         "42"
     );
     let real =
-        alibi_core::store::UserStore::coerce_user_text_number(&store, NumericTextInput::Real(1.5))
+        alibi::store::UserStore::coerce_user_text_number(&store, NumericTextInput::Real(1.5))
             .await?;
     assert_eq!(real.parse::<f64>()?, 1.5);
     assert!(
-        alibi_core::store::UserStore::coerce_user_text_number(
-            &store,
-            NumericTextInput::Real(f64::NAN)
-        )
-        .await
-        .is_err()
+        alibi::store::UserStore::coerce_user_text_number(&store, NumericTextInput::Real(f64::NAN))
+            .await
+            .is_err()
     );
     Ok(())
 }
@@ -184,15 +178,15 @@ async fn stateless_store_lists_only_requested_ephemeral_sessions() -> TestResult
 }
 
 struct Silent;
-impl<S: alibi::AuthSchema, H: alibi_core::store::HookBackend> alibi_core::store::DatabaseHooks<S, H>
+impl<S: alibi::AuthSchema, H: alibi::store::HookBackend> alibi::store::DatabaseHooks<S, H>
     for Silent
 {
 }
 
 async fn hooks_without_overrides_admit_every_lifecycle_operation<B: Backend>(db: Db) -> TestResult {
-    use alibi_core::entity::AuthAccount;
-    use alibi_core::store::{AccountStore, SessionStore, UserStore};
-    use alibi_core::{CreateAccount, UpdateAccount, UpdateUser};
+    use alibi::entity::AuthAccount;
+    use alibi::store::{AccountStore, SessionStore, UserStore};
+    use alibi::{CreateAccount, UpdateAccount, UpdateUser};
 
     let (_, raw) = db.migrated::<B>(SECRET).await?;
     let store = B::hook(raw, Silent);
@@ -251,9 +245,9 @@ async fn hooks_without_overrides_admit_every_lifecycle_operation<B: Backend>(db:
 async fn required_null_fields_take_their_configured_creation_default<B: Backend>(
     db: Db,
 ) -> TestResult {
-    use alibi_core::AuthInitContext;
-    use alibi_core::field_policy::{FieldConfig, FieldDefault};
-    use alibi_core::utils::json::JsValue;
+    use alibi::AuthInitContext;
+    use alibi::field_policy::{FieldConfig, FieldDefault};
+    use alibi::utils::json::JsValue;
 
     let (_, raw) = db.migrated::<B>(SECRET).await?;
     let mut config = AuthConfig::new(SECRET);
@@ -276,20 +270,20 @@ async fn required_null_fields_take_their_configured_creation_default<B: Backend>
 
 struct RefuseUsers;
 #[async_trait::async_trait]
-impl<S: alibi::AuthSchema, H: alibi_core::store::HookBackend> alibi_core::store::DatabaseHooks<S, H>
+impl<S: alibi::AuthSchema, H: alibi::store::HookBackend> alibi::store::DatabaseHooks<S, H>
     for RefuseUsers
 {
     async fn before_create_user(
         &self,
         _: &mut CreateUser,
-        _: &alibi_core::store::DatabaseHookContext<'_, H>,
-    ) -> alibi_core::AuthResult<alibi_core::store::HookControl> {
-        Ok(alibi_core::store::HookControl::Cancel)
+        _: &alibi::store::DatabaseHookContext<'_, H>,
+    ) -> alibi::AuthResult<alibi::store::HookControl> {
+        Ok(alibi::store::HookControl::Cancel)
     }
 }
 
 async fn cancelling_user_hooks_surface_creation_cancelled<B: Backend>(db: Db) -> TestResult {
-    use alibi_core::store::UserStore;
+    use alibi::store::UserStore;
 
     let (_, raw) = db.migrated::<B>(SECRET).await?;
     let store = B::hook(raw, RefuseUsers);

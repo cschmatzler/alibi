@@ -184,8 +184,7 @@ fn validate_key_body(body: Option<&JsValue>, operation: &str) -> AuthResult<JsVa
             ));
             continue;
         }
-        let value =
-            value.ok_or_else(|| crate::endpoint::validation("Missing validated input"))?;
+        let value = value.ok_or_else(|| crate::endpoint::validation("Missing validated input"))?;
         match kind {
             Number(Some(minimum)) if value.as_f64().is_some_and(|number|number<minimum)=>issues.push(format!("[{path}] Too small: expected number to be >={minimum}")),
             Prefix if value.as_str().is_some_and(|prefix|prefix.is_empty()||!prefix.bytes().all(|byte|byte.is_ascii_alphanumeric()||matches!(byte,b'_'|b'-')))=>issues.push(format!("[{path}] Invalid prefix format, must be alphanumeric and contain only underscores and hyphens.")),

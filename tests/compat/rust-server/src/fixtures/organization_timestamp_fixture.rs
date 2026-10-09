@@ -1,9 +1,9 @@
 //! Trusted fixture writes for exercising actual persisted timestamp precision.
 
-use alibi_seaorm::sea_orm::{
+use alibi::seaorm::sea_orm::{
     ActiveModelTrait, DatabaseConnection, EntityTrait, IntoActiveModel, Set,
 };
-use alibi_seaorm::store::entities::{member, organization};
+use alibi::seaorm::store::entities::{member, organization};
 use axum::{Json, Router, http::StatusCode, routing::post};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -21,7 +21,7 @@ struct TimestampRequest {
 async fn write_timestamp(
     database: &DatabaseConnection,
     body: TimestampRequest,
-) -> Result<Value, alibi_seaorm::sea_orm::DbErr> {
+) -> Result<Value, alibi::seaorm::sea_orm::DbErr> {
     let org = organization::Entity::find_by_id(&body.organization_id)
         .one(database)
         .await?;

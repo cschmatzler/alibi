@@ -1,9 +1,9 @@
 //! Keep the fixture's in-memory database alive for the server lifetime.
-use alibi_seaorm::sea_orm::{ConnectOptions, ConnectionTrait, DbBackend, Statement};
+use alibi::seaorm::sea_orm::{ConnectOptions, ConnectionTrait, DbBackend, Statement};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static DATABASE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-use alibi_seaorm::{Database, DatabaseConnection};
+use alibi::seaorm::{Database, DatabaseConnection};
 
 pub(crate) fn options() -> ConnectOptions {
     let name = format!(
@@ -28,7 +28,7 @@ pub(crate) fn options() -> ConnectOptions {
 }
 
 pub(super) async fn connect()
--> Result<(DatabaseConnection, DatabaseConnection), alibi_seaorm::sea_orm::DbErr> {
+-> Result<(DatabaseConnection, DatabaseConnection), alibi::seaorm::sea_orm::DbErr> {
     let configured = options();
     let writer = Database::connect(configured.clone()).await?;
     let observer = Database::connect(configured).await?;
@@ -46,12 +46,12 @@ pub(super) async fn connect()
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alibi_core::{AuthUser, CreateUser};
+    use alibi::{AuthUser, CreateUser};
     use std::time::Duration;
 
     #[tokio::test]
     async fn observer_reads_committed_status_during_writer_transaction_and_cannot_write() {
-        use alibi_seaorm::sea_orm::TransactionTrait;
+        use alibi::seaorm::sea_orm::TransactionTrait;
         let (writer, observer) = connect().await.unwrap();
         writer
             .execute_raw(Statement::from_string(
@@ -131,7 +131,7 @@ mod tests {
             let config =
                 alibi::AuthConfig::new("fixture-database-retention-test-secret-at-least-32chars");
             let store = crate::backend::store::<crate::TestSchema>(config, database.clone());
-            let issued = alibi_core::store::UserStore::create_user(
+            let issued = alibi::store::UserStore::create_user(
                 &store,
                 CreateUser::new().with_email("retained@fixture.test"),
             )
@@ -171,7 +171,7 @@ mod tests {
             .fetch_one(pool)
             .await;
             let found =
-                alibi_core::store::UserStore::get_user_by_id(&store, issued.id().as_ref()).await;
+                alibi::store::UserStore::get_user_by_id(&store, issued.id().as_ref()).await;
             eprintln!(
                 "{label}: tables={tables_before}->{tables_after}; connection={before}->{connection:?}; user={found:?}"
             );
@@ -191,7 +191,7 @@ mod tests {
                     independent,
                 );
                 assert!(
-                    alibi_core::store::UserStore::get_user_by_id(
+                    alibi::store::UserStore::get_user_by_id(
                         &independent_store,
                         issued.id().as_ref(),
                     )

@@ -15,7 +15,7 @@ use alibi::{
         EmailPasswordPlugin, EmailVerificationPlugin, OrganizationPlugin, SessionManagementPlugin,
     },
 };
-use alibi_seaorm::{
+use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };

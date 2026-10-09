@@ -289,8 +289,8 @@ async fn email_otp_verification_reset_and_email_change_bind_owner_and_scope<B: B
 async fn profile_update_publishes_accepted_fields_and_preserves_rejected_identity<B: Backend>(
     db: Db,
 ) -> TestResult {
-    use alibi_core::config::CookieCacheConfig;
-    use alibi_core::utils::username::UsernameConfig;
+    use alibi::config::CookieCacheConfig;
+    use alibi::utils::username::UsernameConfig;
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     for immutable in [false, true] {
         let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
@@ -300,7 +300,7 @@ async fn profile_update_publishes_accepted_fields_and_preserves_rejected_identit
         });
         drop(config.user.additional_fields.insert(
             "role".into(),
-            alibi_core::field_policy::FieldConfig::new(json!({"type":"string"})).read_only(),
+            alibi::field_policy::FieldConfig::new(json!({"type":"string"})).read_only(),
         ));
         let auth = AuthBuilder::new(config.clone())
             .store(B::store(Arc::new(config), &connection))
@@ -521,9 +521,7 @@ async fn password_change_verification_and_session_revocation_are_owner_scoped<B:
 }
 
 async fn configured_username_policy<B: Backend>(parent: &Db) -> TestResult {
-    use alibi_core::utils::username::{
-        UsernameConfig, UsernameNormalization, UsernameValidationOrder,
-    };
+    use alibi::utils::username::{UsernameConfig, UsernameNormalization, UsernameValidationOrder};
     for post in [false, true] {
         let db = parent.fresh().await?;
         let (connection, _) = db.migrated::<B>(SECRET).await?;
@@ -535,28 +533,26 @@ async fn configured_username_policy<B: Backend>(parent: &Db) -> TestResult {
         let policy = UsernameConfig {
             normalization: UsernameNormalization::Custom(Arc::new(|value: &str| {
                 if value.contains("normalizer-error") {
-                    return Err(alibi_core::AuthError::internal(
-                        "private normalizer failure",
-                    ));
+                    return Err(alibi::AuthError::internal("private normalizer failure"));
                 }
                 Ok(value.trim_start_matches("raw-").to_ascii_lowercase())
             })),
             validator: Some(Arc::new(move |value: String| async move {
                 if value.contains("validator-error") {
-                    return Err(alibi_core::AuthError::internal("private validator failure"));
+                    return Err(alibi::AuthError::internal("private validator failure"));
                 }
                 Ok(value == if post { "admitted" } else { "raw-ADMITTED" }
                     || value.contains("normalizer-error"))
             })),
             display_normalizer: Some(Arc::new(|value: &str| {
                 if value.contains("display-error") {
-                    return Err(alibi_core::AuthError::internal("private display failure"));
+                    return Err(alibi::AuthError::internal("private display failure"));
                 }
                 Ok(value.trim_start_matches("raw-").to_ascii_lowercase())
             })),
             display_validator: Some(Arc::new(move |value: String| async move {
                 if value.contains("display-validator-error") {
-                    return Err(alibi_core::AuthError::internal(
+                    return Err(alibi::AuthError::internal(
                         "private display validator failure",
                     ));
                 }
@@ -677,7 +673,7 @@ async fn password_length_limits_apply_to_every_new_password_endpoint<B: Backend>
         auth.store()
             .update_user(
                 &owner_id,
-                alibi_core::UpdateUser {
+                alibi::UpdateUser {
                     role: Some("admin".into()),
                     ..Default::default()
                 },

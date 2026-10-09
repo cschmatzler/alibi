@@ -196,10 +196,7 @@ pub(in crate::two_factor) fn js_number_string(value: f64) -> String {
     }
 }
 
-pub(in crate::two_factor) fn constant_time_totp_equal(
-    input: &str,
-    expected: &str,
-) -> bool {
+pub(in crate::two_factor) fn constant_time_totp_equal(input: &str, expected: &str) -> bool {
     // Source compares UTF-16 code units and includes the original lengths.
     let mut input_units = input.encode_utf16();
     let mut difference = input_units.clone().count() ^ expected.encode_utf16().count();

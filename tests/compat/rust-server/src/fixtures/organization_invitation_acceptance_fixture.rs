@@ -10,7 +10,7 @@ use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
 };
-use alibi_seaorm::{
+use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };

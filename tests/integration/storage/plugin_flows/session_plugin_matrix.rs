@@ -5,7 +5,7 @@ use crate::snapshot::Trace;
 use alibi::plugins::custom_session::{CustomSessionPlugin, SessionTransform};
 use alibi::plugins::multi_session::MultiSessionConfig;
 use alibi::plugins::{BearerPlugin, MultiSessionPlugin};
-use alibi_core::{AuthContext, AuthError, AuthResult, CookieCacheConfig, CookieCacheStrategy};
+use alibi::{AuthContext, AuthError, AuthResult, CookieCacheConfig, CookieCacheStrategy};
 use std::collections::BTreeMap;
 
 backend_tests!(

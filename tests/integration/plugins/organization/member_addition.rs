@@ -9,19 +9,19 @@ use alibi::plugins::organization::{
     OrganizationPlugin,
     types::{AddOrganizationMemberRequest, RoleInput},
 };
-use alibi::{AuthConfig, AuthError, AuthResult};
-use alibi_core::{
-    AuthContext, CreateOrganization, CreateUser,
-    store::{MemberStore, OrganizationStore, UserStore},
-};
-use alibi_seaorm::{
+use alibi::seaorm::{
     Database, SeaOrmStore,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
+use alibi::{AuthConfig, AuthError, AuthResult};
+use alibi::{
+    AuthContext, CreateOrganization, CreateUser,
+    store::{MemberStore, OrganizationStore, UserStore},
 };
 use async_trait::async_trait;
 use std::{collections::HashMap, sync::Arc};
 
-type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -51,7 +51,7 @@ mod tests {
     async fn server_addition_keeps_database_error_distinct_from_after_api_error_and_rows()
     -> TestResult {
         let database = Database::connect("sqlite::memory:").await?;
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
         let config = AuthConfig::new("member-addition-native-secret-at-least-32-bytes");
         let store = Arc::new(SeaOrmStore::<Schema>::new(config.clone(), database.clone()));
         let user = store

@@ -4,10 +4,10 @@
     clippy::panic_in_result_fn,
     reason = "tests assert independently specified wire fields and fixtures"
 )]
+use alibi::field_policy::FieldConfig;
 use alibi::plugin::{AuthRoute, OpenApiEndpoint, PluginOpenApiMetadata};
 use alibi::{AuthBuilder, AuthConfig};
-use alibi_core::field_policy::FieldConfig;
-use alibi_core::{
+use alibi::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthSchema, HttpMethod,
 };
 use async_trait::async_trait;

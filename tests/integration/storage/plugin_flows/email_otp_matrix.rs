@@ -6,7 +6,7 @@ use alibi::plugins::email_otp::{
     EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, OtpResendStrategy,
 };
 use alibi::plugins::{EmailVerificationConfig, EmailVerificationPlugin};
-use alibi_core::{AuthError, AuthResult, CallbackContext};
+use alibi::{AuthError, AuthResult, CallbackContext};
 
 backend_tests!(
     email_otp_issuance_and_request_validation,
@@ -246,7 +246,7 @@ async fn email_otp_change_email_policy<B: Backend>(db: Db) -> TestResult {
 }
 
 async fn email_otp_hooks_and_reset_edges<B: Backend>(db: Db) -> TestResult {
-    use alibi_core::wire::UserView;
+    use alibi::wire::UserView;
     let mut trace = Trace::default();
     for mode in ["passes", "api error", "internal"] {
         let db = db.fresh().await?;

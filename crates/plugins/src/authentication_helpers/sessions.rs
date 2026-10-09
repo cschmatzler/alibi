@@ -23,12 +23,10 @@ pub(crate) async fn session_response_with_remember<S: AuthSchema>(
         create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
         sign_cookie_value, verify_cookie_value,
     };
-    let inherited = crate::helpers::get_cookie(
-        req,
-        &related_cookie_name(&ctx.config, "dont_remember"),
-    )
-    .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
-    .is_some_and(|value| !value.is_empty());
+    let inherited =
+        crate::helpers::get_cookie(req, &related_cookie_name(&ctx.config, "dont_remember"))
+            .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
+            .is_some_and(|value| !value.is_empty());
     let dont_remember = remember_me.map_or(inherited, |value| !value);
     let mut config = (*ctx.config).clone();
     if remember_me == Some(false) {

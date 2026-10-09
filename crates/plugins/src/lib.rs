@@ -23,9 +23,9 @@ compile_error!(
      enable either the `native-tls` (default) or `rustls` feature."
 );
 
-pub mod metadata;
 pub mod access;
 pub mod account_management;
+pub mod metadata;
 
 pub mod admin;
 
@@ -260,8 +260,15 @@ pub use admin::{
 };
 pub use alibi_core::PasswordHasher;
 pub use anonymous::{AnonymousConfig, AnonymousPlugin};
+pub use anonymous::{AnonymousIdentity, AnonymousLink, LinkAnonymousAccount};
+pub use api_key::{
+    ApiKeyCallbackContext, ApiKeyDefaultPermissions, ApiKeyErrorMessage, ApiKeyGenerationOptions,
+    ApiKeyGenerator, ApiKeyGetter, ApiKeyPermissions, ApiKeyValidator,
+    DeleteExpiredApiKeysResponse,
+};
 pub use api_key::{ApiKeyConfig, ApiKeyPlugin};
 pub use bearer::{BearerConfig, BearerPlugin};
+pub use captcha::{CaptchaConfig, CaptchaPlugin, CaptchaProvider};
 pub use device_authorization::DeviceAuthorizationPlugin;
 pub use email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
 pub use email_password::{EmailPasswordConfig, EmailPasswordPlugin};
@@ -269,21 +276,34 @@ pub use email_verification::{
     EmailVerificationConfig, EmailVerificationHook, EmailVerificationPlugin, SendVerificationEmail,
 };
 pub use haveibeenpwned::{HaveIBeenPwnedConfig, HaveIBeenPwnedPlugin, PwnedPasswordClient};
+pub use last_login_method::{
+    BeforeStoreLastLoginMethodCookie, LastLoginMethodContext, ResolveLastLoginMethod,
+};
 pub use magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
+pub use multi_session::{MultiSessionConfig, MultiSessionPlugin};
+pub use oauth::OAuthPlugin;
+pub use oauth_proxy::{OAuthProxyConfig, OAuthProxyPlugin};
+pub use one_tap::{OAuthJwksSource, OneTapClientId};
+pub use one_tap::{OneTapConfig, OneTapPlugin};
+pub use open_api::{OpenApiConfig, OpenApiPlugin};
 pub use organization::{
     OrganizationConfig, OrganizationCreatePatch, OrganizationCreatedContext,
     OrganizationCreationHooks, OrganizationDraftContext, OrganizationMemberCreatePatch,
     OrganizationMemberDraftContext, OrganizationPlugin,
 };
+pub use passkey::{
+    AuthenticationResult, PasskeyAuthenticationAfterVerification, PasskeyAuthenticationConfig,
+    PasskeyAuthenticationContext, PasskeyAuthenticatorSelection, PasskeyExtensions,
+    PasskeyExtensionsResolver, PasskeyOptionsContext, PasskeyRegistrationAfterVerification,
+    PasskeyRegistrationConfig, PasskeyRegistrationContext, PasskeyRegistrationOverride,
+    PasskeyRegistrationUser, PasskeyUserResolver, VerifiedPasskeyAuthentication,
+    VerifiedPasskeyRegistration,
+};
 pub use passkey::{PasskeyConfig, PasskeyPlugin};
-pub use oauth::OAuthPlugin;
-pub use oauth_proxy::{OAuthProxyConfig, OAuthProxyPlugin};
-pub use one_tap::{OneTapConfig, OneTapPlugin};
-pub use open_api::{OpenApiConfig, OpenApiPlugin};
-
 pub use password_management::{
     PasswordManagementConfig, PasswordManagementPlugin, SendResetPassword,
 };
+pub use phone_number::{PhoneNumberConfig, PhoneNumberPlugin, SendPhoneOtp};
 use serde::{Deserialize, Serialize};
 pub use session_management::SessionManagementPlugin;
 pub use siwe::{SiweConfig, SiwePlugin};
@@ -291,6 +311,7 @@ pub use two_factor::{
     SendTwoFactorOtp, TwoFactorBackupCipher, TwoFactorBackupStorage, TwoFactorConfig,
     TwoFactorOtpCipher, TwoFactorOtpHasher, TwoFactorOtpStorage, TwoFactorPlugin,
 };
+pub use user_management::SendChangeEmailConfirmation;
 pub use user_management::{
     ChangeEmailConfig, DeleteUserConfig, UserManagementConfig, UserManagementPlugin,
 };

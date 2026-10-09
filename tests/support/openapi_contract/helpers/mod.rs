@@ -10,6 +10,7 @@ use alibi::plugins::one_time_token::OneTimeTokenPlugin;
 use alibi::plugins::phone_number::PhoneNumberConfig;
 use alibi::plugins::phone_number::PhoneNumberPlugin;
 use alibi::plugins::siwe::{Eip191Verifier, RandomSiweNonce, SiweConfig, SiwePlugin};
+use alibi::seaorm::{Database, DatabaseConnection, SeaOrmStore};
 use alibi::{
     AuthBuilder, AuthConfig, BetterAuth,
     plugins::{
@@ -31,13 +32,12 @@ use alibi::{
     },
     prelude::{AuthRequest, HttpMethod},
 };
-use alibi_seaorm::{Database, DatabaseConnection, SeaOrmStore};
 use serde_json::Value;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type TestSchema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 type TestAuth = BetterAuth<TestSchema>;
 
@@ -263,7 +263,7 @@ fn mock_oauth_plugin() -> OAuthPlugin {
 fn test_session_cookie(token: &str) -> String {
     format!(
         "better-auth.session_token={}",
-        alibi_core::utils::cookie_utils::sign_cookie_value(token, &test_secret())
+        alibi::utils::cookie_utils::sign_cookie_value(token, &test_secret())
     )
 }
 
@@ -271,7 +271,7 @@ async fn test_database() -> DatabaseConnection {
     let database = Database::connect("sqlite::memory:")
         .await
         .unwrap_or_else(|e| panic!("sqlite test database should connect: {e}"));
-    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+    alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .unwrap_or_else(|e| panic!("sqlite test migrations should run: {e}"));
     database

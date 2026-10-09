@@ -10,9 +10,7 @@ pub(in crate::jwt) fn js_truthy(value: &Value) -> bool {
     }
 }
 
-pub(in crate::jwt) fn js_raw_primitive_string(
-    value: &alibi_core::utils::json::JsValue,
-) -> String {
+pub(in crate::jwt) fn js_raw_primitive_string(value: &alibi_core::utils::json::JsValue) -> String {
     use alibi_core::utils::json::JsValue;
     match value {
         JsValue::Null => "null".to_owned(),
@@ -107,10 +105,7 @@ pub(in crate::jwt) fn decode_compact_json(
     Ok(alibi_core::utils::json::parse_value(text)?.to_json_value()?)
 }
 
-pub(in crate::jwt) fn validate_numeric_date(
-    field: &str,
-    number: Option<f64>,
-) -> AuthResult<()> {
+pub(in crate::jwt) fn validate_numeric_date(field: &str, number: Option<f64>) -> AuthResult<()> {
     if number.is_some_and(|number| !number.is_finite()) {
         return Err(AuthError::internal(format!("Invalid {field} input")));
     }
@@ -122,9 +117,7 @@ pub(in crate::jwt) fn validate_numeric_date(
     clippy::cast_precision_loss,
     reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
 )]
-pub(in crate::jwt) fn normalize_signing_claims(
-    payload: &mut Map<String, Value>,
-) -> AuthResult<()> {
+pub(in crate::jwt) fn normalize_signing_claims(payload: &mut Map<String, Value>) -> AuthResult<()> {
     let now = Utc::now().timestamp();
     for field in ["exp", "iat", "nbf"] {
         if let Some(value) = payload.get(field)

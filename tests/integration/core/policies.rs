@@ -5,18 +5,18 @@
     reason = "tests assert independently specified wire fields and fixtures"
 )]
 use alibi::AuthConfig;
-use alibi_core::field_policy::{FieldConfig, FieldInputError, FieldValues, SessionFields};
-use alibi_core::hooks::{RequestHookContext, with_request_hook_context};
-use alibi_core::types::{ListUsersParams, UserFilterValue};
-use alibi_core::user_query::{apply_list_users, apply_list_users_presorted};
-use alibi_core::user_validation::{
+use alibi::field_policy::{FieldConfig, FieldInputError, FieldValues, SessionFields};
+use alibi::hooks::{RequestHookContext, with_request_hook_context};
+use alibi::types::{ListUsersParams, UserFilterValue};
+use alibi::user_query::{apply_list_users, apply_list_users_presorted};
+use alibi::user_validation::{
     UserInfoValidator, UserValidationData, UserValidationRejection, UserValidationSource,
     validate_user_info,
 };
-use alibi_core::utils::json::JsValue;
-use alibi_core::utils::username::{UsernameConfig, UsernameNormalization, UsernameValidationOrder};
-use alibi_core::wire::{UserView, VerificationView};
-use alibi_core::{AuthError, AuthRequest, AuthResult, CreateUser, HttpMethod};
+use alibi::utils::json::JsValue;
+use alibi::utils::username::{UsernameConfig, UsernameNormalization, UsernameValidationOrder};
+use alibi::wire::{UserView, VerificationView};
+use alibi::{AuthError, AuthRequest, AuthResult, CreateUser, HttpMethod};
 use async_trait::async_trait;
 use serde_json::json;
 use std::sync::Arc;
@@ -247,7 +247,7 @@ async fn user_validation_requires_a_complete_source_and_an_endpoint_context() {
         code(validate(&config, oauth.clone(), true).await).2,
         "OAuth user validation source requires oauth.providerId"
     );
-    oauth.oauth = Some(alibi_core::user_validation::UserValidationProvider {
+    oauth.oauth = Some(alibi::user_validation::UserValidationProvider {
         provider_id: String::new(),
         profile: None,
     });
@@ -392,7 +392,7 @@ fn parse(
     creation: bool,
     value: serde_json::Value,
 ) -> Result<FieldValues, FieldInputError> {
-    let JsValue::Object(input) = alibi_core::utils::json::parse_value(&value.to_string()).unwrap()
+    let JsValue::Object(input) = alibi::utils::json::parse_value(&value.to_string()).unwrap()
     else {
         panic!("object input expected");
     };
@@ -460,7 +460,7 @@ fn field_input_rules_for_server_owned_defaults_and_undefined_transforms() {
 
 #[test]
 fn wire_views_round_trip_through_their_entity_traits() {
-    use alibi_core::AuthUser;
+    use alibi::AuthUser;
 
     let created = chrono::DateTime::from_timestamp_millis(1_709_251_200_000).unwrap();
     let view = VerificationView {
@@ -488,7 +488,7 @@ fn wire_views_round_trip_through_their_entity_traits() {
     assert_eq!(serde_json::to_value(&user).unwrap()["emailVerified"], "yes");
 }
 
-fn session_view(id: &str) -> alibi_core::wire::SessionView {
+fn session_view(id: &str) -> alibi::wire::SessionView {
     serde_json::from_value(json!({
         "id": id,
         "expiresAt": "2099-01-01T00:00:00.000Z",
@@ -504,7 +504,7 @@ fn session_view(id: &str) -> alibi_core::wire::SessionView {
 
 #[test]
 fn compact_cache_envelopes_reject_unsound_payloads_and_non_finite_expiry() {
-    use alibi_core::session::cookie_cache::{decode_compact, encode_compact};
+    use alibi::session::cookie_cache::{decode_compact, encode_compact};
     use base64::Engine as _;
 
     const SECRET: &str = "compact-cache-secret-at-least-32-characters";

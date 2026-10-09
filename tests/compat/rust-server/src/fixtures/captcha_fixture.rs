@@ -8,10 +8,10 @@ use alibi::plugins::captcha::{
 };
 use alibi::plugins::{EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi_core::{
+use alibi::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, BeforeRequestAction,
 };
-use alibi_seaorm::DatabaseConnection;
+use alibi::seaorm::DatabaseConnection;
 use async_trait::async_trait;
 use axum::{
     Json, Router,

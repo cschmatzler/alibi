@@ -328,8 +328,7 @@ impl PhoneNumberPlugin {
         )
         .await?;
         if crate::two_factor::is_enabled(ctx) && user.two_factor_enabled() {
-            let trusted =
-                crate::two_factor::inspect_trusted_device(req, &user, ctx).await?;
+            let trusted = crate::two_factor::inspect_trusted_device(req, &user, ctx).await?;
             if trusted.trusted {
                 for header in trusted.set_cookie_headers {
                     response.headers.append("Set-Cookie", header);
@@ -342,12 +341,9 @@ impl PhoneNumberPlugin {
                     .and_then(serde_json::Value::as_str)
                     .ok_or_else(|| AuthError::internal("Issued session must have a token"))?;
                 ctx.database.delete_session(token).await?;
-                let challenge = crate::two_factor::begin_sign_in_challenge(
-                    &user,
-                    body.remember_me,
-                    ctx,
-                )
-                .await?;
+                let challenge =
+                    crate::two_factor::begin_sign_in_challenge(&user, body.remember_me, ctx)
+                        .await?;
                 response = AuthResponse::json(200, &challenge.response)?;
                 for header in trusted
                     .set_cookie_headers
@@ -587,9 +583,7 @@ impl PhoneNumberPlugin {
         let hash = ctx
             .hash_password(settings.hasher.as_ref(), &body.new_password)
             .await?;
-        if let Some(account) =
-            crate::helpers::get_credential_account(ctx, user.id()).await?
-        {
+        if let Some(account) = crate::helpers::get_credential_account(ctx, user.id()).await? {
             drop(
                 ctx.database
                     .update_account_record(

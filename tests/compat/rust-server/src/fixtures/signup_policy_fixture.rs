@@ -13,11 +13,11 @@ use alibi::plugins::{
     SessionManagementPlugin,
 };
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi_core::{
+use alibi::{
     AuthRequest, BackgroundTaskCompletion, BackgroundTaskHandler, PasswordHasher, ScryptHasher,
     wire::{AccountView, UserView, VerificationView},
 };
-use alibi_seaorm::{
+use alibi::seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, QueryOrder, Set},
     store::entities::{account, session, user, verification},
@@ -86,7 +86,7 @@ impl BackgroundTaskHandler for Application {
 impl DatabaseHooks<TestSchema, crate::backend::Backend> for Application {
     async fn before_create_user(
         &self,
-        _user: &mut alibi_core::CreateUser,
+        _user: &mut alibi::CreateUser,
         _context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         if _context.config.base_path.contains("signup-username-") {
@@ -146,7 +146,7 @@ impl SendEmailOtp for Application {
     async fn send(
         &self,
         delivery: &EmailOtpDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         self.event(json!({"stage":"otp","email":delivery.email,"otp":delivery.otp,"type":delivery.otp_type.as_str()}));
         Ok(())
@@ -157,7 +157,7 @@ impl SendPhoneOtp for Application {
     async fn send(
         &self,
         delivery: &PhoneOtpDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         self.event(
             json!({"stage":"phone-otp","phoneNumber":delivery.phone_number,"code":delivery.code}),
@@ -171,7 +171,7 @@ impl PhoneSignupIdentity for Application {
     }
 }
 fn request_observation() -> Value {
-    alibi_core::hooks::current_request_hook_context().map_or(Value::Null, |request| {
+    alibi::hooks::current_request_hook_context().map_or(Value::Null, |request| {
         let path = request.path.rsplit("/api/auth").next().unwrap_or(&request.path);
         json!({"method":format!("{:?}",request.method).to_uppercase(),"path":path,
             "marker":request.headers.get("x-test-policy-marker"),"contentType":request.headers.get("content-type")})
@@ -184,7 +184,7 @@ impl SendResetPassword for Application {
         self.fail("reset-sender")
     }
 }
-fn database_error(error: alibi_seaorm::sea_orm::DbErr) -> AuthError {
+fn database_error(error: alibi::seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
 

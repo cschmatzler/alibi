@@ -2,15 +2,15 @@
 //! cookies of the organization plugin.
 use super::*;
 use crate::snapshot::Trace;
+use alibi::AuthResult;
+use alibi::endpoint::EndpointOptions;
 use alibi::plugins::organization::{
     DynamicAccessControlConfig, MembershipLimit, OrganizationCreationHooks,
     OrganizationLimitResolver, OrganizationMemberAdditionHooks, OrganizationMemberCreatePatch,
     OrganizationMembershipLimitResolver, TeamsConfig, default_organization_statements,
 };
 use alibi::plugins::{OrganizationConfig, OrganizationPlugin};
-use alibi_core::AuthResult;
-use alibi_core::endpoint::EndpointOptions;
-use alibi_core::wire::UserView;
+use alibi::wire::UserView;
 use std::collections::BTreeMap;
 
 backend_tests!(

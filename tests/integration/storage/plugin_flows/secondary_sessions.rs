@@ -5,7 +5,7 @@
     reason = "tests assert independently specified wire fields and fixtures"
 )]
 use super::*;
-use alibi_core::store::{CacheAdapter, MemoryCacheAdapter};
+use alibi::store::{CacheAdapter, MemoryCacheAdapter};
 
 backend_tests!(sign_out_evicts_the_cached_session_and_its_owner_index);
 postgres_tests!(sign_out_evicts_the_cached_session_and_its_owner_index);

@@ -8,15 +8,15 @@ use alibi::plugins::{
     UserManagementPlugin,
 };
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_core::{
+use alibi::{
     CreateAccount,
     store::{AccountStore, UserStore},
 };
-use alibi_seaorm::DatabaseConnection;
-use alibi_seaorm::sea_orm::{
+use alibi::seaorm::DatabaseConnection;
+use alibi::seaorm::sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set,
 };
-use alibi_seaorm::store::entities::{account, session, user};
+use alibi::seaorm::store::entities::{account, session, user};
 use axum::{
     Json, Router,
     extract::State,
@@ -243,7 +243,7 @@ pub(crate) async fn router(
                     let date = DateTime::parse_from_rfc3339(timestamp)
                         .map_err(|_| axum::http::StatusCode::BAD_REQUEST)?
                         .with_timezone(&Utc);
-                    use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+                    use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
                     db.execute_raw(Statement::from_sql_and_values(
                         DbBackend::Sqlite,
                         "UPDATE accounts SET created_at = ?, updated_at = ? WHERE id = ?",

@@ -6,8 +6,8 @@ use alibi::plugins::AnonymousPlugin;
 use alibi::plugins::anonymous::{
     AnonymousConfig, AnonymousIdentity, AnonymousLink, LinkAnonymousAccount,
 };
-use alibi_core::store::{DatabaseHookContext, DatabaseHooks, HookControl};
-use alibi_core::{AuthResult, CreateSession, CreateUser};
+use alibi::store::{DatabaseHookContext, DatabaseHooks, HookControl};
+use alibi::{AuthResult, CreateSession, CreateUser};
 use std::collections::BTreeMap;
 
 backend_tests!(
@@ -48,7 +48,7 @@ struct Cancel {
 }
 
 #[async_trait::async_trait]
-impl<S: AuthSchema, B: alibi_core::store::HookBackend> DatabaseHooks<S, B> for Cancel {
+impl<S: AuthSchema, B: alibi::store::HookBackend> DatabaseHooks<S, B> for Cancel {
     async fn before_create_user(
         &self,
         user: &mut CreateUser,
@@ -226,7 +226,7 @@ async fn anonymous_creation_failures<B: Backend>(db: Db) -> TestResult {
 struct SharedCancel(Arc<Cancel>);
 
 #[async_trait::async_trait]
-impl<S: AuthSchema, B: alibi_core::store::HookBackend> DatabaseHooks<S, B> for SharedCancel {
+impl<S: AuthSchema, B: alibi::store::HookBackend> DatabaseHooks<S, B> for SharedCancel {
     async fn before_create_user(
         &self,
         user: &mut CreateUser,

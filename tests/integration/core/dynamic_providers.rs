@@ -7,10 +7,10 @@
 )]
 use crate::storage::{Backend, Db, Raw, TestResult, backend_tests, postgres_tests};
 use alibi::config::{BaseUrlProtocol, DynamicBaseUrl, TrustedProvidersResolver};
+use alibi::entity::{AuthAccount, AuthSession, AuthUser};
 use alibi::plugins::{OAuthPlugin, oauth::OAuthProvider};
 use alibi::{AuthBuilder, AuthConfig, BetterAuth};
-use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
-use alibi_core::{
+use alibi::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, CreateAccount, CreateUser, HttpMethod, SessionManager,
 };
@@ -192,7 +192,7 @@ fn callback(code: &str, host: &str, trust: &str, state: &str, cookies: &str) -> 
     r
 }
 async fn physical_account(db: &Db, id: &str) -> TestResult<Value> {
-    use alibi_sqlx::sqlx::{self, Row};
+    use alibi::sqlx::sqlx::{self, Row};
     Ok(crate::storage::on_raw!(&db.raw, |pool| {
         let row = sqlx::query(sqlx::AssertSqlSafe(String::from(
             "SELECT id, user_id, account_id, access_token, scope FROM accounts WHERE id=$1",
@@ -376,7 +376,7 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
         .await?;
     let session_cookie = format!(
         "__Secure-better-auth.session_token={}",
-        alibi_core::utils::cookie_utils::sign_cookie_value(session.token(), SECRET)
+        alibi::utils::cookie_utils::sign_cookie_value(session.token(), SECRET)
     );
     let (state, cookies, start) = start(&auth, "actor", "allow", Some(&session_cookie)).await;
     let cookies = format!("{cookies}; {session_cookie}");

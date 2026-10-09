@@ -6,9 +6,9 @@
 )]
 use super::super::{SeaOrm, Sqlx};
 use super::*;
-use alibi_core::config::CookieCacheConfig;
-use alibi_core::field_policy::FieldConfig;
-use alibi_core::utils::json::JsValue;
+use alibi::config::CookieCacheConfig;
+use alibi::field_policy::FieldConfig;
+use alibi::utils::json::JsValue;
 use chrono::{DateTime, Utc};
 
 mod sqlx_model {
@@ -129,7 +129,7 @@ fn config() -> (AuthConfig, AsyncObservation) {
             FieldConfig::new(json!({"type":"string"})).transform(|value| {
                 let Some(value) = value else { return Ok(None) };
                 if value.as_str() == Some("reject") {
-                    return Err(alibi_core::AuthError::internal("private transform failure"));
+                    return Err(alibi::AuthError::internal("private transform failure"));
                 }
                 if value.as_str() == Some("reject-at-binding") {
                     return Ok(Some(JsValue::String("reject".into())));
@@ -147,7 +147,7 @@ fn config() -> (AuthConfig, AsyncObservation) {
                     let Some(value) = value else { return Ok(None) };
                     let value = value.as_str().unwrap();
                     if value.ends_with("adapter-reject") {
-                        return Err(alibi_core::AuthError::internal("adapter callback veto"));
+                        return Err(alibi::AuthError::internal("adapter callback veto"));
                     }
                     tokio::task::yield_now().await;
                     Ok(Some(JsValue::String(format!("adapter:{value}"))))
@@ -420,7 +420,7 @@ async fn exercise<S: AuthSchema>(
             "temporary",
             format!(
                 "; better-auth.dont_remember={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value("true", SECRET)
+                alibi::utils::cookie_utils::sign_cookie_value("true", SECRET)
             ),
             true,
         ),
@@ -550,31 +550,31 @@ struct SessionHooks {
     after: Arc<std::sync::atomic::AtomicUsize>,
 }
 #[async_trait::async_trait]
-impl<S: AuthSchema, H: alibi_core::store::HookBackend> alibi_core::store::DatabaseHooks<S, H>
+impl<S: AuthSchema, H: alibi::store::HookBackend> alibi::store::DatabaseHooks<S, H>
     for SessionHooks
 {
     async fn before_update_session(
         &self,
         _: &str,
-        fields: &mut alibi_core::field_policy::FieldValues,
-        _: &alibi_core::store::DatabaseHookContext<'_, H>,
-    ) -> alibi_core::AuthResult<alibi_core::store::HookControl> {
+        fields: &mut alibi::field_policy::FieldValues,
+        _: &alibi::store::DatabaseHookContext<'_, H>,
+    ) -> alibi::AuthResult<alibi::store::HookControl> {
         let _ = self
             .before
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(
             if fields.get("label").and_then(JsValue::as_str) == Some("cancel") {
-                alibi_core::store::HookControl::Cancel
+                alibi::store::HookControl::Cancel
             } else {
-                alibi_core::store::HookControl::Continue
+                alibi::store::HookControl::Continue
             },
         )
     }
     async fn after_update_session(
         &self,
         _: &S::Session,
-        _: &alibi_core::store::DatabaseHookContext<'_, H>,
-    ) -> alibi_core::AuthResult<()> {
+        _: &alibi::store::DatabaseHookContext<'_, H>,
+    ) -> alibi::AuthResult<()> {
         let _ = self.after.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(())
     }
@@ -582,7 +582,7 @@ impl<S: AuthSchema, H: alibi_core::store::HookBackend> alibi_core::store::Databa
 
 fn secondary_config() -> AuthConfig {
     let (mut config, _) = config();
-    config.session.secondary_storage = Some(Arc::new(alibi_core::store::MemoryCacheAdapter::new()));
+    config.session.secondary_storage = Some(Arc::new(alibi::store::MemoryCacheAdapter::new()));
     config.session.store_in_database = false;
     config.session.cookie_cache = None;
     config
@@ -687,22 +687,20 @@ async fn secondary_sessions_run_update_hooks_seaorm_sqlite() -> TestResult {
 
 struct TransactionProbe;
 #[async_trait::async_trait]
-impl<S: AuthSchema> alibi_core::store::DatabaseHooks<S, alibi_sqlx::SqlxBackend>
-    for TransactionProbe
-{
+impl<S: AuthSchema> alibi::store::DatabaseHooks<S, alibi::sqlx::SqlxBackend> for TransactionProbe {
     async fn before_create_account(
         &self,
-        _: &mut alibi_core::CreateAccount,
-        ctx: &alibi_core::store::DatabaseHookContext<'_, alibi_sqlx::SqlxBackend>,
-    ) -> alibi_core::AuthResult<alibi_core::store::HookControl> {
+        _: &mut alibi::CreateAccount,
+        ctx: &alibi::store::DatabaseHookContext<'_, alibi::sqlx::SqlxBackend>,
+    ) -> alibi::AuthResult<alibi::store::HookControl> {
         let transaction = ctx.tx.expect("signup writes inside one transaction");
         let mut guard = transaction.lock().await;
         let connection = guard.sqlite().expect("SQLite transaction");
-        _ = alibi_sqlx::sqlx::query("UPDATE users SET name = 'rewritten-by-hook'")
+        _ = alibi::sqlx::sqlx::query("UPDATE users SET name = 'rewritten-by-hook'")
             .execute(connection)
             .await
-            .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?;
-        Ok(alibi_core::store::HookControl::Continue)
+            .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
+        Ok(alibi::store::HookControl::Continue)
     }
 }
 

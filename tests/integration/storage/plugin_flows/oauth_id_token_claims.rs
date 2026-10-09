@@ -2,8 +2,8 @@
 use super::social_flows::Social;
 use super::*;
 use crate::snapshot::Trace;
+use alibi::AccountConfig;
 use alibi::plugins::oauth::{HttpOAuthJwksSource, OAuthJwksSelection, OAuthProvider};
-use alibi_core::AccountConfig;
 use jsonwebtoken::Algorithm;
 
 backend_tests!(id_token_policy_decides_admission_from_header_keys_and_claims);

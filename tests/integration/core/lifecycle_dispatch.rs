@@ -1,13 +1,13 @@
 //! Pinned dispatch behavior: hooks share authenticated context and response headers.
 #![allow(clippy::unwrap_used, reason = "regressions assert dispatch outcomes")]
 
+use alibi::seaorm::{Database, SeaOrmStore};
+use alibi::wire::SessionView;
 use alibi::{AuthBuilder, AuthConfig};
-use alibi_core::wire::SessionView;
-use alibi_core::{
+use alibi::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     BeforeRequestAction, HttpMethod,
 };
-use alibi_seaorm::{Database, SeaOrmStore};
 use async_trait::async_trait;
 use serde_json::json;
 use std::sync::{
@@ -15,7 +15,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 struct Probe {
     session: Option<SessionView>,
@@ -268,7 +268,7 @@ impl AuthPlugin<Schema> for ObserveNestedHeaders {
 struct CaptureEmail(Arc<std::sync::Mutex<Vec<String>>>);
 
 #[async_trait]
-impl alibi_core::EmailProvider for CaptureEmail {
+impl alibi::EmailProvider for CaptureEmail {
     async fn send(&self, to: &str, subject: &str, html: &str, text: &str) -> AuthResult<()> {
         self.0
             .lock()
@@ -310,7 +310,7 @@ impl AuthPlugin<Schema> for InitializedEmail {
 async fn auth(probe: Probe) -> alibi::BetterAuth<Schema> {
     let config = AuthConfig::new("dispatch-tests-only-secret-minimum-32-characters");
     let db = Database::connect("sqlite::memory:").await.unwrap();
-    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+    alibi::seaorm::store::__private_test_support::migrator::run_migrations(&db)
         .await
         .unwrap();
     AuthBuilder::new(config.clone())
@@ -434,7 +434,7 @@ mod tests {
     async fn nested_headers_survive_endpoint_errors_and_remain_request_scoped() {
         let config = AuthConfig::new("nested-header-tests-secret-minimum-32-characters");
         let db = Database::connect("sqlite::memory:").await.unwrap();
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&db)
             .await
             .unwrap();
         let configured = AuthBuilder::new(config.clone())
@@ -491,7 +491,7 @@ mod tests {
     async fn unknown_paths_and_methods_cannot_dispatch_plugin_hooks() {
         let config = AuthConfig::new("route-boundary-tests-secret-minimum-32-characters");
         let db = Database::connect("sqlite::memory:").await.unwrap();
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&db)
             .await
             .unwrap();
         let calls = Arc::new(AtomicUsize::new(0));
@@ -537,7 +537,7 @@ mod tests {
         for reject in [false, true] {
             let config = AuthConfig::new("successive-header-tests-secret-minimum-32-characters");
             let db = Database::connect("sqlite::memory:").await.unwrap();
-            alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+            alibi::seaorm::store::__private_test_support::migrator::run_migrations(&db)
                 .await
                 .unwrap();
             let configured = AuthBuilder::new(config.clone())
@@ -567,7 +567,7 @@ mod tests {
     async fn initialized_email_provider_is_shared_with_handlers_and_server_callers() {
         let config = AuthConfig::new("initialized-email-test-secret-minimum-32-characters");
         let db = Database::connect("sqlite::memory:").await.unwrap();
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&db)
             .await
             .unwrap();
         let original = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -609,7 +609,7 @@ mod tests {
         use tower::ServiceExt;
         let config = AuthConfig::new("axum-lifecycle-test-secret-minimum-32-characters");
         let db = Database::connect("sqlite::memory:").await.unwrap();
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&db)
             .await
             .unwrap();
         let calls = Arc::new(AtomicUsize::new(0));
@@ -692,10 +692,10 @@ mod tests {
             };
             let config = AuthConfig::new("telemetry-secret-must-never-be-captured-32-characters");
             let db = Database::connect("sqlite::memory:").await.unwrap();
-            alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+            alibi::seaorm::store::__private_test_support::migrator::run_migrations(&db)
                 .await
                 .unwrap();
-            use alibi_core::store::UserStore;
+            use alibi::store::UserStore;
             let store = SeaOrmStore::<Schema>::new(config.clone(), db);
             let seeded = store
                 .create_user(
@@ -811,7 +811,7 @@ mod tests {
         let capture = CapturedTelemetry::default();
         let config = AuthConfig::new("telemetry-failed-init-secret-at-least-32-characters");
         let db = Database::connect("sqlite::memory:").await.unwrap();
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&db)
             .await
             .unwrap();
         let result = AuthBuilder::<Schema>::new(config.clone())

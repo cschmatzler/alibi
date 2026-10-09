@@ -5,8 +5,8 @@ use alibi::{
     integrations::axum::AxumIntegration,
     plugins::{AdminPlugin, EmailPasswordPlugin, SessionManagementPlugin, UserManagementPlugin},
 };
-use alibi_core::{AuthAccount, AuthSchema, AuthSession, AuthUser};
-use alibi_seaorm::{
+use alibi::{AuthAccount, AuthSchema, AuthSession, AuthUser};
+use alibi::seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ConnectionTrait, Statement},
 };

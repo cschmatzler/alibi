@@ -5,12 +5,12 @@
     reason = "tests assert independently specified wire fields and fixtures"
 )]
 use super::*;
+use alibi::config::{CookieAttributes, CookieOverride, OAuthStateStrategy};
 use alibi::plugins::jwt::{JwtPlugin, JwtPluginConfig};
 use alibi::plugins::user_management::{ChangeEmailConfig, UserManagementConfig};
 use alibi::plugins::{TwoFactorPlugin, UserManagementPlugin};
-use alibi_core::config::{CookieAttributes, CookieOverride, OAuthStateStrategy};
-use alibi_core::session::cookie_cache::runtime::published_session_snapshot;
-use alibi_core::{
+use alibi::session::cookie_cache::runtime::published_session_snapshot;
+use alibi::{
     AuthContext, AuthPlugin, AuthResult, AuthRoute, CookieCacheConfig, CookieCacheStrategy,
 };
 use async_trait::async_trait;

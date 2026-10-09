@@ -37,9 +37,7 @@ impl AcceptanceTransport {
             cookies: Arc::default(),
         }
     }
-    pub(in crate::organization) fn native(
-        call: &alibi_core::endpoint::EndpointCall,
-    ) -> Self {
+    pub(in crate::organization) fn native(call: &alibi_core::endpoint::EndpointCall) -> Self {
         Self {
             request: None,
             call: Some(call.clone()),

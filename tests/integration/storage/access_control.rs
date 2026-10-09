@@ -8,9 +8,9 @@ use alibi::plugins::organization::{
     DynamicAccessControlConfig, OrganizationConfig,
     handlers::extension_common::{has_permissions, organization_roles},
 };
-use alibi_core::store::{OrganizationRoleStore, OrganizationStore};
-use alibi_core::types::{CreateOrganizationRole, OrganizationPermissions};
-use alibi_core::{AuthConfig, AuthContext, CreateOrganization, CreateTeam};
+use alibi::store::{OrganizationRoleStore, OrganizationStore};
+use alibi::types::{CreateOrganizationRole, OrganizationPermissions};
+use alibi::{AuthConfig, AuthContext, CreateOrganization, CreateTeam};
 use serde_json::{Value, json};
 use std::sync::Arc;
 

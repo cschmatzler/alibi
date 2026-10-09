@@ -75,7 +75,7 @@ mod verification_cache;
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use alibi_core::{AuthRequest, AuthResponse, HttpMethod};
+use alibi::{AuthRequest, AuthResponse, HttpMethod};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 

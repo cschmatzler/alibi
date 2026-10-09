@@ -189,10 +189,7 @@ pub(super) async fn verify_provider_token(
     })
 }
 
-pub(crate) fn hosted_domain_allowed(
-    provider: &OAuthProvider,
-    claim: Option<&str>,
-) -> bool {
+pub(crate) fn hosted_domain_allowed(provider: &OAuthProvider, claim: Option<&str>) -> bool {
     provider
         .hosted_domain
         .as_deref()

@@ -10,7 +10,7 @@ use alibi::plugins::{
     EmailPasswordPlugin, OAuthPlugin, OAuthProxyConfig, OAuthProxyPlugin, SessionManagementPlugin,
 };
 use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use alibi_core::{AuthRequest, AuthResponse, AuthSession, AuthUser, HttpMethod};
+use alibi::{AuthRequest, AuthResponse, AuthSession, AuthUser, HttpMethod};
 use axum::{
     Json, Router,
     extract::{Form, State},

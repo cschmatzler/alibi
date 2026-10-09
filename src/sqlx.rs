@@ -5,6 +5,7 @@ pub use alibi_sqlx::additional_fields;
 pub use alibi_sqlx::schema::{
     SqlxAccountModel, SqlxSessionModel, SqlxUserModel, SqlxVerificationModel,
 };
+pub use alibi_sqlx::*;
 pub use alibi_sqlx::{
     ActiveRow, ActiveValue, AuthEntity, ColumnDef, ColumnKind, DatabaseHooks, Engine, HookControl,
     JsonMetadata, OrganizationModels, SqlValue, SqlxBackend, SqlxHookContext, SqlxModel, SqlxPool,

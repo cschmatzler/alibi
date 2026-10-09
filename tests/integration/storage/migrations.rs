@@ -2,8 +2,8 @@
 
 use super::{Backend, Db, SeaOrm, Sqlx, TestResult, backend_tests, postgres_tests};
 use alibi::AuthConfig;
-use alibi_core::store::{SchemaMigrator, UserStore};
-use alibi_core::{AuthUser, CreateUser};
+use alibi::store::{SchemaMigrator, UserStore};
+use alibi::{AuthUser, CreateUser};
 use std::sync::Arc;
 
 backend_tests!(

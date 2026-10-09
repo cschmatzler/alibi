@@ -2,6 +2,7 @@
 //! and storage failures on SQLite.
 use super::*;
 use crate::snapshot::Trace;
+use alibi::AuthResult;
 use alibi::plugins::organization::extensions::TeamLimitContext;
 use alibi::plugins::organization::{
     MembershipLimit, OrganizationInvitationCreatePatch, OrganizationInvitationCreationContext,
@@ -9,7 +10,6 @@ use alibi::plugins::organization::{
     OrganizationLimitResolver, OrganizationTeamHooks, TeamsConfig,
 };
 use alibi::plugins::{OrganizationConfig, OrganizationPlugin};
-use alibi_core::AuthResult;
 use std::collections::BTreeMap;
 
 backend_tests!(
@@ -43,7 +43,7 @@ impl OrganizationInvitationEmailSender for Sender {
     async fn send_invitation_email(
         &self,
         delivery: &OrganizationInvitationDelivery,
-        _: &alibi_core::CallbackContext,
+        _: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         self.0.lock().unwrap().push(delivery.invitation.id.clone());
         Ok(())
@@ -77,7 +77,7 @@ async fn add_member<B: Backend>(
                 .unwrap(),
             )
             .unwrap(),
-            alibi_core::endpoint::EndpointOptions::default(),
+            alibi::endpoint::EndpointOptions::default(),
         ),
     )
     .await
@@ -536,7 +536,7 @@ impl OrganizationInvitationHooks for Stamp {
     ) -> AuthResult<Option<OrganizationInvitationCreatePatch>> {
         Ok(Some(OrganizationInvitationCreatePatch {
             id: Some("stamped-invitation".into()),
-            status: Some(alibi_core::InvitationStatus::Pending),
+            status: Some(alibi::InvitationStatus::Pending),
             created_at: Some(chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap()),
             ..Default::default()
         }))
@@ -545,12 +545,10 @@ impl OrganizationInvitationHooks for Stamp {
 
 struct Refuse;
 
-impl alibi_core::BackgroundTaskHandler for Refuse {
-    fn handle(&self, completion: alibi_core::BackgroundTaskCompletion) -> AuthResult<()> {
+impl alibi::BackgroundTaskHandler for Refuse {
+    fn handle(&self, completion: alibi::BackgroundTaskCompletion) -> AuthResult<()> {
         drop(completion);
-        Err(alibi_core::AuthError::internal(
-            "background tasks are closed",
-        ))
+        Err(alibi::AuthError::internal("background tasks are closed"))
     }
 }
 

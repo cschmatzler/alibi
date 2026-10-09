@@ -1,7 +1,7 @@
 //! Persistent sequence allocation across adapter instances and deleted rows.
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use alibi::{AuthConfig, config::DatabaseIdStrategy};
-use alibi_core::{
+use alibi::{
     AuthUser, CreateUser,
     store::{SchemaMigrator, UserStore},
 };

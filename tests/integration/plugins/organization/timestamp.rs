@@ -4,15 +4,15 @@ use alibi::plugins::organization::types::{
     BasicMemberResponse, CreatedOrganizationResponse, MemberResponse, OrganizationResponse,
 };
 use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin};
+use alibi::seaorm::sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
+use alibi::seaorm::store::entities::{invitation, member, organization};
+use alibi::seaorm::{Database, SeaOrmStore};
 use alibi::{AuthBuilder, AuthConfig, BetterAuth};
-use alibi_core::{AuthRequest, CreateInvitation, HttpMethod};
-use alibi_seaorm::sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
-use alibi_seaorm::store::entities::{invitation, member, organization};
-use alibi_seaorm::{Database, SeaOrmStore};
+use alibi::{AuthRequest, CreateInvitation, HttpMethod};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 
-type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 const ORIGIN: &str = "http://organization-timestamp.fixture.test";
 
@@ -27,7 +27,7 @@ async fn request(
     body: Option<Value>,
     cookie: Option<&str>,
     organization_id: Option<&str>,
-) -> (alibi_core::AuthResponse, Value) {
+) -> (alibi::AuthResponse, Value) {
     let mut req = AuthRequest::new(method, format!("/api/auth{path}"));
     drop(req.headers.insert("origin".into(), ORIGIN.into()));
     if let Some(cookie) = cookie {
@@ -63,7 +63,7 @@ mod tests {
             AuthConfig::new("organization-timestamp-fixture-secret-at-least-32-characters")
                 .base_url(ORIGIN);
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let auth = AuthBuilder::new(config.clone())

@@ -1,11 +1,11 @@
 //! Passwordless sign-up applies the username policy and schema defaults before persistence.
 use super::auth_probe::{Probe, fast_password};
 use super::*;
+use alibi::AuthResult;
+use alibi::hooks::RequestHookContext;
 use alibi::plugins::email_otp::{EmailOtpConfig, EmailOtpPlugin, EmailOtpType};
 use alibi::plugins::{AdminPlugin, AnonymousPlugin, TwoFactorPlugin};
-use alibi_core::AuthResult;
-use alibi_core::hooks::RequestHookContext;
-use alibi_core::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
+use alibi::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
 use async_trait::async_trait;
 
 backend_tests!(
@@ -119,7 +119,7 @@ async fn additional_field_validation_and_username_stripping<B: Backend>(db: Db) 
     let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
     _ = config.user.additional_fields.insert(
         "nickname".into(),
-        alibi_core::field_policy::FieldConfig::new(json!({"type":"string"})).validate(|value| {
+        alibi::field_policy::FieldConfig::new(json!({"type":"string"})).validate(|value| {
             if value.as_str() == Some("bad") {
                 Err("Nickname is not allowed".to_owned())
             } else {

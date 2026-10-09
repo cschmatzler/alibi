@@ -2,8 +2,8 @@
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use alibi::AuthConfig;
-use alibi_core::store::JwkStore;
-use alibi_core::types::CreateJwk;
+use alibi::store::JwkStore;
+use alibi::types::CreateJwk;
 use chrono::{Duration, Utc};
 use std::sync::Arc;
 

@@ -5,9 +5,9 @@
     reason = "tests assert independently specified wire fields and fixtures"
 )]
 use super::*;
-use alibi_core::hooks::RequestHookContext;
-use alibi_core::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
-use alibi_core::{AuthContext, AuthInitContext, AuthPlugin, AuthResult, AuthRoute};
+use alibi::hooks::RequestHookContext;
+use alibi::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
+use alibi::{AuthContext, AuthInitContext, AuthPlugin, AuthResult, AuthRoute};
 use async_trait::async_trait;
 
 backend_tests!(registered_adapter_default_fills_omitted_user_fields);

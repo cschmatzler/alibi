@@ -1,7 +1,7 @@
 //! Configured codecs must process actual issued, delivered and consumed proofs.
 use super::*;
 use alibi::plugins::email_otp::*;
-use alibi_core::{AuthError, AuthResult, CallbackContext};
+use alibi::{AuthError, AuthResult, CallbackContext};
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest as _, Sha256};
@@ -211,7 +211,7 @@ impl SendEmailOtp for VerificationDelivery {
 }
 #[async_trait]
 impl alibi::plugins::SendVerificationEmail for VerificationDelivery {
-    async fn send(&self, _: &alibi_core::UserView, _: &str, token: &str) -> AuthResult<()> {
+    async fn send(&self, _: &alibi::UserView, _: &str, token: &str) -> AuthResult<()> {
         self.tokens.lock().unwrap().push(token.to_owned());
         Ok(())
     }

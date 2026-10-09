@@ -1,13 +1,13 @@
 //! Magic-link issuance policy, callback validation and redemption outcomes.
 use super::auth_probe::{Probe, fast_builder};
 use super::*;
+use alibi::hooks::RequestHookContext;
 use alibi::plugins::magic_link::{
     MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, MagicLinkTokenGenerator,
     MagicLinkTokenHasher, MagicLinkTokenStorage, SendMagicLink,
 };
-use alibi_core::hooks::RequestHookContext;
-use alibi_core::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
-use alibi_core::{AuthError, AuthResult, CallbackContext};
+use alibi::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
+use alibi::{AuthError, AuthResult, CallbackContext};
 use async_trait::async_trait;
 
 backend_tests!(

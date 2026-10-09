@@ -4,17 +4,17 @@
     clippy::panic_in_result_fn,
     reason = "tests assert independently specified wire fields and fixtures"
 )]
-use alibi::{AuthBuilder, AuthConfig, AuthError};
-use alibi_core::config::{BaseUrlProtocol, DynamicBaseUrl};
-use alibi_core::endpoint::{
+use alibi::config::{BaseUrlProtocol, DynamicBaseUrl};
+use alibi::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointHook, EndpointResponse,
 };
-use alibi_core::middleware::{
+use alibi::middleware::{
     CorsConfig, Middleware, RateLimitConfig, RateLimitDecision, RateLimitMiddleware,
 };
-use alibi_core::types::ParsedRequestBody;
-use alibi_core::utils::json::JsValue;
-use alibi_core::{
+use alibi::types::ParsedRequestBody;
+use alibi::utils::json::JsValue;
+use alibi::{AuthBuilder, AuthConfig, AuthError};
+use alibi::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
     CacheRateLimitStorage, EndpointRateLimit, HttpMethod, HttpRequestAction, RateLimitRule,
     RateLimitStorage,
@@ -457,7 +457,7 @@ impl<S: AuthSchema> EndpointHook<S> for QueryPatch {
             "query": call.query().map(|query| query.to_json_value().unwrap()),
             "has": [call.has_body(), call.has_query(), call.has_method()],
         }));
-        let query = alibi_core::utils::json::parse_value(r#"{"tag":["x","y"],"n":3,"s":"z"}"#)?;
+        let query = alibi::utils::json::parse_value(r#"{"tag":["x","y"],"n":3,"s":"z"}"#)?;
         Ok(Some(BeforeEndpointAction::Patch(Box::new(
             EndpointContextPatch {
                 query: Some(query),
@@ -504,7 +504,7 @@ async fn endpoint_hooks_see_repeated_query_pairs_and_patch_them_back_into_the_re
 struct Plain;
 
 #[async_trait]
-impl alibi_core::store::secondary_storage::CacheAdapter for Plain {
+impl alibi::store::secondary_storage::CacheAdapter for Plain {
     async fn set(&self, _: &str, _: &str, _: chrono::Duration) -> AuthResult<()> {
         Ok(())
     }
@@ -543,7 +543,7 @@ async fn cache_backed_rate_limit_requires_an_incrementing_adapter() {
 struct Counter(Mutex<f64>);
 
 #[async_trait]
-impl alibi_core::store::secondary_storage::CacheAdapter for Counter {
+impl alibi::store::secondary_storage::CacheAdapter for Counter {
     async fn set(&self, _: &str, _: &str, _: chrono::Duration) -> AuthResult<()> {
         Ok(())
     }
@@ -616,7 +616,7 @@ impl<S: AuthSchema> EndpointHook<S> for QueryOnly {
     ) -> AuthResult<Option<BeforeEndpointAction>> {
         Ok(Some(BeforeEndpointAction::Patch(Box::new(
             EndpointContextPatch {
-                query: Some(alibi_core::utils::json::parse_value(self.0)?),
+                query: Some(alibi::utils::json::parse_value(self.0)?),
                 ..EndpointContextPatch::default()
             },
         ))))
@@ -661,7 +661,7 @@ async fn disabled_rules_and_plugin_rules_resolve_before_storage_consumption() {
             .storage(storage.clone())
             .rule("/free", RateLimitRule::Disabled),
     )
-    .with_plugin_rules(vec![alibi_core::PluginRateLimit {
+    .with_plugin_rules(vec![alibi::PluginRateLimit {
         matches: |path| path == "/plugin",
         limit: EndpointRateLimit {
             window_seconds: 77.0,

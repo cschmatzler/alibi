@@ -4,10 +4,10 @@ use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_core::{
+use alibi::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, BeforeRequestAction,
 };
-use alibi_seaorm::DatabaseConnection;
+use alibi::seaorm::DatabaseConnection;
 use axum::{Json, Router, routing::get};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -30,7 +30,7 @@ impl AuthPlugin<TestSchema> for ApplicationObserver {
         ]
     }
     fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
-        if route.method == alibi_core::HttpMethod::Post {
+        if route.method == alibi::HttpMethod::Post {
             vec![" Application/JSON "]
         } else {
             vec!["application/json"]
@@ -41,7 +41,7 @@ impl AuthPlugin<TestSchema> for ApplicationObserver {
         req: &AuthRequest,
         _: &AuthContext<TestSchema>,
     ) -> AuthResult<Option<BeforeRequestAction>> {
-        let original = alibi_core::hooks::current_request_hook_context();
+        let original = alibi::hooks::current_request_hook_context();
         let path = original
             .as_ref()
             .map_or(req.path(), |context| context.path.as_str());

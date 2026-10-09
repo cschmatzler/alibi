@@ -2,8 +2,8 @@
 use super::social_flows::{Social, callback};
 use super::*;
 use crate::snapshot::Trace;
+use alibi::AccountConfig;
 use alibi::plugins::OAuthPopupPlugin;
-use alibi_core::AccountConfig;
 
 backend_tests!(popup_start_validates_targets_and_forwards_sign_in_options);
 

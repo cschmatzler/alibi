@@ -620,7 +620,7 @@ impl OAuthProfileMapper for PartialProfileMapper {
     async fn map_profile(
         &self,
         profile: Value,
-    ) -> Result<alibi_core::field_policy::FieldOutput, String> {
+    ) -> Result<alibi::field_policy::FieldOutput, String> {
         self.0.lock().unwrap().push(profile);
         Ok([
             ("id".into(), json!("application-presentation-id")),
@@ -634,7 +634,7 @@ impl OAuthProfileMapper for PartialProfileMapper {
 pub(super) struct FailedMapper;
 #[async_trait::async_trait]
 impl OAuthProfileMapper for FailedMapper {
-    async fn map_profile(&self, _: Value) -> Result<alibi_core::field_policy::FieldOutput, String> {
+    async fn map_profile(&self, _: Value) -> Result<alibi::field_policy::FieldOutput, String> {
         Err("Application profile rejected".into())
     }
 }

@@ -10,8 +10,8 @@ use alibi::plugins::organization::{
 };
 use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi_core::{CreateTeam, Organization, Team, store::MemberStore, wire::UserView};
-use alibi_seaorm::{
+use alibi::{CreateTeam, Organization, Team, store::MemberStore, wire::UserView};
+use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };

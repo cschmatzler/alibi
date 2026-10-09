@@ -5,14 +5,14 @@
 //! Native-only application schema contract. Official SDK scenarios own built-in wire parity.
 use super::application_model::{ApplicationSchema, application_session};
 use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::seaorm::sea_orm::{ConnectionTrait, Statement};
+use alibi::seaorm::store::__private_test_support::migrator::run_migrations;
+use alibi::seaorm::{Database, SeaOrmStore};
 use alibi::{AuthBuilder, AuthConfig};
-use alibi_core::{
+use alibi::{
     AuthRequest, AuthResult, CacheVersionContext, CacheVersionSource, CookieCacheConfig,
     CookieCacheVersion, CookieCacheVersionResolver, HttpMethod,
 };
-use alibi_seaorm::sea_orm::{ConnectionTrait, Statement};
-use alibi_seaorm::store::__private_test_support::migrator::run_migrations;
-use alibi_seaorm::{Database, SeaOrmStore};
 use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
@@ -33,7 +33,7 @@ impl CookieCacheVersionResolver for Version {
                 );
                 assert!(
                     context
-                        .stored_user::<alibi_seaorm::store::entities::user::Model>()
+                        .stored_user::<alibi::seaorm::store::entities::user::Model>()
                         .is_some()
                 );
                 json!({"phase":"stored","id":raw.id,"hidden":raw.hidden,"physical":raw.server_only})
@@ -45,7 +45,7 @@ impl CookieCacheVersionResolver for Version {
                 assert!(raw.is_none());
                 assert!(
                     context
-                        .stored_user::<alibi_seaorm::store::entities::user::Model>()
+                        .stored_user::<alibi::seaorm::store::entities::user::Model>()
                         .is_none()
                 );
                 json!({"phase":"cached","id":context.session().id})
@@ -94,7 +94,7 @@ mod tests {
 
     #[tokio::test]
     async fn successful_cached_reader_does_not_cross_auth_configuration_or_database() {
-        type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+        type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
         let db = Database::connect("sqlite::memory:").await.unwrap();
         run_migrations(&db).await.unwrap();
         let config = AuthConfig::new("cache-owner-instance-secret-at-least-32")
@@ -127,13 +127,13 @@ mod tests {
         assert!(cookies.contains("session_data="));
         let empty = Database::connect("sqlite::memory:").await.unwrap();
         run_migrations(&empty).await.unwrap();
-        let empty_store: Arc<dyn alibi_core::AuthStore<Schema>> =
+        let empty_store: Arc<dyn alibi::AuthStore<Schema>> =
             Arc::new(SeaOrmStore::<Schema>::new(auth.config().clone(), empty));
         let mut wrong_secret = auth.config().clone();
         wrong_secret.secret = "another-cache-instance-secret-at-least-32".into();
         let contexts = [
-            alibi_core::AuthContext::new(Arc::new(wrong_secret), Arc::clone(auth.store())),
-            alibi_core::AuthContext::new(Arc::clone(&auth.context().config), empty_store),
+            alibi::AuthContext::new(Arc::new(wrong_secret), Arc::clone(auth.store())),
+            alibi::AuthContext::new(Arc::clone(&auth.context().config), empty_store),
         ];
         let mut denied = Vec::new();
         for (index, other) in contexts.iter().enumerate() {
@@ -155,7 +155,7 @@ mod tests {
             assert_eq!(repeated, first);
             denied.push(matches!(
                 other.require_cached_session(&read).await,
-                Err(alibi_core::AuthError::Unauthenticated)
+                Err(alibi::AuthError::Unauthenticated)
             ));
             let (_, retained) = auth.context().require_cached_session(&read).await.unwrap();
             assert_eq!(retained, first);
@@ -184,9 +184,9 @@ mod tests {
         use alibi::field_policy::FieldConfig;
 
         for strategy in [
-            alibi_core::CookieCacheStrategy::Compact,
-            alibi_core::CookieCacheStrategy::Jwt,
-            alibi_core::CookieCacheStrategy::Jwe,
+            alibi::CookieCacheStrategy::Compact,
+            alibi::CookieCacheStrategy::Jwt,
+            alibi::CookieCacheStrategy::Jwe,
         ] {
             let db = Database::connect("sqlite::memory:").await.unwrap();
             run_migrations(&db).await.unwrap();
@@ -298,10 +298,7 @@ mod tests {
                     Some(cookies),
                 ))
                 .await;
-            assert!(matches!(
-                physical,
-                Err(alibi_core::AuthError::Unauthenticated)
-            ));
+            assert!(matches!(physical, Err(alibi::AuthError::Unauthenticated)));
             assert!(
                 auth.store()
                     .get_session(body["token"].as_str().unwrap())
@@ -315,12 +312,12 @@ mod tests {
     #[tokio::test]
     async fn jwt_and_jwe_strategies_initialize_when_enabled_or_disabled_without_issuing_authority()
     {
-        type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+        type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
         let db = Database::connect("sqlite::memory:").await.unwrap();
         run_migrations(&db).await.unwrap();
         for strategy in [
-            alibi_core::CookieCacheStrategy::Jwt,
-            alibi_core::CookieCacheStrategy::Jwe,
+            alibi::CookieCacheStrategy::Jwt,
+            alibi::CookieCacheStrategy::Jwe,
         ] {
             for enabled in [true, false] {
                 let config = AuthConfig::new("cache-native-initialization-secret-at-least-32")

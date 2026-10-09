@@ -163,13 +163,12 @@ pub(crate) async fn create_organization_core(
         }
         let custom = match &config.teams.default_team_factory {
             Some(factory) => {
-                let factory_context =
-                    crate::organization::extensions::DefaultTeamContext {
-                        request: request.cloned(),
-                        user: ctx.user_view(user),
-                        session: session.cloned(),
-                        config: std::sync::Arc::clone(&ctx.config),
-                    };
+                let factory_context = crate::organization::extensions::DefaultTeamContext {
+                    request: request.cloned(),
+                    user: ctx.user_view(user),
+                    session: session.cloned(),
+                    config: std::sync::Arc::clone(&ctx.config),
+                };
                 factory
                     .create(&organization, &factory_context, ctx.database.as_ref())
                     .await

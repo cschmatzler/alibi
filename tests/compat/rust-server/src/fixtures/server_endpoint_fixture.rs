@@ -21,10 +21,10 @@ use alibi::plugins::{
     ApiKeyPlugin, EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi_core::utils::json::{self, JsValue};
-use alibi_core::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, HttpMethod};
-use alibi_core::{PasswordHasher, ScryptHasher};
-use alibi_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use alibi::utils::json::{self, JsValue};
+use alibi::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, HttpMethod};
+use alibi::{PasswordHasher, ScryptHasher};
+use alibi::seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use axum::{
     Json, Router,
     body::to_bytes,
@@ -70,7 +70,7 @@ fn snapshot(call: &EndpointCall, response: Option<&EndpointResponse>) -> Value {
     snapshot["current"] = current_endpoint_call_context()
         .as_ref()
         .map_or(Value::Null, input_snapshot);
-    snapshot["legacyRequest"] = alibi_core::hooks::current_request_hook_context().map_or(Value::Null, |request|value!({"url":request.url.as_ref().map(url::Url::as_str),"method":format!("{:?}",request.method).to_uppercase(),"headers":request.headers,"query":request.query,"body":request.body.as_ref().map(|body|String::from_utf8_lossy(body).into_owned())}));
+    snapshot["legacyRequest"] = alibi::hooks::current_request_hook_context().map_or(Value::Null, |request|value!({"url":request.url.as_ref().map(url::Url::as_str),"method":format!("{:?}",request.method).to_uppercase(),"headers":request.headers,"query":request.query,"body":request.body.as_ref().map(|body|String::from_utf8_lossy(body).into_owned())}));
     snapshot
 }
 impl Application {
@@ -87,8 +87,8 @@ impl Application {
     }
 }
 #[async_trait::async_trait]
-impl alibi_core::CookieCacheVersionResolver for Application {
-    async fn resolve(&self, input: &alibi_core::CacheVersionContext) -> AuthResult<String> {
+impl alibi::CookieCacheVersionResolver for Application {
+    async fn resolve(&self, input: &alibi::CacheVersionContext) -> AuthResult<String> {
         self.events.lock().unwrap().push(value!({
             "stage":"cache-version", "user":input.user(), "session":input.session(),
             "current":current_endpoint_call_context().as_ref().map_or(Value::Null,input_snapshot)
@@ -297,7 +297,7 @@ impl EmailOtpGenerator for Application {
         &self,
         email: &str,
         otp_type: EmailOtpType,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<Option<String>> {
         let call = _context
             .endpoint
@@ -367,7 +367,7 @@ struct Input {
     #[serde(default)]
     logical_request_headers: bool,
 }
-fn header_snapshot(headers: &alibi_core::Headers) -> HashMap<String, String> {
+fn header_snapshot(headers: &alibi::Headers) -> HashMap<String, String> {
     let mut values: HashMap<_, _> = headers
         .iter()
         .map(|(name, value)| (name.clone(), value.clone()))
@@ -411,11 +411,11 @@ pub(crate) async fn router(
     let configured =
         base.clone()
             .base_path(&path)
-            .session_cookie_cache(alibi_core::CookieCacheConfig {
+            .session_cookie_cache(alibi::CookieCacheConfig {
                 enabled: compact,
                 max_age: 300.0,
                 version: if profile == "server-dispatch-cache-version" {
-                    Some(alibi_core::CookieCacheVersion::Resolver(Arc::new(
+                    Some(alibi::CookieCacheVersion::Resolver(Arc::new(
                         app.clone(),
                     )))
                 } else {

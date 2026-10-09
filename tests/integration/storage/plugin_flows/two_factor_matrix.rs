@@ -5,7 +5,7 @@ use super::*;
 use crate::snapshot::Trace;
 use alibi::plugins::TwoFactorPlugin;
 use alibi::plugins::two_factor::{SendTwoFactorOtp, TwoFactorBackupStorage, TwoFactorConfig};
-use alibi_core::{AuthResult, UserView};
+use alibi::{AuthResult, UserView};
 use async_trait::async_trait;
 
 backend_tests!(
@@ -271,7 +271,7 @@ async fn two_factor_stored_backup_code_damage<B: Backend>(db: Db) -> TestResult 
         let view = auth
             .dispatch_endpoint(
                 TwoFactorPlugin::view_backup_codes_endpoint(&user),
-                alibi_core::endpoint::EndpointOptions::default(),
+                alibi::endpoint::EndpointOptions::default(),
             )
             .await;
         trace.value(
@@ -369,7 +369,7 @@ async fn two_factor_forged_trust_proofs<B: Backend>(db: Db) -> TestResult {
     let forged = |payload: &str| {
         format!(
             "{name}={}",
-            alibi_core::utils::cookie_utils::sign_cookie_value(payload, SECRET)
+            alibi::utils::cookie_utils::sign_cookie_value(payload, SECRET)
         )
     };
     for (label, cookie) in [
@@ -550,7 +550,7 @@ async fn two_factor_numeric_options_and_damaged_factor<B: Backend>(db: Db) -> Te
         let result = auth
             .dispatch_endpoint(
                 TwoFactorPlugin::generate_totp_endpoint(secret),
-                alibi_core::endpoint::EndpointOptions::default(),
+                alibi::endpoint::EndpointOptions::default(),
             )
             .await
             .and_then(|response| Ok(response.decode()?.code));

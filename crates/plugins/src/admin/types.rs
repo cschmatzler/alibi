@@ -111,9 +111,7 @@ pub(crate) struct HasPermissionRequest {
 }
 
 impl HasPermissionRequest {
-    pub(crate) fn requested_permissions(
-        &self,
-    ) -> Option<&HashMap<String, Vec<String>>> {
+    pub(crate) fn requested_permissions(&self) -> Option<&HashMap<String, Vec<String>>> {
         self.permissions.as_ref().or(self.permission.as_ref())
     }
 }

@@ -4,7 +4,7 @@ use super::social_flows::{Social, authorize, callback, linking};
 use super::*;
 use crate::snapshot::Trace;
 use alibi::plugins::oauth::{OAuthProvider, OAuthTokenEndpointAuth};
-use alibi_core::{AccountConfig, OAuthStateStrategy};
+use alibi::{AccountConfig, OAuthStateStrategy};
 
 backend_tests!(
     authorization_urls_follow_the_provider_policy,

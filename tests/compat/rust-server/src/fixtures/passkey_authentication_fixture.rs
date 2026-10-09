@@ -8,8 +8,8 @@ use alibi::plugins::{
     VerifiedPasskeyAuthentication,
 };
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi_core::{AuthPasskey, store::PasskeyStore, utils::json::JsValue, wire::PasskeyView};
-use alibi_seaorm::{
+use alibi::{AuthPasskey, store::PasskeyStore, utils::json::JsValue, wire::PasskeyView};
+use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
 pub(crate) type Events = Arc<Mutex<Vec<Value>>>;
-fn database_error(error: alibi_seaorm::sea_orm::DbErr) -> AuthError {
+fn database_error(error: alibi::seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
 struct Application {

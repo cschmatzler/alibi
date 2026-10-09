@@ -2,9 +2,9 @@
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use alibi::AuthConfig;
-use alibi_core::store::ApiKeyStore;
-use alibi_core::store::SchemaMigrator;
-use alibi_core::{ConsumeApiKeyResult, CreateApiKey, UpdateApiKey};
+use alibi::store::ApiKeyStore;
+use alibi::store::SchemaMigrator;
+use alibi::{ConsumeApiKeyResult, CreateApiKey, UpdateApiKey};
 use std::sync::Arc;
 use tokio::sync::Barrier;
 use tokio::task::JoinSet;

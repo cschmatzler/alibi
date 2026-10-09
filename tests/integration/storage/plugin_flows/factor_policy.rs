@@ -6,7 +6,7 @@ use alibi::plugins::two_factor::{
     SendTwoFactorOtp, TwoFactorConfig, TwoFactorOtpCipher, TwoFactorOtpStorage,
 };
 use alibi::plugins::{EmailOtpPlugin, TwoFactorPlugin};
-use alibi_core::{AuthError, AuthResult, UserView};
+use alibi::{AuthError, AuthResult, UserView};
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
@@ -93,7 +93,7 @@ async fn factor_storage_callbacks_preserve_consumption_and_totp_disable<B: Backe
         let generated = auth
             .dispatch_endpoint(
                 TwoFactorPlugin::generate_totp_endpoint("12345678901234567890"),
-                alibi_core::endpoint::EndpointOptions::default(),
+                alibi::endpoint::EndpointOptions::default(),
             )
             .await;
         assert_eq!(generated.unwrap_err().error.status_code(), 400);

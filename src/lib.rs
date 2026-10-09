@@ -60,6 +60,7 @@ pub mod wire;
 #[doc(hidden)]
 pub use alibi_core as __private_core;
 pub use alibi_core::PluginConfig;
+pub use alibi_core::*;
 pub use alibi_core::{
     AuthConfig, AuthError, AuthResult, AuthSchema, AuthenticatedUser,
     AwaitedNotificationErrorPolicy, BackgroundTaskCompletion, BackgroundTaskHandler,

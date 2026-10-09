@@ -4,12 +4,12 @@
     reason = "SeaORM entity derives expose associated types in private fixtures"
 )]
 use super::{Backend, Db, Raw, TestResult, on_raw};
-use alibi::{AuthConfig, AuthSchema};
-use alibi_core::store::{AuthStore, UserStore};
-use alibi_core::{
+use alibi::store::{AuthStore, UserStore};
+use alibi::{
     AuthAccount, AuthSession, AuthUser, AuthVerification, CreateAccount, CreateSession, CreateUser,
     CreateVerification, UpdateAccount, UpdateUser,
 };
+use alibi::{AuthConfig, AuthSchema};
 use chrono::{Duration, NaiveDateTime, Utc};
 use sqlx::Row;
 
@@ -197,9 +197,9 @@ mod baseline_model {
     pub struct Schema;
     impl AuthSchema for Schema {
         type User = User;
-        type Session = alibi_sqlx::store::entities::session::Model;
-        type Account = alibi_sqlx::store::entities::account::Model;
-        type Verification = alibi_sqlx::store::entities::verification::Model;
+        type Session = alibi::sqlx::store::entities::session::Model;
+        type Account = alibi::sqlx::store::entities::account::Model;
+        type Verification = alibi::sqlx::store::entities::verification::Model;
     }
 }
 async fn baseline(db: &Db) -> TestResult {
@@ -323,7 +323,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>) -> TestRes
         create.id = Some(id.into());
         _ = create
             .additional_fields
-            .insert("linkedId".into(), alibi_core::utils::json::JsValue::Null);
+            .insert("linkedId".into(), alibi::utils::json::JsValue::Null);
         let user = store.create_user(create).await?;
         assert_eq!(user.id(), id);
         assert_eq!(user.name(), Some("Created"));
@@ -358,12 +358,10 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>) -> TestRes
         assert_eq!(users.len(), 1);
         for operator in ["in", "eq"] {
             let (_, total) = store
-                .list_users(alibi_core::ListUsersParams {
+                .list_users(alibi::ListUsersParams {
                     filter_field: Some("id".into()),
                     filter_operator: Some(operator.into()),
-                    filter_value: Some(alibi_core::UserFilterValue::Multiple(vec![format!(
-                        "{id}   "
-                    )])),
+                    filter_value: Some(alibi::UserFilterValue::Multiple(vec![format!("{id}   ")])),
                     ..Default::default()
                 })
                 .await?;
@@ -403,8 +401,8 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>) -> TestRes
         let mut update = UpdateUser::default();
         _ = update.additional_fields.insert(
             "linkedId".into(),
-            linked.map_or(alibi_core::utils::json::JsValue::Null, |id| {
-                alibi_core::utils::json::JsValue::String(id.into())
+            linked.map_or(alibi::utils::json::JsValue::Null, |id| {
+                alibi::utils::json::JsValue::String(id.into())
             }),
         );
         let updated = store.update_user(id, update).await?;

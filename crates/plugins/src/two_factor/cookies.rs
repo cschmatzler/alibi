@@ -5,9 +5,7 @@ use super::*;
     clippy::cast_precision_loss,
     reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
 )]
-pub(in crate::two_factor) fn cookie_expiry(
-    seconds: f64,
-) -> AuthResult<chrono::DateTime<Utc>> {
+pub(in crate::two_factor) fn cookie_expiry(seconds: f64) -> AuthResult<chrono::DateTime<Utc>> {
     let milliseconds = seconds.mul_add(1000.0, Utc::now().timestamp_millis() as f64);
     if !milliseconds.is_finite() || milliseconds.abs() > 8_640_000_000_000_000.0 {
         return Err(AuthError::internal("Invalid two-factor cookie expiry"));
@@ -110,10 +108,7 @@ pub(in crate::two_factor) fn create_signed_cookie_header(
 // Match Better Call's separately trimmed key, retaining the first duplicate
 // even when its value is empty or invalid. Value decoding belongs to the
 // signed proof reader so failed URI decoding retains the original value.
-pub(in crate::two_factor) fn get_factor_cookie(
-    req: &AuthRequest,
-    name: &str,
-) -> Option<String> {
+pub(in crate::two_factor) fn get_factor_cookie(req: &AuthRequest, name: &str) -> Option<String> {
     req.headers.get("cookie")?.split(';').find_map(|cookie| {
         let (key, value) = cookie.split_once('=')?;
         (key.trim() == name).then(|| value.to_owned())
@@ -167,9 +162,7 @@ pub(in crate::two_factor) fn verify_factor_cookie_value(
 
 // decodeURIComponent rejects the whole value on either malformed escapes or
 // invalid UTF-8, rather than partially decoding an authenticated payload.
-pub(in crate::two_factor) fn decode_factor_cookie(
-    value: &str,
-) -> std::borrow::Cow<'_, str> {
+pub(in crate::two_factor) fn decode_factor_cookie(value: &str) -> std::borrow::Cow<'_, str> {
     let bytes = value.as_bytes();
     let malformed = bytes.iter().enumerate().any(|(index, byte)| {
         *byte == b'%'

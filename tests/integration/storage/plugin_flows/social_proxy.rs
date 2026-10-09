@@ -3,11 +3,11 @@
 use super::social_flows::{Social, authorize};
 use super::*;
 use crate::snapshot::Trace;
+use alibi::hooks::RequestHookContext;
 use alibi::plugins::{OAuthProxyConfig, OAuthProxyPlugin};
-use alibi_core::hooks::RequestHookContext;
-use alibi_core::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
-use alibi_core::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
-use alibi_core::{AuthResult, CreateSession};
+use alibi::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
+use alibi::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
+use alibi::{AuthResult, CreateSession};
 
 backend_tests!(
     proxy_forwards_and_completes_provider_flows,
@@ -57,13 +57,13 @@ impl<S: AuthSchema, B: HookBackend> DatabaseHooks<S, B> for Refuse {
     ) -> AuthResult<HookControl> {
         match self.0 {
             Refusal::Cancel => Ok(HookControl::Cancel),
-            Refusal::Forbidden => Err(alibi_core::AuthError::forbidden("session refused")),
-            Refusal::Coded => Err(alibi_core::AuthError::Api {
+            Refusal::Forbidden => Err(alibi::AuthError::forbidden("session refused")),
+            Refusal::Coded => Err(alibi::AuthError::Api {
                 status: 403,
                 code: Some("SESSION_REFUSED".into()),
                 message: "Session refused by policy".into(),
             }),
-            Refusal::Internal => Err(alibi_core::AuthError::internal("session store failure")),
+            Refusal::Internal => Err(alibi::AuthError::internal("session store failure")),
         }
     }
 }

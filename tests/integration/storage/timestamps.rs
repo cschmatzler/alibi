@@ -7,12 +7,12 @@
 )]
 
 use super::{Db, Raw, TestResult, on_raw};
-use alibi::{AuthConfig, AuthSchema};
-use alibi_core::store::AuthStore;
-use alibi_core::{
+use alibi::store::AuthStore;
+use alibi::{
     AuthAccount, AuthSession, AuthUser, AuthVerification, CreateAccount, CreateSession, CreateUser,
     CreateVerification, UpdateAccount, UpdateUser,
 };
+use alibi::{AuthConfig, AuthSchema};
 use chrono::{DateTime, Duration, NaiveDateTime, SubsecRound, Utc};
 
 // One application schema contract, derived independently by each adapter.
@@ -453,7 +453,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
     let _updated = store
         .update_verification_by_identifier(
             "synthetic-verification",
-            alibi_core::UpdateVerification {
+            alibi::UpdateVerification {
                 value: Some("updated-proof".into()),
                 expires_at: Some(now - Duration::minutes(30)),
             },
@@ -479,7 +479,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
     // Adapter record creation has a separate direct updated_at write.
     let snapshot = store
         .create_verification_record(
-            alibi_core::verification::VerificationCreation {
+            alibi::verification::VerificationCreation {
                 id: Some("synthetic-record".into()),
                 identifier: "record".into(),
                 value: "record-proof".into(),
@@ -487,7 +487,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
                 created_at: historical,
                 updated_at: historical + Duration::seconds(1),
             },
-            alibi_core::verification::VerificationPublication {
+            alibi::verification::VerificationPublication {
                 store_in_database: true,
                 secondary_storage: None,
                 cache_key: "unused".into(),

@@ -1,11 +1,11 @@
 //! Managed keyring lifecycle through real handlers, with independent physical SQL checks.
 use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
+use alibi::endpoint::EndpointOptions;
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::plugins::jwt::{JwtPlugin, JwtPluginConfig};
 use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use alibi_core::endpoint::EndpointOptions;
-use alibi_core::{AuthRequest, AuthResponse, HttpMethod};
+use alibi::{AuthRequest, AuthResponse, HttpMethod};
 use base64::Engine as _;
 use chrono::Duration;
 use serde_json::{Value, json};

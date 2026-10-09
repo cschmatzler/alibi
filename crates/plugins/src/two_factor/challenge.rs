@@ -413,9 +413,7 @@ pub(in crate::two_factor) async fn verify_existing_session_factor(
     ))
 }
 
-pub(in crate::two_factor) async fn finalize_pending_two_factor<
-    S: alibi_core::AuthSchema,
->(
+pub(in crate::two_factor) async fn finalize_pending_two_factor<S: alibi_core::AuthSchema>(
     pending: PendingTwoFactorState<S>,
     req: &AuthRequest,
     trust_device: bool,

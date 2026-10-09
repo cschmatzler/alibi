@@ -3,7 +3,7 @@ use super::auth_probe::{FastHasher, Probe, fast_builder};
 use super::*;
 use alibi::plugins::PasswordManagementPlugin;
 use alibi::plugins::password_management::{PasswordManagementConfig, SendResetPassword};
-use alibi_core::{AuthError, AuthResult};
+use alibi::{AuthError, AuthResult};
 use async_trait::async_trait;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -229,7 +229,7 @@ async fn change_and_verify_password_matrix<B: Backend>(db: Db) -> TestResult {
         let owner = cookies(&signup(&auth, "owner@example.test").await);
         let remember = format!(
             "better-auth.dont_remember={}",
-            alibi_core::utils::cookie_utils::sign_cookie_value("true", SECRET)
+            alibi::utils::cookie_utils::sign_cookie_value("true", SECRET)
         );
         let _ = probe
             .post(

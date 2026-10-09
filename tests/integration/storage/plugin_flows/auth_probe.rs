@@ -1,7 +1,7 @@
 //! Shared request probe and cheap password hasher for the authentication matrix suites.
 use super::*;
 use crate::snapshot::Trace;
-use alibi_core::{AuthResult, PasswordHasher};
+use alibi::{AuthResult, PasswordHasher};
 
 /// Records every response in a snapshot trace while keeping async frames small.
 pub(super) struct Probe<'a, S: AuthSchema> {

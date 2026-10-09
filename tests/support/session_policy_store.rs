@@ -1,8 +1,8 @@
 //! A real store wrapper injecting an explicit application policy at session lookup.
-use alibi_core::store::*;
-use alibi_core::types::*;
-use alibi_core::{AuthError, AuthResult, AuthSchema};
-use alibi_seaorm::SeaOrmStore;
+use alibi::seaorm::SeaOrmStore;
+use alibi::store::*;
+use alibi::types::*;
+use alibi::{AuthError, AuthResult, AuthSchema};
 use async_trait::async_trait;
 use std::sync::{
     Arc,
@@ -13,7 +13,7 @@ use std::sync::{
     unreachable_pub,
     reason = "The private fixture module exposes its store and schema only to the parent integration test"
 )]
-pub type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+pub type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 #[expect(
     unreachable_pub,
@@ -57,9 +57,9 @@ forwarding!(AccountStore<Schema> {
 });
 
 forwarding!(VerificationStore<Schema> {
-    fn create_verification_record(data: alibi_core::verification::VerificationCreation, publication: alibi_core::verification::VerificationPublication) -> AuthResult<Option<alibi_core::verification::VerificationSnapshot>>;
+    fn create_verification_record(data: alibi::verification::VerificationCreation, publication: alibi::verification::VerificationPublication) -> AuthResult<Option<alibi::verification::VerificationSnapshot>>;
     fn consume_verification_snapshot(identifier: &str) -> AuthResult<Option<<Schema as AuthSchema>::Verification>>;
-    fn update_verification_by_identifier(identifier: &str, data: UpdateVerification) -> AuthResult<Option<alibi_core::verification::VerificationSnapshot>>;
+    fn update_verification_by_identifier(identifier: &str, data: UpdateVerification) -> AuthResult<Option<alibi::verification::VerificationSnapshot>>;
     fn reserve_verification_record(logical_identifier: &str, data: CreateVerification) -> AuthResult<Option<<Schema as AuthSchema>::Verification>>;
     fn create_verification(verification: CreateVerification) -> AuthResult<<Schema as AuthSchema>::Verification>;
     fn get_latest_verification_by_identifier(identifier: &str) -> AuthResult<Option<<Schema as AuthSchema>::Verification>>;

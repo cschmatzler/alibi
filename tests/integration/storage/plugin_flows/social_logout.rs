@@ -2,8 +2,8 @@
 //! configured redirect, caller redirect and ID-token availability.
 use super::social_flows::{Social, authorize, callback};
 use super::*;
+use alibi::AccountConfig;
 use alibi::plugins::oauth::{OAuthEndSessionConfig, OAuthProvider};
-use alibi_core::AccountConfig;
 
 backend_tests!(sign_out_builds_the_provider_logout_destination);
 

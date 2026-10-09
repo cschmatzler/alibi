@@ -6,8 +6,8 @@ use alibi::plugins::device_authorization::{
     DeviceRedemptionAuthorization, DeviceRedemptionPolicy, redeem_device_code,
 };
 use alibi::plugins::{DeviceAuthorizationPlugin, OpenApiPlugin};
+use alibi::{AuthContext, AuthPlugin, AuthRoute, AuthUser};
 use alibi::{AuthError, AuthResult};
-use alibi_core::{AuthContext, AuthPlugin, AuthRoute, AuthUser};
 use serde_json::Map;
 
 backend_tests!(
@@ -95,8 +95,8 @@ impl DeviceAuthorizationGrant for Grant {
         })))
     }
 
-    fn device_code_schema_fields(&self) -> Vec<alibi_core::OpenApiField> {
-        vec![alibi_core::OpenApiField::new(
+    fn device_code_schema_fields(&self) -> Vec<alibi::OpenApiField> {
+        vec![alibi::OpenApiField::new(
             "grantAudience",
             json!({"type": "string"}),
             false,

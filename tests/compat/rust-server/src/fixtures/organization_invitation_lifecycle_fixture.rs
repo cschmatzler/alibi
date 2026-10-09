@@ -13,7 +13,7 @@ use alibi::{
     BackgroundTaskHandler, CallbackContext, integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
 };
-use alibi_seaorm::DatabaseConnection;
+use alibi::seaorm::DatabaseConnection;
 use async_trait::async_trait;
 use axum::{
     Json, Router,
@@ -115,7 +115,7 @@ impl OrganizationInvitationHooks for Application {
                 id: Some(format!("trusted-{}", ctx.invitation.organization_id)),
                 role: Some("admin".into()),
                 email: Some(ctx.invitation.email.to_uppercase()),
-                status: Some(alibi_core::InvitationStatus::Rejected),
+                status: Some(alibi::InvitationStatus::Rejected),
                 created_at: Some(date("2020-01-02T03:04:05.123Z")?),
                 expires_at: Some(date("2020-01-03T03:04:05.456Z")?),
                 ..Default::default()

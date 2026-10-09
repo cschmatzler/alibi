@@ -1016,9 +1016,6 @@ name = "compat-rust-server"
 version = "0.1.0"
 dependencies = [
  "alibi",
- "alibi-core",
- "alibi-seaorm",
- "alibi-sqlx",
  "async-trait",
  "axum",
  "base64 0.23.1",

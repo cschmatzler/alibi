@@ -1,6 +1,7 @@
 //! Compromised-password and CAPTCHA admission against varied provider replies.
 use super::*;
 use crate::snapshot::Trace;
+use alibi::AuthResult;
 use alibi::plugins::captcha::{
     BotIdConfig, BotIdVerification, CaptchaConfig, CaptchaPlugin, CaptchaProvider, CheckBotId,
     RecaptchaConfig, SiteKeyCaptchaConfig, TurnstileConfig, ValidateBotIdRequest,
@@ -8,7 +9,6 @@ use alibi::plugins::captcha::{
 use alibi::plugins::haveibeenpwned::{
     HaveIBeenPwnedConfig, HaveIBeenPwnedPlugin, PwnedPasswordClient,
 };
-use alibi_core::AuthResult;
 
 backend_tests!(pwned_range_reply_matrix, captcha_reply_and_path_matrix);
 
@@ -159,7 +159,7 @@ impl CheckBotId for Bot {
                 verified_bot_name: None,
                 verified_bot_category: None,
             })
-            .map_err(alibi_core::AuthError::internal)
+            .map_err(alibi::AuthError::internal)
     }
 }
 struct Judge(bool);

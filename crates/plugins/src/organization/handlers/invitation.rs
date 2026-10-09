@@ -217,9 +217,7 @@ pub(crate) async fn invite_member_core(
                 .database
                 .update_invitation_expiry(
                     &existing.id,
-                    crate::organization::hooks::invitation::expiry(
-                        config.invitation_expires_in,
-                    )?,
+                    crate::organization::hooks::invitation::expiry(config.invitation_expires_in)?,
                 )
                 .await?;
             let invitation = ctx.invitation_view(&updated);
@@ -357,9 +355,7 @@ pub(crate) async fn invite_member_core(
         inviter_id: draft.inviter_id,
         expires_at: match draft.expires_at {
             Some(value) => value,
-            None => crate::organization::hooks::invitation::expiry(
-                config.invitation_expires_in,
-            )?,
+            None => crate::organization::hooks::invitation::expiry(config.invitation_expires_in)?,
         },
     };
     let invitation = ctx

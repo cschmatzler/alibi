@@ -8,7 +8,7 @@ use alibi::plugins::{
     TwoFactorPlugin,
 };
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_seaorm::{
+use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
 };
@@ -23,35 +23,35 @@ use std::{collections::HashMap, sync::Arc};
 
 struct ApplicationDateErrors;
 #[async_trait::async_trait]
-impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for ApplicationDateErrors {
+impl alibi::seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for ApplicationDateErrors {
     async fn before_update_user(
         &self,
         _id: &str,
-        update: &mut alibi_core::UpdateUser,
+        update: &mut alibi::UpdateUser,
         _context: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<alibi_seaorm::HookControl> {
+    ) -> AuthResult<alibi::seaorm::HookControl> {
         if update.banned == Some(true) {
-            return Err(alibi_core::AuthError::Upstream {
+            return Err(alibi::AuthError::Upstream {
                 status: 403,
                 code: "APPLICATION_BAN_REFUSED",
                 message: "Invalid Date",
             });
         }
-        Ok(alibi_seaorm::HookControl::Continue)
+        Ok(alibi::seaorm::HookControl::Continue)
     }
     async fn before_create_session(
         &self,
-        session: &mut alibi_core::CreateSession,
+        session: &mut alibi::CreateSession,
         _context: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<alibi_seaorm::HookControl> {
+    ) -> AuthResult<alibi::seaorm::HookControl> {
         if session.impersonated_by.is_some() {
-            return Err(alibi_core::AuthError::Upstream {
+            return Err(alibi::AuthError::Upstream {
                 status: 500,
                 code: "APPLICATION_SESSION_REFUSED",
                 message: "Invalid Date",
             });
         }
-        Ok(alibi_seaorm::HookControl::Continue)
+        Ok(alibi::seaorm::HookControl::Continue)
     }
 }
 
@@ -213,7 +213,7 @@ async fn set_timestamps(
         ))
         .await
         .map_err(|error| {
-            alibi::AuthError::Database(alibi_core::DatabaseError::Query(error.to_string()))
+            alibi::AuthError::Database(alibi::DatabaseError::Query(error.to_string()))
         })?;
     if result.rows_affected() != 1 {
         return Err(alibi::AuthError::NotFound("user required".into()));
@@ -226,13 +226,13 @@ async fn set_timestamps(
         ))
         .await
         .map_err(|error| {
-            alibi::AuthError::Database(alibi_core::DatabaseError::Query(error.to_string()))
+            alibi::AuthError::Database(alibi::DatabaseError::Query(error.to_string()))
         })?
         .ok_or(alibi::AuthError::UserNotFound)?;
     Ok(Json(json!({
-        "userId": row.try_get::<String>("", "id").map_err(|error| alibi::AuthError::Database(alibi_core::DatabaseError::Query(error.to_string())))?,
-        "createdAt": row.try_get::<String>("", "created_at").map_err(|error| alibi::AuthError::Database(alibi_core::DatabaseError::Query(error.to_string())))?,
-        "updatedAt": row.try_get::<String>("", "updated_at").map_err(|error| alibi::AuthError::Database(alibi_core::DatabaseError::Query(error.to_string())))?,
+        "userId": row.try_get::<String>("", "id").map_err(|error| alibi::AuthError::Database(alibi::DatabaseError::Query(error.to_string())))?,
+        "createdAt": row.try_get::<String>("", "created_at").map_err(|error| alibi::AuthError::Database(alibi::DatabaseError::Query(error.to_string())))?,
+        "updatedAt": row.try_get::<String>("", "updated_at").map_err(|error| alibi::AuthError::Database(alibi::DatabaseError::Query(error.to_string())))?,
     })))
 }
 

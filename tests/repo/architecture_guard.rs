@@ -100,4 +100,41 @@ mod tests {
             );
         }
     }
+
+    /// Applications depend on `alibi` alone, so tests, documentation and the
+    /// compat fixture server must reach every item through it.
+    #[test]
+    fn consumers_import_only_the_facade() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let guard_file = root.join(file!());
+        let internal = [
+            "alibi_core::",
+            "alibi_plugins::",
+            "alibi_sqlx::",
+            "alibi_seaorm::",
+        ];
+        let mut files = vec![root.join("README.md")];
+        for relative in ["tests", "docs/src"] {
+            collect_files(&root.join(relative), &mut files);
+        }
+        let violations: Vec<_> = files
+            .iter()
+            .filter(|path| {
+                **path != guard_file && !path.components().any(|part| part.as_os_str() == "audits")
+            })
+            .flat_map(|path| {
+                let content = fs::read_to_string(path).expect("source file should be readable");
+                internal
+                    .iter()
+                    .filter(|prefix| content.contains(*prefix))
+                    .map(|prefix| format!("{} -> {prefix}", path.display()))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        assert!(
+            violations.is_empty(),
+            "use `alibi` paths instead of internal crates:\n{}",
+            violations.join("\n")
+        );
+    }
 }

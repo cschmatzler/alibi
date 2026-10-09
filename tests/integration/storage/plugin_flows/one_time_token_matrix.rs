@@ -1,12 +1,12 @@
 //! One-time token generation policy, storage failures and redemption of damaged sessions.
 use super::auth_probe::{Probe, fast_builder};
 use super::*;
+use alibi::endpoint::EndpointOptions;
 use alibi::plugins::one_time_token::{
     GenerateOneTimeToken, HashOneTimeToken, OneTimeTokenConfig, OneTimeTokenPlugin,
     OneTimeTokenSession, OneTimeTokenStorage,
 };
-use alibi_core::endpoint::EndpointOptions;
-use alibi_core::{AuthError, AuthResult, CookieCacheConfig, CookieCacheStrategy};
+use alibi::{AuthError, AuthResult, CookieCacheConfig, CookieCacheStrategy};
 use async_trait::async_trait;
 use chrono::Duration;
 
@@ -112,7 +112,7 @@ async fn one_time_token_issuance_and_redemption_policies<B: Backend>(db: Db) -> 
         if let Some(token) = token {
             let remember = format!(
                 "better-auth.dont_remember={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value("true", SECRET)
+                alibi::utils::cookie_utils::sign_cookie_value("true", SECRET)
             );
             let _ = probe
                 .post(
@@ -165,7 +165,7 @@ async fn one_time_token_issuance_and_redemption_policies<B: Backend>(db: Db) -> 
         }
         let remember = format!(
             "better-auth.dont_remember={}",
-            alibi_core::utils::cookie_utils::sign_cookie_value("true", SECRET)
+            alibi::utils::cookie_utils::sign_cookie_value("true", SECRET)
         );
         let _ = probe
             .post(

@@ -10,7 +10,7 @@ use alibi::plugins::{
     SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
 };
 use alibi::{AuthBuilder, AuthConfig, AuthResult, AuthSchema};
-use alibi_seaorm::sea_orm::DatabaseConnection;
+use alibi::seaorm::sea_orm::DatabaseConnection;
 use axum::Router;
 use std::sync::Arc;
 

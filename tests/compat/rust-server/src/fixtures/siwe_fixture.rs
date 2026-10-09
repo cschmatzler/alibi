@@ -9,11 +9,11 @@ use alibi::plugins::siwe::{
 use alibi::plugins::{AdminPlugin, EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin};
 use alibi::prelude::{CreateUser, UpdateUser};
 use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
-use alibi_core::AuthResponse;
-use alibi_seaorm::sea_orm::{
+use alibi::AuthResponse;
+use alibi::seaorm::sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr,
 };
-use alibi_seaorm::store::entities::{account, session, user, verification, wallet_address};
+use alibi::seaorm::store::entities::{account, session, user, verification, wallet_address};
 use async_trait::async_trait;
 use axum::{
     Json, Router,

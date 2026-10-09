@@ -1,12 +1,12 @@
 //! Email verification token outcomes, change-email confirmation and session adoption.
 use super::auth_probe::{Probe, fast_builder};
 use super::*;
+use alibi::AuthResult;
 use alibi::plugins::user_management::{SendChangeEmailConfirmation, UserInfo};
 use alibi::plugins::{
     EmailVerificationConfig, EmailVerificationPlugin, SendVerificationEmail, UserManagementPlugin,
 };
-use alibi_core::AuthResult;
-use alibi_core::wire::UserView;
+use alibi::wire::UserView;
 use async_trait::async_trait;
 use chrono::Duration;
 

@@ -1,8 +1,6 @@
 use super::*;
 /// Log a noncritical callback or a notification whose policy permits continuation.
-pub(crate) async fn run_notification(
-    notification: impl Future<Output = AuthResult<()>>,
-) {
+pub(crate) async fn run_notification(notification: impl Future<Output = AuthResult<()>>) {
     if let Err(error) = notification.await {
         tracing::error!(%error, "Failed to run background task");
     }

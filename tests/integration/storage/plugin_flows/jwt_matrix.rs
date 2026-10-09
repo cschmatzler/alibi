@@ -5,10 +5,8 @@ use alibi::plugins::jwt::{
     DefineJwtPayload, JwtAudience, JwtClaimsConfig, JwtExpiration, JwtPlugin, JwtPluginConfig,
     JwtSession, JwtSignOptions, RemoteJwtClaim, RemoteJwtPayload, SignRemoteJwt,
 };
-use alibi_core::utils::json::{JsValue, parse_value};
-use alibi_core::{
-    AuthError, AuthResult, CookieCacheConfig, CookieCacheStrategy, CookieCacheVersion,
-};
+use alibi::utils::json::{JsValue, parse_value};
+use alibi::{AuthError, AuthResult, CookieCacheConfig, CookieCacheStrategy, CookieCacheVersion};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::Map;
 
@@ -328,8 +326,8 @@ async fn jwt_session_cache_accepts_only_matching_managed_tokens<B: Backend>(db: 
 }
 
 async fn jwt_server_endpoint_overrides_and_reference_nonce<B: Backend>(db: Db) -> TestResult {
+    use alibi::endpoint::{EndpointOptions, ServerEndpoint};
     use alibi::plugins::{OpenApiConfig, OpenApiPlugin};
-    use alibi_core::endpoint::{EndpointOptions, ServerEndpoint};
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let auth = builder::<B>(&connection)
         .plugin(JwtPlugin::new())

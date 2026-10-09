@@ -84,10 +84,7 @@ impl<S: alibi_core::AuthSchema> CompletedSession<S> {
             )
         })
     }
-    pub(crate) fn callback_session(
-        &self,
-        ctx: &AuthContext<S>,
-    ) -> alibi_core::SessionView {
+    pub(crate) fn callback_session(&self, ctx: &AuthContext<S>) -> alibi_core::SessionView {
         self.session_record.as_ref().map_or_else(
             || ctx.trusted_session_view(&self.session),
             |record| ctx.trusted_session_view(record),

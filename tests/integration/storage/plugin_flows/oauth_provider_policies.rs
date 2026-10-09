@@ -444,7 +444,7 @@ struct ImageMapper;
 
 #[async_trait::async_trait]
 impl OAuthProfileMapper for ImageMapper {
-    async fn map_profile(&self, _: Value) -> Result<alibi_core::field_policy::FieldOutput, String> {
+    async fn map_profile(&self, _: Value) -> Result<alibi::field_policy::FieldOutput, String> {
         Ok([
             ("name".into(), json!("Application name")),
             ("image".into(), json!(42)),

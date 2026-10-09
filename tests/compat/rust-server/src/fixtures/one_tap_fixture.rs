@@ -9,8 +9,8 @@ use alibi::plugins::{
     SessionManagementPlugin, TwoFactorPlugin,
 };
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_seaorm::sea_orm::{DatabaseConnection, EntityTrait};
-use alibi_seaorm::store::entities::{account, session, user};
+use alibi::seaorm::sea_orm::{DatabaseConnection, EntityTrait};
+use alibi::seaorm::store::entities::{account, session, user};
 use async_trait::async_trait;
 use axum::{Json, Router, routing::get};
 use serde_json::{Value, json};
@@ -117,7 +117,7 @@ pub(crate) async fn router(
             _ => None,
         };
         if let Some(max_age) = age {
-            profile_config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
+            profile_config.session.cookie_cache = Some(alibi::CookieCacheConfig {
                 enabled: false,
                 max_age,
                 ..Default::default()
@@ -126,12 +126,12 @@ pub(crate) async fn router(
         if name == "one-tap-account-cookie-override" {
             profile_config.advanced.cookies.insert(
                 "account_data".into(),
-                alibi_core::config::CookieOverride {
+                alibi::config::CookieOverride {
                     name: None,
-                    attributes: alibi_core::config::CookieAttributes {
+                    attributes: alibi::config::CookieAttributes {
                         max_age: Some(7.0),
                         http_only: Some(false),
-                        same_site: Some(alibi_core::config::SameSite::Strict),
+                        same_site: Some(alibi::config::SameSite::Strict),
                         ..Default::default()
                     },
                 },

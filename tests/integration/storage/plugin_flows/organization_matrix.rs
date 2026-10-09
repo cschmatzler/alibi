@@ -18,7 +18,7 @@ fn get(path: &str, query: &[(&str, &str)], cookie: &str) -> AuthRequest {
 
 fn raw(path: &str, text: &str, cookie: &str) -> AuthRequest {
     let mut request = request(path, None, cookie);
-    request.method = alibi_core::HttpMethod::Post;
+    request.method = alibi::HttpMethod::Post;
     request.body = Some(text.as_bytes().to_vec());
     request
 }
@@ -167,7 +167,7 @@ async fn organization_route_matrix<B: Backend>(db: Db) -> TestResult {
             auth.dispatch_endpoint(
                 OrganizationPlugin::add_member_endpoint(&serde_json::from_value(input).unwrap())
                     .unwrap(),
-                alibi_core::endpoint::EndpointOptions::default(),
+                alibi::endpoint::EndpointOptions::default(),
             ),
         )
         .await
@@ -292,7 +292,7 @@ async fn organization_without_teams_or_deletion<B: Backend>(db: Db) -> TestResul
             "organizationId": organization_id,
             "teamId": "any",
         }))?)?,
-        alibi_core::endpoint::EndpointOptions::default(),
+        alibi::endpoint::EndpointOptions::default(),
     ))
     .await;
     trace.value(

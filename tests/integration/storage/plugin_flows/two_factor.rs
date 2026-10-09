@@ -2,7 +2,7 @@
 use super::*;
 use alibi::plugins::TwoFactorPlugin;
 use alibi::plugins::two_factor::{SendTwoFactorOtp, TwoFactorConfig};
-use alibi_core::{AuthResult, UserView};
+use alibi::{AuthResult, UserView};
 use async_trait::async_trait;
 
 #[derive(Default)]
@@ -14,7 +14,7 @@ impl SendTwoFactorOtp for FactorMailbox {
         Ok(())
     }
 }
-use alibi_core::endpoint::EndpointOptions;
+use alibi::endpoint::EndpointOptions;
 
 backend_tests!(
     totp_enrollment_pending_login_and_trusted_device_rotation,

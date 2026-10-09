@@ -12,16 +12,16 @@
 )]
 
 use crate::contract::helpers::html_text_content;
+use alibi::seaorm::{Database, DatabaseConnection, SeaOrmStore};
 use alibi::{
     AuthBuilder, AuthConfig, BetterAuth,
     plugins::EmailPasswordPlugin,
     prelude::{AuthRequest, HttpMethod},
 };
-use alibi_seaorm::{Database, DatabaseConnection, SeaOrmStore};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 
-type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type TestSchema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -144,7 +144,7 @@ fn reference_profile_reference_surface(
 /// Create a test auth instance with all currently implemented plugins.
 async fn test_database() -> DatabaseConnection {
     let database = Database::connect("sqlite::memory:").await.unwrap();
-    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+    alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .unwrap();
     database
@@ -669,7 +669,7 @@ mod tests {
             "cookie".to_owned(),
             format!(
                 "better-auth.session_token={}",
-                alibi_core::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
+                alibi::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
             ),
         ));
         drop(

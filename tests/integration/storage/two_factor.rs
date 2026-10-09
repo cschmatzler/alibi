@@ -2,9 +2,9 @@
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use alibi::AuthConfig;
-use alibi_core::store::SchemaMigrator;
-use alibi_core::store::TwoFactorStore;
-use alibi_core::{CreateTwoFactor, UpdateTwoFactor};
+use alibi::store::SchemaMigrator;
+use alibi::store::TwoFactorStore;
+use alibi::{CreateTwoFactor, UpdateTwoFactor};
 use chrono::{Duration, Utc};
 use std::sync::Arc;
 use tokio::{sync::Barrier, task::JoinSet};

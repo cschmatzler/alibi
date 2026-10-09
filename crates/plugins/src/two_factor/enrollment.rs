@@ -283,9 +283,7 @@ pub(in crate::two_factor) async fn verify_user_password(
     }
 }
 
-pub(in crate::two_factor) fn parse_password_body<
-    T: serde::de::DeserializeOwned + 'static,
->(
+pub(in crate::two_factor) fn parse_password_body<T: serde::de::DeserializeOwned + 'static>(
     req: &AuthRequest,
     allow_passwordless: bool,
     include_issuer: bool,

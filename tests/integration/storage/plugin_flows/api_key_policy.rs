@@ -2,13 +2,13 @@
 //! documents, session callbacks, organization ownership and storage edge cases.
 use super::*;
 use crate::snapshot::Trace;
+use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::api_key::*;
 use alibi::plugins::organization::{OrganizationConfig, OrganizationPlugin};
 use alibi::plugins::{ApiKeyConfig, ApiKeyPlugin};
-use alibi_core::endpoint::{EndpointOptions, ServerEndpoint};
-use alibi_core::store::MemoryCacheAdapter;
-use alibi_core::utils::json::parse_value;
-use alibi_core::{AuthError, AuthResult, BackgroundTaskCompletion, BackgroundTaskHandler};
+use alibi::store::MemoryCacheAdapter;
+use alibi::utils::json::parse_value;
+use alibi::{AuthError, AuthResult, BackgroundTaskCompletion, BackgroundTaskHandler};
 
 backend_tests!(
     api_key_configuration_limits,
@@ -26,7 +26,7 @@ fn raw(path: &str, text: &str, cookie: &str) -> AuthRequest {
     request
 }
 
-fn failure(error: &alibi_core::endpoint::EndpointError) -> Value {
+fn failure(error: &alibi::endpoint::EndpointError) -> Value {
     json!({"status": error.error.status_code(), "message": error.to_string()})
 }
 
@@ -819,7 +819,7 @@ async fn api_key_storage_edges<B: Backend>(db: Db) -> TestResult {
         let output = verify(&once.key).await;
         trace.value(
             &format!("single use {attempt}"),
-            json!({"valid": output.valid, "error": output.error.map(|error| alibi_core::utils::json::to_value(&error).unwrap())}),
+            json!({"valid": output.valid, "error": output.error.map(|error| alibi::utils::json::to_value(&error).unwrap())}),
         );
     }
     let empty_owner = signup(&auth, "empty-secondary@example.com").await;
@@ -839,7 +839,7 @@ async fn api_key_storage_edges<B: Backend>(db: Db) -> TestResult {
     let exhausted = verify(&refilling.key).await;
     trace.value(
         "refill not yet due",
-        json!({"valid": exhausted.valid, "error": exhausted.error.map(|error| alibi_core::utils::json::to_value(&error).unwrap())}),
+        json!({"valid": exhausted.valid, "error": exhausted.error.map(|error| alibi::utils::json::to_value(&error).unwrap())}),
     );
     let unknown = verify("not-a-key").await;
     trace.value("unknown", json!({"valid": unknown.valid}));
@@ -933,7 +933,7 @@ async fn api_key_storage_edges<B: Backend>(db: Db) -> TestResult {
         let output = verify_database(&key).await;
         trace.value(
             label,
-            json!({"valid": output.valid, "error": output.error.map(|error| alibi_core::utils::json::to_value(&error).unwrap())}),
+            json!({"valid": output.valid, "error": output.error.map(|error| alibi::utils::json::to_value(&error).unwrap())}),
         );
     }
     database

@@ -9,8 +9,8 @@ use alibi::plugins::user_management::{
 use alibi::plugins::{
     EmailVerificationConfig, EmailVerificationPlugin, SendVerificationEmail, UserManagementPlugin,
 };
-use alibi_core::wire::UserView;
-use alibi_core::{AuthError, AuthResult, CookieCacheConfig, CookieCacheStrategy};
+use alibi::wire::UserView;
+use alibi::{AuthError, AuthResult, CookieCacheConfig, CookieCacheStrategy};
 use async_trait::async_trait;
 use chrono::Duration;
 

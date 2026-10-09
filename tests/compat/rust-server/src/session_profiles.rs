@@ -11,11 +11,11 @@ use alibi::plugins::{
     SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
 };
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_core::store::{CacheAdapter, MemoryCacheAdapter};
-use alibi_seaorm::sea_orm::{
+use alibi::store::{CacheAdapter, MemoryCacheAdapter};
+use alibi::seaorm::sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, sea_query::Expr,
 };
-use alibi_seaorm::store::entities::session;
+use alibi::seaorm::store::entities::session;
 use axum::{Json, Router, http::StatusCode, routing::post};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -70,7 +70,7 @@ pub(super) async fn router(
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = config.clone().base_path(&path);
         let profile_database = if let Some(mode) = name.strip_prefix("id-strategy-") {
-            let database = alibi_seaorm::sea_orm::Database::connect("sqlite::memory:")
+            let database = alibi::seaorm::sea_orm::Database::connect("sqlite::memory:")
                 .await
                 .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
             crate::backend::migrate(&database)
@@ -82,9 +82,9 @@ pub(super) async fn router(
             let sequence = std::sync::atomic::AtomicUsize::new(0);
             let mode = mode.to_owned();
             config.advanced.database.generate_id = Some(match mode.as_str() {
-                "uuid" => alibi_core::config::DatabaseIdStrategy::Uuid,
-                "serial" => alibi_core::config::DatabaseIdStrategy::Serial,
-                _ => alibi_core::config::DatabaseIdStrategy::Custom(Arc::new(
+                "uuid" => alibi::config::DatabaseIdStrategy::Uuid,
+                "serial" => alibi::config::DatabaseIdStrategy::Serial,
+                _ => alibi::config::DatabaseIdStrategy::Custom(Arc::new(
                     move |model: &str, size: Option<usize>| {
                         let mut event = json!({"model":model});
                         if let Some(size) = size {
@@ -123,20 +123,20 @@ pub(super) async fn router(
         if name.starts_with("stateless-refresh-") {
             config.session = config.session.stateless();
             config.account.store_account_cookie = true;
-            config.account.store_state_strategy = alibi_core::OAuthStateStrategy::Cookie;
-            config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
+            config.account.store_state_strategy = alibi::OAuthStateStrategy::Cookie;
+            config.session.cookie_cache = Some(alibi::CookieCacheConfig {
                 enabled: true,
                 max_age: 5.0,
                 strategy: if name.contains("jwt") {
-                    alibi_core::CookieCacheStrategy::Jwt
+                    alibi::CookieCacheStrategy::Jwt
                 } else {
-                    alibi_core::CookieCacheStrategy::Compact
+                    alibi::CookieCacheStrategy::Compact
                 },
-                version: Some(alibi_core::CookieCacheVersion::Literal(
+                version: Some(alibi::CookieCacheVersion::Literal(
                     if name.ends_with("v2") { "2" } else { "1" }.into(),
                 )),
             });
-            config.session.cookie_refresh_cache = alibi_core::CookieRefreshCache::UpdateAge(4.0);
+            config.session.cookie_refresh_cache = alibi::CookieRefreshCache::UpdateAge(4.0);
         }
         if name.contains("update-age") {
             config.session.expires_in = chrono::Duration::seconds(3600);
@@ -148,7 +148,7 @@ pub(super) async fn router(
                 }));
         }
         if name == "session-update-age-cache" {
-            config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
+            config.session.cookie_cache = Some(alibi::CookieCacheConfig {
                 enabled: true,
                 max_age: 300.0,
                 ..Default::default()
@@ -203,7 +203,7 @@ pub(super) async fn router(
         router = router.nest(&path, routes);
     }
     router = router.route("/__test/id-strategy/{mode}/state", axum::routing::get(move |axum::extract::Path(mode): axum::extract::Path<String>| {let database = id_databases[&mode].clone(); let events = id_events[&mode].clone(); async move {
-        use alibi_seaorm::sea_orm::{ConnectionTrait, Statement};
+        use alibi::seaorm::sea_orm::{ConnectionTrait, Statement};
         let read = async |table: &str, owner: bool| {
             let columns = if owner {"id, user_id"} else {"id"};
             let rows = database.query_all_raw(Statement::from_string(database.get_database_backend(), format!("SELECT {columns} FROM {table}"))).await.unwrap();
@@ -213,7 +213,7 @@ pub(super) async fn router(
     }}));
     let casing_database = database.clone();
     router = router.route("/__test/casing/state", axum::routing::get(move |axum::extract::Query(query): axum::extract::Query<HashMap<String,String>>| {let database = casing_database.clone(); async move {
-        use alibi_seaorm::sea_orm::{ConnectionTrait, Statement};
+        use alibi::seaorm::sea_orm::{ConnectionTrait, Statement};
         let id = query.get("userId").unwrap();
         let users = database.query_all_raw(Statement::from_sql_and_values(database.get_database_backend(), "SELECT id, name, email, email_verified FROM users WHERE id = ?", [id.clone().into()])).await.unwrap();
         let sessions = database.query_all_raw(Statement::from_sql_and_values(database.get_database_backend(), "SELECT user_id FROM sessions WHERE user_id = ?", [id.clone().into()])).await.unwrap();

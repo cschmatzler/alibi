@@ -8,7 +8,7 @@ use alibi::plugins::oauth::{
 };
 use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi_seaorm::DatabaseConnection;
+use alibi::seaorm::DatabaseConnection;
 use axum::{
     Json, Router,
     extract::State,

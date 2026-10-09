@@ -10,8 +10,8 @@ use alibi::plugins::{
     ApiKeyPlugin, EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin,
 };
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi_core::{BackgroundTaskCompletion, BackgroundTaskHandler, store::CacheAdapter};
-use alibi_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use alibi::{BackgroundTaskCompletion, BackgroundTaskHandler, store::CacheAdapter};
+use alibi::seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use axum::{
     Json, Router,
     extract::Query,
@@ -594,7 +594,7 @@ pub(crate) async fn router(
                 async move {
                     let (auth, plugin) = profiles.get(&query["profile"]).unwrap();
                     let input: CreateKeyRequest =
-                        alibi_core::utils::json::from_value(input.into()).unwrap();
+                        alibi::utils::json::from_value(input.into()).unwrap();
                     Json(plugin.create_key(auth.context(), &input).await.unwrap())
                 }
             },

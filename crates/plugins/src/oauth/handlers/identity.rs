@@ -24,7 +24,10 @@ pub(in crate::oauth::handlers) async fn finish_oauth_session<S: alibi_core::Auth
                 // OAuth delivery completes after identity/account commit, before a session.
                 if config.send_verification_email.is_some() {
                     if let Some(email) = user.email() {
-                        let plugin = crate::email_verification::EmailVerificationPlugin::with_config((*config).clone());
+                        let plugin =
+                            crate::email_verification::EmailVerificationPlugin::with_config(
+                                (*config).clone(),
+                            );
                         plugin
                             .send_verification_email_for_user(
                                 user,
@@ -513,10 +516,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
             .with_email(user_info.email.to_lowercase())
             .with_name(user_info.name.as_deref().unwrap_or_default())
             .with_email_verified(user_info.email_verified);
-        crate::authentication_helpers::apply_creation_input_defaults(
-            ctx,
-            &mut create_user,
-        );
+        crate::authentication_helpers::apply_creation_input_defaults(ctx, &mut create_user);
         apply_default_role(ctx, &mut create_user);
         create_user.provider_email_verified =
             raw_verification.filter(|value| !value.is_null()).cloned();

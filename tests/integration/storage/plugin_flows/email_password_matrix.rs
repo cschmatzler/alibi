@@ -2,12 +2,12 @@
 use super::auth_probe::{fast_password, raw};
 use super::*;
 use crate::snapshot::Trace;
+use alibi::AuthResult;
+use alibi::hooks::RequestHookContext;
 use alibi::plugins::{EmailVerificationConfig, EmailVerificationPlugin, SendVerificationEmail};
-use alibi_core::AuthResult;
-use alibi_core::hooks::RequestHookContext;
-use alibi_core::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
-use alibi_core::utils::username::UsernameConfig;
-use alibi_core::wire::UserView;
+use alibi::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
+use alibi::utils::username::UsernameConfig;
+use alibi::wire::UserView;
 use async_trait::async_trait;
 
 backend_tests!(

@@ -4,7 +4,7 @@ use super::*;
 use crate::snapshot::Trace;
 use alibi::plugins::api_key::*;
 use alibi::plugins::{ApiKeyConfig, ApiKeyPlugin};
-use alibi_core::{AuthError, AuthResult};
+use alibi::{AuthError, AuthResult};
 
 backend_tests!(api_key_input_matrix, api_key_session_outcomes);
 
@@ -25,7 +25,7 @@ impl ApiKeyValidator for Validator {
 
 fn raw(path: &str, text: &str, cookie: &str) -> AuthRequest {
     let mut request = request(path, None, cookie);
-    request.method = alibi_core::HttpMethod::Post;
+    request.method = alibi::HttpMethod::Post;
     request.body = Some(text.as_bytes().to_vec());
     request
 }
@@ -111,7 +111,7 @@ async fn api_key_session_outcomes<B: Backend>(db: Db) -> TestResult {
                     &serde_json::from_value::<CreateKeyRequest>(input).unwrap(),
                 )
                 .unwrap(),
-                alibi_core::endpoint::EndpointOptions::default(),
+                alibi::endpoint::EndpointOptions::default(),
             ),
         )
         .await

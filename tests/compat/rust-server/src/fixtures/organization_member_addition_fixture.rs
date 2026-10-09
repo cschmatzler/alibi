@@ -12,11 +12,11 @@ use alibi::{
     middleware::RateLimitConfig,
     plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin},
 };
-use alibi_core::{
+use alibi::{
     CreateMember, CreateUser, UpdateUser,
     store::{MemberStore, OrganizationStore, UserStore},
 };
-use alibi_seaorm::{
+use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };

@@ -7,7 +7,7 @@ use alibi::plugins::phone_number::{
     PhoneNumberConfig, PhoneNumberPlugin, PhoneNumberValidator, PhoneNumberVerification,
     PhoneOtpDelivery, PhoneOtpVerifier, PhoneSignupIdentity, PhoneVerificationHook, SendPhoneOtp,
 };
-use alibi_core::{AuthError, AuthResult, CallbackContext};
+use alibi::{AuthError, AuthResult, CallbackContext};
 use async_trait::async_trait;
 
 backend_tests!(

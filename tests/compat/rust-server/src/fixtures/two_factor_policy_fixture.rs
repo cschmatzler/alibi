@@ -12,11 +12,11 @@ use alibi::{
     },
     wire::UserView,
 };
-use alibi_core::{
+use alibi::{
     store::TwoFactorStore,
     utils::json::{self, JsValue},
 };
-use alibi_seaorm::{
+use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
 };
@@ -29,21 +29,21 @@ type Auth = Arc<BetterAuth<TestSchema>>;
 
 struct RejectUserUpdate;
 #[async_trait::async_trait]
-impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for RejectUserUpdate {
+impl alibi::seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for RejectUserUpdate {
     async fn before_update_user(
         &self,
         _id: &str,
-        update: &mut alibi_core::UpdateUser,
+        update: &mut alibi::UpdateUser,
         _context: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<alibi_seaorm::HookControl> {
+    ) -> AuthResult<alibi::seaorm::HookControl> {
         if update.two_factor_enabled == Some(true) {
-            return Err(alibi_core::AuthError::Upstream {
+            return Err(alibi::AuthError::Upstream {
                 status: 400,
                 code: "USER_UPDATE_DENIED",
                 message: "Configured user update denied",
             });
         }
-        Ok(alibi_seaorm::HookControl::Continue)
+        Ok(alibi::seaorm::HookControl::Continue)
     }
 }
 
@@ -53,12 +53,12 @@ struct RejectSessionCreate {
     ordinary: bool,
 }
 #[async_trait::async_trait]
-impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for RejectSessionCreate {
+impl alibi::seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for RejectSessionCreate {
     async fn before_create_session(
         &self,
-        _session: &mut alibi_core::CreateSession,
+        _session: &mut alibi::CreateSession,
         context: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<alibi_seaorm::HookControl> {
+    ) -> AuthResult<alibi::seaorm::HookControl> {
         if context.request.as_ref().is_some_and(|request| {
             if self.pending {
                 request.path.contains("/two-factor/verify-")
@@ -67,18 +67,18 @@ impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for Reject
             }
         }) {
             if self.cancel {
-                return Ok(alibi_seaorm::HookControl::Cancel);
+                return Ok(alibi::seaorm::HookControl::Cancel);
             }
             if self.ordinary {
-                return Err(alibi_core::AuthError::CallbackFailure(Box::new(
-                    alibi_core::AuthError::internal("session creation cancelled by database hook"),
+                return Err(alibi::AuthError::CallbackFailure(Box::new(
+                    alibi::AuthError::internal("session creation cancelled by database hook"),
                 )));
             }
-            return Err(alibi_core::AuthError::forbidden(
+            return Err(alibi::AuthError::forbidden(
                 "session creation cancelled by database hook",
             ));
         }
-        Ok(alibi_seaorm::HookControl::Continue)
+        Ok(alibi::seaorm::HookControl::Continue)
     }
 }
 
@@ -129,15 +129,15 @@ impl BackupCipher {
                 })
         };
         match mode {
-            Some("ordinary") => Err(alibi_core::AuthError::internal(
+            Some("ordinary") => Err(alibi::AuthError::internal(
                 "session creation cancelled by database hook",
             )),
-            Some("explicit") => Err(alibi_core::AuthError::Upstream {
+            Some("explicit") => Err(alibi::AuthError::Upstream {
                 status: 403,
                 code: "BACKUP_CALLBACK_DENIED",
                 message: "session creation cancelled by database hook",
             }),
-            Some("explicit500") => Err(alibi_core::AuthError::Api {
+            Some("explicit500") => Err(alibi::AuthError::Api {
                 status: 500,
                 code: Some("BACKUP_CALLBACK_DENIED".into()),
                 message: "session creation cancelled by database hook".into(),
@@ -280,7 +280,7 @@ pub(crate) async fn router(
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = base.clone().base_path(&path);
         if name == "two-factor-skip-cookie-attributes" {
-            use alibi_core::{CookieAttributes, CookieOverride, SameSite};
+            use alibi::{CookieAttributes, CookieOverride, SameSite};
             config.advanced.use_secure_cookies = Some(false);
             config.advanced.default_cookie_attributes = CookieAttributes {
                 max_age: Some(99.0),
@@ -455,7 +455,7 @@ async fn control(
         let Some(options) = backup_configs.get(profile) else {
             return StatusCode::BAD_REQUEST.into_response();
         };
-        let ctx = alibi_core::AuthContext::new(config, store);
+        let ctx = alibi::AuthContext::new(config, store);
         return match TwoFactorPlugin::with_config(options.clone())
             .view_backup_codes(user_id, &ctx)
             .await
@@ -529,7 +529,7 @@ async fn control(
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
     if value.get("credentialState").and_then(JsValue::as_bool) == Some(true) {
-        use alibi_core::store::AccountStore;
+        use alibi::store::AccountStore;
         return match store.get_user_accounts(user_id).await {
             Ok(mut accounts) => {
                 accounts.sort_by(|left, right| left.provider_id.cmp(&right.provider_id));
@@ -557,7 +557,7 @@ async fn control(
             store
                 .update_two_factor(
                     &row.id,
-                    alibi_core::UpdateTwoFactor {
+                    alibi::UpdateTwoFactor {
                         secret: Some(secret.into()),
                         backup_codes: Some(backup_codes.into()),
                         ..Default::default()
@@ -599,7 +599,7 @@ async fn control(
                 ))
                 .await?;
         }
-        Ok::<_, alibi_seaorm::sea_orm::DbErr>(())
+        Ok::<_, alibi::seaorm::sea_orm::DbErr>(())
     }
     .await;
     if mutation.is_err() {

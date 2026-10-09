@@ -644,9 +644,9 @@ impl OAuthProxyPlugin {
             Ok(outcome) => outcome,
             Err(error) => {
                 if error.is_ambiguous_account() {
-                    return Ok(
-                        crate::oauth::handlers::ambiguous_account_sign_in_response(ctx),
-                    );
+                    return Ok(crate::oauth::handlers::ambiguous_account_sign_in_response(
+                        ctx,
+                    ));
                 }
                 if let OAuthSignInError::SessionAuth(error) = error {
                     return match error {

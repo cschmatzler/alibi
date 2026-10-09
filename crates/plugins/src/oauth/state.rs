@@ -17,9 +17,7 @@ pub(crate) struct OAuthServerContext {
 
 pub(crate) struct CapturedOAuthServerContext(pub(crate) OAuthServerContext);
 
-pub(crate) struct RecoveredOAuthServerContext(
-    pub(crate) OAuthServerContext,
-);
+pub(crate) struct RecoveredOAuthServerContext(pub(crate) OAuthServerContext);
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(crate) struct OAuthStateLink {

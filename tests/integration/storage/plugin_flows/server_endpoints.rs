@@ -3,6 +3,7 @@
 mod hooks;
 
 use super::*;
+use alibi::endpoint::EndpointOptions;
 use alibi::plugins::api_key::{ApiKeyPlugin, CreateKeyRequest};
 use alibi::plugins::email_otp::{EmailOtpConfig, EmailOtpPlugin, EmailOtpType};
 use alibi::plugins::jwt::JwtPlugin;
@@ -12,8 +13,7 @@ use alibi::plugins::organization::types::{
     AddOrganizationMemberRequest, CreateOrganizationRequest, DeleteOrganizationRequest,
     RemoveMemberRequest, RoleInput,
 };
-use alibi_core::endpoint::EndpointOptions;
-use alibi_core::utils::json::parse_value;
+use alibi::utils::json::parse_value;
 
 backend_tests!(
     server_otp_can_bootstrap_a_password_without_replacing_sessions,
@@ -41,49 +41,46 @@ struct PasswordPolicyProbe {
     fail: Arc<std::sync::atomic::AtomicBool>,
 }
 #[async_trait::async_trait]
-impl alibi_core::PasswordHasher for PasswordPolicyProbe {
-    async fn hash(&self, password: &str) -> alibi_core::AuthResult<String> {
+impl alibi::PasswordHasher for PasswordPolicyProbe {
+    async fn hash(&self, password: &str) -> alibi::AuthResult<String> {
         self.events.lock().unwrap().push("hasher");
         if self.fail.load(std::sync::atomic::Ordering::SeqCst) {
-            return Err(alibi_core::AuthError::forbidden("Hasher rejected"));
+            return Err(alibi::AuthError::forbidden("Hasher rejected"));
         }
-        alibi_core::PasswordHasher::hash(&alibi_core::ScryptHasher, password).await
+        alibi::PasswordHasher::hash(&alibi::ScryptHasher, password).await
     }
-    async fn verify(&self, hash: &str, password: &str) -> alibi_core::AuthResult<bool> {
-        alibi_core::PasswordHasher::verify(&alibi_core::ScryptHasher, hash, password).await
+    async fn verify(&self, hash: &str, password: &str) -> alibi::AuthResult<bool> {
+        alibi::PasswordHasher::verify(&alibi::ScryptHasher, hash, password).await
     }
 }
 #[async_trait::async_trait]
-impl alibi_core::PasswordHashHook for PasswordPolicyProbe {
+impl alibi::PasswordHashHook for PasswordPolicyProbe {
     async fn before_hash(
         &self,
         _: &str,
-        context: Option<&alibi_core::PasswordHashContext>,
-    ) -> alibi_core::AuthResult<()> {
+        context: Option<&alibi::PasswordHashContext>,
+    ) -> alibi::AuthResult<()> {
         assert_eq!(context.unwrap().path.as_deref(), Some("virtual:"));
         self.events.lock().unwrap().push("hook");
         Ok(())
     }
 }
 #[async_trait::async_trait]
-impl<S: AuthSchema> alibi_core::AuthPlugin<S> for PasswordPolicyProbe {
+impl<S: AuthSchema> alibi::AuthPlugin<S> for PasswordPolicyProbe {
     fn name(&self) -> &'static str {
         "application-password-policy"
     }
-    fn routes(&self) -> Vec<alibi_core::AuthRoute> {
+    fn routes(&self) -> Vec<alibi::AuthRoute> {
         Vec::new()
     }
     async fn on_request(
         &self,
         _: &AuthRequest,
-        _: &alibi_core::AuthContext<S>,
-    ) -> alibi_core::AuthResult<Option<AuthResponse>> {
+        _: &alibi::AuthContext<S>,
+    ) -> alibi::AuthResult<Option<AuthResponse>> {
         Ok(None)
     }
-    async fn on_init(
-        &self,
-        context: &mut alibi_core::AuthInitContext<S>,
-    ) -> alibi_core::AuthResult<()> {
+    async fn on_init(&self, context: &mut alibi::AuthInitContext<S>) -> alibi::AuthResult<()> {
         context.register_password_hash_hook(Arc::new(self.clone()));
         Ok(())
     }
@@ -184,7 +181,7 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
     .unwrap_err();
     assert!(matches!(
         denied,
-        alibi_core::AuthError::Upstream {
+        alibi::AuthError::Upstream {
             code: "PASSWORD_ALREADY_SET",
             ..
         }
@@ -204,7 +201,7 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
     authenticated(&auth, &cookie, email).await;
     let probe = PasswordPolicyProbe::default();
     let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
-    config.session.cookie_cache = Some(alibi_core::config::CookieCacheConfig {
+    config.session.cookie_cache = Some(alibi::config::CookieCacheConfig {
         enabled: true,
         ..Default::default()
     });
@@ -244,7 +241,7 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
     let user = body(&issued)["user"]["id"].as_str().unwrap().to_owned();
     let credential = configured
         .store()
-        .create_account(alibi_core::CreateAccount {
+        .create_account(alibi::CreateAccount {
             user_id: user.clone(),
             account_id: user.clone(),
             provider_id: "credential".into(),
@@ -276,7 +273,7 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
         )
         .await
         .unwrap_err();
-        assert!(matches!(error,alibi_core::AuthError::Upstream {code,..} if code==expected));
+        assert!(matches!(error,alibi::AuthError::Upstream {code,..} if code==expected));
         assert_eq!(db.table("accounts").await?, empty_accounts);
     }
     assert!(probe.events.lock().unwrap().is_empty());
@@ -290,7 +287,7 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
     probe.fail.store(false, std::sync::atomic::Ordering::SeqCst);
     alibi::plugins::password_management::set_password(&input, "😀😀😀😀", configured.context())
         .await?;
-    use alibi_core::entity::AuthAccount;
+    use alibi::entity::AuthAccount;
     assert_eq!(
         db.count_where("SELECT COUNT(*) FROM accounts WHERE user_id=$1", &[&user])
             .await?,
@@ -299,8 +296,8 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
     let saved = configured.store().get_user_accounts(&user).await?;
     assert_eq!(saved[0].id(), credential.id());
     assert!(
-        alibi_core::PasswordHasher::verify(
-            &alibi_core::ScryptHasher,
+        alibi::PasswordHasher::verify(
+            &alibi::ScryptHasher,
             saved[0].password().unwrap(),
             "😀😀😀😀"
         )
@@ -317,7 +314,7 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
     .unwrap_err();
     assert!(matches!(
         duplicate,
-        alibi_core::AuthError::Upstream {
+        alibi::AuthError::Upstream {
             code: "PASSWORD_ALREADY_SET",
             ..
         }

@@ -4,11 +4,11 @@
     clippy::panic_in_result_fn,
     reason = "tests assert independently specified wire fields and fixtures"
 )]
-use alibi::{AuthBuilder, AuthConfig};
-use alibi_core::endpoint::{
+use alibi::endpoint::{
     EndpointCall, EndpointDefinition, EndpointOptions, EndpointResponse, ServerEndpoint,
 };
-use alibi_core::{
+use alibi::{AuthBuilder, AuthConfig};
+use alibi::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
     HttpMethod,
 };

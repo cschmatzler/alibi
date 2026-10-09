@@ -5,7 +5,7 @@ use alibi::plugins::last_login_method::{
     LastLoginMethodPlugin,
 };
 use alibi::plugins::{BearerPlugin, MultiSessionPlugin};
-use alibi_core::{AuthContext, AuthResult};
+use alibi::{AuthContext, AuthResult};
 use async_trait::async_trait;
 use reqwest::cookie::{CookieStore, Jar};
 

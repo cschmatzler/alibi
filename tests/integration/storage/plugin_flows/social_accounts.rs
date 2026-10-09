@@ -3,16 +3,16 @@
 use super::social_flows::{Social, authorize, callback, linking};
 use super::*;
 use crate::snapshot::Trace;
+use alibi::AuthResult;
+use alibi::field_policy::FieldConfig;
+use alibi::hooks::RequestHookContext;
 use alibi::plugins::email_otp::{EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, SendEmailOtp};
 use alibi::plugins::oauth::{
     OAuthCallbackUserPayload, OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use alibi::plugins::{EmailVerificationConfig, EmailVerificationPlugin};
-use alibi_core::AuthResult;
-use alibi_core::field_policy::FieldConfig;
-use alibi_core::hooks::RequestHookContext;
-use alibi_core::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
-use alibi_core::{AccountConfig, CallbackContext};
+use alibi::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
+use alibi::{AccountConfig, CallbackContext};
 
 backend_tests!(
     account_cookie_and_token_retention_on_sign_in,

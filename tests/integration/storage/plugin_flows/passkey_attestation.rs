@@ -11,7 +11,7 @@ use alibi::plugins::passkey::{
     PasskeyUserResolver,
 };
 use alibi::plugins::{PasskeyPlugin, passkey::PasskeyRegistrationConfig};
-use alibi_core::{AuthError, AuthResult};
+use alibi::{AuthError, AuthResult};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::Signer as _;
 use serde_cbor_2::Value as Cbor;

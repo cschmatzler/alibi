@@ -3,7 +3,7 @@ use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
 use alibi::plugins::{DeviceAuthorizationPlugin, EmailPasswordPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use alibi_core::{AuthRequest, AuthResponse, AuthSession, HttpMethod, UpdateDeviceCode};
+use alibi::{AuthRequest, AuthResponse, AuthSession, HttpMethod, UpdateDeviceCode};
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -143,7 +143,7 @@ async fn without_database_native_device_workflow() -> TestResult {
             .store()
             .update_device_code(&old.id, update.clone())
             .await,
-        Err(alibi_core::AuthError::NotFound(_))
+        Err(alibi::AuthError::NotFound(_))
     ));
     assert!(
         !restarted
@@ -380,7 +380,7 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, backend: &str) -> TestRes
     // Seed an expired row through the public store, avoiding wall-clock sleeps.
     let expired = auth
         .store()
-        .create_device_code(alibi_core::CreateDeviceCode {
+        .create_device_code(alibi::CreateDeviceCode {
             device_code: "expired-device".into(),
             user_code: "EXPIRED".into(),
             user_id: None,
@@ -618,7 +618,7 @@ async fn delayed_device_decisions<B: Backend>(db: Db) -> TestResult {
             assert_eq!(redeemed.status, 200);
             assert_eq!(body(&redeemed)["scope"], "profile raw");
             let token = body(&redeemed)["access_token"].as_str().unwrap().to_owned();
-            use alibi_core::AuthSession;
+            use alibi::AuthSession;
             assert_eq!(
                 auth.store()
                     .get_session(&token)

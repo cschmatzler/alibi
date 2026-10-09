@@ -52,7 +52,7 @@ async fn duplicate_signup_preserves_identity_and_filters_synthetic_output<B: Bac
                     assert_eq!(request.path, "/sign-up/email");
                     assert_eq!(request.body_as_json::<Value>()?["name"], "Submitted Name");
                     observed.lock().unwrap().push("existing");
-                    Err(alibi_core::AuthError::bad_request(
+                    Err(alibi::AuthError::bad_request(
                         "notification failure must not enumerate identity",
                     ))
                 })
@@ -65,7 +65,7 @@ async fn duplicate_signup_preserves_identity_and_filters_synthetic_output<B: Bac
                 assert_eq!(context.core_fields["email"],"duplicate@example.test");
                 assert!(context.additional_fields.is_empty());
                 assert!(!context.id.is_empty());
-                if mode=="custom-error" {return Err(alibi_core::AuthError::bad_request("synthetic customization rejected"));}
+                if mode=="custom-error" {return Err(alibi::AuthError::bad_request("synthetic customization rejected"));}
                 Ok(json!({"id":"synthetic-application-id","name":"Synthetic display","email":"public@example.test","username":"synthetic_username","displayUsername":"Synthetic Username","role":"synthetic-role","privateApplicationSecret":"must-not-escape","accessToken":"must-not-escape"}).as_object().unwrap().clone())
             }));
         }

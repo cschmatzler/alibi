@@ -3,7 +3,7 @@
 use crate::storage::{Backend, Db, Raw, TestResult, backend_tests, on_raw, postgres_tests};
 use alibi::plugins::SessionManagementPlugin;
 use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use alibi_core::{AuthRequest, AuthResponse, AuthSession, AuthUser, CreateUser, HttpMethod};
+use alibi::{AuthRequest, AuthResponse, AuthSession, AuthUser, CreateUser, HttpMethod};
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -28,9 +28,7 @@ async fn fixture_with_config<B: Backend>(
 ) -> (BetterAuth<B::Schema>, Db) {
     let connection = B::connect(&db.url, None).await.unwrap();
     let store = B::store(Arc::new(config.clone()), &connection);
-    alibi_core::store::SchemaMigrator::migrate(&store)
-        .await
-        .unwrap();
+    alibi::store::SchemaMigrator::migrate(&store).await.unwrap();
     let auth = AuthBuilder::new(config.clone())
         .store(store)
         .plugin(SessionManagementPlugin::new())
@@ -55,8 +53,7 @@ async fn issued<S: AuthSchema>(auth: &BetterAuth<S>, email: &str) -> (String, St
         .await
         .unwrap();
     let cookie =
-        alibi_core::utils::cookie_utils::create_session_cookie(session.token(), auth.config())
-            .unwrap();
+        alibi::utils::cookie_utils::create_session_cookie(session.token(), auth.config()).unwrap();
     (
         user.id().into_owned(),
         session.token().to_owned(),
@@ -395,7 +392,7 @@ mod secondary {
         secondary_expiry_and_malformed_credentials_never_fall_back_to_a_preserved_audit_row,
         transactional_secondary_issuance_and_scope_keep_actual_cache_partial_effects_on_rollback
     );
-    use alibi_core::store::{CacheAdapter, MemoryCacheAdapter};
+    use alibi::store::{CacheAdapter, MemoryCacheAdapter};
     use std::sync::Arc;
 
     async fn mode<B: Backend>(
@@ -544,7 +541,7 @@ mod secondary {
                 auth.store()
                     .update_user(
                         &owner,
-                        alibi_core::UpdateUser {
+                        alibi::UpdateUser {
                             name: Some("Renamed cached owner".into()),
                             ..Default::default()
                         },
@@ -638,7 +635,7 @@ mod secondary {
         let url =
             std::env::var("BETTER_AUTH_TEST_REDIS_URL").expect("isolated Redis URL is required");
         let cache: Arc<dyn CacheAdapter> =
-            Arc::new(alibi_core::store::RedisAdapter::new(&url).await.unwrap());
+            Arc::new(alibi::store::RedisAdapter::new(&url).await.unwrap());
         exercise_modes::<crate::storage::SeaOrm>(Db::sqlite().await.unwrap(), Arc::clone(&cache))
             .await;
         exercise_modes::<crate::storage::Sqlx>(Db::sqlite().await.unwrap(), cache).await;
@@ -739,7 +736,7 @@ mod secondary {
             let (owner, token, cookie) = issued(&auth, "rollback@secondary.fixture.test").await;
             let user_id = owner.clone();
             let new_token = "transaction-issued-secondary-token".to_owned();
-            let input = alibi_core::CreateSession {
+            let input = alibi::CreateSession {
                 additional_fields: Default::default(),
                 token: Some(new_token.clone()),
                 user_id,
@@ -750,21 +747,19 @@ mod secondary {
                 active_organization_id: None,
                 active_team_id: None,
             };
-            let result = alibi_core::store::transaction::<B::Schema, (), _>(
-                auth.store().as_ref(),
-                move |tx| {
+            let result =
+                alibi::store::transaction::<B::Schema, (), _>(auth.store().as_ref(), move |tx| {
                     Box::pin(async move {
                         drop(tx.create_session(input).await?);
                         Err(alibi::AuthError::internal("Actual transaction rollback"))
                     })
-                },
-            )
-            .await;
+                })
+                .await;
             assert!(result.is_err());
             assert!(physical(&db, &new_token).await.is_none());
             assert!(cache.get(&new_token).await.unwrap().is_some());
             let signed =
-                alibi_core::utils::cookie_utils::create_session_cookie(&new_token, auth.config())
+                alibi::utils::cookie_utils::create_session_cookie(&new_token, auth.config())
                     .unwrap();
             let (_, surviving) = request(
                 &auth,
@@ -781,9 +776,8 @@ mod secondary {
             );
             assert!(physical(&db, &new_token).await.is_none());
             let token_for_update = token.clone();
-            let result = alibi_core::store::transaction::<B::Schema, (), _>(
-                auth.store().as_ref(),
-                move |tx| {
+            let result =
+                alibi::store::transaction::<B::Schema, (), _>(auth.store().as_ref(), move |tx| {
                     Box::pin(async move {
                         drop(
                             tx.update_session_active_organization(
@@ -801,9 +795,8 @@ mod secondary {
                         );
                         Err(alibi::AuthError::internal("Actual scope rollback"))
                     })
-                },
-            )
-            .await;
+                })
+                .await;
             assert!(result.is_err());
             let (_, surviving_scope) =
                 request(&auth, HttpMethod::Get, "/get-session", &cookie, None).await;

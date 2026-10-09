@@ -1,7 +1,5 @@
 use super::*;
-pub(in crate::two_factor) fn derive_encryption_key(
-    secret: &str,
-) -> AuthResult<Key<Aes256Gcm>> {
+pub(in crate::two_factor) fn derive_encryption_key(secret: &str) -> AuthResult<Key<Aes256Gcm>> {
     let hkdf = Hkdf::<Sha256>::new(None, secret.as_bytes());
     let mut okm = [0u8; 32];
     hkdf.expand(ENCRYPTION_INFO, &mut okm).map_err(|error| {

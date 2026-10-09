@@ -10,7 +10,7 @@ use alibi::{
     },
     wire::UserView,
 };
-use alibi_seaorm::{
+use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };

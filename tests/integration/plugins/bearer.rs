@@ -1,16 +1,16 @@
 //! Public native dispatch must propagate verified headers to completed hooks.
 
+use alibi::seaorm::{Database, SeaOrmStore};
+use alibi::store::{SessionStore, UserStore};
+use alibi::utils::cookie_utils::sign_cookie_value;
 use alibi::{AuthBuilder, AuthConfig, plugins::BearerPlugin};
-use alibi_core::store::{SessionStore, UserStore};
-use alibi_core::utils::cookie_utils::sign_cookie_value;
-use alibi_core::{
+use alibi::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, CreateSession,
     CreateUser, HttpMethod,
 };
-use alibi_seaorm::{Database, SeaOrmStore};
 use async_trait::async_trait;
 use std::{collections::HashMap, sync::Arc};
-type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 struct ApplicationObserver;
 #[async_trait]
@@ -52,7 +52,7 @@ async fn native_bearer_headers_reach_endpoint_and_completed_application_hook() {
     let config = AuthConfig::new("native-bearer-contract-secret-at-least-32-characters")
         .base_path("/native/auth");
     let database = Database::connect("sqlite::memory:").await.unwrap();
-    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+    alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .unwrap();
     let store = Arc::new(SeaOrmStore::<Schema>::new(config.clone(), database));

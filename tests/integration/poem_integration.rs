@@ -6,12 +6,12 @@
     reason = "boundary assertions use known fixture values"
 )]
 use crate::storage::{Backend, Db, TestResult, backend_tests, postgres_tests};
+use alibi::entity::AuthUser;
 use alibi::integrations::{CurrentSession, OptionalSession, poem::PoemIntegration};
+use alibi::middleware::{BodyLimitConfig, RateLimitConfig};
 use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig};
-use alibi_core::entity::AuthUser;
-use alibi_core::middleware::{BodyLimitConfig, RateLimitConfig};
-use alibi_core::{
+use alibi::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
     CreateUser, UpdateUser,
 };
@@ -37,7 +37,7 @@ impl<S: AuthSchema> AuthPlugin<S> for Probe {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
-            AuthRoute::new(alibi_core::HttpMethod::Patch, "/wire", "wire"),
+            AuthRoute::new(alibi::HttpMethod::Patch, "/wire", "wire"),
             AuthRoute::post("/persist", "persist"),
         ]
     }
@@ -268,7 +268,7 @@ async fn sessions<B: Backend>(db: Db) -> TestResult {
     let user_id = body["user"]["id"].as_str().unwrap();
     let token = body["token"].as_str().unwrap();
     denied_session(&auth, "__Secure-better-auth.session_token=bad-signature").await?;
-    let foreign = alibi_core::utils::cookie_utils::sign_cookie_value(
+    let foreign = alibi::utils::cookie_utils::sign_cookie_value(
         token,
         "foreign-secret-with-at-least-32-characters",
     );

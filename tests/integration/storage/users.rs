@@ -1,7 +1,7 @@
 //! Nullable plugin flags on the bundled user table.
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use alibi_core::{AuthUser, CreateUser, UpdateUser, store::UserStore};
+use alibi::{AuthUser, CreateUser, UpdateUser, store::UserStore};
 
 backend_tests!(
     disabled_plugin_creation_preserves_sql_null,
@@ -108,8 +108,8 @@ pub(crate) fn deletion_config() -> alibi::AuthConfig {
     alibi::AuthConfig::new(DELETION_SECRET).base_url(DELETION_ORIGIN)
 }
 
-fn deletion_request(path: &str, body: serde_json::Value, cookie: &str) -> alibi_core::AuthRequest {
-    use alibi_core::{AuthRequest, HttpMethod};
+fn deletion_request(path: &str, body: serde_json::Value, cookie: &str) -> alibi::AuthRequest {
+    use alibi::{AuthRequest, HttpMethod};
     let mut request = AuthRequest::new(HttpMethod::Post, path);
     request.body = Some(body.to_string().into_bytes());
     drop(
@@ -187,7 +187,7 @@ pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
     use alibi::plugins::{
         AdminConfig, AdminPlugin, ApiKeyPlugin, EmailPasswordPlugin, UserManagementPlugin,
     };
-    use alibi_core::{AuthRequest, HttpMethod};
+    use alibi::{AuthRequest, HttpMethod};
     use serde_json::{Value, json};
     let plugins = |builder: alibi::AuthBuilder<S>| {
         let builder = builder.plugin(EmailPasswordPlugin::new());

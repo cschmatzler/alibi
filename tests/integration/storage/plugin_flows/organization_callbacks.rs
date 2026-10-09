@@ -1,7 +1,7 @@
 //! Organization callbacks surround real writes, with intentionally partial effects.
 use super::*;
 use alibi::plugins::organization::*;
-use alibi_core::{AuthError, AuthResult};
+use alibi::{AuthError, AuthResult};
 use async_trait::async_trait;
 
 backend_tests!(
@@ -310,7 +310,7 @@ impl OrganizationInvitationLimitResolver for Lifecycle {
     async fn invitation_limit(
         &self,
         ctx: &OrganizationInvitationLimitContext,
-        _: &alibi_core::CallbackContext,
+        _: &alibi::CallbackContext,
     ) -> AuthResult<f64> {
         assert_eq!(ctx.user.id, *self.actor.lock().unwrap());
         assert_eq!(ctx.member.user_id, ctx.member_user.id);
@@ -380,7 +380,7 @@ impl OrganizationInvitationEmailSender for Lifecycle {
     async fn send_invitation_email(
         &self,
         delivery: &OrganizationInvitationDelivery,
-        _: &alibi_core::CallbackContext,
+        _: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         assert_eq!(delivery.email(), "target@example.test");
         assert_eq!(delivery.user.id, *self.actor.lock().unwrap());
@@ -404,7 +404,7 @@ impl OrganizationInvitationAcceptanceHooks for Lifecycle {
     ) -> AuthResult<()> {
         assert_eq!(ctx.user.id, *self.target.lock().unwrap());
         assert_eq!(ctx.invitation.email, "target@example.test");
-        assert_eq!(ctx.invitation.status, alibi_core::InvitationStatus::Pending);
+        assert_eq!(ctx.invitation.status, alibi::InvitationStatus::Pending);
         assert_eq!(ctx.invitation.organization_id, ctx.organization.id);
         self.phase("before-accept")
     }
@@ -488,7 +488,7 @@ async fn organization_invitation_and_member_callbacks_preserve_actor_and_commit_
             auth.store()
                 .update_user(
                     &target_id,
-                    alibi_core::UpdateUser {
+                    alibi::UpdateUser {
                         email_verified: Some(true),
                         ..Default::default()
                     },

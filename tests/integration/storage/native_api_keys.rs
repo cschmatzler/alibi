@@ -1,14 +1,14 @@
 //! API-key handlers over real SQL adapters and native no-database records.
 use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
+use alibi::endpoint::EndpointOptions;
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::plugins::api_key::{
     ApiKeyConfig, ApiKeyPlugin, ApiKeyVerificationInput, CreateKeyRequest, UpdateKeyRequest,
 };
+use alibi::store::ConsumeApiKeyResult;
 use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use alibi_core::endpoint::EndpointOptions;
-use alibi_core::store::ConsumeApiKeyResult;
-use alibi_core::{AuthRequest, AuthResponse, HttpMethod, UpdateApiKey};
+use alibi::{AuthRequest, AuthResponse, HttpMethod, UpdateApiKey};
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use std::sync::Arc;

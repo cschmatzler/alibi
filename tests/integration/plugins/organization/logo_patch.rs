@@ -1,13 +1,13 @@
 //! The public storage patch distinguishes omission, SQL NULL, and an empty string.
 
 use alibi::AuthConfig;
-use alibi_core::store::OrganizationStore;
-use alibi_core::{CreateOrganization, UpdateOrganization};
-use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
-use alibi_seaorm::{Database, SeaOrmStore};
+use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+use alibi::seaorm::{Database, SeaOrmStore};
+use alibi::store::OrganizationStore;
+use alibi::{CreateOrganization, UpdateOrganization};
 use serde_json::json;
 
-type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 #[cfg(test)]
 mod tests {
@@ -16,7 +16,7 @@ mod tests {
     #[tokio::test]
     async fn public_organization_store_logo_patch_preserves_omission_and_clears_sql_null() {
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let store = SeaOrmStore::<Schema>::new(

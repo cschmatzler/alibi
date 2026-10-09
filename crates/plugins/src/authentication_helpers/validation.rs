@@ -235,9 +235,7 @@ pub(in crate::authentication_helpers) fn parse_body_with_fields_and_ignored<
         .map_err(|_error| validation_response("[body] Invalid input"))
 }
 
-pub(crate) const fn json_type(
-    value: Option<&alibi_core::utils::json::JsValue>,
-) -> &'static str {
+pub(crate) const fn json_type(value: Option<&alibi_core::utils::json::JsValue>) -> &'static str {
     use alibi_core::utils::json::JsValue;
     match value {
         None => "undefined",

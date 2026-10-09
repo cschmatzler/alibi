@@ -22,9 +22,7 @@ use super::state::{
 use super::types::{
     LinkSocialRequest, OAuthIdTokenRequest, SocialSignInRequest, SocialSignInResponse,
 };
-use crate::helpers::{
-    SessionIssueError, apply_default_role, issue_selected_user_session_record,
-};
+use crate::helpers::{SessionIssueError, apply_default_role, issue_selected_user_session_record};
 use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
 use alibi_core::user_validation::{
     UserValidationAction, UserValidationData, UserValidationSource, validate_user_info,

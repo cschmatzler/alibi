@@ -3414,19 +3414,13 @@ mod dynamic_role_tests {
                 .update_member_role(&member.id, "key-editor")
                 .await?,
         );
-        crate::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "create")
-            .await?;
-        crate::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "read")
-            .await?;
-        let error = crate::helpers::require_org_api_key_permission(
-            &ctx,
-            &delegate.id,
-            &org,
-            "delete",
-        )
-        .await
-        .err()
-        .ok_or("Unowned key permission granted")?;
+        crate::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "create").await?;
+        crate::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "read").await?;
+        let error =
+            crate::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "delete")
+                .await
+                .err()
+                .ok_or("Unowned key permission granted")?;
         assert_error(
             &error.to_auth_response(),
             403,
@@ -3445,15 +3439,11 @@ mod dynamic_role_tests {
         )
         .await?;
         assert_eq!(changed.status, 200);
-        let error_2 = crate::helpers::require_org_api_key_permission(
-            &ctx,
-            &delegate.id,
-            &org,
-            "read",
-        )
-        .await
-        .err()
-        .ok_or("Revoked key permission granted")?;
+        let error_2 =
+            crate::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "read")
+                .await
+                .err()
+                .ok_or("Revoked key permission granted")?;
         assert_error(
             &error_2.to_auth_response(),
             403,
@@ -3464,23 +3454,18 @@ mod dynamic_role_tests {
                 .update_member_role(&member.id, " owner ")
                 .await?,
         );
-        let error_3 = crate::helpers::require_org_api_key_permission(
-            &ctx,
-            &delegate.id,
-            &org,
-            "read",
-        )
-        .await
-        .err()
-        .ok_or("Whitespace role bypassed creator check")?;
+        let error_3 =
+            crate::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "read")
+                .await
+                .err()
+                .ok_or("Whitespace role bypassed creator check")?;
         assert_error(
             &error_3.to_auth_response(),
             403,
             "INSUFFICIENT_API_KEY_PERMISSIONS",
         )?;
         drop(ctx.database.update_member_role(&member.id, "owner").await?);
-        crate::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "delete")
-            .await?;
+        crate::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "delete").await?;
         Ok(())
     }
 

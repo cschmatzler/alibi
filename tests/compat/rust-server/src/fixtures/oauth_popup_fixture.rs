@@ -5,9 +5,9 @@ use alibi::middleware::{CorsConfig, RateLimitConfig};
 use alibi::plugins::oauth::OAuthProvider;
 use alibi::plugins::{BearerPlugin, OAuthPlugin, OAuthPopupPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_seaorm::sea_orm::{ActiveModelTrait, EntityTrait, Set};
-use alibi_seaorm::store::entities::{account, session, user, verification};
-use alibi_seaorm::{Database, DatabaseConnection};
+use alibi::seaorm::sea_orm::{ActiveModelTrait, EntityTrait, Set};
+use alibi::seaorm::store::entities::{account, session, user, verification};
+use alibi::seaorm::{Database, DatabaseConnection};
 use axum::{
     Form, Json, Router,
     extract::{Query, State},

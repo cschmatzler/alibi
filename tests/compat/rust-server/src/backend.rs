@@ -4,33 +4,33 @@
 //! in both builds; it is test setup, not the store being compared.
 
 use alibi::{AuthConfig, AuthSchema};
-use alibi_seaorm::DatabaseConnection;
-use alibi_seaorm::sea_orm::DbErr;
+use alibi::seaorm::DatabaseConnection;
+use alibi::seaorm::sea_orm::DbErr;
 use std::sync::Arc;
 
 #[cfg(feature = "seaorm")]
 mod selected {
-    pub use alibi_seaorm::SeaOrmBackend as Backend;
-    pub use alibi_seaorm::SeaOrmHookContext as HookContext;
-    pub use alibi_seaorm::SeaOrmStore as Store;
-    pub use alibi_seaorm::store::entities;
+    pub use alibi::seaorm::SeaOrmBackend as Backend;
+    pub use alibi::seaorm::SeaOrmHookContext as HookContext;
+    pub use alibi::seaorm::SeaOrmStore as Store;
+    pub use alibi::seaorm::store::entities;
     pub type TestSchema =
-        alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+        alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 }
 
 #[cfg(not(feature = "seaorm"))]
 mod selected {
-    pub use alibi_sqlx::SqlxBackend as Backend;
-    pub use alibi_sqlx::SqlxHookContext as HookContext;
-    pub use alibi_sqlx::SqlxStore as Store;
-    pub use alibi_sqlx::store::entities;
-    pub type TestSchema = alibi_sqlx::store::__private_test_support::bundled_schema::BundledSchema;
+    pub use alibi::sqlx::SqlxBackend as Backend;
+    pub use alibi::sqlx::SqlxHookContext as HookContext;
+    pub use alibi::sqlx::SqlxStore as Store;
+    pub use alibi::sqlx::store::entities;
+    pub type TestSchema = alibi::sqlx::store::__private_test_support::bundled_schema::BundledSchema;
 }
 
 pub(crate) use selected::*;
 
 #[cfg(feature = "seaorm")]
-impl alibi_seaorm::sea_orm::ActiveModelBehavior
+impl alibi::seaorm::sea_orm::ActiveModelBehavior
     for crate::session_field_model::application_session::ActiveModel
 {
 }
@@ -54,12 +54,12 @@ pub(crate) fn store<S: AuthSchema>(
 pub(crate) async fn migrate(database: &DatabaseConnection) -> Result<(), DbErr> {
     #[cfg(feature = "seaorm")]
     {
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(database).await
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(database).await
     }
     #[cfg(not(feature = "seaorm"))]
     {
-        let pool = alibi_sqlx::SqlxPool::from(database.get_sqlite_connection_pool().clone());
-        alibi_sqlx::store::__private_test_support::migrator::run_migrations(&pool)
+        let pool = alibi::sqlx::SqlxPool::from(database.get_sqlite_connection_pool().clone());
+        alibi::sqlx::store::__private_test_support::migrator::run_migrations(&pool)
             .await
             .map_err(|error| DbErr::Custom(error.to_string()))
     }
@@ -73,9 +73,9 @@ pub(crate) async fn rows<M>(
     args: Vec<String>,
 ) -> Result<Vec<M>, DbErr>
 where
-    M: alibi_seaorm::sea_orm::FromQueryResult,
+    M: alibi::seaorm::sea_orm::FromQueryResult,
 {
-    use alibi_seaorm::sea_orm::{DbBackend, Statement};
+    use alibi::seaorm::sea_orm::{DbBackend, Statement};
     M::find_by_statement(Statement::from_sql_and_values(
         DbBackend::Sqlite,
         sql,
@@ -113,7 +113,7 @@ pub(crate) async fn hook_execute(
 ) -> alibi::AuthResult<u64> {
     #[cfg(feature = "seaorm")]
     {
-        use alibi_seaorm::sea_orm::{ConnectionTrait, Statement};
+        use alibi::seaorm::sea_orm::{ConnectionTrait, Statement};
         database
             .execute_raw(Statement::from_sql_and_values(
                 database.get_database_backend(),
@@ -145,9 +145,9 @@ pub(crate) async fn hook_execute(
 #[cfg(feature = "seaorm")]
 pub(crate) async fn hook_rows<M>(context: &HookContext<'_>, sql: &str) -> alibi::AuthResult<Vec<M>>
 where
-    M: alibi_seaorm::sea_orm::FromQueryResult,
+    M: alibi::seaorm::sea_orm::FromQueryResult,
 {
-    use alibi_seaorm::sea_orm::{DbBackend, Statement};
+    use alibi::seaorm::sea_orm::{DbBackend, Statement};
     let statement = Statement::from_string(DbBackend::Sqlite, sql);
     let rows = match context.tx {
         Some(tx) => M::find_by_statement(statement).all(tx).await,
@@ -195,7 +195,7 @@ pub(crate) fn database_of<S: AuthSchema>(store: &Store<S>) -> DatabaseConnection
             .as_sqlite()
             .cloned()
             .unwrap_or_else(|| unreachable!("fixture stores use SQLite"));
-        alibi_seaorm::sea_orm::SqlxSqliteConnector::from_sqlx_sqlite_pool(pool)
+        alibi::seaorm::sea_orm::SqlxSqliteConnector::from_sqlx_sqlite_pool(pool)
     }
 }
 

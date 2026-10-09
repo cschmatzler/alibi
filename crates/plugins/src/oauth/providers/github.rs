@@ -71,10 +71,7 @@ pub(in crate::oauth::providers) struct GitHubUserInfoHandler {
 }
 
 impl GitHubUserInfoHandler {
-    pub(in crate::oauth::providers) const fn new(
-        user_url: String,
-        emails_url: String,
-    ) -> Self {
+    pub(in crate::oauth::providers) const fn new(user_url: String, emails_url: String) -> Self {
         Self {
             user_url,
             emails_url,

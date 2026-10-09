@@ -8,7 +8,7 @@ use alibi::plugins::{
 };
 use alibi::wire::UserView;
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi_seaorm::sea_orm::DatabaseConnection;
+use alibi::seaorm::sea_orm::DatabaseConnection;
 use async_trait::async_trait;
 use axum::{Json, Router, routing::get};
 use chrono::Duration;
@@ -32,7 +32,7 @@ impl SendVerificationEmail for Sender {
         }
         self.inner.send(user, url, token).await?;
         if self.rate_limited
-            && alibi_core::hooks::current_request_hook_context().is_some_and(|request| {
+            && alibi::hooks::current_request_hook_context().is_some_and(|request| {
                 request
                     .headers
                     .get("x-verification-sender-mode")

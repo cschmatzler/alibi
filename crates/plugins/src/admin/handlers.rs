@@ -861,9 +861,7 @@ pub(crate) async fn set_user_password_core(
         )
         .await?;
 
-    if let Some(account) =
-        crate::helpers::get_credential_account(ctx, &body.user_id).await?
-    {
+    if let Some(account) = crate::helpers::get_credential_account(ctx, &body.user_id).await? {
         drop(
             ctx.database
                 .update_account_record(

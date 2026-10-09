@@ -7,14 +7,14 @@ use alibi::plugins::organization::{
 };
 use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi_core::wire::UserView;
-use alibi_core::{UpdateOrganization, store::OrganizationStore};
-use alibi_seaorm::DatabaseConnection;
-use alibi_seaorm::sea_orm::{
+use alibi::wire::UserView;
+use alibi::{UpdateOrganization, store::OrganizationStore};
+use alibi::seaorm::DatabaseConnection;
+use alibi::seaorm::sea_orm::{
     ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
     Statement,
 };
-use alibi_seaorm::store::entities::{member, organization, session, user};
+use alibi::seaorm::store::entities::{member, organization, session, user};
 use axum::{
     Json, Router,
     extract::Query,

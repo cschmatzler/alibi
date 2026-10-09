@@ -9,14 +9,14 @@ use alibi::plugins::{
     VerifiedPasskeyRegistration,
 };
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi_core::{
+use alibi::{
     AuthRequest, AuthUser, CreateSession, HttpMethod,
     utils::{
         cookie_utils::{sign_cookie_value, verify_cookie_value},
         json::JsValue,
     },
 };
-use alibi_seaorm::{
+use alibi::seaorm::{
     DatabaseConnection,
     hooks::{DatabaseHooks, HookControl},
     sea_orm::{ConnectionTrait, DbBackend, Statement},

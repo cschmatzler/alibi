@@ -249,9 +249,9 @@ impl OneTapPlugin {
                     .map_err(Into::into);
             }
             Err(OAuthSignInError::AccountLookup(_)) => {
-                return Ok(
-                    crate::oauth::handlers::ambiguous_account_sign_in_response(ctx),
-                );
+                return Ok(crate::oauth::handlers::ambiguous_account_sign_in_response(
+                    ctx,
+                ));
             }
             Err(OAuthSignInError::Generic(error)) => return message(401, &error),
             Err(OAuthSignInError::SessionAuth(error)) => return message(401, &error.to_string()),
@@ -293,9 +293,7 @@ impl OneTapPlugin {
             );
         }
         if let Some(cookie) = outcome.account_cookie.as_ref() {
-            for header in
-                crate::oauth::create_account_cookie_headers(&ctx.config, cookie, req)?
-            {
+            for header in crate::oauth::create_account_cookie_headers(&ctx.config, cookie, req)? {
                 response.headers.append("Set-Cookie", header);
             }
         }

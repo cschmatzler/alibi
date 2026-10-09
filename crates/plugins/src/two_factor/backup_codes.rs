@@ -237,10 +237,7 @@ pub(in crate::two_factor) async fn generate_backup_codes(
     clippy::cast_precision_loss,
     reason = "Finite JS random lengths round up before checked native allocation"
 )]
-pub(in crate::two_factor) fn generate_numeric_string(
-    length: f64,
-    decimal: bool,
-) -> Option<String> {
+pub(in crate::two_factor) fn generate_numeric_string(length: f64, decimal: bool) -> Option<String> {
     if length.is_nan() {
         return Some(String::new());
     }

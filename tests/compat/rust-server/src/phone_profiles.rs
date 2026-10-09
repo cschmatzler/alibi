@@ -10,7 +10,7 @@ use alibi::plugins::{
 };
 use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
 use alibi::{integrations::axum::AxumIntegration, middleware::RateLimitConfig};
-use alibi_seaorm::sea_orm::DatabaseConnection;
+use alibi::seaorm::sea_orm::DatabaseConnection;
 use async_trait::async_trait;
 use axum::{
     Json, Router,
@@ -43,8 +43,8 @@ struct NotificationHandler {
     app: Arc<NotificationApplication>,
     reject: bool,
 }
-impl alibi_core::BackgroundTaskHandler for NotificationHandler {
-    fn handle(&self, completion: alibi_core::BackgroundTaskCompletion) -> AuthResult<()> {
+impl alibi::BackgroundTaskHandler for NotificationHandler {
+    fn handle(&self, completion: alibi::BackgroundTaskCompletion) -> AuthResult<()> {
         self.app
             .scheduled
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -92,7 +92,7 @@ impl SendPhoneOtp for Sender {
     async fn send(
         &self,
         delivery: &PhoneOtpDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         let identifier = if self.purpose == "password-reset" {
             format!("{}-request-password-reset", delivery.phone_number)
@@ -180,7 +180,7 @@ impl PhoneOtpVerifier for Verifier {
     async fn verify(
         &self,
         delivery: &PhoneOtpDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<bool> {
         if let Some(snapshot) =
             crate::fixtures::passwordless_context::snapshot(_context, &delivery.phone_number)
@@ -226,7 +226,7 @@ impl PhoneVerificationHook for Callback {
     async fn verified(
         &self,
         result: &PhoneNumberVerification,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         let mut event = json!({"phoneNumber":result.phone_number,"userId":result.user.id});
         if let Some(snapshot) =
@@ -239,7 +239,7 @@ impl PhoneVerificationHook for Callback {
                     .get_user_by_id_record(&result.user.id)
                     .await?
                     .is_some_and(
-                        |owner| alibi_core::AuthUser::phone_number_verified(&owner) == Some(true)
+                        |owner| alibi::AuthUser::phone_number_verified(&owner) == Some(true)
                     )
             );
         }
@@ -375,7 +375,7 @@ pub(super) async fn build(
             passwords = passwords.on_password_reset(Arc::new(move |user| {
                 let controls = controls.clone();
                 Box::pin(async move {
-                    let request = alibi_core::hooks::current_request_hook_context().map(|context| json!({"method":format!("{:?}",context.method).to_uppercase(),"url":context.url,"marker":context.headers.get("x-reset-marker")}));
+                    let request = alibi::hooks::current_request_hook_context().map(|context| json!({"method":format!("{:?}",context.method).to_uppercase(),"url":context.url,"marker":context.headers.get("x-reset-marker")}));
                     controls.reset_events.lock().await.push(json!({"userId":user["id"],"request":request}));
                     if controls.reset_mode.lock().await.as_str() == "reject" { return Err(alibi::AuthError::Api { status: 403, code: Some("PHONE_RESET_REJECTED".into()), message: "Application reset callback rejected".into() }); }
                     Ok(())

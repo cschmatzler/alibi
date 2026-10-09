@@ -3,7 +3,7 @@
 use super::*;
 use crate::snapshot::Trace;
 use alibi::plugins::{AdminBannedUserMessage, AdminPlugin, RolePermissions};
-use alibi_core::{AuthError, AuthResult, UpdateUser, entity::AuthUser};
+use alibi::{AuthError, AuthResult, UpdateUser, entity::AuthUser};
 use std::collections::{BTreeMap, HashMap};
 
 backend_tests!(
@@ -481,12 +481,12 @@ async fn admin_failure_modes<B: Backend>(db: Db) -> TestResult {
 struct Admit;
 
 #[async_trait::async_trait]
-impl alibi_core::user_validation::UserInfoValidator for Admit {
+impl alibi::user_validation::UserInfoValidator for Admit {
     async fn validate(
         &self,
-        _: &mut alibi_core::user_validation::UserValidationData,
-        _: &alibi_core::hooks::RequestHookContext,
-    ) -> AuthResult<Option<alibi_core::user_validation::UserValidationRejection>> {
+        _: &mut alibi::user_validation::UserValidationData,
+        _: &alibi::hooks::RequestHookContext,
+    ) -> AuthResult<Option<alibi::user_validation::UserValidationRejection>> {
         Ok(None)
     }
 }

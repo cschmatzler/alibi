@@ -16,8 +16,8 @@ use alibi::{
         magic_link::{MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, SendMagicLink},
     },
 };
-use alibi_core::{AuthRequest, HttpMethod};
-use alibi_seaorm::{
+use alibi::{AuthRequest, HttpMethod};
+use alibi::seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
@@ -31,8 +31,8 @@ use std::{
     },
 };
 
-fn callback_value(value: &alibi_core::utils::json::JsValue) -> Value {
-    use alibi_core::utils::json::JsValue;
+fn callback_value(value: &alibi::utils::json::JsValue) -> Value {
+    use alibi::utils::json::JsValue;
     match value {
         JsValue::Number(number)
             if !number.is_finite() || (*number == 0.0 && number.is_sign_negative()) =>
@@ -127,10 +127,10 @@ impl ResolveLastLoginMethod for Application {
                 .ok_or_else(|| AuthError::internal("missing actual callback input"))?;
             let overflow = extra
                 .get("overflow")
-                .and_then(alibi_core::utils::json::JsValue::as_f64);
+                .and_then(alibi::utils::json::JsValue::as_f64);
             let zero = extra
                 .get("zero")
-                .and_then(alibi_core::utils::json::JsValue::as_f64);
+                .and_then(alibi::utils::json::JsValue::as_f64);
             return Ok(Some(format!(
                 "body:{}:{}",
                 if overflow == Some(f64::INFINITY) {
@@ -151,21 +151,21 @@ impl ResolveLastLoginMethod for Application {
     }
 }
 #[async_trait::async_trait]
-impl alibi_core::AuthPlugin<TestSchema> for Application {
+impl alibi::AuthPlugin<TestSchema> for Application {
     fn name(&self) -> &'static str {
         "tracking-application"
     }
-    fn routes(&self) -> Vec<alibi_core::AuthRoute> {
+    fn routes(&self) -> Vec<alibi::AuthRoute> {
         Vec::new()
     }
     async fn on_request(
         &self,
         _: &AuthRequest,
-        _: &alibi_core::AuthContext<TestSchema>,
-    ) -> AuthResult<Option<alibi_core::AuthResponse>> {
+        _: &alibi::AuthContext<TestSchema>,
+    ) -> AuthResult<Option<alibi::AuthResponse>> {
         Ok(None)
     }
-    async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<TestSchema>) -> AuthResult<()> {
+    async fn on_init(&self, ctx: &mut alibi::AuthInitContext<TestSchema>) -> AuthResult<()> {
         if self.mode == "transform" {
             ctx.register_user_update_transform(|_, mut update| {
                 if let Some(Some(method)) = update.last_login_method {
@@ -181,7 +181,7 @@ impl alibi_core::AuthPlugin<TestSchema> for Application {
 impl DatabaseHooks<TestSchema, crate::backend::Backend> for Application {
     async fn before_create_session(
         &self,
-        session: &mut alibi_core::CreateSession,
+        session: &mut alibi::CreateSession,
         _: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         if self.mode == "composition" {
@@ -234,7 +234,7 @@ impl SendMagicLink for Application {
     async fn send(
         &self,
         delivery: &MagicLinkDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         self.deliver(format!("magic:{}",delivery.email),json!({"email":delivery.email,"url":delivery.url,"token":delivery.token,"metadata":delivery.metadata}))
     }
@@ -244,7 +244,7 @@ impl SendEmailOtp for Application {
     async fn send(
         &self,
         delivery: &EmailOtpDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         self.deliver(
             format!("{}:{}", delivery.otp_type.as_str(), delivery.email),
@@ -303,7 +303,7 @@ pub(crate) async fn router(
         let path = format!("/__test/profiles/last-login-{mode}/api/auth");
         let mut config = base.clone().base_path(&path);
         if mode == "policy" {
-            config.session.cookie_same_site = alibi_core::config::SameSite::Strict;
+            config.session.cookie_same_site = alibi::config::SameSite::Strict;
             login.cookie_name = "policy.last_login_method".into();
             login.max_age = 0.0;
         }

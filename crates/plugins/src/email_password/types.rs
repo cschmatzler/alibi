@@ -5,8 +5,7 @@ pub(crate) struct SignUpRequest {
     pub(in crate::email_password) additional_fields:
         indexmap::IndexMap<String, alibi_core::utils::json::JsValue>,
     #[serde(rename = "lastLoginMethod")]
-    pub(in crate::email_password) last_login_method:
-        Option<alibi_core::utils::json::JsValue>,
+    pub(in crate::email_password) last_login_method: Option<alibi_core::utils::json::JsValue>,
     #[validate(length(min = 1, message = "Name is required"))]
     pub(in crate::email_password) name: String,
     #[validate(email(message = "Invalid email address"))]
@@ -24,8 +23,7 @@ pub(crate) struct SignUpRequest {
     #[serde(rename = "phoneNumber")]
     pub(in crate::email_password) phone_number: Option<alibi_core::utils::json::JsValue>,
     #[serde(rename = "phoneNumberVerified")]
-    pub(in crate::email_password) phone_number_verified:
-        Option<alibi_core::utils::json::JsValue>,
+    pub(in crate::email_password) phone_number_verified: Option<alibi_core::utils::json::JsValue>,
 }
 
 impl RequestBody for SignUpRequest {

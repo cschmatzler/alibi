@@ -2,14 +2,14 @@
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use alibi::AuthConfig;
-use alibi_core::entity::{AuthSession, AuthUser};
-use alibi_core::field_policy::FieldValues;
-use alibi_core::store::SchemaMigrator;
-use alibi_core::store::{
+use alibi::entity::{AuthSession, AuthUser};
+use alibi::field_policy::FieldValues;
+use alibi::store::SchemaMigrator;
+use alibi::store::{
     AuthStore, InvitationStore, MemberStore, OrganizationStore, SessionStore, TeamStore, UserStore,
     transaction,
 };
-use alibi_core::{
+use alibi::{
     AuthError, AuthResult, CreateInvitation, CreateMember, CreateOrganization, CreateSession,
     CreateTeam, CreateUser, InvitationStatus,
 };

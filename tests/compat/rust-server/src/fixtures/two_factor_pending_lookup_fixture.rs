@@ -10,11 +10,11 @@ use alibi::{
     },
     wire::UserView,
 };
-use alibi_core::{
+use alibi::{
     CreateVerification, UpdateUser,
     store::{UserStore, VerificationStore},
 };
-use alibi_seaorm::{
+use alibi::seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };

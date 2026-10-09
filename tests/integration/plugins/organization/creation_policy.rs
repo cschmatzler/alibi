@@ -2,18 +2,18 @@
 
 use alibi::plugins::organization::{OrganizationConfig, OrganizationCreationPolicy};
 use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin};
+use alibi::seaorm::sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use alibi::seaorm::store::entities::{member, organization, session};
+use alibi::seaorm::{Database, SeaOrmStore};
+use alibi::utils::cookie_utils::create_session_cookie;
+use alibi::wire::UserView;
 use alibi::{AuthBuilder, AuthConfig, BetterAuth};
-use alibi_core::utils::cookie_utils::create_session_cookie;
-use alibi_core::wire::UserView;
-use alibi_core::{AuthRequest, AuthResponse, AuthResult, HttpMethod};
-use alibi_seaorm::sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-use alibi_seaorm::store::entities::{member, organization, session};
-use alibi_seaorm::{Database, SeaOrmStore};
+use alibi::{AuthRequest, AuthResponse, AuthResult, HttpMethod};
 use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 const ORIGIN: &str = "http://creation-policy.fixture.test";
 
@@ -59,7 +59,7 @@ mod tests {
         let config = AuthConfig::new("organization-creation-native-secret-at-least-32-chars")
             .base_url(ORIGIN);
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let auth = AuthBuilder::new(config.clone())

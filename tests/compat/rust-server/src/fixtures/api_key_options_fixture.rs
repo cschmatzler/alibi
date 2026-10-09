@@ -9,7 +9,7 @@ use alibi::plugins::api_key::{
 };
 use alibi::plugins::{ApiKeyPlugin, EmailPasswordPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi_seaorm::sea_orm::{
+use alibi::seaorm::sea_orm::{
     ConnectionTrait, DatabaseConnection, DbBackend, QueryResult, Statement,
 };
 use axum::{

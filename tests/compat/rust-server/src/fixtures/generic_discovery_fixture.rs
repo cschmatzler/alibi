@@ -8,7 +8,7 @@ use alibi::plugins::oauth::{
 };
 use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_seaorm::DatabaseConnection;
+use alibi::seaorm::DatabaseConnection;
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -36,7 +36,7 @@ impl Fixture {
 struct Mapper;
 #[async_trait::async_trait]
 impl OAuthProfileMapper for Mapper {
-    async fn map_profile(&self, _: Value) -> Result<alibi_core::field_policy::FieldOutput, String> {
+    async fn map_profile(&self, _: Value) -> Result<alibi::field_policy::FieldOutput, String> {
         Ok([
             ("id".into(), json!("mapped-id")),
             ("name".into(), json!("Mapped Name")),

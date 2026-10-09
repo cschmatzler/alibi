@@ -5,7 +5,7 @@ use alibi::middleware::RateLimitConfig;
 use alibi::plugins::oauth::{DropboxAccessType, DropboxOptions, OAuthProvider, OAuthUserInfo};
 use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_seaorm::DatabaseConnection;
+use alibi::seaorm::DatabaseConnection;
 use axum::{
     Json, Router,
     extract::State,

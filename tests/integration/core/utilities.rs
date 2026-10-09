@@ -4,17 +4,17 @@
     clippy::panic_in_result_fn,
     reason = "tests assert independently specified wire fields and fixtures"
 )]
-use alibi_core::AuthConfig;
-use alibi_core::config::{
+use alibi::AuthConfig;
+use alibi::config::{
     AdvancedConfig, CookieAttributes, CookieOverride, CrossSubDomainConfig, OAuthStateStrategy,
     SameSite,
 };
-use alibi_core::error::page::{error_page_html_with_description, error_page_redirect_location};
-use alibi_core::utils::cookie_utils::{
+use alibi::error::page::{error_page_html_with_description, error_page_redirect_location};
+use alibi::utils::cookie_utils::{
     create_account_cookie_header, create_cookie, create_cookie_with_max_age, create_session_cookie,
     delete_session_cookie_headers, related_cookie_name,
 };
-use alibi_core::utils::datetime::parse_date_millis;
+use alibi::utils::datetime::parse_date_millis;
 use chrono::{Duration, Utc};
 use std::collections::HashMap;
 
@@ -323,8 +323,8 @@ fn error_url_builder_stores_the_target() {
 
 #[test]
 fn database_id_strategies_generate_reject_or_defer() {
-    use alibi_core::AuthError;
-    use alibi_core::config::{AdvancedDatabaseConfig, DatabaseIdStrategy};
+    use alibi::AuthError;
+    use alibi::config::{AdvancedDatabaseConfig, DatabaseIdStrategy};
     use std::sync::Arc;
 
     let with = |strategy: Option<DatabaseIdStrategy>| AdvancedDatabaseConfig {
@@ -378,7 +378,7 @@ fn database_id_strategies_generate_reject_or_defer() {
 
 #[test]
 fn api_key_start_text_is_wtf8_only_for_unpaired_surrogates() {
-    use alibi_core::{ApiKeyStartText, ApiKeyStartingCharacters};
+    use alibi::{ApiKeyStartText, ApiKeyStartingCharacters};
 
     let plain = ApiKeyStartingCharacters::from_utf16("ab".encode_utf16().collect());
     assert!(matches!(plain.storage_text(), ApiKeyStartText::Utf8(text) if text == "ab"));
@@ -393,7 +393,7 @@ fn api_key_start_text_is_wtf8_only_for_unpaired_surrogates() {
 
 #[test]
 fn client_ip_resolution_handles_mapped_ipv4_prefixes_and_proxy_networks() {
-    use alibi_core::config::IpAddressConfig;
+    use alibi::config::IpAddressConfig;
 
     let resolve = |proxies: &[&str], subnet: f64, header: &str| {
         IpAddressConfig {
@@ -444,7 +444,7 @@ fn client_ip_resolution_handles_mapped_ipv4_prefixes_and_proxy_networks() {
 
 #[test]
 fn chunked_cookie_reader_orders_chunks_and_skips_invalid_pairs() {
-    use alibi_core::session::cookie_cache::runtime::chunked_cookie_value;
+    use alibi::session::cookie_cache::runtime::chunked_cookie_value;
 
     let read = |cookie: &str, name: &str| {
         chunked_cookie_value(
@@ -464,7 +464,7 @@ fn chunked_cookie_reader_orders_chunks_and_skips_invalid_pairs() {
 
 #[test]
 fn session_cleanup_expires_incoming_account_and_cache_chunks() {
-    use alibi_core::session::cookie_cache::runtime::session_cleanup_headers;
+    use alibi::session::cookie_cache::runtime::session_cleanup_headers;
 
     let mut config = config().base_url("http://app.example.test");
     config.account.store_account_cookie = true;
@@ -500,7 +500,7 @@ fn session_cleanup_expires_incoming_account_and_cache_chunks() {
 
 #[test]
 fn json_dates_normalize_overflowing_midnight_and_reject_invalid_ones() {
-    use alibi_core::utils::datetime::normalize_json_date;
+    use alibi::utils::datetime::normalize_json_date;
 
     assert_eq!(
         normalize_json_date("9999-12-31T24:00:00.000Z").as_deref(),
@@ -517,7 +517,7 @@ fn json_dates_normalize_overflowing_midnight_and_reject_invalid_ones() {
 
 #[test]
 fn javascript_values_coerce_like_primitives_and_parsers_reject_truncation() {
-    use alibi_core::utils::json::{JsValue, parse_value};
+    use alibi::utils::json::{JsValue, parse_value};
 
     let object = parse_value(r#"{"toString":1}"#).unwrap();
     assert_eq!(

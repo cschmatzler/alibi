@@ -9,9 +9,9 @@ use alibi::plugins::{
     SessionManagementPlugin, TwoFactorPlugin,
 };
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use alibi_core::store::UserStore;
-use alibi_core::{AuthUser, CreateUser};
-use alibi_seaorm::DatabaseConnection;
+use alibi::store::UserStore;
+use alibi::{AuthUser, CreateUser};
+use alibi::seaorm::DatabaseConnection;
 use axum::{
     Json, Router,
     extract::{Query, State},
@@ -31,14 +31,14 @@ impl alibi::plugins::anonymous::AnonymousIdentity for CallbackAnonymousIdentity 
 }
 struct ApplicationMetadata;
 #[async_trait::async_trait]
-impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for ApplicationMetadata {
+impl alibi::seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for ApplicationMetadata {
     async fn before_create_user(
         &self,
         input: &mut CreateUser,
         _context: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<alibi_seaorm::HookControl> {
+    ) -> AuthResult<alibi::seaorm::HookControl> {
         input.metadata = Some(json!({"supportCode":"private-fixture-code"}));
-        Ok(alibi_seaorm::HookControl::Continue)
+        Ok(alibi::seaorm::HookControl::Continue)
     }
 }
 struct ApplicationMessage {

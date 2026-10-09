@@ -11,11 +11,11 @@ use alibi::plugins::{
     phone_number::{PhoneNumberConfig, PhoneNumberPlugin, PhoneOtpDelivery, SendPhoneOtp},
 };
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use alibi_core::{
+use alibi::{
     AuthRequest, HttpMethod, PasswordHasher, ScryptHasher,
     wire::{AccountView, VerificationView},
 };
-use alibi_seaorm::{
+use alibi::seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, QueryOrder, Set},
     store::entities::{account, session, user, verification},
@@ -84,7 +84,7 @@ impl PasswordHasher for Application {
 impl DatabaseHooks<TestSchema, crate::backend::Backend> for Application {
     async fn before_create_user(
         &self,
-        user: &mut alibi_core::CreateUser,
+        user: &mut alibi::CreateUser,
         _context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         self.event(json!({"stage":"user-create","name":user.name,"email":user.email}));
@@ -103,7 +103,7 @@ impl SendEmailOtp for Application {
     async fn send(
         &self,
         delivery: &EmailOtpDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         self.event(json!({"stage":"email-otp","email":delivery.email,"otp":delivery.otp,"type":delivery.otp_type.as_str()}));
         Ok(())
@@ -118,13 +118,13 @@ impl SendPhoneOtp for PhoneSender {
     async fn send(
         &self,
         delivery: &PhoneOtpDelivery,
-        _context: &alibi_core::CallbackContext,
+        _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         self.app.event(json!({"stage":if self.reset {"phone-reset-otp"} else {"phone-otp"},"phoneNumber":delivery.phone_number,"code":delivery.code}));
         Ok(())
     }
 }
-fn database_error(error: alibi_seaorm::sea_orm::DbErr) -> AuthError {
+fn database_error(error: alibi::seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
 

@@ -1,7 +1,5 @@
 use super::*;
-pub(in crate::oauth::handlers) fn account_cookie_max_age(
-    config: &alibi_core::AuthConfig,
-) -> f64 {
+pub(in crate::oauth::handlers) fn account_cookie_max_age(config: &alibi_core::AuthConfig) -> f64 {
     if let Some(age) = config.account.cookie_max_age {
         return age;
     }

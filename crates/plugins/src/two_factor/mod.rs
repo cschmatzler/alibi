@@ -531,9 +531,7 @@ impl TwoFactorPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        if let Err(response) =
-            crate::authentication_helpers::parse_body::<SendOtpRequest>(req)
-        {
+        if let Err(response) = crate::authentication_helpers::parse_body::<SendOtpRequest>(req) {
             return Ok(response);
         }
         let response = match send_otp_core(req, &self.config, ctx).await {
@@ -912,22 +910,17 @@ mod tests {
                     Arc::clone(&ctx.database),
                 );
                 plugin.on_init(&mut init).await.unwrap();
-                crate::OrganizationPlugin::with_config(
-                    crate::organization::OrganizationConfig {
-                        teams: crate::organization::TeamsConfig {
-                            enabled: true,
-                            ..Default::default()
-                        },
+                crate::OrganizationPlugin::with_config(crate::organization::OrganizationConfig {
+                    teams: crate::organization::TeamsConfig {
+                        enabled: true,
                         ..Default::default()
                     },
-                )
+                    ..Default::default()
+                })
                 .on_init(&mut init)
                 .await
                 .unwrap();
-                crate::AdminPlugin::new()
-                    .on_init(&mut init)
-                    .await
-                    .unwrap();
+                crate::AdminPlugin::new().on_init(&mut init).await.unwrap();
                 ctx.database = init.database_with_registered_transforms();
                 let parts = init.into_parts();
                 ctx.metadata = parts.metadata;
@@ -1491,15 +1484,13 @@ mod tests {
         let mut configured =
             alibi_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
         plugin.on_init(&mut configured).await.unwrap();
-        crate::OrganizationPlugin::with_config(
-            crate::organization::OrganizationConfig {
-                teams: crate::organization::TeamsConfig {
-                    enabled: true,
-                    ..Default::default()
-                },
+        crate::OrganizationPlugin::with_config(crate::organization::OrganizationConfig {
+            teams: crate::organization::TeamsConfig {
+                enabled: true,
                 ..Default::default()
             },
-        )
+            ..Default::default()
+        })
         .on_init(&mut configured)
         .await
         .unwrap();
@@ -1915,22 +1906,17 @@ mod tests {
                 Arc::clone(&ctx.database),
             );
             plugin.on_init(&mut init).await.unwrap();
-            crate::OrganizationPlugin::with_config(
-                crate::organization::OrganizationConfig {
-                    teams: crate::organization::TeamsConfig {
-                        enabled: true,
-                        ..Default::default()
-                    },
+            crate::OrganizationPlugin::with_config(crate::organization::OrganizationConfig {
+                teams: crate::organization::TeamsConfig {
+                    enabled: true,
                     ..Default::default()
                 },
-            )
+                ..Default::default()
+            })
             .on_init(&mut init)
             .await
             .unwrap();
-            crate::AdminPlugin::new()
-                .on_init(&mut init)
-                .await
-                .unwrap();
+            crate::AdminPlugin::new().on_init(&mut init).await.unwrap();
 
             init.register_user_update_transform(|_, mut update| {
                 if update.two_factor_enabled == Some(true) {

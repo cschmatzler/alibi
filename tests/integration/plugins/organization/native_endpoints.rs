@@ -3,6 +3,10 @@
     reason = "Assert public JSON response fields by their documented paths"
 )]
 //! Public native organization calls retain typed values, lifecycle, and cookies.
+use alibi::endpoint::{
+    BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointHook, EndpointOptions,
+    EndpointResponse,
+};
 use alibi::plugins::{
     EmailPasswordPlugin,
     organization::{
@@ -10,13 +14,9 @@ use alibi::plugins::{
         default_organization_statements, types::*,
     },
 };
+use alibi::utils::json::JsValue;
 use alibi::{AuthBuilder, AuthConfig, BetterAuth};
-use alibi_core::endpoint::{
-    BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointHook, EndpointOptions,
-    EndpointResponse,
-};
-use alibi_core::utils::json::JsValue;
-use alibi_core::{AuthContext, AuthRequest, AuthResult, AuthSchema, HttpMethod};
+use alibi::{AuthContext, AuthRequest, AuthResult, AuthSchema, HttpMethod};
 use async_trait::async_trait;
 use serde_json::json;
 
@@ -496,7 +496,7 @@ async fn native_invitation_transitions_and_logical_errors_keep_their_public_cont
     .await
     .unwrap_err();
     assert!(
-        matches!(invalid.error,alibi_core::AuthError::Api { ref code, .. } if code.as_deref()==Some("VALIDATION_ERROR"))
+        matches!(invalid.error,alibi::AuthError::Api { ref code, .. } if code.as_deref()==Some("VALIDATION_ERROR"))
     );
     let read = Box::pin(
         auth.dispatch_endpoint(
@@ -561,7 +561,7 @@ async fn native_invitation_transitions_and_logical_errors_keep_their_public_cont
     .unwrap();
     assert_eq!(
         rejected.invitation.status,
-        alibi_core::InvitationStatus::Rejected
+        alibi::InvitationStatus::Rejected
     );
     assert!(rejected.member.is_none());
     let listed = Box::pin(
@@ -577,7 +577,7 @@ async fn native_invitation_transitions_and_logical_errors_keep_their_public_cont
     .unwrap()
     .decode()
     .unwrap();
-    assert_eq!(listed[0].status, alibi_core::InvitationStatus::Rejected);
+    assert_eq!(listed[0].status, alibi::InvitationStatus::Rejected);
     let invitation = Box::pin(
         auth.dispatch_endpoint(
             OrganizationPlugin::invite_member_endpoint(&InviteMemberRequest {
@@ -608,7 +608,7 @@ async fn native_invitation_transitions_and_logical_errors_keep_their_public_cont
     .unwrap()
     .decode()
     .unwrap();
-    assert_eq!(canceled.status, alibi_core::InvitationStatus::Canceled);
+    assert_eq!(canceled.status, alibi::InvitationStatus::Canceled);
     let mut client = credentials(&recipient);
     client.request = Some(AuthRequest::new(HttpMethod::Get, "/original-client"));
     let rejected_selector = Box::pin(

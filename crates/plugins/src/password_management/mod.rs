@@ -201,11 +201,10 @@ impl PasswordManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let mut body: ResetPasswordRequest =
-            match crate::authentication_helpers::parse_body(req) {
-                Ok(v) => v,
-                Err(resp) => return Ok(resp),
-            };
+        let mut body: ResetPasswordRequest = match crate::authentication_helpers::parse_body(req) {
+            Ok(v) => v,
+            Err(resp) => return Ok(resp),
+        };
         if body.token.as_ref().is_none_or(String::is_empty) {
             body.token = req.query.get("token").cloned();
         }
@@ -218,11 +217,10 @@ impl PasswordManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let body: ChangePasswordRequest =
-            match crate::authentication_helpers::parse_body(req) {
-                Ok(v) => v,
-                Err(resp) => return Ok(resp),
-            };
+        let body: ChangePasswordRequest = match crate::authentication_helpers::parse_body(req) {
+            Ok(v) => v,
+            Err(resp) => return Ok(resp),
+        };
 
         let (user, _session) = ctx
             .require_authoritative_session_record(req)

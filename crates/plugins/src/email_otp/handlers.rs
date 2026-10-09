@@ -417,9 +417,7 @@ impl EmailOtpPlugin {
             &["username", "displayUsername"][..]
         };
         let body: SignInRequest =
-            match crate::authentication_helpers::parse_body_with_ignored_fields(
-                req, ignored,
-            ) {
+            match crate::authentication_helpers::parse_body_with_ignored_fields(req, ignored) {
                 Ok(value) => value,
                 Err(response) => return Ok(response),
             };

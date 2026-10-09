@@ -1,8 +1,8 @@
 //! Admin route input validation, role authority and moderation outcomes.
 use super::*;
 use crate::snapshot::Trace;
+use alibi::UpdateUser;
 use alibi::plugins::{AdminPlugin, RolePermissions};
-use alibi_core::UpdateUser;
 use std::collections::HashMap;
 
 backend_tests!(admin_route_matrix, admin_impersonation_and_bans);

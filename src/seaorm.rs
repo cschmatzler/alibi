@@ -5,6 +5,7 @@ pub use alibi_seaorm::json_metadata;
 pub use alibi_seaorm::schema::{
     SeaOrmAccountModel, SeaOrmSessionModel, SeaOrmUserModel, SeaOrmVerificationModel,
 };
+pub use alibi_seaorm::*;
 pub use alibi_seaorm::{
     AuthEntity, Database, DatabaseConnection, DatabaseHooks, HookControl, JsonMetadata,
     SeaOrmBackend, SeaOrmHookContext, SeaOrmRateLimitStorage, SeaOrmStore,

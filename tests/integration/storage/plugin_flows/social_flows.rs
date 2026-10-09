@@ -10,7 +10,7 @@ use alibi::plugins::oauth::{
 };
 use alibi::plugins::{AccountManagementPlugin, EmailVerificationPlugin, SendVerificationEmail};
 use alibi::prelude::UserView;
-use alibi_core::{AccountConfig, AccountLinkingConfig};
+use alibi::{AccountConfig, AccountLinkingConfig};
 
 backend_tests!(
     redirect_linking_outcomes,
@@ -506,7 +506,7 @@ async fn callback_protocol_outcomes<B: Backend>(db: Db) -> TestResult {
     drop(cookies);
 
     let mut form = request("/callback/google", None, "");
-    form.method = alibi_core::HttpMethod::Post;
+    form.method = alibi::HttpMethod::Post;
     form.body = Some(b"code=posted&state=form-state&user=%7B%7D".to_vec());
     _ = form.headers.insert(
         "content-type".into(),

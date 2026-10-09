@@ -5,9 +5,9 @@
     reason = "contract tests assert independently specified wire fields; setup errors propagate"
 )]
 
+use alibi::types::{MultipartFiles, ParsedRequestBody};
 use alibi::{AuthBuilder, AuthConfig};
-use alibi_core::types::{MultipartFiles, ParsedRequestBody};
-use alibi_core::{
+use alibi::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
     HttpMethod,
 };
@@ -85,7 +85,7 @@ async fn public_media_admission_decodes_fields_and_uploads_before_invoking_plugi
         request.body = Some(body);
         // Caller-supplied decoded state must not bypass media admission/parsing.
         request.extensions().insert(ParsedRequestBody::Value(
-            alibi_core::utils::json::parse_value(r#"{"forged":true}"#).unwrap(),
+            alibi::utils::json::parse_value(r#"{"forged":true}"#).unwrap(),
         ));
         request
     };

@@ -5,8 +5,8 @@
     reason = "tests assert independently specified wire fields and fixtures"
 )]
 use super::*;
+use alibi::field_policy::FieldConfig;
 use alibi::plugins::AccountManagementPlugin;
-use alibi_core::field_policy::FieldConfig;
 
 backend_tests!(account_views_follow_configured_field_visibility);
 postgres_tests!(account_views_follow_configured_field_visibility);

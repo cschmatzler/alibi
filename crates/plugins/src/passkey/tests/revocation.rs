@@ -32,8 +32,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 )]
 async fn delivered_crl_rejects_revoked_attestation_without_persisting_credentials()
 -> Result<(), Box<dyn std::error::Error>> {
-    let root_pem =
-        include_str!("../../../../../tests/compat/fixtures/passkey-attestation/ca.pem");
+    let root_pem = include_str!("../../../../../tests/compat/fixtures/passkey-attestation/ca.pem");
     let root = X509::from_pem(root_pem.as_bytes())?;
     let root_key = PKey::private_key_from_pem(include_bytes!(
         "../../../../../tests/compat/fixtures/passkey-attestation/ca-key.pem"

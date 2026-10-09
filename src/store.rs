@@ -4,6 +4,7 @@
 pub use alibi_core::store::RedisAdapter;
 pub use alibi_core::store::WalletAddressStore;
 pub use alibi_core::store::stateless::{StatelessSchema, StatelessStore};
+pub use alibi_core::store::*;
 pub use alibi_core::store::{
     AuthStore, AuthTransaction, CacheAdapter, MemoryCacheAdapter, transaction,
 };

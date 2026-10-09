@@ -3,8 +3,8 @@
 use super::social_flows::{Social, authorize, callback};
 use super::*;
 use crate::snapshot::Trace;
+use alibi::AccountConfig;
 use alibi::plugins::oauth::{OAuthAccountApi, OAuthAccountSelection};
-use alibi_core::AccountConfig;
 
 backend_tests!(account_endpoints_validate_selection_authentication_and_refresh);
 

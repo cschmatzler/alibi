@@ -3,7 +3,7 @@ use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use alibi::config::CookieRefreshCache;
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::{AuthBuilder, AuthConfig};
-use alibi_core::{AuthRequest, AuthResponse, HttpMethod};
+use alibi::{AuthRequest, AuthResponse, HttpMethod};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -22,33 +22,33 @@ postgres_tests!(
 
 struct SkipRefresh;
 #[async_trait::async_trait]
-impl<S: alibi::AuthSchema> alibi_core::AuthPlugin<S> for SkipRefresh {
+impl<S: alibi::AuthSchema> alibi::AuthPlugin<S> for SkipRefresh {
     fn name(&self) -> &'static str {
         "fixture-skip-refresh"
     }
-    fn routes(&self) -> Vec<alibi_core::AuthRoute> {
+    fn routes(&self) -> Vec<alibi::AuthRoute> {
         Vec::new()
     }
     async fn before_request(
         &self,
         req: &AuthRequest,
-        _ctx: &alibi_core::AuthContext<S>,
-    ) -> alibi_core::AuthResult<Option<alibi_core::BeforeRequestAction>> {
+        _ctx: &alibi::AuthContext<S>,
+    ) -> alibi::AuthResult<Option<alibi::BeforeRequestAction>> {
         if req
             .headers
             .get("x-fixture-skip-refresh")
             .is_some_and(|value| value == "1")
         {
             req.extensions()
-                .insert(alibi_core::session::SessionRefreshSuppressed);
+                .insert(alibi::session::SessionRefreshSuppressed);
         }
         Ok(None)
     }
     async fn on_request(
         &self,
         _req: &AuthRequest,
-        _ctx: &alibi_core::AuthContext<S>,
-    ) -> alibi_core::AuthResult<Option<AuthResponse>> {
+        _ctx: &alibi::AuthContext<S>,
+    ) -> alibi::AuthResult<Option<AuthResponse>> {
         Ok(None)
     }
 }
@@ -169,7 +169,7 @@ async fn stateless_session_lifecycle<B: Backend>(db: Db) -> TestResult {
     );
     // A changed deployment version invalidates captured cookies without any SQL authority.
     config.session.cookie_cache.as_mut().unwrap().version =
-        Some(alibi_core::CookieCacheVersion::Literal("retired".into()));
+        Some(alibi::CookieCacheVersion::Literal("retired".into()));
     let versioned = AuthBuilder::new(config.clone())
         .store(B::store(Arc::new(config), &connection))
         .build()
@@ -220,7 +220,7 @@ async fn stateless_session_lifecycle<B: Backend>(db: Db) -> TestResult {
 #[tokio::test]
 async fn without_database_credential_issuance_and_restart() -> TestResult {
     let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
-    let field = alibi_core::field_policy::FieldConfig::new(json!({"type":"string"}));
+    let field = alibi::field_policy::FieldConfig::new(json!({"type":"string"}));
     drop(
         config
             .user
@@ -274,8 +274,8 @@ async fn without_database_credential_issuance_and_restart() -> TestResult {
         .split("; ")
         .find_map(|part| part.strip_prefix("better-auth.session_data="))
         .unwrap();
-    let claims = alibi_core::utils::jwe::decode(SECRET, "better-auth-session", value)?;
-    let short_cache = alibi_core::utils::jwe::encode(SECRET, "better-auth-session", &claims, 30.0)?;
+    let claims = alibi::utils::jwe::decode(SECRET, "better-auth-session", value)?;
+    let short_cache = alibi::utils::jwe::encode(SECRET, "better-auth-session", &claims, 30.0)?;
     let renewed = Box::pin(auth.handle_request(request(
         "/get-session",
         None,
@@ -369,8 +369,8 @@ async fn without_database_credential_issuance_and_restart() -> TestResult {
 
 /// Field/version/key/expiry policy shares this owner and runs on each real store.
 async fn stateless_policy_boundaries<B: Backend>(db: Db) -> TestResult {
-    use alibi_core::utils::{cookie_utils::sign_cookie_value, jwe};
-    use alibi_core::{CookieCacheConfig, CookieCacheStrategy, CookieCacheVersion, ManagedSecrets};
+    use alibi::utils::{cookie_utils::sign_cookie_value, jwe};
+    use alibi::{CookieCacheConfig, CookieCacheStrategy, CookieCacheVersion, ManagedSecrets};
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     for (index, strategy) in [
         CookieCacheStrategy::Compact,
@@ -507,7 +507,7 @@ async fn stateless_policy_boundaries<B: Backend>(db: Db) -> TestResult {
 // Public mutation and deferred renewal must update ephemeral records, never SQL.
 // Existing durable refresh tests cannot catch this policy-routing failure.
 async fn stateless_ephemeral_mutation_and_deferred_refresh<B: Backend>(db: Db) -> TestResult {
-    use alibi_core::AuthSession;
+    use alibi::AuthSession;
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
     config.session = config.session.stateless();
@@ -533,7 +533,7 @@ async fn stateless_ephemeral_mutation_and_deferred_refresh<B: Backend>(db: Db) -
         .update_session_active_organization(&token, Some("memory-org"))
         .await?;
     assert_eq!(
-        alibi_core::SessionView::from(&organization)
+        alibi::SessionView::from(&organization)
             .active_organization_id
             .as_deref(),
         Some("memory-org")
@@ -543,9 +543,7 @@ async fn stateless_ephemeral_mutation_and_deferred_refresh<B: Backend>(db: Db) -
         .update_session_active_team(&token, Some("memory-team"))
         .await?;
     assert_eq!(
-        alibi_core::SessionView::from(&team)
-            .active_team_id
-            .as_deref(),
+        alibi::SessionView::from(&team).active_team_id.as_deref(),
         Some("memory-team")
     );
     // Fixture state uses the real initialized store, as Source's internal adapter
@@ -629,7 +627,7 @@ async fn stateless_ephemeral_mutation_and_deferred_refresh<B: Backend>(db: Db) -
 
 #[tokio::test]
 async fn without_database_account_authority_and_verification_generations() -> TestResult {
-    use alibi_core::{AuthError, CreateAccount, CreateVerification, DatabaseError, UpdateAccount};
+    use alibi::{AuthError, CreateAccount, CreateVerification, DatabaseError, UpdateAccount};
     let auth = AuthBuilder::without_database(AuthConfig::new(SECRET))
         .build()
         .await?;
@@ -804,7 +802,7 @@ async fn without_database_account_authority_and_verification_generations() -> Te
             .compare_and_swap_verification("missing", "first", "next", expiry)
             .await?
     );
-    use alibi_core::{CreateUser, ListUsersParams, UpdateUser, UserFilterValue};
+    use alibi::{CreateUser, ListUsersParams, UpdateUser, UserFilterValue};
     for (email, banned) in [
         ("alpha@query.test", false),
         ("beta@query.test", true),
