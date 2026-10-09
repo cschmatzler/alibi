@@ -10,6 +10,7 @@ mod invitations;
 mod jwks;
 mod members;
 pub(crate) mod migrator;
+mod oauth_token_conversion;
 mod organization_roles;
 mod organizations;
 mod passkeys;
@@ -32,10 +33,11 @@ pub mod __private_test_support {
 }
 
 use crate::hooks::{DatabaseHooks, SqlxBackend, SqlxHookContext, current_request_hook_context};
-use crate::pool::{Exec, SqlxPool, SqlxTransaction};
+use crate::pool::{Engine, Exec, SqlxPool, SqlxTransaction};
 use crate::schema::{
     AuthSchema, SqlxAccountModel, SqlxSessionModel, SqlxUserModel, SqlxVerificationModel,
 };
+use crate::sql::Sql;
 use alibi_core::config::AuthConfig;
 use alibi_core::error::AuthResult;
 use alibi_core::store::SchemaMigrator;
@@ -122,15 +124,11 @@ impl<S: AuthSchema> SqlxStore<S> {
         let [ddl, allocate] = alibi_core::config::serial_id_statements(
             table,
             column,
-            exec.engine() == crate::pool::Engine::Postgres,
+            exec.engine() == Engine::Postgres,
         );
-        let mut sql = crate::sql::Sql::new(exec.engine());
-        sql.push(&ddl);
-        _ = exec.execute(sql).await?;
-        let mut sql = crate::sql::Sql::new(exec.engine());
-        sql.push(&allocate);
+        _ = exec.execute(Sql::with(exec.engine(), &ddl)).await?;
         let value = exec
-            .fetch_scalar::<i64>(sql)
+            .fetch_scalar::<i64>(Sql::with(exec.engine(), &allocate))
             .await?
             .ok_or_else(|| alibi_core::AuthError::internal("ID allocation returned no value"))?;
         Ok(Some(value.to_string()))
@@ -186,9 +184,7 @@ impl<S: AuthSchema> SchemaMigrator for SqlxStore<S> {
         if self.config.advanced.database.serial_ids() {
             let [ddl, _] = alibi_core::config::serial_id_statements("", "", false);
             let exec = self.exec();
-            _ = exec
-                .execute(crate::sql::Sql::with(exec.engine(), &ddl))
-                .await?;
+            _ = exec.execute(Sql::with(exec.engine(), &ddl)).await?;
         }
         if let Some(mapping) = &self.config.advanced.database.two_factor {
             let commands = mapping.migration_statements()?;
@@ -196,9 +192,7 @@ impl<S: AuthSchema> SchemaMigrator for SqlxStore<S> {
                 let exec = Exec::tx(tx);
                 if migrator::has_table(exec, "two_factor").await? {
                     for command in commands {
-                        _ = exec
-                            .execute(crate::sql::Sql::with(exec.engine(), &command))
-                            .await?;
+                        _ = exec.execute(Sql::with(exec.engine(), &command)).await?;
                     }
                 }
                 Ok(())
@@ -490,15 +484,15 @@ where
 }
 
 /// `FOR UPDATE` on PostgreSQL; SQLite relies on its `BEGIN IMMEDIATE` writer lock.
-pub(crate) fn lock_exclusive(sql: &mut crate::sql::Sql) {
-    if sql.engine() == crate::pool::Engine::Postgres {
+pub(crate) fn lock_exclusive(sql: &mut Sql) {
+    if sql.engine() == Engine::Postgres {
         sql.push(" FOR UPDATE");
     }
 }
 
 /// `FOR SHARE` on PostgreSQL; SQLite relies on its `BEGIN IMMEDIATE` writer lock.
-pub(crate) fn lock_shared(sql: &mut crate::sql::Sql) {
-    if sql.engine() == crate::pool::Engine::Postgres {
+pub(crate) fn lock_shared(sql: &mut Sql) {
+    if sql.engine() == Engine::Postgres {
         sql.push(" FOR SHARE");
     }
 }
@@ -508,7 +502,7 @@ pub(crate) fn bind_page(sql: &mut crate::sql::Sql, limit: Option<f64>, offset: O
     for (clause, number) in [(" LIMIT ", limit), (" OFFSET ", offset)] {
         if let Some(number) = number {
             sql.push(clause);
-            if sql.engine() == crate::pool::Engine::Postgres {
+            if sql.engine() == Engine::Postgres {
                 // node-postgres sends Number parameters as text. Binding float8
                 // instead lets PostgreSQL round fractional pages to bigint.
                 sql.bind(ryu_js::Buffer::new().format(number).to_owned());
@@ -519,5 +513,3 @@ pub(crate) fn bind_page(sql: &mut crate::sql::Sql, limit: Option<f64>, offset: O
         }
     }
 }
-
-mod oauth_token_conversion;
