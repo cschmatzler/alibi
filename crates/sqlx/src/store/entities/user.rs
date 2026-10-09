@@ -1,5 +1,4 @@
-use crate::AuthEntity;
-use crate::JsonMetadata;
+use crate::{AuthEntity, JsonMetadata};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 

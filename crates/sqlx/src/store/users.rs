@@ -5,14 +5,12 @@ use crate::pool::{Engine, Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxUserModel};
 use crate::sql::Sql;
 use crate::value::{ColumnKind, SqlValue};
-use alibi_core::AuthUser;
-use alibi_core::UserFilterValue;
 use alibi_core::error::{AuthError, AuthResult};
-use alibi_core::store::UserCreationDefaults;
 use alibi_core::store::adapter::cancelled_by_hook;
-use alibi_core::store::{NumericTextInput, UserStore};
+use alibi_core::store::{NumericTextInput, UserCreationDefaults, UserStore};
 use alibi_core::types::{CreateUser, ListUsersParams, UpdateUser};
 use alibi_core::user_validation::PreparedUserCreation;
+use alibi_core::{AuthUser, UserFilterValue};
 use async_trait::async_trait;
 use chrono::Utc;
 

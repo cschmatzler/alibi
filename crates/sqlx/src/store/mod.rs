@@ -39,13 +39,6 @@ use crate::schema::{
     AuthSchema, SqlxAccountModel, SqlxSessionModel, SqlxUserModel, SqlxVerificationModel,
 };
 use crate::sql::Sql;
-use alibi_core::CreateAccount;
-use alibi_core::CreateMember;
-use alibi_core::CreatePasskey;
-use alibi_core::CreateSession;
-use alibi_core::CreateUser;
-use alibi_core::CreateVerification;
-use alibi_core::Passkey;
 use alibi_core::config::AuthConfig;
 use alibi_core::error::AuthResult;
 use alibi_core::field_policy::FieldValues;
@@ -54,15 +47,15 @@ use alibi_core::store::adapter::{AfterHook, AfterHookQueue};
 use alibi_core::store::{
     AuthTransaction, BoxedTransactionValue, TransactionStore, TransactionWork,
 };
-use alibi_core::types::AddTeamMemberResult;
-use alibi_core::types::CreateJwk;
-use alibi_core::types::Jwk;
-use alibi_core::types::Member;
-use alibi_core::types::Team;
+use alibi_core::types::{AddTeamMemberResult, CreateJwk, Jwk, Member, Team};
 use alibi_core::user_validation::PreparedUserCreation;
-use alibi_core::verification::VerificationCreation;
-use alibi_core::verification::VerificationPublication;
-use alibi_core::verification::VerificationSnapshot;
+use alibi_core::verification::{
+    VerificationCreation, VerificationPublication, VerificationSnapshot,
+};
+use alibi_core::{
+    CreateAccount, CreateMember, CreatePasskey, CreateSession, CreateUser, CreateVerification,
+    Passkey,
+};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::marker::PhantomData;

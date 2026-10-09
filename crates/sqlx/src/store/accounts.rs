@@ -4,12 +4,11 @@ use crate::model::{self, SqlxModel};
 use crate::pool::{Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxAccountModel};
 use crate::sql::Sql;
-use alibi_core::AuthError;
-use alibi_core::DatabaseError;
 use alibi_core::error::AuthResult;
 use alibi_core::store::AccountStore;
 use alibi_core::store::adapter::cancelled_by_hook;
 use alibi_core::types::{CreateAccount, UpdateAccount};
+use alibi_core::{AuthError, DatabaseError};
 use async_trait::async_trait;
 use chrono::Utc;
 
