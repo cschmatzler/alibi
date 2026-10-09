@@ -7,6 +7,7 @@ use crate::session::cookie_cache::runtime::{
     session_cleanup_headers, stored_read_headers,
 };
 use crate::utils::cookie_utils::{related_cookie_name, sign_cookie_value};
+use crate::utils::javascript::number_from_i64;
 use crate::{AuthContext, AuthError, AuthResult, AuthSchema, CacheVersionContext};
 use std::sync::Arc;
 /// Try the authenticated compact cache before any physical session lookup.
@@ -144,7 +145,7 @@ pub(crate) async fn renew_cache<S: AuthSchema>(
         // disableSessionRefresh, and deferSessionRefresh. None of these
         // suppress envelope renewal or extend the embedded session expiry.
         if update_age.is_some_and(|age| {
-            cache.expires_at - (chrono::Utc::now().timestamp_millis() as f64) < age * 1000.0
+            cache.expires_at - number_from_i64(chrono::Utc::now().timestamp_millis()) < age * 1000.0
         }) {
             let context = CacheVersionContext::cached(cache.user.clone(), cache.session.clone());
             for header in
@@ -162,7 +163,8 @@ pub(crate) async fn renew_cache<S: AuthSchema>(
                         ctx.config.current_secret(),
                     ))
                     .decode_utf8_lossy(),
-                    (!remember).then_some(ctx.config.session.expires_in.num_seconds() as f64),
+                    (!remember)
+                        .then_some(number_from_i64(ctx.config.session.expires_in.num_seconds())),
                     &ctx.config,
                 )?,
             );

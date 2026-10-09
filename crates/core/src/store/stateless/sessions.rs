@@ -44,7 +44,7 @@ impl SessionStore<StatelessSchema> for StatelessStore {
                 .map(|(key, value)| value.to_json_value().map(|value| (key, value)))
                 .collect::<Result<_, _>>()?,
             active: true,
-            omitted_fields: Default::default(),
+            omitted_fields: std::collections::BTreeSet::default(),
         })
     }
     async fn prepare_secondary_session_update(

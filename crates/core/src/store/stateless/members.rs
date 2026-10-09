@@ -1,5 +1,6 @@
 use crate::store::stateless::StatelessStore;
 use crate::store::{ListOrganizationMembersParams, MemberPageQuery, MemberStore};
+use crate::utils::javascript::number_from_usize;
 use crate::{AuthError, AuthResult, CreateMember, Member};
 use async_trait::async_trait;
 use chrono::Utc;
@@ -44,15 +45,21 @@ fn matches(row: &Member, query: &MemberPageQuery) -> bool {
     })
 }
 // Array.slice applies ToIntegerOrInfinity, supports negative indices, and treats NaN as zero.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "The value is clamped to 0..=length before the conversion"
+)]
 pub(super) fn slice_index(value: f64, length: usize) -> usize {
     if value.is_nan() {
         return 0;
     }
     let value = value.trunc();
+    let length = number_from_usize(length);
     if value < 0.0 {
-        (length as f64 + value.trunc()).max(0.0) as usize
+        (length + value).max(0.0) as usize
     } else {
-        value.min(length as f64) as usize
+        value.min(length) as usize
     }
 }
 
@@ -97,7 +104,7 @@ impl MemberStore for StatelessStore {
         let Some(row) = state.members.get_mut(id) else {
             return Ok(None);
         };
-        row.role = role.to_owned();
+        role.clone_into(&mut row.role);
         Ok(Some(row.clone()))
     }
     async fn delete_member(&self, id: &str) -> AuthResult<()> {
@@ -154,8 +161,8 @@ impl MemberStore for StatelessStore {
     ) -> AuthResult<(Vec<Member>, usize)> {
         self.query_organization_members_page(&MemberPageQuery {
             organization_id: params.organization_id.clone(),
-            limit: params.limit.map(|v| v as f64),
-            offset: params.offset.map(|v| v as f64),
+            limit: params.limit.map(number_from_usize),
+            offset: params.offset.map(number_from_usize),
             sort_by: Some(params.sort_by.clone().unwrap_or_else(|| "createdAt".into())),
             sort_direction: Some(
                 params
@@ -200,7 +207,9 @@ impl MemberStore for StatelessStore {
             .map_or(0, |value| slice_index(value, rows.len()));
         _ = rows.drain(..start);
         rows.truncate(slice_index(
-            query.limit.unwrap_or(self.find_many_limit as f64),
+            query
+                .limit
+                .unwrap_or_else(|| number_from_usize(self.find_many_limit)),
             rows.len(),
         ));
         Ok((rows, total))

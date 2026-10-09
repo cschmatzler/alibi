@@ -18,18 +18,16 @@ fn is_preserved_entity(input: &str) -> bool {
         || input.starts_with("gt;")
         || input.starts_with("quot;")
         || input.starts_with("#39;")
-        || input.strip_prefix("#x").is_some_and(|hex| {
-            let Some(hex) = hex.split_once(';').map(|(entity, _)| entity) else {
-                return false;
-            };
-            !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit())
-        })
-        || input.strip_prefix('#').is_some_and(|digits| {
-            let Some(digits) = digits.split_once(';').map(|(entity, _)| entity) else {
-                return false;
-            };
-            !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())
-        })
+        || input
+            .strip_prefix("#x")
+            .and_then(|rest| rest.split_once(';'))
+            .is_some_and(|(hex, _)| !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit()))
+        || input
+            .strip_prefix('#')
+            .and_then(|rest| rest.split_once(';'))
+            .is_some_and(|(digits, _)| {
+                !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())
+            })
 }
 
 fn sanitize_html(input: &str) -> String {
@@ -93,9 +91,9 @@ pub fn error_page_html_with_description(
 #[must_use]
 pub fn error_page_redirect_location(error_code: &str, error_description: Option<&str>) -> String {
     let mut query = url::form_urlencoded::Serializer::new(String::new());
-    let _ = query.append_pair("error", safe_error_code(error_code));
+    _ = query.append_pair("error", safe_error_code(error_code));
     if let Some(description) = error_description.filter(|value| !value.is_empty()) {
-        let _ = query.append_pair("error_description", description);
+        _ = query.append_pair("error_description", description);
     }
     format!("/?{}", query.finish())
 }

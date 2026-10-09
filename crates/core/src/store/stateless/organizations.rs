@@ -24,7 +24,7 @@ impl OrganizationStore for StatelessStore {
     async fn create_organization(&self, data: CreateOrganization) -> AuthResult<Organization> {
         let now = Utc::now();
         let row = Organization {
-            additional_fields: Default::default(),
+            additional_fields: std::collections::BTreeMap::default(),
             id: data.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
             name: data.name,
             slug: data.slug,

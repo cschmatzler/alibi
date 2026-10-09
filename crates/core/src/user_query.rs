@@ -187,14 +187,15 @@ fn apply<T: AuthUser + Clone>(
 
     let sort_by = params.sort_by.as_deref().unwrap_or("createdAt");
     // An explicit sort field defaults to ascending in the public admin API.
+    let default_direction = if params.sort_by.is_some() {
+        "asc"
+    } else {
+        "desc"
+    };
     let sort_direction = params
         .sort_direction
         .as_deref()
-        .unwrap_or(if params.sort_by.is_some() {
-            "asc"
-        } else {
-            "desc"
-        });
+        .unwrap_or(default_direction);
 
     if !presorted {
         users.sort_by(|lhs, rhs| match sort_by {

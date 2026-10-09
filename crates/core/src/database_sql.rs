@@ -34,7 +34,7 @@ pub fn qualify_schema(sql: &str, schema: &str) -> AuthResult<String> {
             ControlFlow::Continue(())
         }
         fn post_visit_query(&mut self, _: &mut Query) -> ControlFlow<()> {
-            let _ = self.ctes.pop();
+            _ = self.ctes.pop();
             ControlFlow::Continue(())
         }
         fn pre_visit_statement(&mut self, statement: &mut Statement) -> ControlFlow<()> {
@@ -44,13 +44,13 @@ pub fn qualify_schema(sql: &str, schema: &str) -> AuthResult<String> {
                 for column in &mut table.columns {
                     for option in &mut column.options {
                         if let ColumnOption::ForeignKey(key) = &mut option.option {
-                            let _ = self.pre_visit_relation(&mut key.foreign_table);
+                            _ = self.pre_visit_relation(&mut key.foreign_table);
                         }
                     }
                 }
                 for constraint in &mut table.constraints {
                     if let TableConstraint::ForeignKey(key) = constraint {
-                        let _ = self.pre_visit_relation(&mut key.foreign_table);
+                        _ = self.pre_visit_relation(&mut key.foreign_table);
                     }
                 }
             }
@@ -70,7 +70,7 @@ pub fn qualify_schema(sql: &str, schema: &str) -> AuthResult<String> {
     }
     let mut statements = Parser::parse_sql(&PostgreSqlDialect {}, sql)
         .map_err(|error| AuthError::internal(format!("Cannot qualify auth SQL: {error}")))?;
-    let _ = statements.visit(&mut Qualifier {
+    _ = statements.visit(&mut Qualifier {
         schema,
         ctes: Vec::new(),
     });
@@ -176,7 +176,7 @@ pub fn map_two_factor(
             continue;
         }
         let mut target = false;
-        let _ =
+        _ =
             sqlparser::ast::visit_relations(statement, |name| {
                 if name.0.iter().any(
                     |part| matches!(part,ObjectNamePart::Identifier(id) if id.value=="two_factor"),
@@ -186,7 +186,7 @@ pub fn map_two_factor(
                 ControlFlow::<()>::Continue(())
             });
         if target {
-            let _ = statement.visit(&mut Mapper(mapping));
+            _ = statement.visit(&mut Mapper(mapping));
         }
     }
     Ok(statements

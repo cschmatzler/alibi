@@ -132,7 +132,7 @@ impl CreateOrganization {
     pub fn new(name: impl Into<String>, slug: impl Into<String>) -> Self {
         Self {
             id: None,
-            additional_fields: Default::default(),
+            additional_fields: crate::field_policy::FieldValues::default(),
             name: name.into(),
             slug: slug.into(),
             logo: None,

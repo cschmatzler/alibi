@@ -6,8 +6,9 @@ use crate::types::AddTeamMemberResult;
 use crate::user_validation::{PreparedUserCreation, UserValidationSource, prepare_creation};
 use crate::verification::{VerificationCreation, VerificationPublication, VerificationSnapshot};
 use crate::{
-    AuthError, AuthResult, AuthSchema, AuthTransaction, CreateAccount, CreateJwk, CreateMember,
-    CreatePasskey, CreateSession, CreateUser, CreateVerification, Jwk, Member, Passkey, Team,
+    AuthError, AuthResult, AuthSchema, AuthSession, AuthTransaction, CreateAccount, CreateJwk,
+    CreateMember, CreatePasskey, CreateSession, CreateUser, CreateVerification, Jwk, Member,
+    Passkey, Team,
 };
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -379,7 +380,6 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
                     self.record_store.session_uses_database(),
                 )
                 .await?;
-            use crate::AuthSession;
             let user = self
                 .inner
                 .get_user_by_id(model.user_id().as_ref())

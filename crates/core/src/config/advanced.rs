@@ -144,7 +144,7 @@ pub struct CookieOverride {
 #[derive(Debug, Clone)]
 pub struct TwoFactorDatabaseConfig {
     pub table_name: String,
-    /// Canonical `snake_case` column names mapped to application-owned columns.
+    /// Canonical ``snake_case`` column names mapped to application-owned columns.
     pub columns: std::collections::HashMap<String, String>,
 }
 
@@ -154,7 +154,7 @@ pub struct AdvancedDatabaseConfig {
     /// Default `LIMIT` for "find many" queries.
     pub default_find_many_limit: usize,
 
-    /// PostgreSQL namespace for every auth relation; does not change `search_path`.
+    /// PostgreSQL namespace for every auth relation; does not change ``search_path``.
     pub schema_name: Option<String>,
 
     /// Optional physical table and column mapping for two-factor credentials.

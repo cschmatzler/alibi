@@ -5,6 +5,7 @@
 //! `admin`, `password_management`, `session_management`, `email_verification`).
 
 use crate::config::{AuthConfig, CookieAttributes, SameSite};
+use crate::utils::javascript::number_from_i64;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
@@ -18,7 +19,7 @@ pub fn create_cookie(
     max_age_seconds: i64,
     config: &AuthConfig,
 ) -> crate::AuthResult<String> {
-    create_cookie_with_max_age(name, value, Some(max_age_seconds as f64), config)
+    create_cookie_with_max_age(name, value, Some(number_from_i64(max_age_seconds)), config)
 }
 
 /// Create a factory cookie: producer attributes precede per-cookie overrides.
@@ -138,7 +139,7 @@ pub fn create_session_like_cookie(
     // including with undefined for a browser session. Other cookie producers
     // retain their configured age when they supply no override.
     if name == related_cookie_name(config, "session_token") || max_age_seconds.is_some() {
-        attributes.max_age = max_age_seconds.map(|age| age as f64);
+        attributes.max_age = max_age_seconds.map(number_from_i64);
     }
     render_encoded_cookie(name, value, &attributes)
 }
@@ -160,7 +161,7 @@ pub fn create_derived_session_cookie(
             .cookies
             .get("session_token")
             .and_then(|entry| entry.attributes.max_age)
-            .unwrap_or(config.session.expires_in.num_seconds() as f64)
+            .unwrap_or_else(|| number_from_i64(config.session.expires_in.num_seconds()))
     });
     render_encoded_cookie(name, value, &attributes)
 }

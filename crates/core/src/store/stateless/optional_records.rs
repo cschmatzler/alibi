@@ -80,7 +80,7 @@ impl TwoFactorStore for StatelessStore {
             .values_mut()
             .find(|record| record.user_id == user_id)
             .ok_or_else(|| AuthError::not_found("Two-factor settings not found"))?;
-        record.backup_codes = backup_codes.to_owned();
+        backup_codes.clone_into(&mut record.backup_codes);
         record.updated_at = Utc::now();
         Ok(record.clone())
     }
@@ -146,7 +146,7 @@ impl TwoFactorStore for StatelessStore {
     ) -> AuthResult<bool> {
         Ok(mutate_record(&mut self.lock()?.two_factors, id, |record| {
             if record.backup_codes == expected {
-                record.backup_codes = replacement.to_owned();
+                replacement.clone_into(&mut record.backup_codes);
                 true
             } else {
                 false

@@ -395,7 +395,9 @@ impl RateLimitMiddleware {
     /// Match and key routes relative to the application's auth mount path.
     #[must_use]
     pub fn with_base_path(mut self, path: impl Into<String>) -> Self {
-        self.base_path = path.into().trim_end_matches('/').to_owned();
+        path.into()
+            .trim_end_matches('/')
+            .clone_into(&mut self.base_path);
         self
     }
 
@@ -428,10 +430,14 @@ impl RateLimitMiddleware {
         req: &AuthRequest,
         path: &str,
     ) -> AuthResult<Option<EndpointRateLimit>> {
-        let mut limit = self.default_limit_for_path(path).clone();
-        if let Some(rule) = self.plugin_rules.iter().find(|rule| (rule.matches)(path)) {
-            limit = rule.limit.clone();
-        }
+        let limit = self
+            .plugin_rules
+            .iter()
+            .find(|rule| (rule.matches)(path))
+            .map_or_else(
+                || self.default_limit_for_path(path).clone(),
+                |rule| rule.limit.clone(),
+            );
         for ((pattern, rule), compiled) in
             self.config.per_endpoint.iter().zip(&self.endpoint_patterns)
         {

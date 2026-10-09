@@ -1,6 +1,7 @@
 use crate::store::stateless::{OrganizationState, StatelessStore};
 use crate::store::{TeamStore, team_membership_key};
 use crate::types::AddTeamMemberResult;
+use crate::utils::javascript::number_from_i64;
 use crate::{AuthError, AuthResult, CreateTeam, InvitationStatus, Team, TeamMember, UpdateTeam};
 use async_trait::async_trait;
 use chrono::Utc;
@@ -151,7 +152,8 @@ impl TeamStore for StatelessStore {
         team.member_count = team.member_count.max(count);
         // Keep the raw Number predicate, including fractions, NaN and infinities.
         if maximum.is_some_and(|maximum| {
-            (team.member_count as f64).partial_cmp(&maximum) != Some(std::cmp::Ordering::Less)
+            number_from_i64(team.member_count).partial_cmp(&maximum)
+                != Some(std::cmp::Ordering::Less)
         }) {
             return Ok(AddTeamMemberResult::LimitReached);
         }

@@ -105,8 +105,8 @@ pub(in crate::session::cookie_cache) fn browser_preference(
 
 /// Read a base cookie or numerically ordered canonical chunks.
 #[must_use]
-pub fn chunked_cookie_value(
-    headers: &std::collections::HashMap<String, String>,
+pub fn chunked_cookie_value<H: std::hash::BuildHasher + Sync>(
+    headers: &std::collections::HashMap<String, String, H>,
     name: &str,
 ) -> Option<String> {
     cache_value(&cookies(headers), &cookie_values(headers, true), name)
@@ -168,9 +168,9 @@ pub fn chunked_cookie_headers<H: std::hash::BuildHasher + Sync>(
 ///
 /// # Errors
 /// Propagates invalid configured cookie attributes.
-pub fn session_cleanup_headers(
+pub fn session_cleanup_headers<H: std::hash::BuildHasher + Sync>(
     config: &crate::AuthConfig,
-    headers: &std::collections::HashMap<String, String>,
+    headers: &std::collections::HashMap<String, String, H>,
     skip_remember: bool,
 ) -> AuthResult<Vec<String>> {
     let cache_name = related_cookie_name(config, "session_data");

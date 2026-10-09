@@ -277,7 +277,7 @@ impl<S: AuthSchema> AuthContext<S> {
                 "lastLoginMethod",
             ] {
                 if !snapshot.contains_field(name) || snapshot.field_is_undefined(name) {
-                    let _ = view.omitted_fields.insert(name.into());
+                    _ = view.omitted_fields.insert(name.into());
                 }
             }
         }
@@ -295,7 +295,7 @@ impl<S: AuthSchema> AuthContext<S> {
                         .get(name)
                         .is_none_or(serde_json::Value::is_null)
                 {
-                    let _ = view.omitted_fields.insert(name.into());
+                    _ = view.omitted_fields.insert(name.into());
                 }
             }
         }
@@ -489,7 +489,7 @@ impl<S: AuthSchema> AuthContext<S> {
                         .get(name)
                         .is_none_or(serde_json::Value::is_null)
                 {
-                    let _ = view.omitted_fields.insert(name.into());
+                    _ = view.omitted_fields.insert(name.into());
                 }
             }
         }

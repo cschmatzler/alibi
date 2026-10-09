@@ -8,7 +8,10 @@ use crate::{
     UpdateVerification,
     config::VerificationConfig,
     store::{AuthStore, AuthTransaction, CacheAdapter},
-    utils::json::{self, JsValue},
+    utils::{
+        javascript::{number_from_i64, string_to_number},
+        json::{self, JsValue},
+    },
 };
 use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -154,7 +157,7 @@ impl fmt::Debug for VerificationSnapshot {
         f.debug_struct("VerificationSnapshot")
             .field("data", &self.data)
             .field("physical", &self.original_model.is_some())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 impl VerificationSnapshot {
@@ -216,11 +219,10 @@ impl VerificationSnapshot {
     /// revived; other strings retain their numeric relational coercion.
     #[must_use]
     pub fn is_expired(&self) -> bool {
-        let expiry = self.expiry.map_or_else(
-            || number(self.data.get("expiresAt")),
-            |millis| millis as f64,
-        );
-        expiry < Utc::now().timestamp_millis() as f64
+        let expiry = self
+            .expiry
+            .map_or_else(|| number(self.data.get("expiresAt")), number_from_i64);
+        expiry < number_from_i64(Utc::now().timestamp_millis())
     }
     fn cached(raw: &str) -> Option<Self> {
         let mut data = json::parse_value(raw).ok()?;
@@ -302,11 +304,19 @@ impl<S: AuthSchema> VerificationService<'_, S> {
     fn physical(&self) -> bool {
         self.config.secondary_storage.is_none() || self.config.store_in_database
     }
+    async fn stored_identifier(&self, identifier: &str) -> AuthResult<String> {
+        self.config
+            .store_identifier
+            .strategy(identifier)
+            .process(identifier)
+            .await
+    }
     async fn identifiers(&self, identifier: &str) -> AuthResult<Vec<String>> {
-        let strategy = self.config.store_identifier.strategy(identifier);
-        let stored = strategy.process(identifier).await?;
-        let mut identifiers = vec![stored];
-        if !matches!(strategy, VerificationIdentifierStrategy::Plain) {
+        let mut identifiers = vec![self.stored_identifier(identifier).await?];
+        if !matches!(
+            self.config.store_identifier.strategy(identifier),
+            VerificationIdentifierStrategy::Plain
+        ) {
             identifiers.push(identifier.to_owned());
         }
         Ok(identifiers)
@@ -315,12 +325,7 @@ impl<S: AuthSchema> VerificationService<'_, S> {
         &self,
         mut data: VerificationCreation,
     ) -> AuthResult<(VerificationCreation, VerificationPublication)> {
-        data.identifier = self
-            .config
-            .store_identifier
-            .strategy(&data.identifier)
-            .process(&data.identifier)
-            .await?;
+        data.identifier = self.stored_identifier(&data.identifier).await?;
         let publication = VerificationPublication {
             store_in_database: self.physical(),
             secondary_storage: self.config.secondary_storage.clone(),
@@ -378,12 +383,7 @@ impl<S: AuthSchema> VerificationService<'_, S> {
         Ok(found.as_ref().map(VerificationSnapshot::from_model))
     }
     pub async fn delete(&self, identifier: &str) -> AuthResult<()> {
-        let stored = self
-            .config
-            .store_identifier
-            .strategy(identifier)
-            .process(identifier)
-            .await?;
+        let stored = self.stored_identifier(identifier).await?;
         if let Some(cache) = &self.config.secondary_storage {
             cache.delete(&key(&stored)).await?;
         }
@@ -461,12 +461,7 @@ impl<S: AuthSchema> VerificationService<'_, S> {
         identifier: &str,
         data: UpdateVerification,
     ) -> AuthResult<Option<VerificationSnapshot>> {
-        let stored = self
-            .config
-            .store_identifier
-            .strategy(identifier)
-            .process(identifier)
-            .await?;
+        let stored = self.stored_identifier(identifier).await?;
         if let Some(cache) = &self.config.secondary_storage
             && let Some(mut snapshot) = cache
                 .get(&key(&stored))
@@ -505,12 +500,7 @@ impl<S: AuthSchema> VerificationService<'_, S> {
     }
     pub async fn reserve(&self, mut data: CreateVerification) -> AuthResult<bool> {
         let logical = data.identifier.clone();
-        data.identifier = self
-            .config
-            .store_identifier
-            .strategy(&logical)
-            .process(&logical)
-            .await?;
+        data.identifier = self.stored_identifier(&logical).await?;
         if !self.physical() {
             return Err(AuthError::internal(
                 "reserveVerificationValue requires database-backed verification storage. Set verification.storeInDatabase to true for flows that reserve verification values.",
@@ -559,12 +549,8 @@ fn number(value: Option<&JsValue>) -> f64 {
         Some(JsValue::Null) => 0.0,
         Some(JsValue::Bool(value)) => f64::from(u8::from(*value)),
         Some(JsValue::Number(value)) => *value,
-        Some(JsValue::String(value)) => {
-            crate::utils::javascript::string_to_number(value).unwrap_or(f64::NAN)
-        }
-        Some(JsValue::Array(values)) => {
-            crate::utils::javascript::string_to_number(&array_string(values)).unwrap_or(f64::NAN)
-        }
+        Some(JsValue::String(value)) => string_to_number(value).unwrap_or(f64::NAN),
+        Some(JsValue::Array(values)) => string_to_number(&array_string(values)).unwrap_or(f64::NAN),
         _ => f64::NAN,
     }
 }

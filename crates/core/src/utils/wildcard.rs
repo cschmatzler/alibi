@@ -1,6 +1,7 @@
 //! Better Auth's `wildcardMatch` and the simple path globs used by rate limits.
 
 use regex::Regex;
+use std::fmt::Write as _;
 
 const SEPARATOR: &str = r"[/\\]";
 const SEGMENT_CHARACTER: &str = r"[^/\\]";
@@ -30,7 +31,7 @@ pub fn compile(pattern: &str) -> Result<Regex, regex::Error> {
                 if index > 0 {
                     expression.push_str(&separator);
                 }
-                expression.push_str(&format!("(?:{SEGMENT_RUN}{separator})*?"));
+                _ = write!(expression, "(?:{SEGMENT_RUN}{separator})*?");
             }
             continue;
         }
@@ -76,10 +77,12 @@ fn translate(
     let mut characters = pattern.chars();
     while let Some(character) = characters.next() {
         let literal = match (character, special(character)) {
-            ('\\', _) => match characters.next() {
-                Some(escaped) => escaped,
-                None => continue,
-            },
+            ('\\', _) => {
+                let Some(escaped) = characters.next() else {
+                    continue;
+                };
+                escaped
+            }
             (_, Some(translated)) => {
                 expression.push_str(translated);
                 continue;

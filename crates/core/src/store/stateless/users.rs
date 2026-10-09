@@ -37,7 +37,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
             ("displayUsername", create_user.display_username.is_none()),
         ] {
             if absent && !create_user.additional_fields.contains_key(name) {
-                let _ = omitted_fields.insert(name.to_owned());
+                _ = omitted_fields.insert(name.to_owned());
             }
         }
         let username = create_user.username.map(|username| username.to_lowercase());
@@ -210,7 +210,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
                 _ => user.display_username.is_some(),
             };
             if present {
-                let _ = user.omitted_fields.remove(name);
+                _ = user.omitted_fields.remove(name);
             }
         }
         user.updated_at = Utc::now();

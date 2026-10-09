@@ -243,7 +243,7 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
         if verification.value != expected_value {
             return Ok(false);
         }
-        verification.value = value.to_owned();
+        value.clone_into(&mut verification.value);
         verification.expires_at = expires_at;
         verification.updated_at = Utc::now();
         drop(state);

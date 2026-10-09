@@ -70,7 +70,7 @@ impl SessionRequest for crate::endpoint::EndpointCall {
         self.headers().unwrap_or(&EMPTY)
     }
     fn session_method(&self) -> &HttpMethod {
-        self.method().unwrap_or(self.default_method())
+        self.method().unwrap_or_else(|| self.default_method())
     }
     fn session_query_truthy(&self, name: &str) -> bool {
         self.query()

@@ -198,7 +198,7 @@ impl UsernameConfig {
         use crate::field_policy::FieldConfig;
         let mut fields = crate::field_policy::FieldConfigs::new();
         let policy = self.clone();
-        let _ = fields.insert(
+        _ = fields.insert(
             "username".into(),
             FieldConfig::new(serde_json::json!({"type":"string"})).transform(move |value| {
                 match value {
@@ -214,7 +214,7 @@ impl UsernameConfig {
         }
         if self.include_display_username {
             let policy = self.clone();
-            let _ = fields.insert(
+            _ = fields.insert(
                 "displayUsername".into(),
                 FieldConfig::new(serde_json::json!({"type":"string"})).transform(move |value| {
                     match value {
@@ -229,7 +229,7 @@ impl UsernameConfig {
             let mut hidden = FieldConfig::new(serde_json::json!({"type":"string"}));
             hidden.input = false;
             hidden.returned = false;
-            let _ = fields.insert("displayUsername".into(), hidden);
+            _ = fields.insert("displayUsername".into(), hidden);
         }
         fields
     }
@@ -246,7 +246,7 @@ impl UsernameConfig {
             if !value.is_empty() {
                 *value = self.normalize(value)?;
             }
-            let _ = values.insert("username".into(), JsValue::String(value.clone()));
+            _ = values.insert("username".into(), JsValue::String(value.clone()));
         }
         if self.include_display_username {
             if creation
@@ -255,11 +255,11 @@ impl UsernameConfig {
             {
                 display.clone_from(&original_username);
                 if let Some(value) = &display {
-                    let _ = values.insert("displayUsername".into(), JsValue::String(value.clone()));
+                    _ = values.insert("displayUsername".into(), JsValue::String(value.clone()));
                 }
             } else if let Some(value) = display.as_mut().filter(|value| !value.is_empty()) {
                 *value = self.normalize_display(value)?;
-                let _ = values.insert("displayUsername".into(), JsValue::String(value.clone()));
+                _ = values.insert("displayUsername".into(), JsValue::String(value.clone()));
             }
         } else {
             *display = None;
