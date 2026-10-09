@@ -1,30 +1,16 @@
-use super::ACCESS_DENIED;
-use super::AUTHORIZATION_PENDING;
-use super::CLIENT_ID_MISMATCH;
-use super::DEVICE_STATUS_APPROVED;
-use super::DEVICE_STATUS_DENIED;
-use super::DEVICE_STATUS_PENDING;
-use super::DeviceAuthorizationPlugin;
-use super::DeviceGrantRecord;
-use super::EXPIRED_DEVICE_CODE;
-use super::FAILED_TO_CREATE_SESSION;
-use super::INVALID_CLIENT_ID;
-use super::INVALID_DEVICE_CODE;
-use super::INVALID_DEVICE_CODE_STATUS;
-use super::POLLING_TOO_FREQUENTLY;
-use super::USER_NOT_FOUND;
-use super::device_error_response;
-use super::types::DeviceTokenRequest;
-use super::types::DeviceTokenResponse;
-use crate::helpers::SessionIssueError;
-use crate::helpers::create_user_session_record;
-use alibi_core::AuthContext;
-use alibi_core::AuthRequest;
-use alibi_core::AuthResponse;
-use alibi_core::AuthResult;
-use alibi_core::RequestMeta;
-use alibi_core::UpdateDeviceCode;
+use super::types::{DeviceTokenRequest, DeviceTokenResponse};
+use super::{
+    ACCESS_DENIED, AUTHORIZATION_PENDING, CLIENT_ID_MISMATCH, DEVICE_STATUS_APPROVED,
+    DEVICE_STATUS_DENIED, DEVICE_STATUS_PENDING, DeviceAuthorizationPlugin, DeviceGrantRecord,
+    EXPIRED_DEVICE_CODE, FAILED_TO_CREATE_SESSION, INVALID_CLIENT_ID, INVALID_DEVICE_CODE,
+    INVALID_DEVICE_CODE_STATUS, POLLING_TOO_FREQUENTLY, USER_NOT_FOUND, device_error_response,
+    no_store,
+};
+use crate::helpers::{SessionIssueError, create_user_session_record};
 use alibi_core::entity::{AuthSession, AuthUser};
+use alibi_core::{
+    AuthContext, AuthRequest, AuthResponse, AuthResult, RequestMeta, UpdateDeviceCode,
+};
 use chrono::Utc;
 
 impl DeviceAuthorizationPlugin {
@@ -150,7 +136,7 @@ impl DeviceAuthorizationPlugin {
                     }
                 };
 
-            return Ok(AuthResponse::json(
+            return Ok(no_store(AuthResponse::json(
                 200,
                 &DeviceTokenResponse {
                     access_token: session.token().to_owned(),
@@ -161,9 +147,7 @@ impl DeviceAuthorizationPlugin {
                     .max(0),
                     scope: device_code.scope.unwrap_or_default(),
                 },
-            )?
-            .with_header("Cache-Control", "no-store")
-            .with_header("Pragma", "no-cache"));
+            )?));
         }
 
         device_error_response(500, "server_error", INVALID_DEVICE_CODE_STATUS)

@@ -1,26 +1,16 @@
 //! Application-owned issuance and redemption of durable device grants.
-use super::ACCESS_DENIED;
-use super::AUTHORIZATION_PENDING;
-use super::DEVICE_STATUS_APPROVED;
-use super::DEVICE_STATUS_DENIED;
-use super::DEVICE_STATUS_PENDING;
-use super::DeviceAuthorizationPlugin;
-use super::EXPIRED_DEVICE_CODE;
-use super::INVALID_DEVICE_CODE;
-use super::INVALID_DEVICE_CODE_STATUS;
-use super::POLLING_TOO_FREQUENTLY;
-use super::USER_NOT_FOUND;
-use super::device_error_response;
 use super::types::DeviceCodeRequest;
-use super::validate_device_media;
+use super::{
+    ACCESS_DENIED, AUTHORIZATION_PENDING, DEVICE_STATUS_APPROVED, DEVICE_STATUS_DENIED,
+    DEVICE_STATUS_PENDING, DeviceAuthorizationPlugin, EXPIRED_DEVICE_CODE, INVALID_DEVICE_CODE,
+    INVALID_DEVICE_CODE_STATUS, POLLING_TOO_FREQUENTLY, USER_NOT_FOUND, device_error_response,
+    no_store, validate_device_media,
+};
 use crate::helpers::callback_failure;
-use alibi_core::AuthContext;
-use alibi_core::AuthError;
-use alibi_core::AuthRequest;
-use alibi_core::AuthResponse;
-use alibi_core::AuthResult;
-use alibi_core::UpdateDeviceCode;
-use alibi_core::{AuthSchema, DeviceCode};
+use alibi_core::{
+    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, DeviceCode,
+    UpdateDeviceCode,
+};
 use async_trait::async_trait;
 use chrono::Utc;
 use serde_json::{Map, Value};
@@ -281,11 +271,7 @@ impl DeviceAuthorizationPlugin {
         let authorized = match grant.authorize_request(&request, req).await {
             Ok(value) => value,
             Err(error) => {
-                return error.into_response().map(|response| {
-                    response
-                        .with_header("Cache-Control", "no-store")
-                        .with_header("Pragma", "no-cache")
-                });
+                return error.into_response().map(no_store);
             }
         };
         self.issue_device_code_with_fields(
@@ -301,11 +287,7 @@ impl DeviceAuthorizationPlugin {
             ctx,
         )
         .await
-        .map(|response| {
-            response
-                .with_header("Cache-Control", "no-store")
-                .with_header("Pragma", "no-cache")
-        })
+        .map(no_store)
     }
     pub(super) fn grant_openapi(
         &self,

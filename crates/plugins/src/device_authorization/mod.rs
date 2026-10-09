@@ -132,6 +132,7 @@ impl DeviceDecision {
 }
 
 /// OAuth 2.0 device authorization grant plugin.
+#[derive(Default)]
 pub struct DeviceAuthorizationPlugin {
     config: DeviceAuthorizationConfig,
 }
@@ -143,19 +144,11 @@ impl fmt::Debug for DeviceAuthorizationPlugin {
     }
 }
 
-impl Default for DeviceAuthorizationPlugin {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl DeviceAuthorizationPlugin {
     /// Create the plugin with TS-aligned defaults.
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            config: DeviceAuthorizationConfig::default(),
-        }
+        Self::default()
     }
 
     /// Override the device-code expiration window.
@@ -330,6 +323,12 @@ alibi_core::impl_auth_plugin! {
     }
 }
 
+fn no_store(response: AuthResponse) -> AuthResponse {
+    response
+        .with_header("Cache-Control", "no-store")
+        .with_header("Pragma", "no-cache")
+}
+
 // Pinned createAuthEndpoint applies metadata.noStore when the handler starts,
 // including application API errors, but excludes schema/media rejections.
 fn set_device_no_store_headers(req: &AuthRequest) {
@@ -485,14 +484,14 @@ fn parse_device_body(
                 .map(|(_, value)| value)
                 .collect::<Vec<_>>();
             if values.len() > 1 {
-                return Err(device_error_response(
-                    400,
-                    "invalid_request",
-                    &format!("{field} must not be repeated"),
-                )
-                .unwrap_or_else(|_| AuthResponse::text(400, "Repeated request parameter"))
-                .with_header("Cache-Control", "no-store")
-                .with_header("Pragma", "no-cache"));
+                return Err(no_store(
+                    device_error_response(
+                        400,
+                        "invalid_request",
+                        &format!("{field} must not be repeated"),
+                    )
+                    .unwrap_or_else(|_| AuthResponse::text(400, "Repeated request parameter")),
+                ));
             }
             if let Some(value) = values.first()
                 && let Some(object) = body.as_object_mut()
@@ -555,7 +554,7 @@ fn build_verification_uris(
     if !replaced {
         pairs.push(("user_code".to_owned(), user_code.to_owned()));
     }
-    let _ignored_extend_pairs = verification_uri_complete
+    _ = verification_uri_complete
         .query_pairs_mut()
         .clear()
         .extend_pairs(pairs);

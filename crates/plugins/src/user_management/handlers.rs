@@ -5,11 +5,12 @@ use crate::email_password::EmailPasswordConfig;
 use crate::email_verification::EmailVerificationConfig;
 use crate::email_verification::handlers::verification_url;
 use crate::email_verification::token::create_email_verification_token;
-use alibi_core::SuccessMessageResponse;
 use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
 use alibi_core::utils::password as password_utils;
 use alibi_core::wire::{SessionView, UserView};
-use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResult, UpdateUser};
+use alibi_core::{
+    AuthContext, AuthError, AuthRequest, AuthResult, SuccessMessageResponse, UpdateUser,
+};
 use chrono::{Duration, Utc};
 use rand::RngExt;
 

@@ -13,8 +13,7 @@ mod source_endpoints;
 #[rustfmt::skip]
 #[allow(warnings, clippy::all, clippy::pedantic, clippy::nursery, clippy::restriction, reason = "Generated API declarations retain the upstream generator output")]
 mod source_models;
-use alibi_core::AuthRoute;
-use alibi_core::{OpenApiEndpoint, OpenApiField, OpenApiModel, PluginOpenApiMetadata};
+use alibi_core::{AuthRoute, OpenApiEndpoint, OpenApiField, OpenApiModel, PluginOpenApiMetadata};
 use alibi_schema_registry::{FieldDef, plugin_schemas};
 use serde_json::{Value, json};
 

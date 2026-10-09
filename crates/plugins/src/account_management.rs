@@ -1,8 +1,7 @@
 use super::StatusResponse;
 use super::authentication_helpers::{JsonField, RequestBody, parse_body};
 use alibi_core::entity::{AuthAccount, AuthUser};
-use alibi_core::{AuthContext, AuthError, AuthResult};
-use alibi_core::{AuthRequest, AuthResponse};
+use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult};
 use serde::Deserialize;
 use validator::Validate;
 

@@ -1,17 +1,10 @@
-use super::DEVICE_STATUS_PENDING;
-use super::DeviceAuthorizationPlugin;
-use super::INVALID_CLIENT_ID;
-use super::build_verification_uris;
-use super::device_error_response;
-use super::duration_seconds_floor;
-use super::is_unique_constraint_error;
-use super::types::DeviceCodeRequest;
-use super::types::DeviceCodeResponse;
+use super::types::{DeviceCodeRequest, DeviceCodeResponse};
+use super::{
+    DEVICE_STATUS_PENDING, DeviceAuthorizationPlugin, INVALID_CLIENT_ID, build_verification_uris,
+    device_error_response, duration_seconds_floor, is_unique_constraint_error, no_store,
+};
 use crate::helpers::callback_failure;
-use alibi_core::AuthContext;
-use alibi_core::AuthResponse;
-use alibi_core::AuthResult;
-use alibi_core::CreateDeviceCode;
+use alibi_core::{AuthContext, AuthResponse, AuthResult, CreateDeviceCode};
 use chrono::Utc;
 
 impl DeviceAuthorizationPlugin {
@@ -93,7 +86,7 @@ impl DeviceAuthorizationPlugin {
                 &user_code,
             )?;
 
-            return Ok(AuthResponse::json(
+            return Ok(no_store(AuthResponse::json(
                 200,
                 &DeviceCodeResponse {
                     device_code,
@@ -103,9 +96,7 @@ impl DeviceAuthorizationPlugin {
                     expires_in: duration_seconds_floor(self.config.expires_in),
                     interval: duration_seconds_floor(self.config.interval),
                 },
-            )?
-            .with_header("Cache-Control", "no-store")
-            .with_header("Pragma", "no-cache"));
+            )?));
         }
         device_error_response(
             500,

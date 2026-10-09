@@ -1,32 +1,16 @@
-use super::AUTHENTICATION_REQUIRED;
-use super::DEVICE_CODE_ALREADY_PROCESSED;
-use super::DEVICE_CODE_NOT_CLAIMED;
-use super::DEVICE_STATUS_PENDING;
-use super::DeviceAuthorizationPlugin;
-use super::DeviceDecision;
-use super::DeviceGrantRecord;
-use super::DeviceRequestKind;
-use super::EXPIRED_USER_CODE;
-use super::INVALID_REQUEST;
-use super::INVALID_USER_CODE;
-use super::deserialize_device_body;
-use super::device_error_response;
-use super::find_device_code_by_user_code;
-use super::parse_device_body;
-use super::set_device_no_store_headers;
-use super::types::DeviceActionRequest;
-use super::types::DeviceActionResponse;
-use super::types::DeviceCodeRequest;
-use super::types::DeviceTokenRequest;
-use super::types::DeviceVerifyResponse;
-use super::validate_device_media;
-use alibi_core::AuthContext;
-use alibi_core::AuthError;
-use alibi_core::AuthRequest;
-use alibi_core::AuthResponse;
-use alibi_core::AuthResult;
-use alibi_core::UpdateDeviceCode;
+use super::types::{
+    DeviceActionRequest, DeviceActionResponse, DeviceCodeRequest, DeviceTokenRequest,
+    DeviceVerifyResponse,
+};
+use super::{
+    AUTHENTICATION_REQUIRED, DEVICE_CODE_ALREADY_PROCESSED, DEVICE_CODE_NOT_CLAIMED,
+    DEVICE_STATUS_PENDING, DeviceAuthorizationPlugin, DeviceDecision, DeviceGrantRecord,
+    DeviceRequestKind, EXPIRED_USER_CODE, INVALID_REQUEST, INVALID_USER_CODE,
+    deserialize_device_body, device_error_response, find_device_code_by_user_code, no_store,
+    parse_device_body, set_device_no_store_headers, validate_device_media,
+};
 use alibi_core::entity::AuthUser;
+use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, UpdateDeviceCode};
 use chrono::Utc;
 
 impl DeviceAuthorizationPlugin {
@@ -54,11 +38,7 @@ impl DeviceAuthorizationPlugin {
                     set_device_no_store_headers(req);
                 }
             })
-            .map(|response| {
-                response
-                    .with_header("Cache-Control", "no-store")
-                    .with_header("Pragma", "no-cache")
-            })
+            .map(no_store)
     }
 
     pub(in crate::device_authorization) async fn handle_device_token(
@@ -80,11 +60,7 @@ impl DeviceAuthorizationPlugin {
                     set_device_no_store_headers(req);
                 }
             })
-            .map(|response| {
-                response
-                    .with_header("Cache-Control", "no-store")
-                    .with_header("Pragma", "no-cache")
-            })
+            .map(no_store)
     }
 
     pub(in crate::device_authorization) async fn handle_device_verify(
@@ -214,7 +190,7 @@ impl DeviceAuthorizationPlugin {
         // Pinned Source validates the fetched pending snapshot, then updates by ID.
         // An overlapping owner decision may also pass validation; the last
         // completed adapter write determines the state used by redemption.
-        let _updated = ctx
+        _ = ctx
             .database
             .update_device_code(
                 &device_code.id,

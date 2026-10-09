@@ -1,7 +1,6 @@
 use super::{OneTimeTokenPlugin, OneTimeTokenSession};
 use crate::authentication_helpers::JsonField;
 use crate::endpoint::{definition, validate_fields};
-use alibi_core::HttpMethod;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
@@ -10,7 +9,7 @@ use alibi_core::utils::cookie_utils::{
     related_cookie_name, sign_cookie_value, verify_cookie_value,
 };
 use alibi_core::utils::json::JsValue;
-use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema};
+use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod};
 use chrono::Utc;
 use serde::Deserialize;
 
