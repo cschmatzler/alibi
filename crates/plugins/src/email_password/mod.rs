@@ -391,7 +391,6 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
         super::phone_number::reject_verified_input(body.phone_number_verified.as_ref())?;
     }
 
-    // Check if user already exists
     if let Some(user) = ctx.database.get_user_by_email(&body.email).await? {
         if config.require_email_verification || !config.auto_sign_in {
             _ = ctx
@@ -406,7 +405,6 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
         ));
     }
 
-    // Hash password
     let password_hash = ctx
         .hash_password(config.password_hasher.as_ref(), &body.password)
         .await?;

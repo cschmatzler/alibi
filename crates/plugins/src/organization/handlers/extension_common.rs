@@ -191,11 +191,12 @@ fn configured_roles(config: &OrganizationConfig) -> OrganizationRoles {
     roles
 }
 
+/// Loads the roles of an organization through the shared role cache.
 ///
 /// # Errors
 ///
 /// Returns errors from organization-role storage or the shared role cache.
-pub(crate) async fn organization_roles<S: AuthSchema>(
+pub async fn organization_roles<S: AuthSchema>(
     config: &OrganizationConfig,
     ctx: &AuthContext<S>,
     org_id: &str,
@@ -246,11 +247,12 @@ pub(super) fn cached_has_permissions(
     Ok(permitted)
 }
 
+/// Checks whether a role grants every required permission.
 ///
 /// # Errors
 ///
 /// Propagates errors from role loading and authorization callbacks.
-pub(crate) async fn has_permissions<S: AuthSchema>(
+pub async fn has_permissions<S: AuthSchema>(
     role: &str,
     required: &OrganizationPermissions,
     config: &OrganizationConfig,

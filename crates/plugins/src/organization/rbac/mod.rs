@@ -63,7 +63,6 @@ pub struct Role {
 pub fn default_roles() -> HashMap<String, Role> {
     let mut roles = HashMap::new();
 
-    // Owner - full permissions
     _ = roles.insert(
         "owner".to_owned(),
         Role {
@@ -81,7 +80,6 @@ pub fn default_roles() -> HashMap<String, Role> {
         },
     );
 
-    // Admin - most permissions except org deletion
     _ = roles.insert(
         "admin".to_owned(),
         Role {
@@ -99,7 +97,6 @@ pub fn default_roles() -> HashMap<String, Role> {
         },
     );
 
-    // Member - read-only
     _ = roles.insert(
         "member".to_owned(),
         Role {
@@ -121,7 +118,6 @@ pub fn has_permission<H: std::hash::BuildHasher>(
 ) -> bool {
     let default = default_roles();
 
-    // Check custom roles first
     if let Some(custom_role) = custom_roles.get(role) {
         let actions = match resource {
             Resource::Organization => &custom_role.organization,
@@ -141,7 +137,6 @@ pub fn has_permission<H: std::hash::BuildHasher>(
         }
     }
 
-    // Fall back to default roles
     if let Some(role_def) = default.get(role)
         && let Some(actions) = role_def.permissions.get(resource)
     {

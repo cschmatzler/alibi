@@ -1,4 +1,4 @@
-pub(crate) mod extension_common;
+pub mod extension_common;
 
 pub(crate) mod invitation;
 

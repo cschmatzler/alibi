@@ -38,7 +38,6 @@ pub struct ApiKeyConfig {
     /// Application storage overriding the plugin's secondary cache.
     pub custom_storage: Option<Arc<dyn ApiKeyStorage>>,
 
-    // -- key generation --
     /// Raw length excluding the prefix. Zero and NaN use 64; the built-in
     /// generator admits safely terminating fractions from 0.5 upward.
     /// A custom generator receives the number unchanged after that fallback.
@@ -51,46 +50,37 @@ pub struct ApiKeyConfig {
     /// Dynamic defaults replace static `default_permissions` when configured.
     pub default_permissions_callback: Option<Arc<dyn ApiKeyDefaultPermissions>>,
 
-    // -- header --
     pub api_key_headers: Vec<String>,
     /// Trusted application lookup, replacing `api_key_headers` when configured.
     pub custom_api_key_getter: Option<Arc<dyn ApiKeyGetter>>,
     /// Trusted acceptance predicate, checked before quota and rate-limit writes.
     pub custom_api_key_validator: Option<Arc<dyn ApiKeyValidator>>,
 
-    // -- hashing --
     pub disable_key_hashing: bool,
 
-    // -- starting characters --
     /// UTF-16 substring end: finite fractions truncate, negative/NaN select an
     /// empty prefix, and positive infinity selects the whole credential.
     /// SQLite retains a cut through a surrogate pair as actual WTF-8 TEXT.
     pub starting_characters_length: f64,
     pub store_starting_characters: bool,
 
-    // -- prefix length validation --
     /// Compare the actual UTF-16 prefix length against this raw number.
     pub max_prefix_length: f64,
     /// Compare the actual UTF-16 prefix length against this raw number.
     pub min_prefix_length: f64,
 
-    // -- name validation --
     /// Compare the actual UTF-16 name length against this raw number.
     pub max_name_length: f64,
     /// Compare the actual UTF-16 name length against this raw number.
     pub min_name_length: f64,
     pub require_name: bool,
 
-    // -- metadata --
     pub enable_metadata: bool,
 
-    // -- key expiration --
     pub key_expiration: KeyExpirationConfig,
 
-    // -- rate limit defaults --
     pub rate_limit: RateLimitDefaults,
 
-    // -- session emulation --
     pub enable_session_for_api_keys: bool,
     /// Start secondary-only usage merges and automatic cleanup in background work.
     /// The application background handler receives completion observations.

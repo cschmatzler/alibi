@@ -256,7 +256,6 @@ impl EmailVerificationPlugin {
         )?;
         let verification_url = verification_url(&ctx.config, &verification_token, callback_url);
 
-        // Use custom sender if configured, otherwise fall back to EmailProvider
         if let Some(ref custom_sender) = self.config.send_verification_email {
             let user = ctx.trusted_user_view(user);
             send_custom_verification_email(
@@ -269,7 +268,6 @@ impl EmailVerificationPlugin {
             )
             .await?;
         } else if self.config.send_email_notifications {
-            // Gracefully skip if no email provider is configured
             if let Some(provider) = ctx.email_provider.clone() {
                 let subject = "Verify your email address";
                 let html = format!(

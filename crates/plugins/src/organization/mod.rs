@@ -6,7 +6,7 @@ pub mod policy;
 
 pub mod extensions;
 
-pub(crate) mod handlers;
+pub mod handlers;
 
 pub use hooks::invitation::{
     InvitationLimit, OrganizationInvitationContext, OrganizationInvitationCreatePatch,
@@ -375,7 +375,6 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
 
     fn routes(&self) -> Vec<AuthRoute> {
         let mut routes = vec![
-            // Organization CRUD
             AuthRoute::post("/organization/create", "create_organization"),
             AuthRoute::post("/organization/update", "update_organization"),
             AuthRoute::post("/organization/delete", "delete_organization"),
@@ -388,7 +387,6 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
             AuthRoute::post("/organization/check-slug", "check_slug"),
             AuthRoute::post("/organization/set-active", "set_active_organization"),
             AuthRoute::post("/organization/leave", "leave_organization"),
-            // Member management
             AuthRoute::get("/organization/get-active-member", "get_active_member"),
             AuthRoute::get(
                 "/organization/get-active-member-role",
@@ -397,7 +395,6 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
             AuthRoute::get("/organization/list-members", "list_members"),
             AuthRoute::post("/organization/remove-member", "remove_member"),
             AuthRoute::post("/organization/update-member-role", "update_member_role"),
-            // Invitations
             AuthRoute::post("/organization/invite-member", "invite_member"),
             AuthRoute::get("/organization/get-invitation", "get_invitation"),
             AuthRoute::get("/organization/list-invitations", "list_invitations"),
@@ -408,7 +405,6 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
             AuthRoute::post("/organization/accept-invitation", "accept_invitation"),
             AuthRoute::post("/organization/reject-invitation", "reject_invitation"),
             AuthRoute::post("/organization/cancel-invitation", "cancel_invitation"),
-            // Permission check
             AuthRoute::post("/organization/has-permission", "has_permission"),
         ];
         if self.config.teams.enabled {
@@ -442,7 +438,6 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
         match (req.method(), req.path()) {
-            // Organization CRUD
             (HttpMethod::Post, "/organization/create") => Ok(Some(
                 Box::pin(handlers::org::handle_create_organization(
                     req,
@@ -495,7 +490,6 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
                 ))
                 .await?,
             )),
-            // Member management
             (HttpMethod::Get, "/organization/get-active-member") => Ok(Some(
                 Box::pin(handlers::member::handle_get_active_member(req, ctx)).await?,
             )),
@@ -526,7 +520,6 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
                 ))
                 .await?,
             )),
-            // Invitations
             (HttpMethod::Post, "/organization/invite-member") => Ok(Some(
                 Box::pin(handlers::invitation::handle_invite_member(
                     req,
@@ -573,7 +566,6 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
                 ))
                 .await?,
             )),
-            // Permission check
             (HttpMethod::Post, "/organization/has-permission") => Ok(Some(
                 Box::pin(handlers::handle_has_permission(req, ctx, &self.config)).await?,
             )),

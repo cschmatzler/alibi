@@ -297,8 +297,6 @@ impl ApiKeyPlugin {
         }
     }
 
-    // -- internal helpers --
-
     pub(super) fn generate_key(
         config: &ApiKeyConfig,
         custom_prefix: Option<&str>,
@@ -379,8 +377,6 @@ impl ApiKeyPlugin {
         let digest = hasher.finalize();
         URL_SAFE_NO_PAD.encode(digest)
     }
-
-    // -- Validation helpers --
 
     pub(super) fn validate_prefix(config: &ApiKeyConfig, prefix: Option<&str>) -> AuthResult<()> {
         if let Some(p) = prefix.filter(|prefix| !prefix.is_empty()) {
