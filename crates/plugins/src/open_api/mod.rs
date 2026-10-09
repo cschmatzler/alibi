@@ -93,17 +93,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OpenApiPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
-        if req.method() != &HttpMethod::Get
-            || (req.path() != "/open-api/generate-schema"
-                && req.path() != core_paths::OPENAPI_SPEC
-                && req.path() != self.path())
-        {
+        let path = req.path();
+        let is_schema = path == "/open-api/generate-schema" || path == core_paths::OPENAPI_SPEC;
+        if req.method() != &HttpMethod::Get || !(is_schema || path == self.path()) {
             return Ok(None);
         }
-        if req.path() != "/open-api/generate-schema"
-            && req.path() != core_paths::OPENAPI_SPEC
-            && self.config.disable_default_reference
-        {
+        if !is_schema && self.config.disable_default_reference {
             return Ok(Some(
                 AuthResponse::new(404).with_header("content-type", "application/json"),
             ));
@@ -115,10 +110,10 @@ impl<S: AuthSchema> AuthPlugin<S> for OpenApiPlugin {
         let spec = OpenApiBuilder::registered_with_native_extensions(
             &ctx.config,
             &registry,
-            req.path() != core_paths::OPENAPI_SPEC && self.config.include_native_extensions,
+            path != core_paths::OPENAPI_SPEC && self.config.include_native_extensions,
         )
         .build();
-        if req.path() == "/open-api/generate-schema" || req.path() == core_paths::OPENAPI_SPEC {
+        if is_schema {
             return Ok(Some(AuthResponse::json(200, &spec)?));
         }
         let schema = serde_json::to_string(&spec)?;

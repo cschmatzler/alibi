@@ -169,23 +169,17 @@ fn response(description: &str, schema: &Value) -> Value {
     json!({"description":description,"content":{"application/json":{"schema":schema}}})
 }
 fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
-    if let Some(metadata) =
-        sign_in_annotations::endpoint(path).or_else(|| oauth_annotations::endpoint(path))
-    {
-        return Some(metadata);
-    }
-    if let Some(metadata) = user_annotations::endpoint(path) {
-        return Some(metadata);
-    }
-    if let Some(metadata) = account_annotations::endpoint(path)
+    sign_in_annotations::endpoint(path)
+        .or_else(|| oauth_annotations::endpoint(path))
+        .or_else(|| user_annotations::endpoint(path))
+        .or_else(|| account_annotations::endpoint(path))
         .or_else(|| password_annotations::endpoint(path))
         .or_else(|| email_annotations::endpoint(path))
-    {
-        return Some(metadata);
-    }
-    if let Some(metadata) = session_annotations::endpoint(path) {
-        return Some(metadata);
-    }
+        .or_else(|| session_annotations::endpoint(path))
+        .or_else(|| builtin_endpoint(path))
+}
+
+fn builtin_endpoint(path: &str) -> Option<OpenApiEndpoint> {
     let mut metadata = OpenApiEndpoint::default();
     match path {
         "/callback/{provider}" | "/callback/:id" => {

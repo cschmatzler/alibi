@@ -24,19 +24,10 @@ const DEFAULT_PATHS: &[&str] = &[
 
 /// HTTP range service. Its endpoint is trusted application configuration;
 /// requests contain only five uppercase SHA-1 characters, never the password.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PwnedPasswordClient {
     client: reqwest::Client,
     range_api: Option<url::Url>,
-}
-
-impl Default for PwnedPasswordClient {
-    fn default() -> Self {
-        Self {
-            client: reqwest::Client::new(),
-            range_api: None,
-        }
-    }
 }
 
 impl PwnedPasswordClient {
