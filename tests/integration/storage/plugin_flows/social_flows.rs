@@ -21,10 +21,10 @@ backend_tests!(
 );
 
 #[derive(Clone)]
-struct Profile {
-    user: Arc<Mutex<OAuthUserInfo>>,
-    fail: Arc<Mutex<bool>>,
-    valid_id_token: Arc<Mutex<bool>>,
+pub(super) struct Profile {
+    pub(super) user: Arc<Mutex<OAuthUserInfo>>,
+    pub(super) fail: Arc<Mutex<bool>>,
+    pub(super) valid_id_token: Arc<Mutex<bool>>,
 }
 
 impl Profile {
@@ -36,7 +36,7 @@ impl Profile {
         }
     }
 
-    fn set(&self, sub: &str, email: &str, verified: bool) {
+    pub(super) fn set(&self, sub: &str, email: &str, verified: bool) {
         *self.user.lock().unwrap() = user(sub, email, verified);
     }
 }
@@ -91,13 +91,13 @@ impl SendVerificationEmail for Outbox {
     }
 }
 
-struct Social {
-    provider: Provider,
-    profile: Profile,
+pub(super) struct Social {
+    pub(super) provider: Provider,
+    pub(super) profile: Profile,
 }
 
 impl Social {
-    async fn start() -> Self {
+    pub(super) async fn start() -> Self {
         Self {
             provider: Provider::start(
                 "application/json",
@@ -125,7 +125,7 @@ impl Social {
         provider
     }
 
-    async fn auth<B: Backend>(
+    pub(super) async fn auth<B: Backend>(
         &self,
         connection: &B::Connection,
         account: AccountConfig,
@@ -135,7 +135,7 @@ impl Social {
             .await
     }
 
-    async fn auth_with<B: Backend>(
+    pub(super) async fn auth_with<B: Backend>(
         &self,
         connection: &B::Connection,
         account: AccountConfig,
@@ -143,8 +143,20 @@ impl Social {
         extend: impl FnOnce(AuthBuilder<B::Schema>) -> AuthBuilder<B::Schema>,
     ) -> TestResult<BetterAuth<B::Schema>> {
         let config = AuthConfig::new(SECRET).base_url(ORIGIN).account(account);
+        self.auth_configured::<B>(connection, config, configure, extend, |store| store)
+            .await
+    }
+
+    pub(super) async fn auth_configured<B: Backend>(
+        &self,
+        connection: &B::Connection,
+        config: AuthConfig,
+        configure: impl FnOnce(&mut OAuthProvider),
+        extend: impl FnOnce(AuthBuilder<B::Schema>) -> AuthBuilder<B::Schema>,
+        store: impl FnOnce(B::Store) -> B::Store,
+    ) -> TestResult<BetterAuth<B::Schema>> {
         let builder = AuthBuilder::new(config.clone())
-            .store(B::store(Arc::new(config), connection))
+            .store(store(B::store(Arc::new(config), connection)))
             .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new())
             .plugin(SessionManagementPlugin::new())
@@ -156,7 +168,7 @@ impl Social {
 
 /// Start an authorization and return the provider `state` with the cookies to
 /// replay on the callback.
-async fn authorize<S: AuthSchema>(
+pub(super) async fn authorize<S: AuthSchema>(
     auth: &BetterAuth<S>,
     path: &str,
     input: Value,
@@ -178,7 +190,7 @@ async fn authorize<S: AuthSchema>(
     (state, cookies)
 }
 
-async fn callback<S: AuthSchema>(
+pub(super) async fn callback<S: AuthSchema>(
     auth: &BetterAuth<S>,
     query: &[(&str, &str)],
     cookie: &str,
@@ -188,7 +200,7 @@ async fn callback<S: AuthSchema>(
     Box::pin(auth.handle_request(request)).await.unwrap()
 }
 
-async fn accounts<S: AuthSchema>(auth: &BetterAuth<S>, cookie: &str) -> Value {
+pub(super) async fn accounts<S: AuthSchema>(auth: &BetterAuth<S>, cookie: &str) -> Value {
     let accounts = body(&call(auth, request("/list-accounts", None, cookie), 200).await);
     let mut providers = accounts
         .as_array()
@@ -200,7 +212,7 @@ async fn accounts<S: AuthSchema>(auth: &BetterAuth<S>, cookie: &str) -> Value {
     Value::Array(providers)
 }
 
-fn linking(configure: impl FnOnce(&mut AccountLinkingConfig)) -> AccountConfig {
+pub(super) fn linking(configure: impl FnOnce(&mut AccountLinkingConfig)) -> AccountConfig {
     let mut account = AccountConfig::default();
     configure(&mut account.account_linking);
     account

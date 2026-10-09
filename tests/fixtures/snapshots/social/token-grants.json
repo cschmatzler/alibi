@@ -1,0 +1,583 @@
+[
+  {
+    "default": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "/home"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "default: token request": {
+      "form": [
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "client_secret",
+          "google-secret"
+        ],
+        [
+          "code",
+          "grant"
+        ],
+        [
+          "grant_type",
+          "authorization_code"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ]
+      ],
+      "basic": false
+    }
+  },
+  {
+    "default: account": {
+      "scope": "",
+      "expiring": 0
+    }
+  },
+  {
+    "assertion needs its type": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=invalid_code"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "assertion needs its type: token request": null
+  },
+  {
+    "assertion needs its type: account": {
+      "scope": null,
+      "expiring": 0
+    }
+  },
+  {
+    "assertion cannot follow endpoint authentication": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=invalid_code"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "assertion cannot follow endpoint authentication: token request": null
+  },
+  {
+    "assertion cannot follow endpoint authentication: account": {
+      "scope": null,
+      "expiring": 0
+    }
+  },
+  {
+    "assertion cannot accompany a secret": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=invalid_code"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "assertion cannot accompany a secret: token request": null
+  },
+  {
+    "assertion cannot accompany a secret: account": {
+      "scope": null,
+      "expiring": 0
+    }
+  },
+  {
+    "assertion without secret": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "/home"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "assertion without secret: token request": {
+      "form": [
+        [
+          "client_assertion",
+          "signed-assertion"
+        ],
+        [
+          "client_assertion_type",
+          "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "code",
+          "grant"
+        ],
+        [
+          "grant_type",
+          "authorization_code"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ]
+      ],
+      "basic": false
+    }
+  },
+  {
+    "assertion without secret: account": {
+      "scope": "",
+      "expiring": 0
+    }
+  },
+  {
+    "public client cannot hold a secret": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=invalid_code"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "public client cannot hold a secret: token request": null
+  },
+  {
+    "public client cannot hold a secret: account": {
+      "scope": null,
+      "expiring": 0
+    }
+  },
+  {
+    "public client": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "/home"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "public client: token request": {
+      "form": [
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "code",
+          "grant"
+        ],
+        [
+          "grant_type",
+          "authorization_code"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ]
+      ],
+      "basic": false
+    }
+  },
+  {
+    "public client: account": {
+      "scope": "",
+      "expiring": 0
+    }
+  },
+  {
+    "private key needs no secret": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=invalid_code"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "private key needs no secret: token request": null
+  },
+  {
+    "private key needs no secret: account": {
+      "scope": null,
+      "expiring": 0
+    }
+  },
+  {
+    "post needs a secret": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=invalid_code"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "post needs a secret: token request": null
+  },
+  {
+    "post needs a secret: account": {
+      "scope": null,
+      "expiring": 0
+    }
+  },
+  {
+    "basic cannot repeat the secret": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=invalid_code"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "basic cannot repeat the secret: token request": null
+  },
+  {
+    "basic cannot repeat the secret: account": {
+      "scope": null,
+      "expiring": 0
+    }
+  },
+  {
+    "basic": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "/home"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "basic: token request": {
+      "form": [
+        [
+          "code",
+          "grant"
+        ],
+        [
+          "grant_type",
+          "authorization_code"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ]
+      ],
+      "basic": true
+    }
+  },
+  {
+    "basic: account": {
+      "scope": "",
+      "expiring": 0
+    }
+  },
+  {
+    "client key": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "/home"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "client key: token request": {
+      "form": [
+        [
+          "client_key",
+          "google-client"
+        ],
+        [
+          "client_secret",
+          "google-secret"
+        ],
+        [
+          "code",
+          "grant"
+        ],
+        [
+          "grant_type",
+          "authorization_code"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ]
+      ],
+      "basic": false
+    }
+  },
+  {
+    "client key: account": {
+      "scope": "",
+      "expiring": 0
+    }
+  },
+  {
+    "default expiry": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "/home"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "default expiry: token request": {
+      "form": [
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "client_secret",
+          "google-secret"
+        ],
+        [
+          "code",
+          "grant"
+        ],
+        [
+          "grant_type",
+          "authorization_code"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ]
+      ],
+      "basic": false
+    }
+  },
+  {
+    "default expiry: account": {
+      "scope": "",
+      "expiring": 1
+    }
+  },
+  {
+    "unrepresentable default expiry": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=invalid_code"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "unrepresentable default expiry: token request": {
+      "form": [
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "client_secret",
+          "google-secret"
+        ],
+        [
+          "code",
+          "grant"
+        ],
+        [
+          "grant_type",
+          "authorization_code"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ]
+      ],
+      "basic": false
+    }
+  },
+  {
+    "unrepresentable default expiry: account": {
+      "scope": null,
+      "expiring": 0
+    }
+  },
+  {
+    "array scope": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "/home"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "array scope: token request": {
+      "form": [
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "client_secret",
+          "google-secret"
+        ],
+        [
+          "code",
+          "grant"
+        ],
+        [
+          "grant_type",
+          "authorization_code"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ]
+      ],
+      "basic": false
+    }
+  },
+  {
+    "array scope: account": {
+      "scope": "first,second",
+      "expiring": 0
+    }
+  }
+]

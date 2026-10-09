@@ -1,0 +1,626 @@
+[
+  {
+    "default": {
+      "base": "https://accounts.google.com/o/oauth2/v2/auth",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "include_granted_scopes",
+          "true"
+        ]
+      ],
+      "fragment": null
+    }
+  },
+  {
+    "response mode and prompt": {
+      "base": "https://accounts.google.com/o/oauth2/v2/auth",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "response_mode",
+          "form_post"
+        ],
+        [
+          "prompt",
+          "consent"
+        ],
+        [
+          "include_granted_scopes",
+          "true"
+        ]
+      ],
+      "fragment": null
+    }
+  },
+  {
+    "discord permissions without bot scope": {
+      "base": "https://accounts.google.com/o/oauth2/v2/auth",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "include_granted_scopes",
+          "true"
+        ]
+      ],
+      "fragment": null
+    }
+  },
+  {
+    "discord permissions integer": {
+      "base": "https://accounts.google.com/o/oauth2/v2/auth",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid bot"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "permissions",
+          "8"
+        ],
+        [
+          "include_granted_scopes",
+          "true"
+        ]
+      ],
+      "fragment": null
+    }
+  },
+  {
+    "discord permissions fraction": {
+      "base": "https://accounts.google.com/o/oauth2/v2/auth",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid bot"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "permissions",
+          "8.5"
+        ],
+        [
+          "include_granted_scopes",
+          "true"
+        ]
+      ],
+      "fragment": null
+    }
+  },
+  {
+    "discord permissions nan": {
+      "base": "https://accounts.google.com/o/oauth2/v2/auth",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid bot"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "permissions",
+          "NaN"
+        ],
+        [
+          "include_granted_scopes",
+          "true"
+        ]
+      ],
+      "fragment": null
+    }
+  },
+  {
+    "discord permissions infinity": {
+      "base": "https://accounts.google.com/o/oauth2/v2/auth",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid bot"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "permissions",
+          "Infinity"
+        ],
+        [
+          "include_granted_scopes",
+          "true"
+        ]
+      ],
+      "fragment": null
+    }
+  },
+  {
+    "discord permissions negative infinity": {
+      "base": "https://accounts.google.com/o/oauth2/v2/auth",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid bot"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "permissions",
+          "-Infinity"
+        ],
+        [
+          "include_granted_scopes",
+          "true"
+        ]
+      ],
+      "fragment": null
+    }
+  },
+  {
+    "login hint": {
+      "base": "https://accounts.google.com/o/oauth2/v2/auth",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "login_hint",
+          "hint@example.test"
+        ],
+        [
+          "include_granted_scopes",
+          "true"
+        ]
+      ],
+      "fragment": null
+    }
+  },
+  {
+    "login hint disabled": {
+      "base": "https://accounts.google.com/o/oauth2/v2/auth",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "include_granted_scopes",
+          "true"
+        ]
+      ],
+      "fragment": null
+    }
+  },
+  {
+    "empty login hint": {
+      "base": "https://accounts.google.com/o/oauth2/v2/auth",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "include_granted_scopes",
+          "true"
+        ]
+      ],
+      "fragment": null
+    }
+  },
+  {
+    "reserved provider parameters are ignored": {
+      "base": "https://accounts.google.com/o/oauth2/v2/auth",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "custom",
+          "kept"
+        ]
+      ],
+      "fragment": null
+    }
+  },
+  {
+    "additional parameters": {
+      "base": "https://accounts.google.com/o/oauth2/v2/auth",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "include_granted_scopes",
+          "false"
+        ],
+        [
+          "audience",
+          "api"
+        ]
+      ],
+      "fragment": null
+    }
+  },
+  {
+    "client identifier parameter is not overridable": {
+      "base": "https://accounts.google.com/o/oauth2/v2/auth",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "appid",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "include_granted_scopes",
+          "true"
+        ],
+        [
+          "audience",
+          "api"
+        ]
+      ],
+      "fragment": null
+    }
+  },
+  {
+    "existing endpoint parameters are replaced in place": {
+      "base": "https://accounts.example/authorize",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "keep",
+          "1"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "include_granted_scopes",
+          "true"
+        ]
+      ],
+      "fragment": null
+    }
+  },
+  {
+    "callback path without a slash": {
+      "base": "https://accounts.google.com/o/oauth2/v2/auth",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/custom/callback"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "include_granted_scopes",
+          "true"
+        ]
+      ],
+      "fragment": null
+    }
+  },
+  {
+    "callback path with a slash": {
+      "base": "https://accounts.google.com/o/oauth2/v2/auth",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/custom/callback"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "include_granted_scopes",
+          "true"
+        ]
+      ],
+      "fragment": null
+    }
+  },
+  {
+    "fixed parameters and fragment": {
+      "base": "https://accounts.google.com/o/oauth2/v2/auth",
+      "query": [
+        [
+          "response_type",
+          "code"
+        ],
+        [
+          "client_id",
+          "google-client"
+        ],
+        [
+          "scope",
+          "email profile openid"
+        ],
+        [
+          "redirect_uri",
+          "http://localhost:43219/api/auth/callback/google"
+        ],
+        [
+          "code_challenge_method",
+          "S256"
+        ],
+        [
+          "include_granted_scopes",
+          "true"
+        ],
+        [
+          "fixed",
+          "yes"
+        ]
+      ],
+      "fragment": "provider_redirect"
+    }
+  }
+]

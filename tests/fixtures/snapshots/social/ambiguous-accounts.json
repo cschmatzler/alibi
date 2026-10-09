@@ -1,0 +1,47 @@
+[
+  {
+    "callback sign-in": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/api/auth/error?error=internal_server_error"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "id token sign-in": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/api/auth/error?error=internal_server_error"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "id token link": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "callback link": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  }
+]

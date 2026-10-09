@@ -1,0 +1,86 @@
+[
+  {
+    "undecryptable state not-hex": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/configured-error?error=state_mismatch"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "undecryptable state 00ff": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/configured-error?error=state_mismatch"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "undecryptable state 0000000000000000000000000000000000000000000000000000": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/configured-error?error=state_mismatch"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "configured error page": {
+      "status": 302,
+      "location": "http://localhost:43219/configured-error?error=invalid_code"
+    }
+  },
+  {
+    "provider error": {
+      "status": 302,
+      "location": "http://localhost:43219/configured-error?error=access_denied"
+    }
+  },
+  {
+    "missing code": {
+      "status": 302,
+      "location": "http://localhost:43219/configured-error?error=no_code"
+    }
+  },
+  {
+    "other provider": {
+      "status": 302,
+      "location": "http://localhost:43219/configured-error?error=oauth_provider_not_found"
+    }
+  },
+  {
+    "default error page": {
+      "status": 302,
+      "location": "http://localhost:43219/api/auth/error?error=invalid_code"
+    }
+  },
+  {
+    "unusable account key": {
+      "status": 302,
+      "location": "http://localhost:43219/failed?error=unable_to_get_user_info"
+    }
+  },
+  {
+    "profile without email": {
+      "status": 302,
+      "location": "http://localhost:43219/failed?error=email_not_found"
+    }
+  }
+]

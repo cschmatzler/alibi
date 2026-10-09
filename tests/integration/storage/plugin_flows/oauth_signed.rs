@@ -37,7 +37,7 @@ pub(super) fn wrong_public_key() -> TestResult<Value> {
     )
 }
 
-fn protected_token(claims: &Value, header: Value) -> TestResult<String> {
+pub(super) fn protected_token(claims: &Value, header: Value) -> TestResult<String> {
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
     let message = format!(
         "{}.{}",

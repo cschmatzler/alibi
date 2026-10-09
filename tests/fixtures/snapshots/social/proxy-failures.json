@@ -1,0 +1,55 @@
+[
+  {
+    "denied identity": {
+      "status": 302,
+      "location": "http://localhost:43219/failed?error=PROXY_DENIED&error_description=Proxy+identity+denied"
+    }
+  },
+  {
+    "sign up disabled": {
+      "status": 302,
+      "location": "http://localhost:43219/failed?error=signup_disabled"
+    }
+  },
+  {
+    "implicit sign up disabled": {
+      "status": 302,
+      "location": "http://localhost:43219/failed?error=signup_disabled"
+    }
+  },
+  {
+    "session cancelled": {
+      "status": 302,
+      "location": "http://localhost:43219/failed?error=unable_to_create_session"
+    }
+  },
+  {
+    "session coded refusal": {
+      "status": 302,
+      "location": "http://localhost:43219/failed?error=SESSION_REFUSED&error_description=Session+refused+by+policy"
+    }
+  },
+  {
+    "session forbidden": {
+      "status": 403,
+      "headers": {
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "session refused"
+      }
+    }
+  },
+  {
+    "session store failure": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  }
+]

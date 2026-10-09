@@ -1,0 +1,72 @@
+[
+  {
+    "profile": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "/home"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "profile: requests": [
+      "POST /token ",
+      "GET /userinfo Bearer plain-access"
+    ]
+  },
+  {
+    "provider failure": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=unable_to_get_user_info"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "provider failure: requests": [
+      "POST /token ",
+      "GET /userinfo Bearer plain-access"
+    ]
+  },
+  {
+    "unmappable profile": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=unable_to_get_user_info"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "unmappable profile: requests": [
+      "POST /token ",
+      "GET /userinfo Bearer plain-access"
+    ]
+  }
+]
