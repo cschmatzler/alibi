@@ -331,11 +331,11 @@ impl OAuthUserInfoHandler for WeChatProfile {
         let mut output = serde_json::Map::new();
         for (key, field) in [("name", "nickname"), ("image", "headimgurl")] {
             if let Some(value) = profile.get(field) {
-                drop(output.insert(key.into(), value.clone()));
+                _ = output.insert(key.into(), value.clone());
             }
         }
-        drop(output.insert("email".into(), email.clone()));
-        drop(output.insert("emailVerified".into(), Value::Bool(false)));
+        _ = output.insert("email".into(), email.clone());
+        _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(user) = &mapped {
             output.extend(user.public_profile(true));
         }

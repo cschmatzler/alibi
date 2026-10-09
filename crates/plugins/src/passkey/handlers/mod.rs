@@ -110,7 +110,7 @@ fn registration_value(passkey: &alibi_core::Passkey) -> AuthResult<Value> {
     if passkey.name.is_none()
         && let Some(object) = value.as_object_mut()
     {
-        drop(object.insert("name".into(), Value::Null));
+        _ = object.insert("name".into(), Value::Null);
     }
     Ok(value)
 }

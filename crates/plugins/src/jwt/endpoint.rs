@@ -105,9 +105,9 @@ impl JwtPlugin {
         issuer: Option<String>,
     ) -> ServerEndpoint<JwtVerifyOutput> {
         let mut body = indexmap::IndexMap::new();
-        drop(body.insert("token".into(), JsValue::String(token.into())));
+        _ = body.insert("token".into(), JsValue::String(token.into()));
         if let Some(issuer) = issuer {
-            drop(body.insert("issuer".into(), JsValue::String(issuer)));
+            _ = body.insert("issuer".into(), JsValue::String(issuer));
         }
         ServerEndpoint::new("jwt", "verifyJWT").with_body_value(JsValue::Object(body))
     }

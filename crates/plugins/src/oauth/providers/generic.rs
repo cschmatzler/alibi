@@ -208,11 +208,9 @@ impl GenericOAuthConfig {
             return Err(GenericOAuthError::InvalidTokenAuthentication);
         }
         // Generic OAuth merges request scopes before its configured scopes.
-        drop(
-            policy
-                .configured_scopes
-                .splice(0..0, std::mem::take(&mut self.provider.scopes)),
-        );
+        _ = policy
+            .configured_scopes
+            .splice(0..0, std::mem::take(&mut self.provider.scopes));
         policy.end_session = if self.disable_provider_logout {
             None
         } else {
@@ -342,19 +340,17 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                 .await
                 .map_err(|_| "Generic OAuth user info unavailable")?;
             if let Some(object) = profile.as_object_mut() {
-                drop(
-                    object.insert(
-                        "emailVerified".into(),
-                        object
-                            .get("email_verified")
-                            .cloned()
-                            .unwrap_or(Value::Bool(false)),
-                    ),
+                _ = object.insert(
+                    "emailVerified".into(),
+                    object
+                        .get("email_verified")
+                        .cloned()
+                        .unwrap_or(Value::Bool(false)),
                 );
                 if let Some(image) = object.get("picture").cloned() {
-                    drop(object.insert("image".into(), image));
+                    _ = object.insert("image".into(), image);
                 } else {
-                    drop(object.remove("image"));
+                    _ = object.remove("image");
                 }
             }
             profile

@@ -193,7 +193,7 @@ impl AccountCookiePayload {
                 .and_then(|original| original.get(&key))
                 != Some(&value)
             {
-                drop(output.insert(key, value));
+                _ = output.insert(key, value);
             }
         }
         Ok(Value::Object(output))

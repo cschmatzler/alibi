@@ -153,7 +153,7 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
                 .is_none_or(str::is_empty)
             && !resolved_email.is_empty()
         {
-            drop(profile_object.insert("email".to_owned(), Value::String(resolved_email.clone())));
+            _ = profile_object.insert("email".to_owned(), Value::String(resolved_email.clone()));
         }
 
         let email_verified = emails

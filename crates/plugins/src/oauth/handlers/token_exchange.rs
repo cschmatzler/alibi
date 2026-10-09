@@ -130,7 +130,7 @@ pub(in crate::oauth::handlers) async fn provider_token_request(
             let value = reqwest::header::HeaderValue::from_str(value).map_err(|error| {
                 AuthError::config(format!("Invalid code grant header: {error}"))
             })?;
-            drop(headers.insert(name, value));
+            _ = headers.insert(name, value);
         }
         request = request.headers(headers);
     }

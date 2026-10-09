@@ -154,7 +154,7 @@ impl JwtPlugin {
                     .into(),
                     _ => continue,
                 };
-                drop(payload.insert(name.to_owned(), value));
+                _ = payload.insert(name.to_owned(), value);
             }
         }
         let payload = RemoteJwtPayload {
@@ -185,25 +185,23 @@ impl JwtPlugin {
         let config = override_claims.unwrap_or(&self.config.claims);
         if payload.get("exp").is_none_or(Value::is_null) {
             let expiration = config.expiration.timestamp(payload.get("iat"));
-            drop(payload.insert("exp".to_owned(), expiration));
+            _ = payload.insert("exp".to_owned(), expiration);
         }
         if payload.get("iss").is_none_or(Value::is_null) {
-            drop(payload.insert(
+            _ = payload.insert(
                 "iss".to_owned(),
                 json!(config.issuer.as_deref().unwrap_or(&ctx.config.base_url)),
-            ));
+            );
         }
         if payload.get("aud").is_none_or(Value::is_null) {
-            drop(
-                payload.insert(
-                    "aud".to_owned(),
-                    serde_json::to_value(
-                        config
-                            .audience
-                            .clone()
-                            .unwrap_or_else(|| JwtAudience::One(ctx.config.base_url.clone())),
-                    )?,
-                ),
+            _ = payload.insert(
+                "aud".to_owned(),
+                serde_json::to_value(
+                    config
+                        .audience
+                        .clone()
+                        .unwrap_or_else(|| JwtAudience::One(ctx.config.base_url.clone())),
+                )?,
             );
         }
         Ok(payload)
@@ -215,8 +213,8 @@ impl JwtPlugin {
         key: &ResolvedJwtSigningKey,
     ) -> AuthResult<String> {
         let mut header = options.header.clone().unwrap_or_default();
-        drop(header.insert("alg".to_owned(), json!(key.algorithm.as_str())));
-        drop(header.insert("kid".to_owned(), json!(key.key_id)));
+        _ = header.insert("alg".to_owned(), json!(key.algorithm.as_str()));
+        _ = header.insert("kid".to_owned(), json!(key.key_id));
         validate_critical_header(&header, true)?;
         normalize_signing_claims(&mut payload)?;
         let input = format!(

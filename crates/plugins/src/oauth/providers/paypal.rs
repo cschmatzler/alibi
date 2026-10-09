@@ -214,7 +214,7 @@ impl OAuthUserInfoHandler for PayPalUserInfo {
             ("email_verified", "emailVerified"),
         ] {
             if let Some(value) = profile.get(source) {
-                drop(output.insert(target.into(), value.clone()));
+                _ = output.insert(target.into(), value.clone());
             }
         }
         if let Some(user) = &mapped {

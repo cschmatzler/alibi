@@ -83,8 +83,8 @@ pub(super) fn client_data(
     }
     // This affects only parsed policy. The caller keeps the original byte
     // buffer, and every attestation/assertion signature covers its original hash.
-    drop(object.remove("crossOrigin"));
-    drop(object.remove("tokenBinding"));
+    _ = object.remove("crossOrigin");
+    _ = object.remove("tokenBinding");
     serde_json::from_value(parsed).map_err(WebauthnError::ParseJSONFailure)
 }
 
@@ -166,7 +166,7 @@ impl SourcePolicy {
             if usable.is_empty() {
                 return Err(WebauthnError::AttestationNotVerifiable);
             }
-            drop(self.roots.insert(object.fmt, usable));
+            _ = self.roots.insert(object.fmt, usable);
         }
         Ok(())
     }
@@ -578,13 +578,13 @@ where
         .and_then(|(_, crl)| crl.next_update().map(|time| time.timestamp()));
     let is_revoked = serials.contains(&serial);
     if let Some(key) = key {
-        drop(cache.lock().map_err(|_| malformed())?.insert(
+        _ = cache.lock().map_err(|_| malformed())?.insert(
             key,
             RevocationList {
                 serials,
                 next_update,
             },
-        ));
+        );
     }
     Ok(is_revoked)
 }

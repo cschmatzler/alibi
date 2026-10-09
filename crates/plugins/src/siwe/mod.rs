@@ -60,15 +60,14 @@ impl SiwePlugin {
                 }),
             )?);
         }
-        drop(
-            ctx.verifications()
-                .create(CreateVerification {
-                    identifier: format!("siwe:{nonce}"),
-                    value: nonce.clone(),
-                    expires_at: Utc::now() + Duration::seconds(900),
-                })
-                .await?,
-        );
+        _ = ctx
+            .verifications()
+            .create(CreateVerification {
+                identifier: format!("siwe:{nonce}"),
+                value: nonce.clone(),
+                expires_at: Utc::now() + Duration::seconds(900),
+            })
+            .await?;
         Ok(AuthResponse::json(200, &json!({"nonce":nonce}))?)
     }
 
@@ -327,7 +326,7 @@ impl SiwePlugin {
             Err(error) => Err(storage_error(error)),
         };
         if let Some(identifier) = claim {
-            drop(ctx.verifications().consume(&identifier).await);
+            _ = ctx.verifications().consume(&identifier).await;
         }
         created
     }
@@ -340,36 +339,34 @@ impl SiwePlugin {
         chain_id: f64,
         primary: bool,
     ) -> SiweCallbackResult<()> {
-        drop(
-            ctx.database
-                .create_wallet_address(CreateWalletAddress {
-                    user_id: user_id.to_owned(),
-                    address: address.to_owned(),
-                    chain_id,
-                    is_primary: primary,
-                })
-                .await
-                .map_err(storage_error)?,
-        );
+        _ = ctx
+            .database
+            .create_wallet_address(CreateWalletAddress {
+                user_id: user_id.to_owned(),
+                address: address.to_owned(),
+                chain_id,
+                is_primary: primary,
+            })
+            .await
+            .map_err(storage_error)?;
         let mut number = ryu_js::Buffer::new();
-        drop(
-            ctx.database
-                .create_account_record(CreateAccount {
-                    additional_fields: FieldValues::default(),
-                    user_id: user_id.to_owned(),
-                    account_id: format!("{address}:{}", number.format(chain_id)),
-                    provider_id: "siwe".to_owned(),
-                    access_token: None,
-                    refresh_token: None,
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: None,
-                    password: None,
-                })
-                .await
-                .map_err(storage_error)?,
-        );
+        _ = ctx
+            .database
+            .create_account_record(CreateAccount {
+                additional_fields: FieldValues::default(),
+                user_id: user_id.to_owned(),
+                account_id: format!("{address}:{}", number.format(chain_id)),
+                provider_id: "siwe".to_owned(),
+                access_token: None,
+                refresh_token: None,
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: None,
+                password: None,
+            })
+            .await
+            .map_err(storage_error)?;
         Ok(())
     }
 
@@ -537,11 +534,9 @@ mod tests {
     fn request(path: &str, body: &serde_json::Value) -> AuthRequest {
         let mut request = AuthRequest::new(HttpMethod::Post, path);
         request.body = Some(serde_json::to_vec(&body).unwrap());
-        drop(
-            request
-                .headers
-                .insert("content-type".into(), "application/json".into()),
-        );
+        _ = request
+            .headers
+            .insert("content-type".into(), "application/json".into());
         request
     }
     fn body(response: &AuthResponse) -> serde_json::Value {
@@ -669,7 +664,7 @@ mod tests {
             .next()
             .unwrap();
         let mut read = AuthRequest::new(HttpMethod::Get, "/get-session");
-        drop(read.headers.insert("cookie".into(), cookie.to_owned()));
+        _ = read.headers.insert("cookie".into(), cookie.to_owned());
         let (_, session) = ctx.require_session(&read).await.unwrap();
         assert_eq!(session.user_id, user_id);
         assert_eq!(session.token, result["token"].as_str().unwrap());
@@ -795,13 +790,13 @@ mod tests {
                 &(json!({"message":signed,"signature":sign(&signed,1)})),
             );
             if let Some(preference) = preference {
-                drop(req.headers.insert(
+                _ = req.headers.insert(
                     "cookie".into(),
                     format!(
                         "{preference_name}={}",
                         sign_cookie_value(preference, &ctx.config.secret)
                     ),
-                ));
+                );
             }
             let response = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
             assert_eq!(response.status, 200);

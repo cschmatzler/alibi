@@ -147,18 +147,16 @@ impl OAuthUserInfoHandler for LinkedInUserInfo {
         let mut output = serde_json::Map::new();
         for (source, target) in [("name", "name"), ("email", "email"), ("picture", "image")] {
             if let Some(value) = profile.get(source) {
-                drop(output.insert(target.into(), value.clone()));
+                _ = output.insert(target.into(), value.clone());
             }
         }
-        drop(
-            output.insert(
-                "emailVerified".into(),
-                profile
-                    .get("email_verified")
-                    .filter(|value| !value.is_null())
-                    .cloned()
-                    .unwrap_or(Value::Bool(false)),
-            ),
+        _ = output.insert(
+            "emailVerified".into(),
+            profile
+                .get("email_verified")
+                .filter(|value| !value.is_null())
+                .cloned()
+                .unwrap_or(Value::Bool(false)),
         );
         if let Some(user) = &mapped {
             output.extend(user.public_profile(true));

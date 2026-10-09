@@ -153,7 +153,7 @@ pub(super) fn verify(
         return Err(WebauthnError::AttestationStatementSigInvalid);
     }
     check_certificate(leaf)?;
-    drop(validate_extension::<FidoGenCeAaguid>(leaf, &acd.aaguid)?);
+    _ = validate_extension::<FidoGenCeAaguid>(leaf, &acd.aaguid)?;
     Ok((
         ParsedAttestationData::AttCa(chain),
         AttestationMetadata::Tpm {

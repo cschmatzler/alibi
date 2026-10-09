@@ -180,33 +180,29 @@ impl OAuthUserInfoHandler for PolarUserInfo {
         }
         // Keep the published raw JSON independently from typed persistence.
         let mut output = serde_json::Map::new();
-        drop(
-            output.insert(
-                "name".into(),
-                profile
-                    .get("public_name")
-                    .filter(|v| truthy(v))
-                    .or_else(|| profile.get("username").filter(|v| truthy(v)))
-                    .cloned()
-                    .unwrap_or_else(|| Value::String(String::new())),
-            ),
+        _ = output.insert(
+            "name".into(),
+            profile
+                .get("public_name")
+                .filter(|v| truthy(v))
+                .or_else(|| profile.get("username").filter(|v| truthy(v)))
+                .cloned()
+                .unwrap_or_else(|| Value::String(String::new())),
         );
         let email = profile.get("email");
         if let Some(email) = email {
-            drop(output.insert("email".into(), email.clone()));
+            _ = output.insert("email".into(), email.clone());
         }
         if let Some(image) = profile.get("avatar_url") {
-            drop(output.insert("image".into(), image.clone()));
+            _ = output.insert("image".into(), image.clone());
         }
-        drop(
-            output.insert(
-                "emailVerified".into(),
-                profile
-                    .get("email_verified")
-                    .filter(|value| !value.is_null())
-                    .cloned()
-                    .unwrap_or(Value::Bool(false)),
-            ),
+        _ = output.insert(
+            "emailVerified".into(),
+            profile
+                .get("email_verified")
+                .filter(|value| !value.is_null())
+                .cloned()
+                .unwrap_or(Value::Bool(false)),
         );
         if let Some(user) = &mapped {
             output.extend(user.public_profile(true));

@@ -17,7 +17,7 @@ pub(in crate::passkey) async fn list_user_passkeys_core(
             if passkey.transports.is_none()
                 && let Some(object) = value.as_object_mut()
             {
-                drop(object.insert("transports".into(), Value::Null));
+                _ = object.insert("transports".into(), Value::Null);
             }
             Ok(value)
         })

@@ -209,22 +209,20 @@ impl OAuthUserInfoHandler for RedditUserInfo {
         };
         let mut output = serde_json::Map::new();
         if let Some(name) = profile.get("name") {
-            drop(output.insert("name".into(), name.clone()));
+            _ = output.insert("name".into(), name.clone());
         }
         if let Some(image) = image {
-            drop(output.insert("image".into(), image));
+            _ = output.insert("image".into(), image);
         }
         output.extend(mapped.clone());
-        drop(output.insert("email".into(), email));
-        drop(
-            output.insert(
-                "emailVerified".into(),
-                mapped
-                    .get("emailVerified")
-                    .filter(|value| !value.is_null())
-                    .cloned()
-                    .unwrap_or(Value::Bool(false)),
-            ),
+        _ = output.insert("email".into(), email);
+        _ = output.insert(
+            "emailVerified".into(),
+            mapped
+                .get("emailVerified")
+                .filter(|value| !value.is_null())
+                .cloned()
+                .unwrap_or(Value::Bool(false)),
         );
         let user = OAuthUserInfo {
             additional_fields: output

@@ -91,7 +91,7 @@ impl TryFrom<&Cbor> for COSEKey {
                 e: e.clone(),
             }),
         };
-        drop(key.get_openssl_pkey()?);
+        _ = key.get_openssl_pkey()?;
         Ok(key)
     }
 }

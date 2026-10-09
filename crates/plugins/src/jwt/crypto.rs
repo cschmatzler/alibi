@@ -115,7 +115,7 @@ fn private_jwk<const N: usize>(public: &Value, fields: [(&str, Value); N]) -> Au
         .cloned()
         .ok_or_else(|| AuthError::internal("Public JWK must be an object"))?;
     for (name, value) in fields {
-        drop(private.insert(name.to_owned(), value));
+        _ = private.insert(name.to_owned(), value);
     }
     Ok(Value::Object(private))
 }

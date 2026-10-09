@@ -33,7 +33,7 @@ fn verifier(fixture: &Value, trusted: bool) -> Verifier {
         "android-key",
         "android-safetynet",
     ] {
-        drop(policy.roots.insert(format.into(), vec![root.clone()]));
+        _ = policy.roots.insert(format.into(), vec![root.clone()]);
     }
     let origin = Url::parse(fixture["origin"].as_str().unwrap()).unwrap();
     let rp = fixture["rpId"].as_str().unwrap();

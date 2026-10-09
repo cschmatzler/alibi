@@ -134,7 +134,7 @@ pub(in crate::jwt) fn normalize_signing_claims(payload: &mut Map<String, Value>)
                     return Err(AuthError::internal("Invalid time period format"));
                 }
             };
-            drop(payload.insert(field.to_owned(), value));
+            _ = payload.insert(field.to_owned(), value);
         }
     }
     for field in ["iss", "sub", "jti"] {

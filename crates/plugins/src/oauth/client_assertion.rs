@@ -214,7 +214,7 @@ impl OAuthClientAssertionGetter for OAuthPrivateKeyJwtOptions {
         if let Some(kid) = kid.filter(|k| !k.is_empty())
             && let Some(object) = header.as_object_mut()
         {
-            drop(object.insert("kid".into(), Value::String(kid)));
+            _ = object.insert("kid".into(), Value::String(kid));
         }
         let now = chrono::Utc::now().timestamp();
         #[expect(clippy::cast_precision_loss, reason = "JavaScript number arithmetic")]

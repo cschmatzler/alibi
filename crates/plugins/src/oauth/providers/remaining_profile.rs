@@ -235,7 +235,7 @@ pub(super) fn subject(kind: ProfileKind, profile: &Value) -> Result<String, Stri
 
 fn copy(output: &mut Map<String, Value>, key: &str, value: Option<&Value>) {
     if let Some(value) = value {
-        drop(output.insert(key.into(), value.clone()));
+        _ = output.insert(key.into(), value.clone());
     }
 }
 fn or_empty<'a>(values: impl IntoIterator<Item = Option<&'a Value>>) -> Value {
@@ -356,7 +356,7 @@ impl OAuthUserInfoHandler for PublishedProfile {
                     .get_mut("data")
                     .and_then(Value::as_object_mut)
                     .ok_or_else(|| profile_exception("Invalid Twitter email receiver"))?;
-                drop(data.insert("email".into(), email));
+                _ = data.insert("email".into(), email);
                 twitter_verified = true;
             }
         }
@@ -390,13 +390,13 @@ impl OAuthUserInfoHandler for PublishedProfile {
         let mut output = Map::new();
         match self.kind {
             ProfileKind::Roblox => {
-                drop(output.insert(
+                _ = output.insert(
                     "name".into(),
                     or_empty([profile.get("nickname"), profile.get("preferred_username")]),
-                ));
+                );
                 copy(&mut output, "image", profile.get("picture"));
-                drop(output.insert("email".into(), placeholder(profile.get("sub"), "roblox")?));
-                drop(output.insert("emailVerified".into(), Value::Bool(false)));
+                _ = output.insert("email".into(), placeholder(profile.get("sub"), "roblox")?);
+                _ = output.insert("emailVerified".into(), Value::Bool(false));
             }
             ProfileKind::Salesforce => {
                 copy(&mut output, "name", profile.get("name"));
@@ -409,19 +409,17 @@ impl OAuthUserInfoHandler for PublishedProfile {
                         .filter(|value| truthy(value))
                         .or_else(|| profile.pointer("/photos/thumbnail")),
                 );
-                drop(
-                    output.insert(
-                        "emailVerified".into(),
-                        profile
-                            .get("email_verified")
-                            .filter(|value| !value.is_null())
-                            .cloned()
-                            .unwrap_or(Value::Bool(false)),
-                    ),
+                _ = output.insert(
+                    "emailVerified".into(),
+                    profile
+                        .get("email_verified")
+                        .filter(|value| !value.is_null())
+                        .cloned()
+                        .unwrap_or(Value::Bool(false)),
                 );
             }
             ProfileKind::Slack => {
-                drop(output.insert("name".into(), or_empty([profile.get("name")])));
+                _ = output.insert("name".into(), or_empty([profile.get("name")]));
                 copy(&mut output, "email", profile.get("email"));
                 copy(&mut output, "emailVerified", profile.get("email_verified"));
                 copy(
@@ -451,7 +449,7 @@ impl OAuthUserInfoHandler for PublishedProfile {
                         .or_else(|| images.get("0"))
                         .and_then(|image| image.get("url")),
                 );
-                drop(output.insert("emailVerified".into(), Value::Bool(false)));
+                _ = output.insert("emailVerified".into(), Value::Bool(false));
             }
             ProfileKind::Twitch => {
                 for (key, field) in [
@@ -470,31 +468,29 @@ impl OAuthUserInfoHandler for PublishedProfile {
                     .ok_or_else(|| profile_exception("Missing Twitter data"))?;
                 copy(&mut output, "name", data.get("name"));
                 copy(&mut output, "image", data.get("profile_image_url"));
-                drop(output.insert(
+                _ = output.insert(
                     "email".into(),
                     match data.get("email").filter(|value| truthy(value)) {
                         Some(email) => email.clone(),
                         None => placeholder(data.get("id"), "twitter")?,
                     },
-                ));
-                drop(output.insert("emailVerified".into(), Value::Bool(twitter_verified)));
+                );
+                _ = output.insert("emailVerified".into(), Value::Bool(twitter_verified));
             }
             ProfileKind::Vercel => {
-                drop(output.insert(
+                _ = output.insert(
                     "name".into(),
                     nullish_empty([profile.get("name"), profile.get("preferred_username")]),
-                ));
+                );
                 copy(&mut output, "email", profile.get("email"));
                 copy(&mut output, "image", profile.get("picture"));
-                drop(
-                    output.insert(
-                        "emailVerified".into(),
-                        profile
-                            .get("email_verified")
-                            .filter(|value| !value.is_null())
-                            .cloned()
-                            .unwrap_or(Value::Bool(false)),
-                    ),
+                _ = output.insert(
+                    "emailVerified".into(),
+                    profile
+                        .get("email_verified")
+                        .filter(|value| !value.is_null())
+                        .cloned()
+                        .unwrap_or(Value::Bool(false)),
                 );
             }
             ProfileKind::Vk => {
@@ -521,26 +517,26 @@ impl OAuthUserInfoHandler for PublishedProfile {
                         Some(value) => js_string(value),
                     }
                 };
-                drop(output.insert(
+                _ = output.insert(
                     "name".into(),
                     Value::String(format!(
                         "{} {}",
                         template(user.get("first_name"))?,
                         template(user.get("last_name"))?
                     )),
-                ));
+                );
                 copy(&mut output, "email", user.get("email"));
                 copy(&mut output, "image", user.get("avatar"));
-                drop(output.insert("emailVerified".into(), Value::Bool(false)));
+                _ = output.insert("emailVerified".into(), Value::Bool(false));
             }
             ProfileKind::Zoom => {
                 copy(&mut output, "name", profile.get("display_name"));
                 copy(&mut output, "email", profile.get("email"));
                 copy(&mut output, "image", profile.get("pic_url"));
-                drop(output.insert(
+                _ = output.insert(
                     "emailVerified".into(),
                     Value::Bool(profile.get("verified").is_some_and(truthy)),
-                ));
+                );
             }
         }
         if let Some(mapped) = &mapped {

@@ -316,11 +316,9 @@ async fn handle_get_access_token_for_user(
         Err(message) => return invalid_selection("body", &message),
     };
     let mut session_request = req.clone();
-    drop(
-        session_request
-            .query
-            .insert("disableCookieCache".into(), "true".into()),
-    );
+    _ = session_request
+        .query
+        .insert("disableCookieCache".into(), "true".into());
     let user_id = if let Some(user_id) = server_user {
         user_id.to_owned()
     } else {
@@ -349,11 +347,9 @@ async fn handle_refresh_token_for_user(
         Err(message) => return invalid_selection("body", &message),
     };
     let mut session_request = req.clone();
-    drop(
-        session_request
-            .query
-            .insert("disableCookieCache".into(), "true".into()),
-    );
+    _ = session_request
+        .query
+        .insert("disableCookieCache".into(), "true".into());
     let user_id = if let Some(user_id) = server_user {
         user_id.to_owned()
     } else {
@@ -434,14 +430,14 @@ async fn handle_refresh_token_for_user(
             .ok_or_else(|| AuthError::internal("Invalid refresh output"))?;
         match raw.get("access_token") {
             Some(value) => {
-                drop(object.insert("accessToken".into(), value.clone()));
+                _ = object.insert("accessToken".into(), value.clone());
             }
             None => {
-                drop(object.remove("accessToken"));
+                _ = object.remove("accessToken");
             }
         }
         if let Some(value) = raw.get("refresh_token").filter(|value| !value.is_null()) {
-            drop(object.insert("refreshToken".into(), value.clone()));
+            _ = object.insert("refreshToken".into(), value.clone());
         }
         if let Some(value) = raw
             .get("id_token")
@@ -453,7 +449,7 @@ async fn handle_refresh_token_for_user(
             })
             .filter(|value| super::providers::remaining_profile::truthy(value))
         {
-            drop(object.insert("idToken".into(), value.clone()));
+            _ = object.insert("idToken".into(), value.clone());
         }
     }
     token_response(
@@ -478,11 +474,9 @@ async fn handle_account_info_for_user(
     // Source's account helper disables browser cookie-cache reads for stateful
     // accounts while retaining a genuinely established virtual principal.
     let mut session_request = req.clone();
-    drop(
-        session_request
-            .query
-            .insert("disableCookieCache".into(), "true".into()),
-    );
+    _ = session_request
+        .query
+        .insert("disableCookieCache".into(), "true".into());
     let user_id = if let Some(user_id) = server_user {
         user_id.to_owned()
     } else {
@@ -628,7 +622,7 @@ fn server_request(
     );
     match selection {
         OAuthAccountSelection::Id(id) => {
-            drop(req.query.insert("accountId".into(), id.clone()));
+            _ = req.query.insert("accountId".into(), id.clone());
             req.body = Some(
                 serde_json::to_vec(&serde_json::json!({"accountId":id}))
                     .map_err(|e| AuthError::internal(e.to_string()))?,

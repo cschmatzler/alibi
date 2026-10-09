@@ -36,7 +36,7 @@ pub(in crate::passkey) async fn generate_authenticate_options_core<U: AuthUser>(
             if let Some(transports) = passkey.transports().map(parse_transports_csv)
                 && let Some(object) = descriptor.as_object_mut()
             {
-                drop(object.insert("transports".to_owned(), json!(transports)));
+                _ = object.insert("transports".to_owned(), json!(transports));
             }
             descriptor
         })
@@ -63,15 +63,14 @@ pub(in crate::passkey) async fn generate_authenticate_options_core<U: AuthUser>(
 
     let token = Uuid::new_v4().to_string();
     let expires_at = Utc::now() + Duration::seconds(config.challenge_ttl_secs);
-    drop(
-        ctx.verifications()
-            .create(CreateVerification {
-                identifier: token.clone(),
-                value: serde_json::to_string(&state)?,
-                expires_at,
-            })
-            .await?,
-    );
+    _ = ctx
+        .verifications()
+        .create(CreateVerification {
+            identifier: token.clone(),
+            value: serde_json::to_string(&state)?,
+            expires_at,
+        })
+        .await?;
 
     let cookie = create_challenge_cookie(&ctx.config, config.challenge_ttl_secs, &token, config)?;
     let mut response = authentication_options_json(options)?;
@@ -87,12 +86,12 @@ pub(in crate::passkey) async fn generate_authenticate_options_core<U: AuthUser>(
     }
     if let Some(object) = response.as_object_mut() {
         if allow_credentials_json.is_empty() {
-            drop(object.remove("allowCredentials"));
+            _ = object.remove("allowCredentials");
         } else {
-            drop(object.insert(
+            _ = object.insert(
                 "allowCredentials".to_owned(),
                 Value::Array(allow_credentials_json),
-            ));
+            );
         }
     }
     Ok((response, cookie))

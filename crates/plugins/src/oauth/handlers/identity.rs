@@ -252,23 +252,22 @@ pub(crate) async fn process_oauth_sign_in_with_output(
         )
         .await?;
         if ctx.config.account.update_account_on_sign_in {
-            drop(
-                ctx.database
-                    .update_account_record(
-                        &existing_account.id(),
-                        UpdateAccount {
-                            provider_token_nulls: provider_token_nulls(tokens, raw_policy),
-                            access_token: token_bundle.access_token.clone(),
-                            refresh_token: token_bundle.refresh_token.clone(),
-                            id_token: token_bundle.id_token.clone(),
-                            access_token_expires_at: tokens.access_token_expires_at,
-                            refresh_token_expires_at: tokens.refresh_token_expires_at,
-                            ..Default::default()
-                        },
-                    )
-                    .await
-                    .map_err(|error| error.to_string())?,
-            );
+            _ = ctx
+                .database
+                .update_account_record(
+                    &existing_account.id(),
+                    UpdateAccount {
+                        provider_token_nulls: provider_token_nulls(tokens, raw_policy),
+                        access_token: token_bundle.access_token.clone(),
+                        refresh_token: token_bundle.refresh_token.clone(),
+                        id_token: token_bundle.id_token.clone(),
+                        access_token_expires_at: tokens.access_token_expires_at,
+                        refresh_token_expires_at: tokens.refresh_token_expires_at,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|error| error.to_string())?;
         }
 
         let mut user = existing_user;

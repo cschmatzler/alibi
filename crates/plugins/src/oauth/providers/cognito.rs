@@ -192,7 +192,7 @@ impl OAuthUserInfoHandler for CognitoUserInfo {
         {
             let name = profile_name(&profile);
             if let Some(object) = profile.as_object_mut() {
-                drop(object.insert("name".into(), name));
+                _ = object.insert("name".into(), name);
             }
             // Only decoding or the application's mapper may select the access-token
             // fallback. An invalid raw subject remains an admission failure.

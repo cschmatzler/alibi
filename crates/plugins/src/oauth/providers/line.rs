@@ -165,22 +165,20 @@ impl OAuthUserInfoHandler for LineUserInfo {
         let user_output = Some(mapped.as_ref().map_or_else(
             || {
                 let mut output = serde_json::Map::new();
-                drop(
-                    output.insert(
-                        "name".into(),
-                        profile
-                            .get("name")
-                            .filter(|value| truthy(value))
-                            .cloned()
-                            .unwrap_or_else(|| Value::String(String::new())),
-                    ),
+                _ = output.insert(
+                    "name".into(),
+                    profile
+                        .get("name")
+                        .filter(|value| truthy(value))
+                        .cloned()
+                        .unwrap_or_else(|| Value::String(String::new())),
                 );
                 for (source, target) in [("email", "email"), ("picture", "image")] {
                     if let Some(value) = profile.get(source) {
-                        drop(output.insert(target.into(), value.clone()));
+                        _ = output.insert(target.into(), value.clone());
                     }
                 }
-                drop(output.insert("emailVerified".into(), Value::Bool(false)));
+                _ = output.insert("emailVerified".into(), Value::Bool(false));
                 output
             },
             |user| user.public_profile(true),

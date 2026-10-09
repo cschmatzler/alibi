@@ -287,13 +287,13 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
                 && let Ok(bytes) = response.bytes().await
                 && let Some(object) = profile.as_object_mut()
             {
-                drop(object.insert(
+                _ = object.insert(
                     "picture".into(),
                     Value::String(format!(
                         "data:image/jpeg;base64, {}",
                         base64::engine::general_purpose::STANDARD.encode(bytes)
                     )),
-                ));
+                );
             }
         }
         let mapped = self
@@ -321,17 +321,15 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
                 for (source, target) in [("name", "name"), ("email", "email"), ("picture", "image")]
                 {
                     if let Some(value) = profile.get(source) {
-                        drop(output.insert(target.into(), value.clone()));
+                        _ = output.insert(target.into(), value.clone());
                     }
                 }
-                drop(
-                    output.insert(
-                        "emailVerified".into(),
-                        profile
-                            .get("email_verified")
-                            .cloned()
-                            .unwrap_or(Value::Bool(verified)),
-                    ),
+                _ = output.insert(
+                    "emailVerified".into(),
+                    profile
+                        .get("email_verified")
+                        .cloned()
+                        .unwrap_or(Value::Bool(verified)),
                 );
                 output
             },

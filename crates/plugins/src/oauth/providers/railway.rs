@@ -176,16 +176,16 @@ impl OAuthUserInfoHandler for RailwayUserInfo {
         // Keep the published raw JSON independently from typed persistence.
         let mut output = serde_json::Map::new();
         if let Some(name) = profile.get("name") {
-            drop(output.insert("name".into(), name.clone()));
+            _ = output.insert("name".into(), name.clone());
         }
         let email = profile.get("email");
         if let Some(email) = email {
-            drop(output.insert("email".into(), email.clone()));
+            _ = output.insert("email".into(), email.clone());
         }
         if let Some(image) = profile.get("picture") {
-            drop(output.insert("image".into(), image.clone()));
+            _ = output.insert("image".into(), image.clone());
         }
-        drop(output.insert("emailVerified".into(), Value::Bool(false)));
+        _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(user) = &mapped {
             output.extend(user.public_profile(true));
         }

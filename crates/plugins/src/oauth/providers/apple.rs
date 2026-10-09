@@ -191,7 +191,7 @@ impl OAuthUserInfoHandler for AppleUserInfo {
         let JsValue::Object(object) = &mut profile else {
             return Err("Invalid Apple profile".into());
         };
-        drop(object.insert("name".into(), name_value));
+        _ = object.insert("name".into(), name_value);
         let data = profile.to_json_value().map_err(|error| error.to_string())?;
         let mut user_output = None;
         let user = if let Some(mapper) = self.map_profile_to_user {

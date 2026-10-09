@@ -446,10 +446,10 @@ pub(in crate::oauth::handlers) async fn initiate_oauth_flow_core(
         payload.id_token_nonce = Some(alibi_core::utils::id::generate_id(32));
     }
     capture_server_context(&mut payload, &state, ctx.config.current_secret())?;
-    drop(payload.additional_data.insert(
+    _ = payload.additional_data.insert(
         "oauthState".to_owned(),
         serde_json::Value::String(state.clone()),
-    ));
+    );
     if proxy.is_some()
         && let Some(req) = alibi_core::hooks::current_request_hook_context()
     {

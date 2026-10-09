@@ -92,25 +92,24 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
             .await
             .map_err(|error| error.to_string())?;
 
-        drop(
-            ctx.database
-                .update_account_record(
-                    &existing_account.id(),
-                    UpdateAccount {
-                        provider_token_nulls: provider_token_nulls(tokens, raw_policy),
-                        access_token: token_bundle.access_token,
-                        refresh_token: token_bundle.refresh_token,
-                        id_token: token_bundle.id_token,
-                        access_token_expires_at: tokens.access_token_expires_at,
-                        refresh_token_expires_at: tokens.refresh_token_expires_at,
-                        scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
-                            .then(|| tokens.scopes.join(",")),
-                        ..Default::default()
-                    },
-                )
-                .await
-                .map_err(|error| error.to_string())?,
-        );
+        _ = ctx
+            .database
+            .update_account_record(
+                &existing_account.id(),
+                UpdateAccount {
+                    provider_token_nulls: provider_token_nulls(tokens, raw_policy),
+                    access_token: token_bundle.access_token,
+                    refresh_token: token_bundle.refresh_token,
+                    id_token: token_bundle.id_token,
+                    access_token_expires_at: tokens.access_token_expires_at,
+                    refresh_token_expires_at: tokens.refresh_token_expires_at,
+                    scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
+                        .then(|| tokens.scopes.join(",")),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|error| error.to_string())?;
 
         return Ok(LinkSocialOutcome::Linked);
     }
@@ -119,25 +118,24 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
         .await
         .map_err(|error| error.to_string())?;
 
-    drop(
-        ctx.database
-            .create_account_record(CreateAccount {
-                additional_fields: FieldValues::default(),
-                user_id: link.user_id.clone(),
-                account_id: user_info.id.clone(),
-                provider_id: provider_name.to_owned(),
-                access_token: token_bundle.access_token,
-                refresh_token: token_bundle.refresh_token,
-                id_token: token_bundle.id_token,
-                access_token_expires_at: tokens.access_token_expires_at,
-                refresh_token_expires_at: tokens.refresh_token_expires_at,
-                scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
-                    .then(|| tokens.scopes.join(",")),
-                password: None,
-            })
-            .await
-            .map_err(|_error| "unable_to_link_account".to_owned())?,
-    );
+    _ = ctx
+        .database
+        .create_account_record(CreateAccount {
+            additional_fields: FieldValues::default(),
+            user_id: link.user_id.clone(),
+            account_id: user_info.id.clone(),
+            provider_id: provider_name.to_owned(),
+            access_token: token_bundle.access_token,
+            refresh_token: token_bundle.refresh_token,
+            id_token: token_bundle.id_token,
+            access_token_expires_at: tokens.access_token_expires_at,
+            refresh_token_expires_at: tokens.refresh_token_expires_at,
+            scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
+                .then(|| tokens.scopes.join(",")),
+            password: None,
+        })
+        .await
+        .map_err(|_error| "unable_to_link_account".to_owned())?;
 
     Ok(LinkSocialOutcome::Linked)
 }
@@ -415,42 +413,40 @@ pub(in crate::oauth::handlers) async fn link_with_id_token_core(
         id_token.refresh_token.clone(),
         Some(id_token.token.clone()),
     )?;
-    drop(
-        ctx.database
-            .create_account_record(CreateAccount {
-                additional_fields: FieldValues::default(),
-                user_id: session.user_id().to_string(),
-                provider_id: body.provider.clone(),
-                account_id: response.user.id,
-                access_token: token_bundle.access_token,
-                refresh_token: token_bundle.refresh_token,
-                id_token: token_bundle.id_token,
-                access_token_expires_at: id_token
-                    .expires_at
-                    .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
-                refresh_token_expires_at: None,
-                scope: id_token.scopes.as_ref().map(|scopes| scopes.join(",")),
-                password: None,
-            })
-            .await
-            .map_err(|_error| {
-                AuthError::bad_request("Account not linked - unable to create account")
-            })?,
-    );
+    _ = ctx
+        .database
+        .create_account_record(CreateAccount {
+            additional_fields: FieldValues::default(),
+            user_id: session.user_id().to_string(),
+            provider_id: body.provider.clone(),
+            account_id: response.user.id,
+            access_token: token_bundle.access_token,
+            refresh_token: token_bundle.refresh_token,
+            id_token: token_bundle.id_token,
+            access_token_expires_at: id_token
+                .expires_at
+                .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
+            refresh_token_expires_at: None,
+            scope: id_token.scopes.as_ref().map(|scopes| scopes.join(",")),
+            password: None,
+        })
+        .await
+        .map_err(|_error| {
+            AuthError::bad_request("Account not linked - unable to create account")
+        })?;
 
     if linking.update_user_info_on_link {
-        drop(
-            ctx.database
-                .update_user_record(
-                    &session.user_id(),
-                    UpdateUser {
-                        name: response.user.name.clone(),
-                        image: response.user.image.clone(),
-                        ..Default::default()
-                    },
-                )
-                .await,
-        );
+        _ = ctx
+            .database
+            .update_user_record(
+                &session.user_id(),
+                UpdateUser {
+                    name: response.user.name.clone(),
+                    image: response.user.image.clone(),
+                    ..Default::default()
+                },
+            )
+            .await;
     }
 
     Ok(SocialSignInResponse {

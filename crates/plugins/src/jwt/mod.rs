@@ -241,12 +241,10 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
         if !expose.iter().any(|header| header == "set-auth-jwt") {
             expose.push("set-auth-jwt".to_owned());
         }
-        drop(response.headers.insert("set-auth-jwt", token));
-        drop(
-            response
-                .headers
-                .insert("access-control-expose-headers", expose.join(", ")),
-        );
+        _ = response.headers.insert("set-auth-jwt", token);
+        _ = response
+            .headers
+            .insert("access-control-expose-headers", expose.join(", "));
         Ok(response)
     }
 }
@@ -303,10 +301,10 @@ impl<S: AuthSchema> alibi_core::session::cookie_cache::jwt::CookieCacheSigner<S>
             .and_then(|user| user.get("id"))
             .cloned()
             .ok_or_else(|| AuthError::internal("Missing session owner"))?;
-        drop(claims.insert("sid".into(), sid));
-        drop(claims.insert("sub".into(), sub));
-        drop(claims.insert("iss".into(), json!(cache_issuer(ctx))));
-        drop(claims.insert("aud".into(), json!("better-auth:session-cache")));
+        _ = claims.insert("sid".into(), sid);
+        _ = claims.insert("sub".into(), sub);
+        _ = claims.insert("iss".into(), json!(cache_issuer(ctx)));
+        _ = claims.insert("aud".into(), json!("better-auth:session-cache"));
         let options = JwtSignOptions {
             header: Some(serde_json::from_value(
                 json!({"typ":"better-auth.session-cache+jwt"}),
@@ -668,7 +666,7 @@ mod tests {
         ] {
             let before = Utc::now().timestamp() as f64;
             let mut claims = payload("subject");
-            drop(claims.insert("exp".to_owned(), json!(expiry)));
+            _ = claims.insert("exp".to_owned(), json!(expiry));
             let token = plugin
                 .sign_jwt(claims, &JwtSignOptions::default(), None, &ctx)
                 .await
@@ -724,7 +722,7 @@ mod tests {
         assert!(claims["iat"].as_f64().unwrap() <= (Utc::now().timestamp() + 60) as f64);
         assert_eq!(claims["exp"], 4_102_444_800_i64);
         let mut false_iat = payload("false-iat-owner");
-        drop(false_iat.insert("iat".to_owned(), json!(false)));
+        _ = false_iat.insert("iat".to_owned(), json!(false));
         let token_2 = plugin
             .sign_jwt(false_iat, &JwtSignOptions::default(), None, &ctx)
             .await
@@ -787,8 +785,8 @@ mod tests {
                     .is_ok(),
                 signs
             );
-            drop(header.insert("alg".to_owned(), json!(key.algorithm.as_str())));
-            drop(header.insert("kid".to_owned(), json!(key.key_id)));
+            _ = header.insert("alg".to_owned(), json!(key.algorithm.as_str()));
+            _ = header.insert("kid".to_owned(), json!(key.key_id));
             // Use the key directly to create a cryptographically valid JWT even
             // when the public signer correctly refuses its extension header.
             let input = format!(
@@ -821,7 +819,7 @@ mod tests {
             (json!(""), false),
         ] {
             let mut claims = claims.as_object().unwrap().clone();
-            drop(claims.insert("sub".to_owned(), subject));
+            _ = claims.insert("sub".to_owned(), subject);
             let header = json!({"alg":key.algorithm.as_str(),"kid":key.key_id});
             let input = format!(
                 "{}.{}",

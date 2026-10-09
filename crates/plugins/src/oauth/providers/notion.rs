@@ -183,25 +183,23 @@ impl OAuthUserInfoHandler for NotionUserInfo {
             .map_err(super::remaining_profile::profile_exception)?;
         // Keep the published raw JSON independently from typed persistence.
         let mut output = serde_json::Map::new();
-        drop(
-            output.insert(
-                "name".into(),
-                profile
-                    .get("name")
-                    .filter(|v| truthy(v))
-                    .cloned()
-                    .unwrap_or_else(|| Value::String(String::new())),
-            ),
+        _ = output.insert(
+            "name".into(),
+            profile
+                .get("name")
+                .filter(|v| truthy(v))
+                .cloned()
+                .unwrap_or_else(|| Value::String(String::new())),
         );
         let email = profile
             .get("person")
             .and_then(|person| person.get("email"))
             .filter(|v| truthy(v));
-        drop(output.insert("email".into(), email.cloned().unwrap_or(Value::Null)));
+        _ = output.insert("email".into(), email.cloned().unwrap_or(Value::Null));
         if let Some(image) = profile.get("avatar_url") {
-            drop(output.insert("image".into(), image.clone()));
+            _ = output.insert("image".into(), image.clone());
         }
-        drop(output.insert("emailVerified".into(), Value::Bool(false)));
+        _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(user) = &mapped {
             output.extend(user.public_profile(true));
         }

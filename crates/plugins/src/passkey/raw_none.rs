@@ -223,7 +223,7 @@ impl SourceDecoder<'_> {
                             return Err(malformed());
                         }
                         let value = self.item(depth + 1)?;
-                        drop(values.insert(key, value));
+                        _ = values.insert(key, value);
                     }
                     Ok(Cbor::Map(values))
                 }

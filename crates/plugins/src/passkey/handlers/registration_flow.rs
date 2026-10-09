@@ -39,7 +39,7 @@ pub(in crate::passkey) async fn generate_register_options_core(
             if let Some(transports) = passkey.transports().map(parse_transports_csv)
                 && let Some(object) = descriptor.as_object_mut()
             {
-                drop(object.insert("transports".to_owned(), json!(transports)));
+                _ = object.insert("transports".to_owned(), json!(transports));
             }
             descriptor
         })
@@ -110,15 +110,14 @@ pub(in crate::passkey) async fn generate_register_options_core(
             state,
         }),
     })?;
-    drop(
-        ctx.verifications()
-            .create(CreateVerification {
-                identifier: token.clone(),
-                value: serialized_state,
-                expires_at,
-            })
-            .await?,
-    );
+    _ = ctx
+        .verifications()
+        .create(CreateVerification {
+            identifier: token.clone(),
+            value: serialized_state,
+            expires_at,
+        })
+        .await?;
 
     let cookie = create_challenge_cookie(&ctx.config, config.challenge_ttl_secs, &token, config)?;
     let mut response = registration_options_json(
@@ -137,14 +136,14 @@ pub(in crate::passkey) async fn generate_register_options_core(
             ("authenticatorAttachment", &policy.authenticator_attachment),
         ] {
             if let Some(value) = value {
-                drop(selection.insert(name.into(), json!(value)));
+                _ = selection.insert(name.into(), json!(value));
             }
         }
         if let Some(resident_key) = &policy.resident_key {
-            drop(selection.insert(
+            _ = selection.insert(
                 "requireResidentKey".into(),
                 json!(resident_key == "required"),
-            ));
+            );
         }
     }
     if let Some(attachment) = authenticator_attachment
@@ -164,10 +163,10 @@ pub(in crate::passkey) async fn generate_register_options_core(
         }
     }
     if let Some(object) = response.as_object_mut() {
-        drop(object.insert(
+        _ = object.insert(
             "excludeCredentials".to_owned(),
             Value::Array(exclude_credentials_json),
-        ));
+        );
     }
     Ok((response, cookie))
 }
@@ -243,7 +242,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
             && let Some(alibi_core::utils::json::JsValue::Object(authenticator)) =
                 response.get_mut("response")
         {
-            drop(authenticator.shift_remove("transports"));
+            _ = authenticator.shift_remove("transports");
         }
     }
     let registration: RegisterPublicKeyCredential =
@@ -552,11 +551,11 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                     })?;
                 let mut result = registration_value(&passkey)?;
                 if let Some(object) = result.as_object_mut() {
-                    drop(object.insert("user".into(), serde_json::to_value(ctx.user_view(&user))?));
-                    drop(object.insert(
+                    _ = object.insert("user".into(), serde_json::to_value(ctx.user_view(&user))?);
+                    _ = object.insert(
                         "session".into(),
                         serde_json::to_value(ctx.session_view(&session))?,
-                    ));
+                    );
                 }
                 Ok(result)
             }

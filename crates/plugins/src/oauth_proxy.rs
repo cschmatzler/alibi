@@ -672,7 +672,7 @@ impl OAuthProxyPlugin {
                             // Source's ordinary exception response discards the
                             // accumulated endpoint headers; APIError redirects
                             // above retain the state-cookie cleanup instead.
-                            drop(req.take_response_headers());
+                            _ = req.take_response_headers();
                             req.extensions()
                                 .insert(OAuthProxyUnhandledError(AtomicBool::new(true)));
                             Ok(AuthResponse::new(500))
@@ -917,7 +917,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
         }
         response.body = alibi_core::utils::json::to_vec(&body)?;
         if response.headers.get("location").is_some() {
-            drop(response.headers.insert("Location", url.as_str()));
+            _ = response.headers.insert("Location", url.as_str());
         }
         Ok(response)
     }

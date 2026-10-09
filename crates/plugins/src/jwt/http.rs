@@ -43,7 +43,7 @@ impl JwtPlugin {
         // getJwtToken starts with iat before spreading the application payload;
         // an explicit application iat replaces the value in that position.
         let mut payload = Map::new();
-        drop(payload.insert("iat".to_owned(), json!(Utc::now().timestamp())));
+        _ = payload.insert("iat".to_owned(), json!(Utc::now().timestamp()));
         payload.extend(application_payload);
         let subject = match &self.config.define_subject {
             Some(define) => define
@@ -52,7 +52,7 @@ impl JwtPlugin {
                 .unwrap_or_else(|| session.user.id.clone()),
             None => session.user.id.clone(),
         };
-        drop(payload.insert("sub".to_owned(), json!(subject)));
+        _ = payload.insert("sub".to_owned(), json!(subject));
         self.sign_jwt(payload, &JwtSignOptions::default(), req, ctx)
             .await
     }
@@ -85,7 +85,7 @@ impl JwtPlugin {
         }
         let mut keys = self.keys(request, ctx).await?;
         if keys.is_empty() {
-            drop(self.create_jwk(None, request, ctx).await?);
+            _ = self.create_jwk(None, request, ctx).await?;
             keys = self.keys(request, ctx).await?;
         }
         if keys.is_empty() {
@@ -102,20 +102,20 @@ impl JwtPlugin {
             })
             .map(|key| {
                 let mut public = Map::new();
-                drop(public.insert(
+                _ = public.insert(
                     "alg".to_owned(),
                     json!(
                         key.alg
                             .as_deref()
                             .unwrap_or(self.config.key_pair.algorithm.as_str())
                     ),
-                ));
+                );
                 if let Some(curve) = &key.crv {
-                    drop(public.insert("crv".to_owned(), json!(curve)));
+                    _ = public.insert("crv".to_owned(), json!(curve));
                 }
                 let parsed: Map<String, Value> = serde_json::from_str(&key.public_key)?;
                 public.extend(parsed);
-                drop(public.insert("kid".to_owned(), json!(key.id)));
+                _ = public.insert("kid".to_owned(), json!(key.id));
                 Ok::<_, AuthError>(public)
             })
             .collect::<AuthResult<Vec<_>>>()?;

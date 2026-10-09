@@ -152,11 +152,11 @@ impl OAuthUserInfoHandler for TikTokProfile {
             .cloned()
             .unwrap_or_else(|| Value::String(String::new()));
         let mut output = serde_json::Map::new();
-        drop(output.insert("name".into(), name.clone()));
-        drop(output.insert("email".into(), email.clone()));
-        drop(output.insert("emailVerified".into(), Value::Bool(false)));
+        _ = output.insert("name".into(), name.clone());
+        _ = output.insert("email".into(), email.clone());
+        _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(image) = data.get("avatar_large_url") {
-            drop(output.insert("image".into(), image.clone()));
+            _ = output.insert("image".into(), image.clone());
         }
         let user = OAuthUserInfo {
             additional_fields: Map::default(),

@@ -173,7 +173,7 @@ impl OAuthUserInfoHandler for PaybinUserInfo {
         let mut output = serde_json::Map::new();
         for (source, target) in [("email", "email"), ("picture", "image")] {
             if let Some(value) = profile.get(source) {
-                drop(output.insert(target.into(), value.clone()));
+                _ = output.insert(target.into(), value.clone());
             }
         }
         let name = profile
@@ -182,16 +182,14 @@ impl OAuthUserInfoHandler for PaybinUserInfo {
             .or_else(|| profile.get("preferred_username").filter(|v| truthy(v)))
             .cloned()
             .unwrap_or_else(|| Value::String(String::new()));
-        drop(output.insert("name".into(), name.clone()));
-        drop(
-            output.insert(
-                "emailVerified".into(),
-                profile
-                    .get("email_verified")
-                    .filter(|v| truthy(v))
-                    .cloned()
-                    .unwrap_or(Value::Bool(false)),
-            ),
+        _ = output.insert("name".into(), name.clone());
+        _ = output.insert(
+            "emailVerified".into(),
+            profile
+                .get("email_verified")
+                .filter(|v| truthy(v))
+                .cloned()
+                .unwrap_or(Value::Bool(false)),
         );
         if let Some(user) = &mapped {
             output.extend(user.public_profile(true));

@@ -37,7 +37,7 @@ pub(super) fn packed(
             return Err(WebauthnError::AttestationStatementSigInvalid);
         }
         assert_packed_attest_req(leaf)?;
-        drop(validate_extension::<FidoGenCeAaguid>(leaf, &acd.aaguid)?);
+        _ = validate_extension::<FidoGenCeAaguid>(leaf, &acd.aaguid)?;
         Ok((
             ParsedAttestationData::Basic(chain),
             AttestationMetadata::Packed {
