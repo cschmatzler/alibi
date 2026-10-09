@@ -150,7 +150,7 @@ async fn convert_request<T: AuthSchema>(
 /// chunked framing or a client disconnect.
 fn is_length_limit_error(error: &axum::Error) -> bool {
     std::iter::successors(std::error::Error::source(error), |source| source.source())
-        .any(<(dyn std::error::Error + 'static)>::is::<http_body_util::LengthLimitError>)
+        .any(<dyn std::error::Error>::is::<http_body_util::LengthLimitError>)
 }
 
 fn render(result: Result<AuthResponse, AuthError>) -> Response {

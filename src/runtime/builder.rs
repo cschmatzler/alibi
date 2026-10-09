@@ -137,7 +137,7 @@ impl<S: AuthSchema> AuthBuilder<S> {
             .advanced
             .cookie_prefix
             .as_ref()
-            .is_none_or(|p| p.is_empty())
+            .is_none_or(String::is_empty)
         {
             if !self.config.advanced.cookies.contains_key("session_token")
                 && let Some(prefix) = self

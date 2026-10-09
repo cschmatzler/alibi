@@ -5,6 +5,7 @@ use alibi_core::endpoint::{
     is_endpoint_api_error, with_endpoint_call_context,
 };
 use alibi_core::{AuthError, AuthSchema, Headers};
+use std::sync::Arc;
 
 type HttpEndpointError = (u16, Option<String>, String);
 
@@ -15,7 +16,7 @@ pub(super) struct HttpEndpointFrame {
     pub outer: EndpointCall,
     pub header_patch: Option<std::collections::HashMap<String, String>>,
     pub legacy_headers: Option<std::collections::HashMap<String, String>>,
-    pub error: std::sync::Arc<std::sync::Mutex<Option<HttpEndpointError>>>,
+    pub error: Arc<std::sync::Mutex<Option<HttpEndpointError>>>,
 }
 
 impl<S: AuthSchema> BetterAuth<S> {
@@ -59,11 +60,11 @@ impl<S: AuthSchema> BetterAuth<S> {
                 Some(BeforeEndpointAction::Patch(changes)) => patch.merge(*changes),
                 Some(BeforeEndpointAction::Respond(mut response)) => {
                     response.merge_headers(headers);
-                    return render_http_endpoint_response(response).map(Some);
+                    return render_http_endpoint_response(&response).map(Some);
                 }
                 Some(BeforeEndpointAction::Reject(mut response)) => {
                     response.merge_headers(hook_headers);
-                    return render_http_endpoint_response(response).map(Some);
+                    return render_http_endpoint_response(&response).map(Some);
                 }
                 None => {}
             }
@@ -83,63 +84,9 @@ impl<S: AuthSchema> BetterAuth<S> {
             outer,
             header_patch,
             legacy_headers: None,
-            error: Default::default(),
+            error: Arc::default(),
         });
         Ok(None)
-    }
-
-    pub(super) fn apply_http_endpoint_input(
-        &self,
-        request: &mut alibi_core::AuthRequest,
-    ) -> alibi_core::AuthResult<()> {
-        let Some(frame) = request.extensions().get::<HttpEndpointFrame>() else {
-            return Ok(());
-        };
-        let mut frame = (*frame).clone();
-        if let Some(headers) = &frame.header_patch {
-            request.headers.extend(headers.clone());
-        }
-        if let Some(headers) = &frame.legacy_headers {
-            request.headers.extend(headers.clone());
-        }
-        frame.call.replace_headers(request.headers.clone());
-        EndpointContextPatch {
-            headers: Some(request.headers.clone()),
-            ..Default::default()
-        }
-        .apply(&mut frame.outer);
-        let call = &frame.call;
-        if let Some(path) = call.path() {
-            request.path = path.to_owned();
-        }
-        if let Some(method) = call.method() {
-            request.method = method.clone();
-        }
-        if let Some(body) = call.body() {
-            request.body = Some(alibi_core::utils::json::to_vec(body)?);
-            request
-                .extensions()
-                .insert(alibi_core::types::ParsedRequestBody::Value(body.clone()));
-        }
-        if let Some(alibi_core::utils::json::JsValue::Object(query)) = call.query() {
-            request.set_query_pairs(query.iter().flat_map(|(name, value)| {
-                let values = match value {
-                    alibi_core::utils::json::JsValue::Array(values) => values.clone(),
-                    value => vec![value.clone()],
-                };
-                values.into_iter().map(|value| {
-                    (
-                        name.clone(),
-                        match value {
-                            alibi_core::utils::json::JsValue::String(value) => value,
-                            value => alibi_core::utils::json::to_string(&value).unwrap_or_default(),
-                        },
-                    )
-                })
-            }));
-        }
-        request.extensions().insert(frame);
-        Ok(())
     }
 
     pub(super) async fn after_http_endpoint(
@@ -215,9 +162,62 @@ impl<S: AuthSchema> BetterAuth<S> {
             response.headers = logical.headers().clone();
             Ok(response)
         } else {
-            render_http_endpoint_response(logical)
+            render_http_endpoint_response(&logical)
         }
     }
+}
+
+pub(super) fn apply_http_endpoint_input(
+    request: &mut alibi_core::AuthRequest,
+) -> alibi_core::AuthResult<()> {
+    let Some(frame) = request.extensions().get::<HttpEndpointFrame>() else {
+        return Ok(());
+    };
+    let mut frame = (*frame).clone();
+    if let Some(headers) = &frame.header_patch {
+        request.headers.extend(headers.clone());
+    }
+    if let Some(headers) = &frame.legacy_headers {
+        request.headers.extend(headers.clone());
+    }
+    frame.call.replace_headers(request.headers.clone());
+    EndpointContextPatch {
+        headers: Some(request.headers.clone()),
+        ..Default::default()
+    }
+    .apply(&mut frame.outer);
+    let call = &frame.call;
+    if let Some(path) = call.path() {
+        path.clone_into(&mut request.path);
+    }
+    if let Some(method) = call.method() {
+        request.method = method.clone();
+    }
+    if let Some(body) = call.body() {
+        request.body = Some(alibi_core::utils::json::to_vec(body)?);
+        request
+            .extensions()
+            .insert(alibi_core::types::ParsedRequestBody::Value(body.clone()));
+    }
+    if let Some(alibi_core::utils::json::JsValue::Object(query)) = call.query() {
+        request.set_query_pairs(query.iter().flat_map(|(name, value)| {
+            let values = match value {
+                alibi_core::utils::json::JsValue::Array(values) => values.clone(),
+                value => vec![value.clone()],
+            };
+            values.into_iter().map(|value| {
+                (
+                    name.clone(),
+                    match value {
+                        alibi_core::utils::json::JsValue::String(value) => value,
+                        value => alibi_core::utils::json::to_string(&value).unwrap_or_default(),
+                    },
+                )
+            })
+        }));
+    }
+    request.extensions().insert(frame);
+    Ok(())
 }
 
 fn ordinary_http_hook_error(error: AuthError) -> AuthError {
@@ -228,7 +228,7 @@ fn ordinary_http_hook_error(error: AuthError) -> AuthError {
 }
 
 fn render_http_endpoint_response(
-    response: EndpointResponse,
+    response: &EndpointResponse,
 ) -> alibi_core::AuthResult<alibi_core::AuthResponse> {
     let mut rendered = match response.result() {
         Ok(value) => alibi_core::AuthResponse::json(response.status().unwrap_or(200), value)?,

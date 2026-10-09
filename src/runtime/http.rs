@@ -1,8 +1,9 @@
+use super::http_hooks::apply_http_endpoint_input;
 use super::{
-    Arc, AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
-    AuthSchema, AuthStore, BeforeRequestAction, BetterAuth, EmailProvider, HttpEndpointResponse,
-    HttpMethod, HttpRequestAction, Middleware, RequestHookContext, core_paths, middleware,
-    parse_dispatch_body, route_path_matches, with_request_hook_context_value,
+    Arc, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
+    BeforeRequestAction, BetterAuth, HttpEndpointResponse, HttpMethod, HttpRequestAction,
+    Middleware, RequestHookContext, core_paths, middleware, parse_dispatch_body,
+    route_path_matches, with_request_hook_context_value,
 };
 impl<S: AuthSchema> BetterAuth<S> {
     /// Handle an authentication request.
@@ -132,7 +133,7 @@ impl<S: AuthSchema> BetterAuth<S> {
                     .get::<super::http_hooks::HttpEndpointFrame>()
                 {
                     if let Some(path) = frame.call.path() {
-                        hook_request.path = path.to_owned();
+                        path.clone_into(&mut hook_request.path);
                     }
                     if let Some(method) = frame.call.method() {
                         hook_request.method = method.clone();
@@ -410,7 +411,7 @@ impl<S: AuthSchema> BetterAuth<S> {
         }
 
         // Source accumulates returned context patches until all before hooks finish.
-        self.apply_http_endpoint_input(&mut internal_req)?;
+        apply_http_endpoint_input(&mut internal_req)?;
         req.headers.clone_from(&internal_req.headers);
         req.body.clone_from(&internal_req.body);
         req.set_query_pairs(internal_req.query.keys().flat_map(|name| {
