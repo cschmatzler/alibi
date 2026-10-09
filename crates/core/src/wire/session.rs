@@ -19,23 +19,11 @@ pub struct SessionView {
     pub user_agent: Option<String>,
     #[serde(rename = "userId")]
     pub user_id: String,
-    #[serde(
-        rename = "impersonatedBy",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "impersonatedBy", default)]
     pub impersonated_by: Option<String>,
-    #[serde(
-        rename = "activeOrganizationId",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "activeOrganizationId", default)]
     pub active_organization_id: Option<String>,
-    #[serde(
-        rename = "activeTeamId",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "activeTeamId", default)]
     pub active_team_id: Option<String>,
     #[serde(
         flatten,

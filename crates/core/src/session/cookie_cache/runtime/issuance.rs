@@ -102,7 +102,7 @@ pub(in crate::session::cookie_cache::runtime) async fn build_headers<
                 context.public_session(),
                 &version,
                 now,
-            )?;
+            );
             let max_age = if dont_remember {
                 300.0
             } else {

@@ -7,16 +7,13 @@ use serde_json::{Value, json};
 use sha2::{Sha256, Sha384, Sha512};
 
 /// Complete session payload before a configured signer adds protected claims.
-///
-/// # Errors
-/// Returns a serialization error for an invalid application projection.
-pub fn payload(
+pub(crate) fn payload(
     user: &crate::UserView,
     session: &crate::SessionView,
     version: &str,
     now_ms: i64,
-) -> AuthResult<Value> {
-    Ok(json!({"session":session,"user":user,"updatedAt":now_ms,"version":version}))
+) -> Value {
+    json!({"session":session,"user":user,"updatedAt":now_ms,"version":version})
 }
 
 /// Add issued-at and expiry claims with fractional seconds retained.

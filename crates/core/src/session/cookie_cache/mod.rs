@@ -238,7 +238,7 @@ pub fn encode_compact(
     dont_remember: bool,
     secret: &str,
 ) -> AuthResult<String> {
-    let payload = json!({"session":session,"user":user,"updatedAt":now_ms,"version":version});
+    let payload = jwt::payload(user, session, version, now_ms);
     let expiry = now_ms as f64
         + if dont_remember {
             60.0
