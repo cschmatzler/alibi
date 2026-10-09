@@ -298,7 +298,7 @@ impl RateLimitConfig {
 
     #[must_use]
     pub fn rule(mut self, path: impl Into<String>, rule: RateLimitRule) -> Self {
-        drop(self.per_endpoint.insert(path.into(), rule));
+        _ = self.per_endpoint.insert(path.into(), rule);
         self
     }
 

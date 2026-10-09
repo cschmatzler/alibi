@@ -36,7 +36,7 @@ impl ApiKeyStore for StatelessStore {
             permissions: input.permissions,
             metadata: input.metadata,
         };
-        drop(self.lock()?.api_keys.insert(row.id.clone(), row.clone()));
+        _ = self.lock()?.api_keys.insert(row.id.clone(), row.clone());
         Ok(row)
     }
     async fn get_api_key_by_id(&self, id: &str) -> AuthResult<Option<ApiKey>> {
@@ -94,7 +94,7 @@ impl ApiKeyStore for StatelessStore {
         Ok(row.clone())
     }
     async fn delete_api_key(&self, id: &str) -> AuthResult<()> {
-        drop(self.lock()?.api_keys.shift_remove(id));
+        _ = self.lock()?.api_keys.shift_remove(id);
         Ok(())
     }
     async fn delete_expired_api_keys(&self) -> AuthResult<usize> {

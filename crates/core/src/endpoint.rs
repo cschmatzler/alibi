@@ -318,7 +318,7 @@ impl EndpointCall {
                 .and_then(|value| value.get(name))
                 .is_some()
             {
-                drop(query.insert(name.into(), JsValue::Bool(self.session_query_truthy(name))));
+                _ = query.insert(name.into(), JsValue::Bool(self.session_query_truthy(name)));
             }
         }
         context.query = Some(JsValue::Object(query));
@@ -398,13 +398,12 @@ impl EndpointCall {
     }
 
     pub fn set_response_header(&self, name: impl Into<String>, value: impl Into<String>) {
-        drop(
-            self.state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .response_headers
-                .insert(name, value),
-        );
+        _ = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .response_headers
+            .insert(name, value);
     }
 
     pub fn queue_response_header(&self, name: impl Into<String>, value: impl Into<String>) {
@@ -530,7 +529,7 @@ fn merge_value(target: &mut JsValue, patch: JsValue) {
             if let Some(target) = target.get_mut(name) {
                 merge_value(target, value.clone());
             } else {
-                drop(target.insert(name.clone(), value.clone()));
+                _ = target.insert(name.clone(), value.clone());
             }
         }
     } else {
@@ -672,7 +671,7 @@ fn merge_header(headers: &mut Headers, name: String, value: String) {
     if name.eq_ignore_ascii_case("set-cookie") {
         headers.append(name, value);
     } else {
-        drop(headers.insert(name, value));
+        _ = headers.insert(name, value);
     }
 }
 

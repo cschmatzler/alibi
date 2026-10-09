@@ -283,12 +283,11 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     }
     async fn delete_session(&self, token: &str) -> AuthResult<()> {
         if self.config.session.stateless {
-            drop(
-                self.ephemeral_sessions
-                    .lock()
-                    .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
-                    .shift_remove(token),
-            );
+            _ = self
+                .ephemeral_sessions
+                .lock()
+                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
+                .shift_remove(token);
             return Ok(());
         }
         self.remove_cached_session(token).await?;
@@ -308,7 +307,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
                 .retain(|_, session| crate::AuthSession::user_id(session).as_ref() != user_id);
             return Ok(());
         }
-        drop(self.get_user_sessions_record(user_id).await);
+        _ = self.get_user_sessions_record(user_id).await;
         let tokens = self.cached_user_tokens(user_id).await?;
         if self.session_uses_database() {
             if self.secondary().is_some() && self.config.session.preserve_in_database {
@@ -345,12 +344,12 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     ) -> AuthResult<S::Session> {
         if self.config.session.stateless || self.secondary().is_some() {
             let mut fields = crate::field_policy::FieldValues::new();
-            drop(fields.insert(
+            _ = fields.insert(
                 "activeOrganizationId".into(),
                 organization_id.map_or(crate::utils::json::JsValue::Null, |value| {
                     crate::utils::json::JsValue::String(value.to_owned())
                 }),
-            ));
+            );
             let updated = if self.config.session.stateless {
                 self.update_ephemeral_session(token, None, fields).await?
             } else {
@@ -369,12 +368,12 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     ) -> AuthResult<S::Session> {
         if self.config.session.stateless || self.secondary().is_some() {
             let mut fields = crate::field_policy::FieldValues::new();
-            drop(fields.insert(
+            _ = fields.insert(
                 "activeTeamId".into(),
                 team_id.map_or(crate::utils::json::JsValue::Null, |value| {
                     crate::utils::json::JsValue::String(value.to_owned())
                 }),
-            ));
+            );
             let updated = if self.config.session.stateless {
                 self.update_ephemeral_session(token, None, fields).await?
             } else {

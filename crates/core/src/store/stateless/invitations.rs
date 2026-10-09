@@ -24,11 +24,10 @@ impl InvitationStore for StatelessStore {
             expires_at: data.expires_at,
             created_at: options.created_at.unwrap_or_else(Utc::now),
         };
-        drop(
-            self.organization_state()?
-                .invitations
-                .insert(row.id.clone(), row.clone()),
-        );
+        _ = self
+            .organization_state()?
+            .invitations
+            .insert(row.id.clone(), row.clone());
         Ok(row)
     }
     async fn get_invitation_by_id(&self, id: &str) -> AuthResult<Option<Invitation>> {

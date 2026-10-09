@@ -240,11 +240,9 @@ impl TryFrom<UserViewInput> for UserView {
             }
         };
         if !input.email_verified.is_boolean() {
-            drop(
-                input
-                    .extension_fields
-                    .insert("emailVerified".into(), input.email_verified),
-            );
+            _ = input
+                .extension_fields
+                .insert("emailVerified".into(), input.email_verified);
         }
         Ok(Self {
             email_verified,
@@ -302,10 +300,9 @@ impl<T: AuthUser> From<&T> for UserView {
             .and_then(|output| output.values().get("emailVerified"))
             && !value.is_boolean()
         {
-            drop(
-                view.extension_fields
-                    .insert("emailVerified".into(), value.clone()),
-            );
+            _ = view
+                .extension_fields
+                .insert("emailVerified".into(), value.clone());
         }
         view
     }

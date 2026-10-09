@@ -81,7 +81,7 @@ pub(crate) fn revive(value: &mut JsValue) {
 pub(crate) fn revive_parsed(value: &mut JsValue) {
     match value {
         JsValue::Object(values) => {
-            drop(values.shift_remove("__proto__"));
+            _ = values.shift_remove("__proto__");
             values.values_mut().for_each(revive_parsed);
         }
         JsValue::Array(values) => values.iter_mut().for_each(revive_parsed),

@@ -178,9 +178,6 @@ impl fmt::Debug for CookieCacheVersion {
 }
 
 impl CookieCacheVersion {
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
     pub async fn resolve(&self, context: &CacheVersionContext) -> AuthResult<String> {
         match self {
             Self::Literal(value) => Ok(if value.is_empty() {
@@ -232,9 +229,6 @@ pub fn effective_max_age(max_age: f64) -> f64 {
     clippy::suboptimal_flops,
     reason = "Match JavaScript Number arithmetic and its separate rounding steps for cookie expiry"
 )]
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub fn encode_compact(
     user: &UserView,
     session: &SessionView,
@@ -257,7 +251,7 @@ pub fn encode_compact(
         Value::Null
     };
     let mut signed = payload.as_object().cloned().unwrap_or_default();
-    drop(signed.insert("expiresAt".into(), expiry.clone()));
+    _ = signed.insert("expiresAt".into(), expiry.clone());
     let signature = signature(secret, crate::utils::json::to_string(&signed)?.as_bytes());
     let envelope = json!({"session":payload,"expiresAt":expiry,"signature":signature});
     Ok(URL_SAFE_NO_PAD.encode(crate::utils::json::to_string(&envelope)?))
@@ -343,10 +337,10 @@ fn authenticate_compact(
     let mut normalized = original_payload.clone();
     date::revive(&mut normalized);
     let mut signed = normalized.as_object()?.clone();
-    drop(signed.insert(
+    _ = signed.insert(
         "expiresAt".into(),
         crate::utils::json::JsValue::Number(expires_at),
-    ));
+    );
     let message = crate::utils::json::to_string(&signed).ok()?;
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).ok()?;
     mac.update(message.as_bytes());
@@ -421,30 +415,28 @@ pub(crate) fn parse_payload(
     let mut user = payload_2.get("user")?.to_json_value().ok()?;
     let mut session = payload_2.get("session")?.to_json_value().ok()?;
     let user_id = date::coerce_id(original_payload.get("session")?.get("userId")?)?;
-    drop(
-        session
-            .as_object_mut()?
-            .insert("userId".into(), Value::String(user_id)),
-    );
+    _ = session
+        .as_object_mut()?
+        .insert("userId".into(), Value::String(user_id));
     // The source schemas supply absent creation/update dates and a false
     // emailVerified value. Producer dates are canonical JavaScript Date JSON.
     for object in [&mut user, &mut session] {
         let map = object.as_object_mut()?;
         for key in ["createdAt", "updatedAt"] {
             if !map.contains_key(key) {
-                drop(map.insert(
+                _ = map.insert(
                     key.into(),
                     json!(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)),
-                ));
+                );
             }
         }
     }
     let map = user.as_object_mut()?;
     let email = map.get("email")?.as_str()?.to_lowercase();
-    drop(map.insert("email".into(), Value::String(email)));
+    _ = map.insert("email".into(), Value::String(email));
     _ = map.get("name")?.as_str()?;
     if !map.contains_key("emailVerified") {
-        drop(map.insert("emailVerified".into(), Value::Bool(false)));
+        _ = map.insert("emailVerified".into(), Value::Bool(false));
     }
     let null_user_extensions: Vec<_> = [
         "username",
@@ -467,7 +459,7 @@ pub(crate) fn parse_payload(
         _ = user.omitted_fields.insert("image".into());
     }
     for name in null_user_extensions {
-        drop(user.extension_fields.insert(name.into(), Value::Null));
+        _ = user.extension_fields.insert(name.into(), Value::Null);
     }
     let null_extensions: Vec<_> = ["activeOrganizationId", "activeTeamId", "impersonatedBy"]
         .into_iter()
@@ -480,7 +472,7 @@ pub(crate) fn parse_payload(
         }
     }
     for name in null_extensions {
-        drop(session.extension_fields.insert(name.into(), Value::Null));
+        _ = session.extension_fields.insert(name.into(), Value::Null);
     }
     Some(CompactCache {
         user,
@@ -494,9 +486,6 @@ pub(crate) fn parse_payload(
 /// Check the token binding, version callback, and source expiry guards.
 ///
 /// Callback errors propagate; invalid envelopes permit storage fallback.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 #[expect(
     clippy::as_conversions,
     clippy::cast_precision_loss,
@@ -542,9 +531,6 @@ pub async fn validate_compact(
 /// Negative and NaN ages omit Max-Age; nonnegative ages are floored, and
 /// values above the cookie serializer's 400-day ceiling fail rather than
 /// saturating. No Expires attribute is synthesized.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub fn cookie_header(
     name: &str,
     value: &str,

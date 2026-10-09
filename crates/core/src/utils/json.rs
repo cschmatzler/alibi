@@ -203,7 +203,7 @@ impl<'de> Deserialize<'de> for JsValue {
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
                 let mut values = IndexMap::new();
                 while let Some((key, value)) = map.next_entry()? {
-                    drop(values.insert(key, value));
+                    _ = values.insert(key, value);
                 }
                 Ok(JsValue::Object(values))
             }
@@ -383,7 +383,7 @@ impl Parser<'_> {
                         return Err(invalid("expected JSON colon"));
                     }
                     let value = self.value(depth + 1)?;
-                    drop(values.insert(key, value));
+                    _ = values.insert(key, value);
                     self.whitespace();
                     if self.take(b'}') {
                         break;
@@ -444,7 +444,7 @@ impl Parser<'_> {
     }
     fn number(&mut self) -> Result<JsValue, serde_json::Error> {
         let start = self.position;
-        let _ignored_take = self.take(b'-');
+        _ = self.take(b'-');
         if !self.take(b'0') && !self.digits() {
             return Err(invalid("invalid JSON number"));
         }
@@ -452,7 +452,7 @@ impl Parser<'_> {
             return Err(invalid("invalid JSON fraction"));
         }
         if self.take(b'e') || self.take(b'E') {
-            let _ignored_take_2 = self.take(b'+') || self.take(b'-');
+            _ = self.take(b'+') || self.take(b'-');
             if !self.digits() {
                 return Err(invalid("invalid JSON exponent"));
             }
@@ -678,7 +678,7 @@ fn finite_value(value: &JsValue) -> Result<Value, serde_json::Error> {
             entries.sort_by_key(|(name, _)| array_index(name).unwrap_or(u32::MAX));
             let mut values = serde_json::Map::new();
             for (key, value_2) in entries {
-                drop(values.insert(key.clone(), finite_value(value_2)?));
+                _ = values.insert(key.clone(), finite_value(value_2)?);
             }
             Ok(Value::Object(values))
         }

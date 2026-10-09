@@ -1,9 +1,6 @@
 use super::*;
 /// Try the authenticated compact cache before any physical session lookup.
 /// Missing or invalid cache data can only produce a storage fallback.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub async fn read<S: AuthSchema>(
     ctx: &AuthContext<S>,
     request: &impl SessionRequest,
@@ -166,9 +163,6 @@ pub(crate) async fn renew_cache<S: AuthSchema>(
 
 /// Shared direct/nested get-session lifecycle for the explicitly migrated
 /// guards. Nested reads behave as GET even when their parent endpoint is POST.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub async fn authenticated<S: AuthSchema>(
     ctx: &AuthContext<S>,
     request: &impl SessionRequest,

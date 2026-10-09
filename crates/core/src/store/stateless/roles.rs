@@ -25,11 +25,10 @@ impl OrganizationRoleStore for StatelessStore {
             created_at: Utc::now(),
             updated_at: None,
         };
-        drop(
-            self.organization_state()?
-                .roles
-                .insert(row.id.clone(), row.clone()),
-        );
+        _ = self
+            .organization_state()?
+            .roles
+            .insert(row.id.clone(), row.clone());
         Ok(row)
     }
     async fn get_organization_role(

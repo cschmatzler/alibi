@@ -16,7 +16,7 @@ fn merge<T: Clone + PartialEq>(
         // Published merge walks live rows first, then appends only new IDs.
         // A base row concurrently deleted from live must stay deleted.
         if live.contains_key(&id) || !base.contains_key(&id) {
-            drop(live.insert(id, row));
+            _ = live.insert(id, row);
         }
     }
 }

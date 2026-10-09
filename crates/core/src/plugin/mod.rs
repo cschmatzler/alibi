@@ -128,13 +128,13 @@ mod tests {
         // Build request with the session token
         let ctx = AuthContext::new(Arc::clone(&config), db);
         let mut req = AuthRequest::new(HttpMethod::Get, "/test");
-        drop(req.headers.insert(
+        _ = req.headers.insert(
             "cookie".into(),
             format!(
                 "better-auth.session_token={}",
                 crate::utils::cookie_utils::sign_cookie_value(session.token(), &config.secret)
             ),
-        ));
+        );
 
         let (found_user, _found_session) = ctx.require_session(&req).await.unwrap();
         assert_eq!(found_user.id(), user.id());

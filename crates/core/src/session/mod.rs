@@ -437,8 +437,6 @@ mod tests {
         SessionManager::new(test_config(), runtime.block_on(test_database()))
     }
 
-    // ── validate_token_format ───────────────────────────────────────────
-
     // Rust-specific surface: `SessionManager` and its token/session helper APIs are public Rust APIs with no direct TS analogue.
     #[test]
     fn valid_token_format() {
@@ -461,18 +459,15 @@ mod tests {
         assert!(!mgr.validate_token_format("session_short"));
     }
 
-    // ── extract_session_token ───────────────────────────────────────────
-
     // Pinned Better Call sessions require a signed cookie; bearer authentication
     // is supplied by the separate bearer plugin, not core session parsing.
     #[test]
     fn extract_rejects_bare_bearer() {
         let mgr = test_manager();
         let mut req = AuthRequest::new(HttpMethod::Get, "/test");
-        drop(
-            req.headers
-                .insert("authorization".into(), "Bearer my-token".into()),
-        );
+        _ = req
+            .headers
+            .insert("authorization".into(), "Bearer my-token".into());
         assert_eq!(mgr.extract_session_token(&req), None);
     }
 
@@ -499,7 +494,7 @@ mod tests {
             ),
         ] {
             let mut req = AuthRequest::new(HttpMethod::Get, "/test");
-            drop(req.headers.insert("cookie".into(), cookie));
+            _ = req.headers.insert("cookie".into(), cookie);
             assert_eq!(mgr.extract_session_token(&req).as_deref(), expected);
         }
     }
@@ -508,16 +503,15 @@ mod tests {
     fn extract_ignores_bearer_when_signed_cookie_exists() {
         let mgr = test_manager();
         let mut req = AuthRequest::new(HttpMethod::Get, "/test");
-        drop(
-            req.headers
-                .insert("authorization".into(), "Bearer bearer-tok".into()),
-        );
+        _ = req
+            .headers
+            .insert("authorization".into(), "Bearer bearer-tok".into());
         let signed =
             crate::utils::cookie_utils::sign_cookie_value("cookie-tok", &mgr.config.secret);
-        drop(req.headers.insert(
+        _ = req.headers.insert(
             "cookie".into(),
             format!("better-auth.session_token={signed}"),
-        ));
+        );
         assert_eq!(mgr.extract_session_token(&req), Some("cookie-tok".into()));
     }
 
@@ -534,14 +528,11 @@ mod tests {
     fn extract_skips_empty_cookie_value() {
         let mgr = test_manager();
         let mut req = AuthRequest::new(HttpMethod::Get, "/test");
-        drop(
-            req.headers
-                .insert("cookie".into(), "better-auth.session_token=".into()),
-        );
+        _ = req
+            .headers
+            .insert("cookie".into(), "better-auth.session_token=".into());
         assert_eq!(mgr.extract_session_token(&req), None);
     }
-
-    // ── is_session_fresh ────────────────────────────────────────────────
 
     // Rust-specific surface: `SessionManager` and its token/session helper APIs are public Rust APIs with no direct TS analogue.
     #[test]
@@ -623,8 +614,6 @@ mod tests {
         assert!(mgr.is_session_fresh(&session));
     }
 
-    // ── async operations ────────────────────────────────────────────────
-
     // Rust-specific surface: `SessionManager` and its token/session helper APIs are public Rust APIs with no direct TS analogue.
     #[tokio::test]
     async fn create_and_get_session() {
@@ -702,12 +691,12 @@ mod tests {
             (format!("{name}={valid}; {name}=invalid"), true),
         ] {
             let mut request = AuthRequest::new(HttpMethod::Get, "/get-session");
-            drop(request.headers.insert("cookie".into(), header));
+            _ = request.headers.insert("cookie".into(), header);
             assert_eq!(manager.request_disables_refresh(&request), expected);
         }
         for (value, expected) in [("", false), ("false", true), ("0", true), ("true", true)] {
             let mut request = AuthRequest::new(HttpMethod::Get, "/get-session");
-            drop(request.query.insert("disableRefresh".into(), value.into()));
+            _ = request.query.insert("disableRefresh".into(), value.into());
             assert_eq!(manager.request_disables_refresh(&request), expected);
         }
     }
@@ -812,8 +801,8 @@ mod tests {
             .unwrap();
 
         // Create two sessions
-        drop(mgr.create_session(&user, None, None).await.unwrap());
-        drop(mgr.create_session(&user, None, None).await.unwrap());
+        _ = mgr.create_session(&user, None, None).await.unwrap();
+        _ = mgr.create_session(&user, None, None).await.unwrap();
 
         let sessions = mgr.list_user_sessions(user.id()).await.unwrap();
         assert_eq!(sessions.len(), 2);
@@ -830,8 +819,8 @@ mod tests {
             .await
             .unwrap();
 
-        drop(mgr.create_session(&user, None, None).await.unwrap());
-        drop(mgr.create_session(&user, None, None).await.unwrap());
+        _ = mgr.create_session(&user, None, None).await.unwrap();
+        _ = mgr.create_session(&user, None, None).await.unwrap();
 
         let count = mgr.revoke_all_user_sessions(user.id()).await.unwrap();
         assert_eq!(count, 2);
@@ -852,8 +841,8 @@ mod tests {
             .unwrap();
 
         let current = mgr.create_session(&user, None, None).await.unwrap();
-        drop(mgr.create_session(&user, None, None).await.unwrap());
-        drop(mgr.create_session(&user, None, None).await.unwrap());
+        _ = mgr.create_session(&user, None, None).await.unwrap();
+        _ = mgr.create_session(&user, None, None).await.unwrap();
 
         let count = mgr
             .revoke_other_user_sessions(user.id(), current.token())

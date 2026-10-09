@@ -16,8 +16,6 @@ impl std::fmt::Display for SameSite {
     }
 }
 
-// ── Advanced configuration ──────────────────────────────────────────────
-
 /// Advanced configuration options (mirrors TS `advanced` block).
 #[derive(Debug, Clone, Default)]
 pub struct AdvancedConfig {

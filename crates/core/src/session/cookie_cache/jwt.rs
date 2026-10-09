@@ -35,8 +35,8 @@ pub fn time_claims(mut payload: Value, max_age: f64) -> AuthResult<Value> {
     let claims = payload
         .as_object_mut()
         .ok_or_else(|| AuthError::internal("Invalid cookie-cache payload"))?;
-    drop(claims.insert("iat".into(), json!(now)));
-    drop(claims.insert("exp".into(), json!(expiry)));
+    _ = claims.insert("iat".into(), json!(now));
+    _ = claims.insert("exp".into(), json!(expiry));
     Ok(payload)
 }
 

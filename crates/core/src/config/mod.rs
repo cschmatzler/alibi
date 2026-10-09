@@ -587,8 +587,6 @@ fn legacy_pattern_origin(url: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    // ── extract_origin ──────────────────────────────────────────────────
-
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]
     fn extract_origin_with_path() {
@@ -640,8 +638,6 @@ mod tests {
         assert_eq!(extract_origin("example.com"), None);
     }
 
-    // ── AuthConfig::new ─────────────────────────────────────────────────
-
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]
     fn new_config_sets_secret() {
@@ -658,8 +654,6 @@ mod tests {
         assert_eq!(cfg.base_path, "/api/auth");
         assert_eq!(cfg.trusted_origins, Vec::<String>::new());
     }
-
-    // ── Builder methods ─────────────────────────────────────────────────
 
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]
@@ -730,8 +724,6 @@ mod tests {
         assert_eq!(cfg.disabled_paths, vec!["/new"]);
     }
 
-    // ── is_origin_trusted ───────────────────────────────────────────────
-
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]
     fn is_origin_trusted_matches_base_url() {
@@ -758,8 +750,6 @@ mod tests {
         assert!(cfg.is_origin_trusted("https://sub.example.com"));
         assert!(!cfg.is_origin_trusted("https://other.com"));
     }
-
-    // ── is_redirect_target_trusted ─────────────────────────────────────
 
     // Upstream reference: packages/better-auth/src/api/middlewares/origin-check.ts :: originCheck validates callbackURL against trustedOrigins.
     #[test]
@@ -799,8 +789,6 @@ mod tests {
         assert!(!cfg.is_redirect_target_trusted("//evil.com"));
     }
 
-    // ── is_path_disabled ────────────────────────────────────────────────
-
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]
     fn is_path_disabled_matches() {
@@ -808,8 +796,6 @@ mod tests {
         assert!(cfg.is_path_disabled("/admin"));
         assert!(!cfg.is_path_disabled("/user"));
     }
-
-    // ── validate ────────────────────────────────────────────────────────
 
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]
@@ -831,8 +817,6 @@ mod tests {
         let cfg = AuthConfig::new("test-secret-min-32-chars-1234567");
         assert!(cfg.validate().is_ok());
     }
-
-    // ── Defaults ────────────────────────────────────────────────────────
 
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]
@@ -910,8 +894,6 @@ mod tests {
         assert!(crate::error::page::error_page_html("SOME_ERROR-CODE").contains("SOME_ERROR-CODE"));
         assert!(crate::error::page::error_page_html("it's").contains("it's"));
     }
-
-    // ── session builder methods ─────────────────────────────────────────
 
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]

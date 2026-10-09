@@ -127,7 +127,7 @@ impl OpenApiBuilder {
                     }
                 }
             }
-            drop(schemas.insert(model.name.clone(), model.to_schema()));
+            _ = schemas.insert(model.name.clone(), model.to_schema());
         }
         builder.spec.components = Some(json!({"schemas":schemas,"securitySchemes":{
             "apiKeyCookie":{"type":"apiKey","in":"cookie","name":"apiKeyCookie","description":"API Key authentication via cookie"},
@@ -231,7 +231,7 @@ impl OpenApiBuilder {
                         index += 1;
                     }
                 }
-                let _ignored_clone = self.used_ids.insert(candidate.clone());
+                _ = self.used_ids.insert(candidate.clone());
                 candidate
             })
             .unwrap_or_default();
@@ -242,13 +242,13 @@ impl OpenApiBuilder {
                 .remove("description")
                 .and_then(|value| value.as_str().map(str::to_owned))
                 .unwrap_or_default();
-            drop(responses.insert(
+            _ = responses.insert(
                 status.clone(),
                 OpenApiResponse {
                     description,
                     metadata: fields,
                 },
-            ));
+            );
         }
         let tags = if core {
             let mut tags = vec!["Default".into()];
@@ -288,7 +288,7 @@ impl OpenApiBuilder {
                 json!({"content":{"application/json":{"schema":{"type":"object","properties":{}}}}}),
             );
         }
-        drop(self.spec.paths.entry(path_2).or_default().insert(
+        _ = self.spec.paths.entry(path_2).or_default().insert(
             method_name.into(),
             OpenApiOperation {
                 operation_id,
@@ -300,7 +300,7 @@ impl OpenApiBuilder {
                 request_body,
                 responses,
             },
-        ));
+        );
         self
     }
 
@@ -379,8 +379,8 @@ fn default_responses() -> BTreeMap<String, OpenApiResponse> {
         ("500","Internal Server Error. This is a problem with the server that you cannot fix."),
     ].into_iter().map(|(status,description)| {
         let mut schema=json!({"type":"object","properties":{"message":{"type":"string"}}});
-        if (status=="400" || status=="401") && let Some(object)=schema.as_object_mut() {drop(object.insert("required".into(),json!(["message"])));}
-        let mut metadata=serde_json::Map::new();drop(metadata.insert("content".into(),json!({"application/json":{"schema":schema}})));
+        if (status=="400" || status=="401") && let Some(object)=schema.as_object_mut() {_ = object.insert("required".into(),json!(["message"]));}
+        let mut metadata=serde_json::Map::new();_ = metadata.insert("content".into(),json!({"application/json":{"schema":schema}}));
         (status.into(),OpenApiResponse {description:description.into(),metadata})
     }).collect()
 }

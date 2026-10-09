@@ -86,9 +86,6 @@ fn authentication(
     Ok(mac)
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub fn encode(
     secret: &str,
     salt: &str,
@@ -102,15 +99,15 @@ pub fn encode(
     let now = Utc::now().timestamp();
     let mut claims = serde_json::to_value(payload)?;
     let claims = claims.as_object_mut().ok_or_else(invalid)?;
-    drop(claims.insert("iat".into(), json!(now)));
+    _ = claims.insert("iat".into(), json!(now));
     let expiry = serde_json::Number::from(now).as_f64().ok_or_else(invalid)? + max_age;
     if !expiry.is_finite() {
         return Err(AuthError::internal(
             "Invalid encrypted-cookie expiration time",
         ));
     }
-    drop(claims.insert("exp".into(), json!(expiry)));
-    drop(claims.insert("jti".into(), json!(uuid::Uuid::new_v4().to_string())));
+    _ = claims.insert("exp".into(), json!(expiry));
+    _ = claims.insert("jti".into(), json!(uuid::Uuid::new_v4().to_string()));
     let mut ciphertext = crate::utils::json::to_vec(claims)?;
     let padding = 16 - ciphertext.len() % 16;
     ciphertext.resize(

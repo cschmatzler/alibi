@@ -25,11 +25,10 @@ impl TeamStore for StatelessStore {
             updated_at: data.updated_at,
             member_count: 0,
         };
-        drop(
-            self.organization_state()?
-                .teams
-                .insert(row.id.clone(), row.clone()),
-        );
+        _ = self
+            .organization_state()?
+            .teams
+            .insert(row.id.clone(), row.clone());
         Ok(row)
     }
     async fn get_team(&self, organization_id: Option<&str>, id: &str) -> AuthResult<Option<Team>> {
@@ -77,7 +76,7 @@ impl TeamStore for StatelessStore {
         {
             return Ok(false);
         }
-        drop(state.teams.shift_remove(id));
+        _ = state.teams.shift_remove(id);
         state.team_members.retain(|_, row| row.team_id != id);
         for invite in state
             .invitations
@@ -162,7 +161,7 @@ impl TeamStore for StatelessStore {
             created_at: Utc::now(),
             membership_key: Some(key),
         };
-        drop(state.team_members.insert(row.id.clone(), row.clone()));
+        _ = state.team_members.insert(row.id.clone(), row.clone());
         Ok(AddTeamMemberResult::Added(row))
     }
     async fn remove_team_member(&self, team_id: &str, user_id: &str) -> AuthResult<usize> {

@@ -119,7 +119,7 @@ impl VerificationCreation {
     pub fn snapshot(&self) -> VerificationSnapshot {
         let mut fields = IndexMap::new();
         if let Some(id) = &self.id {
-            drop(fields.insert("id".into(), JsValue::String(id.clone())));
+            _ = fields.insert("id".into(), JsValue::String(id.clone()));
         }
         for (key, value) in [
             ("identifier", self.identifier.clone()),
@@ -128,7 +128,7 @@ impl VerificationCreation {
             ("createdAt", date_json(self.created_at)),
             ("updatedAt", date_json(self.updated_at)),
         ] {
-            drop(fields.insert(key.into(), JsValue::String(value)));
+            _ = fields.insert(key.into(), JsValue::String(value));
         }
         VerificationSnapshot {
             data: JsValue::Object(fields),
@@ -246,10 +246,10 @@ impl VerificationSnapshot {
             .or_else(|| date_value(self.data.get("expiresAt")))?;
         self.expiry = Some(expiry);
         if let JsValue::Object(fields) = &mut self.data {
-            drop(fields.insert(
+            _ = fields.insert(
                 "expiresAt".into(),
                 JsValue::String(crate::utils::datetime::json_date_millis(expiry)),
-            ));
+            );
         }
         Some(self)
     }
@@ -373,7 +373,7 @@ impl<S: AuthSchema> VerificationService<'_, S> {
             }
         }
         if !self.config.disable_cleanup {
-            let _deleted = self.database.delete_expired_verifications().await?;
+            _ = self.database.delete_expired_verifications().await?;
         }
         Ok(found.as_ref().map(VerificationSnapshot::from_model))
     }
@@ -525,8 +525,8 @@ impl<S: AuthSchema> VerificationService<'_, S> {
         };
         let mut snapshot = VerificationSnapshot::from_model(&model);
         if let JsValue::Object(fields) = &mut snapshot.data {
-            drop(fields.shift_remove("createdAt"));
-            drop(fields.shift_remove("updatedAt"));
+            _ = fields.shift_remove("createdAt");
+            _ = fields.shift_remove("updatedAt");
         }
         VerificationPublication {
             store_in_database: true,
@@ -622,9 +622,9 @@ fn spread(value: &JsValue) -> IndexMap<String, JsValue> {
 }
 fn patch(fields: &mut IndexMap<String, JsValue>, data: &UpdateVerification) {
     if let Some(value) = &data.value {
-        drop(fields.insert("value".into(), JsValue::String(value.clone())));
+        _ = fields.insert("value".into(), JsValue::String(value.clone()));
     }
     if let Some(expires) = data.expires_at {
-        drop(fields.insert("expiresAt".into(), JsValue::String(date_json(expires))));
+        _ = fields.insert("expiresAt".into(), JsValue::String(date_json(expires)));
     }
 }

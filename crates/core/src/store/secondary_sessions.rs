@@ -29,12 +29,11 @@ impl<S: AuthSchema> PluginStore<S> {
 
     pub(super) fn remember_ephemeral_session(&self, session: &S::Session) -> AuthResult<()> {
         if self.config.session.stateless {
-            drop(
-                self.ephemeral_sessions
-                    .lock()
-                    .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
-                    .insert(session.token().to_owned(), session.clone()),
-            );
+            _ = self
+                .ephemeral_sessions
+                .lock()
+                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
+                .insert(session.token().to_owned(), session.clone());
         }
         Ok(())
     }
@@ -188,7 +187,7 @@ impl<S: AuthSchema> PluginStore<S> {
                     ("activeTeamId", session.active_team_id()),
                 ] {
                     if value.is_none() {
-                        let _inserted = absent.insert(name.to_owned());
+                        _ = absent.insert(name.to_owned());
                     }
                 }
                 for (name, value) in session.additional_fields() {
@@ -200,7 +199,7 @@ impl<S: AuthSchema> PluginStore<S> {
                             .get(&name)
                             .is_none_or(|field| field.default.is_none())
                     {
-                        let _inserted = absent.insert(name);
+                        _ = absent.insert(name);
                     }
                 }
                 absent
@@ -209,7 +208,7 @@ impl<S: AuthSchema> PluginStore<S> {
             };
             if let Some(fields) = updated_fields {
                 for name in fields.keys() {
-                    let _removed = absent_fields.remove(name);
+                    _ = absent_fields.remove(name);
                 }
             }
             let snapshot = CachedSession {

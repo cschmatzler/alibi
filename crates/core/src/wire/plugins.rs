@@ -252,9 +252,7 @@ pub(in crate::wire) fn normalize_api_key_permission_dates(value: &mut serde_json
     }
 }
 
-// ---------------------------------------------------------------------------
 // Plugin entity views
-// ---------------------------------------------------------------------------
 
 #[expect(
     clippy::ref_option,

@@ -311,7 +311,7 @@ impl AuthRequest {
         for (key, value) in pairs {
             let key = key.into();
             let value = value.into();
-            drop(self.query.insert(key.clone(), value.clone()));
+            _ = self.query.insert(key.clone(), value.clone());
             self.query_values.entry(key).or_default().push(value);
         }
     }
@@ -484,7 +484,7 @@ impl AuthResponse {
 
     #[must_use]
     pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
-        drop(self.headers.insert(name.into(), value.into()));
+        _ = self.headers.insert(name.into(), value.into());
         self
     }
 

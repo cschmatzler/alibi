@@ -25,7 +25,7 @@ impl JwkStore for StatelessStore {
         if state.jwks.contains_key(&key.id) {
             return Err(AuthError::internal("duplicate JWK primary ID"));
         }
-        drop(state.jwks.insert(key.id.clone(), key.clone()));
+        _ = state.jwks.insert(key.id.clone(), key.clone());
         Ok(key)
     }
 }

@@ -105,7 +105,7 @@ impl<S: AuthSchema> AuthContext<S> {
     }
 
     pub fn set_metadata(&mut self, key: impl Into<String>, value: serde_json::Value) {
-        drop(self.metadata.insert(key.into(), value));
+        _ = self.metadata.insert(key.into(), value);
     }
 
     #[must_use]
@@ -158,10 +158,9 @@ impl<S: AuthSchema> AuthContext<S> {
                 ("displayUsername", view.display_username.is_none()),
             ] {
                 if absent {
-                    drop(
-                        view.extension_fields
-                            .insert(key.into(), serde_json::Value::Null),
-                    );
+                    _ = view
+                        .extension_fields
+                        .insert(key.into(), serde_json::Value::Null);
                 }
             }
         } else {
@@ -171,10 +170,9 @@ impl<S: AuthSchema> AuthContext<S> {
         if self.feature_enabled("two_factor.enabled") {
             view.two_factor_enabled = user.two_factor_enabled_value();
             if view.two_factor_enabled.is_none() {
-                drop(
-                    view.extension_fields
-                        .insert("twoFactorEnabled".into(), serde_json::Value::Null),
-                );
+                _ = view
+                    .extension_fields
+                    .insert("twoFactorEnabled".into(), serde_json::Value::Null);
             }
         } else {
             view.two_factor_enabled = None;
@@ -188,10 +186,9 @@ impl<S: AuthSchema> AuthContext<S> {
                 ("banExpires", view.ban_expires.is_none()),
             ] {
                 if absent {
-                    drop(
-                        view.extension_fields
-                            .insert(key.into(), serde_json::Value::Null),
-                    );
+                    _ = view
+                        .extension_fields
+                        .insert(key.into(), serde_json::Value::Null);
                 }
             }
         } else {
@@ -208,16 +205,14 @@ impl<S: AuthSchema> AuthContext<S> {
         }
         if self.feature_enabled("phone-number.enabled") {
             if view.phone_number.is_none() {
-                drop(
-                    view.extension_fields
-                        .insert("phoneNumber".into(), serde_json::Value::Null),
-                );
+                _ = view
+                    .extension_fields
+                    .insert("phoneNumber".into(), serde_json::Value::Null);
             }
             if view.phone_number_verified.is_none() {
-                drop(
-                    view.extension_fields
-                        .insert("phoneNumberVerified".into(), serde_json::Value::Null),
-                );
+                _ = view
+                    .extension_fields
+                    .insert("phoneNumberVerified".into(), serde_json::Value::Null);
             }
         } else {
             view.phone_number = None;
@@ -225,10 +220,9 @@ impl<S: AuthSchema> AuthContext<S> {
         }
         if self.feature_enabled("last-login-method.enabled") {
             if view.last_login_method.is_none() {
-                drop(
-                    view.extension_fields
-                        .insert("lastLoginMethod".into(), serde_json::Value::Null),
-                );
+                _ = view
+                    .extension_fields
+                    .insert("lastLoginMethod".into(), serde_json::Value::Null);
             }
         } else {
             view.last_login_method = None;
@@ -243,7 +237,7 @@ impl<S: AuthSchema> AuthContext<S> {
             .map(crate::AdapterOutput::values)
             .unwrap_or(&physical);
         for (name, field) in fields {
-            drop(view.extension_fields.remove(name));
+            _ = view.extension_fields.remove(name);
             if (!public || field.returned)
                 && let Some(value) = values.get(name).or_else(|| {
                     field
@@ -252,7 +246,7 @@ impl<S: AuthSchema> AuthContext<S> {
                         .and_then(|physical| values.get(physical))
                 })
             {
-                drop(view.extension_fields.insert(name.clone(), value.clone()));
+                _ = view.extension_fields.insert(name.clone(), value.clone());
             }
         }
         if let Some(snapshot) = user.adapter_snapshot() {
@@ -374,7 +368,7 @@ impl<S: AuthSchema> AuthContext<S> {
             .map(crate::AdapterOutput::values)
             .unwrap_or(&physical);
         for (name, field) in fields {
-            drop(view.remove(name));
+            _ = view.remove(name);
             if field.returned
                 && let Some(value) = values.get(name).or_else(|| {
                     field
@@ -383,7 +377,7 @@ impl<S: AuthSchema> AuthContext<S> {
                         .and_then(|physical| values.get(physical))
                 })
             {
-                drop(view.insert(name.clone(), value.clone()));
+                _ = view.insert(name.clone(), value.clone());
             }
         }
         for credential in [
@@ -394,7 +388,7 @@ impl<S: AuthSchema> AuthContext<S> {
             "refreshTokenExpiresAt",
             "password",
         ] {
-            drop(view.remove(credential));
+            _ = view.remove(credential);
         }
         Ok(view)
     }
@@ -421,7 +415,7 @@ impl<S: AuthSchema> AuthContext<S> {
                     .map_or(&self.config.session.additional_fields, |fields| &fields.0);
                 for (name, field) in fields {
                     if !field.returned {
-                        let _ignored_clone = view.omitted_fields.insert(name.clone());
+                        _ = view.omitted_fields.insert(name.clone());
                     }
                 }
             }
@@ -436,36 +430,34 @@ impl<S: AuthSchema> AuthContext<S> {
             .retain(|name, _| fields.contains_key(name));
         if let Some(output) = session.adapter_snapshot().map(crate::AdapterOutput::values) {
             for name in fields.keys() {
-                drop(view.extension_fields.remove(name));
+                _ = view.extension_fields.remove(name);
                 if let Some(value) = output.get(name) {
-                    drop(view.extension_fields.insert(name.clone(), value.clone()));
+                    _ = view.extension_fields.insert(name.clone(), value.clone());
                 } else {
-                    let _ignored_clone = view.omitted_fields.insert(name.clone());
+                    _ = view.omitted_fields.insert(name.clone());
                 }
             }
         }
         for (name, field) in fields {
             if public && !field.returned {
-                let _ignored_clone = view.omitted_fields.insert(name.clone());
+                _ = view.omitted_fields.insert(name.clone());
             }
         }
         let declared = |name: &str| fields.contains_key(name);
         if self.feature_enabled("admin.enabled") || declared("impersonatedBy") {
             if view.impersonated_by.is_none() {
-                drop(
-                    view.extension_fields
-                        .insert("impersonatedBy".into(), serde_json::Value::Null),
-                );
+                _ = view
+                    .extension_fields
+                    .insert("impersonatedBy".into(), serde_json::Value::Null);
             }
         } else {
             view.impersonated_by = None;
         }
         if self.feature_enabled("organization.enabled") || declared("activeOrganizationId") {
             if view.active_organization_id.is_none() {
-                drop(
-                    view.extension_fields
-                        .insert("activeOrganizationId".into(), serde_json::Value::Null),
-                );
+                _ = view
+                    .extension_fields
+                    .insert("activeOrganizationId".into(), serde_json::Value::Null);
             }
         } else {
             view.active_organization_id = None;
@@ -473,10 +465,9 @@ impl<S: AuthSchema> AuthContext<S> {
 
         if self.feature_enabled("organization.teams.enabled") || declared("activeTeamId") {
             if view.active_team_id.is_none() {
-                drop(
-                    view.extension_fields
-                        .insert("activeTeamId".into(), serde_json::Value::Null),
-                );
+                _ = view
+                    .extension_fields
+                    .insert("activeTeamId".into(), serde_json::Value::Null);
             }
         } else {
             view.active_team_id = None;
@@ -509,10 +500,9 @@ impl<S: AuthSchema> AuthContext<S> {
         let mut view = crate::wire::InvitationView::from(invitation);
         if self.feature_enabled("organization.teams.enabled") {
             if view.team_id.is_none() {
-                drop(
-                    view.extension_fields
-                        .insert("teamId".into(), serde_json::Value::Null),
-                );
+                _ = view
+                    .extension_fields
+                    .insert("teamId".into(), serde_json::Value::Null);
             }
         } else {
             view.team_id = None;
@@ -633,11 +623,9 @@ impl<S: AuthSchema> AuthContext<S> {
         let mut authoritative = req.clone();
         authoritative.virtual_session = None;
         if self.config.session.has_server_session_store() {
-            drop(
-                authoritative
-                    .query
-                    .insert("disableCookieCache".into(), "true".into()),
-            );
+            _ = authoritative
+                .query
+                .insert("disableCookieCache".into(), "true".into());
         }
         self.require_cached_session(&authoritative).await
     }
@@ -671,11 +659,9 @@ impl<S: AuthSchema> AuthContext<S> {
         let mut physical = req.clone();
         physical.virtual_session = None;
         if self.config.session.has_server_session_store() {
-            drop(
-                physical
-                    .query
-                    .insert("disableCookieCache".into(), "true".into()),
-            );
+            _ = physical
+                .query
+                .insert("disableCookieCache".into(), "true".into());
         }
         let read = crate::session::cookie_cache::runtime::authenticated(self, &physical, false)
             .await?

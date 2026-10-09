@@ -29,11 +29,10 @@ impl OrganizationStore for StatelessStore {
             created_at: now,
             updated_at: now,
         };
-        drop(
-            self.organization_state()?
-                .organizations
-                .insert(row.id.clone(), row.clone()),
-        );
+        _ = self
+            .organization_state()?
+            .organizations
+            .insert(row.id.clone(), row.clone());
         Ok(row)
     }
     async fn get_organization_by_id(&self, id: &str) -> AuthResult<Option<Organization>> {
@@ -95,7 +94,7 @@ impl OrganizationStore for StatelessStore {
         let mut state = self.organization_state()?;
         state.members.retain(|_, row| row.organization_id != id);
         state.invitations.retain(|_, row| row.organization_id != id);
-        drop(state.organizations.shift_remove(id));
+        _ = state.organizations.shift_remove(id);
         Ok(())
     }
     async fn list_user_organizations(&self, user_id: &str) -> AuthResult<Vec<Organization>> {

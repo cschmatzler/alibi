@@ -28,7 +28,7 @@ impl<S: AuthSchema> AuthInitContext<S> {
     }
 
     pub fn set_metadata(&mut self, key: impl Into<String>, value: serde_json::Value) {
-        drop(self.metadata.insert(key.into(), value));
+        _ = self.metadata.insert(key.into(), value);
     }
 
     /// Decorate the instance's actual password hashing boundary. Later

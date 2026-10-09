@@ -30,11 +30,10 @@ impl TwoFactorStore for StatelessStore {
             created_at: now,
             updated_at: now,
         };
-        drop(
-            self.lock()?
-                .two_factors
-                .insert(record.id.clone(), record.clone()),
-        );
+        _ = self
+            .lock()?
+            .two_factors
+            .insert(record.id.clone(), record.clone());
         Ok(record)
     }
     async fn get_two_factor_by_user_id(&self, user_id: &str) -> AuthResult<Option<TwoFactor>> {
@@ -125,11 +124,11 @@ impl TwoFactorStore for StatelessStore {
         }))
     }
     async fn reset_two_factor_failures(&self, id: &str) -> AuthResult<()> {
-        drop(mutate_record(&mut self.lock()?.two_factors, id, |record| {
+        _ = mutate_record(&mut self.lock()?.two_factors, id, |record| {
             record.failed_verification_count = Some(0.0);
             record.locked_until = None;
             true
-        }));
+        });
         Ok(())
     }
     async fn compare_and_swap_two_factor_backup_codes(
@@ -169,11 +168,10 @@ impl PasskeyStore for StatelessStore {
             created_at: now,
             updated_at: now,
         };
-        drop(
-            self.lock()?
-                .passkeys
-                .insert(record.id.clone(), record.clone()),
-        );
+        _ = self
+            .lock()?
+            .passkeys
+            .insert(record.id.clone(), record.clone());
         Ok(record)
     }
     async fn get_passkey_by_id(&self, id: &str) -> AuthResult<Option<Passkey>> {
@@ -223,7 +221,7 @@ impl PasskeyStore for StatelessStore {
         .ok_or_else(|| AuthError::not_found("Passkey not found"))
     }
     async fn delete_passkey(&self, id: &str) -> AuthResult<()> {
-        drop(self.lock()?.passkeys.shift_remove(id));
+        _ = self.lock()?.passkeys.shift_remove(id);
         Ok(())
     }
 }

@@ -470,8 +470,6 @@ where
 mod tests {
     use super::*;
 
-    // ── status_code ─────────────────────────────────────────────────────
-
     // Rust-specific surface: `AuthError` and Rust-side response/error conversion behavior are public Rust library APIs with no direct TS analogue.
     #[test]
     fn bad_request_is_400() {
@@ -590,8 +588,6 @@ mod tests {
         );
     }
 
-    // ── code_from_message ───────────────────────────────────────────────
-
     // Upstream reference: BASE_ERROR_CODES in @better-auth/core — a message
     // upstream defines a constant for carries that constant.
     #[test]
@@ -658,8 +654,6 @@ mod tests {
         }
     }
 
-    // ── error_payload ───────────────────────────────────────────────────
-
     // Rust-specific surface: `AuthError` and Rust-side response/error conversion behavior are public Rust library APIs with no direct TS analogue.
     #[test]
     fn error_payload_for_client_error() {
@@ -683,8 +677,6 @@ mod tests {
         assert_eq!(status, 500);
         assert_eq!(message, "Internal server error");
     }
-
-    // ── to_auth_response ────────────────────────────────────────────────
 
     // Rust-specific surface: `AuthError` and Rust-side response/error conversion behavior are public Rust library APIs with no direct TS analogue.
     #[test]
@@ -710,8 +702,6 @@ mod tests {
         );
     }
 
-    // ── constructor helpers ──────────────────────────────────────────────
-
     // Rust-specific surface: `AuthError` and Rust-side response/error conversion behavior are public Rust library APIs with no direct TS analogue.
     #[test]
     fn constructor_helpers_produce_correct_variants() {
@@ -736,8 +726,6 @@ mod tests {
         );
     }
 
-    // ── DatabaseError ───────────────────────────────────────────────────
-
     // Rust-specific surface: `AuthError` and Rust-side response/error conversion behavior are public Rust library APIs with no direct TS analogue.
     #[test]
     fn database_error_display() {
@@ -752,8 +740,6 @@ mod tests {
         let auth_err: AuthError = db_err.into();
         assert_eq!(auth_err.status_code(), 500);
     }
-
-    // ── validation_error_response ───────────────────────────────────────
 
     // Rust-specific surface: `AuthError` and Rust-side response/error conversion behavior are public Rust library APIs with no direct TS analogue.
     #[test]
@@ -776,8 +762,6 @@ mod tests {
             "[body.email] Email is invalid"
         );
     }
-
-    // ── Display for fixed-message variants ──────────────────────────────
 
     // Rust-specific surface: `AuthError` and Rust-side response/error conversion behavior are public Rust library APIs with no direct TS analogue.
     #[test]

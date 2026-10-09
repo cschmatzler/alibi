@@ -208,7 +208,7 @@ impl Middleware for CorsMiddleware {
         }
 
         for (key, value) in self.cors_headers(&origin) {
-            drop(response.headers.insert(key, value));
+            _ = response.headers.insert(key, value);
         }
 
         Ok(response)

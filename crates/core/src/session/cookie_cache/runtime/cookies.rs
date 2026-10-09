@@ -44,7 +44,7 @@ pub(in crate::session::cookie_cache::runtime) fn cookie_values<H: std::hash::Bui
                 .decode_utf8()
                 .map_or_else(|_| value.to_owned(), |decoded| decoded.into_owned());
             if chunks {
-                drop(values.insert(name.to_owned(), decoded));
+                _ = values.insert(name.to_owned(), decoded);
             } else {
                 _ = values.entry(name.to_owned()).or_insert(decoded);
             }
@@ -145,17 +145,17 @@ pub fn chunked_cookie_headers<H: std::hash::BuildHasher + Sync>(
     };
     let mut output = IndexMap::new();
     for old in existing_names(&cookie_values(headers, true), name) {
-        drop(output.insert(old.clone(), render(&old, "", Some(0.0))?));
+        _ = output.insert(old.clone(), render(&old, "", Some(0.0))?);
     }
     if count <= 1 {
-        drop(output.insert(name.to_owned(), render(name, value, max_age)?));
+        _ = output.insert(name.to_owned(), render(name, value, max_age)?);
     } else if count <= 100 {
         // Encoded compact values are ASCII, so byte chunking matches JS strings.
         for (index, chunk) in value.as_bytes().chunks(capacity).enumerate() {
             let chunk = std::str::from_utf8(chunk)
                 .map_err(|_error| AuthError::internal("Invalid compact cache encoding"))?;
             let part = format!("{name}.{index}");
-            drop(output.insert(part.clone(), render(&part, chunk, max_age)?));
+            _ = output.insert(part.clone(), render(&part, chunk, max_age)?);
         }
     }
     Ok(output.into_values().collect())

@@ -103,8 +103,7 @@ pub trait VerificationStore<S: AuthSchema>: Send + Sync {
     }
     /// Insert a deterministic reservation exactly once. An expired marker
     /// remains reserved until it is cleaned up or explicitly consumed.
-    async fn reserve_verification(&self, verification: CreateVerification) -> AuthResult<bool> {
-        drop(verification);
+    async fn reserve_verification(&self, _verification: CreateVerification) -> AuthResult<bool> {
         Err(AuthError::internal(
             "verification reservation is not supported by this store",
         ))

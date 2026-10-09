@@ -62,11 +62,10 @@ impl MemberStore for StatelessStore {
             role: data.role,
             created_at: Utc::now(),
         };
-        drop(
-            self.organization_state()?
-                .members
-                .insert(row.id.clone(), row.clone()),
-        );
+        _ = self
+            .organization_state()?
+            .members
+            .insert(row.id.clone(), row.clone());
         Ok(row)
     }
     async fn get_member(&self, organization_id: &str, user_id: &str) -> AuthResult<Option<Member>> {
@@ -98,7 +97,7 @@ impl MemberStore for StatelessStore {
         Ok(Some(row.clone()))
     }
     async fn delete_member(&self, id: &str) -> AuthResult<()> {
-        drop(self.organization_state()?.members.shift_remove(id));
+        _ = self.organization_state()?.members.shift_remove(id);
         Ok(())
     }
     async fn delete_member_with_context(
@@ -109,7 +108,7 @@ impl MemberStore for StatelessStore {
         remove_team_members: bool,
     ) -> AuthResult<()> {
         let mut state = self.organization_state()?;
-        drop(state.members.shift_remove(id));
+        _ = state.members.shift_remove(id);
         if remove_team_members {
             let teams: Vec<_> = state
                 .teams
@@ -119,7 +118,7 @@ impl MemberStore for StatelessStore {
                 .map(|row| row.id.clone())
                 .collect();
             for team in teams {
-                let _removed = state.remove_team_members(&team, user_id);
+                _ = state.remove_team_members(&team, user_id);
             }
         }
         Ok(())
@@ -195,7 +194,7 @@ impl MemberStore for StatelessStore {
         let start = query
             .offset
             .map_or(0, |value| slice_index(value, rows.len()));
-        drop(rows.drain(..start));
+        _ = rows.drain(..start);
         rows.truncate(slice_index(
             query.limit.unwrap_or(self.find_many_limit as f64),
             rows.len(),

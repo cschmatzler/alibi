@@ -14,10 +14,6 @@ use std::fmt::Write;
 use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 
-// ---------------------------------------------------------------------------
-// PasswordHasher trait
-// ---------------------------------------------------------------------------
-
 /// Custom password hasher trait for pluggable password hashing strategies.
 ///
 /// When provided in plugin configs, this overrides the default scrypt-based
@@ -130,10 +126,6 @@ fn hexadecimal(bytes: &[u8]) -> String {
     })
 }
 
-// ---------------------------------------------------------------------------
-// hash / verify helpers
-// ---------------------------------------------------------------------------
-
 /// Hash `password` using the custom `hasher` (if provided) or the default
 /// scrypt algorithm and NFKC normalization.
 ///
@@ -180,10 +172,6 @@ pub async fn verify_password(
         Err(AuthError::InvalidCredentials)
     }
 }
-
-// ---------------------------------------------------------------------------
-// Password validation
-// ---------------------------------------------------------------------------
 
 /// Validate `password` against both the plugin-level length limits and the global `PasswordConfig`
 /// strength rules.
@@ -242,10 +230,6 @@ pub fn validate_password(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Serialisation helper
-// ---------------------------------------------------------------------------
-
 /// Serialize any `Serialize`-able value to `serde_json::Value`, converting
 /// errors to `AuthError::internal`.
 ///
@@ -256,10 +240,6 @@ pub fn serialize_to_value(value: &impl Serialize) -> AuthResult<serde_json::Valu
     serde_json::to_value(value)
         .map_err(|e| AuthError::internal(format!("Failed to serialize value: {e}")))
 }
-
-// ---------------------------------------------------------------------------
-// UpdateUser helper
-// ---------------------------------------------------------------------------
 
 /// Build an `UpdateUser` that only changes the `metadata` field.
 #[must_use]

@@ -58,11 +58,9 @@ impl SessionStore<StatelessSchema> for StatelessStore {
                 "activeTeamId" => session.active_team_id = value.as_str().map(str::to_owned),
                 "impersonatedBy" => session.impersonated_by = value.as_str().map(str::to_owned),
                 _ => {
-                    drop(
-                        session
-                            .extension_fields
-                            .insert(key.clone(), value.to_json_value()?),
-                    );
+                    _ = session
+                        .extension_fields
+                        .insert(key.clone(), value.to_json_value()?);
                 }
             }
         }

@@ -165,8 +165,8 @@ impl DeviceCodeStore for StatelessStore {
 
     async fn delete_device_code(&self, id: &str) -> AuthResult<()> {
         let mut state = self.lock()?;
-        drop(state.device_codes.shift_remove(id));
-        drop(state.device_code_fields.shift_remove(id));
+        _ = state.device_codes.shift_remove(id);
+        _ = state.device_code_fields.shift_remove(id);
         Ok(())
     }
 
@@ -178,8 +178,8 @@ impl DeviceCodeStore for StatelessStore {
             .is_some_and(|device_code| device_code.status == status);
 
         if should_delete {
-            drop(state.device_codes.shift_remove(id));
-            drop(state.device_code_fields.shift_remove(id));
+            _ = state.device_codes.shift_remove(id);
+            _ = state.device_code_fields.shift_remove(id);
         }
 
         let locked_result = Ok(should_delete);

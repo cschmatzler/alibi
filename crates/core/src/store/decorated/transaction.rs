@@ -54,12 +54,11 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
             .complete_secondary_session_update(updated, None, fields, false)
             .await?
             .ok_or(AuthError::SessionNotFound)?;
-        drop(
-            self.pending_scopes
-                .lock()
-                .map_err(|_| AuthError::internal("Ephemeral scope queue poisoned"))?
-                .insert(token.to_owned(), updated.clone()),
-        );
+        _ = self
+            .pending_scopes
+            .lock()
+            .map_err(|_| AuthError::internal("Ephemeral scope queue poisoned"))?
+            .insert(token.to_owned(), updated.clone());
         Ok(updated)
     }
     pub(in crate::store) async fn update_secondary_scope(
@@ -241,12 +240,12 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
     ) -> AuthResult<S::Session> {
         if self.config.session.stateless {
             let mut fields = crate::field_policy::FieldValues::new();
-            drop(fields.insert(
+            _ = fields.insert(
                 "activeTeamId".into(),
                 team_id.map_or(crate::utils::json::JsValue::Null, |value| {
                     crate::utils::json::JsValue::String(value.to_owned())
                 }),
-            ));
+            );
             return self.update_ephemeral_scope(token, fields).await;
         }
         if self.record_store.secondary().is_some()
@@ -254,12 +253,12 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
                 || self.record_store.cached_session(token).await?.is_some())
         {
             let mut fields = crate::field_policy::FieldValues::new();
-            drop(fields.insert(
+            _ = fields.insert(
                 "activeTeamId".into(),
                 team_id.map_or(crate::utils::json::JsValue::Null, |value| {
                     crate::utils::json::JsValue::String(value.to_owned())
                 }),
-            ));
+            );
             return self.update_secondary_scope(token, fields).await;
         }
         self.inner.update_session_active_team(token, team_id).await
@@ -272,12 +271,12 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
     ) -> AuthResult<S::Session> {
         if self.config.session.stateless {
             let mut fields = crate::field_policy::FieldValues::new();
-            drop(fields.insert(
+            _ = fields.insert(
                 "activeOrganizationId".into(),
                 organization_id.map_or(crate::utils::json::JsValue::Null, |value| {
                     crate::utils::json::JsValue::String(value.to_owned())
                 }),
-            ));
+            );
             return self.update_ephemeral_scope(token, fields).await;
         }
         if self.record_store.secondary().is_some()
@@ -285,12 +284,12 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
                 || self.record_store.cached_session(token).await?.is_some())
         {
             let mut fields = crate::field_policy::FieldValues::new();
-            drop(fields.insert(
+            _ = fields.insert(
                 "activeOrganizationId".into(),
                 organization_id.map_or(crate::utils::json::JsValue::Null, |value| {
                     crate::utils::json::JsValue::String(value.to_owned())
                 }),
-            ));
+            );
             return self.update_secondary_scope(token, fields).await;
         }
         self.inner

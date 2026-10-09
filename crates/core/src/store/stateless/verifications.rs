@@ -19,7 +19,7 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
             if state.verifications.contains_key(&model.id) {
                 return Err(AuthError::internal("duplicate verification primary ID"));
             }
-            drop(state.verifications.insert(model.id.clone(), model.clone()));
+            _ = state.verifications.insert(model.id.clone(), model.clone());
             drop(state);
             crate::verification::VerificationSnapshot::from_model(&model)
         } else {
@@ -109,11 +109,10 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
             created_at: now,
             updated_at: now,
         };
-        drop(
-            self.lock()?
-                .verifications
-                .insert(verification.id.clone(), verification.clone()),
-        );
+        _ = self
+            .lock()?
+            .verifications
+            .insert(verification.id.clone(), verification.clone());
         Ok(verification)
     }
 
@@ -256,7 +255,7 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
         };
 
         let now = Utc::now();
-        let _ignored_insert = entry.insert(VerificationView {
+        _ = entry.insert(VerificationView {
             id,
             identifier: verification.identifier,
             value: verification.value,
@@ -269,7 +268,7 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
     }
 
     async fn delete_verification(&self, id: &str) -> AuthResult<()> {
-        drop(self.lock()?.verifications.shift_remove(id));
+        _ = self.lock()?.verifications.shift_remove(id);
         Ok(())
     }
 

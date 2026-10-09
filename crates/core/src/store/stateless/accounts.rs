@@ -18,11 +18,10 @@ impl AccountStore<StatelessSchema> for StatelessStore {
             created_at: now,
             updated_at: now,
         };
-        drop(
-            self.lock()?
-                .accounts
-                .insert(account.id.clone(), account.clone()),
-        );
+        _ = self
+            .lock()?
+            .accounts
+            .insert(account.id.clone(), account.clone());
         Ok(account)
     }
 
@@ -90,7 +89,7 @@ impl AccountStore<StatelessSchema> for StatelessStore {
     }
 
     async fn delete_account(&self, id: &str) -> AuthResult<()> {
-        drop(self.lock()?.accounts.shift_remove(id));
+        _ = self.lock()?.accounts.shift_remove(id);
         Ok(())
     }
 }

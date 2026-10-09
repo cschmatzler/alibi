@@ -123,12 +123,12 @@ impl<S: AuthSchema> PluginStore<S> {
         let mut additional = session.additional_fields();
         for name in absent {
             if let Some(object) = public.as_object_mut() {
-                drop(object.remove(&name));
+                _ = object.remove(&name);
             }
             if let Some(object) = physical.as_object_mut() {
-                drop(object.remove(&name));
+                _ = object.remove(&name);
             }
-            drop(additional.remove(&name));
+            _ = additional.remove(&name);
         }
         let output = self
             .adapter_fields
@@ -151,21 +151,19 @@ impl<S: AuthSchema> PluginStore<S> {
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         // Like Promise.all, reject the aggregate immediately but keep every
         // launched row projection alive. Retain its actual request context.
-        drop(tokio::spawn(async move {
+        _ = tokio::spawn(async move {
             let project = async {
-                drop(
-                    futures_util::future::join_all(models.into_iter().enumerate().map(
-                        |(index, model)| {
-                            let sender = &sender;
-                            let store = &store;
-                            async move {
-                                let result = store.session_record(model).await;
-                                let _ignored_closed_receiver = sender.send((index, result));
-                            }
-                        },
-                    ))
-                    .await,
-                );
+                _ = futures_util::future::join_all(models.into_iter().enumerate().map(
+                    |(index, model)| {
+                        let sender = &sender;
+                        let store = &store;
+                        async move {
+                            let result = store.session_record(model).await;
+                            _ = sender.send((index, result));
+                        }
+                    },
+                ))
+                .await;
             };
             if let Some(endpoint) = endpoint {
                 crate::endpoint::with_endpoint_call_context(
@@ -176,7 +174,7 @@ impl<S: AuthSchema> PluginStore<S> {
             } else {
                 crate::hooks::with_optional_request_hook_context(request, project).await;
             }
-        }));
+        });
         for _ in 0..records.len() {
             let (index, record) = receiver
                 .recv()
@@ -200,12 +198,12 @@ impl<S: AuthSchema> PluginStore<S> {
         else {
             return Err(AuthError::internal("Account output must be an object"));
         };
-        drop(canonical.insert(
+        _ = canonical.insert(
             "password".into(),
             account.password().map_or(serde_json::Value::Null, |value| {
                 serde_json::Value::String(value.into())
             }),
-        ));
+        );
         let output = self
             .field_policies()
             .account

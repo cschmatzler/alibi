@@ -1,8 +1,5 @@
 use super::*;
 /// Build cache cookies from the actual stored models and their public output.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub async fn stored_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
     ctx: &AuthContext<S>,
     user: &impl AuthUser,
@@ -127,9 +124,6 @@ pub(in crate::session::cookie_cache::runtime) async fn build_headers<
 /// Error headers are request local and only explicit public API errors retain
 /// the queued token; ordinary callback errors follow the source empty500 path.
 #[doc(hidden)]
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 pub async fn emit_issuance<S: AuthSchema>(
     ctx: &AuthContext<S>,
     user: &impl AuthUser,

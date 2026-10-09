@@ -101,23 +101,23 @@ impl FieldValues {
                 || (field.required && self.values.get(name).is_some_and(JsValue::is_null)))
             && let Some(default) = &field.default
         {
-            drop(self.values.insert(name.to_owned(), default.value()));
+            _ = self.values.insert(name.to_owned(), default.value());
         }
         if !self.transform_omitted
             && !self.values.contains_key(name)
             && let Some(update) = &field.on_update
         {
-            drop(self.values.insert(name.to_owned(), update()));
+            _ = self.values.insert(name.to_owned(), update());
         }
         true
     }
     fn set_adapter_value(&mut self, name: &str, value: Option<JsValue>) {
         match value {
             Some(value) => {
-                drop(self.values.insert(name.to_owned(), value));
+                _ = self.values.insert(name.to_owned(), value);
             }
             None => {
-                drop(self.values.shift_remove(name));
+                _ = self.values.shift_remove(name);
             }
         }
     }
@@ -133,7 +133,7 @@ impl FieldValues {
             .as_ref()
             .is_some_and(|fields| fields.contains_key(name))
         {
-            let _ignored_or_insert = self.values.entry(name.to_owned()).or_insert(value);
+            _ = self.values.entry(name.to_owned()).or_insert(value);
         }
     }
 }
@@ -442,7 +442,7 @@ impl SessionFields {
     pub fn defaults(&self, values: &mut FieldValues) {
         for (name, field) in &self.0 {
             if let Some(default) = &field.default {
-                let _ignored_value = values
+                _ = values
                     .entry(name.clone())
                     .or_insert_with(|| default.value());
             }
@@ -478,7 +478,7 @@ impl SessionFields {
             let Some(value) = input.get(name) else {
                 if creation {
                     if let Some(default) = &field.default {
-                        drop(parsed.insert(name.clone(), default.value()));
+                        _ = parsed.insert(name.clone(), default.value());
                     } else if field.required {
                         return Err(FieldInputError::Validation {
                             code: "MISSING_FIELD",
@@ -490,7 +490,7 @@ impl SessionFields {
             };
             if !field.input {
                 if creation && let Some(default) = &field.default {
-                    drop(parsed.insert(name.clone(), default.value()));
+                    _ = parsed.insert(name.clone(), default.value());
                     continue;
                 }
                 if truthy(value) {
@@ -502,7 +502,7 @@ impl SessionFields {
                 continue;
             }
             if let Some(validator) = &field.async_validator {
-                drop(validator(value.clone()));
+                _ = validator(value.clone());
                 return Err(FieldInputError::Transform(crate::AuthError::Upstream {
                     status: 500,
                     code: "ASYNC_VALIDATION_NOT_SUPPORTED",
@@ -527,10 +527,10 @@ impl SessionFields {
             };
             match value {
                 Some(value) => {
-                    drop(parsed.insert(name.clone(), value));
+                    _ = parsed.insert(name.clone(), value);
                 }
                 None => {
-                    let _ignored_clone = parsed.undefined_input_keys.insert(name.clone());
+                    _ = parsed.undefined_input_keys.insert(name.clone());
                 }
             }
         }
@@ -596,9 +596,9 @@ impl SessionAdapterFields {
             if !additional.contains_key(name)
                 && let Some(value) = base.get(name)
             {
-                drop(additional.insert(name.clone(), value.clone()));
+                _ = additional.insert(name.clone(), value.clone());
             }
-            drop(base.remove(name));
+            _ = base.remove(name);
         }
         let mut output = crate::AdapterOutput::from_values(base);
         output.extend(self.output(additional).await?);

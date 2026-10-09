@@ -75,7 +75,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
         {
             return Err(AuthError::bad_request("User already exists"));
         }
-        drop(state.users.insert(id, user.clone()));
+        _ = state.users.insert(id, user.clone());
         Ok(user)
     }
 
@@ -195,7 +195,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
             user.last_login_method = last_login_method;
         }
         for (key, value) in update.additional_fields {
-            drop(user.extension_fields.insert(key, value.to_json_value()?));
+            _ = user.extension_fields.insert(key, value.to_json_value()?);
         }
         for name in ["name", "email", "image", "username", "displayUsername"] {
             let present = match name {
@@ -216,7 +216,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
     }
 
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
-        drop(self.lock()?.users.shift_remove(id));
+        _ = self.lock()?.users.shift_remove(id);
         Ok(())
     }
 

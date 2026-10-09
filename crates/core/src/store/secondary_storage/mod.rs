@@ -260,7 +260,7 @@ impl CacheAdapter for MemoryCacheAdapter {
             .data
             .lock()
             .map_err(|_error| AuthError::internal("Cache lock poisoned"))?;
-        drop(data.insert(key.to_owned(), entry));
+        _ = data.insert(key.to_owned(), entry);
         drop(data);
 
         Ok(())
@@ -271,13 +271,13 @@ impl CacheAdapter for MemoryCacheAdapter {
             .data
             .lock()
             .map_err(|_| AuthError::internal("Cache lock poisoned"))?;
-        drop(data.insert(
+        _ = data.insert(
             key.to_owned(),
             CacheEntry {
                 value: value.to_owned(),
                 expires_at: None,
             },
-        ));
+        );
         Ok(())
     }
 
@@ -304,7 +304,7 @@ impl CacheAdapter for MemoryCacheAdapter {
             .data
             .lock()
             .map_err(|_error| AuthError::internal("Cache lock poisoned"))?;
-        drop(data.remove(key));
+        _ = data.remove(key);
         drop(data);
 
         Ok(())
@@ -347,13 +347,13 @@ impl CacheAdapter for MemoryCacheAdapter {
             entry.value = count.to_string();
             return Ok(count);
         }
-        drop(data.insert(
+        _ = data.insert(
             key.to_owned(),
             CacheEntry {
                 value: "1".to_owned(),
                 expires_at: Some(expires_at),
             },
-        ));
+        );
         drop(data);
         Ok(1.0)
     }
@@ -419,10 +419,10 @@ mod tests {
         for _ in 0..8 {
             let cache = Arc::clone(&cache);
             let barrier = Arc::clone(&barrier);
-            drop(tasks.spawn(async move {
-                let _ignored_wait = barrier.wait().await;
+            _ = tasks.spawn(async move {
+                _ = barrier.wait().await;
                 cache.get_and_delete("token").await
-            }));
+            });
         }
         let mut winners = Vec::new();
         while let Some(result) = tasks.join_next().await {

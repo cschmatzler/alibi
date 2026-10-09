@@ -8,7 +8,7 @@ pub struct ContextExtensions(HashMap<TypeId, Arc<dyn Any + Send + Sync>>);
 
 impl ContextExtensions {
     pub fn insert<T: Any + Send + Sync>(&mut self, value: T) {
-        drop(self.0.insert(TypeId::of::<T>(), Arc::new(value)));
+        _ = self.0.insert(TypeId::of::<T>(), Arc::new(value));
     }
 
     #[must_use]
