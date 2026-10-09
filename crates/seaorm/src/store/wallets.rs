@@ -91,7 +91,7 @@ pub(super) async fn remove_owned_wallets(
     {
         return Ok(());
     }
-    let _ignored_map_err = wallet_address::Entity::delete_many()
+    _ = wallet_address::Entity::delete_many()
         .filter(wallet_address::Column::UserId.eq(user_id))
         .exec(transaction)
         .await

@@ -123,7 +123,7 @@ where
         active.member_count = Set(reserved_count
             .checked_add(1)
             .ok_or_else(|| AuthError::internal("Team membership count overflow"))?);
-        drop(active.update(tx).await.map_err(map_db_err)?);
+        _ = active.update(tx).await.map_err(map_db_err)?;
         Ok(AddTeamMemberResult::Added(member.into()))
     }
 }
@@ -211,7 +211,7 @@ where
             tx.commit().await.map_err(map_db_err)?;
             return Ok(false);
         }
-        let _ignored_map_err = team_member::Entity::delete_many()
+        _ = team_member::Entity::delete_many()
             .filter(team_member::Column::TeamId.eq(team_id))
             .exec(&tx)
             .await
@@ -237,7 +237,7 @@ where
                 .join(",");
             let mut active = invite.into_active_model();
             active.team_id = Set((!remaining.is_empty()).then_some(remaining));
-            drop(active.update(&tx).await.map_err(map_db_err)?);
+            _ = active.update(&tx).await.map_err(map_db_err)?;
         }
         tx.commit().await.map_err(map_db_err)?;
         Ok(true)
@@ -284,13 +284,11 @@ where
             })
             .await
             .map_err(map_db_err)?;
-        drop(
-            team::Entity::find_by_id(team_id.to_owned())
-                .lock_exclusive()
-                .one(&tx)
-                .await
-                .map_err(map_db_err)?,
-        );
+        _ = team::Entity::find_by_id(team_id.to_owned())
+            .lock_exclusive()
+            .one(&tx)
+            .await
+            .map_err(map_db_err)?;
         let removed = team_member::Entity::delete_many()
             .filter(team_member::Column::TeamId.eq(team_id))
             .filter(team_member::Column::UserId.eq(user_id))
@@ -301,7 +299,7 @@ where
         let count = i64::try_from(removed)
             .map_err(|_error| AuthError::internal("Team membership count overflow"))?;
         if count > 0 {
-            let _ignored_map_err_2 = team::Entity::update_many()
+            _ = team::Entity::update_many()
                 .filter(team::Column::Id.eq(team_id))
                 .filter(team::Column::MemberCount.gte(count))
                 .col_expr(
@@ -394,7 +392,7 @@ pub(super) async fn release_owned_team_members(
         if deleted.rows_affected > 0 {
             let count = i64::try_from(deleted.rows_affected)
                 .map_err(|_error| AuthError::internal("Team membership count overflow"))?;
-            let _ignored_map_err = team::Entity::update_many()
+            _ = team::Entity::update_many()
                 .filter(team::Column::Id.eq(&room.id))
                 .filter(team::Column::MemberCount.gte(count))
                 .col_expr(

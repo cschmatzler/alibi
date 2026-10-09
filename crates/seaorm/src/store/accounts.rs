@@ -195,7 +195,7 @@ where
                 return Ok(());
             }
         }
-        let _ignored_map_err = <S::Account as SeaOrmAccountModel>::Entity::delete_many()
+        _ = <S::Account as SeaOrmAccountModel>::Entity::delete_many()
             .filter(<S::Account as SeaOrmAccountModel>::id_column().eq(account_id))
             .exec(self.scoped_connection())
             .await

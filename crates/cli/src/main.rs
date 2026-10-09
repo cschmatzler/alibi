@@ -86,33 +86,30 @@ fn main() -> ExitCode {
                         && !parent.exists()
                         && let Err(e) = fs::create_dir_all(parent)
                     {
-                        drop(writeln!(
+                        _ = writeln!(
                             std::io::stderr().lock(),
                             "failed to create directory {}: {e}",
                             parent.display()
-                        ));
+                        );
                         return ExitCode::FAILURE;
                     }
                     if let Err(e) = fs::write(&path, &schema) {
-                        drop(writeln!(
+                        _ = writeln!(
                             std::io::stderr().lock(),
                             "failed to write {}: {e}",
                             path.display()
-                        ));
+                        );
                         return ExitCode::FAILURE;
                     }
-                    drop(writeln!(
+                    _ = writeln!(
                         std::io::stderr().lock(),
                         "wrote auth schema to {}",
                         path.display()
-                    ));
+                    );
                 }
                 None => {
                     if let Err(error) = std::io::stdout().lock().write_all(schema.as_bytes()) {
-                        drop(writeln!(
-                            std::io::stderr().lock(),
-                            "failed to write stdout: {error}"
-                        ));
+                        _ = writeln!(std::io::stderr().lock(), "failed to write stdout: {error}");
                         return ExitCode::FAILURE;
                     }
                 }

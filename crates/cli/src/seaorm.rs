@@ -57,7 +57,7 @@ pub(crate) fn seaorm_schema(selection: &Selection) -> TokenStream {
                 schema.create_table_from_entity(verification::Entity).if_not_exists().to_owned(),
                 #(#extra_migration_statements,)*
             ] {
-                let _ = database.execute(&statement).await?;
+                _ = database.execute(&statement).await?;
             }
             Ok(())
         }

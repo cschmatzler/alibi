@@ -86,11 +86,9 @@ where
             .max(room.member_count);
         let mut active = room.into_active();
         active.set("member_count", reserved_count);
-        drop(
-            model::update::<team::Model>(exec, &active)
-                .await?
-                .ok_or_else(record_not_updated)?,
-        );
+        _ = model::update::<team::Model>(exec, &active)
+            .await?
+            .ok_or_else(record_not_updated)?;
         if let Some(maximum) = maximum {
             let mut seat = Sql::with(exec.engine(), "SELECT COUNT(*) FROM ");
             seat.ident(team::Model::TABLE);
@@ -130,11 +128,9 @@ where
                 .checked_add(1)
                 .ok_or_else(|| AuthError::internal("Team membership count overflow"))?,
         );
-        drop(
-            model::update::<team::Model>(exec, &active)
-                .await?
-                .ok_or_else(record_not_updated)?,
-        );
+        _ = model::update::<team::Model>(exec, &active)
+            .await?
+            .ok_or_else(record_not_updated)?;
         Ok(AddTeamMemberResult::Added(member.into()))
     }
 }
@@ -289,13 +285,12 @@ where
                     .join(",");
                 let mut active = invite.into_active();
                 active.set("team_id", (!remaining.is_empty()).then_some(remaining));
-                drop(
-                    self.organization_models
-                        .invitation
-                        .update(exec, &active)
-                        .await?
-                        .ok_or_else(record_not_updated)?,
-                );
+                _ = self
+                    .organization_models
+                    .invitation
+                    .update(exec, &active)
+                    .await?
+                    .ok_or_else(record_not_updated)?;
             }
             Ok(true)
         })
@@ -333,7 +328,7 @@ where
                 let mut room = model::by_id::<team::Model>(exec, team_id.as_str());
                 model::limit_one(&mut room);
                 lock_exclusive(&mut room);
-                drop(exec.fetch_optional::<team::Model>(room).await?);
+                _ = exec.fetch_optional::<team::Model>(room).await?;
                 let mut delete = Sql::with(exec.engine(), "DELETE FROM ");
                 delete.ident(team_member::Model::TABLE);
                 delete.push(" WHERE ");

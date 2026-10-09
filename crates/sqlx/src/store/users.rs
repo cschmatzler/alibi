@@ -360,7 +360,7 @@ where
 
     async fn update_user(&self, id: &str, mut update: UpdateUser) -> AuthResult<S::User> {
         update.email = update.email.map(|email| normalize_user_email(&email));
-        drop(S::User::parse_id(id)?);
+        _ = S::User::parse_id(id)?;
         let hook_context = self.hook_context(None);
         for hook in self.hooks() {
             if hook
@@ -417,7 +417,7 @@ where
     }
 
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
-        drop(S::User::parse_id(id)?);
+        _ = S::User::parse_id(id)?;
         let Some(user) = self.get_user_by_id(id).await? else {
             return Err(AuthError::UserNotFound);
         };
@@ -437,7 +437,7 @@ where
         let id = id.to_owned();
         self.in_transaction(true, async move |tx| {
             let exec = Exec::Tx(tx);
-            drop(find_user_by_id::<S::User>(exec, &id, Lock::Exclusive).await?);
+            _ = find_user_by_id::<S::User>(exec, &id, Lock::Exclusive).await?;
             super::teams::remove_owned_team_members(tx, &owner, None).await?;
             super::wallets::remove_owned_wallets(tx, &owner).await?;
             let mut users = Sql::with(exec.engine(), "DELETE FROM ");

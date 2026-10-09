@@ -135,7 +135,7 @@ impl SqlxPool {
             Self::Sqlite(pool) => pool.begin().await.map(TransactionKind::Sqlite),
             #[cfg(feature = "postgres")]
             Self::Postgres(pool) => {
-                let _ = immediate;
+                _ = immediate;
                 pool.begin().await.map(TransactionKind::Postgres)
             }
         }

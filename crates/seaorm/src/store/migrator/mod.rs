@@ -23,7 +23,6 @@ impl MigratorTrait for AuthMigrator {
     }
 }
 
-///
 /// # Errors
 ///
 /// Propagates database or migration errors.
@@ -108,12 +107,12 @@ async fn create_index<T: IntoTableRef>(
     unique: bool,
 ) -> Result<(), DbErr> {
     let mut index = Index::create();
-    let _ignored_table = index.name(name).table(table);
+    _ = index.name(name).table(table);
     for column in columns {
-        let _ignored_column = index.col(Alias::new(*column));
+        _ = index.col(Alias::new(*column));
     }
     if unique {
-        let _ignored_unique = index.unique();
+        _ = index.unique();
     }
     manager.create_index(index.to_owned()).await
 }
@@ -432,11 +431,11 @@ async fn create_two_factor(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
     // SQLite keeps INTEGER affinity for the counter; reads project it as REAL.
     let mut count = ColumnDef::new(two_factor::Column::FailedVerificationCount);
     if manager.get_database_backend() == sea_orm::DatabaseBackend::Sqlite {
-        let _ignored_integer = count.integer();
+        _ = count.integer();
     } else {
-        let _ignored_double = count.double();
+        _ = count.double();
     }
-    let _ignored_default = count.default(0);
+    _ = count.default(0);
     manager
         .create_table(
             Table::create()

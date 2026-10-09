@@ -176,8 +176,7 @@ pub trait SqlxValue: Sized {
     /// # Errors
     ///
     /// Returns an error if the value cannot be serialized for `engine`.
-    fn prepare(self, engine: Engine) -> AuthResult<Self> {
-        let _ = engine;
+    fn prepare(self, _engine: Engine) -> AuthResult<Self> {
         Ok(self)
     }
 }

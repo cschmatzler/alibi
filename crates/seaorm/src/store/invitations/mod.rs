@@ -144,14 +144,12 @@ where
             if alibi_core::AuthSession::expires_at(&session) < Utc::now() {
                 return Err(AuthError::SessionNotFound);
             }
-            drop(
-                organization::Entity::find_by_id(invitation.organization_id.clone())
-                    .lock_exclusive()
-                    .one(&transaction)
-                    .await
-                    .map_err(map_db_err)?
-                    .ok_or_else(|| AuthError::bad_request("Organization not found"))?,
-            );
+            _ = organization::Entity::find_by_id(invitation.organization_id.clone())
+                .lock_exclusive()
+                .one(&transaction)
+                .await
+                .map_err(map_db_err)?
+                .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
             if let Some(limit) = membership_limit
                 && member::Entity::find()
                     .filter(member::Column::OrganizationId.eq(&invitation.organization_id))
@@ -224,7 +222,7 @@ where
                 )?;
             }
             S::Session::set_updated_at(&mut active, Utc::now());
-            drop(active.update(&transaction).await.map_err(map_db_err)?);
+            _ = active.update(&transaction).await.map_err(map_db_err)?;
             let changed = Entity::update_many()
                 .filter(Column::Id.eq(invitation_id))
                 .filter(Column::Status.eq("pending"))

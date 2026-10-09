@@ -78,13 +78,13 @@ where
             let mut values = Query::select();
             for column in Column::iter() {
                 let value = Expr::val(model.get(column).unwrap());
-                let _ = values.expr(if matches!(column, Column::Start) {
+                _ = values.expr(if matches!(column, Column::Start) {
                     value.cast_as("text")
                 } else {
                     value
                 });
             }
-            let _ = insert
+            _ = insert
                 .query()
                 .select_from(values)
                 .map_err(|error| AuthError::internal(error.to_string()))?;
@@ -215,7 +215,7 @@ where
                             let mut active =
                                 apply_update_fields(model.into_active_model(), update)?;
                             active.updated_at = Set(updated_at);
-                            drop(active.update(txn).await.map_err(map_db_err)?);
+                            _ = active.update(txn).await.map_err(map_db_err)?;
                         }
                         return Ok(ConsumeApiKeyResult::RateLimited {
                             try_again_in: (window - elapsed).ceil(),

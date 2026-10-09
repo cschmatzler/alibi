@@ -192,13 +192,12 @@ where
                 .by_id(exec, invitation.organization_id.as_str())?;
             model::limit_one(&mut owner);
             lock_exclusive(&mut owner);
-            drop(
-                self.organization_models
-                    .organization
-                    .fetch_optional(exec, owner)
-                    .await?
-                    .ok_or_else(|| AuthError::bad_request("Organization not found"))?,
-            );
+            _ = self
+                .organization_models
+                .organization
+                .fetch_optional(exec, owner)
+                .await?
+                .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
             if let Some(limit) = membership_limit {
                 let mut count = Sql::with(exec.engine(), "SELECT COUNT(*) FROM ");
                 count.ident(self.organization_models.member.table());
@@ -277,11 +276,9 @@ where
                 )?;
             }
             S::Session::set_updated_at(&mut active, Utc::now());
-            drop(
-                model::update::<S::Session>(exec, &active)
-                    .await?
-                    .ok_or_else(record_not_updated)?,
-            );
+            _ = model::update::<S::Session>(exec, &active)
+                .await?
+                .ok_or_else(record_not_updated)?;
             let mut changed = Sql::with(exec.engine(), "UPDATE ");
             changed.ident(self.organization_models.invitation.table());
             changed.push(" SET ");

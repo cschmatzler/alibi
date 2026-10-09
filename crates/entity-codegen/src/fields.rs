@@ -77,7 +77,7 @@ pub fn additional_output(
         if physical_output {
             output.push(quote! {
                 if let Ok(value) = #core_root::utils::json::to_value(&self.#name) {
-                    let _ = fields.insert(#camel.into(), value);
+                    _ = fields.insert(#camel.into(), value);
                 }
             });
         }
@@ -89,7 +89,7 @@ pub fn additional_output(
         {
             output.push(quote! {
                 if let Ok(value) = #core_root::utils::json::to_value(&self.#name) {
-                    let _ = fields.insert(#physical.into(), value);
+                    _ = fields.insert(#physical.into(), value);
                 }
             });
         }

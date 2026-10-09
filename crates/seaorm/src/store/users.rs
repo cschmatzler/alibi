@@ -538,19 +538,17 @@ where
             })
             .await
             .map_err(map_db_err)?;
-        drop(
-            user_query::<S::User>(self.scoped_connection().get_database_backend())
-                .filter(S::User::id_column().eq(user_id.clone()))
-                .lock_exclusive()
-                .one(&transaction)
-                .await
-                .map_err(map_db_err)?,
-        );
+        _ = user_query::<S::User>(self.scoped_connection().get_database_backend())
+            .filter(S::User::id_column().eq(user_id.clone()))
+            .lock_exclusive()
+            .one(&transaction)
+            .await
+            .map_err(map_db_err)?;
         super::teams::remove_owned_team_members(&transaction, &user.id(), None).await?;
         super::wallets::remove_owned_wallets(&transaction, &user.id()).await?;
         // Keep polymorphic API-key references; redemption rejects absent owners.
 
-        let _ignored_map_err_2 = <S::User as SeaOrmUserModel>::Entity::delete_many()
+        _ = <S::User as SeaOrmUserModel>::Entity::delete_many()
             .filter(<S::User as SeaOrmUserModel>::id_column().eq(user_id))
             .exec(&transaction)
             .await

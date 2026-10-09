@@ -44,7 +44,7 @@ where
             ));
         }
         let mut query = Entity::insert(active);
-        let _ignored_returning = QueryTrait::query(&mut query).returning(factor_returning(backend));
+        _ = QueryTrait::query(&mut query).returning(factor_returning(backend));
         Entity::find()
             .from_raw_sql(query.build(backend))
             .one(self.scoped_connection())
@@ -132,15 +132,14 @@ where
     }
 
     async fn reset_two_factor_failures(&self, id: &str) -> AuthResult<()> {
-        drop(
-            self.apply_factor_update(
+        _ = self
+            .apply_factor_update(
                 Entity::update_many()
                     .filter(Column::Id.eq(id))
                     .col_expr(Column::FailedVerificationCount, Expr::value(0.0))
                     .col_expr(Column::LockedUntil, Expr::value(None::<DateTime<Utc>>)),
             )
-            .await?,
-        );
+            .await?;
         Ok(())
     }
 
@@ -212,8 +211,7 @@ impl<S: AuthSchema + Send + Sync> SeaOrmStore<S> {
         }
         // RETURNING captures the row in the conditional atomic write, rather
         // than a later read that can observe another request's reset/rotation.
-        let _ignored_returning_2 =
-            QueryTrait::query(&mut query).returning(factor_returning(backend));
+        _ = QueryTrait::query(&mut query).returning(factor_returning(backend));
         Entity::find()
             .from_raw_sql(query.build(backend))
             .one(self.scoped_connection())

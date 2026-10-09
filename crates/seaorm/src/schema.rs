@@ -32,7 +32,6 @@ pub trait SeaOrmUserModel:
         ))
     }
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the field value is unsupported by the entity column.
@@ -89,7 +88,6 @@ pub trait SeaOrmUserModel:
         }
     }
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the identifier is invalid for this entity's ID type.
@@ -145,7 +143,6 @@ pub trait SeaOrmSessionModel:
         ))
     }
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the field value is unsupported by the entity column.
@@ -182,13 +179,11 @@ pub trait SeaOrmSessionModel:
 
     fn created_at_column() -> Self::Column;
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the identifier is invalid for this entity's ID type.
     fn parse_id(id: &str) -> AuthResult<Self::Id>;
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the user identifier is invalid for this entity's ID type.
@@ -207,15 +202,13 @@ pub trait SeaOrmSessionModel:
 
     fn set_active_organization_id(active: &mut Self::ActiveModel, organization_id: Option<String>);
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the configured entity does not support an active-team field.
     fn set_active_team_id(
-        active: &mut Self::ActiveModel,
-        team_id: Option<String>,
+        _active: &mut Self::ActiveModel,
+        _team_id: Option<String>,
     ) -> AuthResult<()> {
-        drop((active, team_id));
         Err(alibi_core::AuthError::internal(
             "the session schema has no active-team field",
         ))
@@ -242,7 +235,6 @@ pub trait SeaOrmAccountModel:
         ))
     }
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the field value is unsupported by the entity column.
@@ -274,13 +266,11 @@ pub trait SeaOrmAccountModel:
     fn account_id_column() -> Self::Column;
     fn user_id_column() -> Self::Column;
     fn created_at_column() -> Self::Column;
-    ///
     /// # Errors
     ///
     /// Returns an error if the identifier is invalid for this entity's ID type.
     fn parse_id(id: &str) -> AuthResult<Self::Id>;
 
-    ///
     /// # Errors
     ///
     /// Returns an error if the user identifier is invalid for this entity's ID type.
@@ -317,7 +307,6 @@ pub trait SeaOrmVerificationModel:
     fn updated_at_column() -> Option<Self::Column> {
         None
     }
-    ///
     /// # Errors
     ///
     /// Returns an error if the identifier is invalid for this entity's ID type.

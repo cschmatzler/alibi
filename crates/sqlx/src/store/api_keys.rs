@@ -218,11 +218,9 @@ where
                             let updated_at = model.updated_at;
                             let mut active = apply_update_fields(model.into_active(), update)?;
                             active.set("updated_at", updated_at);
-                            drop(
-                                model::update::<Model>(exec, &active)
-                                    .await?
-                                    .ok_or_else(record_not_updated)?,
-                            );
+                            _ = model::update::<Model>(exec, &active)
+                                .await?
+                                .ok_or_else(record_not_updated)?;
                         }
                         return Ok(ConsumeApiKeyResult::RateLimited {
                             try_again_in: (window - elapsed).ceil(),

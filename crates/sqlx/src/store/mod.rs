@@ -126,7 +126,7 @@ impl<S: AuthSchema> SqlxStore<S> {
         );
         let mut sql = crate::sql::Sql::new(exec.engine());
         sql.push(&ddl);
-        let _ = exec.execute(sql).await?;
+        _ = exec.execute(sql).await?;
         let mut sql = crate::sql::Sql::new(exec.engine());
         sql.push(&allocate);
         let value = exec
@@ -186,7 +186,7 @@ impl<S: AuthSchema> SchemaMigrator for SqlxStore<S> {
         if self.config.advanced.database.serial_ids() {
             let [ddl, _] = alibi_core::config::serial_id_statements("", "", false);
             let exec = self.exec();
-            let _ = exec
+            _ = exec
                 .execute(crate::sql::Sql::with(exec.engine(), &ddl))
                 .await?;
         }

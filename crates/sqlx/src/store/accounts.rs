@@ -157,7 +157,7 @@ where
     }
 
     async fn update_account(&self, id: &str, mut update: UpdateAccount) -> AuthResult<S::Account> {
-        drop(<S::Account as SqlxAccountModel>::parse_id(id)?);
+        _ = <S::Account as SqlxAccountModel>::parse_id(id)?;
         let hook_context = self.hook_context(None);
         for hook in self.hooks() {
             if hook

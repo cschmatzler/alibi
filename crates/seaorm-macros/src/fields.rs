@@ -46,11 +46,10 @@ pub(crate) fn model_fields(fields: &FieldsNamed) -> syn::Result<Vec<Field>> {
                         physical = Some(meta.value()?.parse::<LitStr>()?.value());
                     } else {
                         // Consume other SeaORM values while preserving bare flags.
-                        drop(
-                            meta.value()
-                                .and_then(syn::parse::ParseBuffer::parse::<syn::Expr>)
-                                .ok(),
-                        );
+                        _ = meta
+                            .value()
+                            .and_then(syn::parse::ParseBuffer::parse::<syn::Expr>)
+                            .ok();
                     }
                     Ok(())
                 })?;

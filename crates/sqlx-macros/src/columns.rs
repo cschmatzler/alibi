@@ -20,11 +20,10 @@ pub(crate) fn rename_all(input: &DeriveInput) -> syn::Result<Option<String>> {
             if meta.path.is_ident("rename_all") {
                 rule = Some(meta.value()?.parse::<LitStr>()?.value());
             } else {
-                drop(
-                    meta.value()
-                        .and_then(syn::parse::ParseBuffer::parse::<syn::Expr>)
-                        .ok(),
-                );
+                _ = meta
+                    .value()
+                    .and_then(syn::parse::ParseBuffer::parse::<syn::Expr>)
+                    .ok();
             }
             Ok(())
         })?;
@@ -95,11 +94,9 @@ pub(crate) fn columns(input: &DeriveInput, fields: &FieldsNamed) -> syn::Result<
                         "model fields map one-to-one to columns; `skip`, `flatten`, `json` and `try_from` are unsupported",
                     ))
                 } else {
-                    drop(
-                        meta.value()
+                    _ = meta.value()
                             .and_then(syn::parse::ParseBuffer::parse::<syn::Expr>)
-                            .ok(),
-                    );
+                            .ok();
                     Ok(())
                 }
             })?;

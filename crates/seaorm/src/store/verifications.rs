@@ -171,12 +171,11 @@ where
             if deleted.rows_affected != 1 {
                 return Ok(None);
             }
-            let _ignored_map_err =
-                <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
-                    .filter(S::Verification::identifier_column().eq(identifier))
-                    .exec(&transaction)
-                    .await
-                    .map_err(map_db_err)?;
+            _ = <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
+                .filter(S::Verification::identifier_column().eq(identifier))
+                .exec(&transaction)
+                .await
+                .map_err(map_db_err)?;
             Ok(Some(model))
         }
         .await;
@@ -355,12 +354,11 @@ where
                 return Ok(());
             }
         }
-        let _ignored_map_err_2 =
-            <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
-                .filter(S::Verification::identifier_column().eq(identifier))
-                .exec(self.scoped_connection())
-                .await
-                .map_err(map_db_err)?;
+        _ = <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
+            .filter(S::Verification::identifier_column().eq(identifier))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
         for hook in self.hooks() {
             hook.after_delete_verification(&model, &hook_context)
                 .await?;
@@ -434,7 +432,7 @@ where
             <<S::Verification as SeaOrmVerificationModel>::Entity as EntityTrait>::Column::iter()
                 .map(|column| column.select_as(column.into_returning_expr(backend))),
         );
-        let _ignored_returning = QueryTrait::query(&mut query).returning(returning);
+        _ = QueryTrait::query(&mut query).returning(returning);
         let Some(model) = <S::Verification as SeaOrmVerificationModel>::Entity::find()
             .from_raw_sql(query.build(backend))
             .one(self.scoped_connection())
@@ -550,7 +548,7 @@ where
             <<S::Verification as SeaOrmVerificationModel>::Entity as EntityTrait>::Column::iter()
                 .map(|column| column.select_as(column.into_returning_expr(backend))),
         );
-        let _returning = QueryTrait::query(&mut query).returning(returning);
+        _ = QueryTrait::query(&mut query).returning(returning);
         let model = <S::Verification as SeaOrmVerificationModel>::Entity::find()
             .from_raw_sql(query.build(backend))
             .one(self.scoped_connection())
@@ -586,14 +584,11 @@ where
                 }
             }
         }
-        let _ignored_map_err_3 =
-            <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
-                .filter(
-                    <S::Verification as SeaOrmVerificationModel>::id_column().eq(verification_id),
-                )
-                .exec(self.scoped_connection())
-                .await
-                .map_err(map_db_err)?;
+        _ = <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
+            .filter(<S::Verification as SeaOrmVerificationModel>::id_column().eq(verification_id))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
         if let Some(verification) = &verification {
             for hook in self.hooks() {
                 hook.after_delete_verification(verification, &hook_context)

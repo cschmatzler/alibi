@@ -123,7 +123,7 @@ where
                 Some(&member.organization_id),
             )
             .await?;
-            let _ignored_map_err = Entity::delete_by_id(member_id.to_owned())
+            _ = Entity::delete_by_id(member_id.to_owned())
                 .exec(&transaction)
                 .await
                 .map_err(map_db_err)?;

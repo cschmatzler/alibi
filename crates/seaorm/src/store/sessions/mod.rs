@@ -425,7 +425,7 @@ where
                 return Ok(());
             }
         }
-        let _ended = <S::Session as SeaOrmSessionModel>::Entity::update_many()
+        _ = <S::Session as SeaOrmSessionModel>::Entity::update_many()
             .col_expr(
                 S::Session::expires_at_column(),
                 sea_orm::sea_query::Expr::value(crate::schema::timestamp_value(
@@ -478,7 +478,7 @@ where
                 }
             }
         }
-        let _ended = <S::Session as SeaOrmSessionModel>::Entity::update_many()
+        _ = <S::Session as SeaOrmSessionModel>::Entity::update_many()
             .col_expr(
                 S::Session::expires_at_column(),
                 sea_orm::sea_query::Expr::value(crate::schema::timestamp_value(
@@ -599,7 +599,7 @@ where
                 }
             }
         }
-        let _ignored_map_err = <S::Session as SeaOrmSessionModel>::Entity::delete_many()
+        _ = <S::Session as SeaOrmSessionModel>::Entity::delete_many()
             .filter(<S::Session as SeaOrmSessionModel>::token_column().eq(token))
             .exec(self.scoped_connection())
             .await

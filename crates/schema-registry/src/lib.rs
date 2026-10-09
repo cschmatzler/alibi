@@ -82,8 +82,6 @@ macro_rules! f_col {
     };
 }
 
-// ── Core fields ──────────────────────────────────────────────────────
-
 static USER_CORE: &[FieldDef] = &[
     pk!("id", "String"),
     f!("name", "Option<String>"),
@@ -130,8 +128,6 @@ static VERIFICATION_CORE: &[FieldDef] = &[
     f!("created_at", "DateTimeUtc"),
     f!("updated_at", "DateTimeUtc"),
 ];
-
-// ── Plugin schemas ───────────────────────────────────────────────────
 
 static PLUGINS: &[PluginSchema] = &[
     PluginSchema {
