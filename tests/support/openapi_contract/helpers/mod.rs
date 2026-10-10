@@ -237,6 +237,7 @@ fn mock_oauth_plugin() -> OAuthPlugin {
             ],
             authorization: None,
             authorization_params: Vec::new(),
+            allowed_request_params: Vec::new(),
             map_user_info: Some(|_value| {
                 Ok(OAuthUserInfo {
                     additional_fields: Default::default(),
