@@ -5,7 +5,11 @@ use alibi::UpdateUser;
 use alibi::plugins::{AdminPlugin, RolePermissions};
 use std::collections::HashMap;
 
-backend_tests!(admin_route_matrix, admin_impersonation_and_bans);
+backend_tests!(
+    admin_route_matrix,
+    admin_impersonation_and_bans,
+    admin_password_bounds_preserve_credentials_until_valid_replacement
+);
 
 async fn promote<S: AuthSchema>(auth: &Alibi<S>, response: &AuthResponse, role: &str) -> String {
     let id = body(response)["user"]["id"].as_str().unwrap().to_owned();
@@ -508,5 +512,62 @@ async fn admin_impersonation_and_bans<B: Backend>(db: Db) -> TestResult {
         .await?,
     );
     trace.assert("admin/impersonation-and-bans");
+    B::close(connection).await
+}
+
+// Compat owner: plugins/admin/password-bounds.test.ts.
+async fn admin_password_bounds_preserve_credentials_until_valid_replacement<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new())
+        .build()
+        .await?;
+    let administrator = signup(&auth, "admin@example.test").await;
+    _ = promote(&auth, &administrator, "admin").await;
+    let owner = signup(&auth, "target@example.test").await;
+    let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    for (length, code) in [(7, "PASSWORD_TOO_SHORT"), (129, "PASSWORD_TOO_LONG")] {
+        let denied = call(
+            &auth,
+            request(
+                "/admin/set-user-password",
+                Some(json!({"userId":id,"newPassword":"x".repeat(length)})),
+                &cookies(&administrator),
+            ),
+            400,
+        )
+        .await;
+        assert_eq!(body(&denied)["code"], code);
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    }
+    for password in [PASSWORD.to_owned(), "x".repeat(8), "x".repeat(128)] {
+        if password != PASSWORD {
+            let accepted = call(
+                &auth,
+                request(
+                    "/admin/set-user-password",
+                    Some(json!({"userId":id,"newPassword":password})),
+                    &cookies(&administrator),
+                ),
+                200,
+            )
+            .await;
+            assert_eq!(body(&accepted)["status"], true);
+        }
+        let login = call(
+            &auth,
+            request(
+                "/sign-in/email",
+                Some(json!({"email":"target@example.test","password":password})),
+                "",
+            ),
+            200,
+        )
+        .await;
+        assert_eq!(body(&login)["user"]["id"], id);
+    }
     B::close(connection).await
 }
