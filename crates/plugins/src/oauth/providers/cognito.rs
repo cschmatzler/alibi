@@ -156,6 +156,7 @@ impl OAuthProvider {
                 login_hint: false,
                 ..OAuthAuthorizationPolicy::default()
             }),
+            allowed_request_params: Vec::new(),
             authorization_params: options
                 .identity_provider
                 .map(|value| vec![("identity_provider".into(), value)])
