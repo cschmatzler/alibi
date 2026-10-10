@@ -86,6 +86,7 @@ impl GenericOAuthConfig {
                     scope_order: OAuthScopeOrder::RequestedThenConfigured,
                     ..Default::default()
                 }),
+                allowed_request_params: Vec::new(),
                 authorization_params: Vec::new(),
                 account_subject: None,
                 map_user_info: None,

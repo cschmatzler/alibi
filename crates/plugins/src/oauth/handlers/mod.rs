@@ -119,6 +119,7 @@ struct FlowStartRequest<'a> {
     scopes: Option<&'a [String]>,
     login_hint: Option<&'a str>,
     additional_params: Option<&'a std::collections::BTreeMap<String, String>>,
+    authorization_params: Option<&'a std::collections::BTreeMap<String, String>>,
     request_sign_up: Option<bool>,
     additional_data: serde_json::Map<String, serde_json::Value>,
     link: Option<OAuthStateLink>,
