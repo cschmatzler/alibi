@@ -343,6 +343,11 @@ pub struct OAuthProvider {
     /// and request scopes in the provider's published order.
     pub authorization: Option<OAuthAuthorizationPolicy>,
     pub authorization_params: Vec<(String, String)>,
+    /// Query parameter names accepted from per-request `authorizationParams`.
+    /// Empty by default. Unlisted names and reserved OAuth parameters are ignored.
+    /// Allowed values override `authorization_params` and `additionalParams`,
+    /// but provider policy's `fixed_authorization_params` take precedence.
+    pub allowed_request_params: Vec<String>,
     /// Selects the factory account subject from the original provider profile.
     pub account_subject: Option<OAuthAccountSubject>,
     pub map_user_info: Option<fn(Value) -> Result<OAuthUserInfo, String>>,

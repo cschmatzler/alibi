@@ -474,6 +474,7 @@ pub(crate) async fn router(
             user_info_url: Some(format!("{}/__test/generic-token/user", config.base_url)),
             scopes: vec!["profile".into()],
             authorization: Some(policy),
+            allowed_request_params: Vec::new(),
             authorization_params: Vec::new(),
             additional_client_ids: Vec::new(),
             hosted_domain: None,
