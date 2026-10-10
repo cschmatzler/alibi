@@ -2,6 +2,7 @@
 use super::*;
 backend_tests!(
     account_deletion_consumes_delivered_owner_proof_and_preserves_foreign_identity,
+    deletion_password_rejection_preserves_delivered_body_proof,
     concurrent_deletion_replay_rejects_before_awaited_owner_hook
 );
 postgres_tests!(account_deletion_consumes_delivered_owner_proof_and_preserves_foreign_identity);
@@ -236,6 +237,114 @@ async fn account_deletion_consumes_delivered_owner_proof_and_preserves_foreign_i
         authenticated(&auth, &cookies(&foreign), "delete-foreign@example.test").await;
         B::close(connection).await?;
     }
+    Ok(())
+}
+
+async fn deletion_password_rejection_preserves_delivered_body_proof<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::plugins::user_management::{AfterDeleteUser, BeforeDeleteUser, UserInfo};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    #[derive(Default)]
+    struct Hooks {
+        before: AtomicUsize,
+        after: AtomicUsize,
+    }
+    #[async_trait::async_trait]
+    impl BeforeDeleteUser for Hooks {
+        async fn before_delete(&self, _: &UserInfo) -> alibi::AuthResult<()> {
+            let _ = self.before.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+    #[async_trait::async_trait]
+    impl AfterDeleteUser for Hooks {
+        async fn after_delete(&self, _: &UserInfo) -> alibi::AuthResult<()> {
+            let _ = self.after.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+    let hooks = Arc::new(Hooks::default());
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mailbox = Arc::new(DeletionMailbox::default());
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(
+            alibi::plugins::UserManagementPlugin::new()
+                .delete_user_enabled(true)
+                .send_delete_account_verification(mailbox.clone())
+                .before_delete(hooks.clone())
+                .after_delete(hooks.clone()),
+        )
+        .build()
+        .await?;
+    let owner = signup(&auth, "delete-password-owner@example.test").await;
+    let foreign = signup(&auth, "delete-password-foreign@example.test").await;
+    let cookie = cookies(&owner);
+    let _ = call(
+        &auth,
+        request(
+            "/delete-user",
+            Some(json!({"callbackURL":"/gone"})),
+            &cookie,
+        ),
+        200,
+    )
+    .await;
+    let (_, _, token) = mailbox.0.lock().unwrap().pop().unwrap();
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    for (password, code) in [
+        ("wrong-password".to_owned(), "INVALID_PASSWORD"),
+        ("x".repeat(129), "PASSWORD_TOO_LONG"),
+    ] {
+        let rejected = call(
+            &auth,
+            request(
+                "/delete-user",
+                Some(json!({"password":password,"token":token})),
+                &cookie,
+            ),
+            400,
+        )
+        .await;
+        assert_eq!(body(&rejected)["code"], code);
+        assert_eq!(hooks.before.load(Ordering::SeqCst), 0);
+        assert_eq!(hooks.after.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "verifications"])
+                .await?,
+            before
+        );
+        assert!(!rejected.headers.contains_key("set-cookie"));
+    }
+    let deleted = call(
+        &auth,
+        request(
+            "/delete-user",
+            Some(json!({"password":PASSWORD,"token":token})),
+            &cookie,
+        ),
+        200,
+    )
+    .await;
+    assert!(!deleted.headers.contains_key("set-cookie"));
+    assert_eq!(hooks.before.load(Ordering::SeqCst), 1);
+    assert_eq!(hooks.after.load(Ordering::SeqCst), 1);
+    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("users").await?, 1);
+    assert_eq!(db.count("accounts").await?, 1);
+    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(
+        db.text("SELECT id FROM users", &[]).await?.as_deref(),
+        body(&foreign)["user"]["id"].as_str()
+    );
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "delete-password-foreign@example.test",
+    )
+    .await;
     Ok(())
 }
 
