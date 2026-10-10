@@ -147,13 +147,13 @@ pub(crate) async fn set_role_core(
     config: &AdminConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<UserResponse<AdminUserView>> {
+    validate_role_input(&body.role, config)?;
+
     _ = ctx
         .database
         .get_user_by_id_record(&body.user_id)
         .await?
         .ok_or_else(|| AuthError::not_found(MESSAGE_USER_NOT_FOUND))?;
-
-    validate_role_input(&body.role, config)?;
 
     let update = UpdateUser {
         role: Some(body.role.joined()),
@@ -381,8 +381,11 @@ pub(crate) async fn update_user_core(
         }
     }
 
-    if let Some(value) = body.data.get("email").and_then(|value| value.as_str()) {
-        let email = value.to_lowercase();
+    if let Some(value) = body.data.get("email") {
+        let email = alibi_core::utils::json::JsValue::from(value.clone())
+            .coerce_string()
+            .map_err(AuthError::internal)?
+            .to_lowercase();
         if !super::validation::valid_email(&email) {
             return Err(AuthError::Api {
                 status: 400,

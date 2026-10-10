@@ -10,7 +10,14 @@ use alibi::plugins::haveibeenpwned::{
     HaveIBeenPwnedConfig, HaveIBeenPwnedPlugin, PwnedPasswordClient,
 };
 
-backend_tests!(pwned_range_reply_matrix, captcha_reply_and_path_matrix);
+backend_tests!(
+    pwned_range_reply_matrix,
+    captcha_reply_and_path_matrix,
+    captcha_normalized_physical_paths_reject_before_json_and_origin_validation,
+    captcha_botid_validator_receives_actual_request_and_full_verification,
+    captcha_botid_validator_error_preserves_all_existing_principals,
+    captcha_slow_successful_response_body_still_authenticates_existing_owner
+);
 
 const SUFFIX: &str = "1E4C9B93F3F0682250B6CF8331B7EE68FD8";
 
@@ -342,6 +349,272 @@ async fn captcha_reply_and_path_matrix<B: Backend>(db: Db) -> TestResult {
         trace.response(label, &Box::pin(auth.handle_request(sign_in(None))).await?);
     }
     trace.assert("screening/captcha-reply-path-matrix");
+    B::close(connection).await
+}
+
+async fn captcha_normalized_physical_paths_reject_before_json_and_origin_validation<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let base = super::auth_probe::fast_builder::<B>(&connection)
+        .build()
+        .await?;
+    let owner = signup(&base, "owner@example.test").await;
+    let foreign = signup(&base, "foreign@example.test").await;
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    for (patterns, paths, control) in [
+        (
+            vec![],
+            vec!["/sign-in//email", "/sign-in/email/", "//sign-in///email//"],
+            "/sign-in/email/extended",
+        ),
+        (
+            vec!["/guarded".into()],
+            vec!["/guarded/", "//guarded//"],
+            "/sign-in/email",
+        ),
+        (
+            vec!["/guard/*".into()],
+            vec!["/guard//leaf/"],
+            "/guard/leaf/deeper",
+        ),
+        (
+            vec!["/guard/**".into()],
+            vec!["/guard//leaf/deeper/"],
+            "/unguarded/leaf",
+        ),
+    ] {
+        let auth = super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(CaptchaPlugin::new(CaptchaConfig {
+                provider: CaptchaProvider::CloudflareTurnstile(TurnstileConfig::new("secret")),
+                endpoints: patterns,
+            }))
+            .build()
+            .await?;
+        for path in paths {
+            let mut input = request(path, Some(json!({})), &cookies(&owner));
+            input.body = Some(b"not-json".to_vec());
+            _ = input
+                .headers
+                .insert("origin".into(), "https://foreign.invalid".into());
+            let denied = call(&auth, input, 400).await;
+            assert_eq!(body(&denied)["code"], "MISSING_RESPONSE");
+            assert_eq!(
+                db.tables(&["users", "accounts", "sessions", "verifications"])
+                    .await?,
+                before
+            );
+        }
+        let mut input = request(control, Some(json!({})), &cookies(&owner));
+        input.body = Some(b"not-json".to_vec());
+        _ = input
+            .headers
+            .insert("origin".into(), "https://foreign.invalid".into());
+        let control = Box::pin(auth.handle_request(input)).await?;
+        let code = serde_json::from_slice::<Value>(&control.body).ok();
+        assert!(code.is_none_or(|value| value["code"] != "MISSING_RESPONSE"));
+    }
+    authenticated(&base, &cookies(&owner), "owner@example.test").await;
+    authenticated(&base, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+async fn captcha_botid_validator_receives_actual_request_and_full_verification<B: Backend>(
+    db: Db,
+) -> TestResult {
+    struct Policy(Mutex<Vec<(AuthRequest, Value)>>);
+    #[async_trait::async_trait]
+    impl CheckBotId for Policy {
+        async fn check(&self) -> AuthResult<BotIdVerification> {
+            Ok(BotIdVerification {
+                is_bot: true,
+                is_verified_bot: Some(true),
+                verified_bot_name: Some("SearchBot".into()),
+                verified_bot_category: Some("search".into()),
+            })
+        }
+    }
+    #[async_trait::async_trait]
+    impl ValidateBotIdRequest for Policy {
+        async fn validate(
+            &self,
+            request: &AuthRequest,
+            result: &BotIdVerification,
+        ) -> AuthResult<bool> {
+            self.0
+                .lock()
+                .unwrap()
+                .push((request.clone(), serde_json::to_value(result).unwrap()));
+            Ok(request
+                .header("x-app-marker")
+                .is_some_and(|value| value == "allowed")
+                && result.is_bot
+                && result.is_verified_bot == Some(true)
+                && result.verified_bot_name.as_deref() == Some("SearchBot")
+                && result.verified_bot_category.as_deref() == Some("search"))
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let policy = Arc::new(Policy(Mutex::new(Vec::new())));
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(CaptchaPlugin::new(CaptchaConfig {
+            provider: CaptchaProvider::VercelBotId(BotIdConfig {
+                check_bot_id: policy.clone(),
+                validate_request: Some(policy.clone()),
+            }),
+            endpoints: vec!["/sign-in/email".into()],
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let mut input = request(
+        "/sign-in/email",
+        Some(json!({"email":"owner@example.test","password":PASSWORD})),
+        "",
+    );
+    let denied = call(&auth, input.clone(), 403).await;
+    assert_eq!(body(&denied)["code"], "VERIFICATION_FAILED");
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    _ = input
+        .headers
+        .insert("x-app-marker".into(), "allowed".into());
+    let accepted = call(&auth, input.clone(), 200).await;
+    assert_eq!(body(&accepted)["user"]["id"], body(&owner)["user"]["id"]);
+    {
+        let events = policy.0.lock().unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[1].0.path, input.path);
+        assert_eq!(events[1].0.body, input.body);
+        assert_eq!(
+            events[1].0.header("x-app-marker").map(String::as_str),
+            Some("allowed")
+        );
+        assert_eq!(
+            events[1].1,
+            json!({"isBot":true,"isVerifiedBot":true,"verifiedBotName":"SearchBot","verifiedBotCategory":"search"})
+        );
+    }
+    authenticated(&auth, &cookies(&accepted), "owner@example.test").await;
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+async fn captcha_botid_validator_error_preserves_all_existing_principals<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    struct Policy(AtomicBool);
+    #[async_trait::async_trait]
+    impl ValidateBotIdRequest for Policy {
+        async fn validate(&self, _: &AuthRequest, _: &BotIdVerification) -> AuthResult<bool> {
+            if self.0.load(Ordering::SeqCst) {
+                Err(alibi::AuthError::internal("validator unavailable"))
+            } else {
+                Ok(true)
+            }
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let policy = Arc::new(Policy(AtomicBool::new(true)));
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(CaptchaPlugin::new(CaptchaConfig {
+            provider: CaptchaProvider::VercelBotId(BotIdConfig {
+                check_bot_id: Arc::new(Bot(Ok(false))),
+                validate_request: Some(policy.clone()),
+            }),
+            endpoints: vec!["/sign-in/email".into()],
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    let input = request(
+        "/sign-in/email",
+        Some(json!({"email":"owner@example.test","password":PASSWORD})),
+        "",
+    );
+    let denied = call(&auth, input.clone(), 500).await;
+    assert_eq!(body(&denied)["code"], "UNKNOWN_ERROR");
+    assert!(denied.headers.get_all("set-cookie").next().is_none());
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        before
+    );
+    authenticated(&auth, &cookies(&owner), "owner@example.test").await;
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    policy.0.store(false, Ordering::SeqCst);
+    let restored = call(&auth, input, 200).await;
+    assert_eq!(body(&restored)["user"]["id"], body(&owner)["user"]["id"]);
+    B::close(connection).await
+}
+
+async fn captcha_slow_successful_response_body_still_authenticates_existing_owner<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let address = listener.local_addr()?;
+    let received = Arc::new(tokio::sync::Notify::new());
+    let sent = received.clone();
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut buffer = [0; 8192];
+        _ = stream.read(&mut buffer).await.unwrap();
+        let body = r#"{"success":true}"#;
+        stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",body.len()).as_bytes()).await.unwrap();
+        stream.flush().await.unwrap();
+        sent.notify_one();
+        tokio::time::sleep(std::time::Duration::from_millis(10_100)).await;
+        stream.write_all(body.as_bytes()).await.unwrap();
+    });
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mut options = TurnstileConfig::new("secret");
+    options.http.site_verify_url = Some(format!("http://{address}/verify").parse()?);
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(
+            CaptchaPlugin::new(CaptchaConfig {
+                provider: CaptchaProvider::CloudflareTurnstile(options),
+                endpoints: vec!["/sign-in/email".into()],
+            })
+            .with_http_client(reqwest::Client::builder().no_proxy().build()?),
+        )
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let accounts = db.table("accounts").await?;
+    let mut input = request(
+        "/sign-in/email",
+        Some(json!({"email":"owner@example.test","password":PASSWORD})),
+        "",
+    );
+    _ = input
+        .headers
+        .insert("x-captcha-response".into(), "answer".into());
+    let pending = Box::pin(auth.handle_request(input));
+    tokio::pin!(pending);
+    tokio::select! { response=&mut pending=>panic!("authentication completed before response body: {response:?}"),()=received.notified()=>{} }
+    let response = pending.await?;
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    assert_eq!(body(&response)["user"]["id"], body(&owner)["user"]["id"]);
+    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.count("sessions").await?, 3);
+    authenticated(&auth, &cookies(&response), "owner@example.test").await;
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    server.await?;
     B::close(connection).await
 }
 
