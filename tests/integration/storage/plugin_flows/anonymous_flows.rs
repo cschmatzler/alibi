@@ -13,7 +13,8 @@ use std::collections::BTreeMap;
 backend_tests!(
     anonymous_identity_and_lifecycle,
     anonymous_creation_failures,
-    anonymous_deletion_and_linking
+    anonymous_deletion_and_linking,
+    anonymous_issuance_ignores_tampered_browser_preference
 );
 
 #[derive(Default)]
@@ -381,5 +382,86 @@ async fn anonymous_deletion_and_linking<B: Backend>(db: Db) -> TestResult {
     trace.response("upgrade keeps the anonymous user", &merged);
     B::close(disabled_connection).await?;
     trace.assert("anonymous/deletion-and-linking");
+    B::close(connection).await
+}
+
+async fn anonymous_issuance_ignores_tampered_browser_preference<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AnonymousPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let browser = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"owner@example.test","password":PASSWORD,"rememberMe":false})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let preference = cookies(&browser)
+        .split("; ")
+        .find(|pair| pair.starts_with("better-auth.dont_remember="))
+        .unwrap()
+        .to_owned();
+    let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+    let valid = call(
+        &auth,
+        request("/sign-in/anonymous", Some(json!({})), &preference),
+        200,
+    )
+    .await;
+    let valid_headers = valid.headers.get_all("set-cookie").collect::<Vec<_>>();
+    assert_eq!(valid_headers.len(), 2);
+    assert!(
+        valid_headers
+            .iter()
+            .all(|header| !header.to_ascii_lowercase().contains("max-age"))
+    );
+    assert!(cookies(&valid).contains("dont_remember="));
+    let mut tampered = preference.into_bytes();
+    let index = tampered
+        .iter()
+        .rposition(|byte| byte.is_ascii_alphanumeric())
+        .unwrap();
+    tampered[index] = if tampered[index] == b'A' { b'B' } else { b'A' };
+    let invalid = call(
+        &auth,
+        request(
+            "/sign-in/anonymous",
+            Some(json!({})),
+            &String::from_utf8(tampered)?,
+        ),
+        200,
+    )
+    .await;
+    let invalid_headers = invalid.headers.get_all("set-cookie").collect::<Vec<_>>();
+    assert_eq!(invalid_headers.len(), 1);
+    assert!(invalid_headers[0].starts_with("better-auth.session_token="));
+    assert!(
+        invalid_headers[0]
+            .to_ascii_lowercase()
+            .contains("max-age=604800")
+    );
+    assert!(!cookies(&invalid).contains("dont_remember="));
+    for issued in [&valid, &invalid] {
+        let current =
+            body(&call(&auth, request("/get-session", None, &cookies(issued)), 200).await);
+        assert_eq!(current["user"]["id"], body(issued)["user"]["id"]);
+        assert_eq!(current["session"]["token"], body(issued)["token"]);
+    }
+    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    for (before, after) in baseline.iter().zip(after.iter()) {
+        let before: Vec<Value> = serde_json::from_str(before)?;
+        let after: Vec<Value> = serde_json::from_str(after)?;
+        assert!(before.iter().all(|row| after.contains(row)));
+    }
+    assert_eq!(db.table("accounts").await?, baseline[1]);
+    authenticated(&auth, &cookies(&owner), "owner@example.test").await;
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
 }
