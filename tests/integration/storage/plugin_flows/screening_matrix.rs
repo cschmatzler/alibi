@@ -15,7 +15,8 @@ backend_tests!(
     captcha_reply_and_path_matrix,
     captcha_normalized_physical_paths_reject_before_json_and_origin_validation,
     captcha_botid_validator_receives_actual_request_and_full_verification,
-    captcha_botid_validator_error_preserves_all_existing_principals
+    captcha_botid_validator_error_preserves_all_existing_principals,
+    captcha_slow_successful_response_body_still_authenticates_existing_owner
 );
 
 const SUFFIX: &str = "1E4C9B93F3F0682250B6CF8331B7EE68FD8";
@@ -552,5 +553,67 @@ async fn captcha_botid_validator_error_preserves_all_existing_principals<B: Back
     policy.0.store(false, Ordering::SeqCst);
     let restored = call(&auth, input, 200).await;
     assert_eq!(body(&restored)["user"]["id"], body(&owner)["user"]["id"]);
+    B::close(connection).await
+}
+
+async fn captcha_slow_successful_response_body_still_authenticates_existing_owner<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let address = listener.local_addr()?;
+    let received = Arc::new(tokio::sync::Notify::new());
+    let sent = received.clone();
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut buffer = [0; 8192];
+        _ = stream.read(&mut buffer).await.unwrap();
+        let body = r#"{"success":true}"#;
+        stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",body.len()).as_bytes()).await.unwrap();
+        stream.flush().await.unwrap();
+        sent.notify_one();
+        tokio::time::sleep(std::time::Duration::from_millis(10_100)).await;
+        stream.write_all(body.as_bytes()).await.unwrap();
+    });
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mut options = TurnstileConfig::new("secret");
+    options.http.site_verify_url = Some(format!("http://{address}/verify").parse()?);
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(
+            CaptchaPlugin::new(CaptchaConfig {
+                provider: CaptchaProvider::CloudflareTurnstile(options),
+                endpoints: vec!["/sign-in/email".into()],
+            })
+            .with_http_client(reqwest::Client::builder().no_proxy().build()?),
+        )
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let accounts = db.table("accounts").await?;
+    let mut input = request(
+        "/sign-in/email",
+        Some(json!({"email":"owner@example.test","password":PASSWORD})),
+        "",
+    );
+    _ = input
+        .headers
+        .insert("x-captcha-response".into(), "answer".into());
+    let pending = Box::pin(auth.handle_request(input));
+    tokio::pin!(pending);
+    tokio::select! { response=&mut pending=>panic!("authentication completed before response body: {response:?}"),()=received.notified()=>{} }
+    let response = pending.await?;
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    assert_eq!(body(&response)["user"]["id"], body(&owner)["user"]["id"]);
+    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.count("sessions").await?, 3);
+    authenticated(&auth, &cookies(&response), "owner@example.test").await;
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    server.await?;
     B::close(connection).await
 }
