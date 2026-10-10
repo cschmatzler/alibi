@@ -38,7 +38,7 @@ exclude = ["tests/compat/rust-server"]
 readme = "README.md"
 keywords = ["auth", "authentication", "session", "oauth", "security"]
 categories = ["authentication", "web-programming"]
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT"
@@ -46,13 +46,13 @@ repository = "https://github.com/cschmatzler/better-auth-rs"
 homepage = "https://alibi.schmatzler.com"
 [workspace.dependencies]
 regex = "1"
-alibi-core = { version = "0.4.0", path = "crates/core" }
-alibi-plugins = { version = "0.4.0", path = "crates/plugins", default-features = false }
-alibi-macros = { version = "0.4.0", path = "crates/macros" }
-alibi-seaorm = { version = "0.4.0", path = "crates/seaorm" }
-alibi-schema-registry = { version = "0.4.0", path = "crates/schema-registry" }
-alibi-entity-codegen = { version = "0.4.0", path = "crates/entity-codegen" }
-alibi-sqlx = { version = "0.4.0", path = "crates/sqlx", default-features = false }
+alibi-core = { version = "0.4.1", path = "crates/core" }
+alibi-plugins = { version = "0.4.1", path = "crates/plugins", default-features = false }
+alibi-macros = { version = "0.4.1", path = "crates/macros" }
+alibi-seaorm = { version = "0.4.1", path = "crates/seaorm" }
+alibi-schema-registry = { version = "0.4.1", path = "crates/schema-registry" }
+alibi-entity-codegen = { version = "0.4.1", path = "crates/entity-codegen" }
+alibi-sqlx = { version = "0.4.1", path = "crates/sqlx", default-features = false }
 prettyplease = "0.3"
 tokio = { version = "1.0", features = ["full"] }
 async-trait = "0.1.92"
