@@ -669,6 +669,7 @@ fn mock_oauth_plugin_at(
                     "profile".to_string(),
                 ],
                 authorization: None,
+                allowed_request_params: Vec::new(),
                 authorization_params: Vec::new(),
                 account_subject: None,
                 map_user_info: Some(|_value| {
@@ -721,6 +722,7 @@ fn mock_oauth_plugin_at(
                     "openid".to_string(),
                 ],
                 authorization: None,
+                allowed_request_params: Vec::new(),
                 authorization_params: vec![(
                     "include_granted_scopes".to_string(),
                     "true".to_string(),

@@ -28,6 +28,7 @@ impl OAuthProvider {
             user_info_url: Some(gitlab_endpoint(issuer, "/api/v4/user")),
             scopes: vec!["read_user".into()],
             authorization: Some(OAuthAuthorizationPolicy::default()),
+            allowed_request_params: Vec::new(),
             authorization_params: Vec::new(),
             account_subject: None,
             map_user_info: Some(gitlab_user_info),

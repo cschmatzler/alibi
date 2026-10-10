@@ -20,7 +20,9 @@ backend_tests!(
     static_org_create_grants_admit_nonowner_and_reject_reader,
     static_org_reader_lists_only_tenant_keys_without_plaintext,
     static_org_update_requires_update_action_and_preserves_key_identity,
-    static_org_delete_requires_delete_action_and_revokes_only_selected_key
+    static_org_delete_requires_delete_action_and_revokes_only_selected_key,
+    disabled_custom_key_expiration_retains_default_lifetime_through_rename,
+    banned_api_key_owner_can_verify_but_cannot_use_synthetic_deletion_authority
 );
 
 fn raw(path: &str, text: &str, cookie: &str) -> AuthRequest {
@@ -1648,5 +1650,248 @@ async fn static_org_delete_requires_delete_action_and_revokes_only_selected_key<
     assert_eq!(verified.id, sibling["id"]);
 
     authenticated(&auth, &owner_cookie, "owner@example.test").await;
+    B::close(connection).await
+}
+
+async fn disabled_custom_key_expiration_retains_default_lifetime_through_rename<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(ApiKeyPlugin::with_config(ApiKeyConfig {
+            key_expiration: KeyExpirationConfig {
+                disable_custom_expires_time: true,
+                default_expires_in: Some(120.0),
+                ..Default::default()
+            },
+            rate_limit: RateLimitDefaults {
+                enabled: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let cookie = cookies(&owner);
+    let rejected = call(
+        &auth,
+        request(
+            "/api-key/create",
+            Some(json!({"name":"Rejected","expiresIn":60})),
+            &cookie,
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&rejected)["code"], "KEY_DISABLED_EXPIRATION");
+    assert_eq!(db.count("api_keys").await?, 0);
+    let start = chrono::Utc::now();
+    let created = body(
+        &call(
+            &auth,
+            request(
+                "/api-key/create",
+                Some(json!({"name":"Default expiry"})),
+                &cookie,
+            ),
+            200,
+        )
+        .await,
+    );
+    let end = chrono::Utc::now();
+    let expires = chrono::DateTime::parse_from_rfc3339(created["expiresAt"].as_str().unwrap())?
+        .with_timezone(&chrono::Utc);
+    assert!(expires >= start + chrono::Duration::seconds(120) - chrono::Duration::milliseconds(1));
+    assert!(expires <= end + chrono::Duration::seconds(120));
+    let before = db.table("api_keys").await?;
+    let rejected = call(
+        &auth,
+        request(
+            "/api-key/update",
+            Some(json!({"keyId":created["id"],"expiresIn":60})),
+            &cookie,
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&rejected)["code"], "KEY_DISABLED_EXPIRATION");
+    assert_eq!(db.table("api_keys").await?, before);
+    let id = created["id"].as_str().unwrap();
+    let hash = db
+        .text("SELECT key FROM api_keys WHERE id=$1", &[id])
+        .await?;
+    let physical_expiry = db
+        .text("SELECT expires_at FROM api_keys WHERE id=$1", &[id])
+        .await?;
+    let renamed = body(
+        &call(
+            &auth,
+            request(
+                "/api-key/update",
+                Some(json!({"keyId":id,"name":"Renamed"})),
+                &cookie,
+            ),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(renamed["id"], created["id"]);
+    assert_eq!(renamed["expiresAt"], created["expiresAt"]);
+    assert_eq!(renamed["name"], "Renamed");
+    assert_eq!(
+        db.text("SELECT key FROM api_keys WHERE id=$1", &[id])
+            .await?,
+        hash
+    );
+    assert_eq!(
+        db.text("SELECT expires_at FROM api_keys WHERE id=$1", &[id])
+            .await?,
+        physical_expiry
+    );
+    assert_eq!(db.count("api_keys").await?, 1);
+    authenticated(&auth, &cookie, "owner@example.test").await;
+    B::close(connection).await
+}
+
+async fn banned_api_key_owner_can_verify_but_cannot_use_synthetic_deletion_authority<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let keys = ApiKeyPlugin::with_config(ApiKeyConfig {
+        enable_session_for_api_keys: true,
+        rate_limit: RateLimitDefaults {
+            enabled: false,
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(alibi::plugins::AdminPlugin::new())
+        .plugin(keys.clone())
+        .build()
+        .await?;
+    let admin = signup(&auth, "admin@example.test").await;
+    let admin_id = body(&admin)["user"]["id"].as_str().unwrap().to_owned();
+    _ = auth
+        .store()
+        .update_user(
+            &admin_id,
+            alibi::UpdateUser {
+                role: Some("admin".into()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let created = body(
+        &call(
+            &auth,
+            request(
+                "/api-key/create",
+                Some(json!({"name":"Owned key"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let id = created["id"].as_str().unwrap();
+    let secret = created["key"].as_str().unwrap();
+    let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let hash = db
+        .text("SELECT key FROM api_keys WHERE id=$1", &[id])
+        .await?;
+    assert!(
+        keys.verify_api_key(
+            &VerifyApiKey {
+                key: secret,
+                config_id: None,
+                permissions: None
+            },
+            auth.context()
+        )
+        .await
+        .is_ok()
+    );
+    _ = call(
+        &auth,
+        request(
+            "/admin/ban-user",
+            Some(json!({"userId":owner_id,"banReason":"Key test ban"})),
+            &cookies(&admin),
+        ),
+        200,
+    )
+    .await;
+    assert!(
+        keys.verify_api_key(
+            &VerifyApiKey {
+                key: secret,
+                config_id: None,
+                permissions: None
+            },
+            auth.context()
+        )
+        .await
+        .is_ok()
+    );
+    let mut input = request("/api-key/delete", Some(json!({"keyId":id})), "");
+    _ = input.headers.insert("x-api-key".into(), secret.into());
+    let denied = call(&auth, input, 401).await;
+    assert_eq!(body(&denied)["code"], "USER_BANNED");
+    assert!(!denied.headers.contains_key("set-cookie"));
+    assert_eq!(
+        db.text("SELECT key FROM api_keys WHERE id=$1", &[id])
+            .await?,
+        hash
+    );
+    assert_eq!(
+        db.text("SELECT reference_id FROM api_keys WHERE id=$1", &[id])
+            .await?
+            .as_deref(),
+        Some(owner_id.as_str())
+    );
+    assert_eq!(db.count("sessions").await?, 2);
+    _ = call(
+        &auth,
+        request(
+            "/admin/unban-user",
+            Some(json!({"userId":owner_id})),
+            &cookies(&admin),
+        ),
+        200,
+    )
+    .await;
+    assert!(
+        keys.verify_api_key(
+            &VerifyApiKey {
+                key: secret,
+                config_id: None,
+                permissions: None
+            },
+            auth.context()
+        )
+        .await
+        .is_ok()
+    );
+    _ = call(
+        &auth,
+        request(
+            "/admin/remove-user",
+            Some(json!({"userId":owner_id})),
+            &cookies(&admin),
+        ),
+        200,
+    )
+    .await;
+    let mut input = request("/get-session", None, "");
+    _ = input.headers.insert("x-api-key".into(), secret.into());
+    let orphan = call(&auth, input, 401).await;
+    assert_eq!(body(&orphan)["code"], "INVALID_REFERENCE_ID_FROM_API_KEY");
+    assert!(!orphan.headers.contains_key("set-cookie"));
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    authenticated(&auth, &cookies(&admin), "admin@example.test").await;
     B::close(connection).await
 }
