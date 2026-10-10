@@ -21,7 +21,8 @@ backend_tests!(
     server_one_time_token_distinguishes_logical_and_client_requests,
     server_organization_authority_and_member_lifecycle,
     server_password_ignores_misbound_credential_identity,
-    server_password_discards_foreign_virtual_authority
+    server_password_discards_foreign_virtual_authority,
+    server_password_expired_physical_session_cannot_use_cached_identity
 );
 postgres_tests!(
     server_otp_can_bootstrap_a_password_without_replacing_sessions,
@@ -882,6 +883,59 @@ async fn server_password_discards_foreign_virtual_authority<B: Backend>(db: Db) 
     )
     .await;
     assert_eq!(body(&login)["user"]["id"], id);
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+async fn server_password_expired_physical_session_cannot_use_cached_identity<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET)
+        .base_url(ORIGIN)
+        .session_cookie_cache(alibi::CookieCacheConfig {
+            enabled: true,
+            max_age: 300.0,
+            ..Default::default()
+        });
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let token = body(&owner)["token"].as_str().unwrap().to_owned();
+    _ = db
+        .execute("DELETE FROM accounts WHERE user_id=$1", &[&id])
+        .await?;
+    db.set_timestamp(
+        "sessions",
+        "expires_at",
+        ("token", &token),
+        chrono::Utc::now() - chrono::Duration::hours(1),
+    )
+    .await?;
+    let before = db.tables(&["users", "accounts"]).await?;
+    authenticated(&auth, &cookies(&owner), "owner@example.test").await;
+    let error = alibi::plugins::password_management::set_password(
+        &request("/trusted", None, &cookies(&owner)),
+        "owner-password-123",
+        auth.context(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.status_code(), 401);
+    assert_eq!(db.tables(&["users", "accounts"]).await?, before);
+    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(
+        db.count_where("SELECT COUNT(*) FROM sessions WHERE token=$1", &[&token])
+            .await?,
+        0
+    );
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
 }
