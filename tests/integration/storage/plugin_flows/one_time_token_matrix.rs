@@ -12,7 +12,8 @@ use chrono::Duration;
 
 backend_tests!(
     one_time_token_issuance_and_redemption_policies,
-    one_time_token_server_endpoints_publish_cached_identity
+    one_time_token_server_endpoints_publish_cached_identity,
+    ott_new_session_callback_failures_preserve_committed_authentication
 );
 
 struct Generator(&'static str);
@@ -234,4 +235,164 @@ async fn one_time_token_server_endpoints_publish_cached_identity<B: Backend>(db:
         "anonymous server generation is unauthorized"
     );
     B::close(connection).await
+}
+
+async fn ott_new_session_callback_failures_preserve_committed_authentication<B: Backend>(
+    db: Db,
+) -> TestResult {
+    struct Callbacks {
+        next: std::sync::atomic::AtomicUsize,
+        mode: Mutex<&'static str>,
+        seen: Mutex<Vec<(OneTimeTokenSession, AuthRequest)>>,
+    }
+    #[async_trait]
+    impl GenerateOneTimeToken for Callbacks {
+        async fn generate(
+            &self,
+            session: &OneTimeTokenSession,
+            request: Option<&AuthRequest>,
+        ) -> AuthResult<String> {
+            self.seen
+                .lock()
+                .unwrap()
+                .push((session.clone(), request.unwrap().clone()));
+            match *self.mode.lock().unwrap() {
+                "generate internal" => Err(AuthError::internal("generator down")),
+                "generate api" => Err(AuthError::Upstream {
+                    status: 403,
+                    code: "OTT_VETO",
+                    message: "OTT callback veto",
+                }),
+                _ => Ok(format!(
+                    "new-session-ott-{}",
+                    self.next.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                )),
+            }
+        }
+    }
+    #[async_trait]
+    impl HashOneTimeToken for Callbacks {
+        async fn hash(&self, token: &str) -> AuthResult<String> {
+            match *self.mode.lock().unwrap() {
+                "hash internal" => Err(AuthError::internal("hasher down")),
+                "hash api" => Err(AuthError::Upstream {
+                    status: 403,
+                    code: "OTT_VETO",
+                    message: "OTT callback veto",
+                }),
+                _ => Ok(format!("digest-{token}")),
+            }
+        }
+    }
+    for signup_flow in [true, false] {
+        for mode in [
+            "generate internal",
+            "generate api",
+            "hash internal",
+            "hash api",
+        ] {
+            let db = db.fresh().await?;
+            let (connection, _) = db.migrated::<B>(SECRET).await?;
+            let callbacks = Arc::new(Callbacks {
+                next: std::sync::atomic::AtomicUsize::new(0),
+                mode: Mutex::new("success"),
+                seen: Mutex::new(Vec::new()),
+            });
+            let auth = fast_builder::<B>(&connection)
+                .plugin(OneTimeTokenPlugin::with_config(OneTimeTokenConfig {
+                    generator: Some(callbacks.clone()),
+                    storage: OneTimeTokenStorage::Custom(callbacks.clone()),
+                    set_ott_header_on_new_session: true,
+                    ..Default::default()
+                }))
+                .build()
+                .await?;
+            let foreign = signup(&auth, "foreign@example.test").await;
+            if !signup_flow {
+                _ = signup(&auth, "owner@example.test").await;
+            }
+            let proofs = db.table("verifications").await?;
+            callbacks.seen.lock().unwrap().clear();
+            *callbacks.mode.lock().unwrap() = mode;
+            let path = if signup_flow {
+                "/sign-up/email"
+            } else {
+                "/sign-in/email"
+            };
+            let mut input = request(
+                path,
+                Some(json!({"email":"owner@example.test","password":PASSWORD,"name":"OTT owner"})),
+                "",
+            );
+            _ = input.headers.insert("x-ott-marker".into(), mode.into());
+            let failed = call(&auth, input, if mode.ends_with("api") { 403 } else { 500 }).await;
+            assert!(failed.headers.get("set-ott").is_none());
+            if mode.ends_with("internal") {
+                assert!(failed.body.is_empty());
+            }
+            let (session, seen_request) = callbacks.seen.lock().unwrap().last().unwrap().clone();
+            assert_eq!(seen_request.path(), path);
+            assert_eq!(
+                seen_request.headers.get("x-ott-marker").map(String::as_str),
+                Some(mode)
+            );
+            assert_eq!(session.user.email.as_deref(), Some("owner@example.test"));
+            assert_eq!(session.session.user_id, session.user.id);
+            assert!(
+                auth.store()
+                    .get_session(&session.session.token)
+                    .await?
+                    .is_some()
+            );
+            assert_eq!(
+                db.count_where(
+                    "SELECT COUNT(*) FROM sessions WHERE user_id=$1",
+                    &[&session.user.id]
+                )
+                .await?,
+                if signup_flow { 1 } else { 2 }
+            );
+            assert_eq!(
+                db.count_where(
+                    "SELECT COUNT(*) FROM accounts WHERE user_id=$1",
+                    &[&session.user.id]
+                )
+                .await?,
+                1
+            );
+            assert_eq!(db.table("verifications").await?, proofs);
+            authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+            *callbacks.mode.lock().unwrap() = "success";
+            let restored = call(
+                &auth,
+                request(
+                    "/sign-in/email",
+                    Some(json!({"email":"owner@example.test","password":PASSWORD})),
+                    "",
+                ),
+                200,
+            )
+            .await;
+            assert_eq!(body(&restored)["user"]["id"], session.user.id);
+            let token = restored.headers.get("set-ott").unwrap();
+            let consumed = call(
+                &auth,
+                request("/one-time-token/verify", Some(json!({"token":token})), ""),
+                200,
+            )
+            .await;
+            assert_eq!(
+                body(&consumed)["session"]["token"],
+                body(&restored)["token"]
+            );
+            _ = call(
+                &auth,
+                request("/one-time-token/verify", Some(json!({"token":token})), ""),
+                400,
+            )
+            .await;
+            B::close(connection).await?;
+        }
+    }
+    Ok(())
 }
