@@ -18,7 +18,8 @@ backend_tests!(
     phone_signin_distinguishes_missing_null_and_empty_credentials,
     phone_self_update_consumes_proof_without_changing_owner_or_callbacks,
     phone_reset_callback_rejection_precedes_configured_session_revocation,
-    phone_missing_otp_sender_precedes_application_validation
+    phone_missing_otp_sender_precedes_application_validation,
+    phone_external_verifier_cannot_authorize_local_password_reset
 );
 
 #[derive(Default)]
@@ -866,5 +867,142 @@ async fn phone_missing_otp_sender_precedes_application_validation<B: Backend>(
             .await?,
         before
     );
+    B::close(connection).await
+}
+
+async fn phone_external_verifier_cannot_authorize_local_password_reset<B: Backend>(
+    db: Db,
+) -> TestResult {
+    struct ProviderCount(std::sync::atomic::AtomicUsize);
+    #[async_trait]
+    impl PhoneOtpVerifier for ProviderCount {
+        async fn verify(&self, _: &PhoneOtpDelivery, _: &CallbackContext) -> AuthResult<bool> {
+            _ = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(true)
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let outbox = Arc::new(Outbox::default());
+    let provider = Arc::new(ProviderCount(std::sync::atomic::AtomicUsize::new(0)));
+    let auth = fast_builder::<B>(&connection)
+        .plugin(PhoneNumberPlugin::new(PhoneNumberConfig {
+            send_otp: Some(outbox.clone()),
+            send_password_reset_otp: Some(outbox.clone()),
+            verify_otp: Some(provider.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let phone = "+15550000105";
+    let owner=call(&auth,request("/sign-up/email",Some(json!({"email":"provider-reset@example.test","password":PASSWORD,"name":"Owner","phoneNumber":phone})),""),200).await;
+    _ = call(
+        &auth,
+        request(
+            "/phone-number/send-otp",
+            Some(json!({"phoneNumber":phone})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    _ = call(
+        &auth,
+        request(
+            "/phone-number/verify",
+            Some(json!({"phoneNumber":phone,"code":outbox.last().code,"disableSession":true})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(provider.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    _ = call(
+        &auth,
+        request(
+            "/phone-number/request-password-reset",
+            Some(json!({"phoneNumber":phone})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let code = outbox.last().code;
+    let identifier = format!("{phone}-request-password-reset");
+    let proof = db
+        .text(
+            "SELECT expires_at FROM verifications WHERE identifier=$1",
+            &[&identifier],
+        )
+        .await?;
+    _ = call(
+        &auth,
+        request(
+            "/phone-number/send-otp",
+            Some(json!({"phoneNumber":phone})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let wrong = if code == "000000" { "999999" } else { "000000" };
+    let denied = call(
+        &auth,
+        request(
+            "/phone-number/reset-password",
+            Some(json!({"phoneNumber":phone,"otp":wrong,"newPassword":"new-local-password"})),
+            "",
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&denied)["code"], "INVALID_OTP");
+    assert_eq!(provider.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(
+        db.text(
+            "SELECT value FROM verifications WHERE identifier=$1",
+            &[&identifier]
+        )
+        .await?
+        .as_deref(),
+        Some(format!("{code}:1").as_str())
+    );
+    assert_eq!(
+        db.text(
+            "SELECT expires_at FROM verifications WHERE identifier=$1",
+            &[&identifier]
+        )
+        .await?,
+        proof
+    );
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    _ = call(
+        &auth,
+        request(
+            "/phone-number/reset-password",
+            Some(json!({"phoneNumber":phone,"otp":code,"newPassword":"new-local-password"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(provider.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(
+        db.count_where(
+            "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+            &[&identifier]
+        )
+        .await?,
+        0
+    );
+    assert_eq!(
+        db.count_where(
+            "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+            &[phone]
+        )
+        .await?,
+        1
+    );
+    authenticated(&auth, &cookies(&owner), "provider-reset@example.test").await;
     B::close(connection).await
 }
