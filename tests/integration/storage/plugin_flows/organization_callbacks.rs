@@ -15,7 +15,8 @@ backend_tests!(
     organization_update_hooks_preserve_empty_values_and_input_field_fallback,
     organization_creation_hooks_preserve_trusted_empty_values_and_omitted_fields,
     organization_creation_retains_original_member_after_independent_role_write,
-    organization_creator_patch_retargeting_keeps_team_and_selection_actor
+    organization_creator_patch_retargeting_keeps_team_and_selection_actor,
+    organization_addition_after_hook_keeps_original_target_after_user_write
 );
 postgres_tests!(
     organization_lifecycle_callbacks_preserve_patch_authority_and_committed_phases,
@@ -1741,5 +1742,105 @@ async fn organization_creator_patch_retargeting_keeps_team_and_selection_actor<B
         .await?,
         before
     );
+    B::close(connection).await
+}
+
+async fn organization_addition_after_hook_keeps_original_target_after_user_write<B: Backend>(
+    db: Db,
+) -> TestResult {
+    struct Hooks<S: AuthSchema> {
+        store: Arc<dyn alibi::AuthStore<S>>,
+        before: Mutex<Vec<OrganizationMemberAdditionContext>>,
+        after: Mutex<Vec<OrganizationMemberAddedContext>>,
+    }
+    impl<S: AuthSchema> std::fmt::Debug for Hooks<S> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("AdditionTargetWrite")
+        }
+    }
+    #[async_trait]
+    impl<S: AuthSchema> OrganizationMemberAdditionHooks for Hooks<S> {
+        async fn before_add_member(
+            &self,
+            c: &OrganizationMemberAdditionContext,
+        ) -> AuthResult<Option<OrganizationMemberCreatePatch>> {
+            self.before.lock().unwrap().push(c.clone());
+            _ = self
+                .store
+                .update_user(
+                    &c.user.id,
+                    alibi::UpdateUser {
+                        name: Some("Stored Addition Target".into()),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            Ok(None)
+        }
+        async fn after_add_member(&self, c: &OrganizationMemberAddedContext) -> AuthResult<()> {
+            self.after.lock().unwrap().push(c.clone());
+            Ok(())
+        }
+    }
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks {
+        store: Arc::new(store),
+        before: Mutex::new(Vec::new()),
+        after: Mutex::new(Vec::new()),
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            member_addition_hooks: Some(hooks.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let target = signup(&auth, "target@example.test").await;
+    let org = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Owned","slug":"owned"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let stable = db.tables(&["accounts", "sessions", "organization"]).await?;
+    let target_id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
+    let result = auth
+        .dispatch_endpoint(
+            OrganizationPlugin::add_member_endpoint(&serde_json::from_value(
+                json!({"organizationId":org["id"],"userId":target_id,"role":"member"}),
+            )?)?,
+            alibi::endpoint::EndpointOptions::default(),
+        )
+        .await?
+        .decode()?;
+    let before = hooks.before.lock().unwrap()[0].clone();
+    let after = hooks.after.lock().unwrap()[0].clone();
+    assert_eq!(
+        before.user.name.as_deref(),
+        body(&target)["user"]["name"].as_str()
+    );
+    assert_eq!(after.user.name, before.user.name);
+    assert_eq!(after.user.email, before.user.email);
+    assert_eq!(after.user.id, target_id);
+    assert_eq!(after.member.id, result.id);
+    assert_eq!(
+        db.text("SELECT name FROM users WHERE id=$1", &[&target_id])
+            .await?
+            .as_deref(),
+        Some("Stored Addition Target")
+    );
+    assert_eq!(
+        db.tables(&["accounts", "sessions", "organization"]).await?,
+        stable
+    );
+    assert_eq!(db.count("member").await?, 2);
+    authenticated(&auth, &cookies(&owner), "owner@example.test").await;
     B::close(connection).await
 }
