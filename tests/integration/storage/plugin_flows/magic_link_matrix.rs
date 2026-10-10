@@ -13,7 +13,9 @@ use async_trait::async_trait;
 backend_tests!(
     magic_link_request_matrix,
     magic_link_issuance_policies,
-    magic_link_redemption_matrix
+    magic_link_redemption_matrix,
+    magic_link_configured_quota_blocks_delivery_and_resets_at_configured_window,
+    magic_link_returning_verified_owner_retains_credentials_oauth_and_browser_sessions
 );
 
 #[derive(Default)]
@@ -305,5 +307,185 @@ async fn magic_link_redemption_matrix<B: Backend>(db: Db) -> TestResult {
         json!([db.count("users").await?, db.count("sessions").await?]),
     );
     probe.trace.assert("magic-link/redemption-matrix");
+    B::close(connection).await
+}
+
+async fn magic_link_configured_quota_blocks_delivery_and_resets_at_configured_window<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::store::SchemaMigrator;
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let ledger = B::rate_limit(&connection);
+    ledger.migrate().await?;
+    let outbox = Arc::new(Outbox::default());
+    let auth = fast_builder::<B>(&connection)
+        .rate_limit(
+            alibi::middleware::RateLimitConfig::new()
+                .enabled(true)
+                .storage(Arc::new(ledger)),
+        )
+        .plugin(MagicLinkPlugin::new(MagicLinkConfig {
+            send_magic_link: Some(outbox.clone()),
+            rate_limit: alibi::EndpointRateLimit {
+                window_seconds: 120.0,
+                max_requests: 2.0,
+            },
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    for index in 0..2 {
+        _ = call(
+            &auth,
+            request(
+                "/sign-in/magic-link",
+                Some(json!({"email":format!("quota-{index}@example.test")})),
+                "",
+            ),
+            200,
+        )
+        .await;
+    }
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    assert_eq!(outbox.sent.lock().unwrap().len(), 2);
+    // Crossing the default window must still respect this plugin's longer window.
+    _ = db
+        .execute(
+            "UPDATE rate_limit SET last_request = last_request - 61000",
+            &[],
+        )
+        .await?;
+    let index = 2;
+    let denied = call(
+        &auth,
+        request(
+            "/sign-in/magic-link",
+            Some(json!({"email":format!("quota-{index}@example.test")})),
+            "",
+        ),
+        429,
+    )
+    .await;
+    assert_eq!(denied.status, 429);
+    assert_eq!(outbox.sent.lock().unwrap().len(), 2);
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        before
+    );
+    _ = db
+        .execute(
+            "UPDATE rate_limit SET last_request = last_request - 61000",
+            &[],
+        )
+        .await?;
+    _ = call(
+        &auth,
+        request(
+            "/sign-in/magic-link",
+            Some(json!({"email":format!("quota-{index}@example.test")})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(outbox.sent.lock().unwrap().len(), 3);
+    assert_eq!(db.count("verifications").await?, 3);
+    assert_eq!(db.count("sessions").await?, 0);
+    B::close(connection).await
+}
+
+async fn magic_link_returning_verified_owner_retains_credentials_oauth_and_browser_sessions<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let outbox = Arc::new(Outbox::default());
+    let auth = fast_builder::<B>(&connection)
+        .plugin(MagicLinkPlugin::new(MagicLinkConfig {
+            send_magic_link: Some(outbox.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "verified@example.test").await;
+    let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    _ = auth
+        .store()
+        .update_user(
+            &id,
+            alibi::UpdateUser {
+                email_verified: Some(true),
+                ..Default::default()
+            },
+        )
+        .await?;
+    _ = auth
+        .store()
+        .create_account(alibi::CreateAccount {
+            user_id: id.clone(),
+            account_id: "linked-provider-owner".into(),
+            provider_id: "github".into(),
+            access_token: Some("durable-access".into()),
+            refresh_token: Some("durable-refresh".into()),
+            id_token: None,
+            access_token_expires_at: None,
+            refresh_token_expires_at: None,
+            scope: Some("profile".into()),
+            password: None,
+            additional_fields: Default::default(),
+        })
+        .await?;
+    let second = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"verified@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let accounts = db.table("accounts").await?;
+    _ = call(
+        &auth,
+        request(
+            "/sign-in/magic-link",
+            Some(json!({"email":"VERIFIED@EXAMPLE.TEST","name":"must-not-replace"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let delivery = outbox.sent.lock().unwrap().last().unwrap().clone();
+    let response = call(&auth, redeem(&delivery, &[]), 302).await;
+    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(
+        db.text("SELECT name FROM users WHERE id=$1", &[&id])
+            .await?
+            .as_deref(),
+        Some("Native owner")
+    );
+    assert_eq!(db.count("verifications").await?, 0);
+    for cookie in [cookies(&owner), cookies(&second), cookies(&response)] {
+        authenticated(&auth, &cookie, "verified@example.test").await;
+    }
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    let login = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"verified@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&login)["user"]["id"], id);
+    assert_eq!(db.table("accounts").await?, accounts);
     B::close(connection).await
 }
