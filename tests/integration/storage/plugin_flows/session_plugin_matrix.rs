@@ -15,7 +15,8 @@ backend_tests!(
     device_session_projection,
     multi_session_raw_capacity_controls_proofs_without_evicting_durable_sessions,
     multi_session_repeated_genuine_proofs_retire_before_fractional_capacity,
-    multi_session_without_database_preserves_order_fallback_and_cache_replay_limits
+    multi_session_without_database_preserves_order_fallback_and_cache_replay_limits,
+    parallel_sibling_revocation_retains_owned_deletes_after_rejection
 );
 
 fn merge(first: &str, second: &str) -> String {
@@ -737,4 +738,136 @@ async fn multi_session_without_database_preserves_order_fallback_and_cache_repla
         assert_eq!(db.count(table).await?, 0);
     }
     B::close(connection).await
+}
+
+async fn parallel_sibling_revocation_retains_owned_deletes_after_rejection<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::AuthSession;
+    use alibi::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
+    struct Gates {
+        modes: Mutex<BTreeMap<String, usize>>,
+        started: [tokio::sync::Notify; 3],
+        held_release: tokio::sync::Notify,
+        failure_release: tokio::sync::Notify,
+        success_committed: tokio::sync::Notify,
+        held_committed: tokio::sync::Notify,
+    }
+    struct Hooks(Arc<Gates>);
+    #[async_trait::async_trait]
+    impl<S: AuthSchema, H: HookBackend> DatabaseHooks<S, H> for Hooks {
+        async fn before_delete_session(
+            &self,
+            session: &S::Session,
+            _: &DatabaseHookContext<'_, H>,
+        ) -> AuthResult<HookControl> {
+            let mode = self.0.modes.lock().unwrap().get(session.token()).copied();
+            if let Some(mode) = mode {
+                self.0.started[mode].notify_one();
+                match mode {
+                    0 => self.0.held_release.notified().await,
+                    1 => {
+                        self.0.failure_release.notified().await;
+                        return Err(AuthError::internal("sibling application rejection"));
+                    }
+                    _ => {}
+                }
+            }
+            Ok(HookControl::Continue)
+        }
+        async fn after_delete_session(
+            &self,
+            session: &S::Session,
+            _: &DatabaseHookContext<'_, H>,
+        ) -> AuthResult<()> {
+            match self.0.modes.lock().unwrap().get(session.token()).copied() {
+                Some(0) => self.0.held_committed.notify_one(),
+                Some(2) => self.0.success_committed.notify_one(),
+                _ => {}
+            }
+            Ok(())
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let gates = Arc::new(Gates {
+        modes: Mutex::new(BTreeMap::new()),
+        started: std::array::from_fn(|_| tokio::sync::Notify::new()),
+        held_release: tokio::sync::Notify::new(),
+        failure_release: tokio::sync::Notify::new(),
+        success_committed: tokio::sync::Notify::new(),
+        held_committed: tokio::sync::Notify::new(),
+    });
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let store = B::hook(
+        B::store(Arc::new(config.clone()), &connection),
+        Hooks(gates.clone()),
+    );
+    let auth = Arc::new(
+        AuthBuilder::new(config)
+            .store(store)
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+            .plugin(super::auth_probe::fast_password())
+            .plugin(SessionManagementPlugin::new())
+            .build()
+            .await?,
+    );
+    let owner = signup(&auth, "parallel-owner@example.test").await;
+    let foreign = signup(&auth, "parallel-foreign@example.test").await;
+    let mut siblings = Vec::new();
+    for mode in 0..3 {
+        let response = call(
+            &auth,
+            request(
+                "/sign-in/email",
+                Some(json!({"email":"parallel-owner@example.test","password":PASSWORD})),
+                "",
+            ),
+            200,
+        )
+        .await;
+        let token = body(&response)["token"].as_str().unwrap().to_owned();
+        let _ = gates.modes.lock().unwrap().insert(token.clone(), mode);
+        siblings.push((token, cookies(&response)));
+    }
+    let input = request("/revoke-other-sessions", Some(json!({})), &cookies(&owner));
+    let worker = auth.clone();
+    let response = tokio::spawn(async move { call(&worker, input, 500).await });
+    for started in &gates.started {
+        tokio::time::timeout(std::time::Duration::from_secs(2), started.notified()).await?;
+    }
+    tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        gates.success_committed.notified(),
+    )
+    .await?;
+    gates.failure_release.notify_one();
+    let rejected = tokio::time::timeout(std::time::Duration::from_secs(2), response).await??;
+    assert!(!rejected.headers.contains_key("set-cookie"));
+    assert_eq!(db.count("sessions").await?, 4);
+    for (index, (token, _)) in siblings.iter().enumerate() {
+        assert_eq!(
+            db.count_where("SELECT COUNT(*) FROM sessions WHERE token = $1", &[token])
+                .await?,
+            i64::from(index != 2)
+        );
+    }
+    gates.held_release.notify_one();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        gates.held_committed.notified(),
+    )
+    .await?;
+    assert_eq!(db.count("sessions").await?, 3);
+    assert_eq!(
+        db.count_where(
+            "SELECT COUNT(*) FROM sessions WHERE token = $1",
+            &[&siblings[0].0]
+        )
+        .await?,
+        0
+    );
+    authenticated(&auth, &siblings[1].1, "parallel-owner@example.test").await;
+    authenticated(&auth, &cookies(&owner), "parallel-owner@example.test").await;
+    authenticated(&auth, &cookies(&foreign), "parallel-foreign@example.test").await;
+    Ok(())
 }
