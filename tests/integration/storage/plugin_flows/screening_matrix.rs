@@ -13,7 +13,8 @@ use alibi::plugins::haveibeenpwned::{
 backend_tests!(
     pwned_range_reply_matrix,
     captcha_reply_and_path_matrix,
-    captcha_normalized_physical_paths_reject_before_json_and_origin_validation
+    captcha_normalized_physical_paths_reject_before_json_and_origin_validation,
+    captcha_botid_validator_receives_actual_request_and_full_verification
 );
 
 const SUFFIX: &str = "1E4C9B93F3F0682250B6CF8331B7EE68FD8";
@@ -415,5 +416,87 @@ async fn captcha_normalized_physical_paths_reject_before_json_and_origin_validat
     }
     authenticated(&base, &cookies(&owner), "owner@example.test").await;
     authenticated(&base, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+async fn captcha_botid_validator_receives_actual_request_and_full_verification<B: Backend>(
+    db: Db,
+) -> TestResult {
+    struct Policy(Mutex<Vec<(AuthRequest, Value)>>);
+    #[async_trait::async_trait]
+    impl CheckBotId for Policy {
+        async fn check(&self) -> AuthResult<BotIdVerification> {
+            Ok(BotIdVerification {
+                is_bot: true,
+                is_verified_bot: Some(true),
+                verified_bot_name: Some("SearchBot".into()),
+                verified_bot_category: Some("search".into()),
+            })
+        }
+    }
+    #[async_trait::async_trait]
+    impl ValidateBotIdRequest for Policy {
+        async fn validate(
+            &self,
+            request: &AuthRequest,
+            result: &BotIdVerification,
+        ) -> AuthResult<bool> {
+            self.0
+                .lock()
+                .unwrap()
+                .push((request.clone(), serde_json::to_value(result).unwrap()));
+            Ok(request
+                .header("x-app-marker")
+                .is_some_and(|value| value == "allowed")
+                && result.is_bot
+                && result.is_verified_bot == Some(true)
+                && result.verified_bot_name.as_deref() == Some("SearchBot")
+                && result.verified_bot_category.as_deref() == Some("search"))
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let policy = Arc::new(Policy(Mutex::new(Vec::new())));
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(CaptchaPlugin::new(CaptchaConfig {
+            provider: CaptchaProvider::VercelBotId(BotIdConfig {
+                check_bot_id: policy.clone(),
+                validate_request: Some(policy.clone()),
+            }),
+            endpoints: vec!["/sign-in/email".into()],
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let mut input = request(
+        "/sign-in/email",
+        Some(json!({"email":"owner@example.test","password":PASSWORD})),
+        "",
+    );
+    let denied = call(&auth, input.clone(), 403).await;
+    assert_eq!(body(&denied)["code"], "VERIFICATION_FAILED");
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    _ = input
+        .headers
+        .insert("x-app-marker".into(), "allowed".into());
+    let accepted = call(&auth, input.clone(), 200).await;
+    assert_eq!(body(&accepted)["user"]["id"], body(&owner)["user"]["id"]);
+    {
+        let events = policy.0.lock().unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[1].0.path, input.path);
+        assert_eq!(events[1].0.body, input.body);
+        assert_eq!(
+            events[1].0.header("x-app-marker").map(String::as_str),
+            Some("allowed")
+        );
+        assert_eq!(
+            events[1].1,
+            json!({"isBot":true,"isVerifiedBot":true,"verifiedBotName":"SearchBot","verifiedBotCategory":"search"})
+        );
+    }
+    authenticated(&auth, &cookies(&accepted), "owner@example.test").await;
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
 }
