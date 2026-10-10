@@ -6,7 +6,7 @@ description: "Select database engines, framework integrations, the TLS stack, pa
 Choose features on the Git dependency. For SQLite with Rustls and Axum:
 
 ```toml
-alibi = { version = "0.4.0", default-features = false, features = ["axum", "sqlx-sqlite", "rustls"] }
+alibi = { version = "0.4.1", default-features = false, features = ["axum", "sqlx-sqlite", "rustls"] }
 ```
 
 | Feature | Default | Enables |
@@ -34,13 +34,13 @@ alibi = { version = "0.4.0", default-features = false, features = ["axum", "sqlx
 
 ```toml
 # PostgreSQL + Axum + Rustls (typical production)
-alibi = { version = "0.4.0", default-features = false, features = ["axum", "sqlx-postgres", "rustls"] }
+alibi = { version = "0.4.1", default-features = false, features = ["axum", "sqlx-postgres", "rustls"] }
 
 # SeaORM + Poem + Rustls
-alibi = { version = "0.4.0", default-features = false, features = ["poem", "seaorm", "rustls"] }
+alibi = { version = "0.4.1", default-features = false, features = ["poem", "seaorm", "rustls"] }
 
 # Axum + SQLx + Redis-backed sessions and rate limits
-alibi = { version = "0.4.0", features = ["axum", "redis-cache"] }
+alibi = { version = "0.4.1", features = ["axum", "redis-cache"] }
 ```
 
 Your own `sqlx` dependency must enable the same engine (`"sqlite"` and/or `"postgres"`) plus `chrono`, `json` and `derive`, because the generated models derive `sqlx::FromRow`.
