@@ -19,7 +19,8 @@ backend_tests!(
     server_otp_can_bootstrap_a_password_without_replacing_sessions,
     server_jwt_signatures_are_usable_by_an_independent_consumer,
     server_one_time_token_distinguishes_logical_and_client_requests,
-    server_organization_authority_and_member_lifecycle
+    server_organization_authority_and_member_lifecycle,
+    server_password_ignores_misbound_credential_identity
 );
 postgres_tests!(
     server_otp_can_bootstrap_a_password_without_replacing_sessions,
@@ -767,4 +768,68 @@ async fn verify_jwt_overrides<S: AuthSchema>(
         "default-after-overrides"
     );
     Ok(())
+}
+
+async fn server_password_ignores_misbound_credential_identity<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let other = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
+    _ = db
+        .execute(
+            "UPDATE accounts SET account_id=$1,password=NULL WHERE user_id=$2",
+            &[&other, &id],
+        )
+        .await?;
+    let old = db
+        .text("SELECT id FROM accounts WHERE user_id=$1", &[&id])
+        .await?
+        .unwrap();
+    let before = db.tables(&["users", "sessions"]).await?;
+    let foreign_accounts = db
+        .text("SELECT password FROM accounts WHERE user_id=$1", &[&other])
+        .await?;
+    alibi::plugins::password_management::set_password(
+        &request("/trusted", None, &cookies(&owner)),
+        "canonical-password-123",
+        auth.context(),
+    )
+    .await?;
+    assert_eq!(db.tables(&["users", "sessions"]).await?, before);
+    assert_eq!(
+        db.count_where("SELECT COUNT(*) FROM accounts WHERE user_id=$1", &[&id])
+            .await?,
+        2
+    );
+    assert_eq!(
+        db.text("SELECT account_id FROM accounts WHERE id=$1", &[&old])
+            .await?
+            .as_deref(),
+        Some(other.as_str())
+    );
+    assert_eq!(
+        db.text("SELECT password FROM accounts WHERE id=$1", &[&old])
+            .await?,
+        None
+    );
+    assert_eq!(
+        db.text(
+            "SELECT password FROM accounts WHERE user_id=$1 AND account_id=$1",
+            &[&id]
+        )
+        .await?
+        .as_deref(),
+        Some("fast$canonical-password-123")
+    );
+    assert_eq!(
+        db.text("SELECT password FROM accounts WHERE user_id=$1", &[&other])
+            .await?,
+        foreign_accounts
+    );
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
 }
