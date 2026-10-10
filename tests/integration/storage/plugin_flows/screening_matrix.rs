@@ -344,3 +344,125 @@ async fn captcha_reply_and_path_matrix<B: Backend>(db: Db) -> TestResult {
     trace.assert("screening/captcha-reply-path-matrix");
     B::close(connection).await
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn captcha_botid_deadline_rejects_authentication_without_cancelling_callbacks() -> TestResult
+{
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct Check {
+        entered: tokio::sync::Notify,
+        release: tokio::sync::Notify,
+    }
+    #[async_trait::async_trait]
+    impl CheckBotId for Check {
+        async fn check(&self) -> AuthResult<BotIdVerification> {
+            self.entered.notify_one();
+            self.release.notified().await;
+            Ok(BotIdVerification {
+                is_bot: false,
+                is_verified_bot: Some(false),
+                verified_bot_name: None,
+                verified_bot_category: None,
+            })
+        }
+    }
+    struct Finish {
+        completed: tokio::sync::Notify,
+        count: AtomicUsize,
+    }
+    #[async_trait::async_trait]
+    impl ValidateBotIdRequest for Finish {
+        async fn validate(&self, _: &AuthRequest, _: &BotIdVerification) -> AuthResult<bool> {
+            _ = self.count.fetch_add(1, Ordering::SeqCst);
+            self.completed.notify_one();
+            Ok(true)
+        }
+    }
+    let check = Arc::new(Check {
+        entered: tokio::sync::Notify::new(),
+        release: tokio::sync::Notify::new(),
+    });
+    let finish = Arc::new(Finish {
+        completed: tokio::sync::Notify::new(),
+        count: AtomicUsize::new(0),
+    });
+    let auth = Arc::new(
+        AuthBuilder::without_database(
+            AuthConfig::new(SECRET)
+                .base_url(ORIGIN)
+                .trusted_origin(ORIGIN),
+        )
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(CaptchaPlugin::new(CaptchaConfig {
+            provider: CaptchaProvider::VercelBotId(BotIdConfig {
+                check_bot_id: check.clone(),
+                validate_request: Some(finish.clone()),
+            }),
+            endpoints: vec!["/sign-in/email".into()],
+        }))
+        .build()
+        .await?,
+    );
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let before = body(
+        &call(
+            &auth,
+            request("/list-sessions", None, &cookies(&owner)),
+            200,
+        )
+        .await,
+    );
+    let running = auth.clone();
+    let pending = tokio::spawn(async move {
+        Box::pin(running.handle_request(request(
+            "/sign-in/email",
+            Some(json!({"email":"owner@example.test","password":PASSWORD})),
+            "",
+        )))
+        .await
+    });
+    check.entered.notified().await;
+    tokio::time::pause();
+    tokio::time::advance(std::time::Duration::from_secs(11)).await;
+    let denied = pending.await??;
+    tokio::time::resume();
+    assert_eq!(denied.status, 500);
+    assert_eq!(body(&denied)["code"], "UNKNOWN_ERROR");
+    assert!(denied.headers.get_all("set-cookie").next().is_none());
+    assert_eq!(finish.count.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        body(
+            &call(
+                &auth,
+                request("/list-sessions", None, &cookies(&owner)),
+                200
+            )
+            .await
+        ),
+        before
+    );
+    check.release.notify_one();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        finish.completed.notified(),
+    )
+    .await?;
+    assert_eq!(finish.count.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        body(
+            &call(
+                &auth,
+                request("/list-sessions", None, &cookies(&owner)),
+                200
+            )
+            .await
+        ),
+        before
+    );
+    authenticated(&auth, &cookies(&owner), "owner@example.test").await;
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    Ok(())
+}
