@@ -2,7 +2,8 @@
 use super::*;
 backend_tests!(
     account_deletion_consumes_delivered_owner_proof_and_preserves_foreign_identity,
-    deletion_password_rejection_preserves_delivered_body_proof
+    deletion_password_rejection_preserves_delivered_body_proof,
+    concurrent_deletion_replay_rejects_before_awaited_owner_hook
 );
 postgres_tests!(account_deletion_consumes_delivered_owner_proof_and_preserves_foreign_identity);
 #[derive(Default)]
@@ -342,6 +343,103 @@ async fn deletion_password_rejection_preserves_delivered_body_proof<B: Backend>(
         &auth,
         &cookies(&foreign),
         "delete-password-foreign@example.test",
+    )
+    .await;
+    Ok(())
+}
+
+async fn concurrent_deletion_replay_rejects_before_awaited_owner_hook<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::plugins::user_management::{AfterDeleteUser, BeforeDeleteUser, UserInfo};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct Gate {
+        entered: tokio::sync::Notify,
+        release: tokio::sync::Notify,
+        before: AtomicUsize,
+        after: AtomicUsize,
+    }
+    #[async_trait::async_trait]
+    impl BeforeDeleteUser for Gate {
+        async fn before_delete(&self, _: &UserInfo) -> alibi::AuthResult<()> {
+            let _ = self.before.fetch_add(1, Ordering::SeqCst);
+            self.entered.notify_one();
+            self.release.notified().await;
+            Ok(())
+        }
+    }
+    #[async_trait::async_trait]
+    impl AfterDeleteUser for Gate {
+        async fn after_delete(&self, _: &UserInfo) -> alibi::AuthResult<()> {
+            let _ = self.after.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mailbox = Arc::new(DeletionMailbox::default());
+    let gate = Arc::new(Gate {
+        entered: tokio::sync::Notify::new(),
+        release: tokio::sync::Notify::new(),
+        before: 0.into(),
+        after: 0.into(),
+    });
+    let auth = Arc::new(
+        super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(
+                alibi::plugins::UserManagementPlugin::new()
+                    .delete_user_enabled(true)
+                    .send_delete_account_verification(mailbox.clone())
+                    .before_delete(gate.clone())
+                    .after_delete(gate.clone()),
+            )
+            .build()
+            .await?,
+    );
+    let owner = signup(&auth, "delete-race-owner@example.test").await;
+    let foreign = signup(&auth, "delete-race-foreign@example.test").await;
+    let cookie = cookies(&owner);
+    let _ = call(
+        &auth,
+        request(
+            "/delete-user",
+            Some(json!({"callbackURL":"/gone"})),
+            &cookie,
+        ),
+        200,
+    )
+    .await;
+    let (_, _, token) = mailbox.0.lock().unwrap().pop().unwrap();
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let callback = |token: &str| {
+        let mut input = request("/delete-user/callback", None, &cookie);
+        let _ = input.query.insert("token".into(), token.into());
+        input
+    };
+    let input = callback(&token);
+    let worker = auth.clone();
+    let first = tokio::spawn(async move { call(&worker, input, 200).await });
+    tokio::time::timeout(std::time::Duration::from_secs(2), gate.entered.notified()).await?;
+    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    let replay = call(&auth, callback(&token), 404).await;
+    assert_eq!(body(&replay)["code"], "INVALID_TOKEN");
+    assert_eq!(gate.before.load(Ordering::SeqCst), 1);
+    assert_eq!(gate.after.load(Ordering::SeqCst), 0);
+    gate.release.notify_one();
+    let _ = first.await?;
+    assert_eq!(gate.before.load(Ordering::SeqCst), 1);
+    assert_eq!(gate.after.load(Ordering::SeqCst), 1);
+    assert_eq!(db.count("users").await?, 1);
+    assert_eq!(db.count("accounts").await?, 1);
+    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(
+        db.text("SELECT id FROM users", &[]).await?.as_deref(),
+        body(&foreign)["user"]["id"].as_str()
+    );
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "delete-race-foreign@example.test",
     )
     .await;
     Ok(())
