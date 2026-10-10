@@ -9,7 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 backend_tests!(
     password_reset_token_matrix,
-    change_and_verify_password_matrix
+    change_and_verify_password_matrix,
+    invalid_stored_reset_proofs_consume_before_crypto_or_callback
 );
 
 #[derive(Default)]
@@ -334,5 +335,137 @@ async fn change_and_verify_password_matrix<B: Backend>(db: Db) -> TestResult {
         B::close(connection).await?;
     }
     trace.assert("password-management/change-and-verify-matrix");
+    Ok(())
+}
+
+async fn invalid_stored_reset_proofs_consume_before_crypto_or_callback<B: Backend>(
+    db: Db,
+) -> TestResult {
+    for missing_owner in [false, true] {
+        let db = db.fresh().await?;
+
+        struct CountingHasher {
+            hashes: std::sync::atomic::AtomicUsize,
+            verifies: std::sync::atomic::AtomicUsize,
+            fail: AtomicBool,
+        }
+        #[async_trait]
+        impl alibi::PasswordHasher for CountingHasher {
+            async fn hash(&self, password: &str) -> AuthResult<String> {
+                let _ = self.hashes.fetch_add(1, Ordering::SeqCst);
+                if self.fail.load(Ordering::SeqCst) {
+                    return Err(AuthError::internal("application hasher rejected"));
+                }
+                Ok(format!("fast${password}"))
+            }
+            async fn verify(&self, hash: &str, password: &str) -> AuthResult<bool> {
+                let _ = self.verifies.fetch_add(1, Ordering::SeqCst);
+                Ok(hash == format!("fast${password}"))
+            }
+        }
+        let hasher = Arc::new(CountingHasher {
+            hashes: 0.into(),
+            verifies: 0.into(),
+            fail: AtomicBool::new(false),
+        });
+        let (connection, _) = db.migrated::<B>(SECRET).await?;
+        let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+
+        let mailbox = Arc::new(Mailbox::default());
+        let callbacks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observed = callbacks.clone();
+        let auth = AuthBuilder::new(config.clone())
+            .store(B::store(Arc::new(config), &connection))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+            .plugin(EmailPasswordPlugin::new().password_hasher(hasher.clone()))
+            .plugin(SessionManagementPlugin::new())
+            .plugin(PasswordManagementPlugin::with_config(
+                PasswordManagementConfig {
+                    send_reset_password: Some(mailbox.clone()),
+                    revoke_sessions_on_password_reset: true,
+                    on_password_reset: Some(Arc::new(move |_| {
+                        let _ = observed.fetch_add(1, Ordering::SeqCst);
+                        Box::pin(async { Ok(()) })
+                    })),
+                    ..Default::default()
+                },
+            ))
+            .build()
+            .await?;
+        let owner = signup(&auth, "invalid-proof-owner@example.test").await;
+        let foreign = signup(&auth, "invalid-proof-foreign@example.test").await;
+        let _ = call(
+            &auth,
+            request(
+                "/request-password-reset",
+                Some(json!({"email":"invalid-proof-owner@example.test"})),
+                "",
+            ),
+            200,
+        )
+        .await;
+        let (_, token) = mailbox.0.lock().unwrap().pop().unwrap();
+        let identifier = format!("reset-password:{token}");
+        if missing_owner {
+            let _ = db
+                .execute(
+                    "UPDATE verifications SET value = 'missing-owner' WHERE identifier = $1",
+                    &[&identifier],
+                )
+                .await?;
+        } else {
+            db.set_timestamp(
+                "verifications",
+                "expires_at",
+                ("identifier", &identifier),
+                chrono::Utc::now() - chrono::Duration::hours(1),
+            )
+            .await?;
+        }
+        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        hasher.hashes.store(0, Ordering::SeqCst);
+        hasher.verifies.store(0, Ordering::SeqCst);
+        let rejected = call(
+            &auth,
+            request(
+                "/reset-password",
+                Some(json!({"token":token,"newPassword":"invalid-proof-replacement"})),
+                "",
+            ),
+            400,
+        )
+        .await;
+        assert_eq!(
+            body(&rejected)["code"],
+            if missing_owner {
+                "USER_NOT_FOUND"
+            } else {
+                "INVALID_TOKEN"
+            }
+        );
+        let replay = call(
+            &auth,
+            request(
+                "/reset-password",
+                Some(json!({"token":token,"newPassword":"invalid-proof-replacement"})),
+                "",
+            ),
+            400,
+        )
+        .await;
+        assert_eq!(body(&replay)["code"], "INVALID_TOKEN");
+        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(hasher.hashes.load(Ordering::SeqCst), 0);
+        assert_eq!(hasher.verifies.load(Ordering::SeqCst), 0);
+        assert_eq!(callbacks.load(Ordering::SeqCst), 0);
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        authenticated(&auth, &cookies(&owner), "invalid-proof-owner@example.test").await;
+        authenticated(
+            &auth,
+            &cookies(&foreign),
+            "invalid-proof-foreign@example.test",
+        )
+        .await;
+    }
     Ok(())
 }
