@@ -18,7 +18,8 @@ backend_tests!(
     demoted_admin_cannot_use_stale_cookie_cache_to_restore_grants,
     explicit_empty_admin_roles_deny_builtin_grants_without_losing_sessions,
     admin_role_tokens_with_whitespace_do_not_gain_privileges_or_admin_protection,
-    blank_admin_role_falls_back_to_configured_user_permission
+    blank_admin_role_falls_back_to_configured_user_permission,
+    create_only_role_cannot_select_explicit_or_nested_roles
 );
 
 async fn promote<S: AuthSchema>(auth: &Alibi<S>, response: &AuthResponse, role: &str) -> String {
@@ -1125,5 +1126,68 @@ async fn blank_admin_role_falls_back_to_configured_user_permission<B: Backend>(
     )
     .await;
     assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    B::close(connection).await
+}
+
+async fn create_only_role_cannot_select_explicit_or_nested_roles<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mut permissions = roles();
+    _ = permissions.insert(
+        "creator".into(),
+        RolePermissions::new().allow("user", ["create"]),
+    );
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::with_config(alibi::plugins::AdminConfig {
+            default_role: "creator".into(),
+            roles: Some(permissions),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "creator@example.test").await;
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    for extra in [
+        json!({"role":"support"}),
+        json!({"role":""}),
+        json!({"data":{"role":"support"}}),
+        json!({"data":{"role":null}}),
+        json!({"data":{"role":{"unexpected":"support"}}}),
+        json!({"role":[],"data":{"role":"user"}}),
+    ] {
+        let mut input = json!({"email":"target@example.test","name":"Target","password":PASSWORD});
+        input
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        let denied = call(
+            &auth,
+            request("/admin/create-user", Some(input), &cookies(&owner)),
+            403,
+        )
+        .await;
+        assert_eq!(
+            body(&denied)["code"],
+            "YOU_ARE_NOT_ALLOWED_TO_CHANGE_USERS_ROLE"
+        );
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    }
+    let created = call(
+        &auth,
+        request(
+            "/admin/create-user",
+            Some(json!({"email":"target@example.test","name":"Target","password":PASSWORD})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&created)["user"]["role"], "creator");
+    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let duplicate=call(&auth,request("/admin/create-user",Some(json!({"email":"target@example.test","name":"Target","password":PASSWORD,"data":{"role":"user"}})),&cookies(&owner)),403).await;
+    assert_eq!(
+        body(&duplicate)["code"],
+        "YOU_ARE_NOT_ALLOWED_TO_CHANGE_USERS_ROLE"
+    );
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
     B::close(connection).await
 }
