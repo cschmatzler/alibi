@@ -8,7 +8,8 @@ use std::collections::HashMap;
 backend_tests!(
     admin_route_matrix,
     admin_impersonation_and_bans,
-    create_only_role_cannot_initialize_ban_properties
+    create_only_role_cannot_initialize_ban_properties,
+    update_only_role_cannot_mutate_any_ban_property
 );
 
 async fn promote<S: AuthSchema>(auth: &Alibi<S>, response: &AuthResponse, role: &str) -> String {
@@ -564,5 +565,60 @@ async fn create_only_role_cannot_initialize_ban_properties<B: Backend>(db: Db) -
     )
     .await;
     assert_eq!(body(&login)["user"]["id"], body(&created)["user"]["id"]);
+    B::close(connection).await
+}
+
+async fn update_only_role_cannot_mutate_any_ban_property<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new().roles(roles()))
+        .build()
+        .await?;
+    let manager = signup(&auth, "manager@example.test").await;
+    _ = promote(&auth, &manager, "support").await;
+    let cookie = cookies(&manager);
+    let owner = signup(&auth, "target@example.test").await;
+    let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    for data in [
+        json!({"banned":false,"name":"must-not-commit"}),
+        json!({"banReason":"reason","name":"must-not-commit"}),
+        json!({"banExpires":"2100-01-01T00:00:00.000Z","name":"must-not-commit"}),
+    ] {
+        let denied = call(
+            &auth,
+            request(
+                "/admin/update-user",
+                Some(json!({"userId":id,"data":data})),
+                &cookie,
+            ),
+            403,
+        )
+        .await;
+        assert_eq!(body(&denied)["code"], "YOU_ARE_NOT_ALLOWED_TO_BAN_USERS");
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    }
+    let accounts = db.table("accounts").await?;
+    let sessions = db.table("sessions").await?;
+    let accepted = call(
+        &auth,
+        request(
+            "/admin/update-user",
+            Some(json!({"userId":id,"data":{"name":"Allowed name"}})),
+            &cookie,
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&accepted)["name"], "Allowed name");
+    assert_eq!(
+        db.text("SELECT name FROM users WHERE id=$1", &[&id])
+            .await?
+            .as_deref(),
+        Some("Allowed name")
+    );
+    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.table("sessions").await?, sessions);
+    authenticated(&auth, &cookies(&owner), "target@example.test").await;
     B::close(connection).await
 }
