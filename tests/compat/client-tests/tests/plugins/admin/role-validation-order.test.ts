@@ -22,6 +22,7 @@ compatScenario(
     });
     expect(signup.error).toBeNull();
     const before = await ctx.readUserState({ userId: signup.data!.user.id });
+    // @ts-expect-error Exercise server validation with a role outside the client enum.
     const invalid = await client.admin.setRole({ userId: "missing-target", role: "ghost" });
     expect(invalid.error).toMatchObject({
       status: 400,
