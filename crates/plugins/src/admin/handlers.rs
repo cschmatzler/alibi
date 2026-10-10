@@ -381,8 +381,11 @@ pub(crate) async fn update_user_core(
         }
     }
 
-    if let Some(value) = body.data.get("email").and_then(|value| value.as_str()) {
-        let email = value.to_lowercase();
+    if let Some(value) = body.data.get("email") {
+        let email = alibi_core::utils::json::JsValue::from(value.clone())
+            .coerce_string()
+            .map_err(AuthError::internal)?
+            .to_lowercase();
         if !super::validation::valid_email(&email) {
             return Err(AuthError::Api {
                 status: 400,
