@@ -15,6 +15,7 @@ backend_tests!(
     phone_number_provider_and_sender_failures,
     phone_number_password_reset_effects,
     phone_number_signup_and_update_inputs,
+    phone_signin_distinguishes_missing_null_and_empty_credentials,
     phone_self_update_consumes_proof_without_changing_owner_or_callbacks
 );
 
@@ -549,6 +550,67 @@ async fn phone_number_signup_and_update_inputs<B: Backend>(db: Db) -> TestResult
     probe.trace.value("rows", json!(db.count("users").await?));
     probe.trace.assert("phone-number/signup-and-update-inputs");
     B::close(connection).await
+}
+
+async fn phone_signin_distinguishes_missing_null_and_empty_credentials<B: Backend>(
+    parent: Db,
+) -> TestResult {
+    for state in ["missing", "null", "empty"] {
+        let db = parent.fresh().await?;
+        let (connection, _) = db.migrated::<B>(SECRET).await?;
+        let auth = fast_builder::<B>(&connection)
+            .plugin(PhoneNumberPlugin::new(PhoneNumberConfig::default()))
+            .build()
+            .await?;
+        let owner=call(&auth,request("/sign-up/email",Some(json!({"email":"phone-owner@example.test","password":PASSWORD,"name":"Phone Owner","phoneNumber":"+15550000101"})),""),200).await;
+        let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+        _ = call(
+            &auth,
+            request(
+                "/sign-in/phone-number",
+                Some(json!({"phoneNumber":"+15550000101","password":PASSWORD})),
+                "",
+            ),
+            200,
+        )
+        .await;
+        let sql = match state {
+            "missing" => "DELETE FROM accounts WHERE user_id=$1",
+            "null" => "UPDATE accounts SET password=NULL WHERE user_id=$1",
+            _ => "UPDATE accounts SET password='' WHERE user_id=$1",
+        };
+        _ = db.execute(sql, &[&id]).await?;
+        let before = db
+            .tables(&["users", "accounts", "sessions", "verifications"])
+            .await?;
+        let denied = call(
+            &auth,
+            request(
+                "/sign-in/phone-number",
+                Some(json!({"phoneNumber":"+15550000101","password":PASSWORD})),
+                "",
+            ),
+            401,
+        )
+        .await;
+        assert_eq!(
+            body(&denied)["code"],
+            if state == "missing" {
+                "INVALID_PHONE_NUMBER_OR_PASSWORD"
+            } else {
+                "UNEXPECTED_ERROR"
+            }
+        );
+        assert!(!denied.headers.contains_key("set-cookie"));
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "verifications"])
+                .await?,
+            before
+        );
+        authenticated(&auth, &cookies(&owner), "phone-owner@example.test").await;
+        B::close(connection).await?;
+    }
+    Ok(())
 }
 
 async fn phone_self_update_consumes_proof_without_changing_owner_or_callbacks<B: Backend>(
