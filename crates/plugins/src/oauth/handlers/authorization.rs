@@ -357,6 +357,7 @@ pub(in crate::oauth::handlers) async fn social_sign_in_core(
             scopes: body.scopes.as_deref(),
             login_hint: body.login_hint.as_deref(),
             additional_params: body.additional_params.as_ref(),
+            authorization_params: body.authorization_params.as_ref(),
             request_sign_up: body.request_sign_up,
             additional_data: filter_additional_state_data(body.additional_data.clone()),
             link: None,
@@ -405,6 +406,7 @@ pub(in crate::oauth::handlers) async fn link_social_core(
             scopes: body.scopes.as_deref(),
             login_hint: None,
             additional_params: body.additional_params.as_ref(),
+            authorization_params: body.authorization_params.as_ref(),
             request_sign_up: body.request_sign_up,
             additional_data: filter_additional_state_data(body.additional_data.clone()),
             link: Some(OAuthStateLink {
@@ -426,6 +428,21 @@ pub(in crate::oauth::handlers) async fn initiate_oauth_flow_core(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     request: FlowStartRequest<'_>,
 ) -> AuthResult<InitiatedOAuthFlow> {
+    let mut additional_params = request.additional_params.cloned().unwrap_or_default();
+    if let Some(params) = request.authorization_params {
+        for (key, value) in params {
+            if request.provider.allowed_request_params.contains(key)
+                && !RESERVED_AUTHORIZATION_PARAMS.contains(&key.as_str())
+                && request
+                    .provider
+                    .authorization
+                    .as_ref()
+                    .is_none_or(|policy| key != &policy.client_id_parameter)
+            {
+                _ = additional_params.insert(key.clone(), value.clone());
+            }
+        }
+    }
     let (code_verifier, code_challenge) = generate_pkce();
     let state: String = {
         let alphabet = b"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
@@ -507,7 +524,7 @@ pub(in crate::oauth::handlers) async fn initiate_oauth_flow_core(
         &state,
         &code_challenge,
         request.login_hint,
-        request.additional_params,
+        Some(&additional_params),
     )?;
     if let Some(nonce) = &payload.id_token_nonce {
         let mut parsed = url::Url::parse(&url)
