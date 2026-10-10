@@ -14,7 +14,8 @@ backend_tests!(
     anonymous_identity_and_lifecycle,
     anonymous_creation_failures,
     anonymous_deletion_and_linking,
-    anonymous_transfer_uses_original_completed_snapshot
+    anonymous_transfer_uses_original_completed_snapshot,
+    anonymous_transfer_failure_preserves_committed_login
 );
 
 #[derive(Default)]
@@ -499,5 +500,121 @@ async fn anonymous_transfer_uses_original_completed_snapshot<B: Backend>(db: Db)
         assert!(before.iter().all(|row| after.contains(row)));
     }
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+async fn anonymous_transfer_failure_preserves_committed_login<B: Backend>(db: Db) -> TestResult {
+    struct Reject {
+        mode: usize,
+        seen: Mutex<Vec<Value>>,
+    }
+    #[async_trait::async_trait]
+    impl LinkAnonymousAccount for Reject {
+        async fn link(&self, link: &AnonymousLink, _: &AuthRequest) -> AuthResult<()> {
+            self.seen.lock().unwrap().push(json!({"oldUser":link.anonymous_user,"oldSession":link.anonymous_session,"newUser":link.new_user,"newSession":link.new_session}));
+            Err(if self.mode == 0 {
+                alibi::AuthError::internal("Configured anonymous transfer denied")
+            } else {
+                alibi::AuthError::Api {
+                    status: 403,
+                    code: (self.mode == 2).then(|| "APPLICATION_LINK_DENIED".into()),
+                    message: "Configured anonymous transfer denied".into(),
+                }
+            })
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    for mode in 0..3 {
+        let linker = Arc::new(Reject {
+            mode,
+            seen: Mutex::new(Vec::new()),
+        });
+        let auth = super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(AnonymousPlugin::with_config(AnonymousConfig {
+                on_link_account: Some(linker.clone()),
+                ..Default::default()
+            }))
+            .build()
+            .await?;
+        let email = format!("owner-{mode}@example.test");
+        let regular = signup(&auth, &email).await;
+        let foreign_email = format!("foreign-{mode}@example.test");
+        let foreign = signup(&auth, &foreign_email).await;
+        let anonymous = call(
+            &auth,
+            request("/sign-in/anonymous", Some(json!({})), ""),
+            200,
+        )
+        .await;
+        let original = body(
+            &call(
+                &auth,
+                request("/get-session", None, &cookies(&anonymous)),
+                200,
+            )
+            .await,
+        );
+        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        _ = call(
+            &auth,
+            request(
+                "/sign-in/email",
+                Some(json!({"email":email,"password":"wrong-password"})),
+                &cookies(&anonymous),
+            ),
+            401,
+        )
+        .await;
+        assert!(linker.seen.lock().unwrap().is_empty());
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        let error = call(
+            &auth,
+            request(
+                "/sign-in/email",
+                Some(json!({"email":email,"password":PASSWORD})),
+                &cookies(&anonymous),
+            ),
+            if mode == 0 { 500 } else { 403 },
+        )
+        .await;
+        if mode == 0 {
+            assert!(error.body.is_empty());
+        } else {
+            let expected = if mode == 1 {
+                json!({"message":"Configured anonymous transfer denied"})
+            } else {
+                json!({"code":"APPLICATION_LINK_DENIED","message":"Configured anonymous transfer denied"})
+            };
+            assert_eq!(body(&error), expected);
+        }
+        let seen = linker.seen.lock().unwrap().clone();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0]["oldUser"], original["user"]);
+        assert_eq!(seen[0]["oldSession"], original["session"]);
+        assert_eq!(seen[0]["newUser"]["id"], body(&regular)["user"]["id"]);
+        assert_eq!(db.tables(&["users", "accounts"]).await?, before[..2]);
+        let old: Vec<Value> = serde_json::from_str(&before[2])?;
+        let new: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+        assert_eq!(new.len(), old.len() + 1);
+        assert!(old.iter().all(|row| new.contains(row)));
+        let committed = new
+            .iter()
+            .find(|row| row["token"] == seen[0]["newSession"]["token"])
+            .unwrap();
+        assert_eq!(committed["user_id"], body(&regular)["user"]["id"]);
+        assert_eq!(
+            body(
+                &call(
+                    &auth,
+                    request("/get-session", None, &cookies(&anonymous)),
+                    200
+                )
+                .await
+            ),
+            original
+        );
+        authenticated(&auth, &cookies(&regular), &email).await;
+        authenticated(&auth, &cookies(&foreign), &foreign_email).await;
+    }
     B::close(connection).await
 }
