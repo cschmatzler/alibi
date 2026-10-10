@@ -12,7 +12,10 @@ use serde_json::Map;
 
 backend_tests!(
     application_grant_lifecycle,
-    device_decision_and_issuance_edges
+    device_decision_and_issuance_edges,
+    device_missing_owner_preserves_approved_grant_for_recovery,
+    device_empty_application_codes_complete_real_grant,
+    device_fractional_durations_preserve_persisted_milliseconds
 );
 
 type Events = Arc<Mutex<Vec<Value>>>;
@@ -558,5 +561,352 @@ async fn device_decision_and_issuance_edges<B: Backend>(db: Db) -> TestResult {
     )
     .await;
     assert_eq!(body(&expired)["error"], "expired_token");
+    B::close(connection).await
+}
+
+async fn device_missing_owner_preserves_approved_grant_for_recovery<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(DeviceAuthorizationPlugin::new().interval(chrono::Duration::zero()))
+        .plugin(alibi::plugins::BearerPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let issue = body(
+        &call(
+            &auth,
+            request(
+                "/device/code",
+                Some(json!({"client_id":"recover","scope":"read"})),
+                "",
+            ),
+            200,
+        )
+        .await,
+    );
+    let code = issue["device_code"].as_str().unwrap();
+    let user_code = issue["user_code"].as_str().unwrap();
+    _ = call(
+        &auth,
+        get("/device", &[("user_code", user_code)], &cookies(&owner)),
+        200,
+    )
+    .await;
+    _ = call(
+        &auth,
+        request(
+            "/device/approve",
+            Some(json!({"userCode":user_code})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    let grant = auth
+        .store()
+        .get_device_code_by_device_code(code)
+        .await?
+        .unwrap();
+    _ = auth
+        .store()
+        .update_device_code(
+            &grant.id,
+            alibi::UpdateDeviceCode {
+                user_id: Some(Some("11111111-1111-4111-8111-111111111111".into())),
+                ..Default::default()
+            },
+        )
+        .await?;
+    let orphan = auth
+        .store()
+        .get_device_code_by_device_code(code)
+        .await?
+        .unwrap();
+    let stable = db.tables(&["users", "accounts", "sessions"]).await?;
+    let redemption = || {
+        request(
+            "/device/token",
+            Some(
+                json!({"grant_type":"urn:ietf:params:oauth:grant-type:device_code","device_code":code,"client_id":"recover"}),
+            ),
+            "",
+        )
+    };
+    let denied = call(&auth, redemption(), 500).await;
+    assert_eq!(
+        body(&denied),
+        json!({"error":"server_error","error_description":"User not found"})
+    );
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stable);
+    let retained = auth
+        .store()
+        .get_device_code_by_device_code(code)
+        .await?
+        .unwrap();
+    assert!(retained.last_polled_at.is_some());
+    let mut before = serde_json::to_value(&orphan)?;
+    let mut after = serde_json::to_value(&retained)?;
+    _ = before.as_object_mut().unwrap().remove("lastPolledAt");
+    _ = after.as_object_mut().unwrap().remove("lastPolledAt");
+    assert_eq!(after, before);
+    _ = auth
+        .store()
+        .update_device_code(
+            &retained.id,
+            alibi::UpdateDeviceCode {
+                user_id: Some(Some(owner_id.clone())),
+                ..Default::default()
+            },
+        )
+        .await?;
+    let redeemed = body(&call(&auth, redemption(), 200).await);
+    assert_eq!(redeemed["token_type"], "Bearer");
+    assert_eq!(redeemed["scope"], "read");
+    let token = redeemed["access_token"].as_str().unwrap();
+    let mut current = request("/get-session", None, "");
+    _ = current
+        .headers
+        .insert("authorization".into(), format!("Bearer {token}"));
+    assert_eq!(
+        body(&call(&auth, current, 200).await)["user"]["id"],
+        owner_id
+    );
+    assert!(
+        auth.store()
+            .get_device_code_by_device_code(code)
+            .await?
+            .is_none()
+    );
+    let final_rows = db.tables(&["users", "accounts", "sessions"]).await?;
+    assert_eq!(
+        body(&call(&auth, redemption(), 400).await)["error"],
+        "invalid_grant"
+    );
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions"]).await?,
+        final_rows
+    );
+    assert_eq!(final_rows[..2], stable[..2]);
+    let old: Vec<Value> = serde_json::from_str(&stable[2])?;
+    let new: Vec<Value> = serde_json::from_str(&final_rows[2])?;
+    assert_eq!(new.len(), old.len() + 1);
+    assert!(old.iter().all(|row| new.contains(row)));
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+async fn device_empty_application_codes_complete_real_grant<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(
+            DeviceAuthorizationPlugin::new()
+                .interval(chrono::Duration::zero())
+                .generate_device_code_async_with(|| async { Ok(String::new()) })
+                .generate_user_code_async_with(|| async { Ok(String::new()) }),
+        )
+        .plugin(alibi::plugins::BearerPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let stable = db.tables(&["users", "accounts", "sessions"]).await?;
+    let issued = body(
+        &call(
+            &auth,
+            request(
+                "/device/code",
+                Some(json!({"client_id":"empty","scope":"read"})),
+                "",
+            ),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(issued["device_code"], "");
+    assert_eq!(issued["user_code"], "");
+    let grant = auth
+        .store()
+        .get_device_code_by_device_code("")
+        .await?
+        .unwrap();
+    assert_eq!(grant.device_code, "");
+    assert_eq!(grant.user_code, "");
+    let redeem = |client: &str| {
+        request(
+            "/device/token",
+            Some(
+                json!({"grant_type":"urn:ietf:params:oauth:grant-type:device_code","device_code":"","client_id":client}),
+            ),
+            "",
+        )
+    };
+    let wrong = call(&auth, redeem("foreign"), 400).await;
+    assert_eq!(
+        body(&wrong),
+        json!({"error":"invalid_grant","error_description":"Client ID mismatch"})
+    );
+    assert_eq!(
+        serde_json::to_value(
+            auth.store()
+                .get_device_code_by_device_code("")
+                .await?
+                .unwrap()
+        )?,
+        serde_json::to_value(&grant)?
+    );
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stable);
+    _ = call(
+        &auth,
+        get("/device", &[("user_code", "")], &cookies(&owner)),
+        200,
+    )
+    .await;
+    _ = call(
+        &auth,
+        request(
+            "/device/approve",
+            Some(json!({"userCode":""})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    let token = body(&call(&auth, redeem("empty"), 200).await)["access_token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut current = request("/get-session", None, "");
+    _ = current
+        .headers
+        .insert("authorization".into(), format!("Bearer {token}"));
+    assert_eq!(
+        body(&call(&auth, current, 200).await)["user"]["id"],
+        body(&owner)["user"]["id"]
+    );
+    assert!(
+        auth.store()
+            .get_device_code_by_device_code("")
+            .await?
+            .is_none()
+    );
+    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    assert_eq!(
+        body(&call(&auth, redeem("empty"), 400).await)["error"],
+        "invalid_grant"
+    );
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+    assert_eq!(after[..2], stable[..2]);
+    let old: Vec<Value> = serde_json::from_str(&stable[2])?;
+    let new: Vec<Value> = serde_json::from_str(&after[2])?;
+    assert_eq!(new.len(), old.len() + 1);
+    assert!(old.iter().all(|row| new.contains(row)));
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+async fn device_fractional_durations_preserve_persisted_milliseconds<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use chrono::{Duration, Utc};
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    for (lifetime, interval, expires_seconds, interval_seconds) in [
+        (1750, 250, 1, 0),
+        (-1250, -250, -2, -1),
+        (120000, -250, 120, -1),
+    ] {
+        let auth = super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(
+                DeviceAuthorizationPlugin::new()
+                    .expires_in(Duration::milliseconds(lifetime))
+                    .interval(Duration::milliseconds(interval)),
+            )
+            .build()
+            .await?;
+        let stable = db.tables(&["users", "accounts", "sessions"]).await?;
+        let start = Utc::now();
+        let issued = body(
+            &call(
+                &auth,
+                request("/device/code", Some(json!({"client_id":"fractional"})), ""),
+                200,
+            )
+            .await,
+        );
+        let finish = Utc::now();
+        assert_eq!(issued["expires_in"], expires_seconds);
+        assert_eq!(issued["interval"], interval_seconds);
+        let code = issued["device_code"].as_str().unwrap();
+        let stored = auth
+            .store()
+            .get_device_code_by_device_code(code)
+            .await?
+            .unwrap();
+        assert_eq!(stored.polling_interval, Some(interval));
+        assert!(stored.expires_at >= start + Duration::milliseconds(lifetime));
+        assert!(stored.expires_at <= finish + Duration::milliseconds(lifetime));
+        let poll = || {
+            request(
+                "/device/token",
+                Some(
+                    json!({"grant_type":"urn:ietf:params:oauth:grant-type:device_code","device_code":code,"client_id":"fractional"}),
+                ),
+                "",
+            )
+        };
+        if lifetime < 0 {
+            assert_eq!(
+                body(&call(&auth, poll(), 400).await)["error"],
+                "expired_token"
+            );
+            assert!(
+                auth.store()
+                    .get_device_code_by_device_code(code)
+                    .await?
+                    .is_none()
+            );
+            assert_eq!(
+                body(&call(&auth, poll(), 400).await)["error"],
+                "invalid_grant"
+            );
+        } else {
+            assert_eq!(
+                body(&call(&auth, poll(), 400).await)["error"],
+                "authorization_pending"
+            );
+            if interval > 0 {
+                _ = auth
+                    .store()
+                    .update_device_code(
+                        &stored.id,
+                        alibi::UpdateDeviceCode {
+                            last_polled_at: Some(Some(Utc::now() + Duration::seconds(1))),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+                let before = db.table("device_code").await?;
+                assert_eq!(body(&call(&auth, poll(), 400).await)["error"], "slow_down");
+                assert_eq!(db.table("device_code").await?, before);
+            } else {
+                assert_eq!(
+                    body(&call(&auth, poll(), 400).await)["error"],
+                    "authorization_pending"
+                );
+                assert_eq!(
+                    auth.store()
+                        .get_device_code_by_device_code(code)
+                        .await?
+                        .unwrap()
+                        .polling_interval,
+                    Some(-250)
+                );
+            }
+        }
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stable);
+    }
     B::close(connection).await
 }

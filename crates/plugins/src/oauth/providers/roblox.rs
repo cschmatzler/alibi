@@ -88,6 +88,7 @@ impl OAuthProvider {
             user_info_url: Some("https://apis.roblox.com/oauth/v1/userinfo".into()),
             scopes: vec!["openid".into(), "profile".into()],
             authorization: None,
+            allowed_request_params: Vec::new(),
             authorization_params: Vec::new(),
             account_subject: Some(subject),
             map_user_info: None,
