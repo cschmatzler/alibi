@@ -13,7 +13,8 @@ backend_tests!(
     organization_update_hook_demotion_keeps_original_context_and_rechecks_next_request,
     organization_update_hook_deleted_row_returns_null_and_original_authority,
     organization_update_hooks_preserve_empty_values_and_input_field_fallback,
-    organization_creation_hooks_preserve_trusted_empty_values_and_omitted_fields
+    organization_creation_hooks_preserve_trusted_empty_values_and_omitted_fields,
+    organization_creation_retains_original_member_after_independent_role_write
 );
 postgres_tests!(
     organization_lifecycle_callbacks_preserve_patch_authority_and_committed_phases,
@@ -1511,5 +1512,91 @@ async fn organization_creation_hooks_preserve_trusted_empty_values_and_omitted_f
     assert_eq!(db.count("member").await?, 4);
     assert_eq!(db.count("sessions").await?, 2);
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+async fn organization_creation_retains_original_member_after_independent_role_write<B: Backend>(
+    db: Db,
+) -> TestResult {
+    struct Hooks<S: AuthSchema> {
+        store: Arc<dyn alibi::AuthStore<S>>,
+        roles: Mutex<Vec<String>>,
+    }
+    impl<S: AuthSchema> std::fmt::Debug for Hooks<S> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("CreatorRoleWrite")
+        }
+    }
+    #[async_trait]
+    impl<S: AuthSchema> OrganizationCreationHooks for Hooks<S> {
+        async fn after_add_member(&self, c: &OrganizationCreatedContext) -> AuthResult<()> {
+            self.roles.lock().unwrap().push(c.member.role.clone());
+            _ = self.store.update_member_role(&c.member.id, "admin").await?;
+            Ok(())
+        }
+        async fn after_create(&self, c: &OrganizationCreatedContext) -> AuthResult<()> {
+            self.roles.lock().unwrap().push(c.member.role.clone());
+            Ok(())
+        }
+    }
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks {
+        store: Arc::new(store),
+        roles: Mutex::new(Vec::new()),
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            creation_hooks: Some(hooks.clone()),
+            teams: TeamsConfig {
+                enabled: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let result = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Created","slug":"created"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(result["members"][0]["role"], "owner");
+    assert_eq!(*hooks.roles.lock().unwrap(), vec!["owner", "owner"]);
+    let member_id = result["members"][0]["id"].as_str().unwrap();
+    assert_eq!(
+        db.text("SELECT role FROM member WHERE id=$1", &[member_id])
+            .await?
+            .as_deref(),
+        Some("admin")
+    );
+    assert_eq!(db.count("team").await?, 1);
+    assert_eq!(db.count("team_member").await?, 1);
+    let token = body(&owner)["token"].as_str().unwrap().to_owned();
+    assert_eq!(
+        db.text(
+            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            &[&token]
+        )
+        .await?
+        .as_deref(),
+        result["id"].as_str()
+    );
+    assert_eq!(
+        db.text(
+            "SELECT active_team_id FROM sessions WHERE token=$1",
+            &[&token]
+        )
+        .await?,
+        db.text("SELECT id FROM team", &[]).await?
+    );
+    assert_eq!(db.count("sessions").await?, 1);
     B::close(connection).await
 }
