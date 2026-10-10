@@ -9,7 +9,8 @@ backend_tests!(
     organization_invitation_and_member_callbacks_preserve_actor_and_commit_order,
     organization_role_hook_empty_and_absent_patches_retain_normalized_request,
     organization_role_after_hook_retains_original_target_across_independent_writes,
-    organization_role_hook_target_deletion_rejects_before_after_callback
+    organization_role_hook_target_deletion_rejects_before_after_callback,
+    organization_update_hook_demotion_keeps_original_context_and_rechecks_next_request
 );
 postgres_tests!(
     organization_lifecycle_callbacks_preserve_patch_authority_and_committed_phases,
@@ -1076,5 +1077,139 @@ async fn organization_role_hook_target_deletion_rejects_before_after_callback<B:
         before
     );
     authenticated(&auth, &cookies(&target), "target@example.test").await;
+    B::close(connection).await
+}
+
+async fn organization_update_hook_demotion_keeps_original_context_and_rechecks_next_request<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    struct Hooks<S: AuthSchema> {
+        store: Arc<dyn alibi::AuthStore<S>>,
+        after: Mutex<Vec<OrganizationUpdatedContext>>,
+        before: std::sync::atomic::AtomicUsize,
+    }
+    impl<S: AuthSchema> std::fmt::Debug for Hooks<S> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("DemotingUpdateCallback")
+        }
+    }
+    #[async_trait]
+    impl<S: AuthSchema> OrganizationUpdateHooks for Hooks<S> {
+        async fn before_update(
+            &self,
+            c: &OrganizationUpdateContext,
+        ) -> AuthResult<Option<OrganizationUpdatePatch>> {
+            _ = self
+                .before
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            _ = self
+                .store
+                .update_user(
+                    &c.user.id,
+                    alibi::UpdateUser {
+                        name: Some("Stored New Name".into()),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            _ = self
+                .store
+                .update_member_role(&c.member.id, "member")
+                .await?;
+            Ok(None)
+        }
+        async fn after_update(&self, c: &OrganizationUpdatedContext) -> AuthResult<()> {
+            self.after.lock().unwrap().push(c.clone());
+            Ok(())
+        }
+    }
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks {
+        store: Arc::new(store),
+        after: Mutex::new(Vec::new()),
+        before: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            update_hooks: Some(hooks.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let org = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Original","slug":"owned"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let sessions = db.table("sessions").await?;
+    let updated = body(
+        &call(
+            &auth,
+            request(
+                "/organization/update",
+                Some(json!({"organizationId":org["id"],"data":{"name":"Submitted update"}})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(updated["name"], "Submitted update");
+    let after = hooks.after.lock().unwrap()[0].clone();
+    assert_eq!(
+        after.user.name.as_deref(),
+        body(&owner)["user"]["name"].as_str()
+    );
+    assert_eq!(after.member.role, "owner");
+    assert_eq!(after.organization.unwrap().name, "Submitted update");
+    assert_eq!(
+        db.text("SELECT name FROM users WHERE id=$1", &[&after.user.id])
+            .await?
+            .as_deref(),
+        Some("Stored New Name")
+    );
+    assert_eq!(
+        db.text("SELECT role FROM member WHERE id=$1", &[&after.member.id])
+            .await?
+            .as_deref(),
+        Some("member")
+    );
+    assert_eq!(db.table("sessions").await?, sessions);
+    let before = db
+        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .await?;
+    let denied = call(
+        &auth,
+        request(
+            "/organization/update",
+            Some(json!({"organizationId":org["id"],"data":{"name":"must-not-write"}})),
+            &cookies(&owner),
+        ),
+        403,
+    )
+    .await;
+    assert_eq!(
+        body(&denied)["code"],
+        "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_ORGANIZATION"
+    );
+    assert_eq!(hooks.before.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(hooks.after.lock().unwrap().len(), 1);
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "organization", "member"])
+            .await?,
+        before
+    );
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
 }
