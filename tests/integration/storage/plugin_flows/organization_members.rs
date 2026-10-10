@@ -18,7 +18,8 @@ backend_tests!(
     organization_dynamic_roles,
     organization_server_admission,
     organization_plugin_helpers,
-    organization_trusted_addition_preserves_literal_role_arrays_and_session_scope
+    organization_trusted_addition_preserves_literal_role_arrays_and_session_scope,
+    fractional_organization_membership_limit_uses_actual_physical_count
 );
 
 fn merge(first: &str, second: &str) -> String {
@@ -729,5 +730,51 @@ async fn organization_trusted_addition_preserves_literal_role_arrays_and_session
         before
     );
     authenticated(&auth, &target.cookie, "target@example.test").await;
+    B::close(connection).await
+}
+
+async fn fractional_organization_membership_limit_uses_actual_physical_count<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            membership_limit: Some(MembershipLimit::Fixed(1.5)),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let mut owner = account(&auth, "owner@example.test").await;
+    let first = account(&auth, "first@example.test").await;
+    let second = account(&auth, "second@example.test").await;
+    let org = organization(&auth, &mut owner, "fractional").await;
+    let admitted = add(&auth, &org, &first.id, "member").await;
+    assert_eq!(admitted["userId"], first.id);
+    assert_eq!(db.count("member").await?, 2);
+    let before = db
+        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .await?;
+    let endpoint = OrganizationPlugin::add_member_endpoint(&serde_json::from_value(
+        json!({"userId":second.id,"organizationId":org,"role":"member"}),
+    )?)?;
+    let denied = auth
+        .dispatch_endpoint(endpoint, EndpointOptions::default())
+        .await
+        .unwrap_err();
+    assert_eq!(denied.error.status_code(), 403);
+    assert!(matches!(
+        denied.error,
+        alibi::AuthError::Upstream {
+            code: "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED",
+            ..
+        }
+    ));
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "organization", "member"])
+            .await?,
+        before
+    );
+    authenticated(&auth, &first.cookie, "first@example.test").await;
+    authenticated(&auth, &second.cookie, "second@example.test").await;
     B::close(connection).await
 }
