@@ -19,7 +19,8 @@ backend_tests!(
     server_otp_can_bootstrap_a_password_without_replacing_sessions,
     server_jwt_signatures_are_usable_by_an_independent_consumer,
     server_one_time_token_distinguishes_logical_and_client_requests,
-    server_organization_authority_and_member_lifecycle
+    server_organization_authority_and_member_lifecycle,
+    server_password_hash_error_precedes_existing_password_denial
 );
 postgres_tests!(
     server_otp_can_bootstrap_a_password_without_replacing_sessions,
@@ -767,4 +768,75 @@ async fn verify_jwt_overrides<S: AuthSchema>(
         "default-after-overrides"
     );
     Ok(())
+}
+
+async fn server_password_hash_error_precedes_existing_password_denial<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    struct Hash {
+        fail: AtomicBool,
+        calls: AtomicUsize,
+    }
+    #[async_trait::async_trait]
+    impl alibi::PasswordHasher for Hash {
+        async fn hash(&self, password: &str) -> alibi::AuthResult<String> {
+            _ = self.calls.fetch_add(1, Ordering::SeqCst);
+            if self.fail.load(Ordering::SeqCst) {
+                Err(alibi::AuthError::internal("hash callback failed"))
+            } else {
+                Ok(format!("fast${password}"))
+            }
+        }
+        async fn verify(&self, hash: &str, password: &str) -> alibi::AuthResult<bool> {
+            Ok(hash == format!("fast${password}"))
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let hash = Arc::new(Hash {
+        fail: AtomicBool::new(false),
+        calls: AtomicUsize::new(0),
+    });
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(EmailPasswordPlugin::new().password_hasher(hash.clone()))
+        .plugin(SessionManagementPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let baseline = hash.calls.load(Ordering::SeqCst);
+    hash.fail.store(true, Ordering::SeqCst);
+    let input = request("/trusted", None, &cookies(&owner));
+    let error = alibi::plugins::password_management::set_password(
+        &input,
+        "replacement-password-123",
+        auth.context(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.status_code(), 500);
+    assert_eq!(hash.calls.load(Ordering::SeqCst), baseline + 1);
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    hash.fail.store(false, Ordering::SeqCst);
+    let error = alibi::plugins::password_management::set_password(
+        &input,
+        "replacement-password-123",
+        auth.context(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        alibi::AuthError::Upstream {
+            code: "PASSWORD_ALREADY_SET",
+            ..
+        }
+    ));
+    assert_eq!(hash.calls.load(Ordering::SeqCst), baseline + 2);
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    authenticated(&auth, &cookies(&owner), "owner@example.test").await;
+    B::close(connection).await
 }
