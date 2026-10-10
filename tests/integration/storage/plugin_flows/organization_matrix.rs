@@ -8,6 +8,7 @@ use alibi::plugins::{OrganizationConfig, OrganizationPlugin};
 backend_tests!(
     organization_route_matrix,
     organization_without_teams_or_deletion,
+    organization_mixed_selectors_only_update_current_token_selection,
     organization_selection_returns_stored_metadata_text_without_rewriting_rows
 );
 
@@ -333,6 +334,130 @@ async fn organization_without_teams_or_deletion<B: Backend>(db: Db) -> TestResul
         &Box::pin(auth.handle_request(get("/organization/get-active-member", &[], &owner))).await?,
     );
     trace.assert("organization/without-teams");
+    B::close(connection).await
+}
+
+async fn organization_mixed_selectors_only_update_current_token_selection<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let sibling = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"owner@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let first = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"First","slug":"first"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let second = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Second","slug":"second"})),
+                &cookies(&sibling),
+            ),
+            200,
+        )
+        .await,
+    );
+    let sibling_token = body(&sibling)["token"].as_str().unwrap().to_owned();
+    let token = body(&owner)["token"].as_str().unwrap().to_owned();
+    let before = db
+        .tables(&["organization", "member", "users", "accounts"])
+        .await?;
+    for (input, selected) in [
+        (
+            json!({"organizationId":"","organizationSlug":"second"}),
+            Some(second["id"].as_str().unwrap()),
+        ),
+        (
+            json!({"organizationId":first["id"],"organizationSlug":"second"}),
+            Some(first["id"].as_str().unwrap()),
+        ),
+        (
+            json!({"organizationId":null,"organizationSlug":"second"}),
+            None,
+        ),
+    ] {
+        let response = call(
+            &auth,
+            request("/organization/set-active", Some(input), &cookies(&owner)),
+            200,
+        )
+        .await;
+        if let Some(id) = selected {
+            assert_eq!(body(&response)["id"], id);
+        } else {
+            assert!(body(&response).is_null());
+        }
+        assert_eq!(
+            db.text(
+                "SELECT active_organization_id FROM sessions WHERE token=$1",
+                &[&token]
+            )
+            .await?
+            .as_deref(),
+            selected
+        );
+        assert_eq!(
+            db.text(
+                "SELECT active_organization_id FROM sessions WHERE token=$1",
+                &[&sibling_token]
+            )
+            .await?
+            .as_deref(),
+            second["id"].as_str()
+        );
+        assert_eq!(
+            db.tables(&["organization", "member", "users", "accounts"])
+                .await?,
+            before
+        );
+    }
+    let sessions = db.table("sessions").await?;
+    let denied = call(
+        &auth,
+        request(
+            "/organization/set-active",
+            Some(json!({"organizationId":"","organizationSlug":"missing"})),
+            &cookies(&owner),
+        ),
+        400,
+    )
+    .await;
+    assert!(!denied.headers.contains_key("set-cookie"));
+    assert_eq!(db.table("sessions").await?, sessions);
+    _ = call(
+        &auth,
+        request(
+            "/organization/set-active",
+            Some(json!({"organizationId":first["id"]})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    authenticated(&auth, &cookies(&sibling), "owner@example.test").await;
     B::close(connection).await
 }
 
