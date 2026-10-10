@@ -16,7 +16,8 @@ backend_tests!(
     phone_number_password_reset_effects,
     phone_number_signup_and_update_inputs,
     phone_signin_distinguishes_missing_null_and_empty_credentials,
-    phone_self_update_consumes_proof_without_changing_owner_or_callbacks
+    phone_self_update_consumes_proof_without_changing_owner_or_callbacks,
+    phone_reset_callback_rejection_precedes_configured_session_revocation
 );
 
 #[derive(Default)]
@@ -722,5 +723,103 @@ async fn phone_self_update_consumes_proof_without_changing_owner_or_callbacks<B:
     assert_eq!(body(&updated)["user"]["phoneNumber"], next);
     assert_eq!(hook.0.load(std::sync::atomic::Ordering::SeqCst), 2);
     assert_eq!(db.count("sessions").await?, 1);
+    B::close(connection).await
+}
+
+async fn phone_reset_callback_rejection_precedes_configured_session_revocation<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let outbox = Arc::new(Outbox::default());
+    let fail = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let reject = fail.clone();
+    let auth = fast_builder::<B>(&connection)
+        .plugin(PhoneNumberPlugin::new(PhoneNumberConfig {
+            send_password_reset_otp: Some(outbox.clone()),
+            ..Default::default()
+        }))
+        .plugin(PasswordManagementPlugin::with_config(
+            PasswordManagementConfig {
+                revoke_sessions_on_password_reset: true,
+                on_password_reset: Some(Arc::new(move |_: Value| -> ResetFuture {
+                    let failing = reject.load(std::sync::atomic::Ordering::SeqCst);
+                    Box::pin(async move {
+                        if failing {
+                            Err(AuthError::forbidden("reset hook refused"))
+                        } else {
+                            Ok(())
+                        }
+                    })
+                })),
+                ..Default::default()
+            },
+        ))
+        .build()
+        .await?;
+    let phone = "+15550000104";
+    let owner=call(&auth,request("/sign-up/email",Some(json!({"email":"reset-phone@example.test","password":PASSWORD,"name":"Owner","phoneNumber":phone})),""),200).await;
+    let sibling = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"reset-phone@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let sessions = db.table("sessions").await?;
+    _ = call(
+        &auth,
+        request(
+            "/phone-number/request-password-reset",
+            Some(json!({"phoneNumber":phone})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    _=call(&auth,request("/phone-number/reset-password",Some(json!({"phoneNumber":phone,"otp":outbox.last().code,"newPassword":"committed-phone-password"})),""),403).await;
+    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.table("sessions").await?, sessions);
+    authenticated(&auth, &cookies(&owner), "reset-phone@example.test").await;
+    authenticated(&auth, &cookies(&sibling), "reset-phone@example.test").await;
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    _ = call(
+        &auth,
+        request(
+            "/sign-in/phone-number",
+            Some(json!({"phoneNumber":phone,"password":PASSWORD})),
+            "",
+        ),
+        401,
+    )
+    .await;
+    let login = call(
+        &auth,
+        request(
+            "/sign-in/phone-number",
+            Some(json!({"phoneNumber":phone,"password":"committed-phone-password"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&login)["user"]["id"], body(&owner)["user"]["id"]);
+    fail.store(false, std::sync::atomic::Ordering::SeqCst);
+    _ = call(
+        &auth,
+        request(
+            "/phone-number/request-password-reset",
+            Some(json!({"phoneNumber":phone})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    _=call(&auth,request("/phone-number/reset-password",Some(json!({"phoneNumber":phone,"otp":outbox.last().code,"newPassword":"successful-phone-password"})),""),200).await;
+    assert_eq!(db.count("sessions").await?, 1);
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
 }
