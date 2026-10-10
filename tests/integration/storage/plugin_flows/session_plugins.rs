@@ -12,7 +12,8 @@ use reqwest::cookie::{CookieStore, Jar};
 backend_tests!(
     last_login_consent_controls_tracking_cookie_without_changing_authentication,
     multiple_sessions_require_delivered_device_proofs,
-    custom_session_projection_cannot_replace_bearer_authority
+    custom_session_projection_cannot_replace_bearer_authority,
+    last_login_consent_error_keeps_database_tracking_and_issued_authority
 );
 postgres_tests!(
     last_login_consent_controls_tracking_cookie_without_changing_authentication,
@@ -231,5 +232,69 @@ async fn custom_session_projection_cannot_replace_bearer_authority<B: Backend>(
         body(&anonymous).is_null(),
         "projection must never run for an unauthenticated caller"
     );
+    B::close(connection).await
+}
+
+async fn last_login_consent_error_keeps_database_tracking_and_issued_authority<B: Backend>(
+    db: Db,
+) -> TestResult {
+    struct Reject;
+    #[async_trait]
+    impl BeforeStoreLastLoginMethodCookie for Reject {
+        async fn before_store(&self, _: &LastLoginMethodContext, _: &str) -> AuthResult<bool> {
+            Err(alibi::AuthError::internal("consent unavailable"))
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(LastLoginMethodPlugin::with_config(LastLoginMethodConfig {
+            store_in_database: true,
+            before_store_cookie: Some(Arc::new(Reject)),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let issued = signup(&auth, "owner@example.test").await;
+    let id = body(&issued)["user"]["id"].as_str().unwrap().to_owned();
+    for response in [
+        issued,
+        call(
+            &auth,
+            request(
+                "/sign-in/email",
+                Some(json!({"email":"owner@example.test","password":PASSWORD})),
+                "",
+            ),
+            200,
+        )
+        .await,
+    ] {
+        assert!(
+            !response
+                .headers
+                .get_all("set-cookie")
+                .any(|cookie| cookie.starts_with("better-auth.last_used_login_method="))
+        );
+        authenticated(&auth, &cookies(&response), "owner@example.test").await;
+        assert_eq!(
+            db.text("SELECT last_login_method FROM users WHERE id=$1", &[&id])
+                .await?
+                .as_deref(),
+            Some("email")
+        );
+    }
+    assert_eq!(db.count("sessions").await?, 2);
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    _ = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"owner@example.test","password":"incorrect"})),
+            "",
+        ),
+        401,
+    )
+    .await;
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
     B::close(connection).await
 }
