@@ -14,6 +14,7 @@ backend_tests!(
     anonymous_identity_and_lifecycle,
     anonymous_creation_failures,
     anonymous_deletion_and_linking,
+    anonymous_transfer_uses_original_completed_snapshot,
     anonymous_transfer_failure_preserves_committed_login
 );
 
@@ -382,6 +383,123 @@ async fn anonymous_deletion_and_linking<B: Backend>(db: Db) -> TestResult {
     trace.response("upgrade keeps the anonymous user", &merged);
     B::close(disabled_connection).await?;
     trace.assert("anonymous/deletion-and-linking");
+    B::close(connection).await
+}
+
+async fn anonymous_transfer_uses_original_completed_snapshot<B: Backend>(db: Db) -> TestResult {
+    use alibi::AuthSession;
+    struct Hook(crate::storage::Raw);
+    #[async_trait::async_trait]
+    impl<S: AuthSchema, H: alibi::store::HookBackend> DatabaseHooks<S, H> for Hook {
+        async fn after_create_session(
+            &self,
+            session: &S::Session,
+            context: &DatabaseHookContext<'_, H>,
+        ) -> AuthResult<()> {
+            if context
+                .request
+                .as_ref()
+                .is_some_and(|request| request.path.ends_with("/sign-up/email"))
+            {
+                _ = self
+                    .0
+                    .execute(
+                        "UPDATE users SET name='Stored Hook Name' WHERE id=$1",
+                        &[session.user_id().as_ref()],
+                    )
+                    .await
+                    .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
+            }
+            Ok(())
+        }
+    }
+    struct Capture(Mutex<Vec<Value>>);
+    #[async_trait::async_trait]
+    impl LinkAnonymousAccount for Capture {
+        async fn link(&self, link: &AnonymousLink, request: &AuthRequest) -> AuthResult<()> {
+            self.0.lock().unwrap().push(json!({"anonymousUser":link.anonymous_user,"anonymousSession":link.anonymous_session,"newUser":link.new_user,"newSession":link.new_session,"path":request.path}));
+            Ok(())
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let linker = Arc::new(Capture(Mutex::new(Vec::new())));
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .store(B::hook(
+            B::store(
+                Arc::new(AuthConfig::new(SECRET).base_url(ORIGIN)),
+                &connection,
+            ),
+            Hook(db.raw.clone()),
+        ))
+        .plugin(AnonymousPlugin::with_config(AnonymousConfig {
+            on_link_account: Some(linker.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+    let anonymous = call(
+        &auth,
+        request("/sign-in/anonymous", Some(json!({})), ""),
+        200,
+    )
+    .await;
+    let original = body(
+        &call(
+            &auth,
+            request("/get-session", None, &cookies(&anonymous)),
+            200,
+        )
+        .await,
+    );
+    let upgrade=call(&auth,request("/sign-up/email",Some(json!({"email":"upgrade@example.test","password":PASSWORD,"name":"Original New Owner"})),&cookies(&anonymous)),200).await;
+    assert_eq!(body(&upgrade)["user"]["name"], "Original New Owner");
+    let receipts = linker.0.lock().unwrap().clone();
+    assert_eq!(receipts.len(), 1);
+    assert_eq!(receipts[0]["anonymousUser"], original["user"]);
+    assert_eq!(receipts[0]["anonymousSession"], original["session"]);
+    assert_eq!(receipts[0]["newUser"], body(&upgrade)["user"]);
+    assert_eq!(receipts[0]["newSession"]["token"], body(&upgrade)["token"]);
+    assert_eq!(
+        receipts[0]["newSession"]["userId"],
+        body(&upgrade)["user"]["id"]
+    );
+    assert!(
+        receipts[0]["path"]
+            .as_str()
+            .unwrap()
+            .ends_with("/sign-up/email")
+    );
+    let old_id = body(&anonymous)["user"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(
+        db.count_where("SELECT COUNT(*) FROM users WHERE id=$1", &[&old_id])
+            .await?,
+        0
+    );
+    assert_eq!(
+        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&old_id])
+            .await?,
+        0
+    );
+    let current = body(
+        &call(
+            &auth,
+            request("/get-session", None, &cookies(&upgrade)),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(current["user"]["id"], body(&upgrade)["user"]["id"]);
+    assert_eq!(current["user"]["name"], "Stored Hook Name");
+    assert_eq!(current["session"]["token"], body(&upgrade)["token"]);
+    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    for (before, after) in baseline.iter().zip(after.iter()) {
+        let before: Vec<Value> = serde_json::from_str(before)?;
+        let after: Vec<Value> = serde_json::from_str(after)?;
+        assert!(before.iter().all(|row| after.contains(row)));
+    }
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
 }
 

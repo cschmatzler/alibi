@@ -31,6 +31,7 @@ impl OAuthProvider {
                 require_client_secret: true,
                 ..Default::default()
             }),
+            allowed_request_params: Vec::new(),
             authorization_params: vec![("include_granted_scopes".to_owned(), "true".to_owned())],
             account_subject: None,
             map_user_info: Some(|v| {
