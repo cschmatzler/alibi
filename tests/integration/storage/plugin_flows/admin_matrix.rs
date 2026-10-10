@@ -12,7 +12,8 @@ backend_tests!(
     update_only_role_cannot_mutate_any_ban_property,
     update_only_role_cannot_change_email_verification,
     admin_password_bounds_preserve_credentials_until_valid_replacement,
-    admin_email_replacement_moves_login_without_replacing_accounts_or_sessions
+    admin_email_replacement_moves_login_without_replacing_accounts_or_sessions,
+    configured_role_validation_precedes_missing_target_lookup
 );
 
 async fn promote<S: AuthSchema>(auth: &Alibi<S>, response: &AuthResponse, role: &str) -> String {
@@ -783,5 +784,45 @@ async fn admin_email_replacement_moves_login_without_replacing_accounts_or_sessi
     assert_eq!(body(&login)["user"]["id"], id);
     assert_eq!(db.table("accounts").await?, accounts);
     authenticated(&auth, &cookies(&owner), "new@example.test").await;
+    B::close(connection).await
+}
+
+async fn configured_role_validation_precedes_missing_target_lookup<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new().roles(roles()))
+        .build()
+        .await?;
+    let admin = signup(&auth, "admin@example.test").await;
+    _ = promote(&auth, &admin, "admin").await;
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let denied = call(
+        &auth,
+        request(
+            "/admin/set-role",
+            Some(json!({"userId":"missing-target","role":"ghost"})),
+            &cookies(&admin),
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(
+        body(&denied)["code"],
+        "YOU_ARE_NOT_ALLOWED_TO_SET_NON_EXISTENT_VALUE"
+    );
+    let missing = call(
+        &auth,
+        request(
+            "/admin/set-role",
+            Some(json!({"userId":"missing-target","role":"user"})),
+            &cookies(&admin),
+        ),
+        404,
+    )
+    .await;
+    assert_eq!(body(&missing)["code"], "USER_NOT_FOUND");
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
     B::close(connection).await
 }
