@@ -21,7 +21,8 @@ backend_tests!(
     id_token_sign_in_failure_modes,
     callback_user_payload_reaches_the_profile_handler,
     unverified_social_sign_in_delegates_to_the_otp_override,
-    ambiguous_provider_accounts_fail_closed
+    ambiguous_provider_accounts_fail_closed,
+    returning_social_signin_preserves_previously_granted_scopes
 );
 
 struct Deny;
@@ -562,5 +563,107 @@ async fn ambiguous_provider_accounts_fail_closed<B: Backend>(db: Db) -> TestResu
     );
     assert_eq!(db.count("sessions").await?, sessions);
     trace.assert("social/ambiguous-accounts");
+    B::close(connection).await
+}
+
+async fn returning_social_signin_preserves_previously_granted_scopes<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let social = Social::start().await;
+    let auth = social
+        .auth::<B>(&connection, AccountConfig::default(), |_| {})
+        .await?;
+    social
+        .profile
+        .set("foreign-sub", "foreign@example.test", true);
+    let foreign = sign_in(&auth, "").await;
+    assert_eq!(foreign.status, 302);
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    social.profile.set("social-sub", "social@example.com", true);
+    let initial = sign_in(&auth, "").await;
+    assert_eq!(initial.status, 302);
+    let current = body(
+        &call(
+            &auth,
+            request("/get-session", None, &cookies(&initial)),
+            200,
+        )
+        .await,
+    );
+    let owner_id = current["user"]["id"].clone();
+    _=db.execute("UPDATE accounts SET scope='calendar,drive' WHERE account_id=$1 AND provider_id='google'",&["social-sub"]).await?;
+    let before: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    let original = before
+        .iter()
+        .find(|row| row["account_id"] == "social-sub")
+        .unwrap();
+    let users = db.table("users").await?;
+    let sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    social.provider.respond(200,"application/json",json!({"access_token":"rotated-access","refresh_token":"rotated-refresh","id_token":"rotated-id","token_type":"Bearer","expires_in":3600,"scope":"openid email profile"}).to_string());
+    _ = social.provider.take();
+    let returning = sign_in(&auth, "").await;
+    assert_eq!(returning.status, 302);
+    assert_eq!(
+        returning.headers.get("location").map(String::as_str),
+        Some("/home")
+    );
+    let current = body(
+        &call(
+            &auth,
+            request("/get-session", None, &cookies(&returning)),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(current["user"]["id"], owner_id);
+    let after: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    assert_eq!(after.len(), before.len());
+    let updated = after
+        .iter()
+        .find(|row| row["id"] == original["id"])
+        .unwrap();
+    for field in [
+        "id",
+        "user_id",
+        "account_id",
+        "provider_id",
+        "created_at",
+        "scope",
+    ] {
+        assert_eq!(updated[field], original[field], "{field}");
+    }
+    assert_eq!(updated["scope"], "calendar,drive");
+    assert_eq!(updated["access_token"], "rotated-access");
+    assert_eq!(updated["refresh_token"], "rotated-refresh");
+    assert_eq!(updated["id_token"], "rotated-id");
+    for row in before.iter().filter(|row| row["id"] != original["id"]) {
+        assert!(after.contains(row));
+    }
+    let listed = body(
+        &call(
+            &auth,
+            request("/list-accounts", None, &cookies(&returning)),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    assert_eq!(listed[0]["id"], original["id"]);
+    assert_eq!(listed[0]["accountId"], "social-sub");
+    assert_eq!(listed[0]["scopes"], json!(["calendar", "drive"]));
+    assert_eq!(db.table("users").await?, users);
+    let new_sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    assert_eq!(new_sessions.len(), sessions.len() + 1);
+    assert!(sessions.iter().all(|row| new_sessions.contains(row)));
+    let receipts = social.provider.take();
+    assert_eq!(receipts.len(), 1);
+    let fields = url::form_urlencoded::parse(&receipts[0].body)
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(
+        fields.get("grant_type").map(|value| value.as_ref()),
+        Some("authorization_code")
+    );
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
 }
