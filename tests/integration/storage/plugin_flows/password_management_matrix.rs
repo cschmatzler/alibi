@@ -9,7 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 backend_tests!(
     password_reset_token_matrix,
-    change_and_verify_password_matrix
+    change_and_verify_password_matrix,
+    reset_hash_failure_consumes_proof_without_changing_credentials
 );
 
 #[derive(Default)]
@@ -334,5 +335,121 @@ async fn change_and_verify_password_matrix<B: Backend>(db: Db) -> TestResult {
         B::close(connection).await?;
     }
     trace.assert("password-management/change-and-verify-matrix");
+    Ok(())
+}
+
+async fn reset_hash_failure_consumes_proof_without_changing_credentials<B: Backend>(
+    db: Db,
+) -> TestResult {
+    struct CountingHasher {
+        hashes: std::sync::atomic::AtomicUsize,
+        verifies: std::sync::atomic::AtomicUsize,
+        fail: AtomicBool,
+    }
+    #[async_trait]
+    impl alibi::PasswordHasher for CountingHasher {
+        async fn hash(&self, password: &str) -> AuthResult<String> {
+            let _ = self.hashes.fetch_add(1, Ordering::SeqCst);
+            if self.fail.load(Ordering::SeqCst) {
+                return Err(AuthError::internal("application hasher rejected"));
+            }
+            Ok(format!("fast${password}"))
+        }
+        async fn verify(&self, hash: &str, password: &str) -> AuthResult<bool> {
+            let _ = self.verifies.fetch_add(1, Ordering::SeqCst);
+            Ok(hash == format!("fast${password}"))
+        }
+    }
+    let hasher = Arc::new(CountingHasher {
+        hashes: 0.into(),
+        verifies: 0.into(),
+        fail: AtomicBool::new(false),
+    });
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+
+    let mailbox = Arc::new(Mailbox::default());
+    let callbacks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let observed = callbacks.clone();
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(EmailPasswordPlugin::new().password_hasher(hasher.clone()))
+        .plugin(SessionManagementPlugin::new())
+        .plugin(PasswordManagementPlugin::with_config(
+            PasswordManagementConfig {
+                send_reset_password: Some(mailbox.clone()),
+                revoke_sessions_on_password_reset: true,
+                on_password_reset: Some(Arc::new(move |_| {
+                    let _ = observed.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(async { Ok(()) })
+                })),
+                ..Default::default()
+            },
+        ))
+        .build()
+        .await?;
+    let owner = signup(&auth, "hash-failure-owner@example.test").await;
+    let foreign = signup(&auth, "hash-failure-foreign@example.test").await;
+    let _ = call(
+        &auth,
+        request(
+            "/request-password-reset",
+            Some(json!({"email":"hash-failure-owner@example.test"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let (_, token) = mailbox.0.lock().unwrap().pop().unwrap();
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    hasher.hashes.store(0, Ordering::SeqCst);
+    hasher.fail.store(true, Ordering::SeqCst);
+    let failed = call(
+        &auth,
+        request(
+            "/reset-password",
+            Some(json!({"token":token,"newPassword":"hash-failure-replacement"})),
+            "",
+        ),
+        500,
+    )
+    .await;
+    assert!(!failed.headers.contains_key("set-cookie"));
+    assert_eq!(hasher.hashes.load(Ordering::SeqCst), 1);
+    assert_eq!(callbacks.load(Ordering::SeqCst), 0);
+    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    let replay = call(
+        &auth,
+        request(
+            "/reset-password",
+            Some(json!({"token":token,"newPassword":"hash-failure-replacement"})),
+            "",
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&replay)["code"], "INVALID_TOKEN");
+    assert_eq!(hasher.hashes.load(Ordering::SeqCst), 1);
+    hasher.fail.store(false, Ordering::SeqCst);
+    let login = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"hash-failure-owner@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&login)["user"]["id"], body(&owner)["user"]["id"]);
+    authenticated(&auth, &cookies(&owner), "hash-failure-owner@example.test").await;
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "hash-failure-foreign@example.test",
+    )
+    .await;
     Ok(())
 }
