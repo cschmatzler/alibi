@@ -5,7 +5,7 @@ use super::shared::{
     CurrentSession, OptionalSession, auth_request, check_content_length, max_body_bytes,
     payload_too_large,
 };
-use crate::BetterAuth;
+use crate::Alibi;
 use alibi_core::{AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema};
 use poem::{Endpoint, FromRequest, Request, RequestBody, Response, http::StatusCode};
 use std::sync::Arc;
@@ -23,7 +23,7 @@ pub trait PoemIntegration {
     fn poem_endpoint(self) -> PoemAuthEndpoint<Self::Schema>;
 }
 
-impl<S: AuthSchema> PoemIntegration for Arc<BetterAuth<S>> {
+impl<S: AuthSchema> PoemIntegration for Arc<Alibi<S>> {
     type Schema = S;
 
     fn poem_endpoint(self) -> PoemAuthEndpoint<S> {
@@ -36,7 +36,7 @@ impl<S: AuthSchema> PoemIntegration for Arc<BetterAuth<S>> {
 
 /// A Poem endpoint that delegates routing and method policy to auth dispatch.
 pub struct PoemAuthEndpoint<S: AuthSchema> {
-    auth: Arc<BetterAuth<S>>,
+    auth: Arc<Alibi<S>>,
     supervisor: DispatchSupervisor<Response>,
 }
 
@@ -67,7 +67,7 @@ impl<S: AuthSchema> Endpoint for PoemAuthEndpoint<S> {
 impl<'a, S: AuthSchema> FromRequest<'a> for CurrentSession<S> {
     async fn from_request(request: &'a Request, _body: &mut RequestBody) -> poem::Result<Self> {
         let auth = request
-            .data::<Arc<BetterAuth<S>>>()
+            .data::<Arc<Alibi<S>>>()
             .ok_or_else(|| poem::Error::from_status(StatusCode::INTERNAL_SERVER_ERROR))?;
         Self::resolve(auth, request.uri().path(), request.headers())
             .await
@@ -84,7 +84,7 @@ impl<'a, S: AuthSchema> FromRequest<'a> for OptionalSession<S> {
 }
 
 async fn convert_request<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     mut request: Request,
 ) -> AuthResult<AuthRequest> {
     let max_bytes = max_body_bytes(auth);

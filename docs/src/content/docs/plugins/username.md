@@ -17,13 +17,13 @@ This adds `users.username` and `users.display_username` (both nullable). Apply t
 use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(EmailPasswordPlugin::new().enable_signup(true).enable_username(true))
         .build()

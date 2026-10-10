@@ -28,7 +28,7 @@ use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::oauth::OAuthProvider;
 use alibi::plugins::{OAuthPlugin, OAuthProxyConfig, OAuthProxyPlugin};
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 async fn build_auth(
     config: AuthConfig,
@@ -36,8 +36,8 @@ async fn build_auth(
     client_id: &str,
     client_secret: &str,
     shared_secret: &str,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(
             OAuthPlugin::new()

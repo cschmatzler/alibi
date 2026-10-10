@@ -17,7 +17,7 @@ use alibi::email::EmailProvider;
 use alibi::plugins::magic_link::MagicLinkDelivery;
 use alibi::plugins::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 use std::sync::Arc;
 
 struct Mailer(Arc<dyn EmailProvider>);
@@ -35,8 +35,8 @@ async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
     mail: Arc<dyn EmailProvider>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(MagicLinkPlugin::new(MagicLinkConfig {
             send_magic_link: Some(Arc::new(Mailer(mail))),

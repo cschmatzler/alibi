@@ -14,7 +14,7 @@
 use crate::contract::helpers::html_text_content;
 use alibi::seaorm::{Database, DatabaseConnection, SeaOrmStore};
 use alibi::{
-    AuthBuilder, AuthConfig, BetterAuth,
+    Alibi, AuthBuilder, AuthConfig,
     plugins::EmailPasswordPlugin,
     prelude::{AuthRequest, HttpMethod},
 };
@@ -150,7 +150,7 @@ async fn test_database() -> DatabaseConnection {
     database
 }
 
-async fn create_full_auth() -> BetterAuth<TestSchema> {
+async fn create_full_auth() -> Alibi<TestSchema> {
     let config = AuthConfig::new("test-secret-key-that-is-at-least-32-characters-long")
         .base_url("http://localhost:3000");
 
@@ -179,7 +179,7 @@ async fn create_full_auth() -> BetterAuth<TestSchema> {
 }
 
 /// Collect all routes our implementation exposes (core + plugin).
-fn collect_implemented_routes(auth: &BetterAuth<TestSchema>) -> BTreeMap<String, HashSet<String>> {
+fn collect_implemented_routes(auth: &Alibi<TestSchema>) -> BTreeMap<String, HashSet<String>> {
     let mut routes: BTreeMap<String, HashSet<String>> = BTreeMap::new();
 
     // Core routes (from handle_core_request)
@@ -219,7 +219,7 @@ fn collect_implemented_routes(auth: &BetterAuth<TestSchema>) -> BTreeMap<String,
 
 /// Helper to send a request and parse the JSON response body.
 async fn send_json_request(
-    auth: &BetterAuth<TestSchema>,
+    auth: &Alibi<TestSchema>,
     method: HttpMethod,
     path: &str,
     body: Option<Value>,

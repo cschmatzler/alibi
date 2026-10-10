@@ -19,13 +19,13 @@ Adds `users.two_factor_enabled` and the `two_factor` table: `secret`, `backup_co
 use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::{EmailPasswordPlugin, TwoFactorPlugin};
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .plugin(TwoFactorPlugin::new().issuer("My application".to_owned()))
@@ -164,12 +164,12 @@ Two operations are not HTTP routes; call them through [`dispatch_endpoint`](/gui
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::endpoint::EndpointOptions;
 use alibi::plugins::TwoFactorPlugin;
 
 async fn backup_codes(
-    auth: &BetterAuth<AppAuthSchema>,
+    auth: &Alibi<AppAuthSchema>,
     user_id: &str,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let output = auth

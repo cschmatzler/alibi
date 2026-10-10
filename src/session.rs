@@ -9,10 +9,10 @@
 //! use alibi::session::{
 //!     IssuedSession, SessionIssueError, create_session_cookie, issue_user_session,
 //! };
-//! use alibi::{AuthError, AuthResult, AuthSchema, BetterAuth};
+//! use alibi::{AuthError, AuthResult, AuthSchema, Alibi};
 //!
 //! async fn sign_in_verified_user<S: AuthSchema>(
-//!     auth: &BetterAuth<S>,
+//!     auth: &Alibi<S>,
 //!     user_id: &str,
 //! ) -> AuthResult<(IssuedSession<S>, String)> {
 //!     let issued = match issue_user_session(auth.context(), user_id, None, None).await {
@@ -37,10 +37,10 @@
 //!
 //! ```
 //! use alibi::session::{SessionIssueError, SessionOverrides, issue_user_session_with_fields};
-//! use alibi::{AuthSchema, BetterAuth};
+//! use alibi::{AuthSchema, Alibi};
 //!
 //! async fn sign_in_to_organization<S: AuthSchema>(
-//!     auth: &BetterAuth<S>, user_id: &str, organization_id: &str,
+//!     auth: &Alibi<S>, user_id: &str, organization_id: &str,
 //! ) -> Result<(), SessionIssueError> {
 //!     let issued = issue_user_session_with_fields(
 //!         auth.context(), user_id, None, None,

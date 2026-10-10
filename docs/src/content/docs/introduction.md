@@ -16,9 +16,9 @@ You assemble an auth instance from four parts:
 
 ```rust
 use alibi::plugins::{EmailPasswordPlugin, TwoFactorPlugin};
-use alibi::{AuthBuilder, AuthResult, AuthSchema, BetterAuth};
+use alibi::{AuthBuilder, AuthResult, AuthSchema, Alibi};
 
-async fn build<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthResult<BetterAuth<S>> {
+async fn build<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthResult<Alibi<S>> {
     builder
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .plugin(TwoFactorPlugin::new())
@@ -27,7 +27,7 @@ async fn build<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthResult<BetterAuth<
 }
 ```
 
-Install Alibi `0.3.0` from [crates.io](https://crates.io/crates/alibi). See [Installation](/installation/) for the library dependency and matching schema generator.
+Install Alibi `0.4.0` from [crates.io](https://crates.io/crates/alibi). See [Installation](/installation/) for the library dependency and matching schema generator.
 
 ## How a request flows
 

@@ -6,7 +6,7 @@ use alibi::seaorm::{
     store::entities::{account, session, user, verification, wallet_address},
 };
 use alibi::{
-    AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
+    Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{
@@ -324,7 +324,7 @@ pub(crate) async fn router(
 ) -> AuthResult<(Router, Arc<Application>)> {
     let app = Arc::new(Application::default());
     let mut router = Router::new();
-    let mut profiles = HashMap::<String, Arc<BetterAuth<TestSchema>>>::new();
+    let mut profiles = HashMap::<String, Arc<Alibi<TestSchema>>>::new();
     for name in [
         "validation",
         "validation-no-auto",

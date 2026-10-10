@@ -5,7 +5,7 @@
 //! ## Quick Start
 //!
 //! ```rust,ignore
-//! use alibi::{AuthConfig, AuthSchema, BetterAuth};
+//! use alibi::{AuthConfig, AuthSchema, Alibi};
 //! use alibi::plugins::EmailPasswordPlugin;
 //! use alibi::seaorm::{Database, SeaOrmStore};
 //!
@@ -15,7 +15,7 @@
 //!     let database = Database::connect("sqlite::memory:").await?;
 //!     let store = SeaOrmStore::<AppAuthSchema>::new(config.clone(), database);
 //!
-//!     let auth = BetterAuth::<AppAuthSchema>::new(config)
+//!     let auth = Alibi::<AppAuthSchema>::new(config)
 //!         .store(store)
 //!         .plugin(EmailPasswordPlugin::new())
 //!         .build()
@@ -60,4 +60,4 @@ pub mod wire;
 #[doc(hidden)]
 pub use alibi_core as __private_core;
 pub use alibi_core::*;
-pub use runtime::{AuthBuilder, BetterAuth};
+pub use runtime::{Alibi, AuthBuilder};

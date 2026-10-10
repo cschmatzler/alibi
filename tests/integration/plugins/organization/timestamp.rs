@@ -7,7 +7,7 @@ use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin};
 use alibi::seaorm::sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
 use alibi::seaorm::store::entities::{invitation, member, organization};
 use alibi::seaorm::{Database, SeaOrmStore};
-use alibi::{AuthBuilder, AuthConfig, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig};
 use alibi::{AuthRequest, CreateInvitation, HttpMethod};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
@@ -21,7 +21,7 @@ const SOURCE: &str = "2001-02-03T04:05:06.227234Z";
 const WIRE: &str = "2001-02-03T04:05:06.227Z";
 
 async fn request(
-    auth: &BetterAuth<Schema>,
+    auth: &Alibi<Schema>,
     method: HttpMethod,
     path: &str,
     body: Option<Value>,

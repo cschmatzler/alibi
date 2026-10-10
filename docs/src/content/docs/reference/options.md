@@ -117,7 +117,7 @@ The default ID strategy uses each application model's generator. Explicit strate
 | `.middleware(mw)` | Custom `Middleware` (before/after request) | — |
 | `.telemetry(TelemetryConfig)` | Opt-in telemetry | [Telemetry](/reference/telemetry/) |
 | `AuthBuilder::without_database(config)` | In-memory store and stateless sessions | [No database](/databases/no-database/) |
-| `.build().await` | Validate, initialize plugins, return `BetterAuth` | — |
+| `.build().await` | Validate, initialize plugins, return `Alibi` | — |
 
 ## Plugin options
 

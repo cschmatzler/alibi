@@ -4,7 +4,7 @@ use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::{BodyLimitConfig, CsrfConfig, Middleware, RateLimitConfig};
 use alibi::seaorm::{Database, SeaOrmStore};
 use alibi::store::UserStore;
-use alibi::{AuthBuilder, AuthConfig, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig};
 use alibi::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, CreateUser,
     UpdateUser,
@@ -178,9 +178,7 @@ impl Drop for DropReceipt {
     }
 }
 
-async fn auth(
-    observations: Arc<Observations>,
-) -> (Arc<BetterAuth<Schema>>, Arc<SeaOrmStore<Schema>>) {
+async fn auth(observations: Arc<Observations>) -> (Arc<Alibi<Schema>>, Arc<SeaOrmStore<Schema>>) {
     auth_with_database(
         observations,
         Database::connect("sqlite::memory:").await.unwrap(),
@@ -191,7 +189,7 @@ async fn auth(
 async fn auth_with_database(
     observations: Arc<Observations>,
     database: alibi::seaorm::DatabaseConnection,
-) -> (Arc<BetterAuth<Schema>>, Arc<SeaOrmStore<Schema>>) {
+) -> (Arc<Alibi<Schema>>, Arc<SeaOrmStore<Schema>>) {
     alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .unwrap();

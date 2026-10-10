@@ -14,7 +14,7 @@ use crate::auth_schema::AppAuthSchema;
 use async_trait::async_trait;
 use alibi::sqlx::SqlxStore;
 use alibi::telemetry::{TelemetryConfig, TelemetryEvent, TelemetrySink};
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 struct EventLog;
 
@@ -29,8 +29,8 @@ impl TelemetrySink for EventLog {
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .telemetry(TelemetryConfig::new(EventLog))
         .build()
@@ -45,18 +45,18 @@ async fn build_auth(
 Initialization publishes one event:
 
 ```json
-{"type":"init","payload":{"libraryVersion":"0.3.0","runtime":"rust","platform":"linux","architecture":"x86_64","plugins":["email-password","session-management","oauth"]}}
+{"type":"init","payload":{"libraryVersion":"0.4.0","runtime":"rust","platform":"linux","architecture":"x86_64","plugins":["email-password","session-management","oauth"]}}
 ```
 
 It contains the library version, platform and the installed plugin names — no hostnames, URLs, secrets or user data. Publish your own application events through the same sink:
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::telemetry::TelemetryEvent;
 use serde_json::json;
 
-async fn record(auth: &BetterAuth<AppAuthSchema>) {
+async fn record(auth: &Alibi<AppAuthSchema>) {
     auth.publish_telemetry(TelemetryEvent::new("checkout_started", json!({ "plan": "pro" }))).await;
 }
 ```

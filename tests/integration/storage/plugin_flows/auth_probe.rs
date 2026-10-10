@@ -5,13 +5,13 @@ use alibi::{AuthResult, PasswordHasher};
 
 /// Records every response in a snapshot trace while keeping async frames small.
 pub(super) struct Probe<'a, S: AuthSchema> {
-    pub(super) auth: &'a BetterAuth<S>,
+    pub(super) auth: &'a Alibi<S>,
     pub(super) trace: Trace,
     pub(super) prefix: String,
 }
 
 impl<'a, S: AuthSchema> Probe<'a, S> {
-    pub(super) fn new(auth: &'a BetterAuth<S>) -> Self {
+    pub(super) fn new(auth: &'a Alibi<S>) -> Self {
         Self {
             auth,
             trace: Trace::default(),

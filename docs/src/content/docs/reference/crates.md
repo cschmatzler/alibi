@@ -7,7 +7,7 @@ Depend on **one** library crate, `alibi`. It re-exports the complete public API 
 
 | Crate | Description | Depend on it directly when… |
 | --- | --- | --- |
-| [`alibi`](https://github.com/cschmatzler/better-auth-rs/tree/main) | Composition and public facade: `BetterAuth`, `AuthBuilder`, request dispatch, plugins, stores and framework integrations | Always |
+| [`alibi`](https://github.com/cschmatzler/better-auth-rs/tree/main) | Composition and public facade: `Alibi`, `AuthBuilder`, request dispatch, plugins, stores and framework integrations | Always |
 | [`alibi-core`](https://github.com/cschmatzler/better-auth-rs/tree/main/crates/core) | Shared contracts and services: configuration, sessions, middleware, store decoration, plugin/endpoint contracts and errors | Never — every item is available at the same path under `alibi` (for example `alibi::config`, `alibi::store`, `alibi::utils`) |
 | [`alibi-plugins`](https://github.com/cschmatzler/better-auth-rs/tree/main/crates/plugins) | Built-in plugin implementations and their OpenAPI metadata | Never — use `alibi::plugins` |
 | [`alibi-sqlx`](https://github.com/cschmatzler/better-auth-rs/tree/main/crates/sqlx) | SQLx store, `AuthEntity` and `SqlxModel` derives, rate-limit storage, bundled migrations | Never — use `alibi::sqlx` |
@@ -19,4 +19,4 @@ Depend on **one** library crate, `alibi`. It re-exports the complete public API 
 
 Install the CLI as a separate tool using the same release version as your application; see the [CLI reference](/reference/cli/).
 
-The workspace release is `0.3.0`. The library and supporting crates are published on crates.io.
+The workspace release is `0.4.0`. The library and supporting crates are published on crates.io.

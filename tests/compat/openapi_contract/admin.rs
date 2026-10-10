@@ -26,7 +26,7 @@ use serde_json::json;
 
 type TestSchema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
-async fn setup_admin(auth: &alibi::BetterAuth<TestSchema>) -> String {
+async fn setup_admin(auth: &alibi::Alibi<TestSchema>) -> String {
     use alibi::prelude::UpdateUser;
 
     // Sign up a regular user first

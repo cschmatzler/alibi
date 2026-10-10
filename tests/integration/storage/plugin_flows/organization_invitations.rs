@@ -63,11 +63,7 @@ fn merge(first: &str, second: &str) -> String {
         .join("; ")
 }
 
-async fn add_member<B: Backend>(
-    auth: &BetterAuth<B::Schema>,
-    organization_id: &str,
-    user_id: &str,
-) {
+async fn add_member<B: Backend>(auth: &Alibi<B::Schema>, organization_id: &str, user_id: &str) {
     _ = Box::pin(
         auth.dispatch_endpoint(
             OrganizationPlugin::add_member_endpoint(

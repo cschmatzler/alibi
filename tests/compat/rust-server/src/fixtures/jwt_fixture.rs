@@ -13,7 +13,7 @@ use alibi::plugins::{
 use alibi::seaorm::DatabaseConnection;
 use alibi::seaorm::sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use alibi::seaorm::store::entities::jwk;
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult};
 use alibi::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, AuthSession};
 use axum::{
     Json, Router,
@@ -27,7 +27,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use std::{collections::HashMap, sync::Arc};
 
-type Auth = Arc<BetterAuth<TestSchema>>;
+type Auth = Arc<Alibi<TestSchema>>;
 
 const PROFILES: &[&str] = &[
     "jwt-default",

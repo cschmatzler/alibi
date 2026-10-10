@@ -6,7 +6,7 @@ use alibi::plugins::EmailPasswordPlugin;
 use alibi::seaorm::DatabaseConnection;
 use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
 use alibi::store::SchemaMigrator;
-use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthResult};
 use axum::Router;
 use axum::{
     Json,
@@ -194,7 +194,7 @@ pub(crate) async fn router(
     base: &AuthConfig,
     database: DatabaseConnection,
     outbox: otp_profiles::Outbox,
-) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
+) -> AuthResult<Router<Arc<Alibi<TestSchema>>>> {
     #[cfg(feature = "seaorm")]
     let storage = Arc::new(alibi::seaorm::SeaOrmRateLimitStorage::new(database.clone()));
     #[cfg(not(feature = "seaorm"))]
@@ -316,7 +316,7 @@ pub(crate) async fn router(
         if name == "secondary-failure" {
             // The reference fixture awaits this public handler inside its outer
             // host catch. Preserve that host boundary for propagated quota errors.
-            let mounted: Router<Arc<BetterAuth<TestSchema>>> = Router::new().fallback(
+            let mounted: Router<Arc<Alibi<TestSchema>>> = Router::new().fallback(
                 move |axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
                       request: axum::extract::Request| {
                     let auth = auth.clone();

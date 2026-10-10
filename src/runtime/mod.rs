@@ -18,7 +18,7 @@ use alibi_core::{
 };
 use std::sync::Arc;
 
-pub struct BetterAuth<S: AuthSchema> {
+pub struct Alibi<S: AuthSchema> {
     config: Arc<AuthConfig>,
     telemetry: crate::telemetry::TelemetryConfig,
     pub(super) plugins: Vec<Box<dyn AuthPlugin<S>>>,
@@ -34,13 +34,13 @@ pub struct BetterAuth<S: AuthSchema> {
     pub(super) endpoint_hooks: Vec<Arc<dyn alibi_core::endpoint::EndpointHook<S>>>,
 }
 
-impl<S: AuthSchema> std::fmt::Debug for BetterAuth<S> {
+impl<S: AuthSchema> std::fmt::Debug for Alibi<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BetterAuth").finish_non_exhaustive()
+        f.debug_struct("Alibi").finish_non_exhaustive()
     }
 }
 
-/// Initial builder for configuring `BetterAuth`.
+/// Initial builder for configuring `Alibi`.
 pub struct AuthBuilder<S: AuthSchema> {
     config: AuthConfig,
     telemetry: crate::telemetry::TelemetryConfig,
@@ -86,7 +86,7 @@ impl<S: AuthSchema> AuthBuilder<S> {
     }
 }
 
-impl<S: AuthSchema> BetterAuth<S> {
+impl<S: AuthSchema> Alibi<S> {
     /// Publish an application-owned event to the configured telemetry sink.
     /// Delivery is awaited; a sink failure is logged and does not fail authentication.
     /// The host is responsible for excluding secrets and personal data from its payload.

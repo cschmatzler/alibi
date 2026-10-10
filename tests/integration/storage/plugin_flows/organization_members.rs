@@ -51,7 +51,7 @@ struct Account {
     cookie: String,
 }
 
-async fn account<S: AuthSchema>(auth: &BetterAuth<S>, email: &str) -> Account {
+async fn account<S: AuthSchema>(auth: &Alibi<S>, email: &str) -> Account {
     let response = signup(auth, email).await;
     Account {
         id: body(&response)["user"]["id"].as_str().unwrap().to_owned(),
@@ -59,11 +59,7 @@ async fn account<S: AuthSchema>(auth: &BetterAuth<S>, email: &str) -> Account {
     }
 }
 
-async fn organization<S: AuthSchema>(
-    auth: &BetterAuth<S>,
-    owner: &mut Account,
-    slug: &str,
-) -> String {
+async fn organization<S: AuthSchema>(auth: &Alibi<S>, owner: &mut Account, slug: &str) -> String {
     let created = call(
         auth,
         request(
@@ -79,7 +75,7 @@ async fn organization<S: AuthSchema>(
 }
 
 async fn add<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     organization_id: &str,
     user_id: &str,
     role: &str,

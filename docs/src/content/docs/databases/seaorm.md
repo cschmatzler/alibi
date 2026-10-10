@@ -10,7 +10,7 @@ description: "Use SeaORM entities for users, sessions, accounts and plugin data.
 Enable the `seaorm` feature. SeaORM is re-exported as `alibi::seaorm::sea_orm`, so you do not need a separate `sea-orm` dependency for the generated code:
 
 ```toml title="Cargo.toml"
-alibi = { version = "0.3.0", default-features = false, features = ["axum", "seaorm", "rustls"] }
+alibi = { version = "0.4.0", default-features = false, features = ["axum", "seaorm", "rustls"] }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
@@ -56,18 +56,18 @@ mod user {
 use crate::auth_schema::{AppAuthSchema, run_app_migrations};
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::seaorm::{Database, SeaOrmStore};
-use alibi::{AuthConfig, BetterAuth};
+use alibi::{AuthConfig, Alibi};
 
 async fn build_auth(
     secret: &str,
     database_url: &str,
-) -> Result<BetterAuth<AppAuthSchema>, Box<dyn std::error::Error>> {
+) -> Result<Alibi<AppAuthSchema>, Box<dyn std::error::Error>> {
     let config = AuthConfig::new(secret).base_url("http://localhost:3000");
     let database = Database::connect(database_url).await?;
     run_app_migrations(&database).await?;
     let store = SeaOrmStore::<AppAuthSchema>::new(config.clone(), database);
 
-    Ok(BetterAuth::<AppAuthSchema>::new(config)
+    Ok(Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .build()

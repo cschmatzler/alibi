@@ -101,7 +101,7 @@ use alibi::seaorm::store::entities::{
     user, verification, wallet_address,
 };
 use alibi::wire::UserView;
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult};
 use axum::{
     Json, Router,
     extract::Query,
@@ -128,7 +128,7 @@ enum PasswordFixtureRequest {
 }
 
 async fn password_fixture_operation(
-    auth: &BetterAuth<TestSchema>,
+    auth: &Alibi<TestSchema>,
     body: PasswordFixtureRequest,
 ) -> AuthResult<serde_json::Value> {
     match body {

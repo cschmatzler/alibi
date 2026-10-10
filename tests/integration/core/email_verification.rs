@@ -11,8 +11,8 @@ use alibi::plugins::{
     UserManagementPlugin,
 };
 use alibi::wire::UserView;
+use alibi::{Alibi, AuthBuilder, AuthConfig};
 use alibi::{AuthAccount, AuthError, AuthRequest, AuthResponse, AuthResult, AuthUser, HttpMethod};
-use alibi::{AuthBuilder, AuthConfig, BetterAuth};
 use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -73,7 +73,7 @@ async fn auth<B: Backend>(
     send_on_signup: Option<bool>,
     fail: bool,
     policy: alibi::AwaitedNotificationErrorPolicy,
-) -> (BetterAuth<B::Schema>, Arc<Sender>, Db) {
+) -> (Alibi<B::Schema>, Arc<Sender>, Db) {
     let mut config =
         AuthConfig::new("verification-fixture-secret-minimum-32-characters").base_url(ORIGIN);
     if policy == alibi::AwaitedNotificationErrorPolicy::LogAndContinue {
@@ -110,7 +110,7 @@ async fn auth<B: Backend>(
 }
 
 async fn post<S: alibi::AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     path: &str,
     body: Value,
 ) -> (AuthResponse, Value) {
@@ -118,7 +118,7 @@ async fn post<S: alibi::AuthSchema>(
 }
 
 async fn post_with_cookie<S: alibi::AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     path: &str,
     body: Value,
     cookie: Option<&str>,

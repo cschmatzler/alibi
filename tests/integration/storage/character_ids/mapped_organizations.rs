@@ -465,10 +465,7 @@ async fn exercise(db: Db) -> TestResult {
 }
 
 /// Typed native create and update keep configured fields and drop unknown ones.
-async fn typed_organization_calls(
-    auth: &alibi::BetterAuth<Schema>,
-    cookie: &str,
-) -> TestResult<String> {
+async fn typed_organization_calls(auth: &alibi::Alibi<Schema>, cookie: &str) -> TestResult<String> {
     use alibi::plugins::organization::types::{
         CreateOrganizationRequest, UpdateOrganizationData, UpdateOrganizationRequest,
     };
@@ -517,7 +514,7 @@ async fn typed_organization_calls(
 }
 
 async fn post(
-    auth: &alibi::BetterAuth<Schema>,
+    auth: &alibi::Alibi<Schema>,
     path: &str,
     body: Value,
     cookie: &str,

@@ -1,9 +1,9 @@
 use crate::TestSchema;
 use alibi::entity::{AuthAccount, AuthSession, AuthUser};
+use alibi::{Alibi, AuthError};
 use alibi::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, BeforeRequestAction,
 };
-use alibi::{AuthError, BetterAuth};
 use async_trait::async_trait;
 use axum::{
     Json, Router,
@@ -25,9 +25,9 @@ impl LifecycleFixture {
         LifecycleObserver(self.clone())
     }
 
-    pub(crate) fn router(&self) -> Router<Arc<BetterAuth<TestSchema>>> {
+    pub(crate) fn router(&self) -> Router<Arc<Alibi<TestSchema>>> {
         let fixture = self.clone();
-        Router::new().route("/__test/lifecycle", get(move |State(auth): State<Arc<BetterAuth<TestSchema>>>, Query(query): Query<std::collections::HashMap<String, String>>| {
+        Router::new().route("/__test/lifecycle", get(move |State(auth): State<Arc<Alibi<TestSchema>>>, Query(query): Query<std::collections::HashMap<String, String>>| {
             let fixture = fixture.clone();
             async move {
                 let events = std::mem::take(&mut *fixture.0.lock().expect("lifecycle fixture lock"));

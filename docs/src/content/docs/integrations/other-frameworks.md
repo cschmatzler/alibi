@@ -3,7 +3,7 @@ title: "Other frameworks"
 description: "Embed Alibi in any HTTP host by converting requests and responses, or call it directly from server code."
 ---
 
-Axum and Poem have first-class adapters. Any other Rust HTTP host — Actix, Hyper, Rocket, Warp, AWS Lambda, a custom server — can embed the auth instance through one method: `BetterAuth::handle_request`.
+Axum and Poem have first-class adapters. Any other Rust HTTP host — Actix, Hyper, Rocket, Warp, AWS Lambda, a custom server — can embed the auth instance through one method: `Alibi::handle_request`.
 
 ```text
 your framework request ──► AuthRequest ──► auth.handle_request() ──► AuthResponse ──► your framework response
@@ -18,7 +18,7 @@ The `http` types are what Hyper, Axum, Actix (via `actix-http`), Lambda and most
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use axum::http::{HeaderName, HeaderValue, Method, Request, Response, StatusCode};
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::prelude::{AuthRequest, HttpMethod};
 use std::collections::HashMap;
 
@@ -73,7 +73,7 @@ fn to_auth_request(request: Request<Vec<u8>>) -> Option<AuthRequest> {
 }
 
 async fn dispatch(
-    auth: &BetterAuth<AppAuthSchema>,
+    auth: &Alibi<AppAuthSchema>,
     request: Request<Vec<u8>>,
 ) -> Response<Vec<u8>> {
     let Some(request) = to_auth_request(request) else {
@@ -116,12 +116,12 @@ Your host owns the dispatch future. If the client disconnects and your framework
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::prelude::{AuthRequest, AuthResponse};
 use std::sync::Arc;
 
 async fn dispatch_detached(
-    auth: Arc<BetterAuth<AppAuthSchema>>,
+    auth: Arc<Alibi<AppAuthSchema>>,
     request: AuthRequest,
 ) -> AuthResponse {
     tokio::spawn(async move {
@@ -146,12 +146,12 @@ Without an adapter there are no extractors. Two options:
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::prelude::{AuthRequest, HttpMethod};
 
 /// Returns the user id of the session identified by the request's headers, if any.
 async fn current_user_id(
-    auth: &BetterAuth<AppAuthSchema>,
+    auth: &Alibi<AppAuthSchema>,
     headers: &[(&str, &str)],
 ) -> Option<String> {
     let mut request = AuthRequest::new(HttpMethod::Get, "/api/auth/get-session");
@@ -170,7 +170,7 @@ Forward only the headers you intend to authenticate with.
 
 ## Trusted server operations
 
-`BetterAuth::dispatch_endpoint` runs an operation with logical inputs instead of an HTTP request — for example creating an API key for a user, verifying a JWT, or consuming a one-time token. These operations stay on the server and are **not** HTTP routes. See [Server-side calls](/guides/server-side-calls/).
+`Alibi::dispatch_endpoint` runs an operation with logical inputs instead of an HTTP request — for example creating an API key for a user, verifying a JWT, or consuming a one-time token. These operations stay on the server and are **not** HTTP routes. See [Server-side calls](/guides/server-side-calls/).
 
 ## Frontend
 

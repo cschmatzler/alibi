@@ -6,7 +6,7 @@ description: "Mount the auth endpoint in a Poem application and extract sessions
 The Poem adapter nests the auth API as a single `Endpoint` and provides `CurrentSession` and `OptionalSession` extractors. Enable the `poem` feature and add `poem` to your application:
 
 ```toml title="Cargo.toml"
-alibi = { version = "0.3.0", features = ["poem"] }
+alibi = { version = "0.4.0", features = ["poem"] }
 poem = "3.1"
 ```
 
@@ -16,7 +16,7 @@ Build the auth instance with your SQLx or SeaORM store as usual, then nest `poem
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::integrations::{CurrentSession, poem::PoemIntegration};
 use alibi::prelude::AuthUser;
 use poem::{Endpoint, EndpointExt, Route, get, handler};
@@ -27,7 +27,7 @@ async fn profile(session: CurrentSession<AppAuthSchema>) -> String {
     format!("Hello, {}", session.user.id())
 }
 
-fn app(auth: Arc<BetterAuth<AppAuthSchema>>) -> impl Endpoint {
+fn app(auth: Arc<Alibi<AppAuthSchema>>) -> impl Endpoint {
     Route::new()
         .nest("/api/auth", auth.clone().poem_endpoint())
         .at("/profile", get(profile))
@@ -39,12 +39,12 @@ Serve it with Poem's server:
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::integrations::poem::PoemIntegration;
 use poem::{EndpointExt, Route, Server, listener::TcpListener};
 use std::sync::Arc;
 
-async fn serve(auth: Arc<BetterAuth<AppAuthSchema>>) -> std::io::Result<()> {
+async fn serve(auth: Arc<Alibi<AppAuthSchema>>) -> std::io::Result<()> {
     let app = Route::new()
         .nest("/api/auth", auth.clone().poem_endpoint())
         .data(auth);
@@ -59,7 +59,7 @@ async fn serve(auth: Arc<BetterAuth<AppAuthSchema>>) -> std::io::Result<()> {
 | `CurrentSession<S>` | Rejects with `401` |
 | `OptionalSession<S>` | Yields `None` for **any** extraction failure — a missing session, missing auth data or a storage error — matching the Axum adapter. Use `CurrentSession` when failures must be reported |
 
-Both expose `user` and `session` in your own model types. The extractors need the same `Arc<BetterAuth<S>>` installed with `.data(auth)` on the routes that use them; as in Axum they validate the session cookie.
+Both expose `user` and `session` in your own model types. The extractors need the same `Arc<Alibi<S>>` installed with `.data(auth)` on the routes that use them; as in Axum they validate the session cookie.
 
 ```rust
 use crate::auth_schema::AppAuthSchema;

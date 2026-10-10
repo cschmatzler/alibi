@@ -24,7 +24,7 @@ fn auth_config(secret: &str) -> AuthConfig {
 `MemoryCacheAdapter` is local to one process — good for development and tests. For several server processes, use the Redis adapter (`redis-cache` feature):
 
 ```toml title="Cargo.toml"
-alibi = { version = "0.3.0", features = ["axum", "redis-cache"] }
+alibi = { version = "0.4.0", features = ["axum", "redis-cache"] }
 ```
 
 ```rust

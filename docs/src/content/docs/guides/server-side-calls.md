@@ -17,11 +17,11 @@ Build an `AuthRequest`, get an `AuthResponse`. It runs exactly the pipeline an H
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use alibi::prelude::{AuthRequest, HttpMethod};
-use alibi::{AuthResult, BetterAuth};
+use alibi::{AuthResult, Alibi};
 use serde_json::Value;
 
 /// Resolve the session behind a `Cookie` header.
-async fn session_for(auth: &BetterAuth<AppAuthSchema>, cookie: &str) -> AuthResult<Option<Value>> {
+async fn session_for(auth: &Alibi<AppAuthSchema>, cookie: &str) -> AuthResult<Option<Value>> {
     let mut request = AuthRequest::new(HttpMethod::Get, "/api/auth/get-session");
     request.headers.insert("cookie".into(), cookie.to_owned());
     let response = auth.handle_request(request).await?;
@@ -52,11 +52,11 @@ The output is an `EndpointOutput<T>`; `decode()` turns it into the typed value `
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::endpoint::EndpointOptions;
 use alibi::plugins::jwt::JwtPlugin;
 
-async fn roundtrip(auth: &BetterAuth<AppAuthSchema>, token: &str) -> Result<bool, Box<dyn std::error::Error>> {
+async fn roundtrip(auth: &Alibi<AppAuthSchema>, token: &str) -> Result<bool, Box<dyn std::error::Error>> {
     let verified = auth
         .dispatch_endpoint(
             JwtPlugin::verify_endpoint(token, Some("https://auth.example.com".to_owned())),
@@ -72,12 +72,12 @@ async fn roundtrip(auth: &BetterAuth<AppAuthSchema>, token: &str) -> Result<bool
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::endpoint::EndpointOptions;
 use alibi::plugins::one_time_token::OneTimeTokenPlugin;
 use std::collections::HashMap;
 
-async fn handoff_token(auth: &BetterAuth<AppAuthSchema>, cookie: &str) -> Result<String, Box<dyn std::error::Error>> {
+async fn handoff_token(auth: &Alibi<AppAuthSchema>, cookie: &str) -> Result<String, Box<dyn std::error::Error>> {
     let output = auth
         .dispatch_endpoint(
             OneTimeTokenPlugin::generate_endpoint(),
@@ -113,12 +113,12 @@ Instance methods take the initialized context — `auth.context()` — and need 
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::plugins::email_otp::EmailOtpType;
 use alibi::plugins::{EmailOtpConfig, EmailOtpPlugin};
 
 async fn code_for_support(
-    auth: &BetterAuth<AppAuthSchema>,
+    auth: &Alibi<AppAuthSchema>,
     plugin: &EmailOtpPlugin,
     email: &str,
 ) -> alibi::AuthResult<String> {
@@ -142,9 +142,9 @@ An instance built with [`AuthBuilder::without_database`](/databases/no-database/
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::store::StatelessSchema;
-use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthBuilder, AuthConfig, AuthResult, Alibi};
 
-async fn test_instance() -> AuthResult<BetterAuth<StatelessSchema>> {
+async fn test_instance() -> AuthResult<Alibi<StatelessSchema>> {
     let config = AuthConfig::new("test-secret-with-at-least-32-characters").base_url("http://localhost:3000");
     AuthBuilder::without_database(config)
         .rate_limit(RateLimitConfig::new().enabled(false))

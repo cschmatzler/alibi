@@ -8,7 +8,7 @@ use alibi::plugins::{
         default_organization_statements,
     },
 };
-use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthSchema};
 use alibi::{AuthRequest, AuthResponse, HttpMethod};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -52,7 +52,7 @@ fn cookies(response: &AuthResponse) -> String {
         .join("; ")
 }
 async fn call<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     trace: &mut Vec<Value>,
     path: &str,
     input: Option<Value>,
@@ -90,7 +90,7 @@ async fn call<S: AuthSchema>(
     Ok(body(&response))
 }
 async fn signup<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     email: &str,
 ) -> TestResult<(String, String, String)> {
     let mut req = AuthRequest::new(HttpMethod::Post, "/sign-up/email");
@@ -117,7 +117,7 @@ struct Retained {
     cookie: String,
     token: String,
 }
-async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResult<Retained> {
+async fn workflow<S: AuthSchema>(auth: &Alibi<S>, owner: &str) -> TestResult<Retained> {
     let mut trace = Vec::new();
     let (cookie, _, token) = signup(auth, "owner@native-org.test").await?;
     let (recipient, recipient_id, _) = signup(auth, "member@native-org.test").await?;

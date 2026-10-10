@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use alibi::prelude::CreateUser;
 use alibi::sqlx::{SqlxBackend, SqlxStore};
 use alibi::store::{DatabaseHookContext, DatabaseHooks, HookControl};
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 struct NormalizeUsers;
 
@@ -42,8 +42,8 @@ impl DatabaseHooks<AppAuthSchema, SqlxBackend> for NormalizeUsers {
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store.hook(NormalizeUsers))
         .build()
         .await
@@ -114,7 +114,7 @@ use async_trait::async_trait;
 use alibi::endpoint::{BeforeEndpointAction, EndpointCall, EndpointHook, EndpointResponse};
 use alibi::plugin::AuthContext;
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthError, AuthResult, Alibi};
 
 #[derive(serde::Deserialize)]
 struct SignUpBody {
@@ -168,8 +168,8 @@ impl EndpointHook<AppAuthSchema> for OperationLog {
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .endpoint_hook(BlockDisposableEmails)
         .endpoint_hook(OperationLog)

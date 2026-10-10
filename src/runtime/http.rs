@@ -1,12 +1,12 @@
 use super::endpoint::merge_headers;
 use super::http_hooks::apply_http_endpoint_input;
 use super::{
-    Arc, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
-    BeforeRequestAction, BetterAuth, HttpEndpointResponse, HttpMethod, HttpRequestAction,
+    Alibi, Arc, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthRoute,
+    AuthSchema, BeforeRequestAction, HttpEndpointResponse, HttpMethod, HttpRequestAction,
     Middleware, RequestHookContext, core_paths, middleware, parse_dispatch_body,
     with_request_hook_context_value,
 };
-impl<S: AuthSchema> BetterAuth<S> {
+impl<S: AuthSchema> Alibi<S> {
     /// Handle an authentication request.
     ///
     /// Errors from plugins and core handlers are automatically converted

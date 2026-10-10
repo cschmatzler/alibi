@@ -362,7 +362,7 @@ async fn logical_endpoint_hooks_preserve_order_failure_and_persistence_contracts
 }
 
 struct IsolationHook<S: AuthSchema> {
-    auth: Arc<std::sync::OnceLock<std::sync::Weak<BetterAuth<S>>>>,
+    auth: Arc<std::sync::OnceLock<std::sync::Weak<Alibi<S>>>>,
 }
 #[async_trait]
 impl<S: AuthSchema> EndpointHook<S> for IsolationHook<S> {

@@ -4,8 +4,8 @@ use alibi::seaorm::{
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use alibi::{
-    AuthBuilder, AuthConfig, AuthError, AuthResult, BackgroundTaskCompletion,
-    BackgroundTaskHandler, BetterAuth,
+    Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult, BackgroundTaskCompletion,
+    BackgroundTaskHandler,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{
@@ -133,7 +133,7 @@ struct Control {
 pub(crate) async fn router(
     base: &AuthConfig,
     database: DatabaseConnection,
-) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
+) -> AuthResult<Router<Arc<Alibi<TestSchema>>>> {
     let state = State::default();
     let mut router = Router::new();
     for mode in ["default", "observe", "ignore", "throw"] {

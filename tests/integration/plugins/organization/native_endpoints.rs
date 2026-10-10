@@ -15,7 +15,7 @@ use alibi::plugins::{
     },
 };
 use alibi::utils::json::JsValue;
-use alibi::{AuthBuilder, AuthConfig, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig};
 use alibi::{AuthContext, AuthRequest, AuthResult, AuthSchema, HttpMethod};
 use async_trait::async_trait;
 use serde_json::json;
@@ -26,7 +26,7 @@ fn credentials(cookie: &str) -> EndpointOptions {
         ..Default::default()
     }
 }
-async fn signup<S: AuthSchema>(auth: &BetterAuth<S>, email: &str) -> (String, String) {
+async fn signup<S: AuthSchema>(auth: &Alibi<S>, email: &str) -> (String, String) {
     let mut request = AuthRequest::new(HttpMethod::Post, "/sign-up/email");
     drop(
         request

@@ -127,7 +127,7 @@ fn deletion_request(path: &str, body: serde_json::Value, cookie: &str) -> alibi:
 }
 
 async fn signup<S: alibi::AuthSchema>(
-    auth: &alibi::BetterAuth<S>,
+    auth: &alibi::Alibi<S>,
     email: &str,
 ) -> TestResult<(String, String)> {
     let response = Box::pin(auth.handle_request(deletion_request(
@@ -156,7 +156,7 @@ async fn signup<S: alibi::AuthSchema>(
 }
 
 async fn create_key<S: alibi::AuthSchema>(
-    auth: &alibi::BetterAuth<S>,
+    auth: &alibi::Alibi<S>,
     cookie: &str,
 ) -> TestResult<(String, String)> {
     let response = Box::pin(auth.handle_request(deletion_request(

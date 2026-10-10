@@ -17,7 +17,7 @@ use alibi::seaorm::{
     sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, QueryOrder, Set},
     store::entities::{account, session, user, verification},
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult};
 use alibi::{
     AuthRequest, BackgroundTaskCompletion, BackgroundTaskHandler, PasswordHasher, ScryptHasher,
     wire::{AccountView, UserView, VerificationView},
@@ -191,7 +191,7 @@ fn database_error(error: alibi::seaorm::sea_orm::DbErr) -> AuthError {
 pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
     let app = Arc::new(Application::default());
     let mut router = Router::new();
-    let mut profiles: HashMap<String, Arc<BetterAuth<TestSchema>>> = HashMap::new();
+    let mut profiles: HashMap<String, Arc<Alibi<TestSchema>>> = HashMap::new();
     for name in [
         "signup-standard",
         "signup-disabled",

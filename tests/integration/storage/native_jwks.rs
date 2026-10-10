@@ -4,7 +4,7 @@ use super::{Backend, Db, TestResult, backend_tests};
 use alibi::endpoint::EndpointOptions;
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::plugins::jwt::{JwtPlugin, JwtPluginConfig};
-use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthSchema};
 use alibi::{AuthRequest, AuthResponse, HttpMethod};
 use base64::Engine as _;
 use chrono::Duration;
@@ -34,7 +34,7 @@ fn body(response: &AuthResponse) -> Value {
     serde_json::from_slice(&response.body).unwrap()
 }
 async fn call<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     trace: &mut Vec<Value>,
     path: &str,
     input: Option<Value>,
@@ -68,7 +68,7 @@ fn token_key(token: &str) -> String {
         .unwrap()
         .to_owned()
 }
-async fn verified<S: AuthSchema>(auth: &BetterAuth<S>, token: &str) -> TestResult<bool> {
+async fn verified<S: AuthSchema>(auth: &Alibi<S>, token: &str) -> TestResult<bool> {
     Ok(auth
         .dispatch_endpoint(
             JwtPlugin::verify_endpoint(token, None),
@@ -142,7 +142,7 @@ fn save(name: &str, value: &Value) -> TestResult {
     }
     Ok(())
 }
-async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, backend: &str) -> TestResult<String> {
+async fn workflow<S: AuthSchema>(auth: &Alibi<S>, backend: &str) -> TestResult<String> {
     let mut trace = Vec::new();
     let first = call(auth, &mut trace, "/jwks", None, "").await?;
     assert_eq!(

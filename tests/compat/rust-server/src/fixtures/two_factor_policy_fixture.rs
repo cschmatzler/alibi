@@ -4,7 +4,7 @@ use alibi::seaorm::{
     sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
 };
 use alibi::{
-    AuthBuilder, AuthConfig, AuthResult, BetterAuth,
+    Alibi, AuthBuilder, AuthConfig, AuthResult,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{
@@ -25,7 +25,7 @@ use chrono::{Duration, Utc};
 use serde_json::json;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
-type Auth = Arc<BetterAuth<TestSchema>>;
+type Auth = Arc<Alibi<TestSchema>>;
 
 struct RejectUserUpdate;
 #[async_trait::async_trait]

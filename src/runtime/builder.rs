@@ -1,6 +1,6 @@
 use super::{
-    Arc, AuthBuilder, AuthConfig, AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthResult,
-    AuthSchema, AuthStore, BetterAuth, BodyLimitMiddleware, CorsConfig, CorsMiddleware,
+    Alibi, Arc, AuthBuilder, AuthConfig, AuthContext, AuthError, AuthInitContext, AuthPlugin,
+    AuthResult, AuthSchema, AuthStore, BodyLimitMiddleware, CorsConfig, CorsMiddleware,
     CsrfMiddleware, EmailProvider, Middleware, OpenApiRegistry, RateLimitConfig,
     RateLimitMiddleware, SessionManager,
 };
@@ -90,12 +90,12 @@ impl<S: AuthSchema> AuthBuilder<S> {
         self
     }
 
-    /// Build the `BetterAuth` instance.
+    /// Build the `Alibi` instance.
     ///
     /// # Errors
     ///
     /// Returns an error if configuration validation or plugin initialization fails.
-    pub async fn build(mut self) -> AuthResult<BetterAuth<S>> {
+    pub async fn build(mut self) -> AuthResult<Alibi<S>> {
         self.resolve_oauth_state_strategy();
         self.config.validate()?;
         self.resolve_trusted_providers().await?;
@@ -163,7 +163,7 @@ impl<S: AuthSchema> AuthBuilder<S> {
                 .await;
         }
 
-        Ok(BetterAuth {
+        Ok(Alibi {
             telemetry: self.telemetry,
             config,
             plugins: self.plugins,
@@ -340,8 +340,8 @@ fn register_openapi<S: AuthSchema>(
     init_context.extensions.insert(openapi);
 }
 
-impl<S: AuthSchema> BetterAuth<S> {
-    /// Create a new `BetterAuth` builder.
+impl<S: AuthSchema> Alibi<S> {
+    /// Create a new `Alibi` builder.
     #[expect(
         clippy::new_ret_no_self,
         reason = "returns AuthBuilder by design — builder pattern entry point"

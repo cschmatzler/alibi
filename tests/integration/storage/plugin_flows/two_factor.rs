@@ -22,7 +22,7 @@ backend_tests!(
 );
 postgres_tests!(totp_enrollment_pending_login_and_trusted_device_rotation);
 
-async fn signin<S: AuthSchema>(auth: &BetterAuth<S>, cookie: &str) -> AuthResponse {
+async fn signin<S: AuthSchema>(auth: &Alibi<S>, cookie: &str) -> AuthResponse {
     call(
         auth,
         request(

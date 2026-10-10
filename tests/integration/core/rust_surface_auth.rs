@@ -8,7 +8,7 @@ use alibi::plugin::{AuthContext, AuthPlugin, AuthRoute};
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::prelude::{AuthRequest, AuthResponse, HttpMethod};
 use alibi::seaorm::{Database, DatabaseConnection, SeaOrmStore};
-use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthResult};
 use async_trait::async_trait;
 
 type TestSchema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
@@ -52,7 +52,7 @@ async fn test_database() -> DatabaseConnection {
     database
 }
 
-async fn build_auth_with_route_plugin() -> BetterAuth<TestSchema> {
+async fn build_auth_with_route_plugin() -> Alibi<TestSchema> {
     let config = test_config();
     let store = SeaOrmStore::<TestSchema>::new(config.clone(), test_database().await);
     AuthBuilder::<TestSchema>::new(config)
@@ -69,19 +69,16 @@ mod tests {
     use super::*;
 
     // Rust-specific surface: `AuthBuilder::build` is the Rust entry point that
-    // validates configuration before producing a `BetterAuth` instance.
+    // validates configuration before producing a `Alibi` instance.
     #[tokio::test]
     async fn test_builder_rejects_invalid_config() {
         let config = AuthConfig::default();
         let store = SeaOrmStore::<TestSchema>::new(config.clone(), test_database().await);
-        let result = BetterAuth::<TestSchema>::new(config)
-            .store(store)
-            .build()
-            .await;
+        let result = Alibi::<TestSchema>::new(config).store(store).build().await;
         assert!(result.is_err());
     }
 
-    // Rust-specific surface: `BetterAuth::plugin_names` and `BetterAuth::get_plugin`
+    // Rust-specific surface: `Alibi::plugin_names` and `Alibi::get_plugin`
     // are public Rust introspection APIs with no TS analogue.
     #[tokio::test]
     async fn test_plugin_registry_accessors() {
@@ -94,7 +91,7 @@ mod tests {
         assert!(auth.get_plugin("missing-plugin").is_none());
     }
 
-    // Rust-specific surface: `BetterAuth::routes` exposes only plugin-declared
+    // Rust-specific surface: `Alibi::routes` exposes only plugin-declared
     // routes for embedding and router composition.
     #[tokio::test]
     async fn test_routes_lists_plugin_routes_only() {
@@ -111,7 +108,7 @@ mod tests {
     async fn test_disabled_path_blocks_direct_dispatch() {
         let config = test_config().disabled_path("/ok");
         let store = SeaOrmStore::<TestSchema>::new(config.clone(), test_database().await);
-        let auth = BetterAuth::<TestSchema>::new(config)
+        let auth = Alibi::<TestSchema>::new(config)
             .store(store)
             .build()
             .await
@@ -125,7 +122,7 @@ mod tests {
         assert_eq!(response.status, 404);
     }
 
-    // Rust-specific surface: `BetterAuth::openapi_spec` is a Rust API for embedded
+    // Rust-specific surface: `Alibi::openapi_spec` is a Rust API for embedded
     // schema generation and should include both core and plugin routes.
     #[tokio::test]
     async fn test_openapi_spec_includes_core_and_plugin_routes() {

@@ -89,13 +89,13 @@ curl -b cookies.txt -X POST http://localhost:3000/api/auth/revoke-session \
 use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::SessionManagementPlugin;
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(
             SessionManagementPlugin::new()
@@ -124,10 +124,10 @@ After your application verifies its own sign-in proof and resolves the user ID, 
 ```rust
 use alibi::prelude::{AuthResponse, AuthSession};
 use alibi::session::{SessionIssueError, create_session_cookie, issue_user_session};
-use alibi::{AuthResult, AuthSchema, BetterAuth};
+use alibi::{AuthResult, AuthSchema, Alibi};
 
 async fn sign_in_verified_user<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     user_id: &str,
 ) -> AuthResult<AuthResponse> {
     let issued = issue_user_session(auth.context(), user_id, None, None)

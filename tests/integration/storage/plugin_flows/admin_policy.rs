@@ -28,7 +28,7 @@ fn merge(first: &str, second: &str) -> String {
 }
 
 async fn promoted<B: Backend>(
-    auth: &BetterAuth<B::Schema>,
+    auth: &Alibi<B::Schema>,
     email: &str,
     role: &str,
 ) -> (String, String) {

@@ -686,7 +686,7 @@ async fn server_organization_authority_and_member_lifecycle<B: Backend>(db: Db) 
 }
 
 async fn verify_jwt_overrides<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     jwks: &jsonwebtoken::jwk::JwkSet,
     db: &Db,
 ) -> TestResult {

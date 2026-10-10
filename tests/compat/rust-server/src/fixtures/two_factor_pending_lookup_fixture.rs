@@ -5,7 +5,7 @@ use alibi::seaorm::{
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use alibi::{
-    AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
+    Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{
@@ -25,7 +25,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
-type Auth = Arc<BetterAuth<TestSchema>>;
+type Auth = Arc<Alibi<TestSchema>>;
 #[derive(Default)]
 struct Trace {
     armed: bool,

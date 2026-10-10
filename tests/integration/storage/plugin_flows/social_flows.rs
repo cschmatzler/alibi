@@ -130,7 +130,7 @@ impl Social {
         connection: &B::Connection,
         account: AccountConfig,
         configure: impl FnOnce(&mut OAuthProvider),
-    ) -> TestResult<BetterAuth<B::Schema>> {
+    ) -> TestResult<Alibi<B::Schema>> {
         self.auth_with::<B>(connection, account, configure, |builder| builder)
             .await
     }
@@ -141,7 +141,7 @@ impl Social {
         account: AccountConfig,
         configure: impl FnOnce(&mut OAuthProvider),
         extend: impl FnOnce(AuthBuilder<B::Schema>) -> AuthBuilder<B::Schema>,
-    ) -> TestResult<BetterAuth<B::Schema>> {
+    ) -> TestResult<Alibi<B::Schema>> {
         let config = AuthConfig::new(SECRET).base_url(ORIGIN).account(account);
         self.auth_configured::<B>(connection, config, configure, extend, |store| store)
             .await
@@ -154,7 +154,7 @@ impl Social {
         configure: impl FnOnce(&mut OAuthProvider),
         extend: impl FnOnce(AuthBuilder<B::Schema>) -> AuthBuilder<B::Schema>,
         store: impl FnOnce(B::Store) -> B::Store,
-    ) -> TestResult<BetterAuth<B::Schema>> {
+    ) -> TestResult<Alibi<B::Schema>> {
         let builder = AuthBuilder::new(config.clone())
             .store(store(B::store(Arc::new(config), connection)))
             .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
@@ -169,7 +169,7 @@ impl Social {
 /// Start an authorization and return the provider `state` with the cookies to
 /// replay on the callback.
 pub(super) async fn authorize<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     path: &str,
     input: Value,
     cookie: &str,
@@ -191,7 +191,7 @@ pub(super) async fn authorize<S: AuthSchema>(
 }
 
 pub(super) async fn callback<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     query: &[(&str, &str)],
     cookie: &str,
 ) -> AuthResponse {
@@ -200,7 +200,7 @@ pub(super) async fn callback<S: AuthSchema>(
     Box::pin(auth.handle_request(request)).await.unwrap()
 }
 
-pub(super) async fn accounts<S: AuthSchema>(auth: &BetterAuth<S>, cookie: &str) -> Value {
+pub(super) async fn accounts<S: AuthSchema>(auth: &Alibi<S>, cookie: &str) -> Value {
     let accounts = body(&call(auth, request("/list-accounts", None, cookie), 200).await);
     let mut providers = accounts
         .as_array()
@@ -377,7 +377,7 @@ async fn id_token_sign_in_outcomes<B: Backend>(db: Db) -> TestResult {
         .auth::<B>(&connection, AccountConfig::default(), |_| {})
         .await?;
     let mut trace = Trace::default();
-    let sign_in = async |auth: &BetterAuth<B::Schema>| {
+    let sign_in = async |auth: &Alibi<B::Schema>| {
         Box::pin(auth.handle_request(request(
             "/sign-in/social",
             Some(json!({
@@ -424,7 +424,7 @@ async fn callback_protocol_outcomes<B: Backend>(db: Db) -> TestResult {
         .auth::<B>(&connection, AccountConfig::default(), |_| {})
         .await?;
     let mut trace = Trace::default();
-    let start = async |auth: &BetterAuth<B::Schema>| {
+    let start = async |auth: &Alibi<B::Schema>| {
         authorize(
             auth,
             "/sign-in/social",
@@ -552,7 +552,7 @@ async fn sign_in_policies<B: Backend>(db: Db) -> TestResult {
     social
         .profile
         .set("unverified-sub", "unverified@example.com", false);
-    let sign_in = async |auth: &BetterAuth<B::Schema>| {
+    let sign_in = async |auth: &Alibi<B::Schema>| {
         let (state, cookies) = authorize(
             auth,
             "/sign-in/social",

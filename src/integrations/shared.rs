@@ -1,11 +1,11 @@
-use crate::BetterAuth;
+use crate::Alibi;
 use alibi_core::{AuthError, AuthRequest, AuthResult, AuthSchema, HttpMethod};
 use std::collections::HashMap;
 
 /// The authenticated user and session of a request; rejects with `401` when
 /// no valid session is present.
 ///
-/// Axum handlers need `Arc<BetterAuth<S>>` in the router state; Poem routes
+/// Axum handlers need `Arc<Alibi<S>>` in the router state; Poem routes
 /// install it with `EndpointExt::data`.
 ///
 /// ```rust,no_run
@@ -30,7 +30,7 @@ pub struct OptionalSession<S: AuthSchema>(pub Option<CurrentSession<S>>);
 
 impl<S: AuthSchema> CurrentSession<S> {
     pub(super) async fn resolve(
-        auth: &BetterAuth<S>,
+        auth: &Alibi<S>,
         path: &str,
         headers: &http::HeaderMap,
     ) -> AuthResult<Self> {
@@ -84,7 +84,7 @@ pub(super) fn request_headers(headers: &http::HeaderMap) -> HashMap<String, Stri
 
 /// The pre-parse body cap. Transports enforce it while reading, so chunked
 /// bodies cannot exhaust memory before `BodyLimitMiddleware` sees them.
-pub(super) fn max_body_bytes<S: AuthSchema>(auth: &BetterAuth<S>) -> usize {
+pub(super) fn max_body_bytes<S: AuthSchema>(auth: &Alibi<S>) -> usize {
     let limit = auth.body_limit();
     if limit.enabled {
         limit.max_bytes

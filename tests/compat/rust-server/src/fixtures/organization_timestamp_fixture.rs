@@ -54,9 +54,7 @@ async fn write_timestamp(
     )
 }
 
-pub(crate) fn router(
-    database: DatabaseConnection,
-) -> Router<Arc<alibi::BetterAuth<crate::TestSchema>>> {
+pub(crate) fn router(database: DatabaseConnection) -> Router<Arc<alibi::Alibi<crate::TestSchema>>> {
     Router::new().route(
         "/__test/organization-timestamps",
         post(move |Json(body): Json<TimestampRequest>| {

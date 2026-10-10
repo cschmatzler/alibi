@@ -11,13 +11,13 @@ description: "Generate an OpenAPI document and an interactive API reference for 
 use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::OpenApiPlugin;
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(OpenApiPlugin::new())
         .build()
@@ -45,13 +45,13 @@ Export the spec directly from the built instance — for a CI check or to commit
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use alibi::BetterAuth;
+use alibi::Alibi;
 
-fn export_openapi(auth: &BetterAuth<AppAuthSchema>) -> Result<String, serde_json::Error> {
+fn export_openapi(auth: &Alibi<AppAuthSchema>) -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(&auth.openapi_spec())
 }
 
-fn export_with_native(auth: &BetterAuth<AppAuthSchema>) -> Result<String, serde_json::Error> {
+fn export_with_native(auth: &Alibi<AppAuthSchema>) -> Result<String, serde_json::Error> {
     // Includes operations that exist only in Alibi.
     serde_json::to_string_pretty(&auth.openapi_spec_with_native_extensions())
 }

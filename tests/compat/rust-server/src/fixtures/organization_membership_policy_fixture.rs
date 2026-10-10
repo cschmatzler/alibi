@@ -12,7 +12,7 @@ use alibi::seaorm::{
 };
 use alibi::wire::UserView;
 use alibi::{
-    AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
+    Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{
@@ -172,7 +172,7 @@ pub(crate) async fn router(
 ) -> AuthResult<Router> {
     let receipts = Arc::new(Mutex::new(Vec::<Value>::new()));
     let mut router = Router::new();
-    let mut profiles = HashMap::<String, (Arc<BetterAuth<TestSchema>>, OrganizationConfig)>::new();
+    let mut profiles = HashMap::<String, (Arc<Alibi<TestSchema>>, OrganizationConfig)>::new();
     for name in [
         "org-membership-default",
         "org-membership-none",

@@ -1,8 +1,8 @@
 use super::{
-    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, BetterAuth,
-    HttpMethod, OkResponse, core_paths,
+    Alibi, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, HttpMethod,
+    OkResponse, core_paths,
 };
-impl<S: AuthSchema> BetterAuth<S> {
+impl<S: AuthSchema> Alibi<S> {
     /// Handle core authentication requests.
     pub(in crate::runtime) async fn handle_core_request(
         &self,

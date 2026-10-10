@@ -24,7 +24,7 @@ use alibi::CallbackContext;
 use alibi::plugins::phone_number::PhoneOtpDelivery;
 use alibi::plugins::{PhoneNumberConfig, PhoneNumberPlugin, SendPhoneOtp};
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 use std::sync::Arc;
 
 #[async_trait]
@@ -47,8 +47,8 @@ async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
     sms: Arc<dyn SmsSender>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(PhoneNumberPlugin::new(PhoneNumberConfig {
             send_otp: Some(Arc::new(OtpSender(sms))),

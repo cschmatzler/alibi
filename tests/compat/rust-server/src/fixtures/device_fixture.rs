@@ -8,7 +8,7 @@ use alibi::seaorm::{
     sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr},
     store::entities::device_code,
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult};
 use axum::{
     Json, Router,
     extract::Query,
@@ -44,7 +44,7 @@ struct DeviceOwner {
     device_code: String,
     user_id: String,
 }
-pub(crate) fn router(database: DatabaseConnection) -> Router<Arc<BetterAuth<TestSchema>>> {
+pub(crate) fn router(database: DatabaseConnection) -> Router<Arc<Alibi<TestSchema>>> {
     let read_database = database.clone();
 
     let generator_database = database.clone();
@@ -78,7 +78,7 @@ pub(crate) fn router(database: DatabaseConnection) -> Router<Arc<BetterAuth<Test
 pub(crate) async fn profiles(
     base: &AuthConfig,
     database: DatabaseConnection,
-) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
+) -> AuthResult<Router<Arc<Alibi<TestSchema>>>> {
     super::application_device_grant_fixture::initialize(&database).await?;
     let mut router = Router::new();
     for name in [
@@ -259,8 +259,7 @@ pub(crate) async fn profiles(
             ));
         }
         let auth = Arc::new(builder.build().await?);
-        let routes: Router<Arc<BetterAuth<TestSchema>>> =
-            auth.clone().axum_router().with_state(auth);
+        let routes: Router<Arc<Alibi<TestSchema>>> = auth.clone().axum_router().with_state(auth);
         router = router.nest(&path, routes);
     }
     Ok(router)

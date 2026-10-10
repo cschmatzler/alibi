@@ -7,11 +7,7 @@ use std::collections::HashMap;
 
 backend_tests!(admin_route_matrix, admin_impersonation_and_bans);
 
-async fn promote<S: AuthSchema>(
-    auth: &BetterAuth<S>,
-    response: &AuthResponse,
-    role: &str,
-) -> String {
+async fn promote<S: AuthSchema>(auth: &Alibi<S>, response: &AuthResponse, role: &str) -> String {
     let id = body(response)["user"]["id"].as_str().unwrap().to_owned();
     _ = auth
         .store()

@@ -235,7 +235,7 @@ async fn issue_account_cookie<S: alibi::AuthSchema>(
     let plugin = OAuthPlugin::with_config(oauth_config);
     let mut issuer_config = (**config).clone();
     issuer_config.account.skip_state_cookie_check = true;
-    let auth = alibi::BetterAuth::<S>::new(issuer_config)
+    let auth = alibi::Alibi::<S>::new(issuer_config)
         .store_arc(Arc::clone(db))
         .plugin(plugin)
         .build()
@@ -683,7 +683,7 @@ mod tests {
             sequence: Arc::clone(&sequence),
         }));
         oauth_config.providers.insert("google".to_owned(), provider);
-        let auth = alibi::BetterAuth::<B::Schema>::new((*config).clone())
+        let auth = alibi::Alibi::<B::Schema>::new((*config).clone())
             .store_arc(Arc::clone(&db))
             .plugin(OAuthPlugin::with_config(oauth_config))
             .build()

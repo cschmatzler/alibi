@@ -31,7 +31,7 @@ use alibi::plugins::email_verification::SendVerificationEmail;
 use alibi::plugins::{EmailPasswordPlugin, EmailVerificationConfig, EmailVerificationPlugin};
 use alibi::sqlx::SqlxStore;
 use alibi::wire::UserView;
-use alibi::{AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthError, AuthResult, Alibi};
 use std::sync::Arc;
 
 struct VerificationMailer(Arc<dyn EmailProvider>);
@@ -53,7 +53,7 @@ async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
     mail: Arc<dyn EmailProvider>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
+) -> AuthResult<Alibi<AppAuthSchema>> {
     let verification = EmailVerificationConfig {
         send_on_sign_in: true,
         send_verification_email: Some(Arc::new(VerificationMailer(mail))),
@@ -66,7 +66,7 @@ async fn build_auth(
             verification.clone(),
         )));
 
-    BetterAuth::<AppAuthSchema>::new(config)
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(password)
         .plugin(EmailVerificationPlugin::with_config(verification))

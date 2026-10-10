@@ -136,7 +136,7 @@ impl DatabaseHooks<Schema, SeaOrmBackend> for StorageContext {
     }
 }
 
-async fn configured() -> (alibi::BetterAuth<Schema>, Arc<Mutex<Vec<(usize, String)>>>) {
+async fn configured() -> (alibi::Alibi<Schema>, Arc<Mutex<Vec<(usize, String)>>>) {
     let config = AuthConfig::new("native-request-extension-regression-secret-32")
         .base_url("http://localhost:42611");
     let database = Database::connect("sqlite::memory:").await.unwrap();

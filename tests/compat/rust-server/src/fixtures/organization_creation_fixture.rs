@@ -13,7 +13,7 @@ use alibi::seaorm::sea_orm::{
 };
 use alibi::seaorm::store::entities::{member, organization, session, user};
 use alibi::wire::UserView;
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult};
 use alibi::{UpdateOrganization, store::OrganizationStore};
 use axum::{
     Json, Router,
@@ -89,7 +89,7 @@ struct ServerRequest {
 #[derive(Clone)]
 struct Profile {
     name: &'static str,
-    auth: Arc<BetterAuth<TestSchema>>,
+    auth: Arc<Alibi<TestSchema>>,
     config: OrganizationConfig,
 }
 fn failure(error: AuthError) -> (StatusCode, Json<Value>) {
@@ -108,7 +108,7 @@ fn failure(error: AuthError) -> (StatusCode, Json<Value>) {
 pub(crate) async fn router(
     base: &AuthConfig,
     database: DatabaseConnection,
-) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
+) -> AuthResult<Router<Arc<Alibi<TestSchema>>>> {
     let receipts = Arc::new(Mutex::new(Vec::new()));
     let mut router = Router::new();
     let mut profiles = Vec::new();

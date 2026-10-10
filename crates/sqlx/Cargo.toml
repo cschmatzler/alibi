@@ -23,7 +23,7 @@ workspace = true
 
 [dependencies]
 alibi-core = { workspace = true }
-alibi-sqlx-macros = { version = "0.3.0", path = "../sqlx-macros" }
+alibi-sqlx-macros = { version = "0.4.0", path = "../sqlx-macros" }
 
 async-trait = { workspace = true }
 chrono = { workspace = true }

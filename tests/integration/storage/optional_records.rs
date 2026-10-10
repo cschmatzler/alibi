@@ -3,7 +3,7 @@ use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
 use alibi::plugins::{EmailPasswordPlugin, PasskeyPlugin, TwoFactorConfig, TwoFactorPlugin};
 use alibi::types::UpdatePasskeyAuthentication;
-use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthSchema};
 use alibi::{
     AuthRequest, AuthResponse, CreatePasskey, CreateTwoFactor, HttpMethod, UpdateTwoFactor,
 };
@@ -265,7 +265,7 @@ async fn without_database_optional_record_workflow() -> TestResult {
     Ok(())
 }
 async fn workflow<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     physical: Option<&Db>,
     owner: &str,
 ) -> TestResult {

@@ -25,7 +25,7 @@ use crate::auth_schema::AppAuthSchema;
 use alibi::middleware::CorsConfig;
 use alibi::plugins::EmailPasswordPlugin;
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthResult, Alibi};
 
 fn auth_config(secret: &str) -> AuthConfig {
     AuthConfig::new(secret)
@@ -36,8 +36,8 @@ fn auth_config(secret: &str) -> AuthConfig {
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
-    BetterAuth::<AppAuthSchema>::new(config)
+) -> AuthResult<Alibi<AppAuthSchema>> {
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .cors(
@@ -101,12 +101,12 @@ Third-party cookie restrictions keep tightening (Safari and Firefox block them o
 use crate::auth_schema::AppAuthSchema;
 use axum::Router;
 use axum::http::{HeaderValue, Method, header};
-use alibi::BetterAuth;
+use alibi::Alibi;
 use alibi::integrations::axum::AxumIntegration;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
-fn router(auth: Arc<BetterAuth<AppAuthSchema>>) -> Router {
+fn router(auth: Arc<Alibi<AppAuthSchema>>) -> Router {
     // CORS via tower-http instead of `.cors(CorsConfig…)` on the builder.
     let cors = CorsLayer::new()
         .allow_origin(HeaderValue::from_static("https://app.example.com"))

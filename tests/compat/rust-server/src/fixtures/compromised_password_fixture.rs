@@ -15,7 +15,7 @@ use alibi::seaorm::{
     sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, QueryOrder, Set},
     store::entities::{account, session, user, verification},
 };
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult};
 use alibi::{
     AuthRequest, HttpMethod, PasswordHasher, ScryptHasher,
     wire::{AccountView, VerificationView},
@@ -272,7 +272,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 }
                 if operation=="helper" {return Ok(json!({"compromised":client.is_password_compromised(body["password"].as_str().unwrap_or_default()).await?}));}
                 let profile=body["profile"].as_str().unwrap_or("pwned-default");
-                let auth: &Arc<BetterAuth<TestSchema>>=profiles.get(profile).ok_or_else(||AuthError::bad_request("unknown profile"))?;
+                let auth: &Arc<Alibi<TestSchema>>=profiles.get(profile).ok_or_else(||AuthError::bad_request("unknown profile"))?;
                 if operation=="clear-password" {
                     let row=account::Entity::find_by_id(body["accountId"].as_str().unwrap_or_default()).one(&database).await.map_err(database_error)?.ok_or_else(||AuthError::bad_request("missing credential"))?;
                     let mut row=row.into_active_model();row.password=Set(None);row.updated_at=Set(chrono::Utc::now());let _row=row.update(&database).await.map_err(database_error)?;

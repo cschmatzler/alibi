@@ -57,7 +57,7 @@ pub enum AwaitedNotificationErrorPolicy {
     LogAndContinue,
 }
 
-/// Main configuration for `BetterAuth`
+/// Main configuration for `Alibi`
 #[derive(Clone)]
 pub struct AuthConfig {
     /// Single-secret input. Managed mode uses `current_secret()` instead.
@@ -83,7 +83,7 @@ pub struct AuthConfig {
 
     /// Base path where the auth routes are mounted.
     ///
-    /// All routes handled by `BetterAuth` will be prefixed with this path.
+    /// All routes handled by `Alibi` will be prefixed with this path.
     /// For example, with the default `"/api/auth"`, the sign-in route becomes
     /// `"/api/auth/sign-in/email"`.
     ///

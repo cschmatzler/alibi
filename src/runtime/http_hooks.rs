@@ -1,4 +1,4 @@
-use super::BetterAuth;
+use super::Alibi;
 use super::endpoint::merge_headers;
 use alibi_core::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointResponse,
@@ -19,7 +19,7 @@ pub(super) struct HttpEndpointFrame {
     pub error: Arc<std::sync::Mutex<Option<HttpEndpointError>>>,
 }
 
-impl<S: AuthSchema> BetterAuth<S> {
+impl<S: AuthSchema> Alibi<S> {
     pub(super) async fn before_http_endpoint(
         &self,
         request: &mut alibi_core::AuthRequest,

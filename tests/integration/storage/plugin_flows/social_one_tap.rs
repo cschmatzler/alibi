@@ -66,7 +66,7 @@ impl Tap {
         account: AccountConfig,
         one_tap: OneTapConfig,
         google: Option<OAuthProvider>,
-    ) -> TestResult<BetterAuth<B::Schema>> {
+    ) -> TestResult<Alibi<B::Schema>> {
         let mut config = AuthConfig::new(SECRET).base_url(ORIGIN).account(account);
         config.user_validation = Some(Arc::new(DenyList));
         let mut builder = AuthBuilder::new(config.clone())
@@ -100,7 +100,7 @@ fn token(claims: Value) -> String {
     super::oauth_signed::token(&full, false, "one-tap-local-rs256").unwrap()
 }
 
-async fn tap<S: AuthSchema>(auth: &BetterAuth<S>, claims: Value, cookie: &str) -> AuthResponse {
+async fn tap<S: AuthSchema>(auth: &Alibi<S>, claims: Value, cookie: &str) -> AuthResponse {
     Box::pin(auth.handle_request(request(
         "/one-tap/callback",
         Some(json!({"idToken": token(claims)})),

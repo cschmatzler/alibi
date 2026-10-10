@@ -6,7 +6,7 @@ use alibi::{AuthUser, UpdateUser};
 backend_tests!(admin_provisioning_permissions_passwords_and_session_moderation);
 postgres_tests!(admin_provisioning_permissions_passwords_and_session_moderation);
 
-async fn login<S: AuthSchema>(auth: &BetterAuth<S>, password: &str, status: u16) -> AuthResponse {
+async fn login<S: AuthSchema>(auth: &Alibi<S>, password: &str, status: u16) -> AuthResponse {
     call(
         auth,
         request(

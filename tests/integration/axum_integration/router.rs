@@ -5,7 +5,7 @@ use alibi::plugins::{
 };
 use alibi::prelude::AuthUser;
 use alibi::seaorm::{Database, DatabaseConnection, SeaOrmStore};
-use alibi::{AuthBuilder, AuthConfig, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig};
 use axum::{
     body::Body,
     extract::{FromRef, State},
@@ -19,11 +19,11 @@ use tower_http::cors::CorsLayer;
 
 #[derive(Clone)]
 struct AppState {
-    auth: Arc<BetterAuth<TestSchema>>,
+    auth: Arc<Alibi<TestSchema>>,
     app_name: &'static str,
 }
 
-impl FromRef<AppState> for Arc<BetterAuth<TestSchema>> {
+impl FromRef<AppState> for Arc<Alibi<TestSchema>> {
     fn from_ref(input: &AppState) -> Self {
         Self::clone(&input.auth)
     }
@@ -41,7 +41,7 @@ fn test_session_cookie(token: &str) -> String {
     )
 }
 
-/// Helper to create test `BetterAuth` instance with all plugins
+/// Helper to create test `Alibi` instance with all plugins
 async fn test_database() -> DatabaseConnection {
     let database = Database::connect("sqlite::memory:").await.unwrap();
     alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
@@ -50,7 +50,7 @@ async fn test_database() -> DatabaseConnection {
     database
 }
 
-async fn create_test_auth() -> Arc<BetterAuth<TestSchema>> {
+async fn create_test_auth() -> Arc<Alibi<TestSchema>> {
     create_test_auth_with_config(
         AuthConfig::new("test-secret-key-that-is-at-least-32-characters-long")
             .base_url("http://localhost:3000"),
@@ -58,7 +58,7 @@ async fn create_test_auth() -> Arc<BetterAuth<TestSchema>> {
     .await
 }
 
-async fn create_test_auth_with_config(config: AuthConfig) -> Arc<BetterAuth<TestSchema>> {
+async fn create_test_auth_with_config(config: AuthConfig) -> Arc<Alibi<TestSchema>> {
     struct NoopResetSender;
 
     #[async_trait::async_trait]
@@ -89,10 +89,10 @@ async fn create_test_auth_with_config(config: AuthConfig) -> Arc<BetterAuth<Test
 }
 
 /// Helper to create the complete Axum router (mimics the example server)
-fn create_test_router(auth: Arc<BetterAuth<TestSchema>>) -> axum::Router {
+fn create_test_router(auth: Arc<Alibi<TestSchema>>) -> axum::Router {
     use axum::Router;
 
-    // Create auth router using the BetterAuth AxumIntegration
+    // Create auth router using the Alibi AxumIntegration
     let auth_router = Arc::clone(&auth).axum_router();
 
     // Create main application router
@@ -104,7 +104,7 @@ fn create_test_router(auth: Arc<BetterAuth<TestSchema>>) -> axum::Router {
         .with_state(auth)
 }
 
-fn create_extractor_test_router(auth: Arc<BetterAuth<TestSchema>>) -> axum::Router {
+fn create_extractor_test_router(auth: Arc<Alibi<TestSchema>>) -> axum::Router {
     use axum::{Json, Router, routing::get};
 
     async fn current_session_route(session: CurrentSession<TestSchema>) -> Json<Value> {
@@ -128,7 +128,7 @@ fn create_extractor_test_router(auth: Arc<BetterAuth<TestSchema>>) -> axum::Rout
         .with_state(auth)
 }
 
-fn create_app_state_test_router(auth: Arc<BetterAuth<TestSchema>>) -> axum::Router {
+fn create_app_state_test_router(auth: Arc<Alibi<TestSchema>>) -> axum::Router {
     use axum::{Json, Router, routing::get};
 
     async fn current_session_route(
@@ -181,7 +181,7 @@ async fn create_test_user(router: axum::Router) -> (Value, String) {
         .unwrap();
 
     let response = router.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK); // BetterAuth returns 200, not 201
+    assert_eq!(response.status(), StatusCode::OK); // Alibi returns 200, not 201
 
     let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
@@ -371,7 +371,7 @@ mod tests {
     }
 
     // Rust-specific surface: `CurrentSession` must work with app state that
-    // exposes `Arc<BetterAuth>` via `FromRef`, without wrapper extractors.
+    // exposes `Arc<Alibi>` via `FromRef`, without wrapper extractors.
     #[tokio::test]
     async fn test_axum_current_session_extractor_with_app_state() {
         let auth = create_test_auth().await;
@@ -441,7 +441,7 @@ mod tests {
     }
 
     // Rust-specific surface: `OptionalSession` must also work with custom app
-    // state that embeds BetterAuth.
+    // state that embeds Alibi.
     #[tokio::test]
     async fn test_axum_optional_session_extractor_without_auth_with_app_state() {
         let auth = create_test_auth().await;

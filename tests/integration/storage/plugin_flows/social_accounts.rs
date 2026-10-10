@@ -45,7 +45,7 @@ impl UserInfoValidator for Deny {
     }
 }
 
-async fn sign_in<S: AuthSchema>(auth: &BetterAuth<S>, cookie: &str) -> AuthResponse {
+async fn sign_in<S: AuthSchema>(auth: &Alibi<S>, cookie: &str) -> AuthResponse {
     let (state, cookies) = authorize(
         auth,
         "/sign-in/social",
@@ -329,7 +329,7 @@ async fn id_token_sign_in_failure_modes<B: Backend>(db: Db) -> TestResult {
     let social = Social::start().await;
     let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
     config.user_validation = Some(Arc::new(Deny));
-    let sign_in = async |auth: &BetterAuth<B::Schema>| {
+    let sign_in = async |auth: &Alibi<B::Schema>| {
         Box::pin(auth.handle_request(request(
             "/sign-in/social",
             Some(json!({"provider":"google","idToken":{"token":"id-token"}})),

@@ -14,12 +14,12 @@ use crate::auth_schema::AppAuthSchema;
 use alibi::plugins::OAuthPlugin;
 use alibi::plugins::oauth::GenericOAuthConfig;
 use alibi::sqlx::SqlxStore;
-use alibi::{AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{AuthConfig, AuthError, AuthResult, Alibi};
 
 async fn build_auth(
     config: AuthConfig,
     store: SqlxStore<AppAuthSchema>,
-) -> AuthResult<BetterAuth<AppAuthSchema>> {
+) -> AuthResult<Alibi<AppAuthSchema>> {
     let mut keycloak = GenericOAuthConfig::new("my-client-id", "my-client-secret");
     keycloak.discovery_url =
         Some("https://sso.example.com/realms/acme/.well-known/openid-configuration".into());
@@ -31,7 +31,7 @@ async fn build_auth(
         .map_err(|error| AuthError::config(error.to_string()))?
         .ok_or_else(|| AuthError::config("Keycloak discovery returned no usable endpoints"))?;
 
-    BetterAuth::<AppAuthSchema>::new(config)
+    Alibi::<AppAuthSchema>::new(config)
         .store(store)
         .plugin(OAuthPlugin::new().add_provider("keycloak", resolved.provider))
         .build()

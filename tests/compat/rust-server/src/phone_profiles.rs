@@ -9,7 +9,7 @@ use alibi::plugins::{
     EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
 use alibi::seaorm::sea_orm::DatabaseConnection;
-use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthResult};
 use alibi::{integrations::axum::AxumIntegration, middleware::RateLimitConfig};
 use async_trait::async_trait;
 use axum::{
@@ -262,7 +262,7 @@ impl PhoneVerificationHook for Callback {
 }
 #[derive(Clone)]
 pub(super) struct Runtime {
-    pub auth: Arc<BetterAuth<TestSchema>>,
+    pub auth: Arc<Alibi<TestSchema>>,
     pub plugin: PhoneNumberPlugin,
 }
 pub(super) type Runtimes = Arc<HashMap<String, Runtime>>;

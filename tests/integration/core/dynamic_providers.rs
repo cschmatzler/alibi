@@ -9,7 +9,7 @@ use crate::storage::{Backend, Db, Raw, TestResult, backend_tests, postgres_tests
 use alibi::config::{BaseUrlProtocol, DynamicBaseUrl, TrustedProvidersResolver};
 use alibi::entity::{AuthAccount, AuthSession, AuthUser};
 use alibi::plugins::{OAuthPlugin, oauth::OAuthProvider};
-use alibi::{AuthBuilder, AuthConfig, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig};
 use alibi::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, CreateAccount, CreateUser, HttpMethod, SessionManager,
@@ -101,7 +101,7 @@ fn req(method: HttpMethod, path: &str, host: &str, trust: &str, body: Value) -> 
 // Keep the composed callback scenario's polling frame small on the default
 // test-thread stack; dispatch still executes the same public request boundary.
 async fn dispatch<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     request: AuthRequest,
 ) -> AuthResult<AuthResponse> {
     Box::pin(auth.handle_request(request)).await
@@ -133,7 +133,7 @@ async fn issuer() -> (String, tokio::task::JoinHandle<()>, Arc<Mutex<Vec<Value>>
     (url, handle, receipts)
 }
 async fn start<S: AuthSchema>(
-    auth: &BetterAuth<S>,
+    auth: &Alibi<S>,
     code: &str,
     trust: &str,
     cookie: Option<&str>,

@@ -6,7 +6,7 @@ mod policy_store;
 use alibi::plugins::SessionManagementPlugin;
 use alibi::seaorm::{Database, SeaOrmStore};
 use alibi::store::{SessionStore, UserStore};
-use alibi::{AuthBuilder, AuthConfig, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig};
 use alibi::{
     AuthRequest, AuthResponse, AuthSession, AuthUser, CreateSession, CreateUser, HttpMethod,
 };
@@ -20,7 +20,7 @@ use std::sync::{
 
 const ORIGIN: &str = "http://session-policy.fixture.test";
 
-async fn get(auth: &BetterAuth<Schema>, path: &str, cookie: &str) -> (AuthResponse, Value) {
+async fn get(auth: &Alibi<Schema>, path: &str, cookie: &str) -> (AuthResponse, Value) {
     let mut req = AuthRequest::new(HttpMethod::Get, format!("/api/auth{path}"));
     drop(req.headers.insert("cookie".into(), cookie.into()));
     let response = auth.handle_request(req).await.unwrap();

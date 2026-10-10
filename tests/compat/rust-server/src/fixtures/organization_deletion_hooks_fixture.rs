@@ -13,7 +13,7 @@ use alibi::seaorm::{
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use alibi::store::OrganizationStore;
-use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::{Alibi, AuthBuilder, AuthConfig, AuthError, AuthResult};
 use axum::{
     Json, Router,
     extract::Query,
@@ -164,7 +164,7 @@ pub(crate) async fn router(
     base: &AuthConfig,
     database: DatabaseConnection,
     transport: crate::fixtures::organization_transport_probe::Probe,
-) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
+) -> AuthResult<Router<Arc<Alibi<TestSchema>>>> {
     let hooks = Arc::new(Hooks {
         database: database.clone(),
         store: Arc::new(crate::backend::store(base.clone(), database)),

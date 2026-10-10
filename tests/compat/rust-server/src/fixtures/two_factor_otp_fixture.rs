@@ -4,7 +4,7 @@ use alibi::seaorm::{
     sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
 };
 use alibi::{
-    AuthBuilder, AuthConfig, AuthResult, BetterAuth,
+    Alibi, AuthBuilder, AuthConfig, AuthResult,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{
@@ -92,7 +92,7 @@ impl TwoFactorOtpCipher for Callback {
 pub(crate) async fn router(
     base: &AuthConfig,
     database: DatabaseConnection,
-) -> AuthResult<(Router<Arc<BetterAuth<TestSchema>>>, State)> {
+) -> AuthResult<(Router<Arc<Alibi<TestSchema>>>, State)> {
     let state = State::default();
     let mut router = Router::new();
     for name in [
