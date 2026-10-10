@@ -19,7 +19,8 @@ backend_tests!(
     organization_server_admission,
     organization_plugin_helpers,
     organization_trusted_addition_preserves_literal_role_arrays_and_session_scope,
-    fractional_organization_membership_limit_uses_actual_physical_count
+    fractional_organization_membership_limit_uses_actual_physical_count,
+    organization_membership_resolver_keeps_target_snapshots_and_raw_falsy_results
 );
 
 fn merge(first: &str, second: &str) -> String {
@@ -776,5 +777,119 @@ async fn fractional_organization_membership_limit_uses_actual_physical_count<B: 
     );
     authenticated(&auth, &first.cookie, "first@example.test").await;
     authenticated(&auth, &second.cookie, "second@example.test").await;
+    B::close(connection).await
+}
+
+async fn organization_membership_resolver_keeps_target_snapshots_and_raw_falsy_results<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    use alibi::plugins::organization::types::OrganizationResponse;
+    #[derive(Debug, Default)]
+    struct Policy {
+        mode: Mutex<usize>,
+        seen: Mutex<Vec<(UserView, OrganizationResponse)>>,
+    }
+    #[async_trait::async_trait]
+    impl OrganizationMembershipLimitResolver for Policy {
+        async fn maximum_members(
+            &self,
+            user: &UserView,
+            org: &OrganizationResponse,
+        ) -> AuthResult<f64> {
+            self.seen.lock().unwrap().push((user.clone(), org.clone()));
+            match *self.mode.lock().unwrap() {
+                0 => Ok(0.0),
+                1 => Err(alibi::AuthError::Api {
+                    status: 400,
+                    code: Some("MEMBERSHIP_POLICY_REJECTED".into()),
+                    message: "membership rejected".into(),
+                }),
+                _ => Ok(f64::NAN),
+            }
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let policy = Arc::new(Policy::default());
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            membership_limit: Some(MembershipLimit::Resolver(policy.clone())),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let mut owner = account(&auth, "owner@example.test").await;
+    let target = account(&auth, "target@example.test").await;
+    let org = organization(&auth, &mut owner, "resolved").await;
+    _ = call(
+        &auth,
+        request(
+            "/organization/update",
+            Some(json!({"organizationId":org,"data":{"metadata":{"policy":"raw"}}})),
+            &owner.cookie,
+        ),
+        200,
+    )
+    .await;
+    let raw = db
+        .text(
+            "SELECT CAST(metadata AS TEXT) FROM organization WHERE id=$1",
+            &[&org],
+        )
+        .await?
+        .unwrap();
+    let before = db
+        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .await?;
+    for mode in 0..3 {
+        *policy.mode.lock().unwrap() = mode;
+        let endpoint = OrganizationPlugin::add_member_endpoint(&serde_json::from_value(
+            json!({"userId":target.id,"organizationId":org,"role":"member"}),
+        )?)?;
+        let result = auth
+            .dispatch_endpoint(endpoint, EndpointOptions::default())
+            .await;
+        if mode < 2 {
+            let error = result.unwrap_err().error;
+            assert_eq!(error.status_code(), if mode == 0 { 403 } else { 400 });
+            if mode == 0 {
+                assert!(matches!(
+                    error,
+                    alibi::AuthError::Upstream {
+                        code: "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED",
+                        ..
+                    }
+                ));
+            } else {
+                assert!(
+                    matches!(error,alibi::AuthError::Api{code:Some(ref code),..}if code=="MEMBERSHIP_POLICY_REJECTED")
+                );
+            }
+            assert_eq!(
+                db.tables(&["users", "accounts", "sessions", "organization", "member"])
+                    .await?,
+                before
+            );
+        } else {
+            assert_eq!(result?.decode()?.user_id, target.id);
+        }
+        let seen = policy.seen.lock().unwrap().last().unwrap().clone();
+        assert_eq!(seen.0.id, target.id);
+        assert_eq!(seen.0.email.as_deref(), Some("target@example.test"));
+        assert_eq!(seen.1.metadata, Some(json!(raw)));
+        assert_eq!(policy.seen.lock().unwrap().len(), mode + 1);
+    }
+    let count = policy.seen.lock().unwrap().len();
+    let endpoint = OrganizationPlugin::add_member_endpoint(&serde_json::from_value(
+        json!({"userId":target.id,"organizationId":org,"role":"member"}),
+    )?)?;
+    assert!(
+        auth.dispatch_endpoint(endpoint, EndpointOptions::default())
+            .await
+            .is_err()
+    );
+    assert_eq!(policy.seen.lock().unwrap().len(), count);
+    assert_eq!(db.count("member").await?, 2);
     B::close(connection).await
 }
