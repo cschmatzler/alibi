@@ -19,7 +19,8 @@ backend_tests!(
     explicit_empty_admin_roles_deny_builtin_grants_without_losing_sessions,
     admin_role_tokens_with_whitespace_do_not_gain_privileges_or_admin_protection,
     blank_admin_role_falls_back_to_configured_user_permission,
-    create_only_role_cannot_select_explicit_or_nested_roles
+    create_only_role_cannot_select_explicit_or_nested_roles,
+    admin_colliding_email_rejects_accompanying_profile_mutations
 );
 
 async fn promote<S: AuthSchema>(auth: &Alibi<S>, response: &AuthResponse, role: &str) -> String {
@@ -1189,5 +1190,54 @@ async fn create_only_role_cannot_select_explicit_or_nested_roles<B: Backend>(db:
         "YOU_ARE_NOT_ALLOWED_TO_CHANGE_USERS_ROLE"
     );
     assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+    B::close(connection).await
+}
+
+async fn admin_colliding_email_rejects_accompanying_profile_mutations<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new())
+        .build()
+        .await?;
+    let admin = signup(&auth, "admin@example.test").await;
+    _ = promote(&auth, &admin, "admin").await;
+    let left = signup(&auth, "left@example.test").await;
+    let right = signup(&auth, "right@example.test").await;
+    let id = body(&left)["user"]["id"].as_str().unwrap().to_owned();
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    for email in ["right@example.test", "RIGHT@EXAMPLE.TEST"] {
+        let denied = call(
+            &auth,
+            request(
+                "/admin/update-user",
+                Some(json!({"userId":id,"data":{"email":email,"name":"must-not-commit"}})),
+                &cookies(&admin),
+            ),
+            400,
+        )
+        .await;
+        assert_eq!(
+            body(&denied)["code"],
+            "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"
+        );
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    }
+    for (email, owner) in [("left@example.test", &left), ("right@example.test", &right)] {
+        let login = call(
+            &auth,
+            request(
+                "/sign-in/email",
+                Some(json!({"email":email,"password":PASSWORD})),
+                "",
+            ),
+            200,
+        )
+        .await;
+        assert_eq!(body(&login)["user"]["id"], body(owner)["user"]["id"]);
+        assert_eq!(body(&login)["user"]["name"], body(owner)["user"]["name"]);
+        authenticated(&auth, &cookies(owner), email).await;
+    }
     B::close(connection).await
 }
