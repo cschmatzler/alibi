@@ -13,7 +13,8 @@ backend_tests!(
     two_factor_stored_backup_code_damage,
     two_factor_forged_trust_proofs,
     two_factor_otp_budget_and_session_choices,
-    two_factor_numeric_options_and_damaged_factor
+    two_factor_numeric_options_and_damaged_factor,
+    two_factor_otp_resends_are_consumed_once_across_real_requests
 );
 
 #[derive(Default)]
@@ -640,4 +641,120 @@ async fn two_factor_numeric_options_and_damaged_factor<B: Backend>(db: Db) -> Te
     }
     trace.assert("two-factor/numeric-options-and-damage");
     Ok(())
+}
+
+async fn two_factor_otp_resends_are_consumed_once_across_real_requests<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let outbox = Arc::new(Outbox::default());
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(TwoFactorPlugin::with_config(TwoFactorConfig {
+            send_otp: Some(outbox.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let enabled = call(
+        &auth,
+        request(
+            "/two-factor/enable",
+            Some(json!({"password":PASSWORD,"method":"otp"})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    let cookie = cookies(&enabled);
+    let current = body(&call(&auth, request("/get-session", None, &cookie), 200).await);
+    let token = current["session"]["token"].as_str().unwrap().to_owned();
+    assert_eq!(db.count("two_factor").await?, 0);
+    assert_eq!(
+        db.count_where(
+            "SELECT COUNT(*) FROM sessions WHERE user_id=$1",
+            &[&owner_id]
+        )
+        .await?,
+        1
+    );
+    let stable = db
+        .tables(&["users", "accounts", "sessions", "two_factor"])
+        .await?;
+    _ = call(
+        &auth,
+        request("/two-factor/send-otp", Some(json!({})), &cookie),
+        200,
+    )
+    .await;
+    let first: Vec<Value> = serde_json::from_str(&db.table("verifications").await?)?;
+    assert_eq!(first.len(), 1);
+    let identifier = first[0]["identifier"].as_str().unwrap().to_owned();
+    _ = call(
+        &auth,
+        request("/two-factor/send-otp", Some(json!({})), &cookie),
+        200,
+    )
+    .await;
+    let generations: Vec<Value> = serde_json::from_str(&db.table("verifications").await?)?;
+    assert_eq!(generations.len(), 2);
+    assert!(generations.contains(&first[0]));
+    assert!(
+        generations
+            .iter()
+            .all(|row| row["identifier"] == identifier)
+    );
+    assert_ne!(generations[0]["id"], generations[1]["id"]);
+    let delivered = outbox.0.lock().unwrap().clone();
+    assert_eq!(delivered.len(), 2);
+    let input = json!({"code":delivered[1]});
+    let (left, right) = tokio::join!(
+        Box::pin(auth.handle_request(request(
+            "/two-factor/verify-otp",
+            Some(input.clone()),
+            &cookie
+        ))),
+        Box::pin(auth.handle_request(request("/two-factor/verify-otp", Some(input), &cookie)))
+    );
+    let mut responses = [left?, right?];
+    responses.sort_by_key(|response| response.status);
+    assert_eq!([responses[0].status, responses[1].status], [200, 400]);
+    assert_eq!(body(&responses[0])["token"], token);
+    assert_eq!(body(&responses[0])["user"]["id"], owner_id);
+    assert_eq!(body(&responses[1])["code"], "OTP_HAS_EXPIRED");
+    assert_eq!(
+        db.count_where(
+            "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+            &[&identifier]
+        )
+        .await?,
+        0
+    );
+    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "two_factor"])
+            .await?,
+        stable
+    );
+    let replay = call(
+        &auth,
+        request(
+            "/two-factor/verify-otp",
+            Some(json!({"code":delivered[0]})),
+            &cookie,
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&replay)["code"], "OTP_HAS_EXPIRED");
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "two_factor"])
+            .await?,
+        stable
+    );
+    authenticated(&auth, &cookie, "owner@example.test").await;
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
 }
