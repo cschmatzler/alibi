@@ -13,7 +13,8 @@ backend_tests!(
     multi_session_limits_and_revocation,
     session_management_failures,
     device_session_projection,
-    multi_session_raw_capacity_controls_proofs_without_evicting_durable_sessions
+    multi_session_raw_capacity_controls_proofs_without_evicting_durable_sessions,
+    multi_session_repeated_genuine_proofs_retire_before_fractional_capacity
 );
 
 fn merge(first: &str, second: &str) -> String {
@@ -516,4 +517,79 @@ async fn multi_session_raw_capacity_controls_proofs_without_evicting_durable_ses
         B::close(connection).await?;
     }
     Ok(())
+}
+
+async fn multi_session_repeated_genuine_proofs_retire_before_fractional_capacity<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(MultiSessionPlugin::with_config(MultiSessionConfig {
+            maximum_sessions: 1.5,
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let original = body(&owner)["token"].as_str().unwrap().to_owned();
+    let proof = owner
+        .headers
+        .get_all("set-cookie")
+        .find(|raw| raw.contains("_multi-"))
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    let (name, signed) = proof.split_once('=').unwrap();
+    let alias = format!("another_multi-{original}={signed}");
+    let issued = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"owner@example.test","password":PASSWORD})),
+            &format!("{proof}; {alias}"),
+        ),
+        200,
+    )
+    .await;
+    let current = body(&issued)["token"].as_str().unwrap().to_owned();
+    assert_ne!(current, original);
+    let retired: Vec<_> = issued
+        .headers
+        .get_all("set-cookie")
+        .filter(|raw| raw.contains("_multi-") && raw.contains("Max-Age=0"))
+        .collect();
+    assert_eq!(retired.len(), 2);
+    assert!(
+        retired
+            .iter()
+            .any(|raw| raw.starts_with(&format!("{name}=")))
+    );
+    assert!(
+        retired
+            .iter()
+            .any(|raw| raw.starts_with(&format!("another_multi-{original}=")))
+    );
+    let fresh: Vec<_> = issued
+        .headers
+        .get_all("set-cookie")
+        .filter(|raw| raw.contains("_multi-") && !raw.contains("Max-Age=0"))
+        .collect();
+    assert_eq!(fresh.len(), 1);
+    assert!(fresh[0].contains(&current));
+    assert!(auth.store().get_session(&original).await?.is_none());
+    assert_eq!(db.count("sessions").await?, 1);
+    let selector = call(
+        &auth,
+        request(
+            "/multi-session/set-active",
+            Some(json!({"sessionToken":current})),
+            fresh[0].split(';').next().unwrap(),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&selector)["session"]["token"], current);
+    authenticated(&auth, &cookies(&selector), "owner@example.test").await;
+    B::close(connection).await
 }
