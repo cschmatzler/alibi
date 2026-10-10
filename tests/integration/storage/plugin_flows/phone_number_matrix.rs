@@ -14,7 +14,8 @@ backend_tests!(
     phone_number_request_and_proof_matrix,
     phone_number_provider_and_sender_failures,
     phone_number_password_reset_effects,
-    phone_number_signup_and_update_inputs
+    phone_number_signup_and_update_inputs,
+    phone_missing_otp_sender_precedes_application_validation
 );
 
 #[derive(Default)]
@@ -547,5 +548,49 @@ async fn phone_number_signup_and_update_inputs<B: Backend>(db: Db) -> TestResult
     }
     probe.trace.value("rows", json!(db.count("users").await?));
     probe.trace.assert("phone-number/signup-and-update-inputs");
+    B::close(connection).await
+}
+
+async fn phone_missing_otp_sender_precedes_application_validation<B: Backend>(
+    db: Db,
+) -> TestResult {
+    struct Count(std::sync::atomic::AtomicUsize);
+    #[async_trait]
+    impl PhoneNumberValidator for Count {
+        async fn is_valid(&self, _: &str) -> AuthResult<bool> {
+            _ = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(AuthError::internal("validator must not run"))
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let validator = Arc::new(Count(std::sync::atomic::AtomicUsize::new(0)));
+    let auth = fast_builder::<B>(&connection)
+        .plugin(PhoneNumberPlugin::new(PhoneNumberConfig {
+            phone_number_validator: Some(validator.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    let denied = call(
+        &auth,
+        request(
+            "/phone-number/send-otp",
+            Some(json!({"phoneNumber":"not-a-phone"})),
+            "",
+        ),
+        501,
+    )
+    .await;
+    assert_eq!(body(&denied)["code"], "SEND_OTP_NOT_IMPLEMENTED");
+    assert_eq!(validator.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert!(!denied.headers.contains_key("set-cookie"));
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        before
+    );
     B::close(connection).await
 }
