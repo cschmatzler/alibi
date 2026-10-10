@@ -22,7 +22,8 @@ backend_tests!(
     last_login_tracks_every_sign_in_method,
     last_login_resolver_and_cookie_policy,
     last_login_tracks_social_callbacks,
-    last_login_resolver_receives_transformed_numbers_and_original_http_bytes
+    last_login_resolver_receives_transformed_numbers_and_original_http_bytes,
+    last_login_tracking_update_failure_is_best_effort_for_authentication
 );
 
 const COOKIE: &str = "better-auth.last_used_login_method";
@@ -472,5 +473,44 @@ async fn last_login_resolver_receives_transformed_numbers_and_original_http_byte
         Some("body:Infinity:-0")
     );
     authenticated(&auth, &cookies(&issued), "numeric@example.test").await;
+    B::close(connection).await
+}
+
+async fn last_login_tracking_update_failure_is_best_effort_for_authentication<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(LastLoginMethodPlugin::with_config(LastLoginMethodConfig {
+            store_in_database: true,
+            resolver: Some(Arc::new(Resolver)),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let users = db.table("users").await?;
+    let accounts = db.table("accounts").await?;
+    _ = db.execute("CREATE TRIGGER reject_tracking BEFORE UPDATE OF last_login_method ON users BEGIN SELECT RAISE(ABORT, 'tracking unavailable'); END",&[]).await?;
+    let mut input = request(
+        "/sign-in/email",
+        Some(json!({"email":"owner@example.test","password":PASSWORD})),
+        "",
+    );
+    _ = input.headers.insert("x-resolve".into(), "custom".into());
+    let issued = call(&auth, input, 200).await;
+    assert_eq!(
+        tracked(&issued).as_deref(),
+        Some("better-auth.last_used_login_method=custom%20method!(*)'")
+    );
+    assert_eq!(db.table("users").await?, users);
+    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.count("sessions").await?, 3);
+    for cookie in [cookies(&owner), cookies(&issued)] {
+        authenticated(&auth, &cookie, "owner@example.test").await;
+    }
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    _ = db.execute("DROP TRIGGER reject_tracking", &[]).await?;
     B::close(connection).await
 }
