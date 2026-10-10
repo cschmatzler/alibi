@@ -104,6 +104,7 @@ impl OAuthProvider {
                 prompt: options.prompt,
                 ..OAuthAuthorizationPolicy::default()
             }),
+            allowed_request_params: Vec::new(),
             authorization_params: Vec::new(),
             account_subject: Some(subject),
             map_user_info: None,
