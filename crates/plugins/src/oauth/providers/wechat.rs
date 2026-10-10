@@ -103,6 +103,7 @@ impl OAuthProvider {
                 preserve_raw_email_errors: true,
                 ..OAuthAuthorizationPolicy::default()
             }),
+            allowed_request_params: Vec::new(),
             authorization_params: vec![(
                 "lang".into(),
                 match options.language {
