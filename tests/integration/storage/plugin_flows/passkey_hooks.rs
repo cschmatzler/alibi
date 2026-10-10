@@ -20,7 +20,8 @@ backend_tests!(
     passkey_registration_ownership,
     passkey_authentication_hooks,
     passkey_session_freshness,
-    passkey_input_types
+    passkey_input_types,
+    passkey_auth_callback_reassignment_keeps_verified_owner
 );
 
 type Observed = (usize, u32, bool, bool, bool);
@@ -571,5 +572,168 @@ async fn passkey_input_types<B: Backend>(db: Db) -> TestResult {
         );
     }
     trace.assert("passkey/input-types");
+    B::close(connection).await
+}
+
+async fn passkey_auth_callback_reassignment_keeps_verified_owner<B: Backend>(db: Db) -> TestResult {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    struct Reassign {
+        raw: crate::storage::Raw,
+        foreign: Mutex<String>,
+        seen: Mutex<Vec<Value>>,
+    }
+    #[async_trait::async_trait]
+    impl PasskeyAuthenticationAfterVerification for Reassign {
+        async fn after_verification(
+            &self,
+            context: &PasskeyAuthenticationContext<'_>,
+            verification: &VerifiedPasskeyAuthentication,
+            _: &JsValue,
+        ) -> AuthResult<()> {
+            let credential = URL_SAFE_NO_PAD.encode(verification.result.cred_id().as_slice());
+            let foreign = self.foreign.lock().unwrap().clone();
+            self.seen.lock().unwrap().push(json!({"credential":credential,"counter":verification.result.counter(),"origin":verification.origin,"rpId":verification.rp_id,"path":context.request.path}));
+            let changed=self.raw.execute("UPDATE passkeys SET user_id=$1, name='Application updated', backed_up=1, device_type='application-updated' WHERE credential_id=$2",&[&foreign,&credential]).await.map_err(|error|AuthError::internal(error.to_string()))?;
+            assert_eq!(changed, 1);
+            Ok(())
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let policy = Arc::new(Reassign {
+        raw: db.raw.clone(),
+        foreign: Mutex::new(String::new()),
+        seen: Mutex::new(Vec::new()),
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(
+            PasskeyPlugin::new()
+                .origins(vec![ORIGIN.into()])
+                .authentication(PasskeyAuthenticationConfig {
+                    extensions: None,
+                    after_verification: Some(policy.clone()),
+                }),
+        )
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
+    *policy.foreign.lock().unwrap() = foreign_id.clone();
+    let (key, shape) = keyed(31);
+    let registration = call(
+        &auth,
+        request("/passkey/generate-register-options", None, &cookies(&owner)),
+        200,
+    )
+    .await;
+    _=call(&auth,request("/passkey/verify-registration",Some(json!({"response":proof(&key,&shape,&body(&registration)["challenge"]),"name":"Original"})),&format!("{}; {}",cookies(&owner),cookies(&registration))),200).await;
+    let before: Vec<Value> = serde_json::from_str(&db.table("passkeys").await?)?;
+    let before_sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let stable = db.tables(&["users", "accounts"]).await?;
+    let options = call(
+        &auth,
+        request(
+            "/passkey/generate-authenticate-options",
+            None,
+            &cookies(&foreign),
+        ),
+        200,
+    )
+    .await;
+    let challenge_cookie = format!("{}; {}", cookies(&foreign), cookies(&options));
+    let client =
+        json!({"type":"webauthn.get","challenge":body(&options)["challenge"],"origin":ORIGIN});
+    let assertion = key.assertion(
+        &client,
+        "localhost",
+        USER_PRESENT | USER_VERIFIED | BACKUP_ELIGIBLE,
+        2,
+    );
+    let input = json!({"response":assertion,"userId":foreign_id});
+    let verified = call(
+        &auth,
+        request(
+            "/passkey/verify-authentication",
+            Some(input.clone()),
+            &challenge_cookie,
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&verified)["user"]["id"], body(&owner)["user"]["id"]);
+    assert_eq!(
+        body(&verified)["session"]["userId"],
+        body(&owner)["user"]["id"]
+    );
+    let current = body(
+        &call(
+            &auth,
+            request("/get-session", None, &cookies(&verified)),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(current["user"]["id"], body(&owner)["user"]["id"]);
+    let after: Vec<Value> = serde_json::from_str(&db.table("passkeys").await?)?;
+    assert_eq!(after.len(), 1);
+    assert_eq!(after[0]["id"], before[0]["id"]);
+    assert_eq!(after[0]["credential_id"], assertion["id"]);
+    assert_eq!(after[0]["user_id"], foreign_id);
+    assert_eq!(after[0]["counter"], 2);
+    assert_eq!(after[0]["backed_up"], 1);
+    assert_eq!(after[0]["device_type"], "application-updated");
+    assert_eq!(after[0]["name"], "Application updated");
+    assert_eq!(after[0]["created_at"], before[0]["created_at"]);
+    let seen = policy.seen.lock().unwrap().clone();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0]["credential"], assertion["id"]);
+    assert_eq!(seen[0]["counter"], 2);
+    assert_eq!(seen[0]["origin"], ORIGIN);
+    assert_eq!(seen[0]["rpId"], "localhost");
+    let owner_passkeys = body(
+        &call(
+            &auth,
+            request("/passkey/list-user-passkeys", None, &cookies(&verified)),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(owner_passkeys, json!([]));
+    let foreign_passkeys = body(
+        &call(
+            &auth,
+            request("/passkey/list-user-passkeys", None, &cookies(&foreign)),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(foreign_passkeys.as_array().unwrap().len(), 1);
+    assert_eq!(foreign_passkeys[0]["userId"], foreign_id);
+    let sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    assert_eq!(sessions.len(), before_sessions.len() + 1);
+    assert!(before_sessions.iter().all(|row| sessions.contains(row)));
+    assert_eq!(db.tables(&["users", "accounts"]).await?, stable);
+    let replay = call(
+        &auth,
+        request(
+            "/passkey/verify-authentication",
+            Some(input),
+            &challenge_cookie,
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&replay)["code"], "CHALLENGE_NOT_FOUND");
+    assert_eq!(policy.seen.lock().unwrap().len(), 1);
+    assert_eq!(
+        serde_json::from_str::<Vec<Value>>(&db.table("passkeys").await?)?,
+        after
+    );
+    assert_eq!(
+        serde_json::from_str::<Vec<Value>>(&db.table("sessions").await?)?,
+        sessions
+    );
+    authenticated(&auth, &cookies(&owner), "owner@example.test").await;
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
 }
