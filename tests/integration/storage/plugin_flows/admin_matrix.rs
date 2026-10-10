@@ -8,6 +8,13 @@ use std::collections::HashMap;
 backend_tests!(
     admin_route_matrix,
     admin_impersonation_and_bans,
+    create_only_role_cannot_initialize_ban_properties,
+    update_only_role_cannot_mutate_any_ban_property,
+    update_only_role_cannot_change_email_verification,
+    admin_password_bounds_preserve_credentials_until_valid_replacement,
+    admin_email_replacement_moves_login_without_replacing_accounts_or_sessions,
+    configured_role_validation_precedes_missing_target_lookup,
+    admin_email_values_are_coerced_and_validated_before_any_update,
     demoted_admin_cannot_use_stale_cookie_cache_to_restore_grants
 );
 
@@ -512,6 +519,366 @@ async fn admin_impersonation_and_bans<B: Backend>(db: Db) -> TestResult {
         .await?,
     );
     trace.assert("admin/impersonation-and-bans");
+    B::close(connection).await
+}
+
+// Compat owner: plugins/admin/ban-permission-create.test.ts.
+async fn create_only_role_cannot_initialize_ban_properties<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mut permissions = roles();
+    _ = permissions.insert(
+        "creator".into(),
+        RolePermissions::new().allow("user", ["create"]),
+    );
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new().roles(permissions))
+        .build()
+        .await?;
+    let creator = signup(&auth, "creator@example.test").await;
+    _ = promote(&auth, &creator, "creator").await;
+    let cookie = cookies(&creator);
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    for data in [
+        json!({"banned":false}),
+        json!({"banReason":"reason"}),
+        json!({"banExpires":"2100-01-01T00:00:00.000Z"}),
+    ] {
+        let denied = call(&auth, request("/admin/create-user", Some(json!({"email":"target@example.test","name":"Target","password":PASSWORD,"data":data})), &cookie), 403).await;
+        assert_eq!(body(&denied)["code"], "YOU_ARE_NOT_ALLOWED_TO_BAN_USERS");
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    }
+    let created = call(
+        &auth,
+        request(
+            "/admin/create-user",
+            Some(json!({"email":"target@example.test","name":"Target","password":PASSWORD})),
+            &cookie,
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(db.count("users").await?, 2);
+    assert_eq!(db.count("accounts").await?, 2);
+    assert_eq!(db.count("sessions").await?, 1);
+    let login = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"target@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&login)["user"]["id"], body(&created)["user"]["id"]);
+    B::close(connection).await
+}
+
+async fn update_only_role_cannot_mutate_any_ban_property<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new().roles(roles()))
+        .build()
+        .await?;
+    let manager = signup(&auth, "manager@example.test").await;
+    _ = promote(&auth, &manager, "support").await;
+    let cookie = cookies(&manager);
+    let owner = signup(&auth, "target@example.test").await;
+    let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    for data in [
+        json!({"banned":false,"name":"must-not-commit"}),
+        json!({"banReason":"reason","name":"must-not-commit"}),
+        json!({"banExpires":"2100-01-01T00:00:00.000Z","name":"must-not-commit"}),
+    ] {
+        let denied = call(
+            &auth,
+            request(
+                "/admin/update-user",
+                Some(json!({"userId":id,"data":data})),
+                &cookie,
+            ),
+            403,
+        )
+        .await;
+        assert_eq!(body(&denied)["code"], "YOU_ARE_NOT_ALLOWED_TO_BAN_USERS");
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    }
+    let accounts = db.table("accounts").await?;
+    let sessions = db.table("sessions").await?;
+    let accepted = call(
+        &auth,
+        request(
+            "/admin/update-user",
+            Some(json!({"userId":id,"data":{"name":"Allowed name"}})),
+            &cookie,
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&accepted)["name"], "Allowed name");
+    assert_eq!(
+        db.text("SELECT name FROM users WHERE id=$1", &[&id])
+            .await?
+            .as_deref(),
+        Some("Allowed name")
+    );
+    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.table("sessions").await?, sessions);
+    authenticated(&auth, &cookies(&owner), "target@example.test").await;
+    B::close(connection).await
+}
+
+async fn update_only_role_cannot_change_email_verification<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new().roles(roles()))
+        .build()
+        .await?;
+    let manager = signup(&auth, "manager@example.test").await;
+    _ = promote(&auth, &manager, "support").await;
+    let owner = signup(&auth, "target@example.test").await;
+    let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let denied = call(
+        &auth,
+        request(
+            "/admin/update-user",
+            Some(json!({"userId":id,"data":{"emailVerified":true,"name":"must-not-commit"}})),
+            &cookies(&manager),
+        ),
+        403,
+    )
+    .await;
+    assert_eq!(
+        body(&denied)["code"],
+        "YOU_ARE_NOT_ALLOWED_TO_SET_USERS_EMAIL"
+    );
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    let accepted = call(
+        &auth,
+        request(
+            "/admin/update-user",
+            Some(json!({"userId":id,"data":{"name":"Allowed name"}})),
+            &cookies(&manager),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&accepted)["name"], "Allowed name");
+    assert_eq!(body(&accepted)["emailVerified"], false);
+    authenticated(&auth, &cookies(&owner), "target@example.test").await;
+    B::close(connection).await
+}
+
+async fn admin_password_bounds_preserve_credentials_until_valid_replacement<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new())
+        .build()
+        .await?;
+    let administrator = signup(&auth, "admin@example.test").await;
+    _ = promote(&auth, &administrator, "admin").await;
+    let owner = signup(&auth, "target@example.test").await;
+    let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    for (length, code) in [(7, "PASSWORD_TOO_SHORT"), (129, "PASSWORD_TOO_LONG")] {
+        let denied = call(
+            &auth,
+            request(
+                "/admin/set-user-password",
+                Some(json!({"userId":id,"newPassword":"x".repeat(length)})),
+                &cookies(&administrator),
+            ),
+            400,
+        )
+        .await;
+        assert_eq!(body(&denied)["code"], code);
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    }
+    for password in [PASSWORD.to_owned(), "x".repeat(8), "x".repeat(128)] {
+        if password != PASSWORD {
+            let accepted = call(
+                &auth,
+                request(
+                    "/admin/set-user-password",
+                    Some(json!({"userId":id,"newPassword":password})),
+                    &cookies(&administrator),
+                ),
+                200,
+            )
+            .await;
+            assert_eq!(body(&accepted)["status"], true);
+        }
+        let login = call(
+            &auth,
+            request(
+                "/sign-in/email",
+                Some(json!({"email":"target@example.test","password":password})),
+                "",
+            ),
+            200,
+        )
+        .await;
+        assert_eq!(body(&login)["user"]["id"], id);
+    }
+    B::close(connection).await
+}
+
+async fn admin_email_replacement_moves_login_without_replacing_accounts_or_sessions<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new())
+        .build()
+        .await?;
+    let administrator = signup(&auth, "admin@example.test").await;
+    _ = promote(&auth, &administrator, "admin").await;
+    let owner = signup(&auth, "old@example.test").await;
+    let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let accounts = db.table("accounts").await?;
+    let sessions = db.table("sessions").await?;
+    let updated = call(
+        &auth,
+        request(
+            "/admin/update-user",
+            Some(json!({"userId":id,"data":{"email":"NEW@EXAMPLE.TEST","emailVerified":false}})),
+            &cookies(&administrator),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&updated)["id"], id);
+    assert_eq!(body(&updated)["email"], "new@example.test");
+    assert_eq!(
+        db.text("SELECT email FROM users WHERE id=$1", &[&id])
+            .await?
+            .as_deref(),
+        Some("new@example.test")
+    );
+    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.table("sessions").await?, sessions);
+    let denied = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"old@example.test","password":PASSWORD})),
+            "",
+        ),
+        401,
+    )
+    .await;
+    assert_eq!(body(&denied)["code"], "INVALID_EMAIL_OR_PASSWORD");
+    assert_eq!(db.table("sessions").await?, sessions);
+    let login = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"new@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&login)["user"]["id"], id);
+    assert_eq!(db.table("accounts").await?, accounts);
+    authenticated(&auth, &cookies(&owner), "new@example.test").await;
+    B::close(connection).await
+}
+
+async fn configured_role_validation_precedes_missing_target_lookup<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new().roles(roles()))
+        .build()
+        .await?;
+    let admin = signup(&auth, "admin@example.test").await;
+    _ = promote(&auth, &admin, "admin").await;
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let denied = call(
+        &auth,
+        request(
+            "/admin/set-role",
+            Some(json!({"userId":"missing-target","role":"ghost"})),
+            &cookies(&admin),
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(
+        body(&denied)["code"],
+        "YOU_ARE_NOT_ALLOWED_TO_SET_NON_EXISTENT_VALUE"
+    );
+    let missing = call(
+        &auth,
+        request(
+            "/admin/set-role",
+            Some(json!({"userId":"missing-target","role":"user"})),
+            &cookies(&admin),
+        ),
+        404,
+    )
+    .await;
+    assert_eq!(body(&missing)["code"], "USER_NOT_FOUND");
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    B::close(connection).await
+}
+
+async fn admin_email_values_are_coerced_and_validated_before_any_update<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new())
+        .build()
+        .await?;
+    let admin = signup(&auth, "admin@example.test").await;
+    _ = promote(&auth, &admin, "admin").await;
+    let owner = signup(&auth, "owner@example.test").await;
+    let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    for email in [json!(null), json!(123), json!(false), json!([]), json!({})] {
+        let denied = call(
+            &auth,
+            request(
+                "/admin/update-user",
+                Some(json!({"userId":id,"data":{"email":email,"name":"must-not-commit"}})),
+                &cookies(&admin),
+            ),
+            400,
+        )
+        .await;
+        assert_eq!(body(&denied)["code"], "INVALID_EMAIL");
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    }
+    let accepted = call(
+        &auth,
+        request(
+            "/admin/update-user",
+            Some(json!({"userId":id,"data":{"email":["REPLACEMENT@EXAMPLE.TEST"]}})),
+            &cookies(&admin),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&accepted)["email"], "replacement@example.test");
+    assert_eq!(body(&accepted)["id"], id);
+    let login = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"replacement@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&login)["user"]["id"], id);
     B::close(connection).await
 }
 
