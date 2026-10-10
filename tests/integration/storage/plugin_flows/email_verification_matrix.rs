@@ -16,7 +16,8 @@ backend_tests!(
     verify_email_change_confirmation_chain,
     send_verification_email_matrix,
     verified_guest_replay_skips_hooks_and_session_issuance,
-    verification_after_hook_rejection_commits_user_without_issuing_session
+    verification_after_hook_rejection_commits_user_without_issuing_session,
+    verification_delivery_keeps_original_bodies_and_headers_for_all_entry_points
 );
 
 #[derive(Default)]
@@ -507,5 +508,83 @@ async fn verification_after_hook_rejection_commits_user_without_issuing_session<
         "verification-veto-foreign@example.test",
     )
     .await;
+    Ok(())
+}
+
+async fn verification_delivery_keeps_original_bodies_and_headers_for_all_entry_points<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    #[derive(Default)]
+    struct ContextInbox(Mutex<Vec<(String, Value, String)>>);
+    #[async_trait]
+    impl SendVerificationEmail for ContextInbox {
+        async fn send(&self, _: &UserView, _: &str, _: &str) -> AuthResult<()> {
+            let context =
+                alibi::hooks::current_request_hook_context().expect("delivery request context");
+            let original: Value = serde_json::from_slice(context.body.as_ref().unwrap()).unwrap();
+            self.0.lock().unwrap().push((
+                context.path.clone(),
+                original,
+                context.headers["x-app-marker"].clone(),
+            ));
+            Ok(())
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let inbox = Arc::new(ContextInbox::default());
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password().require_email_verification(true))
+        .plugin(SessionManagementPlugin::new())
+        .plugin(EmailVerificationPlugin::with_config(
+            EmailVerificationConfig {
+                send_verification_email: Some(inbox.clone()),
+                send_on_sign_up: Some(true),
+                require_verification_for_signin: true,
+                send_on_sign_in: true,
+                ..Default::default()
+            },
+        ))
+        .build()
+        .await?;
+    for (path, input, status, marker) in [
+        (
+            "/sign-up/email",
+            json!({"email":"context-owner@example.test","password":PASSWORD,"name":"Owner","applicationMarker":{"entry":"signup","items":[1,true,null]}}),
+            200,
+            "signup",
+        ),
+        (
+            "/sign-in/email",
+            json!({"email":"context-owner@example.test","password":PASSWORD,"applicationMarker":{"entry":"signin","items":[2,false,null]}}),
+            403,
+            "signin",
+        ),
+        (
+            "/send-verification-email",
+            json!({"email":"context-owner@example.test","callbackURL":"/done","applicationMarker":{"entry":"direct","items":[3,true,null]}}),
+            200,
+            "direct",
+        ),
+    ] {
+        let before = db.count("sessions").await?;
+        let mut actual = request(path, Some(input.clone()), "");
+        let _ = actual.headers.insert("x-app-marker".into(), marker.into());
+        let response = call(&auth, actual, status).await;
+        if path == "/sign-in/email" {
+            assert_eq!(db.count("sessions").await?, before);
+            assert!(!response.headers.contains_key("set-cookie"));
+        }
+        let delivery = inbox.0.lock().unwrap().pop().expect("actual delivery");
+        assert_eq!(
+            delivery,
+            (format!("/api/auth{path}"), input, marker.to_owned())
+        );
+    }
+    assert!(alibi::hooks::current_request_hook_context().is_none());
     Ok(())
 }
