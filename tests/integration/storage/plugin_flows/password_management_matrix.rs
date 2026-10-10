@@ -9,7 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 backend_tests!(
     password_reset_token_matrix,
-    change_and_verify_password_matrix
+    change_and_verify_password_matrix,
+    disabled_reset_rejects_before_lookup_without_changing_principals
 );
 
 #[derive(Default)]
@@ -334,5 +335,97 @@ async fn change_and_verify_password_matrix<B: Backend>(db: Db) -> TestResult {
         B::close(connection).await?;
     }
     trace.assert("password-management/change-and-verify-matrix");
+    Ok(())
+}
+
+async fn disabled_reset_rejects_before_lookup_without_changing_principals<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = fast_builder::<B>(&connection)
+        .plugin(PasswordManagementPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "disabled-owner@example.test").await;
+    let foreign = signup(&auth, "disabled-foreign@example.test").await;
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    let _ = db
+        .execute(
+            "ALTER TABLE users RENAME TO temporarily_unavailable_users",
+            &[],
+        )
+        .await?;
+    for email in ["disabled-owner@example.test", "missing@example.test"] {
+        let rejected = call(
+            &auth,
+            request(
+                "/request-password-reset",
+                Some(json!({"email":email,"redirectTo":"/reset"})),
+                "",
+            ),
+            400,
+        )
+        .await;
+        assert_eq!(body(&rejected)["code"], "RESET_PASSWORD_DISABLED");
+        assert!(!rejected.headers.contains_key("set-cookie"));
+        assert_eq!(db.count("verifications").await?, 0);
+    }
+    let _ = db
+        .execute(
+            "ALTER TABLE temporarily_unavailable_users RENAME TO users",
+            &[],
+        )
+        .await?;
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        before
+    );
+    authenticated(&auth, &cookies(&owner), "disabled-owner@example.test").await;
+    authenticated(&auth, &cookies(&foreign), "disabled-foreign@example.test").await;
+    let mailbox = Arc::new(Mailbox::default());
+    let enabled = fast_builder::<B>(&connection)
+        .plugin(management(
+            &mailbox,
+            &Arc::new(AtomicBool::new(false)),
+            false,
+            true,
+        ))
+        .build()
+        .await?;
+    let _ = call(
+        &enabled,
+        request(
+            "/request-password-reset",
+            Some(json!({"email":"disabled-owner@example.test"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let (_, token) = mailbox.0.lock().unwrap().pop().unwrap();
+    let _ = call(
+        &enabled,
+        request(
+            "/reset-password",
+            Some(json!({"token":token,"newPassword":"enabled-new-password"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let login = call(
+        &enabled,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"disabled-owner@example.test","password":"enabled-new-password"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&login)["user"]["id"], body(&owner)["user"]["id"]);
     Ok(())
 }
