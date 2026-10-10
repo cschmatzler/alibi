@@ -45,7 +45,7 @@ async fn build_auth(
 Initialization publishes one event:
 
 ```json
-{"type":"init","payload":{"libraryVersion":"0.4.0","runtime":"rust","platform":"linux","architecture":"x86_64","plugins":["email-password","session-management","oauth"]}}
+{"type":"init","payload":{"libraryVersion":"0.4.1","runtime":"rust","platform":"linux","architecture":"x86_64","plugins":["email-password","session-management","oauth"]}}
 ```
 
 It contains the library version, platform and the installed plugin names — no hostnames, URLs, secrets or user data. Publish your own application events through the same sink:
