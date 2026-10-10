@@ -74,6 +74,7 @@ Request body of `POST /sign-in/social`:
 | `callbackURL`, `newUserCallbackURL`, `errorCallbackURL` | Post-flow destinations; must be relative or a [trusted origin](/concepts/security/) (`403 INVALID_CALLBACK_URL` otherwise) |
 | `scopes` | Extra scopes appended to the provider's defaults |
 | `loginHint` | Pre-fills the provider's account chooser |
+| `authorizationParams` | Per-flow authorization parameters filtered by the provider’s `allowed_request_params` |
 | `additionalParams` | Extra authorization-URL query parameters (for example Google `hd`) |
 | `requestSignUp` | Explicitly allow sign-up when the provider disables implicit sign-up |
 | `additionalData` | Application data carried through the round trip |
@@ -144,7 +145,8 @@ fn plugin(client_id: &str, client_secret: &str) -> OAuthPlugin {
 | `OAuthProvider` field | Effect |
 | --- | --- |
 | `scopes` | Base scope list |
-| `authorization_params` | Fixed authorization-URL parameters, e.g. `("prompt", "consent")` |
+| `authorization_params` | Default authorization-URL parameters, e.g. `("prompt", "consent")` |
+| `allowed_request_params` | Names accepted from `authorizationParams`; empty by default |
 | `disable_sign_up` | Never create users through this provider |
 | `disable_implicit_sign_up` | Create users only when the request sets `requestSignUp` |
 | `override_user_info_on_sign_in` | Update the stored profile at every sign-in |
@@ -154,6 +156,36 @@ fn plugin(client_id: &str, client_secret: &str) -> OAuthPlugin {
 | `get_user_info`, `refresh_access_token`, `verify_id_token` | Replace the transports (`OAuthUserInfoHandler`, …) |
 
 For richer mapping — populating your own [additional fields](/concepts/field-policies/) — implement `OAuthProfileMapper` and attach it with `provider.with_profile_mapper(Arc::new(MyMapper))`. It receives the raw profile JSON and returns the fields to override (including additional ones).
+
+### Per-flow authorization parameters
+
+To request an offline Google grant only when linking Drive, configure the names clients may send:
+
+```rust
+let mut google = OAuthProvider::google(client_id, client_secret);
+google.allowed_request_params = vec![
+    "access_type".into(),
+    "prompt".into(),
+    "login_hint".into(),
+];
+```
+
+Then post to `/link-social` with the signed-in user's session:
+
+```json
+{
+  "provider": "google",
+  "callbackURL": "/settings/integrations",
+  "scopes": ["https://www.googleapis.com/auth/drive.file"],
+  "authorizationParams": {"access_type": "offline", "prompt": "consent"}
+}
+```
+
+Both `/link-social` and `/sign-in/social` accept `authorizationParams` as an object of string values. Unlisted names are ignored. Reserved OAuth names (`state`, `client_id`, `redirect_uri`, `response_type`, `code_challenge`, `code_challenge_method`, `nonce`, `scope`) and a provider's custom client-ID parameter are ignored even if allowlisted. Use `scopes` to request scopes.
+
+Allowed values override provider defaults and `additionalParams` for that flow. Provider policy's `fixed_authorization_params` still take precedence. A subsequent request without `authorizationParams` uses the original provider defaults, so ordinary sign-ins need not force consent. The field applies to redirect flows; it has no effect on `idToken` sign-in.
+
+`additionalParams` retains its existing behavior and does not use this allowlist.
 
 ## Link and unlink accounts
 
