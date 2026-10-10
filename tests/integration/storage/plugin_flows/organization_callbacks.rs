@@ -12,7 +12,8 @@ backend_tests!(
     organization_role_hook_target_deletion_rejects_before_after_callback,
     organization_update_hook_demotion_keeps_original_context_and_rechecks_next_request,
     organization_update_hook_deleted_row_returns_null_and_original_authority,
-    organization_update_hooks_preserve_empty_values_and_input_field_fallback
+    organization_update_hooks_preserve_empty_values_and_input_field_fallback,
+    organization_creation_hooks_preserve_trusted_empty_values_and_omitted_fields
 );
 postgres_tests!(
     organization_lifecycle_callbacks_preserve_patch_authority_and_committed_phases,
@@ -1393,5 +1394,122 @@ async fn organization_update_hooks_preserve_empty_values_and_input_field_fallbac
             stable
         );
     }
+    B::close(connection).await
+}
+
+async fn organization_creation_hooks_preserve_trusted_empty_values_and_omitted_fields<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    #[derive(Debug, Default)]
+    struct Hooks(Mutex<usize>);
+    #[async_trait]
+    impl OrganizationCreationHooks for Hooks {
+        async fn before_create(
+            &self,
+            _: &OrganizationDraftContext,
+        ) -> AuthResult<Option<OrganizationCreatePatch>> {
+            Ok(match *self.0.lock().unwrap() {
+                0 => Some(OrganizationCreatePatch {
+                    name: Some(String::new()),
+                    ..Default::default()
+                }),
+                1 => Some(OrganizationCreatePatch {
+                    metadata: Some(Some(Default::default())),
+                    ..Default::default()
+                }),
+                2 => Some(OrganizationCreatePatch {
+                    name: Some("Patched Without Metadata".into()),
+                    ..Default::default()
+                }),
+                _ => None,
+            })
+        }
+        async fn before_add_member(
+            &self,
+            _: &OrganizationMemberDraftContext,
+        ) -> AuthResult<Option<OrganizationMemberCreatePatch>> {
+            Ok(
+                (*self.0.lock().unwrap() == 3).then(|| OrganizationMemberCreatePatch {
+                    role: Some(String::new()),
+                    ..Default::default()
+                }),
+            )
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks::default());
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            creation_hooks: Some(hooks.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let foreign_token = body(&foreign)["token"].as_str().unwrap().to_owned();
+    let foreign_selection = db
+        .text(
+            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            &[&foreign_token],
+        )
+        .await?;
+    for mode in 0..4 {
+        *hooks.0.lock().unwrap() = mode;
+        let result=body(&call(&auth,request("/organization/create",Some(json!({"name":"Submitted","slug":format!("trusted-{mode}"),"metadata":{"requested":true}})),&cookies(&owner)),200).await);
+        let expected_name = match mode {
+            0 => "",
+            2 => "Patched Without Metadata",
+            _ => "Submitted",
+        };
+        let expected_meta = if mode == 1 {
+            json!({})
+        } else {
+            json!({"requested":true})
+        };
+        let expected_role = if mode == 3 { "" } else { "owner" };
+        assert_eq!(result["name"], expected_name);
+        assert_eq!(result["metadata"], expected_meta);
+        assert_eq!(result["members"][0]["role"], expected_role);
+        assert_eq!(
+            db.text(
+                "SELECT role FROM member WHERE organization_id=$1",
+                &[result["id"].as_str().unwrap()]
+            )
+            .await?
+            .as_deref(),
+            Some(expected_role)
+        );
+        assert_eq!(
+            db.text(
+                "SELECT name FROM organization WHERE id=$1",
+                &[result["id"].as_str().unwrap()]
+            )
+            .await?
+            .as_deref(),
+            Some(expected_name)
+        );
+        let stored = db
+            .text(
+                "SELECT CAST(metadata AS TEXT) FROM organization WHERE id=$1",
+                &[result["id"].as_str().unwrap()],
+            )
+            .await?
+            .unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&stored)?, expected_meta);
+        assert_eq!(
+            db.text(
+                "SELECT active_organization_id FROM sessions WHERE token=$1",
+                &[&foreign_token]
+            )
+            .await?,
+            foreign_selection
+        );
+    }
+    assert_eq!(db.count("member").await?, 4);
+    assert_eq!(db.count("sessions").await?, 2);
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
 }
