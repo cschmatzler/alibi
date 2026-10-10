@@ -10,7 +10,11 @@ use alibi::plugins::haveibeenpwned::{
     HaveIBeenPwnedConfig, HaveIBeenPwnedPlugin, PwnedPasswordClient,
 };
 
-backend_tests!(pwned_range_reply_matrix, captcha_reply_and_path_matrix);
+backend_tests!(
+    pwned_range_reply_matrix,
+    captcha_reply_and_path_matrix,
+    captcha_normalized_physical_paths_reject_before_json_and_origin_validation
+);
 
 const SUFFIX: &str = "1E4C9B93F3F0682250B6CF8331B7EE68FD8";
 
@@ -342,5 +346,74 @@ async fn captcha_reply_and_path_matrix<B: Backend>(db: Db) -> TestResult {
         trace.response(label, &Box::pin(auth.handle_request(sign_in(None))).await?);
     }
     trace.assert("screening/captcha-reply-path-matrix");
+    B::close(connection).await
+}
+
+async fn captcha_normalized_physical_paths_reject_before_json_and_origin_validation<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let base = super::auth_probe::fast_builder::<B>(&connection)
+        .build()
+        .await?;
+    let owner = signup(&base, "owner@example.test").await;
+    let foreign = signup(&base, "foreign@example.test").await;
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    for (patterns, paths, control) in [
+        (
+            vec![],
+            vec!["/sign-in//email", "/sign-in/email/", "//sign-in///email//"],
+            "/sign-in/email/extended",
+        ),
+        (
+            vec!["/guarded".into()],
+            vec!["/guarded/", "//guarded//"],
+            "/sign-in/email",
+        ),
+        (
+            vec!["/guard/*".into()],
+            vec!["/guard//leaf/"],
+            "/guard/leaf/deeper",
+        ),
+        (
+            vec!["/guard/**".into()],
+            vec!["/guard//leaf/deeper/"],
+            "/unguarded/leaf",
+        ),
+    ] {
+        let auth = super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(CaptchaPlugin::new(CaptchaConfig {
+                provider: CaptchaProvider::CloudflareTurnstile(TurnstileConfig::new("secret")),
+                endpoints: patterns,
+            }))
+            .build()
+            .await?;
+        for path in paths {
+            let mut input = request(path, Some(json!({})), &cookies(&owner));
+            input.body = Some(b"not-json".to_vec());
+            _ = input
+                .headers
+                .insert("origin".into(), "https://foreign.invalid".into());
+            let denied = call(&auth, input, 400).await;
+            assert_eq!(body(&denied)["code"], "MISSING_RESPONSE");
+            assert_eq!(
+                db.tables(&["users", "accounts", "sessions", "verifications"])
+                    .await?,
+                before
+            );
+        }
+        let mut input = request(control, Some(json!({})), &cookies(&owner));
+        input.body = Some(b"not-json".to_vec());
+        _ = input
+            .headers
+            .insert("origin".into(), "https://foreign.invalid".into());
+        let control = Box::pin(auth.handle_request(input)).await?;
+        let code = serde_json::from_slice::<Value>(&control.body).ok();
+        assert!(code.is_none_or(|value| value["code"] != "MISSING_RESPONSE"));
+    }
+    authenticated(&base, &cookies(&owner), "owner@example.test").await;
+    authenticated(&base, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
 }
