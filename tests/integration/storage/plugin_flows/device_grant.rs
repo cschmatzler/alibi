@@ -12,7 +12,8 @@ use serde_json::Map;
 
 backend_tests!(
     application_grant_lifecycle,
-    device_decision_and_issuance_edges
+    device_decision_and_issuance_edges,
+    device_fractional_durations_preserve_persisted_milliseconds
 );
 
 type Events = Arc<Mutex<Vec<Value>>>;
@@ -558,5 +559,108 @@ async fn device_decision_and_issuance_edges<B: Backend>(db: Db) -> TestResult {
     )
     .await;
     assert_eq!(body(&expired)["error"], "expired_token");
+    B::close(connection).await
+}
+
+async fn device_fractional_durations_preserve_persisted_milliseconds<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use chrono::{Duration, Utc};
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    for (lifetime, interval, expires_seconds, interval_seconds) in [
+        (1750, 250, 1, 0),
+        (-1250, -250, -2, -1),
+        (120000, -250, 120, -1),
+    ] {
+        let auth = super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(
+                DeviceAuthorizationPlugin::new()
+                    .expires_in(Duration::milliseconds(lifetime))
+                    .interval(Duration::milliseconds(interval)),
+            )
+            .build()
+            .await?;
+        let stable = db.tables(&["users", "accounts", "sessions"]).await?;
+        let start = Utc::now();
+        let issued = body(
+            &call(
+                &auth,
+                request("/device/code", Some(json!({"client_id":"fractional"})), ""),
+                200,
+            )
+            .await,
+        );
+        let finish = Utc::now();
+        assert_eq!(issued["expires_in"], expires_seconds);
+        assert_eq!(issued["interval"], interval_seconds);
+        let code = issued["device_code"].as_str().unwrap();
+        let stored = auth
+            .store()
+            .get_device_code_by_device_code(code)
+            .await?
+            .unwrap();
+        assert_eq!(stored.polling_interval, Some(interval));
+        assert!(stored.expires_at >= start + Duration::milliseconds(lifetime));
+        assert!(stored.expires_at <= finish + Duration::milliseconds(lifetime));
+        let poll = || {
+            request(
+                "/device/token",
+                Some(
+                    json!({"grant_type":"urn:ietf:params:oauth:grant-type:device_code","device_code":code,"client_id":"fractional"}),
+                ),
+                "",
+            )
+        };
+        if lifetime < 0 {
+            assert_eq!(
+                body(&call(&auth, poll(), 400).await)["error"],
+                "expired_token"
+            );
+            assert!(
+                auth.store()
+                    .get_device_code_by_device_code(code)
+                    .await?
+                    .is_none()
+            );
+            assert_eq!(
+                body(&call(&auth, poll(), 400).await)["error"],
+                "invalid_grant"
+            );
+        } else {
+            assert_eq!(
+                body(&call(&auth, poll(), 400).await)["error"],
+                "authorization_pending"
+            );
+            if interval > 0 {
+                _ = auth
+                    .store()
+                    .update_device_code(
+                        &stored.id,
+                        alibi::UpdateDeviceCode {
+                            last_polled_at: Some(Some(Utc::now() + Duration::seconds(1))),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+                let before = db.table("device_code").await?;
+                assert_eq!(body(&call(&auth, poll(), 400).await)["error"], "slow_down");
+                assert_eq!(db.table("device_code").await?, before);
+            } else {
+                assert_eq!(
+                    body(&call(&auth, poll(), 400).await)["error"],
+                    "authorization_pending"
+                );
+                assert_eq!(
+                    auth.store()
+                        .get_device_code_by_device_code(code)
+                        .await?
+                        .unwrap()
+                        .polling_interval,
+                    Some(-250)
+                );
+            }
+        }
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stable);
+    }
     B::close(connection).await
 }
