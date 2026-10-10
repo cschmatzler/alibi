@@ -370,6 +370,7 @@ fn make_test_provider(mock_url: &str) -> OAuthProvider {
         scopes: vec!["email".to_owned()],
         authorization: None,
         account_subject: None,
+        allowed_request_params: Vec::new(),
         authorization_params: Vec::new(),
         map_user_info: Some(|v| {
             Ok(OAuthUserInfo {
@@ -492,6 +493,7 @@ mod tests {
                 scopes: provider.scopes,
                 authorization: None,
                 account_subject: provider.account_subject,
+                allowed_request_params: provider.allowed_request_params,
                 authorization_params: provider.authorization_params,
                 map_user_info: provider.map_user_info,
                 get_user_info: provider.get_user_info,
@@ -1467,6 +1469,7 @@ mod tests {
                 scopes: vec!["user:email".to_owned()],
                 authorization: None,
                 account_subject: None,
+                allowed_request_params: Vec::new(),
                 authorization_params: Vec::new(),
                 map_user_info: Some(|_| panic!("This rejection must precede profile mapping")),
                 get_user_info: None,
