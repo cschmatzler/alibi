@@ -86,6 +86,7 @@ impl OAuthProvider {
             user_info_url: Some("https://slack.com/api/openid.connect.userInfo".into()),
             scopes: vec!["openid".into(), "profile".into(), "email".into()],
             authorization: None,
+            allowed_request_params: Vec::new(),
             authorization_params: Vec::new(),
             account_subject: Some(subject),
             map_user_info: None,

@@ -34,6 +34,7 @@ fn request(linking: bool) -> Value {
             "disableRedirect",
             "loginHint",
             "additionalParams",
+            "authorizationParams",
             "additionalData",
         ]
     } else {
@@ -48,6 +49,7 @@ fn request(linking: bool) -> Value {
             "requestSignUp",
             "loginHint",
             "additionalParams",
+            "authorizationParams",
             "additionalData",
         ]
     };
@@ -93,6 +95,9 @@ fn request(linking: bool) -> Value {
                 "string",
                 "The login hint to use for the authorization code request",
             ),
+            "authorizationParams" => {
+                json!({"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"type":"string"},"description":"Per-flow authorization query parameters. Only names in the provider's allowed_request_params are accepted; reserved OAuth parameters are ignored."})
+            }
             "additionalParams" => {
                 json!({"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"type":"string"},"description":"Extra query parameters to append to the provider authorization URL (e.g. Cognito identity_provider, Google hd)."})
             }
