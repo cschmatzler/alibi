@@ -18,6 +18,16 @@ export default defineConfig({
         { icon: 'github', label: 'GitHub', href: 'https://github.com/cschmatzler/better-auth-rs' },
       ],
       editLink: { baseUrl: 'https://github.com/cschmatzler/better-auth-rs/edit/main/docs/' },
+      head: [
+        {
+          tag: 'script',
+          attrs: {
+            src: 'https://unagi.leuchtturm.dev/script.js',
+            defer: true,
+            'data-website-id': 'e130f3b2-d9bd-47c8-a832-1dccf305ffa8',
+          },
+        },
+      ],
       customCss: ['./src/styles/custom.css'],
       expressiveCode: { themes: ['github-dark', 'github-light'] },
       // Order matters: the sidebar is explicit so pages read in learning order
