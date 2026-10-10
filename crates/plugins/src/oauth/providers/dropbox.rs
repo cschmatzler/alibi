@@ -114,6 +114,7 @@ impl OAuthProvider {
                 login_hint: false,
                 ..OAuthAuthorizationPolicy::default()
             }),
+            allowed_request_params: Vec::new(),
             authorization_params: options
                 .access_type
                 .map(|value| vec![("token_access_type".into(), value.as_str().into())])
