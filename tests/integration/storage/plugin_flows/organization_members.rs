@@ -18,6 +18,8 @@ backend_tests!(
     organization_dynamic_roles,
     organization_server_admission,
     organization_plugin_helpers,
+    organization_trusted_addition_preserves_literal_role_arrays_and_session_scope,
+    fractional_organization_membership_limit_uses_actual_physical_count,
     organization_membership_resolver_keeps_target_snapshots_and_raw_falsy_results
 );
 
@@ -656,6 +658,125 @@ async fn organization_plugin_helpers<B: Backend>(db: Db) -> TestResult {
         json!({"error": removed.err().map(|error| error.to_string())}),
     );
     trace.assert("organization/plugin-helpers");
+    B::close(connection).await
+}
+
+async fn organization_trusted_addition_preserves_literal_role_arrays_and_session_scope<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    use alibi::plugins::organization::{
+        OrganizationMemberAddedContext, OrganizationMemberAdditionContext,
+    };
+    #[derive(Debug, Default)]
+    struct Hooks(Mutex<Vec<(String, String)>>);
+    #[async_trait::async_trait]
+    impl OrganizationMemberAdditionHooks for Hooks {
+        async fn before_add_member(
+            &self,
+            c: &OrganizationMemberAdditionContext,
+        ) -> AuthResult<Option<OrganizationMemberCreatePatch>> {
+            self.0
+                .lock()
+                .unwrap()
+                .push((c.member.role.clone(), c.user.id.clone()));
+            Ok(None)
+        }
+        async fn after_add_member(&self, c: &OrganizationMemberAddedContext) -> AuthResult<()> {
+            self.0
+                .lock()
+                .unwrap()
+                .push((c.member.role.clone(), c.user.id.clone()));
+            Ok(())
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks::default());
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            member_addition_hooks: Some(hooks.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let mut owner = account(&auth, "owner@example.test").await;
+    let target = account(&auth, "target@example.test").await;
+    let org = organization(&auth, &mut owner, "literal-roles").await;
+    let before = db
+        .tables(&["users", "accounts", "sessions", "organization"])
+        .await?;
+    let result = serde_json::to_value(auth.dispatch_endpoint(OrganizationPlugin::add_member_endpoint(&serde_json::from_value(json!({"userId":target.id,"organizationId":org,"role":[" member ","member","admin"]}))?)?,EndpointOptions::default()).await?.decode()?)?;
+    assert_eq!(result["role"], " member ,member,admin");
+    assert_eq!(result["userId"], target.id);
+    assert_eq!(
+        *hooks.0.lock().unwrap(),
+        vec![
+            (" member ,member,admin".into(), target.id.clone()),
+            (" member ,member,admin".into(), target.id.clone())
+        ]
+    );
+    assert_eq!(
+        db.text(
+            "SELECT role FROM member WHERE id=$1",
+            &[result["id"].as_str().unwrap()]
+        )
+        .await?
+        .as_deref(),
+        Some(" member ,member,admin")
+    );
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "organization"])
+            .await?,
+        before
+    );
+    authenticated(&auth, &target.cookie, "target@example.test").await;
+    B::close(connection).await
+}
+
+async fn fractional_organization_membership_limit_uses_actual_physical_count<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            membership_limit: Some(MembershipLimit::Fixed(1.5)),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let mut owner = account(&auth, "owner@example.test").await;
+    let first = account(&auth, "first@example.test").await;
+    let second = account(&auth, "second@example.test").await;
+    let org = organization(&auth, &mut owner, "fractional").await;
+    let admitted = add(&auth, &org, &first.id, "member").await;
+    assert_eq!(admitted["userId"], first.id);
+    assert_eq!(db.count("member").await?, 2);
+    let before = db
+        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .await?;
+    let endpoint = OrganizationPlugin::add_member_endpoint(&serde_json::from_value(
+        json!({"userId":second.id,"organizationId":org,"role":"member"}),
+    )?)?;
+    let denied = auth
+        .dispatch_endpoint(endpoint, EndpointOptions::default())
+        .await
+        .unwrap_err();
+    assert_eq!(denied.error.status_code(), 403);
+    assert!(matches!(
+        denied.error,
+        alibi::AuthError::Upstream {
+            code: "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED",
+            ..
+        }
+    ));
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "organization", "member"])
+            .await?,
+        before
+    );
+    authenticated(&auth, &first.cookie, "first@example.test").await;
+    authenticated(&auth, &second.cookie, "second@example.test").await;
     B::close(connection).await
 }
 
