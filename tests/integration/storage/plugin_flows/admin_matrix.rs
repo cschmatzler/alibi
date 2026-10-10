@@ -13,7 +13,8 @@ backend_tests!(
     update_only_role_cannot_change_email_verification,
     admin_password_bounds_preserve_credentials_until_valid_replacement,
     admin_email_replacement_moves_login_without_replacing_accounts_or_sessions,
-    configured_role_validation_precedes_missing_target_lookup
+    configured_role_validation_precedes_missing_target_lookup,
+    admin_email_values_are_coerced_and_validated_before_any_update
 );
 
 async fn promote<S: AuthSchema>(auth: &Alibi<S>, response: &AuthResponse, role: &str) -> String {
@@ -824,5 +825,58 @@ async fn configured_role_validation_precedes_missing_target_lookup<B: Backend>(
     .await;
     assert_eq!(body(&missing)["code"], "USER_NOT_FOUND");
     assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    B::close(connection).await
+}
+
+async fn admin_email_values_are_coerced_and_validated_before_any_update<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new())
+        .build()
+        .await?;
+    let admin = signup(&auth, "admin@example.test").await;
+    _ = promote(&auth, &admin, "admin").await;
+    let owner = signup(&auth, "owner@example.test").await;
+    let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    for email in [json!(null), json!(123), json!(false), json!([]), json!({})] {
+        let denied = call(
+            &auth,
+            request(
+                "/admin/update-user",
+                Some(json!({"userId":id,"data":{"email":email,"name":"must-not-commit"}})),
+                &cookies(&admin),
+            ),
+            400,
+        )
+        .await;
+        assert_eq!(body(&denied)["code"], "INVALID_EMAIL");
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    }
+    let accepted = call(
+        &auth,
+        request(
+            "/admin/update-user",
+            Some(json!({"userId":id,"data":{"email":["REPLACEMENT@EXAMPLE.TEST"]}})),
+            &cookies(&admin),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&accepted)["email"], "replacement@example.test");
+    assert_eq!(body(&accepted)["id"], id);
+    let login = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"replacement@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&login)["user"]["id"], id);
     B::close(connection).await
 }
