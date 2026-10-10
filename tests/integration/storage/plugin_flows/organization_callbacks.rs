@@ -6,7 +6,18 @@ use async_trait::async_trait;
 
 backend_tests!(
     organization_lifecycle_callbacks_preserve_patch_authority_and_committed_phases,
-    organization_invitation_and_member_callbacks_preserve_actor_and_commit_order
+    organization_invitation_and_member_callbacks_preserve_actor_and_commit_order,
+    organization_role_hook_empty_and_absent_patches_retain_normalized_request,
+    organization_role_after_hook_retains_original_target_across_independent_writes,
+    organization_role_hook_target_deletion_rejects_before_after_callback,
+    organization_update_hook_demotion_keeps_original_context_and_rechecks_next_request,
+    organization_update_hook_deleted_row_returns_null_and_original_authority,
+    organization_update_hooks_preserve_empty_values_and_input_field_fallback,
+    organization_creation_hooks_preserve_trusted_empty_values_and_omitted_fields,
+    organization_creation_retains_original_member_after_independent_role_write,
+    organization_creator_patch_retargeting_keeps_team_and_selection_actor,
+    organization_addition_after_hook_keeps_original_target_after_user_write,
+    organization_self_removal_after_rejection_clears_only_current_org_selection
 );
 postgres_tests!(
     organization_lifecycle_callbacks_preserve_patch_authority_and_committed_phases,
@@ -749,4 +760,1299 @@ async fn organization_invitation_and_member_callbacks_preserve_actor_and_commit_
         B::close(connection).await?;
     }
     Ok(())
+}
+
+async fn organization_role_hook_empty_and_absent_patches_retain_normalized_request<B: Backend>(
+    db: Db,
+) -> TestResult {
+    #[derive(Debug, Default)]
+    struct Hooks {
+        mode: Mutex<usize>,
+        before: Mutex<Vec<OrganizationMemberRoleContext>>,
+        after: Mutex<Vec<OrganizationMemberRoleUpdatedContext>>,
+    }
+    #[async_trait]
+    impl OrganizationMemberRoleHooks for Hooks {
+        async fn before_update(
+            &self,
+            c: &OrganizationMemberRoleContext,
+        ) -> AuthResult<Option<OrganizationMemberRolePatch>> {
+            self.before.lock().unwrap().push(c.clone());
+            Ok(match *self.mode.lock().unwrap() {
+                0 => None,
+                1 => Some(OrganizationMemberRolePatch::default()),
+                2 => Some(OrganizationMemberRolePatch {
+                    role: Some(String::new()),
+                }),
+                _ => Some(OrganizationMemberRolePatch {
+                    role: Some("hook-unregistered-role".into()),
+                }),
+            })
+        }
+        async fn after_update(&self, c: &OrganizationMemberRoleUpdatedContext) -> AuthResult<()> {
+            self.after.lock().unwrap().push(c.clone());
+            Ok(())
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks::default());
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            member_role_hooks: Some(hooks.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+
+    let owner = signup(&auth, "owner@example.test").await;
+    let target = signup(&auth, "target@example.test").await;
+    let org = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Owned","slug":"owned"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let target_id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
+    let added = auth
+        .dispatch_endpoint(
+            OrganizationPlugin::add_member_endpoint(&serde_json::from_value(
+                json!({"organizationId":org["id"],"userId":target_id,"role":"member"}),
+            )?)?,
+            alibi::endpoint::EndpointOptions::default(),
+        )
+        .await?
+        .decode()?;
+
+    let unchanged = db
+        .tables(&["users", "accounts", "sessions", "organization"])
+        .await?;
+    for mode in 0..4 {
+        *hooks.mode.lock().unwrap() = mode;
+        let previous = db
+            .text("SELECT role FROM member WHERE id=$1", &[&added.id])
+            .await?
+            .unwrap();
+        _=call(&auth,request("/organization/update-member-role",Some(json!({"organizationId":org["id"],"memberId":added.id,"role":[" admin ,member ","admin"]})),&cookies(&owner)),200).await;
+        let expected = if mode == 3 {
+            "hook-unregistered-role"
+        } else {
+            "admin,member,admin"
+        };
+        assert_eq!(
+            db.text("SELECT role FROM member WHERE id=$1", &[&added.id])
+                .await?
+                .as_deref(),
+            Some(expected)
+        );
+        let before = hooks.before.lock().unwrap().last().unwrap().clone();
+        let after = hooks.after.lock().unwrap().last().unwrap().clone();
+        assert_eq!(before.user.id, target_id);
+        assert_eq!(before.new_role, "admin,member,admin");
+        assert_eq!(after.member.role, expected);
+        assert_eq!(after.previous_role, previous);
+        assert_eq!(after.user.id, target_id);
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "organization"])
+                .await?,
+            unchanged
+        );
+    }
+    B::close(connection).await
+}
+
+async fn organization_role_after_hook_retains_original_target_across_independent_writes<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    struct Hooks<S: AuthSchema> {
+        store: Arc<dyn alibi::AuthStore<S>>,
+        before: Mutex<Vec<OrganizationMemberRoleContext>>,
+        after: Mutex<Vec<OrganizationMemberRoleUpdatedContext>>,
+    }
+    impl<S: AuthSchema> std::fmt::Debug for Hooks<S> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("TargetRoleCallbacks")
+        }
+    }
+    #[async_trait]
+    impl<S: AuthSchema> OrganizationMemberRoleHooks for Hooks<S> {
+        async fn before_update(
+            &self,
+            c: &OrganizationMemberRoleContext,
+        ) -> AuthResult<Option<OrganizationMemberRolePatch>> {
+            self.before.lock().unwrap().push(c.clone());
+            _ = self
+                .store
+                .update_user(
+                    &c.user.id,
+                    alibi::UpdateUser {
+                        name: Some("Stored Target Name".into()),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            _ = self
+                .store
+                .update_member_role(&c.member.id, "member")
+                .await?;
+            Ok(None)
+        }
+        async fn after_update(&self, c: &OrganizationMemberRoleUpdatedContext) -> AuthResult<()> {
+            self.after.lock().unwrap().push(c.clone());
+            Ok(())
+        }
+    }
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks {
+        store: Arc::new(store),
+        before: Mutex::new(Vec::new()),
+        after: Mutex::new(Vec::new()),
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            member_role_hooks: Some(hooks.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+
+    let owner = signup(&auth, "owner@example.test").await;
+    let target = signup(&auth, "target@example.test").await;
+    let org = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Owned","slug":"owned"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let target_id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
+    let added = auth
+        .dispatch_endpoint(
+            OrganizationPlugin::add_member_endpoint(&serde_json::from_value(
+                json!({"organizationId":org["id"],"userId":target_id,"role":"member"}),
+            )?)?,
+            alibi::endpoint::EndpointOptions::default(),
+        )
+        .await?
+        .decode()?;
+
+    let sessions = db.table("sessions").await?;
+    for (role, original_name, previous) in [
+        (
+            "admin",
+            body(&target)["user"]["name"].as_str().unwrap().to_owned(),
+            "member",
+        ),
+        ("member", "Stored Target Name".into(), "admin"),
+    ] {
+        _ = call(
+            &auth,
+            request(
+                "/organization/update-member-role",
+                Some(json!({"organizationId":org["id"],"memberId":added.id,"role":role})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await;
+        let before = hooks.before.lock().unwrap().last().unwrap().clone();
+        let after = hooks.after.lock().unwrap().last().unwrap().clone();
+        assert_eq!(before.user.name.as_deref(), Some(original_name.as_str()));
+        assert_eq!(after.user.name, before.user.name);
+        assert_eq!(after.user.id, target_id);
+        assert_eq!(after.previous_role, previous);
+        assert_eq!(after.member.role, role);
+        assert_eq!(
+            db.text("SELECT name FROM users WHERE id=$1", &[&target_id])
+                .await?
+                .as_deref(),
+            Some("Stored Target Name")
+        );
+        assert_eq!(
+            db.text("SELECT role FROM member WHERE id=$1", &[&added.id])
+                .await?
+                .as_deref(),
+            Some(role)
+        );
+        assert_eq!(db.table("sessions").await?, sessions);
+    }
+    authenticated(&auth, &cookies(&owner), "owner@example.test").await;
+    B::close(connection).await
+}
+
+async fn organization_role_hook_target_deletion_rejects_before_after_callback<B: Backend>(
+    db: Db,
+) -> TestResult {
+    struct Hooks<S: AuthSchema> {
+        store: Arc<dyn alibi::AuthStore<S>>,
+        calls: Mutex<Vec<&'static str>>,
+    }
+    impl<S: AuthSchema> std::fmt::Debug for Hooks<S> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("DeleteTargetCallback")
+        }
+    }
+    #[async_trait]
+    impl<S: AuthSchema> OrganizationMemberRoleHooks for Hooks<S> {
+        async fn before_update(
+            &self,
+            c: &OrganizationMemberRoleContext,
+        ) -> AuthResult<Option<OrganizationMemberRolePatch>> {
+            self.calls.lock().unwrap().push("before");
+            self.store.delete_member(&c.member.id).await?;
+            Ok(None)
+        }
+        async fn after_update(&self, _: &OrganizationMemberRoleUpdatedContext) -> AuthResult<()> {
+            self.calls.lock().unwrap().push("after");
+            Ok(())
+        }
+    }
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks {
+        store: Arc::new(store),
+        calls: Mutex::new(Vec::new()),
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            member_role_hooks: Some(hooks.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+
+    let owner = signup(&auth, "owner@example.test").await;
+    let target = signup(&auth, "target@example.test").await;
+    let org = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Owned","slug":"owned"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let target_id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
+    let added = auth
+        .dispatch_endpoint(
+            OrganizationPlugin::add_member_endpoint(&serde_json::from_value(
+                json!({"organizationId":org["id"],"userId":target_id,"role":"member"}),
+            )?)?,
+            alibi::endpoint::EndpointOptions::default(),
+        )
+        .await?
+        .decode()?;
+
+    let before = db
+        .tables(&["users", "accounts", "sessions", "organization"])
+        .await?;
+    let response = call(
+        &auth,
+        request(
+            "/organization/update-member-role",
+            Some(json!({"organizationId":org["id"],"memberId":added.id,"role":"admin"})),
+            &cookies(&owner),
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&response)["code"], "MEMBER_NOT_FOUND");
+    assert_eq!(*hooks.calls.lock().unwrap(), vec!["before"]);
+    assert_eq!(
+        db.count_where("SELECT COUNT(*) FROM member WHERE id=$1", &[&added.id])
+            .await?,
+        0
+    );
+    assert_eq!(db.count("member").await?, 1);
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "organization"])
+            .await?,
+        before
+    );
+    authenticated(&auth, &cookies(&target), "target@example.test").await;
+    B::close(connection).await
+}
+
+async fn organization_update_hook_demotion_keeps_original_context_and_rechecks_next_request<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    struct Hooks<S: AuthSchema> {
+        store: Arc<dyn alibi::AuthStore<S>>,
+        after: Mutex<Vec<OrganizationUpdatedContext>>,
+        before: std::sync::atomic::AtomicUsize,
+    }
+    impl<S: AuthSchema> std::fmt::Debug for Hooks<S> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("DemotingUpdateCallback")
+        }
+    }
+    #[async_trait]
+    impl<S: AuthSchema> OrganizationUpdateHooks for Hooks<S> {
+        async fn before_update(
+            &self,
+            c: &OrganizationUpdateContext,
+        ) -> AuthResult<Option<OrganizationUpdatePatch>> {
+            _ = self
+                .before
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            _ = self
+                .store
+                .update_user(
+                    &c.user.id,
+                    alibi::UpdateUser {
+                        name: Some("Stored New Name".into()),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            _ = self
+                .store
+                .update_member_role(&c.member.id, "member")
+                .await?;
+            Ok(None)
+        }
+        async fn after_update(&self, c: &OrganizationUpdatedContext) -> AuthResult<()> {
+            self.after.lock().unwrap().push(c.clone());
+            Ok(())
+        }
+    }
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks {
+        store: Arc::new(store),
+        after: Mutex::new(Vec::new()),
+        before: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            update_hooks: Some(hooks.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let org = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Original","slug":"owned"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let sessions = db.table("sessions").await?;
+    let updated = body(
+        &call(
+            &auth,
+            request(
+                "/organization/update",
+                Some(json!({"organizationId":org["id"],"data":{"name":"Submitted update"}})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(updated["name"], "Submitted update");
+    let after = hooks.after.lock().unwrap()[0].clone();
+    assert_eq!(
+        after.user.name.as_deref(),
+        body(&owner)["user"]["name"].as_str()
+    );
+    assert_eq!(after.member.role, "owner");
+    assert_eq!(after.organization.unwrap().name, "Submitted update");
+    assert_eq!(
+        db.text("SELECT name FROM users WHERE id=$1", &[&after.user.id])
+            .await?
+            .as_deref(),
+        Some("Stored New Name")
+    );
+    assert_eq!(
+        db.text("SELECT role FROM member WHERE id=$1", &[&after.member.id])
+            .await?
+            .as_deref(),
+        Some("member")
+    );
+    assert_eq!(db.table("sessions").await?, sessions);
+    let before = db
+        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .await?;
+    let denied = call(
+        &auth,
+        request(
+            "/organization/update",
+            Some(json!({"organizationId":org["id"],"data":{"name":"must-not-write"}})),
+            &cookies(&owner),
+        ),
+        403,
+    )
+    .await;
+    assert_eq!(
+        body(&denied)["code"],
+        "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_ORGANIZATION"
+    );
+    assert_eq!(hooks.before.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(hooks.after.lock().unwrap().len(), 1);
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "organization", "member"])
+            .await?,
+        before
+    );
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+async fn organization_update_hook_deleted_row_returns_null_and_original_authority<B: Backend>(
+    db: Db,
+) -> TestResult {
+    struct Hooks<S: AuthSchema> {
+        store: Arc<dyn alibi::AuthStore<S>>,
+        after: Mutex<Vec<OrganizationUpdatedContext>>,
+    }
+    impl<S: AuthSchema> std::fmt::Debug for Hooks<S> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("DeletingUpdateCallback")
+        }
+    }
+    #[async_trait]
+    impl<S: AuthSchema> OrganizationUpdateHooks for Hooks<S> {
+        async fn before_update(
+            &self,
+            c: &OrganizationUpdateContext,
+        ) -> AuthResult<Option<OrganizationUpdatePatch>> {
+            self.store
+                .delete_organization(&c.member.organization_id)
+                .await?;
+            Ok(None)
+        }
+        async fn after_update(&self, c: &OrganizationUpdatedContext) -> AuthResult<()> {
+            self.after.lock().unwrap().push(c.clone());
+            Ok(())
+        }
+    }
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks {
+        store: Arc::new(store),
+        after: Mutex::new(Vec::new()),
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            update_hooks: Some(hooks.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let org = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Original","slug":"owned"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let response = call(
+        &auth,
+        request(
+            "/organization/update",
+            Some(json!({"organizationId":org["id"],"data":{"name":"Submitted update"}})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    assert!(body(&response).is_null());
+    let after = hooks.after.lock().unwrap()[0].clone();
+    assert!(after.organization.is_none());
+    assert_eq!(after.user.id, body(&owner)["user"]["id"]);
+    assert_eq!(after.member.organization_id, org["id"]);
+    assert_eq!(after.member.role, "owner");
+    assert_eq!(db.count("organization").await?, 0);
+    assert_eq!(db.count("member").await?, 0);
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+async fn organization_update_hooks_preserve_empty_values_and_input_field_fallback<B: Backend>(
+    db: Db,
+) -> TestResult {
+    #[derive(Debug, Default)]
+    struct Hooks {
+        mode: Mutex<usize>,
+        after: Mutex<Vec<OrganizationUpdatedContext>>,
+    }
+    #[async_trait]
+    impl OrganizationUpdateHooks for Hooks {
+        async fn before_update(
+            &self,
+            _: &OrganizationUpdateContext,
+        ) -> AuthResult<Option<OrganizationUpdatePatch>> {
+            Ok(Some(match *self.mode.lock().unwrap() {
+                0 => OrganizationUpdatePatch {
+                    name: Some(String::new()),
+                    ..Default::default()
+                },
+                1 => OrganizationUpdatePatch {
+                    metadata: Some(Some(Default::default())),
+                    ..Default::default()
+                },
+                _ => OrganizationUpdatePatch {
+                    name: Some("Patched Without Metadata".into()),
+                    ..Default::default()
+                },
+            }))
+        }
+        async fn after_update(&self, c: &OrganizationUpdatedContext) -> AuthResult<()> {
+            self.after.lock().unwrap().push(c.clone());
+            Ok(())
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks::default());
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            update_hooks: Some(hooks.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let org = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Original","slug":"owned"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let stable = db
+        .tables(&["users", "accounts", "sessions", "member"])
+        .await?;
+    for mode in 0..3 {
+        *hooks.mode.lock().unwrap() = mode;
+        let result=body(&call(&auth,request("/organization/update",Some(json!({"organizationId":org["id"],"data":{"name":"Submitted","metadata":{"requested":true}}})),&cookies(&owner)),200).await);
+        let expected_name = match mode {
+            0 => "",
+            1 => "Submitted",
+            _ => "Patched Without Metadata",
+        };
+        let expected_meta = if mode == 1 {
+            json!({})
+        } else {
+            json!({"requested":true})
+        };
+        assert_eq!(result["name"], expected_name);
+        assert_eq!(result["metadata"], expected_meta);
+        let after = hooks.after.lock().unwrap().last().unwrap().clone();
+        assert_eq!(after.organization.unwrap().name, expected_name);
+        assert_eq!(
+            db.text(
+                "SELECT name FROM organization WHERE id=$1",
+                &[org["id"].as_str().unwrap()]
+            )
+            .await?
+            .as_deref(),
+            Some(expected_name)
+        );
+        let stored = db
+            .text(
+                "SELECT CAST(metadata AS TEXT) FROM organization WHERE id=$1",
+                &[org["id"].as_str().unwrap()],
+            )
+            .await?
+            .unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&stored)?, expected_meta);
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "member"])
+                .await?,
+            stable
+        );
+    }
+    B::close(connection).await
+}
+
+async fn organization_creation_hooks_preserve_trusted_empty_values_and_omitted_fields<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    #[derive(Debug, Default)]
+    struct Hooks(Mutex<usize>);
+    #[async_trait]
+    impl OrganizationCreationHooks for Hooks {
+        async fn before_create(
+            &self,
+            _: &OrganizationDraftContext,
+        ) -> AuthResult<Option<OrganizationCreatePatch>> {
+            Ok(match *self.0.lock().unwrap() {
+                0 => Some(OrganizationCreatePatch {
+                    name: Some(String::new()),
+                    ..Default::default()
+                }),
+                1 => Some(OrganizationCreatePatch {
+                    metadata: Some(Some(Default::default())),
+                    ..Default::default()
+                }),
+                2 => Some(OrganizationCreatePatch {
+                    name: Some("Patched Without Metadata".into()),
+                    ..Default::default()
+                }),
+                _ => None,
+            })
+        }
+        async fn before_add_member(
+            &self,
+            _: &OrganizationMemberDraftContext,
+        ) -> AuthResult<Option<OrganizationMemberCreatePatch>> {
+            Ok(
+                (*self.0.lock().unwrap() == 3).then(|| OrganizationMemberCreatePatch {
+                    role: Some(String::new()),
+                    ..Default::default()
+                }),
+            )
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks::default());
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            creation_hooks: Some(hooks.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let foreign_token = body(&foreign)["token"].as_str().unwrap().to_owned();
+    let foreign_selection = db
+        .text(
+            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            &[&foreign_token],
+        )
+        .await?;
+    for mode in 0..4 {
+        *hooks.0.lock().unwrap() = mode;
+        let result=body(&call(&auth,request("/organization/create",Some(json!({"name":"Submitted","slug":format!("trusted-{mode}"),"metadata":{"requested":true}})),&cookies(&owner)),200).await);
+        let expected_name = match mode {
+            0 => "",
+            2 => "Patched Without Metadata",
+            _ => "Submitted",
+        };
+        let expected_meta = if mode == 1 {
+            json!({})
+        } else {
+            json!({"requested":true})
+        };
+        let expected_role = if mode == 3 { "" } else { "owner" };
+        assert_eq!(result["name"], expected_name);
+        assert_eq!(result["metadata"], expected_meta);
+        assert_eq!(result["members"][0]["role"], expected_role);
+        assert_eq!(
+            db.text(
+                "SELECT role FROM member WHERE organization_id=$1",
+                &[result["id"].as_str().unwrap()]
+            )
+            .await?
+            .as_deref(),
+            Some(expected_role)
+        );
+        assert_eq!(
+            db.text(
+                "SELECT name FROM organization WHERE id=$1",
+                &[result["id"].as_str().unwrap()]
+            )
+            .await?
+            .as_deref(),
+            Some(expected_name)
+        );
+        let stored = db
+            .text(
+                "SELECT CAST(metadata AS TEXT) FROM organization WHERE id=$1",
+                &[result["id"].as_str().unwrap()],
+            )
+            .await?
+            .unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&stored)?, expected_meta);
+        assert_eq!(
+            db.text(
+                "SELECT active_organization_id FROM sessions WHERE token=$1",
+                &[&foreign_token]
+            )
+            .await?,
+            foreign_selection
+        );
+    }
+    assert_eq!(db.count("member").await?, 4);
+    assert_eq!(db.count("sessions").await?, 2);
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+async fn organization_creation_retains_original_member_after_independent_role_write<B: Backend>(
+    db: Db,
+) -> TestResult {
+    struct Hooks<S: AuthSchema> {
+        store: Arc<dyn alibi::AuthStore<S>>,
+        roles: Mutex<Vec<String>>,
+    }
+    impl<S: AuthSchema> std::fmt::Debug for Hooks<S> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("CreatorRoleWrite")
+        }
+    }
+    #[async_trait]
+    impl<S: AuthSchema> OrganizationCreationHooks for Hooks<S> {
+        async fn after_add_member(&self, c: &OrganizationCreatedContext) -> AuthResult<()> {
+            self.roles.lock().unwrap().push(c.member.role.clone());
+            _ = self.store.update_member_role(&c.member.id, "admin").await?;
+            Ok(())
+        }
+        async fn after_create(&self, c: &OrganizationCreatedContext) -> AuthResult<()> {
+            self.roles.lock().unwrap().push(c.member.role.clone());
+            Ok(())
+        }
+    }
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks {
+        store: Arc::new(store),
+        roles: Mutex::new(Vec::new()),
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            creation_hooks: Some(hooks.clone()),
+            teams: TeamsConfig {
+                enabled: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let result = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Created","slug":"created"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(result["members"][0]["role"], "owner");
+    assert_eq!(*hooks.roles.lock().unwrap(), vec!["owner", "owner"]);
+    let member_id = result["members"][0]["id"].as_str().unwrap();
+    assert_eq!(
+        db.text("SELECT role FROM member WHERE id=$1", &[member_id])
+            .await?
+            .as_deref(),
+        Some("admin")
+    );
+    assert_eq!(db.count("team").await?, 1);
+    assert_eq!(db.count("team_member").await?, 1);
+    let token = body(&owner)["token"].as_str().unwrap().to_owned();
+    assert_eq!(
+        db.text(
+            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            &[&token]
+        )
+        .await?
+        .as_deref(),
+        result["id"].as_str()
+    );
+    assert_eq!(
+        db.text(
+            "SELECT active_team_id FROM sessions WHERE token=$1",
+            &[&token]
+        )
+        .await?,
+        db.text("SELECT id FROM team", &[]).await?
+    );
+    assert_eq!(db.count("sessions").await?, 1);
+    B::close(connection).await
+}
+
+async fn organization_creator_patch_retargeting_keeps_team_and_selection_actor<B: Backend>(
+    db: Db,
+) -> TestResult {
+    #[derive(Debug, Default)]
+    struct Hooks {
+        target: Mutex<Option<(String, String)>>,
+        actors: Mutex<Vec<String>>,
+    }
+    #[async_trait]
+    impl OrganizationCreationHooks for Hooks {
+        async fn before_add_member(
+            &self,
+            c: &OrganizationMemberDraftContext,
+        ) -> AuthResult<Option<OrganizationMemberCreatePatch>> {
+            self.actors.lock().unwrap().push(c.user.id.clone());
+            Ok(self.target.lock().unwrap().as_ref().map(|(org, user)| {
+                OrganizationMemberCreatePatch {
+                    organization_id: Some(org.clone()),
+                    user_id: Some(user.clone()),
+                    role: Some("member".into()),
+                }
+            }))
+        }
+        async fn after_create(&self, c: &OrganizationCreatedContext) -> AuthResult<()> {
+            self.actors.lock().unwrap().push(c.user.id.clone());
+            Ok(())
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks::default());
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            creation_hooks: Some(hooks.clone()),
+            teams: TeamsConfig {
+                enabled: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let actor = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
+    let prior = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Prior","slug":"prior"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let prior_id = prior["id"].as_str().unwrap().to_owned();
+    *hooks.target.lock().unwrap() = Some((prior_id.clone(), foreign_id.clone()));
+    hooks.actors.lock().unwrap().clear();
+    let foreign_token = body(&foreign)["token"].as_str().unwrap().to_owned();
+    let before = db
+        .text(
+            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            &[&foreign_token],
+        )
+        .await?;
+    let created = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"New","slug":"new"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let id = created["id"].as_str().unwrap();
+    assert_eq!(created["members"][0]["organizationId"], prior_id);
+    assert_eq!(created["members"][0]["userId"], foreign_id);
+    assert_eq!(
+        *hooks.actors.lock().unwrap(),
+        vec![actor.clone(), actor.clone()]
+    );
+    assert_eq!(
+        db.count_where(
+            "SELECT COUNT(*) FROM member WHERE organization_id=$1",
+            &[id]
+        )
+        .await?,
+        0
+    );
+    assert_eq!(
+        db.count_where(
+            "SELECT COUNT(*) FROM member WHERE organization_id=$1",
+            &[&prior_id]
+        )
+        .await?,
+        2
+    );
+    let team = db
+        .text("SELECT id FROM team WHERE organization_id=$1", &[id])
+        .await?
+        .unwrap();
+    assert_eq!(
+        db.text("SELECT user_id FROM team_member WHERE team_id=$1", &[&team])
+            .await?
+            .as_deref(),
+        Some(actor.as_str())
+    );
+    let token = body(&owner)["token"].as_str().unwrap().to_owned();
+    assert_eq!(
+        db.text(
+            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            &[&token]
+        )
+        .await?
+        .as_deref(),
+        Some(id)
+    );
+    assert_eq!(
+        db.text(
+            "SELECT active_team_id FROM sessions WHERE token=$1",
+            &[&token]
+        )
+        .await?
+        .as_deref(),
+        Some(team.as_str())
+    );
+    assert_eq!(
+        db.text(
+            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            &[&foreign_token]
+        )
+        .await?,
+        before
+    );
+    B::close(connection).await
+}
+
+async fn organization_addition_after_hook_keeps_original_target_after_user_write<B: Backend>(
+    db: Db,
+) -> TestResult {
+    struct Hooks<S: AuthSchema> {
+        store: Arc<dyn alibi::AuthStore<S>>,
+        before: Mutex<Vec<OrganizationMemberAdditionContext>>,
+        after: Mutex<Vec<OrganizationMemberAddedContext>>,
+    }
+    impl<S: AuthSchema> std::fmt::Debug for Hooks<S> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("AdditionTargetWrite")
+        }
+    }
+    #[async_trait]
+    impl<S: AuthSchema> OrganizationMemberAdditionHooks for Hooks<S> {
+        async fn before_add_member(
+            &self,
+            c: &OrganizationMemberAdditionContext,
+        ) -> AuthResult<Option<OrganizationMemberCreatePatch>> {
+            self.before.lock().unwrap().push(c.clone());
+            _ = self
+                .store
+                .update_user(
+                    &c.user.id,
+                    alibi::UpdateUser {
+                        name: Some("Stored Addition Target".into()),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            Ok(None)
+        }
+        async fn after_add_member(&self, c: &OrganizationMemberAddedContext) -> AuthResult<()> {
+            self.after.lock().unwrap().push(c.clone());
+            Ok(())
+        }
+    }
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks {
+        store: Arc::new(store),
+        before: Mutex::new(Vec::new()),
+        after: Mutex::new(Vec::new()),
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            member_addition_hooks: Some(hooks.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let target = signup(&auth, "target@example.test").await;
+    let org = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Owned","slug":"owned"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let stable = db.tables(&["accounts", "sessions", "organization"]).await?;
+    let target_id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
+    let result = auth
+        .dispatch_endpoint(
+            OrganizationPlugin::add_member_endpoint(&serde_json::from_value(
+                json!({"organizationId":org["id"],"userId":target_id,"role":"member"}),
+            )?)?,
+            alibi::endpoint::EndpointOptions::default(),
+        )
+        .await?
+        .decode()?;
+    let before = hooks.before.lock().unwrap()[0].clone();
+    let after = hooks.after.lock().unwrap()[0].clone();
+    assert_eq!(
+        before.user.name.as_deref(),
+        body(&target)["user"]["name"].as_str()
+    );
+    assert_eq!(after.user.name, before.user.name);
+    assert_eq!(after.user.email, before.user.email);
+    assert_eq!(after.user.id, target_id);
+    assert_eq!(after.member.id, result.id);
+    assert_eq!(
+        db.text("SELECT name FROM users WHERE id=$1", &[&target_id])
+            .await?
+            .as_deref(),
+        Some("Stored Addition Target")
+    );
+    assert_eq!(
+        db.tables(&["accounts", "sessions", "organization"]).await?,
+        stable
+    );
+    assert_eq!(db.count("member").await?, 2);
+    authenticated(&auth, &cookies(&owner), "owner@example.test").await;
+    B::close(connection).await
+}
+
+async fn organization_self_removal_after_rejection_clears_only_current_org_selection<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::AuthSession;
+    struct Hooks<S: AuthSchema> {
+        store: Arc<dyn alibi::AuthStore<S>>,
+        token: Mutex<String>,
+        after: Mutex<Vec<OrganizationMemberRemovalContext>>,
+        observed: Mutex<Vec<(Option<String>, Option<String>)>>,
+    }
+    impl<S: AuthSchema> std::fmt::Debug for Hooks<S> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("SelfRemovalAfterVeto")
+        }
+    }
+    #[async_trait]
+    impl<S: AuthSchema> OrganizationMemberRemovalHooks for Hooks<S> {
+        async fn after_remove(&self, c: &OrganizationMemberRemovalContext) -> AuthResult<()> {
+            self.after.lock().unwrap().push(c.clone());
+            let token = self.token.lock().unwrap().clone();
+            let session = self.store.get_session(&token).await?.unwrap();
+            self.observed.lock().unwrap().push((
+                session.active_organization_id().map(str::to_owned),
+                session.active_team_id().map(str::to_owned),
+            ));
+            Err(AuthError::Api {
+                status: 400,
+                code: Some("MEMBER_REMOVAL_HOOK_REJECTED".into()),
+                message: "after removal rejected".into(),
+            })
+        }
+    }
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks {
+        store: Arc::new(store),
+        token: Mutex::new(String::new()),
+        after: Mutex::new(Vec::new()),
+        observed: Mutex::new(Vec::new()),
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            member_removal_hooks: Some(hooks.clone()),
+            teams: TeamsConfig {
+                enabled: true,
+                create_default_team: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let target = signup(&auth, "target@example.test").await;
+    let sibling = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"target@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let org = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Owned","slug":"owned"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let target_id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
+    let member = auth
+        .dispatch_endpoint(
+            OrganizationPlugin::add_member_endpoint(&serde_json::from_value(
+                json!({"organizationId":org["id"],"userId":target_id,"role":"owner"}),
+            )?)?,
+            alibi::endpoint::EndpointOptions::default(),
+        )
+        .await?
+        .decode()?;
+    let team = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create-team",
+                Some(json!({"organizationId":org["id"],"name":"Selected team"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    _ = call(
+        &auth,
+        request(
+            "/organization/add-team-member",
+            Some(json!({"organizationId":org["id"],"teamId":team["id"],"userId":target_id})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    for browser in [&target, &sibling] {
+        _ = call(
+            &auth,
+            request(
+                "/organization/set-active",
+                Some(json!({"organizationId":org["id"]})),
+                &cookies(browser),
+            ),
+            200,
+        )
+        .await;
+        _ = call(
+            &auth,
+            request(
+                "/organization/set-active-team",
+                Some(json!({"teamId":team["id"]})),
+                &cookies(browser),
+            ),
+            200,
+        )
+        .await;
+    }
+    let token = body(&target)["token"].as_str().unwrap().to_owned();
+    let sibling_token = body(&sibling)["token"].as_str().unwrap().to_owned();
+    *hooks.token.lock().unwrap() = token.clone();
+    let stable = db.tables(&["users", "accounts", "organization"]).await?;
+    let mut expected_team: Value = serde_json::from_str(&db.table("team").await?)?;
+    expected_team[0]["member_count"] = json!(0);
+    let denied = call(
+        &auth,
+        request(
+            "/organization/remove-member",
+            Some(json!({"organizationId":org["id"],"memberIdOrEmail":member.id})),
+            &cookies(&target),
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&denied)["code"], "MEMBER_REMOVAL_HOOK_REJECTED");
+    assert_eq!(
+        db.count_where("SELECT COUNT(*) FROM member WHERE id=$1", &[&member.id])
+            .await?,
+        0
+    );
+    assert_eq!(
+        db.count_where(
+            "SELECT COUNT(*) FROM team_member WHERE user_id=$1",
+            &[&target_id]
+        )
+        .await?,
+        0
+    );
+    assert_eq!(
+        db.text(
+            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            &[&token]
+        )
+        .await?,
+        None
+    );
+    assert_eq!(
+        db.text(
+            "SELECT active_team_id FROM sessions WHERE token=$1",
+            &[&token]
+        )
+        .await?
+        .as_deref(),
+        team["id"].as_str()
+    );
+    assert_eq!(
+        db.text(
+            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            &[&sibling_token]
+        )
+        .await?
+        .as_deref(),
+        org["id"].as_str()
+    );
+    assert_eq!(
+        db.text(
+            "SELECT active_team_id FROM sessions WHERE token=$1",
+            &[&sibling_token]
+        )
+        .await?
+        .as_deref(),
+        team["id"].as_str()
+    );
+    assert_eq!(
+        hooks.observed.lock().unwrap()[0],
+        (None, Some(team["id"].as_str().unwrap().into()))
+    );
+    assert_eq!(hooks.after.lock().unwrap()[0].user.id, target_id);
+    assert_eq!(
+        db.tables(&["users", "accounts", "organization"]).await?,
+        stable
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(&db.table("team").await?)?,
+        expected_team
+    );
+    authenticated(&auth, &cookies(&owner), "owner@example.test").await;
+    B::close(connection).await
 }

@@ -40,6 +40,7 @@ impl OAuthProvider {
             user_info_url: Some(user_info_url.to_owned()),
             scopes: vec!["read:user".to_owned(), "user:email".to_owned()],
             authorization: Some(OAuthAuthorizationPolicy::default()),
+            allowed_request_params: Vec::new(),
             authorization_params: Vec::new(),
             account_subject: None,
             map_user_info: None,
