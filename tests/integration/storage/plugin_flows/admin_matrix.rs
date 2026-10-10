@@ -5,7 +5,11 @@ use alibi::UpdateUser;
 use alibi::plugins::{AdminPlugin, RolePermissions};
 use std::collections::HashMap;
 
-backend_tests!(admin_route_matrix, admin_impersonation_and_bans);
+backend_tests!(
+    admin_route_matrix,
+    admin_impersonation_and_bans,
+    explicit_empty_admin_roles_deny_builtin_grants_without_losing_sessions
+);
 
 async fn promote<S: AuthSchema>(auth: &Alibi<S>, response: &AuthResponse, role: &str) -> String {
     let id = body(response)["user"]["id"].as_str().unwrap().to_owned();
@@ -508,5 +512,56 @@ async fn admin_impersonation_and_bans<B: Backend>(db: Db) -> TestResult {
         .await?,
     );
     trace.assert("admin/impersonation-and-bans");
+    B::close(connection).await
+}
+
+async fn explicit_empty_admin_roles_deny_builtin_grants_without_losing_sessions<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::with_config(alibi::plugins::AdminConfig {
+            roles: Some(HashMap::new()),
+            default_role: "admin".into(),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let target = signup(&auth, "target@example.test").await;
+    let id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let mut get = request("/admin/get-user", None, &cookies(&owner));
+    _ = get.query.insert("id".into(), id.clone());
+    _ = call(&auth, get.clone(), 403).await;
+    _ = call(
+        &auth,
+        request(
+            "/admin/ban-user",
+            Some(json!({"userId":id})),
+            &cookies(&owner),
+        ),
+        403,
+    )
+    .await;
+    let check = call(
+        &auth,
+        request(
+            "/admin/has-permission",
+            Some(json!({"permissions":{"user":["get"]},"role":"admin"})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&check)["success"], false);
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    authenticated(&auth, &cookies(&owner), "owner@example.test").await;
+    let standard = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new())
+        .build()
+        .await?;
+    let allowed = call(&standard, get, 200).await;
+    assert_eq!(body(&allowed)["id"], id);
     B::close(connection).await
 }
