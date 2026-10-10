@@ -19,6 +19,7 @@ impl OAuthProvider {
                 default_prompt: Some("none".into()),
                 ..OAuthAuthorizationPolicy::default()
             }),
+            allowed_request_params: Vec::new(),
             authorization_params: Vec::new(),
             account_subject: None,
             map_user_info: Some(discord_user_info),
