@@ -16,7 +16,8 @@ backend_tests!(
     jwt_server_endpoint_overrides_and_reference_nonce,
     jwt_public_keyring_failures_preserve_context_and_owned_storage,
     jwt_session_claim_failures_stop_before_keyring_and_preserve_sessions,
-    jwt_server_keyring_preserves_absent_request_and_virtual_endpoint
+    jwt_server_keyring_preserves_absent_request_and_virtual_endpoint,
+    jwt_application_keyring_concurrent_initial_discovery_retains_both_signing_keys
 );
 
 #[derive(Default)]
@@ -825,6 +826,129 @@ async fn jwt_server_keyring_preserves_absent_request_and_virtual_endpoint<B: Bac
         }
     }
     assert_eq!(app.rows.lock().unwrap().len(), 1);
+    assert!(auth.store().list_jwks().await?.is_empty());
+    assert_eq!(db.count("sessions").await?, 0);
+    B::close(connection).await
+}
+
+async fn jwt_application_keyring_concurrent_initial_discovery_retains_both_signing_keys<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    use alibi::plugins::jwt::{JwtKeyring, JwtKeyringContext};
+    use alibi::{CreateJwk, Jwk};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct Ring {
+        rows: Mutex<Vec<Jwk>>,
+        initial: tokio::sync::Barrier,
+        reads: AtomicUsize,
+        release: tokio::sync::Notify,
+        created: Mutex<Vec<String>>,
+    }
+    #[async_trait::async_trait]
+    impl JwtKeyring for Ring {
+        async fn keys(&self, _: &JwtKeyringContext<'_>) -> AuthResult<Vec<Jwk>> {
+            let rows = self.rows.lock().unwrap().clone();
+            if self.reads.fetch_add(1, Ordering::SeqCst) < 2 {
+                _ = self.initial.wait().await;
+            }
+            Ok(rows)
+        }
+        async fn create_key(
+            &self,
+            data: CreateJwk,
+            context: &JwtKeyringContext<'_>,
+        ) -> AuthResult<Jwk> {
+            assert_eq!(context.path, "/jwks");
+            let request = context.request.unwrap();
+            assert_eq!(request.method, HttpMethod::Get);
+            let marker = request.headers.get("x-keyring-proof").unwrap().clone();
+            if marker == "second" {
+                self.release.notified().await;
+            }
+            let mut rows = self.rows.lock().unwrap();
+            let key = Jwk {
+                id: format!("racing-key-{}", rows.len() + 1),
+                public_key: data.public_key,
+                private_key: data.private_key,
+                created_at: data.created_at,
+                expires_at: data.expires_at,
+                alg: data.alg,
+                crv: data.crv,
+            };
+            rows.push(key.clone());
+            self.created.lock().unwrap().push(marker);
+            Ok(key)
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let app = Arc::new(Ring {
+        rows: Mutex::new(Vec::new()),
+        initial: tokio::sync::Barrier::new(2),
+        reads: AtomicUsize::new(0),
+        release: tokio::sync::Notify::new(),
+        created: Mutex::new(Vec::new()),
+    });
+    let jwt = JwtPlugin::with_config(JwtPluginConfig {
+        keyring: Some(app.clone()),
+        ..Default::default()
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(jwt.clone())
+        .build()
+        .await?;
+    let mut first = request("/jwks", None, "");
+    _ = first
+        .headers
+        .insert("x-keyring-proof".into(), "first".into());
+    let mut second = request("/jwks", None, "");
+    _ = second
+        .headers
+        .insert("x-keyring-proof".into(), "second".into());
+    let (first, second) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::join!(
+            async {
+                let response = call(&auth, first, 200).await;
+                app.release.notify_one();
+                response
+            },
+            call(&auth, second, 200)
+        )
+    })
+    .await?;
+    let left = body(&first);
+    let right = body(&second);
+    assert_eq!(left["keys"].as_array().unwrap().len(), 1);
+    assert_eq!(right["keys"].as_array().unwrap().len(), 2);
+    assert_eq!(left["keys"][0]["kid"], right["keys"][0]["kid"]);
+    assert_eq!(*app.created.lock().unwrap(), vec!["first", "second"]);
+    let rows = app.rows.lock().unwrap().clone();
+    assert_eq!(rows.len(), 2);
+    assert_ne!(rows[0].id, rows[1].id);
+    for key in rows {
+        assert!(serde_json::from_str::<Value>(&key.private_key)?.is_string());
+        let token = jwt
+            .sign_jwt(
+                json!({"sub":"racing-owner"}).as_object().unwrap().clone(),
+                &JwtSignOptions {
+                    signing_key_id: Some(key.id.clone()),
+                    ..Default::default()
+                },
+                None,
+                auth.context(),
+            )
+            .await?;
+        let header: Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(token.split('.').next().unwrap())?)?;
+        assert_eq!(header["kid"], key.id);
+        assert_eq!(
+            jwt.verify_jwt(&token, None, None, auth.context())
+                .await?
+                .unwrap()["sub"],
+            "racing-owner"
+        );
+    }
     assert!(auth.store().list_jwks().await?.is_empty());
     assert_eq!(db.count("sessions").await?, 0);
     B::close(connection).await
