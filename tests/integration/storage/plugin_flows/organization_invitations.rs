@@ -15,7 +15,8 @@ use std::collections::BTreeMap;
 backend_tests!(
     organization_invitation_policy,
     organization_anonymous_and_failures,
-    organization_invitation_stamps
+    organization_invitation_stamps,
+    processed_invitation_cancellation_keeps_members_and_original_callback_status
 );
 
 #[derive(Debug, Default)]
@@ -596,4 +597,120 @@ async fn organization_invitation_stamps<B: Backend>(db: Db) -> TestResult {
             .is_some()
     );
     B::close(connection).await
+}
+
+async fn processed_invitation_cancellation_keeps_members_and_original_callback_status<
+    B: Backend,
+>(
+    parent: Db,
+) -> TestResult {
+    use alibi::plugins::organization::OrganizationInvitationContext;
+    #[derive(Debug, Default)]
+    struct Hooks(Mutex<Vec<Value>>);
+    #[async_trait::async_trait]
+    impl OrganizationInvitationHooks for Hooks {
+        async fn before_cancel_invitation(
+            &self,
+            c: &OrganizationInvitationContext,
+        ) -> AuthResult<()> {
+            self.0
+                .lock()
+                .unwrap()
+                .push(json!({"phase":"before","status":c.invitation.status,"actor":c.user.id}));
+            Ok(())
+        }
+        async fn after_cancel_invitation(
+            &self,
+            c: &OrganizationInvitationContext,
+        ) -> AuthResult<()> {
+            self.0
+                .lock()
+                .unwrap()
+                .push(json!({"phase":"after","status":c.invitation.status,"actor":c.user.id}));
+            Ok(())
+        }
+    }
+    for accepted in [true, false] {
+        let db = parent.fresh().await?;
+        let (connection, _) = db.migrated::<B>(SECRET).await?;
+        let hooks = Arc::new(Hooks::default());
+        let sender = Arc::new(Sender::default());
+        let auth = super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+                invitation_hooks: Some(hooks.clone()),
+                send_invitation_email: Some(sender),
+                require_email_verification_on_invitation: Some(false),
+                ..Default::default()
+            }))
+            .build()
+            .await?;
+        let owner = signup(&auth, "owner@example.test").await;
+        let target = signup(&auth, "target@example.test").await;
+        let foreign = signup(&auth, "foreign@example.test").await;
+        let org = body(
+            &call(
+                &auth,
+                request(
+                    "/organization/create",
+                    Some(json!({"name":"Owned","slug":"owned"})),
+                    &cookies(&owner),
+                ),
+                200,
+            )
+            .await,
+        );
+        let invited=body(&call(&auth,request("/organization/invite-member",Some(json!({"organizationId":org["id"],"email":"target@example.test","role":"member"})),&cookies(&owner)),200).await);
+        let id = invited["id"].as_str().unwrap();
+        let path = if accepted {
+            "/organization/accept-invitation"
+        } else {
+            "/organization/reject-invitation"
+        };
+        _ = call(
+            &auth,
+            request(path, Some(json!({"invitationId":id})), &cookies(&target)),
+            200,
+        )
+        .await;
+        let before = db
+            .tables(&["users", "accounts", "sessions", "organization", "member"])
+            .await?;
+        let canceled = body(
+            &call(
+                &auth,
+                request(
+                    "/organization/cancel-invitation",
+                    Some(json!({"invitationId":id})),
+                    &cookies(&owner),
+                ),
+                200,
+            )
+            .await,
+        );
+        assert_eq!(canceled["id"], id);
+        assert_eq!(canceled["status"], "canceled");
+        assert_eq!(
+            db.text("SELECT status FROM invitation WHERE id=$1", &[id])
+                .await?
+                .as_deref(),
+            Some("canceled")
+        );
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "organization", "member"])
+                .await?,
+            before
+        );
+        let actor = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+        assert_eq!(
+            *hooks.0.lock().unwrap(),
+            vec![
+                json!({"phase":"before","status":if accepted{"accepted"}else{"rejected"},"actor":actor}),
+                json!({"phase":"after","status":"canceled","actor":actor})
+            ]
+        );
+        assert_eq!(db.count("member").await?, if accepted { 2 } else { 1 });
+        authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+        B::close(connection).await?;
+    }
+    Ok(())
 }
