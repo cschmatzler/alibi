@@ -9,7 +9,8 @@ backend_tests!(
     admin_route_matrix,
     admin_impersonation_and_bans,
     create_only_role_cannot_initialize_ban_properties,
-    update_only_role_cannot_mutate_any_ban_property
+    update_only_role_cannot_mutate_any_ban_property,
+    update_only_role_cannot_change_email_verification
 );
 
 async fn promote<S: AuthSchema>(auth: &Alibi<S>, response: &AuthResponse, role: &str) -> String {
@@ -619,6 +620,48 @@ async fn update_only_role_cannot_mutate_any_ban_property<B: Backend>(db: Db) -> 
     );
     assert_eq!(db.table("accounts").await?, accounts);
     assert_eq!(db.table("sessions").await?, sessions);
+    authenticated(&auth, &cookies(&owner), "target@example.test").await;
+    B::close(connection).await
+}
+
+async fn update_only_role_cannot_change_email_verification<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new().roles(roles()))
+        .build()
+        .await?;
+    let manager = signup(&auth, "manager@example.test").await;
+    _ = promote(&auth, &manager, "support").await;
+    let owner = signup(&auth, "target@example.test").await;
+    let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let denied = call(
+        &auth,
+        request(
+            "/admin/update-user",
+            Some(json!({"userId":id,"data":{"emailVerified":true,"name":"must-not-commit"}})),
+            &cookies(&manager),
+        ),
+        403,
+    )
+    .await;
+    assert_eq!(
+        body(&denied)["code"],
+        "YOU_ARE_NOT_ALLOWED_TO_SET_USERS_EMAIL"
+    );
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    let accepted = call(
+        &auth,
+        request(
+            "/admin/update-user",
+            Some(json!({"userId":id,"data":{"name":"Allowed name"}})),
+            &cookies(&manager),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&accepted)["name"], "Allowed name");
+    assert_eq!(body(&accepted)["emailVerified"], false);
     authenticated(&auth, &cookies(&owner), "target@example.test").await;
     B::close(connection).await
 }
