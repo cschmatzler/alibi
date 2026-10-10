@@ -11,7 +11,8 @@ backend_tests!(
     admin_remember_me_impersonation,
     admin_banned_message_callback,
     admin_failure_modes,
-    admin_user_validation
+    admin_user_validation,
+    fractional_and_negative_admin_bans_preserve_milliseconds_and_ownership
 );
 
 fn merge(first: &str, second: &str) -> String {
@@ -552,4 +553,70 @@ fn get(path: &str, query: &[(&str, &str)], cookie: &str) -> AuthRequest {
     let mut request = request(path, None, cookie);
     request.set_query_pairs(query.iter().copied());
     request
+}
+
+async fn fractional_and_negative_admin_bans_preserve_milliseconds_and_ownership<B: Backend>(
+    db: Db,
+) -> TestResult {
+    for (duration, milliseconds) in [
+        (300.875, Some(300_875)),
+        (0.0, None),
+        (-60.25, Some(-60_250)),
+    ] {
+        let db = db.fresh().await?;
+        let (connection, _) = db.migrated::<B>(SECRET).await?;
+        let auth = super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(AdminPlugin::new())
+            .build()
+            .await?;
+        let (_, admin) = promoted::<B>(&auth, "admin@example.test", "admin").await;
+        let owner = signup(&auth, "owner@example.test").await;
+        let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+        let foreign = signup(&auth, "foreign@example.test").await;
+        let accounts = db.table("accounts").await?;
+        let banned = call(
+            &auth,
+            request(
+                "/admin/ban-user",
+                Some(json!({"userId":id,"banExpiresIn":duration})),
+                &admin,
+            ),
+            200,
+        )
+        .await;
+        assert_eq!(body(&banned)["user"]["banned"], true);
+        let user = auth.store().get_user_by_id(&id).await?.unwrap();
+        if let Some(ms) = milliseconds {
+            assert!(
+                ((user.ban_expires().unwrap() - user.updated_at()).num_milliseconds() - ms).abs()
+                    < 100
+            );
+        } else {
+            assert!(user.ban_expires().is_none());
+        }
+        assert_eq!(
+            db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&id])
+                .await?,
+            0
+        );
+        let login = call(
+            &auth,
+            request(
+                "/sign-in/email",
+                Some(json!({"email":"owner@example.test","password":PASSWORD})),
+                "",
+            ),
+            if duration < 0.0 { 200 } else { 403 },
+        )
+        .await;
+        if duration < 0.0 {
+            assert_eq!(body(&login)["user"]["id"], id);
+            assert!(!auth.store().get_user_by_id(&id).await?.unwrap().banned());
+        }
+        assert_eq!(db.table("accounts").await?, accounts);
+        authenticated(&auth, &admin, "admin@example.test").await;
+        authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+        B::close(connection).await?;
+    }
+    Ok(())
 }
