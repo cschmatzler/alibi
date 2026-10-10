@@ -17,7 +17,8 @@ backend_tests!(
     admin_email_values_are_coerced_and_validated_before_any_update,
     demoted_admin_cannot_use_stale_cookie_cache_to_restore_grants,
     explicit_empty_admin_roles_deny_builtin_grants_without_losing_sessions,
-    admin_role_tokens_with_whitespace_do_not_gain_privileges_or_admin_protection
+    admin_role_tokens_with_whitespace_do_not_gain_privileges_or_admin_protection,
+    blank_admin_role_falls_back_to_configured_user_permission
 );
 
 async fn promote<S: AuthSchema>(auth: &Alibi<S>, response: &AuthResponse, role: &str) -> String {
@@ -1076,5 +1077,53 @@ async fn admin_role_tokens_with_whitespace_do_not_gain_privileges_or_admin_prote
     )
     .await;
     assert_eq!(body(&stopped)["user"]["id"], admin_id);
+    B::close(connection).await
+}
+
+async fn blank_admin_role_falls_back_to_configured_user_permission<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let permissions =
+        HashMap::from([("user".into(), RolePermissions::new().allow("user", ["get"]))]);
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::with_config(alibi::plugins::AdminConfig {
+            default_role: String::new(),
+            roles: Some(permissions),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let target = signup(&auth, "target@example.test").await;
+    let id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(body(&owner)["user"]["role"], "");
+    let check = call(
+        &auth,
+        request(
+            "/admin/has-permission",
+            Some(json!({"permissions":{"user":["get"]}})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&check)["success"], true);
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let mut get = request("/admin/get-user", None, &cookies(&owner));
+    _ = get.query.insert("id".into(), id.clone());
+    let visible = call(&auth, get, 200).await;
+    assert_eq!(body(&visible)["id"], id);
+    _ = call(
+        &auth,
+        request(
+            "/admin/ban-user",
+            Some(json!({"userId":id})),
+            &cookies(&owner),
+        ),
+        403,
+    )
+    .await;
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
     B::close(connection).await
 }
