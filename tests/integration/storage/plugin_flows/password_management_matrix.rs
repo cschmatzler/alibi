@@ -9,7 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 backend_tests!(
     password_reset_token_matrix,
-    change_and_verify_password_matrix
+    change_and_verify_password_matrix,
+    reset_body_proof_wins_over_conflicting_live_query_proof
 );
 
 #[derive(Default)]
@@ -334,5 +335,108 @@ async fn change_and_verify_password_matrix<B: Backend>(db: Db) -> TestResult {
         B::close(connection).await?;
     }
     trace.assert("password-management/change-and-verify-matrix");
+    Ok(())
+}
+
+async fn reset_body_proof_wins_over_conflicting_live_query_proof<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mailbox = Arc::new(Mailbox::default());
+    let auth = fast_builder::<B>(&connection)
+        .plugin(management(
+            &mailbox,
+            &Arc::new(AtomicBool::new(false)),
+            false,
+            true,
+        ))
+        .build()
+        .await?;
+    let owner = signup(&auth, "body-token-owner@example.test").await;
+    let query_owner = signup(&auth, "query-token-owner@example.test").await;
+    let mut tokens = Vec::new();
+    for email in [
+        "body-token-owner@example.test",
+        "query-token-owner@example.test",
+    ] {
+        let _ = call(
+            &auth,
+            request("/request-password-reset", Some(json!({"email":email})), ""),
+            200,
+        )
+        .await;
+        tokens.push(mailbox.0.lock().unwrap().pop().unwrap().1);
+    }
+    let query_id = body(&query_owner)["user"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let query_password = db
+        .text(
+            "SELECT password FROM accounts WHERE user_id = $1",
+            &[&query_id],
+        )
+        .await?;
+    let rows = db.tables(&["users", "sessions"]).await?;
+    let before: Value = serde_json::from_str(&db.table("verifications").await?)?;
+    let query_proof = before
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["identifier"] == format!("reset-password:{}", tokens[1]))
+        .unwrap()
+        .clone();
+    let mut input = request(
+        "/reset-password",
+        Some(json!({"token":tokens[0],"newPassword":"body-token-new-password"})),
+        "",
+    );
+    let _ = input.query.insert("token".into(), tokens[1].clone());
+    let _ = call(&auth, input, 200).await;
+    assert_eq!(db.tables(&["users", "sessions"]).await?, rows);
+    assert_eq!(
+        db.text(
+            "SELECT password FROM accounts WHERE user_id = $1",
+            &[&query_id]
+        )
+        .await?,
+        query_password
+    );
+    let after: Value = serde_json::from_str(&db.table("verifications").await?)?;
+    assert_eq!(after, json!([query_proof]));
+    let _ = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"body-token-owner@example.test","password":PASSWORD})),
+            "",
+        ),
+        401,
+    )
+    .await;
+    let login = call(&auth, request("/sign-in/email", Some(json!({"email":"body-token-owner@example.test","password":"body-token-new-password"})), ""), 200).await;
+    assert_eq!(body(&login)["user"]["id"], body(&owner)["user"]["id"]);
+    let foreign_login = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"query-token-owner@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(
+        body(&foreign_login)["user"]["id"],
+        body(&query_owner)["user"]["id"]
+    );
+    let _ = call(
+        &auth,
+        request(
+            "/reset-password",
+            Some(json!({"token":tokens[1],"newPassword":"query-owner-new-password"})),
+            "",
+        ),
+        200,
+    )
+    .await;
     Ok(())
 }
