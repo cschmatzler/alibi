@@ -5,7 +5,11 @@ use alibi::UpdateUser;
 use alibi::plugins::{AdminPlugin, RolePermissions};
 use std::collections::HashMap;
 
-backend_tests!(admin_route_matrix, admin_impersonation_and_bans);
+backend_tests!(
+    admin_route_matrix,
+    admin_impersonation_and_bans,
+    configured_role_validation_precedes_missing_target_lookup
+);
 
 async fn promote<S: AuthSchema>(auth: &Alibi<S>, response: &AuthResponse, role: &str) -> String {
     let id = body(response)["user"]["id"].as_str().unwrap().to_owned();
@@ -508,5 +512,45 @@ async fn admin_impersonation_and_bans<B: Backend>(db: Db) -> TestResult {
         .await?,
     );
     trace.assert("admin/impersonation-and-bans");
+    B::close(connection).await
+}
+
+async fn configured_role_validation_precedes_missing_target_lookup<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new().roles(roles()))
+        .build()
+        .await?;
+    let admin = signup(&auth, "admin@example.test").await;
+    _ = promote(&auth, &admin, "admin").await;
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let denied = call(
+        &auth,
+        request(
+            "/admin/set-role",
+            Some(json!({"userId":"missing-target","role":"ghost"})),
+            &cookies(&admin),
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(
+        body(&denied)["code"],
+        "YOU_ARE_NOT_ALLOWED_TO_SET_NON_EXISTENT_VALUE"
+    );
+    let missing = call(
+        &auth,
+        request(
+            "/admin/set-role",
+            Some(json!({"userId":"missing-target","role":"user"})),
+            &cookies(&admin),
+        ),
+        404,
+    )
+    .await;
+    assert_eq!(body(&missing)["code"], "USER_NOT_FOUND");
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
     B::close(connection).await
 }
