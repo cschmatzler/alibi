@@ -6,7 +6,8 @@ use async_trait::async_trait;
 
 backend_tests!(
     organization_lifecycle_callbacks_preserve_patch_authority_and_committed_phases,
-    organization_invitation_and_member_callbacks_preserve_actor_and_commit_order
+    organization_invitation_and_member_callbacks_preserve_actor_and_commit_order,
+    organization_self_removal_after_rejection_clears_only_current_org_selection
 );
 postgres_tests!(
     organization_lifecycle_callbacks_preserve_patch_authority_and_committed_phases,
@@ -749,4 +750,215 @@ async fn organization_invitation_and_member_callbacks_preserve_actor_and_commit_
         B::close(connection).await?;
     }
     Ok(())
+}
+
+async fn organization_self_removal_after_rejection_clears_only_current_org_selection<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::AuthSession;
+    struct Hooks<S: AuthSchema> {
+        store: Arc<dyn alibi::AuthStore<S>>,
+        token: Mutex<String>,
+        after: Mutex<Vec<OrganizationMemberRemovalContext>>,
+        observed: Mutex<Vec<(Option<String>, Option<String>)>>,
+    }
+    impl<S: AuthSchema> std::fmt::Debug for Hooks<S> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("SelfRemovalAfterVeto")
+        }
+    }
+    #[async_trait]
+    impl<S: AuthSchema> OrganizationMemberRemovalHooks for Hooks<S> {
+        async fn after_remove(&self, c: &OrganizationMemberRemovalContext) -> AuthResult<()> {
+            self.after.lock().unwrap().push(c.clone());
+            let token = self.token.lock().unwrap().clone();
+            let session = self.store.get_session(&token).await?.unwrap();
+            self.observed.lock().unwrap().push((
+                session.active_organization_id().map(str::to_owned),
+                session.active_team_id().map(str::to_owned),
+            ));
+            Err(AuthError::Api {
+                status: 400,
+                code: Some("MEMBER_REMOVAL_HOOK_REJECTED".into()),
+                message: "after removal rejected".into(),
+            })
+        }
+    }
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks {
+        store: Arc::new(store),
+        token: Mutex::new(String::new()),
+        after: Mutex::new(Vec::new()),
+        observed: Mutex::new(Vec::new()),
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            member_removal_hooks: Some(hooks.clone()),
+            teams: TeamsConfig {
+                enabled: true,
+                create_default_team: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let target = signup(&auth, "target@example.test").await;
+    let sibling = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"target@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let org = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Owned","slug":"owned"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let target_id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
+    let member = auth
+        .dispatch_endpoint(
+            OrganizationPlugin::add_member_endpoint(&serde_json::from_value(
+                json!({"organizationId":org["id"],"userId":target_id,"role":"owner"}),
+            )?)?,
+            alibi::endpoint::EndpointOptions::default(),
+        )
+        .await?
+        .decode()?;
+    let team = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create-team",
+                Some(json!({"organizationId":org["id"],"name":"Selected team"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    _ = call(
+        &auth,
+        request(
+            "/organization/add-team-member",
+            Some(json!({"organizationId":org["id"],"teamId":team["id"],"userId":target_id})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    for browser in [&target, &sibling] {
+        _ = call(
+            &auth,
+            request(
+                "/organization/set-active",
+                Some(json!({"organizationId":org["id"]})),
+                &cookies(browser),
+            ),
+            200,
+        )
+        .await;
+        _ = call(
+            &auth,
+            request(
+                "/organization/set-active-team",
+                Some(json!({"teamId":team["id"]})),
+                &cookies(browser),
+            ),
+            200,
+        )
+        .await;
+    }
+    let token = body(&target)["token"].as_str().unwrap().to_owned();
+    let sibling_token = body(&sibling)["token"].as_str().unwrap().to_owned();
+    *hooks.token.lock().unwrap() = token.clone();
+    let stable = db.tables(&["users", "accounts", "organization"]).await?;
+    let mut expected_team: Value = serde_json::from_str(&db.table("team").await?)?;
+    expected_team[0]["member_count"] = json!(0);
+    let denied = call(
+        &auth,
+        request(
+            "/organization/remove-member",
+            Some(json!({"organizationId":org["id"],"memberIdOrEmail":member.id})),
+            &cookies(&target),
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&denied)["code"], "MEMBER_REMOVAL_HOOK_REJECTED");
+    assert_eq!(
+        db.count_where("SELECT COUNT(*) FROM member WHERE id=$1", &[&member.id])
+            .await?,
+        0
+    );
+    assert_eq!(
+        db.count_where(
+            "SELECT COUNT(*) FROM team_member WHERE user_id=$1",
+            &[&target_id]
+        )
+        .await?,
+        0
+    );
+    assert_eq!(
+        db.text(
+            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            &[&token]
+        )
+        .await?,
+        None
+    );
+    assert_eq!(
+        db.text(
+            "SELECT active_team_id FROM sessions WHERE token=$1",
+            &[&token]
+        )
+        .await?
+        .as_deref(),
+        team["id"].as_str()
+    );
+    assert_eq!(
+        db.text(
+            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            &[&sibling_token]
+        )
+        .await?
+        .as_deref(),
+        org["id"].as_str()
+    );
+    assert_eq!(
+        db.text(
+            "SELECT active_team_id FROM sessions WHERE token=$1",
+            &[&sibling_token]
+        )
+        .await?
+        .as_deref(),
+        team["id"].as_str()
+    );
+    assert_eq!(
+        hooks.observed.lock().unwrap()[0],
+        (None, Some(team["id"].as_str().unwrap().into()))
+    );
+    assert_eq!(hooks.after.lock().unwrap()[0].user.id, target_id);
+    assert_eq!(
+        db.tables(&["users", "accounts", "organization"]).await?,
+        stable
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(&db.table("team").await?)?,
+        expected_team
+    );
+    authenticated(&auth, &cookies(&owner), "owner@example.test").await;
+    B::close(connection).await
 }
