@@ -19,7 +19,8 @@ backend_tests!(
     server_otp_can_bootstrap_a_password_without_replacing_sessions,
     server_jwt_signatures_are_usable_by_an_independent_consumer,
     server_one_time_token_distinguishes_logical_and_client_requests,
-    server_organization_authority_and_member_lifecycle
+    server_organization_authority_and_member_lifecycle,
+    server_password_concurrent_admissions_keep_original_browser_authority
 );
 postgres_tests!(
     server_otp_can_bootstrap_a_password_without_replacing_sessions,
@@ -766,5 +767,109 @@ async fn verify_jwt_overrides<S: AuthSchema>(
         .claims["sub"],
         "default-after-overrides"
     );
+    Ok(())
+}
+
+async fn server_password_concurrent_admissions_keep_original_browser_authority<B: Backend>(
+    parent: Db,
+) -> TestResult {
+    struct Hash {
+        barrier: tokio::sync::Barrier,
+        armed: std::sync::atomic::AtomicBool,
+    }
+    #[async_trait::async_trait]
+    impl alibi::PasswordHasher for Hash {
+        async fn hash(&self, password: &str) -> alibi::AuthResult<String> {
+            if self.armed.load(std::sync::atomic::Ordering::SeqCst) {
+                _ = self.barrier.wait().await;
+            }
+            Ok(format!("fast${password}"))
+        }
+        async fn verify(&self, hash: &str, password: &str) -> alibi::AuthResult<bool> {
+            Ok(hash == format!("fast${password}"))
+        }
+    }
+    for existing in [false, true] {
+        let db = parent.fresh().await?;
+        let (connection, _) = db.migrated::<B>(SECRET).await?;
+        let hash = Arc::new(Hash {
+            barrier: tokio::sync::Barrier::new(2),
+            armed: std::sync::atomic::AtomicBool::new(false),
+        });
+        let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+        let auth = AuthBuilder::new(config.clone())
+            .store(B::store(Arc::new(config), &connection))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+            .plugin(EmailPasswordPlugin::new().password_hasher(hash.clone()))
+            .plugin(SessionManagementPlugin::new())
+            .build()
+            .await?;
+        let owner = signup(&auth, "owner@example.test").await;
+        let foreign = signup(&auth, "foreign@example.test").await;
+        let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+        let original = db
+            .text("SELECT id FROM accounts WHERE user_id=$1", &[&id])
+            .await?
+            .unwrap();
+        if existing {
+            _ = db
+                .execute("UPDATE accounts SET password=NULL WHERE user_id=$1", &[&id])
+                .await?;
+        } else {
+            _ = db
+                .execute("DELETE FROM accounts WHERE user_id=$1", &[&id])
+                .await?;
+        }
+        let before = db.tables(&["users", "sessions"]).await?;
+        hash.armed.store(true, std::sync::atomic::Ordering::SeqCst);
+        let input = request("/trusted", None, &cookies(&owner));
+        let (left, right) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            tokio::join!(
+                alibi::plugins::password_management::set_password(
+                    &input,
+                    "concurrent-password-123",
+                    auth.context()
+                ),
+                alibi::plugins::password_management::set_password(
+                    &input,
+                    "concurrent-password-123",
+                    auth.context()
+                )
+            )
+        })
+        .await?;
+        left?;
+        right?;
+        hash.armed.store(false, std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(
+            db.count_where("SELECT COUNT(*) FROM accounts WHERE user_id=$1", &[&id])
+                .await?,
+            if existing { 1 } else { 2 }
+        );
+        assert_eq!(db.count_where("SELECT COUNT(*) FROM accounts WHERE user_id=$1 AND account_id=$1 AND password='fast$concurrent-password-123'",&[&id]).await?,if existing {1}else{2});
+        if existing {
+            assert_eq!(
+                db.text("SELECT id FROM accounts WHERE user_id=$1", &[&id])
+                    .await?
+                    .as_deref(),
+                Some(original.as_str())
+            );
+        }
+        assert_eq!(db.tables(&["users", "sessions"]).await?, before);
+        authenticated(&auth, &cookies(&owner), "owner@example.test").await;
+        authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+        let login = call(
+            &auth,
+            request(
+                "/sign-in/email",
+                Some(json!({"email":"owner@example.test","password":"concurrent-password-123"})),
+                "",
+            ),
+            200,
+        )
+        .await;
+        assert_eq!(body(&login)["user"]["id"], id);
+        B::close(connection).await?;
+    }
     Ok(())
 }
