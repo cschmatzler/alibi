@@ -85,6 +85,7 @@ impl OAuthProvider {
             user_info_url: Some("https://api.zoom.us/v2/users/me".into()),
             scopes: vec![],
             authorization: None,
+            allowed_request_params: Vec::new(),
             authorization_params: Vec::new(),
             account_subject: Some(subject),
             map_user_info: None,
