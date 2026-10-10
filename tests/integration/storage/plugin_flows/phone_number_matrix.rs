@@ -15,7 +15,8 @@ backend_tests!(
     phone_number_provider_and_sender_failures,
     phone_number_password_reset_effects,
     phone_number_signup_and_update_inputs,
-    phone_signin_distinguishes_missing_null_and_empty_credentials
+    phone_signin_distinguishes_missing_null_and_empty_credentials,
+    phone_self_update_consumes_proof_without_changing_owner_or_callbacks
 );
 
 #[derive(Default)]
@@ -610,4 +611,116 @@ async fn phone_signin_distinguishes_missing_null_and_empty_credentials<B: Backen
         B::close(connection).await?;
     }
     Ok(())
+}
+
+async fn phone_self_update_consumes_proof_without_changing_owner_or_callbacks<B: Backend>(
+    db: Db,
+) -> TestResult {
+    struct Count(std::sync::atomic::AtomicUsize);
+    #[async_trait]
+    impl PhoneVerificationHook for Count {
+        async fn verified(
+            &self,
+            _: &PhoneNumberVerification,
+            _: &CallbackContext,
+        ) -> AuthResult<()> {
+            _ = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let outbox = Arc::new(Outbox::default());
+    let hook = Arc::new(Count(std::sync::atomic::AtomicUsize::new(0)));
+    let auth = fast_builder::<B>(&connection)
+        .plugin(PhoneNumberPlugin::new(PhoneNumberConfig {
+            send_otp: Some(outbox.clone()),
+            sign_up_on_verification: Some(Arc::new(Identity)),
+            callback_on_verification: Some(hook.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let phone = "+15550000102";
+    _ = call(
+        &auth,
+        request(
+            "/phone-number/send-otp",
+            Some(json!({"phoneNumber":phone})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let owner = call(
+        &auth,
+        request(
+            "/phone-number/verify",
+            Some(json!({"phoneNumber":phone,"code":outbox.last().code})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    assert_eq!(hook.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    _ = call(
+        &auth,
+        request(
+            "/phone-number/send-otp",
+            Some(json!({"phoneNumber":phone})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let code = outbox.last().code;
+    let input = json!({"phoneNumber":phone,"code":code,"updatePhoneNumber":true});
+    let denied = call(
+        &auth,
+        request(
+            "/phone-number/verify",
+            Some(input.clone()),
+            &cookies(&owner),
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&denied)["code"], "PHONE_NUMBER_EXIST");
+    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(hook.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let replay = call(
+        &auth,
+        request("/phone-number/verify", Some(input), &cookies(&owner)),
+        400,
+    )
+    .await;
+    assert_eq!(body(&replay)["code"], "OTP_NOT_FOUND");
+    let next = "+15550000103";
+    _ = call(
+        &auth,
+        request(
+            "/phone-number/send-otp",
+            Some(json!({"phoneNumber":next})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let updated = call(
+        &auth,
+        request(
+            "/phone-number/verify",
+            Some(json!({"phoneNumber":next,"code":outbox.last().code,"updatePhoneNumber":true})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&updated)["user"]["id"], body(&owner)["user"]["id"]);
+    assert_eq!(body(&updated)["token"], body(&owner)["token"]);
+    assert_eq!(body(&updated)["user"]["phoneNumber"], next);
+    assert_eq!(hook.0.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert_eq!(db.count("sessions").await?, 1);
+    B::close(connection).await
 }
