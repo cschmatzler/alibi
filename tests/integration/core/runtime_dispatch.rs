@@ -131,6 +131,7 @@ impl<S: AuthSchema> AuthPlugin<S> for Edge {
             AuthRoute::get("/echo", "echo"),
             AuthRoute::post("/echo", "echoPost"),
             AuthRoute::post("/any", "any"),
+            AuthRoute::get("/echo/{id}", "echoId").with_context_path("/echo/:id"),
         ]
     }
     fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
@@ -442,6 +443,94 @@ async fn cors_preflight_and_rate_limit_short_circuit_before_routing() {
     let blocked = limited.handle_request(get("/api/auth/ok")).await.unwrap();
     assert_eq!(blocked.status, 429);
     assert!(blocked.headers.contains_key("x-retry-after"));
+}
+
+struct PathHook {
+    matches: bool,
+    patch: Option<EndpointContextPatch>,
+}
+
+#[async_trait]
+impl<S: AuthSchema> EndpointHook<S> for PathHook {
+    fn matches_before(&self, call: &EndpointCall, _: &AuthContext<S>) -> AuthResult<bool> {
+        assert_eq!(call.path(), Some("/echo/:id"));
+        Ok(self.matches)
+    }
+
+    async fn before(
+        &self,
+        call: &EndpointCall,
+        _: &AuthContext<S>,
+    ) -> AuthResult<Option<BeforeEndpointAction>> {
+        assert_eq!(call.path(), Some("/echo/:id"));
+        Ok(self
+            .patch
+            .clone()
+            .map(|patch| BeforeEndpointAction::Patch(Box::new(patch))))
+    }
+
+    async fn after(
+        &self,
+        call: &EndpointCall,
+        _: &AuthContext<S>,
+        mut response: EndpointResponse,
+    ) -> AuthResult<EndpointResponse> {
+        let mut headers = alibi::Headers::new();
+        drop(headers.insert("x-hook-path", call.path().unwrap()));
+        response.merge_headers(headers);
+        Ok(response)
+    }
+}
+
+#[tokio::test]
+async fn endpoint_hooks_preserve_concrete_paths_unless_explicitly_patched() {
+    let cases = [
+        (false, None, "/echo/google", "/echo/:id"),
+        (true, None, "/echo/google", "/echo/:id"),
+        (
+            true,
+            Some(EndpointContextPatch {
+                headers: Some([("x-patched".into(), "yes".into())].into_iter().collect()),
+                ..EndpointContextPatch::default()
+            }),
+            "/echo/google",
+            "/echo/:id",
+        ),
+        (
+            true,
+            Some(EndpointContextPatch {
+                path: Some("/echo/github".into()),
+                ..EndpointContextPatch::default()
+            }),
+            "/echo/github",
+            "/echo/github",
+        ),
+        (
+            true,
+            Some(EndpointContextPatch {
+                path: Some("/echo/:id".into()),
+                ..EndpointContextPatch::default()
+            }),
+            "/echo/:id",
+            "/echo/:id",
+        ),
+    ];
+    for (matches, patch, request_path, hook_path) in cases {
+        let auth = AuthBuilder::without_database(config())
+            .plugin(Edge)
+            .endpoint_hook(PathHook { matches, patch })
+            .build()
+            .await
+            .unwrap();
+        let response = auth
+            .handle_request(get("/api/auth/echo/google"))
+            .await
+            .unwrap();
+        assert_eq!(response.status, 200);
+        let body: Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(body["path"], request_path);
+        assert_eq!(response.headers.get("x-hook-path").unwrap(), hook_path);
+    }
 }
 
 struct QueryPatch(Arc<Mutex<Vec<Value>>>);

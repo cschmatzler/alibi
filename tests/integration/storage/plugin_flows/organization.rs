@@ -5,7 +5,10 @@ use alibi::plugins::organization::{
     default_organization_statements,
 };
 
-backend_tests!(organization_discovery_invitations_and_active_membership_are_owner_scoped);
+backend_tests!(
+    organization_discovery_invitations_and_active_membership_are_owner_scoped,
+    stray_team_membership_without_tenant_membership_cannot_read_roster
+);
 postgres_tests!(organization_discovery_invitations_and_active_membership_are_owner_scoped);
 
 async fn organization_discovery_invitations_and_active_membership_are_owner_scoped<B: Backend>(
@@ -1003,5 +1006,119 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
     );
     assert_eq!(db.count("organization").await?, 2);
     assert_eq!(db.table("sessions").await?, sessions);
+    B::close(connection).await
+}
+
+async fn stray_team_membership_without_tenant_membership_cannot_read_roster<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            teams: TeamsConfig {
+                enabled: true,
+                create_default_team: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let outsider = signup(&auth, "outsider@example.test").await;
+    let foreign_id = body(&outsider)["user"]["id"].as_str().unwrap().to_owned();
+    let org = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Tenant","slug":"tenant"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    _ = call(
+        &auth,
+        request(
+            "/organization/create",
+            Some(json!({"name":"Foreign","slug":"foreign"})),
+            &cookies(&outsider),
+        ),
+        200,
+    )
+    .await;
+    let team = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create-team",
+                Some(json!({"organizationId":org,"name":"Team"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    _ = call(
+        &auth,
+        request(
+            "/organization/add-team-member",
+            Some(json!({"teamId":team,"organizationId":org,"userId":body(&owner)["user"]["id"]})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    // Legacy physical membership does not confer tenant membership.
+    _ = auth
+        .store()
+        .add_team_member(&team, &foreign_id, None)
+        .await?;
+    assert!(auth.store().get_member(&org, &foreign_id).await?.is_none());
+    let before = db
+        .tables(&[
+            "organization",
+            "member",
+            "team",
+            "team_member",
+            "users",
+            "accounts",
+            "sessions",
+        ])
+        .await?;
+    let mut query = request("/organization/list-team-members", None, &cookies(&outsider));
+    _ = query.query.insert("teamId".into(), team.clone());
+    let denied = call(&auth, query.clone(), 400).await;
+    assert_eq!(body(&denied)["code"], "USER_IS_NOT_A_MEMBER_OF_THE_TEAM");
+    _ = query.headers.insert("cookie".into(), cookies(&owner));
+    let rows = body(&call(&auth, query, 200).await);
+    assert!(
+        rows.as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["teamId"] == team && row["userId"] == foreign_id)
+    );
+    assert_eq!(
+        db.tables(&[
+            "organization",
+            "member",
+            "team",
+            "team_member",
+            "users",
+            "accounts",
+            "sessions"
+        ])
+        .await?,
+        before
+    );
+    authenticated(&auth, &cookies(&outsider), "outsider@example.test").await;
     B::close(connection).await
 }
