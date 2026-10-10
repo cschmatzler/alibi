@@ -9,7 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 backend_tests!(
     password_reset_token_matrix,
-    change_and_verify_password_matrix
+    change_and_verify_password_matrix,
+    expired_delivered_reset_redirect_replaces_error_and_preserves_fragment
 );
 
 #[derive(Default)]
@@ -334,5 +335,88 @@ async fn change_and_verify_password_matrix<B: Backend>(db: Db) -> TestResult {
         B::close(connection).await?;
     }
     trace.assert("password-management/change-and-verify-matrix");
+    Ok(())
+}
+
+async fn expired_delivered_reset_redirect_replaces_error_and_preserves_fragment<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mailbox = Arc::new(Mailbox::default());
+    let auth = fast_builder::<B>(&connection)
+        .plugin(management(
+            &mailbox,
+            &Arc::new(AtomicBool::new(false)),
+            false,
+            true,
+        ))
+        .build()
+        .await?;
+    let owner = signup(&auth, "expired-reset-owner@example.test").await;
+    let foreign = signup(&auth, "expired-reset-foreign@example.test").await;
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let callback = "/done?error=old&keep=a%2Bb#details";
+    let _ = call(
+        &auth,
+        request(
+            "/request-password-reset",
+            Some(json!({"email":"expired-reset-owner@example.test","redirectTo":callback})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let (url, token) = mailbox.0.lock().unwrap().pop().unwrap();
+    let identifier = format!("reset-password:{token}");
+    db.set_timestamp(
+        "verifications",
+        "expires_at",
+        ("identifier", &identifier),
+        chrono::Utc::now() - chrono::Duration::hours(1),
+    )
+    .await?;
+    let delivered = url::Url::parse(&url)?;
+    let mut input = AuthRequest::new(HttpMethod::Get, delivered.path());
+    input.query.extend(
+        delivered
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned())),
+    );
+    let rejected = call(&auth, input, 302).await;
+    let mut expected = url::Url::parse(ORIGIN)?.join(callback)?;
+    expected.set_query(Some("error=INVALID_TOKEN&keep=a%2Bb"));
+    assert_eq!(
+        rejected.headers.get("location").map(String::as_str),
+        Some(expected.as_str())
+    );
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    authenticated(&auth, &cookies(&owner), "expired-reset-owner@example.test").await;
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "expired-reset-foreign@example.test",
+    )
+    .await;
+    let _ = call(
+        &auth,
+        request(
+            "/request-password-reset",
+            Some(json!({"email":"expired-reset-owner@example.test"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let (_, fresh) = mailbox.0.lock().unwrap().pop().unwrap();
+    let _ = call(
+        &auth,
+        request(
+            "/reset-password",
+            Some(json!({"token":fresh,"newPassword":"fresh-reset-password"})),
+            "",
+        ),
+        200,
+    )
+    .await;
     Ok(())
 }
