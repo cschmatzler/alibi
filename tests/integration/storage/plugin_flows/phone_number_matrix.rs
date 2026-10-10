@@ -19,7 +19,8 @@ backend_tests!(
     phone_self_update_consumes_proof_without_changing_owner_or_callbacks,
     phone_reset_callback_rejection_precedes_configured_session_revocation,
     phone_missing_otp_sender_precedes_application_validation,
-    phone_external_verifier_cannot_authorize_local_password_reset
+    phone_external_verifier_cannot_authorize_local_password_reset,
+    phone_verifier_rejection_preserves_local_proof_until_successful_retry
 );
 
 #[derive(Default)]
@@ -1005,4 +1006,87 @@ async fn phone_external_verifier_cannot_authorize_local_password_reset<B: Backen
     );
     authenticated(&auth, &cookies(&owner), "provider-reset@example.test").await;
     B::close(connection).await
+}
+
+async fn phone_verifier_rejection_preserves_local_proof_until_successful_retry<B: Backend>(
+    parent: Db,
+) -> TestResult {
+    struct MutableProvider(std::sync::atomic::AtomicUsize);
+    #[async_trait]
+    impl PhoneOtpVerifier for MutableProvider {
+        async fn verify(&self, _: &PhoneOtpDelivery, _: &CallbackContext) -> AuthResult<bool> {
+            match self.0.load(std::sync::atomic::Ordering::SeqCst) {
+                0 => Err(AuthError::Upstream {
+                    status: 403,
+                    code: "PHONE_VERIFIER_REJECTED",
+                    message: "Application verifier rejected",
+                }),
+                1 => Err(AuthError::internal("provider offline")),
+                _ => Ok(true),
+            }
+        }
+    }
+    for mode in [0, 1] {
+        let db = parent.fresh().await?;
+        let (connection, _) = db.migrated::<B>(SECRET).await?;
+        let outbox = Arc::new(Outbox::default());
+        let provider = Arc::new(MutableProvider(std::sync::atomic::AtomicUsize::new(mode)));
+        let auth = fast_builder::<B>(&connection)
+            .plugin(PhoneNumberPlugin::new(PhoneNumberConfig {
+                send_otp: Some(outbox.clone()),
+                verify_otp: Some(provider.clone()),
+                ..Default::default()
+            }))
+            .build()
+            .await?;
+        let phone = "+15550000106";
+        let owner=call(&auth,request("/sign-up/email",Some(json!({"email":"retry-phone@example.test","password":PASSWORD,"name":"Owner","phoneNumber":phone})),""),200).await;
+        _ = call(
+            &auth,
+            request(
+                "/phone-number/send-otp",
+                Some(json!({"phoneNumber":phone})),
+                "",
+            ),
+            200,
+        )
+        .await;
+        let code = outbox.last().code;
+        let before = db
+            .tables(&["users", "accounts", "sessions", "verifications"])
+            .await?;
+        _ = call(
+            &auth,
+            request(
+                "/phone-number/verify",
+                Some(json!({"phoneNumber":phone,"code":code})),
+                &cookies(&owner),
+            ),
+            if mode == 0 { 403 } else { 500 },
+        )
+        .await;
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "verifications"])
+                .await?,
+            before
+        );
+        provider.0.store(2, std::sync::atomic::Ordering::SeqCst);
+        let accepted = call(
+            &auth,
+            request(
+                "/phone-number/verify",
+                Some(json!({"phoneNumber":phone,"code":code})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await;
+        assert_eq!(body(&accepted)["user"]["id"], body(&owner)["user"]["id"]);
+        assert_eq!(body(&accepted)["user"]["phoneNumberVerified"], true);
+        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("sessions").await?, 2);
+        authenticated(&auth, &cookies(&owner), "retry-phone@example.test").await;
+        B::close(connection).await?;
+    }
+    Ok(())
 }
