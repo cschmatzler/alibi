@@ -8,6 +8,7 @@ use alibi::{AccountConfig, OAuthStateStrategy};
 
 backend_tests!(
     authorization_urls_follow_the_provider_policy,
+    request_authorization_parameters_are_allowlisted_and_flow_local,
     authorization_configuration_failures_are_opaque,
     token_grants_follow_the_provider_policy,
     profile_requests_without_a_dedicated_handler,
@@ -183,6 +184,108 @@ async fn authorization_urls_follow_the_provider_policy<B: Backend>(db: Db) -> Te
         );
     }
     trace.assert("social/authorization-urls");
+    B::close(connection).await
+}
+
+// The HTTP boundary owns both request decoding and the provider allowlist.
+// Existing additionalParams coverage does not exercise authorizationParams.
+async fn request_authorization_parameters_are_allowlisted_and_flow_local<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let social = Social::start().await;
+    for allow in [true, false] {
+        let auth = social
+            .auth::<B>(&connection, linking(|_| {}), |provider| {
+                provider.authorization_params = vec![("access_type".into(), "online".into())];
+                policy(provider).client_id_parameter = "appid".into();
+                policy(provider).fixed_authorization_params =
+                    vec![("fixed".into(), "server".into())];
+                if allow {
+                    provider.allowed_request_params = [
+                        "access_type",
+                        "prompt",
+                        "login_hint",
+                        "fixed",
+                        "appid",
+                        "state",
+                        "client_id",
+                        "redirect_uri",
+                        "response_type",
+                        "code_challenge",
+                        "code_challenge_method",
+                        "nonce",
+                        "scope",
+                    ]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect();
+                }
+            })
+            .await?;
+        let owner = cookies(&signup(&auth, &format!("params-{allow}@example.test")).await);
+        for path in ["/sign-in/social", "/link-social"] {
+            for supplied in [true, false] {
+                let mut input = json!({"provider":"google","disableRedirect":true});
+                if supplied {
+                    input["additionalParams"] = json!({"access_type":"legacy"});
+                    input["authorizationParams"] = json!({
+                        "access_type":"offline", "prompt":"consent",
+                        "login_hint":"drive+exports@example.test", "arbitrary":"forged",
+                        "fixed":"forged", "appid":"forged", "state":"forged",
+                        "client_id":"forged", "redirect_uri":"https://evil.test",
+                        "response_type":"token", "code_challenge":"forged",
+                        "code_challenge_method":"plain", "nonce":"forged", "scope":"forged"
+                    });
+                }
+                let response = call(&auth, request(path, Some(input), &owner), 200).await;
+                let url = url::Url::parse(body(&response)["url"].as_str().unwrap()).unwrap();
+                let pairs = url.query_pairs().into_owned().collect::<Vec<_>>();
+                let query = pairs
+                    .iter()
+                    .cloned()
+                    .collect::<std::collections::HashMap<_, _>>();
+                assert_eq!(pairs.len(), query.len(), "duplicate query keys: {url}");
+                assert_eq!(
+                    query["access_type"],
+                    if supplied && allow {
+                        "offline"
+                    } else if supplied {
+                        "legacy"
+                    } else {
+                        "online"
+                    }
+                );
+                assert_eq!(
+                    query.get("prompt").map(String::as_str),
+                    (supplied && allow).then_some("consent")
+                );
+                assert_eq!(
+                    query.get("login_hint").map(String::as_str),
+                    (supplied && allow).then_some("drive+exports@example.test")
+                );
+                assert!(!query.contains_key("arbitrary"));
+                assert_eq!(query["fixed"], "server");
+                assert_eq!(query["appid"], "google-client");
+                assert!(!query.contains_key("client_id"));
+                assert_ne!(query["state"], "forged");
+                assert_ne!(query["code_challenge"], "forged");
+                assert_eq!(query["code_challenge_method"], "S256");
+                assert_eq!(query["response_type"], "code");
+                assert_eq!(
+                    query["scope"]
+                        .split_whitespace()
+                        .collect::<std::collections::BTreeSet<_>>(),
+                    ["openid", "email", "profile"].into_iter().collect()
+                );
+                assert_eq!(
+                    query["redirect_uri"],
+                    format!("{ORIGIN}/api/auth/callback/google")
+                );
+                assert!(!query.contains_key("nonce"));
+            }
+        }
+    }
     B::close(connection).await
 }
 
