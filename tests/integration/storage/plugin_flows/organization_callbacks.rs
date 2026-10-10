@@ -7,6 +7,7 @@ use async_trait::async_trait;
 backend_tests!(
     organization_lifecycle_callbacks_preserve_patch_authority_and_committed_phases,
     organization_invitation_and_member_callbacks_preserve_actor_and_commit_order,
+    organization_role_hook_empty_and_absent_patches_retain_normalized_request,
     organization_role_after_hook_retains_original_target_across_independent_writes
 );
 postgres_tests!(
@@ -750,6 +751,110 @@ async fn organization_invitation_and_member_callbacks_preserve_actor_and_commit_
         B::close(connection).await?;
     }
     Ok(())
+}
+
+async fn organization_role_hook_empty_and_absent_patches_retain_normalized_request<B: Backend>(
+    db: Db,
+) -> TestResult {
+    #[derive(Debug, Default)]
+    struct Hooks {
+        mode: Mutex<usize>,
+        before: Mutex<Vec<OrganizationMemberRoleContext>>,
+        after: Mutex<Vec<OrganizationMemberRoleUpdatedContext>>,
+    }
+    #[async_trait]
+    impl OrganizationMemberRoleHooks for Hooks {
+        async fn before_update(
+            &self,
+            c: &OrganizationMemberRoleContext,
+        ) -> AuthResult<Option<OrganizationMemberRolePatch>> {
+            self.before.lock().unwrap().push(c.clone());
+            Ok(match *self.mode.lock().unwrap() {
+                0 => None,
+                1 => Some(OrganizationMemberRolePatch::default()),
+                2 => Some(OrganizationMemberRolePatch {
+                    role: Some(String::new()),
+                }),
+                _ => Some(OrganizationMemberRolePatch {
+                    role: Some("hook-unregistered-role".into()),
+                }),
+            })
+        }
+        async fn after_update(&self, c: &OrganizationMemberRoleUpdatedContext) -> AuthResult<()> {
+            self.after.lock().unwrap().push(c.clone());
+            Ok(())
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks::default());
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            member_role_hooks: Some(hooks.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+
+    let owner = signup(&auth, "owner@example.test").await;
+    let target = signup(&auth, "target@example.test").await;
+    let org = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Owned","slug":"owned"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let target_id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
+    let added = auth
+        .dispatch_endpoint(
+            OrganizationPlugin::add_member_endpoint(&serde_json::from_value(
+                json!({"organizationId":org["id"],"userId":target_id,"role":"member"}),
+            )?)?,
+            alibi::endpoint::EndpointOptions::default(),
+        )
+        .await?
+        .decode()?;
+
+    let unchanged = db
+        .tables(&["users", "accounts", "sessions", "organization"])
+        .await?;
+    for mode in 0..4 {
+        *hooks.mode.lock().unwrap() = mode;
+        let previous = db
+            .text("SELECT role FROM member WHERE id=$1", &[&added.id])
+            .await?
+            .unwrap();
+        _=call(&auth,request("/organization/update-member-role",Some(json!({"organizationId":org["id"],"memberId":added.id,"role":[" admin ,member ","admin"]})),&cookies(&owner)),200).await;
+        let expected = if mode == 3 {
+            "hook-unregistered-role"
+        } else {
+            "admin,member,admin"
+        };
+        assert_eq!(
+            db.text("SELECT role FROM member WHERE id=$1", &[&added.id])
+                .await?
+                .as_deref(),
+            Some(expected)
+        );
+        let before = hooks.before.lock().unwrap().last().unwrap().clone();
+        let after = hooks.after.lock().unwrap().last().unwrap().clone();
+        assert_eq!(before.user.id, target_id);
+        assert_eq!(before.new_role, "admin,member,admin");
+        assert_eq!(after.member.role, expected);
+        assert_eq!(after.previous_role, previous);
+        assert_eq!(after.user.id, target_id);
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "organization"])
+                .await?,
+            unchanged
+        );
+    }
+    B::close(connection).await
 }
 
 async fn organization_role_after_hook_retains_original_target_across_independent_writes<
