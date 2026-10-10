@@ -9,7 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 backend_tests!(
     password_reset_token_matrix,
-    change_and_verify_password_matrix
+    change_and_verify_password_matrix,
+    zero_password_options_enforce_default_bounds_and_reset_expiry
 );
 
 #[derive(Default)]
@@ -334,5 +335,132 @@ async fn change_and_verify_password_matrix<B: Backend>(db: Db) -> TestResult {
         B::close(connection).await?;
     }
     trace.assert("password-management/change-and-verify-matrix");
+    Ok(())
+}
+
+async fn zero_password_options_enforce_default_bounds_and_reset_expiry<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mailbox = Arc::new(Mailbox::default());
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(
+            super::auth_probe::fast_password()
+                .password_min_length(0)
+                .password_max_length(0),
+        )
+        .plugin(SessionManagementPlugin::new())
+        .plugin(PasswordManagementPlugin::with_config(
+            PasswordManagementConfig {
+                send_reset_password: Some(mailbox.clone()),
+                reset_token_expiry: Some(chrono::Duration::zero()),
+                ..Default::default()
+            },
+        ))
+        .build()
+        .await?;
+    for (length, status, code) in [
+        (7, 400, "PASSWORD_TOO_SHORT"),
+        (129, 400, "PASSWORD_TOO_LONG"),
+        (8, 200, ""),
+        (128, 200, ""),
+    ] {
+        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let response = call(&auth, request("/sign-up/email", Some(json!({"email":format!("boundary-{length}@example.test"),"name":"Boundary","password":"x".repeat(length)})), ""), status).await;
+        if status == 400 {
+            assert_eq!(body(&response)["code"], code);
+            assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        }
+    }
+    for accepted in [8, 128] {
+        let _ = call(
+            &auth,
+            request(
+                "/request-password-reset",
+                Some(json!({"email":"boundary-8@example.test"})),
+                "",
+            ),
+            200,
+        )
+        .await;
+        let (_, token) = mailbox.0.lock().unwrap().pop().unwrap();
+        let proof: Value = serde_json::from_str(&db.table("verifications").await?)?;
+        let row = proof
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["identifier"] == format!("reset-password:{token}"))
+            .unwrap();
+        let expires = chrono::DateTime::parse_from_rfc3339(row["expires_at"].as_str().unwrap())?;
+        let remaining = expires
+            .signed_duration_since(chrono::Utc::now())
+            .num_seconds();
+        assert!((3590..=3600).contains(&remaining));
+        let before = db
+            .tables(&["accounts", "sessions", "verifications"])
+            .await?;
+        for (length, code) in [(7, "PASSWORD_TOO_SHORT"), (129, "PASSWORD_TOO_LONG")] {
+            let rejected = call(
+                &auth,
+                request(
+                    "/reset-password",
+                    Some(json!({"token":token,"newPassword":"y".repeat(length)})),
+                    "",
+                ),
+                400,
+            )
+            .await;
+            assert_eq!(body(&rejected)["code"], code);
+            assert_eq!(
+                db.tables(&["accounts", "sessions", "verifications"])
+                    .await?,
+                before
+            );
+        }
+        let _ = call(
+            &auth,
+            request(
+                "/reset-password",
+                Some(json!({"token":token,"newPassword":"y".repeat(accepted)})),
+                "",
+            ),
+            200,
+        )
+        .await;
+        let _ = call(
+            &auth,
+            request(
+                "/sign-in/email",
+                Some(json!({"email":"boundary-8@example.test","password":"y".repeat(accepted)})),
+                "",
+            ),
+            200,
+        )
+        .await;
+    }
+    let long = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"boundary-8@example.test","password":"y".repeat(129)})),
+            "",
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&long)["code"], "PASSWORD_TOO_LONG");
+    let _ = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"boundary-8@example.test","password":"short"})),
+            "",
+        ),
+        401,
+    )
+    .await;
     Ok(())
 }
