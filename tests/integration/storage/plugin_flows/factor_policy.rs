@@ -12,7 +12,8 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
 backend_tests!(
     factor_storage_callbacks_preserve_consumption_and_totp_disable,
-    passwordless_factor_policy_requires_absent_credential_and_honors_route_overrides
+    passwordless_factor_policy_requires_absent_credential_and_honors_route_overrides,
+    two_factor_passwordless_retained_empty_credential
 );
 postgres_tests!(
     factor_storage_callbacks_preserve_consumption_and_totp_disable,
@@ -327,5 +328,141 @@ async fn passwordless_factor_policy_requires_absent_credential_and_honors_route_
     )
     .await;
     assert_eq!(db.count("two_factor").await?, 0);
+    B::close(connection).await
+}
+
+async fn two_factor_passwordless_retained_empty_credential<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(TwoFactorPlugin::with_config(TwoFactorConfig {
+            allow_passwordless: true,
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    _ = db
+        .execute(
+            "UPDATE accounts SET password='' WHERE user_id=$1 AND provider_id='credential'",
+            &[&owner_id],
+        )
+        .await?;
+    let accounts = db.table("accounts").await?;
+    let baseline = db
+        .tables(&[
+            "users",
+            "accounts",
+            "sessions",
+            "two_factor",
+            "verifications",
+        ])
+        .await?;
+    let null = call(
+        &auth,
+        request(
+            "/two-factor/enable",
+            Some(json!({"password":null})),
+            &cookies(&owner),
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&null)["code"], "VALIDATION_ERROR");
+    assert_eq!(
+        db.tables(&[
+            "users",
+            "accounts",
+            "sessions",
+            "two_factor",
+            "verifications"
+        ])
+        .await?,
+        baseline
+    );
+    let enabled = call(
+        &auth,
+        request(
+            "/two-factor/enable",
+            Some(json!({"password":"ignored-wrong-password"})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(db.count("two_factor").await?, 1);
+    let uri = body(&enabled)["totpURI"].as_str().unwrap().to_owned();
+    let totp = totp_rs::Totp::from_url(&uri)?;
+    let verified = call(
+        &auth,
+        request(
+            "/two-factor/verify-totp",
+            Some(json!({"code":totp.generate_current().to_string()})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    let cookie = cookies(&verified);
+    let current = body(&call(&auth, request("/get-session", None, &cookie), 200).await);
+    assert_eq!(current["user"]["id"], owner_id);
+    assert_eq!(current["user"]["twoFactorEnabled"], true);
+    let saved = call(
+        &auth,
+        request("/two-factor/get-totp-uri", Some(json!({})), &cookie),
+        200,
+    )
+    .await;
+    assert_eq!(body(&saved)["totpURI"], uri);
+    let disabled = call(
+        &auth,
+        request(
+            "/two-factor/disable",
+            Some(json!({"password":"ignored-wrong-password"})),
+            &cookie,
+        ),
+        200,
+    )
+    .await;
+    let current = body(
+        &call(
+            &auth,
+            request("/get-session", None, &cookies(&disabled)),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(current["user"]["id"], owner_id);
+    assert_eq!(current["user"]["twoFactorEnabled"], false);
+    assert_eq!(db.count("two_factor").await?, 0);
+    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(
+        db.text(
+            "SELECT password FROM accounts WHERE user_id=$1 AND provider_id='credential'",
+            &[&owner_id]
+        )
+        .await?
+        .as_deref(),
+        Some("")
+    );
+    let initial_users: Vec<Value> = serde_json::from_str(&baseline[0])?;
+    let final_users: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+    let foreign_id = body(&foreign)["user"]["id"].clone();
+    assert_eq!(
+        final_users.iter().find(|row| row["id"] == foreign_id),
+        initial_users.iter().find(|row| row["id"] == foreign_id)
+    );
+    let initial_sessions: Vec<Value> = serde_json::from_str(&baseline[2])?;
+    let final_sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    assert_eq!(
+        final_sessions
+            .iter()
+            .find(|row| row["user_id"] == foreign_id),
+        initial_sessions
+            .iter()
+            .find(|row| row["user_id"] == foreign_id)
+    );
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
 }
