@@ -13,7 +13,8 @@ use serde_json::Map;
 backend_tests!(
     application_grant_lifecycle,
     device_decision_and_issuance_edges,
-    device_missing_owner_preserves_approved_grant_for_recovery
+    device_missing_owner_preserves_approved_grant_for_recovery,
+    device_empty_application_codes_complete_real_grant
 );
 
 type Events = Arc<Mutex<Vec<Value>>>;
@@ -691,6 +692,115 @@ async fn device_missing_owner_preserves_approved_grant_for_recovery<B: Backend>(
     assert_eq!(final_rows[..2], stable[..2]);
     let old: Vec<Value> = serde_json::from_str(&stable[2])?;
     let new: Vec<Value> = serde_json::from_str(&final_rows[2])?;
+    assert_eq!(new.len(), old.len() + 1);
+    assert!(old.iter().all(|row| new.contains(row)));
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+async fn device_empty_application_codes_complete_real_grant<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(
+            DeviceAuthorizationPlugin::new()
+                .interval(chrono::Duration::zero())
+                .generate_device_code_async_with(|| async { Ok(String::new()) })
+                .generate_user_code_async_with(|| async { Ok(String::new()) }),
+        )
+        .plugin(alibi::plugins::BearerPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let stable = db.tables(&["users", "accounts", "sessions"]).await?;
+    let issued = body(
+        &call(
+            &auth,
+            request(
+                "/device/code",
+                Some(json!({"client_id":"empty","scope":"read"})),
+                "",
+            ),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(issued["device_code"], "");
+    assert_eq!(issued["user_code"], "");
+    let grant = auth
+        .store()
+        .get_device_code_by_device_code("")
+        .await?
+        .unwrap();
+    assert_eq!(grant.device_code, "");
+    assert_eq!(grant.user_code, "");
+    let redeem = |client: &str| {
+        request(
+            "/device/token",
+            Some(
+                json!({"grant_type":"urn:ietf:params:oauth:grant-type:device_code","device_code":"","client_id":client}),
+            ),
+            "",
+        )
+    };
+    let wrong = call(&auth, redeem("foreign"), 400).await;
+    assert_eq!(
+        body(&wrong),
+        json!({"error":"invalid_grant","error_description":"Client ID mismatch"})
+    );
+    assert_eq!(
+        serde_json::to_value(
+            auth.store()
+                .get_device_code_by_device_code("")
+                .await?
+                .unwrap()
+        )?,
+        serde_json::to_value(&grant)?
+    );
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stable);
+    _ = call(
+        &auth,
+        get("/device", &[("user_code", "")], &cookies(&owner)),
+        200,
+    )
+    .await;
+    _ = call(
+        &auth,
+        request(
+            "/device/approve",
+            Some(json!({"userCode":""})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    let token = body(&call(&auth, redeem("empty"), 200).await)["access_token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut current = request("/get-session", None, "");
+    _ = current
+        .headers
+        .insert("authorization".into(), format!("Bearer {token}"));
+    assert_eq!(
+        body(&call(&auth, current, 200).await)["user"]["id"],
+        body(&owner)["user"]["id"]
+    );
+    assert!(
+        auth.store()
+            .get_device_code_by_device_code("")
+            .await?
+            .is_none()
+    );
+    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    assert_eq!(
+        body(&call(&auth, redeem("empty"), 400).await)["error"],
+        "invalid_grant"
+    );
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+    assert_eq!(after[..2], stable[..2]);
+    let old: Vec<Value> = serde_json::from_str(&stable[2])?;
+    let new: Vec<Value> = serde_json::from_str(&after[2])?;
     assert_eq!(new.len(), old.len() + 1);
     assert!(old.iter().all(|row| new.contains(row)));
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
