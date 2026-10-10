@@ -16,7 +16,8 @@ backend_tests!(
     api_key_permission_documents,
     api_key_session_callbacks,
     api_key_organization_ownership,
-    api_key_storage_edges
+    api_key_storage_edges,
+    static_org_create_grants_admit_nonowner_and_reject_reader
 );
 
 fn raw(path: &str, text: &str, cookie: &str) -> AuthRequest {
@@ -971,5 +972,141 @@ async fn api_key_storage_edges<B: Backend>(db: Db) -> TestResult {
         );
     }
     trace.assert("api-key/storage-edges");
+    B::close(connection).await
+}
+
+async fn static_org_create_grants_admit_nonowner_and_reject_reader<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::plugins::organization::RolePermissions;
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let keys = ApiKeyPlugin::with_config(ApiKeyConfig::default()).configuration(ApiKeyConfig {
+        config_id: "organization".into(),
+        references: ApiKeyReferences::Organization,
+        ..Default::default()
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            roles: Some(std::collections::HashMap::from([
+                (
+                    "owner".into(),
+                    RolePermissions {
+                        api_key: vec![
+                            "create".into(),
+                            "read".into(),
+                            "update".into(),
+                            "delete".into(),
+                        ],
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "member".into(),
+                    RolePermissions {
+                        api_key: vec!["read".into()],
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "admin".into(),
+                    RolePermissions {
+                        api_key: vec!["create".into()],
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "updater".into(),
+                    RolePermissions {
+                        api_key: vec!["read".into(), "update".into()],
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "deleter".into(),
+                    RolePermissions {
+                        api_key: vec!["read".into(), "delete".into()],
+                        ..Default::default()
+                    },
+                ),
+            ])),
+            ..Default::default()
+        }))
+        .plugin(keys.clone())
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let reader = signup(&auth, "reader@example.test").await;
+    let owner_cookie = cookies(&owner);
+    let reader_cookie = cookies(&reader);
+    let created = call(
+        &auth,
+        request(
+            "/organization/create",
+            Some(json!({"name":"Tenant","slug":"tenant"})),
+            &owner_cookie,
+        ),
+        200,
+    )
+    .await;
+    let org = body(&created)["id"].as_str().unwrap().to_owned();
+    _ = auth
+        .store()
+        .create_member(alibi::CreateMember::new(
+            &org,
+            body(&reader)["user"]["id"].as_str().unwrap(),
+            "member",
+        ))
+        .await?;
+
+    let admin = signup(&auth, "admin@example.test").await;
+    _ = auth
+        .store()
+        .create_member(alibi::CreateMember::new(
+            &org,
+            body(&admin)["user"]["id"].as_str().unwrap(),
+            "admin",
+        ))
+        .await?;
+    let before = db
+        .tables(&["api_keys", "users", "accounts", "sessions", "member"])
+        .await?;
+    let input = json!({"configId":"organization","organizationId":org,"name":"Issued"});
+    let denied = call(
+        &auth,
+        request("/api-key/create", Some(input.clone()), &reader_cookie),
+        403,
+    )
+    .await;
+    assert_eq!(body(&denied)["code"], "INSUFFICIENT_API_KEY_PERMISSIONS");
+    assert_eq!(
+        db.tables(&["api_keys", "users", "accounts", "sessions", "member"])
+            .await?,
+        before
+    );
+    let issued = body(
+        &call(
+            &auth,
+            request("/api-key/create", Some(input), &cookies(&admin)),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(issued["referenceId"], org);
+    assert_eq!(issued["configId"], "organization");
+    let verified = keys
+        .verify_api_key(
+            &VerifyApiKey {
+                key: issued["key"].as_str().unwrap(),
+                config_id: Some("organization"),
+                permissions: None,
+            },
+            auth.context(),
+        )
+        .await;
+    let verified = verified.unwrap();
+    assert_eq!(verified.reference_id, org);
+    assert_eq!(verified.id, issued["id"]);
+
+    authenticated(&auth, &reader_cookie, "reader@example.test").await;
     B::close(connection).await
 }
