@@ -15,7 +15,8 @@ backend_tests!(
     jwt_session_cache_accepts_only_matching_managed_tokens,
     jwt_server_endpoint_overrides_and_reference_nonce,
     jwt_public_keyring_failures_preserve_context_and_owned_storage,
-    jwt_session_claim_failures_stop_before_keyring_and_preserve_sessions
+    jwt_session_claim_failures_stop_before_keyring_and_preserve_sessions,
+    jwt_server_keyring_preserves_absent_request_and_virtual_endpoint
 );
 
 #[derive(Default)]
@@ -706,5 +707,125 @@ async fn jwt_session_claim_failures_stop_before_keyring_and_preserve_sessions<B:
     assert!(auth.store().list_jwks().await?.is_empty());
     authenticated(&auth, &cookies(&owner), "owner@example.test").await;
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+async fn jwt_server_keyring_preserves_absent_request_and_virtual_endpoint<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::plugins::jwt::{JwtKeyring, JwtKeyringContext};
+    use alibi::{CreateJwk, Jwk};
+    #[derive(Default)]
+    struct Ring {
+        rows: Mutex<Vec<Jwk>>,
+        events: Mutex<Vec<(String, String, Option<String>, Option<String>)>>,
+        failure: Mutex<(&'static str, u16)>,
+    }
+    impl Ring {
+        fn observe(&self, operation: &str, context: &JwtKeyringContext<'_>) -> AuthResult<()> {
+            self.events.lock().unwrap().push((
+                operation.into(),
+                context.path.into(),
+                context.request.map(|r| format!("{:?}", r.method)),
+                context
+                    .request
+                    .and_then(|r| r.headers.get("x-keyring-proof").cloned()),
+            ));
+            let failure = *self.failure.lock().unwrap();
+            if failure.0 == operation {
+                if failure.1 == 0 {
+                    return Err(AuthError::internal("private keyring failure"));
+                }
+                return Err(AuthError::Api {
+                    status: failure.1,
+                    code: Some("APPLICATION_KEYRING_DENIED".into()),
+                    message: "application denied keys".into(),
+                });
+            }
+            Ok(())
+        }
+    }
+    #[async_trait::async_trait]
+    impl JwtKeyring for Ring {
+        async fn keys(&self, context: &JwtKeyringContext<'_>) -> AuthResult<Vec<Jwk>> {
+            self.observe("read", context)?;
+            Ok(self.rows.lock().unwrap().clone())
+        }
+        async fn create_key(
+            &self,
+            data: CreateJwk,
+            context: &JwtKeyringContext<'_>,
+        ) -> AuthResult<Jwk> {
+            self.observe("create", context)?;
+            let mut rows = self.rows.lock().unwrap();
+            let key = Jwk {
+                id: format!("application-key-{}", rows.len() + 1),
+                public_key: data.public_key,
+                private_key: data.private_key,
+                created_at: data.created_at,
+                expires_at: data.expires_at,
+                alg: data.alg,
+                crv: data.crv,
+            };
+            rows.push(key.clone());
+            Ok(key)
+        }
+    }
+
+    use alibi::endpoint::EndpointOptions;
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let app = Arc::new(Ring::default());
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::with_config(JwtPluginConfig {
+            keyring: Some(app.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let token = auth
+        .dispatch_endpoint(
+            JwtPlugin::sign_endpoint(JsValue::from(
+                json!({"sub":"server-owner","exp":4102444800_i64}),
+            )),
+            EndpointOptions::default(),
+        )
+        .await?
+        .decode()?
+        .token;
+    let events = app.events.lock().unwrap().clone();
+    assert!(!events.is_empty());
+    for e in events {
+        assert_eq!(e.1, "virtual:");
+        assert_eq!(e.2, None);
+        assert_eq!(e.3, None);
+    }
+    for supplied in [false, true] {
+        app.events.lock().unwrap().clear();
+        let mut http = request("/caller-owned-transport", Some(json!({})), "");
+        _ = http
+            .headers
+            .insert("x-keyring-proof".into(), "server-marker".into());
+        let result = auth
+            .dispatch_endpoint(
+                JwtPlugin::verify_endpoint(&token, None),
+                EndpointOptions {
+                    request: supplied.then_some(http),
+                    ..Default::default()
+                },
+            )
+            .await?
+            .decode()?;
+        assert_eq!(result.payload.unwrap()["sub"], "server-owner");
+        let events = app.events.lock().unwrap().clone();
+        assert!(!events.is_empty());
+        for e in events.iter() {
+            assert_eq!(e.1, "virtual:");
+            assert_eq!(e.2.as_deref(), supplied.then_some("Post"));
+            assert_eq!(e.3.as_deref(), supplied.then_some("server-marker"));
+        }
+    }
+    assert_eq!(app.rows.lock().unwrap().len(), 1);
+    assert!(auth.store().list_jwks().await?.is_empty());
+    assert_eq!(db.count("sessions").await?, 0);
     B::close(connection).await
 }
