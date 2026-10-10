@@ -16,7 +16,8 @@ backend_tests!(
     configured_role_validation_precedes_missing_target_lookup,
     admin_email_values_are_coerced_and_validated_before_any_update,
     demoted_admin_cannot_use_stale_cookie_cache_to_restore_grants,
-    explicit_empty_admin_roles_deny_builtin_grants_without_losing_sessions
+    explicit_empty_admin_roles_deny_builtin_grants_without_losing_sessions,
+    admin_role_tokens_with_whitespace_do_not_gain_privileges_or_admin_protection
 );
 
 async fn promote<S: AuthSchema>(auth: &Alibi<S>, response: &AuthResponse, role: &str) -> String {
@@ -1009,5 +1010,71 @@ async fn explicit_empty_admin_roles_deny_builtin_grants_without_losing_sessions<
         .await?;
     let allowed = call(&standard, get, 200).await;
     assert_eq!(body(&allowed)["id"], id);
+    B::close(connection).await
+}
+
+async fn admin_role_tokens_with_whitespace_do_not_gain_privileges_or_admin_protection<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::with_config(alibi::plugins::AdminConfig {
+            default_role: "user, admin".into(),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let admin = signup(&auth, "admin@example.test").await;
+    let admin_id = promote(&auth, &admin, "admin").await;
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let check = call(
+        &auth,
+        request(
+            "/admin/has-permission",
+            Some(json!({"permissions":{"user":["ban"]},"role":"admin","userId":admin_id})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&check)["success"], false);
+    _ = call(
+        &auth,
+        request(
+            "/admin/ban-user",
+            Some(json!({"userId":admin_id})),
+            &cookies(&owner),
+        ),
+        403,
+    )
+    .await;
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    let impersonated = call(
+        &auth,
+        request(
+            "/admin/impersonate-user",
+            Some(json!({"userId":owner_id})),
+            &cookies(&admin),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&impersonated)["user"]["id"], owner_id);
+    assert_eq!(body(&impersonated)["session"]["impersonatedBy"], admin_id);
+    let stopped = call(
+        &auth,
+        request(
+            "/admin/stop-impersonating",
+            Some(json!({})),
+            &cookies(&impersonated),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&stopped)["user"]["id"], admin_id);
     B::close(connection).await
 }
