@@ -10,7 +10,11 @@ use alibi::plugins::haveibeenpwned::{
     HaveIBeenPwnedConfig, HaveIBeenPwnedPlugin, PwnedPasswordClient,
 };
 
-backend_tests!(pwned_range_reply_matrix, captcha_reply_and_path_matrix);
+backend_tests!(
+    pwned_range_reply_matrix,
+    captcha_reply_and_path_matrix,
+    captcha_botid_validator_error_preserves_all_existing_principals
+);
 
 const SUFFIX: &str = "1E4C9B93F3F0682250B6CF8331B7EE68FD8";
 
@@ -342,5 +346,58 @@ async fn captcha_reply_and_path_matrix<B: Backend>(db: Db) -> TestResult {
         trace.response(label, &Box::pin(auth.handle_request(sign_in(None))).await?);
     }
     trace.assert("screening/captcha-reply-path-matrix");
+    B::close(connection).await
+}
+
+async fn captcha_botid_validator_error_preserves_all_existing_principals<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    struct Policy(AtomicBool);
+    #[async_trait::async_trait]
+    impl ValidateBotIdRequest for Policy {
+        async fn validate(&self, _: &AuthRequest, _: &BotIdVerification) -> AuthResult<bool> {
+            if self.0.load(Ordering::SeqCst) {
+                Err(alibi::AuthError::internal("validator unavailable"))
+            } else {
+                Ok(true)
+            }
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let policy = Arc::new(Policy(AtomicBool::new(true)));
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(CaptchaPlugin::new(CaptchaConfig {
+            provider: CaptchaProvider::VercelBotId(BotIdConfig {
+                check_bot_id: Arc::new(Bot(Ok(false))),
+                validate_request: Some(policy.clone()),
+            }),
+            endpoints: vec!["/sign-in/email".into()],
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    let input = request(
+        "/sign-in/email",
+        Some(json!({"email":"owner@example.test","password":PASSWORD})),
+        "",
+    );
+    let denied = call(&auth, input.clone(), 500).await;
+    assert_eq!(body(&denied)["code"], "UNKNOWN_ERROR");
+    assert!(denied.headers.get_all("set-cookie").next().is_none());
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        before
+    );
+    authenticated(&auth, &cookies(&owner), "owner@example.test").await;
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    policy.0.store(false, Ordering::SeqCst);
+    let restored = call(&auth, input, 200).await;
+    assert_eq!(body(&restored)["user"]["id"], body(&owner)["user"]["id"]);
     B::close(connection).await
 }
