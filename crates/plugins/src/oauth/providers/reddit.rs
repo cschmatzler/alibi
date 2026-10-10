@@ -96,6 +96,7 @@ impl OAuthProvider {
                 pkce: false,
                 ..OAuthAuthorizationPolicy::default()
             }),
+            allowed_request_params: Vec::new(),
             authorization_params: options
                 .duration
                 .filter(|v| !v.is_empty())
