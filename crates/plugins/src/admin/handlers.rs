@@ -147,13 +147,13 @@ pub(crate) async fn set_role_core(
     config: &AdminConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<UserResponse<AdminUserView>> {
+    validate_role_input(&body.role, config)?;
+
     _ = ctx
         .database
         .get_user_by_id_record(&body.user_id)
         .await?
         .ok_or_else(|| AuthError::not_found(MESSAGE_USER_NOT_FOUND))?;
-
-    validate_role_input(&body.role, config)?;
 
     let update = UpdateUser {
         role: Some(body.role.joined()),
