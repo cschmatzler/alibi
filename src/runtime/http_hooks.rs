@@ -14,6 +14,7 @@ type HttpEndpointError = (u16, Option<String>, String);
 pub(super) struct HttpEndpointFrame {
     pub call: EndpointCall,
     pub outer: EndpointCall,
+    pub path_patch: Option<String>,
     pub header_patch: Option<std::collections::HashMap<String, String>>,
     pub legacy_headers: Option<std::collections::HashMap<String, String>>,
     pub error: Arc<std::sync::Mutex<Option<HttpEndpointError>>>,
@@ -69,6 +70,7 @@ impl<S: AuthSchema> Alibi<S> {
                 None => {}
             }
         }
+        let path_patch = patch.path.clone();
         let header_patch = patch.headers.clone();
         patch.apply(&mut call);
         EndpointContextPatch {
@@ -82,6 +84,7 @@ impl<S: AuthSchema> Alibi<S> {
         request.extensions().insert(HttpEndpointFrame {
             call,
             outer,
+            path_patch,
             header_patch,
             legacy_headers: None,
             error: Arc::default(),
@@ -187,7 +190,8 @@ pub(super) fn apply_http_endpoint_input(
     }
     .apply(&mut frame.outer);
     let call = &frame.call;
-    if let Some(path) = call.path() {
+    // Logical hook paths may be route templates; only explicit patches change dispatch input.
+    if let Some(path) = &frame.path_patch {
         path.clone_into(&mut request.path);
     }
     if let Some(method) = call.method() {

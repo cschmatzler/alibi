@@ -22,7 +22,7 @@ The example below runs email and password authentication with Axum and SQLite. A
 
 ```toml
 [dependencies]
-alibi = { version = "0.4.0", features = ["axum"] }
+alibi = { version = "0.4.1", features = ["axum"] }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
@@ -36,7 +36,7 @@ Commit your application’s `Cargo.lock` for reproducible builds and install the
 Generate your auth models:
 
 ```bash
-cargo install alibi-cli --version 0.4.0 --locked
+cargo install alibi-cli --version 0.4.1 --locked
 alibi generate -o src/auth_schema.rs
 ```
 
@@ -103,11 +103,11 @@ Rust releases use independent Semantic Versioning. Each release records the exac
 
 Compatible Rust bug fixes can ship as patch releases without waiting for upstream. Compatible additions use minor releases; breaking changes require major releases. Upstream upgrades are versioned by their effect on Rust users.
 
-For example, Rust `1.0.0` and `1.0.1` could both target Better Auth `1.7.7`, with `1.0.1` fixing a Rust implementation bug. These illustrate the versioning policy. The current release is `0.4.0`.
+For example, Rust `1.0.0` and `1.0.1` could both target Better Auth `1.7.7`, with `1.0.1` fixing a Rust implementation bug. These illustrate the versioning policy. The current release is `0.4.1`.
 
 See the [release policy](docs/src/content/docs/guides/releases.md) for compatibility rules and publication checks.
 
-Alibi `0.4.0` is available on [crates.io](https://crates.io/crates/alibi).
+Alibi `0.4.1` is available on [crates.io](https://crates.io/crates/alibi).
 
 Import the library as `alibi` and run the schema generator with `alibi generate`.
 
