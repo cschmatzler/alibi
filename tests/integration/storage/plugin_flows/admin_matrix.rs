@@ -5,7 +5,11 @@ use alibi::UpdateUser;
 use alibi::plugins::{AdminPlugin, RolePermissions};
 use std::collections::HashMap;
 
-backend_tests!(admin_route_matrix, admin_impersonation_and_bans);
+backend_tests!(
+    admin_route_matrix,
+    admin_impersonation_and_bans,
+    create_only_role_cannot_initialize_ban_properties
+);
 
 async fn promote<S: AuthSchema>(auth: &Alibi<S>, response: &AuthResponse, role: &str) -> String {
     let id = body(response)["user"]["id"].as_str().unwrap().to_owned();
@@ -508,5 +512,57 @@ async fn admin_impersonation_and_bans<B: Backend>(db: Db) -> TestResult {
         .await?,
     );
     trace.assert("admin/impersonation-and-bans");
+    B::close(connection).await
+}
+
+// Compat owner: plugins/admin/ban-permission-create.test.ts.
+async fn create_only_role_cannot_initialize_ban_properties<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mut permissions = roles();
+    _ = permissions.insert(
+        "creator".into(),
+        RolePermissions::new().allow("user", ["create"]),
+    );
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new().roles(permissions))
+        .build()
+        .await?;
+    let creator = signup(&auth, "creator@example.test").await;
+    _ = promote(&auth, &creator, "creator").await;
+    let cookie = cookies(&creator);
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    for data in [
+        json!({"banned":false}),
+        json!({"banReason":"reason"}),
+        json!({"banExpires":"2100-01-01T00:00:00.000Z"}),
+    ] {
+        let denied = call(&auth, request("/admin/create-user", Some(json!({"email":"target@example.test","name":"Target","password":PASSWORD,"data":data})), &cookie), 403).await;
+        assert_eq!(body(&denied)["code"], "YOU_ARE_NOT_ALLOWED_TO_BAN_USERS");
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    }
+    let created = call(
+        &auth,
+        request(
+            "/admin/create-user",
+            Some(json!({"email":"target@example.test","name":"Target","password":PASSWORD})),
+            &cookie,
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(db.count("users").await?, 2);
+    assert_eq!(db.count("accounts").await?, 2);
+    assert_eq!(db.count("sessions").await?, 1);
+    let login = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"target@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&login)["user"]["id"], body(&created)["user"]["id"]);
     B::close(connection).await
 }
