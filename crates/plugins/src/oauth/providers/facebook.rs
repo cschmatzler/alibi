@@ -120,6 +120,7 @@ impl OAuthProvider {
                 pkce: false,
                 ..OAuthAuthorizationPolicy::default()
             }),
+            allowed_request_params: Vec::new(),
             authorization_params: options
                 .config_id
                 .filter(|value| !value.is_empty())
