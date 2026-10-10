@@ -21,7 +21,9 @@ use alibi::{AuthError, AuthResult};
 backend_tests!(
     last_login_tracks_every_sign_in_method,
     last_login_resolver_and_cookie_policy,
-    last_login_tracks_social_callbacks
+    last_login_tracks_social_callbacks,
+    last_login_resolver_receives_transformed_numbers_and_original_http_bytes,
+    last_login_tracking_update_failure_is_best_effort_for_authentication
 );
 
 const COOKIE: &str = "better-auth.last_used_login_method";
@@ -378,5 +380,137 @@ async fn last_login_tracks_social_callbacks<B: Backend>(db: Db) -> TestResult {
             .as_deref(),
         Some("google")
     );
+    B::close(connection).await
+}
+
+async fn last_login_resolver_receives_transformed_numbers_and_original_http_bytes<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::plugins::last_login_method::BeforeStoreLastLoginMethodCookie;
+    struct Capture(Mutex<Vec<LastLoginMethodContext>>);
+    impl ResolveLastLoginMethod for Capture {
+        fn resolve(&self, context: &LastLoginMethodContext) -> AuthResult<Option<String>> {
+            self.0.lock().unwrap().push(context.clone());
+            Ok(Some("body:Infinity:-0".into()))
+        }
+    }
+    #[async_trait::async_trait]
+    impl BeforeStoreLastLoginMethodCookie for Capture {
+        async fn before_store(
+            &self,
+            context: &LastLoginMethodContext,
+            _: &str,
+        ) -> AuthResult<bool> {
+            self.0.lock().unwrap().push(context.clone());
+            Ok(true)
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let capture = Arc::new(Capture(Mutex::new(Vec::new())));
+    let config = AuthConfig::new(SECRET)
+        .base_url(ORIGIN)
+        .trusted_origin(ORIGIN);
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password().enable_username(true))
+        .plugin(SessionManagementPlugin::new())
+        .plugin(LastLoginMethodPlugin::with_config(LastLoginMethodConfig {
+            store_in_database: true,
+            resolver: Some(capture.clone()),
+            before_store_cookie: Some(capture.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let raw = r#"{"email":"numeric@example.test","password":"a-native-password-123","name":"Numeric Owner","username":"numericowner","extra":{"overflow":1e400,"zero":-0,"nested":[null,false,"literal"]}}"#;
+    let mut input = request("/sign-up/email", Some(json!({})), "");
+    input.body = Some(raw.as_bytes().to_vec());
+    _ = input
+        .headers
+        .insert("x-last-login-body".into(), "true".into());
+    let issued = call(&auth, input, 200).await;
+    {
+        let contexts = capture.0.lock().unwrap();
+        assert!(contexts.len() >= 3);
+        for context in contexts.iter() {
+            assert_eq!(context.request.body.as_deref(), Some(raw.as_bytes()));
+            assert_eq!(
+                context
+                    .request
+                    .headers
+                    .get("x-last-login-body")
+                    .map(String::as_str),
+                Some("true")
+            );
+            assert_eq!(context.route_path, "/sign-up/email");
+            let body = context.body.as_ref().unwrap();
+            assert_eq!(
+                body.get("displayUsername").unwrap().as_str(),
+                Some("numericowner")
+            );
+            let extra = body.get("extra").unwrap();
+            assert_eq!(extra.get("overflow").unwrap().as_f64(), Some(f64::INFINITY));
+            let zero = extra.get("zero").unwrap().as_f64().unwrap();
+            assert_eq!(zero, 0.0);
+            assert!(zero.is_sign_negative());
+            assert_eq!(
+                extra.get("nested"),
+                Some(&alibi::utils::json::JsValue::from(json!([
+                    null, false, "literal"
+                ])))
+            );
+        }
+    }
+    assert_eq!(
+        tracked(&issued).as_deref(),
+        Some("better-auth.last_used_login_method=body%3AInfinity%3A-0")
+    );
+    assert_eq!(
+        db.text("SELECT last_login_method FROM users", &[])
+            .await?
+            .as_deref(),
+        Some("body:Infinity:-0")
+    );
+    authenticated(&auth, &cookies(&issued), "numeric@example.test").await;
+    B::close(connection).await
+}
+
+async fn last_login_tracking_update_failure_is_best_effort_for_authentication<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(LastLoginMethodPlugin::with_config(LastLoginMethodConfig {
+            store_in_database: true,
+            resolver: Some(Arc::new(Resolver)),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let users = db.table("users").await?;
+    let accounts = db.table("accounts").await?;
+    _ = db.execute("CREATE TRIGGER reject_tracking BEFORE UPDATE OF last_login_method ON users BEGIN SELECT RAISE(ABORT, 'tracking unavailable'); END",&[]).await?;
+    let mut input = request(
+        "/sign-in/email",
+        Some(json!({"email":"owner@example.test","password":PASSWORD})),
+        "",
+    );
+    _ = input.headers.insert("x-resolve".into(), "custom".into());
+    let issued = call(&auth, input, 200).await;
+    assert_eq!(
+        tracked(&issued).as_deref(),
+        Some("better-auth.last_used_login_method=custom%20method!(*)'")
+    );
+    assert_eq!(db.table("users").await?, users);
+    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.count("sessions").await?, 3);
+    for cookie in [cookies(&owner), cookies(&issued)] {
+        authenticated(&auth, &cookie, "owner@example.test").await;
+    }
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    _ = db.execute("DROP TRIGGER reject_tracking", &[]).await?;
     B::close(connection).await
 }

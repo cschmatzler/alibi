@@ -10,6 +10,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 backend_tests!(
     password_reset_token_matrix,
     change_and_verify_password_matrix,
+    disabled_reset_rejects_before_lookup_without_changing_principals,
+    reset_callback_failure_keeps_new_password_and_existing_sessions,
+    expired_delivered_reset_redirect_replaces_error_and_preserves_fragment,
+    change_password_invalid_revocation_flag_never_runs_crypto,
     reset_hash_failure_consumes_proof_without_changing_credentials
 );
 
@@ -335,6 +339,358 @@ async fn change_and_verify_password_matrix<B: Backend>(db: Db) -> TestResult {
         B::close(connection).await?;
     }
     trace.assert("password-management/change-and-verify-matrix");
+    Ok(())
+}
+
+async fn disabled_reset_rejects_before_lookup_without_changing_principals<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = fast_builder::<B>(&connection)
+        .plugin(PasswordManagementPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "disabled-owner@example.test").await;
+    let foreign = signup(&auth, "disabled-foreign@example.test").await;
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    let _ = db
+        .execute(
+            "ALTER TABLE users RENAME TO temporarily_unavailable_users",
+            &[],
+        )
+        .await?;
+    for email in ["disabled-owner@example.test", "missing@example.test"] {
+        let rejected = call(
+            &auth,
+            request(
+                "/request-password-reset",
+                Some(json!({"email":email,"redirectTo":"/reset"})),
+                "",
+            ),
+            400,
+        )
+        .await;
+        assert_eq!(body(&rejected)["code"], "RESET_PASSWORD_DISABLED");
+        assert!(!rejected.headers.contains_key("set-cookie"));
+        assert_eq!(db.count("verifications").await?, 0);
+    }
+    let _ = db
+        .execute(
+            "ALTER TABLE temporarily_unavailable_users RENAME TO users",
+            &[],
+        )
+        .await?;
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        before
+    );
+    authenticated(&auth, &cookies(&owner), "disabled-owner@example.test").await;
+    authenticated(&auth, &cookies(&foreign), "disabled-foreign@example.test").await;
+    let mailbox = Arc::new(Mailbox::default());
+    let enabled = fast_builder::<B>(&connection)
+        .plugin(management(
+            &mailbox,
+            &Arc::new(AtomicBool::new(false)),
+            false,
+            true,
+        ))
+        .build()
+        .await?;
+    let _ = call(
+        &enabled,
+        request(
+            "/request-password-reset",
+            Some(json!({"email":"disabled-owner@example.test"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let (_, token) = mailbox.0.lock().unwrap().pop().unwrap();
+    let _ = call(
+        &enabled,
+        request(
+            "/reset-password",
+            Some(json!({"token":token,"newPassword":"enabled-new-password"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let login = call(
+        &enabled,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"disabled-owner@example.test","password":"enabled-new-password"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&login)["user"]["id"], body(&owner)["user"]["id"]);
+    Ok(())
+}
+
+async fn reset_callback_failure_keeps_new_password_and_existing_sessions<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mailbox = Arc::new(Mailbox::default());
+    let refuse = Arc::new(AtomicBool::new(true));
+    let auth = fast_builder::<B>(&connection)
+        .plugin(management(&mailbox, &refuse, true, true))
+        .build()
+        .await?;
+    let owner = signup(&auth, "reset-callback-owner@example.test").await;
+    let foreign = signup(&auth, "reset-callback-foreign@example.test").await;
+    let _ = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"reset-callback-owner@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let _ = call(
+        &auth,
+        request(
+            "/request-password-reset",
+            Some(json!({"email":"reset-callback-owner@example.test"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let (_, token) = mailbox.0.lock().unwrap().pop().unwrap();
+    let before = db.tables(&["users", "sessions"]).await?;
+    let response = call(
+        &auth,
+        request(
+            "/reset-password",
+            Some(json!({"token":token,"newPassword":"durable-new-password"})),
+            "",
+        ),
+        403,
+    )
+    .await;
+    assert!(!response.headers.contains_key("set-cookie"));
+    assert_eq!(db.tables(&["users", "sessions"]).await?, before);
+    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(
+        db.text(
+            "SELECT password FROM accounts WHERE user_id = $1",
+            &[body(&owner)["user"]["id"].as_str().unwrap()]
+        )
+        .await?
+        .as_deref(),
+        Some("fast$durable-new-password")
+    );
+    let replay = call(
+        &auth,
+        request(
+            "/reset-password",
+            Some(json!({"token":token,"newPassword":"another-new-password"})),
+            "",
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&replay)["code"], "INVALID_TOKEN");
+    authenticated(&auth, &cookies(&owner), "reset-callback-owner@example.test").await;
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "reset-callback-foreign@example.test",
+    )
+    .await;
+    let _ = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"reset-callback-owner@example.test","password":PASSWORD})),
+            "",
+        ),
+        401,
+    )
+    .await;
+    let login = call(&auth, request("/sign-in/email", Some(json!({"email":"reset-callback-owner@example.test","password":"durable-new-password"})), ""), 200).await;
+    assert_eq!(body(&login)["user"]["id"], body(&owner)["user"]["id"]);
+    Ok(())
+}
+
+async fn expired_delivered_reset_redirect_replaces_error_and_preserves_fragment<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mailbox = Arc::new(Mailbox::default());
+    let auth = fast_builder::<B>(&connection)
+        .plugin(management(
+            &mailbox,
+            &Arc::new(AtomicBool::new(false)),
+            false,
+            true,
+        ))
+        .build()
+        .await?;
+    let owner = signup(&auth, "expired-reset-owner@example.test").await;
+    let foreign = signup(&auth, "expired-reset-foreign@example.test").await;
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let callback = "/done?error=old&keep=a%2Bb#details";
+    let _ = call(
+        &auth,
+        request(
+            "/request-password-reset",
+            Some(json!({"email":"expired-reset-owner@example.test","redirectTo":callback})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let (url, token) = mailbox.0.lock().unwrap().pop().unwrap();
+    let identifier = format!("reset-password:{token}");
+    db.set_timestamp(
+        "verifications",
+        "expires_at",
+        ("identifier", &identifier),
+        chrono::Utc::now() - chrono::Duration::hours(1),
+    )
+    .await?;
+    let delivered = url::Url::parse(&url)?;
+    let mut input = AuthRequest::new(HttpMethod::Get, delivered.path());
+    input.query.extend(
+        delivered
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned())),
+    );
+    let rejected = call(&auth, input, 302).await;
+    let mut expected = url::Url::parse(ORIGIN)?.join(callback)?;
+    expected.set_query(Some("error=INVALID_TOKEN&keep=a%2Bb"));
+    assert_eq!(
+        rejected.headers.get("location").map(String::as_str),
+        Some(expected.as_str())
+    );
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    authenticated(&auth, &cookies(&owner), "expired-reset-owner@example.test").await;
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "expired-reset-foreign@example.test",
+    )
+    .await;
+    let _ = call(
+        &auth,
+        request(
+            "/request-password-reset",
+            Some(json!({"email":"expired-reset-owner@example.test"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let (_, fresh) = mailbox.0.lock().unwrap().pop().unwrap();
+    let _ = call(
+        &auth,
+        request(
+            "/reset-password",
+            Some(json!({"token":fresh,"newPassword":"fresh-reset-password"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    Ok(())
+}
+
+async fn change_password_invalid_revocation_flag_never_runs_crypto<B: Backend>(
+    db: Db,
+) -> TestResult {
+    struct CountingHasher {
+        hashes: std::sync::atomic::AtomicUsize,
+        verifies: std::sync::atomic::AtomicUsize,
+        fail: AtomicBool,
+    }
+    #[async_trait]
+    impl alibi::PasswordHasher for CountingHasher {
+        async fn hash(&self, password: &str) -> AuthResult<String> {
+            let _ = self.hashes.fetch_add(1, Ordering::SeqCst);
+            if self.fail.load(Ordering::SeqCst) {
+                return Err(AuthError::internal("application hasher rejected"));
+            }
+            Ok(format!("fast${password}"))
+        }
+        async fn verify(&self, hash: &str, password: &str) -> AuthResult<bool> {
+            let _ = self.verifies.fetch_add(1, Ordering::SeqCst);
+            Ok(hash == format!("fast${password}"))
+        }
+    }
+    let hasher = Arc::new(CountingHasher {
+        hashes: 0.into(),
+        verifies: 0.into(),
+        fail: AtomicBool::new(false),
+    });
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(EmailPasswordPlugin::new().password_hasher(hasher.clone()))
+        .plugin(SessionManagementPlugin::new())
+        .plugin(PasswordManagementPlugin::with_config(
+            PasswordManagementConfig {
+                password_hasher: Some(hasher.clone()),
+                ..Default::default()
+            },
+        ))
+        .build()
+        .await?;
+    let owner = signup(&auth, "schema-owner@example.test").await;
+    let foreign = signup(&auth, "schema-foreign@example.test").await;
+    let _ = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"schema-owner@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    hasher.hashes.store(0, Ordering::SeqCst);
+    hasher.verifies.store(0, Ordering::SeqCst);
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    for flag in [json!("true"), json!("false"), Value::Null, json!(1)] {
+        let rejected = call(&auth, request("/change-password", Some(json!({"currentPassword":PASSWORD,"newPassword":"schema-new-password","revokeOtherSessions":flag})), &cookies(&owner)), 400).await;
+        assert!(!rejected.headers.contains_key("set-cookie"));
+        assert_eq!(hasher.hashes.load(Ordering::SeqCst), 0);
+        assert_eq!(hasher.verifies.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "verifications"])
+                .await?,
+            before
+        );
+    }
+    let _ = call(&auth, request("/change-password", Some(json!({"currentPassword":PASSWORD,"newPassword":"schema-new-password","revokeOtherSessions":false})), &cookies(&owner)), 200).await;
+    assert_eq!(hasher.hashes.load(Ordering::SeqCst), 1);
+    assert_eq!(hasher.verifies.load(Ordering::SeqCst), 1);
+    assert_eq!(db.count("sessions").await?, 3);
+    assert_eq!(
+        db.text(
+            "SELECT password FROM accounts WHERE user_id = $1",
+            &[body(&owner)["user"]["id"].as_str().unwrap()]
+        )
+        .await?
+        .as_deref(),
+        Some("fast$schema-new-password")
+    );
+    authenticated(&auth, &cookies(&foreign), "schema-foreign@example.test").await;
     Ok(())
 }
 
