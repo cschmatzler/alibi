@@ -14,7 +14,8 @@ backend_tests!(
     organization_update_hook_deleted_row_returns_null_and_original_authority,
     organization_update_hooks_preserve_empty_values_and_input_field_fallback,
     organization_creation_hooks_preserve_trusted_empty_values_and_omitted_fields,
-    organization_creation_retains_original_member_after_independent_role_write
+    organization_creation_retains_original_member_after_independent_role_write,
+    organization_creator_patch_retargeting_keeps_team_and_selection_actor
 );
 postgres_tests!(
     organization_lifecycle_callbacks_preserve_patch_authority_and_committed_phases,
@@ -1598,5 +1599,147 @@ async fn organization_creation_retains_original_member_after_independent_role_wr
         db.text("SELECT id FROM team", &[]).await?
     );
     assert_eq!(db.count("sessions").await?, 1);
+    B::close(connection).await
+}
+
+async fn organization_creator_patch_retargeting_keeps_team_and_selection_actor<B: Backend>(
+    db: Db,
+) -> TestResult {
+    #[derive(Debug, Default)]
+    struct Hooks {
+        target: Mutex<Option<(String, String)>>,
+        actors: Mutex<Vec<String>>,
+    }
+    #[async_trait]
+    impl OrganizationCreationHooks for Hooks {
+        async fn before_add_member(
+            &self,
+            c: &OrganizationMemberDraftContext,
+        ) -> AuthResult<Option<OrganizationMemberCreatePatch>> {
+            self.actors.lock().unwrap().push(c.user.id.clone());
+            Ok(self.target.lock().unwrap().as_ref().map(|(org, user)| {
+                OrganizationMemberCreatePatch {
+                    organization_id: Some(org.clone()),
+                    user_id: Some(user.clone()),
+                    role: Some("member".into()),
+                }
+            }))
+        }
+        async fn after_create(&self, c: &OrganizationCreatedContext) -> AuthResult<()> {
+            self.actors.lock().unwrap().push(c.user.id.clone());
+            Ok(())
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks::default());
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            creation_hooks: Some(hooks.clone()),
+            teams: TeamsConfig {
+                enabled: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let actor = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
+    let prior = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Prior","slug":"prior"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let prior_id = prior["id"].as_str().unwrap().to_owned();
+    *hooks.target.lock().unwrap() = Some((prior_id.clone(), foreign_id.clone()));
+    hooks.actors.lock().unwrap().clear();
+    let foreign_token = body(&foreign)["token"].as_str().unwrap().to_owned();
+    let before = db
+        .text(
+            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            &[&foreign_token],
+        )
+        .await?;
+    let created = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"New","slug":"new"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let id = created["id"].as_str().unwrap();
+    assert_eq!(created["members"][0]["organizationId"], prior_id);
+    assert_eq!(created["members"][0]["userId"], foreign_id);
+    assert_eq!(
+        *hooks.actors.lock().unwrap(),
+        vec![actor.clone(), actor.clone()]
+    );
+    assert_eq!(
+        db.count_where(
+            "SELECT COUNT(*) FROM member WHERE organization_id=$1",
+            &[id]
+        )
+        .await?,
+        0
+    );
+    assert_eq!(
+        db.count_where(
+            "SELECT COUNT(*) FROM member WHERE organization_id=$1",
+            &[&prior_id]
+        )
+        .await?,
+        2
+    );
+    let team = db
+        .text("SELECT id FROM team WHERE organization_id=$1", &[id])
+        .await?
+        .unwrap();
+    assert_eq!(
+        db.text("SELECT user_id FROM team_member WHERE team_id=$1", &[&team])
+            .await?
+            .as_deref(),
+        Some(actor.as_str())
+    );
+    let token = body(&owner)["token"].as_str().unwrap().to_owned();
+    assert_eq!(
+        db.text(
+            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            &[&token]
+        )
+        .await?
+        .as_deref(),
+        Some(id)
+    );
+    assert_eq!(
+        db.text(
+            "SELECT active_team_id FROM sessions WHERE token=$1",
+            &[&token]
+        )
+        .await?
+        .as_deref(),
+        Some(team.as_str())
+    );
+    assert_eq!(
+        db.text(
+            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            &[&foreign_token]
+        )
+        .await?,
+        before
+    );
     B::close(connection).await
 }
