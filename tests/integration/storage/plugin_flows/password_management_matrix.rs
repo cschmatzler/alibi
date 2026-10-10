@@ -17,7 +17,8 @@ backend_tests!(
     reset_hash_failure_consumes_proof_without_changing_credentials,
     invalid_stored_reset_proofs_consume_before_crypto_or_callback,
     concurrent_reset_proof_is_consumed_before_hashing_and_callback,
-    zero_password_options_enforce_default_bounds_and_reset_expiry
+    zero_password_options_enforce_default_bounds_and_reset_expiry,
+    reset_body_proof_wins_over_conflicting_live_query_proof
 );
 
 #[derive(Default)]
@@ -1173,6 +1174,109 @@ async fn zero_password_options_enforce_default_bounds_and_reset_expiry<B: Backen
             "",
         ),
         401,
+    )
+    .await;
+    Ok(())
+}
+
+async fn reset_body_proof_wins_over_conflicting_live_query_proof<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mailbox = Arc::new(Mailbox::default());
+    let auth = fast_builder::<B>(&connection)
+        .plugin(management(
+            &mailbox,
+            &Arc::new(AtomicBool::new(false)),
+            false,
+            true,
+        ))
+        .build()
+        .await?;
+    let owner = signup(&auth, "body-token-owner@example.test").await;
+    let query_owner = signup(&auth, "query-token-owner@example.test").await;
+    let mut tokens = Vec::new();
+    for email in [
+        "body-token-owner@example.test",
+        "query-token-owner@example.test",
+    ] {
+        let _ = call(
+            &auth,
+            request("/request-password-reset", Some(json!({"email":email})), ""),
+            200,
+        )
+        .await;
+        tokens.push(mailbox.0.lock().unwrap().pop().unwrap().1);
+    }
+    let query_id = body(&query_owner)["user"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let query_password = db
+        .text(
+            "SELECT password FROM accounts WHERE user_id = $1",
+            &[&query_id],
+        )
+        .await?;
+    let rows = db.tables(&["users", "sessions"]).await?;
+    let before: Value = serde_json::from_str(&db.table("verifications").await?)?;
+    let query_proof = before
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["identifier"] == format!("reset-password:{}", tokens[1]))
+        .unwrap()
+        .clone();
+    let mut input = request(
+        "/reset-password",
+        Some(json!({"token":tokens[0],"newPassword":"body-token-new-password"})),
+        "",
+    );
+    let _ = input.query.insert("token".into(), tokens[1].clone());
+    let _ = call(&auth, input, 200).await;
+    assert_eq!(db.tables(&["users", "sessions"]).await?, rows);
+    assert_eq!(
+        db.text(
+            "SELECT password FROM accounts WHERE user_id = $1",
+            &[&query_id]
+        )
+        .await?,
+        query_password
+    );
+    let after: Value = serde_json::from_str(&db.table("verifications").await?)?;
+    assert_eq!(after, json!([query_proof]));
+    let _ = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"body-token-owner@example.test","password":PASSWORD})),
+            "",
+        ),
+        401,
+    )
+    .await;
+    let login = call(&auth, request("/sign-in/email", Some(json!({"email":"body-token-owner@example.test","password":"body-token-new-password"})), ""), 200).await;
+    assert_eq!(body(&login)["user"]["id"], body(&owner)["user"]["id"]);
+    let foreign_login = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"query-token-owner@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(
+        body(&foreign_login)["user"]["id"],
+        body(&query_owner)["user"]["id"]
+    );
+    let _ = call(
+        &auth,
+        request(
+            "/reset-password",
+            Some(json!({"token":tokens[1],"newPassword":"query-owner-new-password"})),
+            "",
+        ),
+        200,
     )
     .await;
     Ok(())
