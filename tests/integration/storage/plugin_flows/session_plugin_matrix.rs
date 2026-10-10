@@ -12,7 +12,8 @@ backend_tests!(
     bearer_authorization_matrix,
     multi_session_limits_and_revocation,
     session_management_failures,
-    device_session_projection
+    device_session_projection,
+    multi_session_without_database_preserves_order_fallback_and_cache_replay_limits
 );
 
 fn merge(first: &str, second: &str) -> String {
@@ -438,5 +439,149 @@ async fn device_session_projection<B: Backend>(db: Db) -> TestResult {
             .await?,
     );
     trace.assert("session-plugins/device-projection");
+    B::close(connection).await
+}
+
+async fn multi_session_without_database_preserves_order_fallback_and_cache_replay_limits<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    fn apply(jar: &str, response: &AuthResponse) -> String {
+        let wire = response
+            .headers
+            .get_all("set-cookie")
+            .map(|raw| raw.split(';').next().unwrap())
+            .collect::<Vec<_>>()
+            .join("; ");
+        merge(jar, &wire)
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = AuthBuilder::without_database(
+        AuthConfig::new(SECRET)
+            .base_url(ORIGIN)
+            .trusted_origin(ORIGIN),
+    )
+    .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+    .plugin(super::auth_probe::fast_password())
+    .plugin(SessionManagementPlugin::new())
+    .plugin(MultiSessionPlugin::new())
+    .build()
+    .await?;
+    let mut jar = String::new();
+    let mut tokens = Vec::new();
+    for index in 0..3 {
+        let issued=call(&auth,request("/sign-up/email",Some(json!({"email":format!("no-db-{index}@example.test"),"password":PASSWORD,"name":"Owner"})),&jar),200).await;
+        tokens.push(body(&issued)["token"].as_str().unwrap().to_owned());
+        assert!(cookies(&issued).contains("session_data="));
+        jar = apply(&jar, &issued);
+    }
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let listed = body(
+        &call(
+            &auth,
+            request("/multi-session/list-device-sessions", None, &jar),
+            200,
+        )
+        .await,
+    );
+    let ordered: Vec<_> = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["session"]["token"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ordered,
+        tokens.iter().map(String::as_str).collect::<Vec<_>>()
+    );
+    _ = call(
+        &auth,
+        request(
+            "/multi-session/set-active",
+            Some(json!({"sessionToken":tokens[0]})),
+            &cookies(&foreign),
+        ),
+        401,
+    )
+    .await;
+    let selected = call(
+        &auth,
+        request(
+            "/multi-session/set-active",
+            Some(json!({"sessionToken":tokens[0]})),
+            &jar,
+        ),
+        200,
+    )
+    .await;
+    jar = apply(&jar, &selected);
+    authenticated(&auth, &jar, "no-db-0@example.test").await;
+    let revoked = call(
+        &auth,
+        request(
+            "/multi-session/revoke",
+            Some(json!({"sessionToken":tokens[0]})),
+            &jar,
+        ),
+        200,
+    )
+    .await;
+    jar = apply(&jar, &revoked);
+    authenticated(&auth, &jar, "no-db-1@example.test").await;
+    let captured = cookies(&revoked);
+    let listed = body(
+        &call(
+            &auth,
+            request("/multi-session/list-device-sessions", None, &jar),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(
+        listed
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["session"]["token"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec![tokens[1].as_str(), tokens[2].as_str()]
+    );
+    let logout = call(&auth, request("/sign-out", Some(json!({})), &jar), 200).await;
+    jar = apply(&jar, &logout);
+    let after_logout = body(&call(&auth, request("/get-session", None, &jar), 200).await);
+    assert!(after_logout.is_null());
+    assert_eq!(
+        body(
+            &call(
+                &auth,
+                request("/multi-session/list-device-sessions", None, &jar),
+                200
+            )
+            .await
+        ),
+        json!([])
+    );
+    let replay = call(&auth, request("/get-session", None, &captured), 200).await;
+    assert_eq!(body(&replay)["session"]["token"], tokens[1]);
+    let mut physical = request("/get-session", None, &captured);
+    _ = physical
+        .query
+        .insert("disableCookieCache".into(), "true".into());
+    assert!(body(&call(&auth, physical, 200).await).is_null());
+    _ = call(
+        &auth,
+        request(
+            "/multi-session/set-active",
+            Some(json!({"sessionToken":tokens[1]})),
+            &captured,
+        ),
+        401,
+    )
+    .await;
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    for table in ["users", "accounts", "sessions"] {
+        assert_eq!(db.count(table).await?, 0);
+    }
     B::close(connection).await
 }
