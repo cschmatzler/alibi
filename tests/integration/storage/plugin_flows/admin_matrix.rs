@@ -11,7 +11,8 @@ backend_tests!(
     create_only_role_cannot_initialize_ban_properties,
     update_only_role_cannot_mutate_any_ban_property,
     update_only_role_cannot_change_email_verification,
-    admin_password_bounds_preserve_credentials_until_valid_replacement
+    admin_password_bounds_preserve_credentials_until_valid_replacement,
+    admin_email_replacement_moves_login_without_replacing_accounts_or_sessions
 );
 
 async fn promote<S: AuthSchema>(auth: &Alibi<S>, response: &AuthResponse, role: &str) -> String {
@@ -720,5 +721,67 @@ async fn admin_password_bounds_preserve_credentials_until_valid_replacement<B: B
         .await;
         assert_eq!(body(&login)["user"]["id"], id);
     }
+    B::close(connection).await
+}
+
+async fn admin_email_replacement_moves_login_without_replacing_accounts_or_sessions<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new())
+        .build()
+        .await?;
+    let administrator = signup(&auth, "admin@example.test").await;
+    _ = promote(&auth, &administrator, "admin").await;
+    let owner = signup(&auth, "old@example.test").await;
+    let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let accounts = db.table("accounts").await?;
+    let sessions = db.table("sessions").await?;
+    let updated = call(
+        &auth,
+        request(
+            "/admin/update-user",
+            Some(json!({"userId":id,"data":{"email":"NEW@EXAMPLE.TEST","emailVerified":false}})),
+            &cookies(&administrator),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&updated)["id"], id);
+    assert_eq!(body(&updated)["email"], "new@example.test");
+    assert_eq!(
+        db.text("SELECT email FROM users WHERE id=$1", &[&id])
+            .await?
+            .as_deref(),
+        Some("new@example.test")
+    );
+    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.table("sessions").await?, sessions);
+    let denied = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"old@example.test","password":PASSWORD})),
+            "",
+        ),
+        401,
+    )
+    .await;
+    assert_eq!(body(&denied)["code"], "INVALID_EMAIL_OR_PASSWORD");
+    assert_eq!(db.table("sessions").await?, sessions);
+    let login = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"new@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&login)["user"]["id"], id);
+    assert_eq!(db.table("accounts").await?, accounts);
+    authenticated(&auth, &cookies(&owner), "new@example.test").await;
     B::close(connection).await
 }
