@@ -19,7 +19,7 @@ For example, hypothetical Rust releases `1.0.0` and `1.0.1` could both target Be
 
 Stable releases have no suffix. Reserve `-alpha.N`, `-beta.N`, and `-rc.N` for actual prereleases. Never reuse a published version or move its Git tag. Release tags use `v` followed by the Rust version, for example `v1.0.1`.
 
-The current release is **Alibi `0.4.1`**, targeting **Better Auth `1.7.7`**. The version examples above illustrate the policy for future releases.
+The current release is **Alibi `0.5.0`**, targeting **Better Auth `1.7.7`**. The version examples above illustrate the policy for future releases.
 
 ## Compatibility rules
 
@@ -48,13 +48,13 @@ The upstream compatibility target is separate release information. Do not encode
 5. Verify the packaged workspace with `devenv shell -- ./scripts/publish.sh`. Cargo stages the unpublished workspace dependencies together and verifies the archives with the default TLS backend and all framework, store and cache integrations enabled.
 6. Publish from the reviewed release commit with `devenv shell -- ./scripts/publish.sh --publish`, then create its immutable `v{rust-version}` tag and release notes. Cargo uploads the crates in dependency order. If publication is interrupted, resume with the same commit and version for unpublished crates; never overwrite an already published crate.
 
-## Release 0.4.1
+## Release 0.5.0
 
-All eleven first-party crates advance together to `0.4.1`, targeting Better Auth `1.7.7`.
+All eleven first-party crates advance together to `0.5.0`, targeting Better Auth `1.7.7`.
 
 Endpoint hooks now change the dispatch path only when they explicitly patch one. Previously, a hook that only observed a request could replace the concrete request path with the route template it was given (for example `/echo/:id`), so the request could be dispatched to the wrong route.
 
-Update library dependencies and the matching `alibi-cli` to `0.4.1`. The upstream compatibility target, encryption labels, cookie formats, and database migration ledgers remain unchanged.
+Update library dependencies and the matching `alibi-cli` to `0.5.0`. The upstream compatibility target, encryption labels, cookie formats, and database migration ledgers remain unchanged.
 
 ## Release 0.4.0
 
