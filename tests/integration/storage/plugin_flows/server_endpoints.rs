@@ -20,6 +20,11 @@ backend_tests!(
     server_jwt_signatures_are_usable_by_an_independent_consumer,
     server_one_time_token_distinguishes_logical_and_client_requests,
     server_organization_authority_and_member_lifecycle,
+    server_password_ignores_misbound_credential_identity,
+    server_password_discards_foreign_virtual_authority,
+    server_password_expired_physical_session_cannot_use_cached_identity,
+    server_password_hash_error_precedes_existing_password_denial,
+    server_password_credential_write_failure_preserves_authority_for_retry,
     server_password_concurrent_admissions_keep_original_browser_authority
 );
 postgres_tests!(
@@ -767,6 +772,314 @@ async fn verify_jwt_overrides<S: AuthSchema>(
         .claims["sub"],
         "default-after-overrides"
     );
+    Ok(())
+}
+
+async fn server_password_ignores_misbound_credential_identity<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let other = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
+    _ = db
+        .execute(
+            "UPDATE accounts SET account_id=$1,password=NULL WHERE user_id=$2",
+            &[&other, &id],
+        )
+        .await?;
+    let old = db
+        .text("SELECT id FROM accounts WHERE user_id=$1", &[&id])
+        .await?
+        .unwrap();
+    let before = db.tables(&["users", "sessions"]).await?;
+    let foreign_accounts = db
+        .text("SELECT password FROM accounts WHERE user_id=$1", &[&other])
+        .await?;
+    alibi::plugins::password_management::set_password(
+        &request("/trusted", None, &cookies(&owner)),
+        "canonical-password-123",
+        auth.context(),
+    )
+    .await?;
+    assert_eq!(db.tables(&["users", "sessions"]).await?, before);
+    assert_eq!(
+        db.count_where("SELECT COUNT(*) FROM accounts WHERE user_id=$1", &[&id])
+            .await?,
+        2
+    );
+    assert_eq!(
+        db.text("SELECT account_id FROM accounts WHERE id=$1", &[&old])
+            .await?
+            .as_deref(),
+        Some(other.as_str())
+    );
+    assert_eq!(
+        db.text("SELECT password FROM accounts WHERE id=$1", &[&old])
+            .await?,
+        None
+    );
+    assert_eq!(
+        db.text(
+            "SELECT password FROM accounts WHERE user_id=$1 AND account_id=$1",
+            &[&id]
+        )
+        .await?
+        .as_deref(),
+        Some("fast$canonical-password-123")
+    );
+    assert_eq!(
+        db.text("SELECT password FROM accounts WHERE user_id=$1", &[&other])
+            .await?,
+        foreign_accounts
+    );
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+async fn server_password_discards_foreign_virtual_authority<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    _ = db
+        .execute("DELETE FROM accounts WHERE user_id=$1", &[&id])
+        .await?;
+    let foreign_token = body(&foreign)["token"].as_str().unwrap().to_owned();
+    let physical = auth.store().get_session(&foreign_token).await?.unwrap();
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let mut guest = request("/trusted", None, "");
+    guest.set_virtual_session(auth.context().session_view(&physical));
+    let error = alibi::plugins::password_management::set_password(
+        &guest,
+        "owner-password-123",
+        auth.context(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.status_code(), 401);
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    let mut owned = request("/trusted", None, &cookies(&owner));
+    owned.set_virtual_session(auth.context().session_view(&physical));
+    alibi::plugins::password_management::set_password(&owned, "owner-password-123", auth.context())
+        .await?;
+    assert_eq!(
+        db.text("SELECT password FROM accounts WHERE user_id=$1", &[&id])
+            .await?
+            .as_deref(),
+        Some("fast$owner-password-123")
+    );
+    assert_eq!(db.count("accounts").await?, 2);
+    let login = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"owner@example.test","password":"owner-password-123"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&login)["user"]["id"], id);
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+async fn server_password_expired_physical_session_cannot_use_cached_identity<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET)
+        .base_url(ORIGIN)
+        .session_cookie_cache(alibi::CookieCacheConfig {
+            enabled: true,
+            max_age: 300.0,
+            ..Default::default()
+        });
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let token = body(&owner)["token"].as_str().unwrap().to_owned();
+    _ = db
+        .execute("DELETE FROM accounts WHERE user_id=$1", &[&id])
+        .await?;
+    db.set_timestamp(
+        "sessions",
+        "expires_at",
+        ("token", &token),
+        chrono::Utc::now() - chrono::Duration::hours(1),
+    )
+    .await?;
+    let before = db.tables(&["users", "accounts"]).await?;
+    authenticated(&auth, &cookies(&owner), "owner@example.test").await;
+    let error = alibi::plugins::password_management::set_password(
+        &request("/trusted", None, &cookies(&owner)),
+        "owner-password-123",
+        auth.context(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.status_code(), 401);
+    assert_eq!(db.tables(&["users", "accounts"]).await?, before);
+    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(
+        db.count_where("SELECT COUNT(*) FROM sessions WHERE token=$1", &[&token])
+            .await?,
+        0
+    );
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+async fn server_password_hash_error_precedes_existing_password_denial<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    struct Hash {
+        fail: AtomicBool,
+        calls: AtomicUsize,
+    }
+    #[async_trait::async_trait]
+    impl alibi::PasswordHasher for Hash {
+        async fn hash(&self, password: &str) -> alibi::AuthResult<String> {
+            _ = self.calls.fetch_add(1, Ordering::SeqCst);
+            if self.fail.load(Ordering::SeqCst) {
+                Err(alibi::AuthError::internal("hash callback failed"))
+            } else {
+                Ok(format!("fast${password}"))
+            }
+        }
+        async fn verify(&self, hash: &str, password: &str) -> alibi::AuthResult<bool> {
+            Ok(hash == format!("fast${password}"))
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let hash = Arc::new(Hash {
+        fail: AtomicBool::new(false),
+        calls: AtomicUsize::new(0),
+    });
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(EmailPasswordPlugin::new().password_hasher(hash.clone()))
+        .plugin(SessionManagementPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let baseline = hash.calls.load(Ordering::SeqCst);
+    hash.fail.store(true, Ordering::SeqCst);
+    let input = request("/trusted", None, &cookies(&owner));
+    let error = alibi::plugins::password_management::set_password(
+        &input,
+        "replacement-password-123",
+        auth.context(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.status_code(), 500);
+    assert_eq!(hash.calls.load(Ordering::SeqCst), baseline + 1);
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    hash.fail.store(false, Ordering::SeqCst);
+    let error = alibi::plugins::password_management::set_password(
+        &input,
+        "replacement-password-123",
+        auth.context(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        alibi::AuthError::Upstream {
+            code: "PASSWORD_ALREADY_SET",
+            ..
+        }
+    ));
+    assert_eq!(hash.calls.load(Ordering::SeqCst), baseline + 2);
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    authenticated(&auth, &cookies(&owner), "owner@example.test").await;
+    B::close(connection).await
+}
+
+async fn server_password_credential_write_failure_preserves_authority_for_retry<B: Backend>(
+    parent: Db,
+) -> TestResult {
+    for existing in [false, true] {
+        let db = parent.fresh().await?;
+        let (connection, _) = db.migrated::<B>(SECRET).await?;
+        let auth = super::auth_probe::fast_builder::<B>(&connection)
+            .build()
+            .await?;
+        let owner = signup(&auth, "owner@example.test").await;
+        let foreign = signup(&auth, "foreign@example.test").await;
+        let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+        if existing {
+            _ = db
+                .execute("UPDATE accounts SET password=NULL WHERE user_id=$1", &[&id])
+                .await?;
+        } else {
+            _ = db
+                .execute("DELETE FROM accounts WHERE user_id=$1", &[&id])
+                .await?;
+        }
+        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let verb = if existing { "UPDATE" } else { "INSERT" };
+        _=db.execute(&format!("CREATE TRIGGER reject_credential BEFORE {verb} ON accounts WHEN NEW.provider_id='credential' BEGIN SELECT RAISE(ABORT,'credential write unavailable'); END"),&[]).await?;
+        let input = request("/trusted", None, &cookies(&owner));
+        let error = alibi::plugins::password_management::set_password(
+            &input,
+            "retry-password-123",
+            auth.context(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status_code(), 500);
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        authenticated(&auth, &cookies(&owner), "owner@example.test").await;
+        authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+        _ = db.execute("DROP TRIGGER reject_credential", &[]).await?;
+        alibi::plugins::password_management::set_password(
+            &input,
+            "retry-password-123",
+            auth.context(),
+        )
+        .await?;
+        assert_eq!(db.count_where("SELECT COUNT(*) FROM accounts WHERE user_id=$1 AND account_id=$1 AND provider_id='credential'",&[&id]).await?,1);
+        assert_eq!(
+            db.text(
+                "SELECT password FROM accounts WHERE user_id=$1 AND account_id=$1",
+                &[&id]
+            )
+            .await?
+            .as_deref(),
+            Some("fast$retry-password-123")
+        );
+        let login = call(
+            &auth,
+            request(
+                "/sign-in/email",
+                Some(json!({"email":"owner@example.test","password":"retry-password-123"})),
+                "",
+            ),
+            200,
+        )
+        .await;
+        assert_eq!(body(&login)["user"]["id"], id);
+        B::close(connection).await?;
+    }
     Ok(())
 }
 
