@@ -16,7 +16,8 @@ backend_tests!(
     api_key_permission_documents,
     api_key_session_callbacks,
     api_key_organization_ownership,
-    api_key_storage_edges
+    api_key_storage_edges,
+    static_org_delete_requires_delete_action_and_revokes_only_selected_key
 );
 
 fn raw(path: &str, text: &str, cookie: &str) -> AuthRequest {
@@ -971,5 +972,193 @@ async fn api_key_storage_edges<B: Backend>(db: Db) -> TestResult {
         );
     }
     trace.assert("api-key/storage-edges");
+    B::close(connection).await
+}
+
+async fn static_org_delete_requires_delete_action_and_revokes_only_selected_key<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::plugins::organization::RolePermissions;
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let keys = ApiKeyPlugin::with_config(ApiKeyConfig::default()).configuration(ApiKeyConfig {
+        config_id: "organization".into(),
+        references: ApiKeyReferences::Organization,
+        ..Default::default()
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            roles: Some(std::collections::HashMap::from([
+                (
+                    "owner".into(),
+                    RolePermissions {
+                        api_key: vec![
+                            "create".into(),
+                            "read".into(),
+                            "update".into(),
+                            "delete".into(),
+                        ],
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "member".into(),
+                    RolePermissions {
+                        api_key: vec!["read".into()],
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "admin".into(),
+                    RolePermissions {
+                        api_key: vec!["create".into()],
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "updater".into(),
+                    RolePermissions {
+                        api_key: vec!["read".into(), "update".into()],
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "deleter".into(),
+                    RolePermissions {
+                        api_key: vec!["read".into(), "delete".into()],
+                        ..Default::default()
+                    },
+                ),
+            ])),
+            ..Default::default()
+        }))
+        .plugin(keys.clone())
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let reader = signup(&auth, "reader@example.test").await;
+    let owner_cookie = cookies(&owner);
+    let reader_cookie = cookies(&reader);
+    let created = call(
+        &auth,
+        request(
+            "/organization/create",
+            Some(json!({"name":"Tenant","slug":"tenant"})),
+            &owner_cookie,
+        ),
+        200,
+    )
+    .await;
+    let org = body(&created)["id"].as_str().unwrap().to_owned();
+    _ = auth
+        .store()
+        .create_member(alibi::CreateMember::new(
+            &org,
+            body(&reader)["user"]["id"].as_str().unwrap(),
+            "member",
+        ))
+        .await?;
+    let selected = call(
+        &auth,
+        request(
+            "/api-key/create",
+            Some(json!({"configId":"organization","organizationId":org,"name":"selected"})),
+            &owner_cookie,
+        ),
+        200,
+    )
+    .await;
+    let selected = body(&selected);
+    let sibling = call(
+        &auth,
+        request(
+            "/api-key/create",
+            Some(json!({"configId":"organization","organizationId":org,"name":"sibling"})),
+            &owner_cookie,
+        ),
+        200,
+    )
+    .await;
+    let sibling = body(&sibling);
+
+    let deleter = signup(&auth, "deleter@example.test").await;
+    _ = auth
+        .store()
+        .create_member(alibi::CreateMember::new(
+            &org,
+            body(&deleter)["user"]["id"].as_str().unwrap(),
+            "deleter",
+        ))
+        .await?;
+    let before = db.tables(&["api_keys", "sessions", "member"]).await?;
+    let input = json!({"configId":"organization","keyId":selected["id"]});
+    let denied = call(
+        &auth,
+        request("/api-key/delete", Some(input.clone()), &reader_cookie),
+        403,
+    )
+    .await;
+    assert_eq!(body(&denied)["code"], "INSUFFICIENT_API_KEY_PERMISSIONS");
+    assert_eq!(
+        db.tables(&["api_keys", "sessions", "member"]).await?,
+        before
+    );
+    let verified = keys
+        .verify_api_key(
+            &VerifyApiKey {
+                key: selected["key"].as_str().unwrap(),
+                config_id: Some("organization"),
+                permissions: None,
+            },
+            auth.context(),
+        )
+        .await;
+    let verified = verified.unwrap();
+    assert_eq!(verified.reference_id, org);
+    assert_eq!(verified.id, selected["id"]);
+
+    let mut query = request("/api-key/get", None, &reader_cookie);
+    query.set_query_pairs([
+        ("id", sibling["id"].as_str().unwrap()),
+        ("configId", "organization"),
+    ]);
+    let sibling_before = body(&call(&auth, query.clone(), 200).await);
+    _ = call(
+        &auth,
+        request("/api-key/delete", Some(input), &cookies(&deleter)),
+        200,
+    )
+    .await;
+    assert_eq!(body(&call(&auth, query.clone(), 200).await), sibling_before);
+    _ = query
+        .query
+        .insert("id".into(), selected["id"].as_str().unwrap().into());
+    let missing = call(&auth, query, 404).await;
+    assert_eq!(body(&missing)["code"], "KEY_NOT_FOUND");
+    let verified = keys
+        .verify_api_key(
+            &VerifyApiKey {
+                key: selected["key"].as_str().unwrap(),
+                config_id: Some("organization"),
+                permissions: None,
+            },
+            auth.context(),
+        )
+        .await;
+    assert!(verified.is_err());
+    let verified = keys
+        .verify_api_key(
+            &VerifyApiKey {
+                key: sibling["key"].as_str().unwrap(),
+                config_id: Some("organization"),
+                permissions: None,
+            },
+            auth.context(),
+        )
+        .await;
+    let verified = verified.unwrap();
+    assert_eq!(verified.reference_id, org);
+    assert_eq!(verified.id, sibling["id"]);
+
+    authenticated(&auth, &owner_cookie, "owner@example.test").await;
     B::close(connection).await
 }
