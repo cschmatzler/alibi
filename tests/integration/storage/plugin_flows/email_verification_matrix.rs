@@ -15,6 +15,7 @@ backend_tests!(
     verify_email_session_adoption,
     verify_email_change_confirmation_chain,
     send_verification_email_matrix,
+    verified_guest_replay_skips_hooks_and_session_issuance,
     verification_after_hook_rejection_commits_user_without_issuing_session
 );
 
@@ -370,6 +371,76 @@ async fn send_verification_email_matrix<B: Backend>(db: Db) -> TestResult {
         .value("deliveries", json!(inbox.0.lock().unwrap().len()));
     probe.trace.assert("email-verification/send-matrix");
     B::close(connection).await
+}
+
+async fn verified_guest_replay_skips_hooks_and_session_issuance<B: Backend>(db: Db) -> TestResult {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let inbox = Arc::new(Inbox::default());
+    let before_count = Arc::new(AtomicUsize::new(0));
+    let after_count = Arc::new(AtomicUsize::new(0));
+    let before_hook = before_count.clone();
+    let after_hook = after_count.clone();
+    let auth = fast_builder::<B>(&connection)
+        .plugin(EmailVerificationPlugin::with_config(
+            EmailVerificationConfig {
+                send_verification_email: Some(inbox.clone()),
+                send_on_sign_up: Some(true),
+                auto_sign_in_after_verification: true,
+                before_email_verification: Some(Arc::new(move |_| {
+                    let _ = before_hook.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(async { Ok(()) })
+                })),
+                after_email_verification: Some(Arc::new(move |_| {
+                    let _ = after_hook.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(async { Ok(()) })
+                })),
+                ..Default::default()
+            },
+        ))
+        .build()
+        .await?;
+    let owner = signup(&auth, "verified-replay-owner@example.test").await;
+    let (_, token) = inbox.take();
+    let foreign = signup(&auth, "verified-replay-foreign@example.test").await;
+    let first = call(&auth, verify(&token, None, ""), 200).await;
+    authenticated(
+        &auth,
+        &cookies(&first),
+        "verified-replay-owner@example.test",
+    )
+    .await;
+    assert_eq!(before_count.load(Ordering::SeqCst), 1);
+    assert_eq!(after_count.load(Ordering::SeqCst), 1);
+    let rows = db.tables(&["users", "accounts", "sessions"]).await?;
+    let replay = call(&auth, verify(&token, None, ""), 200).await;
+    assert_eq!(body(&replay), json!({"status":true,"user":null}));
+    assert!(!replay.headers.contains_key("set-cookie"));
+    let callback = format!("{ORIGIN}/done?mode=replay#verified");
+    let redirected = call(&auth, verify(&token, Some(&callback), ""), 302).await;
+    assert_eq!(
+        redirected.headers.get("location").map(String::as_str),
+        Some(callback.as_str())
+    );
+    assert!(redirected.body.is_empty());
+    assert!(!redirected.headers.contains_key("set-cookie"));
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, rows);
+    assert_eq!(before_count.load(Ordering::SeqCst), 1);
+    assert_eq!(after_count.load(Ordering::SeqCst), 1);
+    assert!(body(&call(&auth, request("/get-session", None, ""), 200).await).is_null());
+    authenticated(
+        &auth,
+        &cookies(&owner),
+        "verified-replay-owner@example.test",
+    )
+    .await;
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "verified-replay-foreign@example.test",
+    )
+    .await;
+    Ok(())
 }
 
 async fn verification_after_hook_rejection_commits_user_without_issuing_session<B: Backend>(
