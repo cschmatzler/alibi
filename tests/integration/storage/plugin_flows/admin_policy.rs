@@ -11,7 +11,8 @@ backend_tests!(
     admin_remember_me_impersonation,
     admin_banned_message_callback,
     admin_failure_modes,
-    admin_user_validation
+    admin_user_validation,
+    configured_impersonation_durations_preserve_milliseconds_and_authority
 );
 
 fn merge(first: &str, second: &str) -> String {
@@ -552,4 +553,61 @@ fn get(path: &str, query: &[(&str, &str)], cookie: &str) -> AuthRequest {
     let mut request = request(path, None, cookie);
     request.set_query_pairs(query.iter().copied());
     request
+}
+
+async fn configured_impersonation_durations_preserve_milliseconds_and_authority<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::AuthSession;
+    for (duration, milliseconds) in [(120.75, 120_750), (-10.5, -10_500), (f64::NAN, 3_600_000)] {
+        let db = db.fresh().await?;
+        let (connection, _) = db.migrated::<B>(SECRET).await?;
+        let auth = super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(AdminPlugin::with_config(alibi::plugins::AdminConfig {
+                impersonation_session_duration: Some(duration),
+                ..Default::default()
+            }))
+            .build()
+            .await?;
+        let (admin_id, admin) = promoted::<B>(&auth, "admin@example.test", "admin").await;
+        let owner = signup(&auth, "owner@example.test").await;
+        let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+        let foreign = signup(&auth, "foreign@example.test").await;
+        let before: Value = serde_json::from_str(&db.table("sessions").await?)?;
+        let issued = call(
+            &auth,
+            request(
+                "/admin/impersonate-user",
+                Some(json!({"userId":id})),
+                &admin,
+            ),
+            200,
+        )
+        .await;
+        let token = body(&issued)["session"]["token"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let session = auth.store().get_session(&token).await?.unwrap();
+        assert_eq!(session.user_id(), id);
+        assert_eq!(session.impersonated_by(), Some(admin_id.as_str()));
+        assert!(
+            ((session.expires_at() - session.created_at()).num_milliseconds() - milliseconds).abs()
+                < 100
+        );
+        let after: Value = serde_json::from_str(&db.table("sessions").await?)?;
+        for old in before.as_array().unwrap() {
+            assert!(after.as_array().unwrap().contains(old));
+        }
+        let active = call(&auth, request("/get-session", None, &cookies(&issued)), 200).await;
+        if milliseconds < 0 {
+            assert!(body(&active).is_null());
+        } else {
+            assert_eq!(body(&active)["user"]["id"], id);
+        }
+        authenticated(&auth, &admin, "admin@example.test").await;
+        authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+        B::close(connection).await?;
+    }
+    Ok(())
 }
