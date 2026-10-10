@@ -21,7 +21,8 @@ backend_tests!(
     blank_admin_role_falls_back_to_configured_user_permission,
     create_only_role_cannot_select_explicit_or_nested_roles,
     admin_password_field_rejects_accompanying_profile_mutations,
-    admin_colliding_email_rejects_accompanying_profile_mutations
+    admin_colliding_email_rejects_accompanying_profile_mutations,
+    admin_update_ban_revokes_every_target_browser_and_preserves_foreign_sessions
 );
 
 async fn promote<S: AuthSchema>(auth: &Alibi<S>, response: &AuthResponse, role: &str) -> String {
@@ -1286,5 +1287,65 @@ async fn admin_colliding_email_rejects_accompanying_profile_mutations<B: Backend
         assert_eq!(body(&login)["user"]["name"], body(owner)["user"]["name"]);
         authenticated(&auth, &cookies(owner), email).await;
     }
+    B::close(connection).await
+}
+
+async fn admin_update_ban_revokes_every_target_browser_and_preserves_foreign_sessions<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new())
+        .build()
+        .await?;
+    let admin = signup(&auth, "admin@example.test").await;
+    _ = promote(&auth, &admin, "admin").await;
+    let target = signup(&auth, "target@example.test").await;
+    let sibling = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"target@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    let id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
+    let accounts = db.table("accounts").await?;
+    assert_eq!(
+        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&id])
+            .await?,
+        2
+    );
+    let updated = call(
+        &auth,
+        request(
+            "/admin/update-user",
+            Some(json!({"userId":id,"data":{"banned":true,"banReason":"Update route ban"}})),
+            &cookies(&admin),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&updated)["id"], id);
+    assert_eq!(body(&updated)["banned"], true);
+    assert_eq!(body(&updated)["banReason"], "Update route ban");
+    assert_eq!(
+        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&id])
+            .await?,
+        0
+    );
+    assert_eq!(db.count("sessions").await?, 2);
+    assert_eq!(db.table("accounts").await?, accounts);
+    for browser in [&target, &sibling] {
+        let response = call(&auth, request("/get-session", None, &cookies(browser)), 200).await;
+        assert!(body(&response).is_null());
+    }
+    authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    authenticated(&auth, &cookies(&admin), "admin@example.test").await;
     B::close(connection).await
 }
