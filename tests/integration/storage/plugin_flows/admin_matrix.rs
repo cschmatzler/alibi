@@ -14,7 +14,8 @@ backend_tests!(
     admin_password_bounds_preserve_credentials_until_valid_replacement,
     admin_email_replacement_moves_login_without_replacing_accounts_or_sessions,
     configured_role_validation_precedes_missing_target_lookup,
-    admin_email_values_are_coerced_and_validated_before_any_update
+    admin_email_values_are_coerced_and_validated_before_any_update,
+    demoted_admin_cannot_use_stale_cookie_cache_to_restore_grants
 );
 
 async fn promote<S: AuthSchema>(auth: &Alibi<S>, response: &AuthResponse, role: &str) -> String {
@@ -878,5 +879,83 @@ async fn admin_email_values_are_coerced_and_validated_before_any_update<B: Backe
     )
     .await;
     assert_eq!(body(&login)["user"]["id"], id);
+    B::close(connection).await
+}
+
+async fn demoted_admin_cannot_use_stale_cookie_cache_to_restore_grants<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::AuthUser;
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET)
+        .base_url(ORIGIN)
+        .session_cookie_cache(alibi::CookieCacheConfig {
+            enabled: true,
+            strategy: alibi::CookieCacheStrategy::Compact,
+            max_age: 300.0,
+            version: None,
+        });
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(AdminPlugin::with_config(alibi::plugins::AdminConfig {
+            default_role: "admin".into(),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let first = signup(&auth, "first@example.test").await;
+    let second = signup(&auth, "second@example.test").await;
+    let id = body(&first)["user"]["id"].as_str().unwrap().to_owned();
+    let other_id = body(&second)["user"]["id"].as_str().unwrap().to_owned();
+    let cookie = cookies(&first);
+    assert!(cookie.contains("session_data"));
+    _ = call(
+        &auth,
+        request(
+            "/admin/set-role",
+            Some(json!({"userId":id,"role":"user"})),
+            &cookies(&second),
+        ),
+        200,
+    )
+    .await;
+    let cached = call(&auth, request("/get-session", None, &cookie), 200).await;
+    assert_eq!(body(&cached)["user"]["role"], "admin");
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    for (path, input, code) in [
+        (
+            "/admin/set-role",
+            json!({"userId":id,"role":"admin"}),
+            "YOU_ARE_NOT_ALLOWED_TO_CHANGE_USERS_ROLE",
+        ),
+        (
+            "/admin/impersonate-user",
+            json!({"userId":other_id}),
+            "YOU_ARE_NOT_ALLOWED_TO_IMPERSONATE_USERS",
+        ),
+    ] {
+        let denied = call(&auth, request(path, Some(input), &cookie), 403).await;
+        assert_eq!(body(&denied)["code"], code);
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    }
+    let permission = call(
+        &auth,
+        request(
+            "/admin/has-permission",
+            Some(json!({"permissions":{"user":["set-role"]}})),
+            &cookie,
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&permission)["success"], false);
+    assert_eq!(
+        auth.store().get_user_by_id(&id).await?.unwrap().role(),
+        Some("user")
+    );
+    authenticated(&auth, &cookies(&second), "second@example.test").await;
     B::close(connection).await
 }
