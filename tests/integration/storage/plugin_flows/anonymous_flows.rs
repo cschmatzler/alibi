@@ -15,7 +15,8 @@ backend_tests!(
     anonymous_creation_failures,
     anonymous_deletion_and_linking,
     anonymous_transfer_uses_original_completed_snapshot,
-    anonymous_transfer_failure_preserves_committed_login
+    anonymous_transfer_failure_preserves_committed_login,
+    anonymous_database_hook_errors_preserve_stage_commit
 );
 
 #[derive(Default)]
@@ -615,6 +616,94 @@ async fn anonymous_transfer_failure_preserves_committed_login<B: Backend>(db: Db
         );
         authenticated(&auth, &cookies(&regular), &email).await;
         authenticated(&auth, &cookies(&foreign), &foreign_email).await;
+    }
+    B::close(connection).await
+}
+
+async fn anonymous_database_hook_errors_preserve_stage_commit<B: Backend>(db: Db) -> TestResult {
+    struct Hook(Arc<Mutex<usize>>);
+    fn rejected(stage: &str) -> alibi::AuthError {
+        alibi::AuthError::Api {
+            status: 403,
+            code: None,
+            message: format!("{stage} creation cancelled by database hook"),
+        }
+    }
+    #[async_trait::async_trait]
+    impl<S: AuthSchema, H: alibi::store::HookBackend> DatabaseHooks<S, H> for Hook {
+        async fn before_create_user(
+            &self,
+            user: &mut CreateUser,
+            _: &DatabaseHookContext<'_, H>,
+        ) -> AuthResult<HookControl> {
+            if user.is_anonymous == Some(true) && *self.0.lock().unwrap() == 1 {
+                return Err(rejected("user"));
+            }
+            Ok(HookControl::Continue)
+        }
+        async fn before_create_session(
+            &self,
+            _: &mut CreateSession,
+            context: &DatabaseHookContext<'_, H>,
+        ) -> AuthResult<HookControl> {
+            if *self.0.lock().unwrap() == 2
+                && context
+                    .request
+                    .as_ref()
+                    .is_some_and(|request| request.path.ends_with("/sign-in/anonymous"))
+            {
+                return Err(rejected("session"));
+            }
+            Ok(HookControl::Continue)
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mode = Arc::new(Mutex::new(0));
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .store(B::hook(
+            B::store(
+                Arc::new(AuthConfig::new(SECRET).base_url(ORIGIN)),
+                &connection,
+            ),
+            Hook(mode.clone()),
+        ))
+        .plugin(AnonymousPlugin::new())
+        .build()
+        .await?;
+    let foreign = signup(&auth, "foreign@example.test").await;
+    for (stage, label, delta) in [(1, "user", 0), (2, "session", 1)] {
+        *mode.lock().unwrap() = stage;
+        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before_users = db.count("users").await?;
+        let denied = call(
+            &auth,
+            request("/sign-in/anonymous", Some(json!({})), ""),
+            403,
+        )
+        .await;
+        assert_eq!(
+            body(&denied),
+            json!({"message":format!("{label} creation cancelled by database hook")})
+        );
+        assert_eq!(denied.headers.get_all("set-cookie").count(), 0);
+        assert_eq!(db.count("users").await?, before_users + delta);
+        assert_eq!(db.tables(&["accounts", "sessions"]).await?, before[1..]);
+        if delta == 0 {
+            assert_eq!(db.table("users").await?, before[0]);
+        } else {
+            let old: Vec<Value> = serde_json::from_str(&before[0])?;
+            let new: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+            assert!(old.iter().all(|row| new.contains(row)));
+            assert_eq!(
+                new.iter().find(|row| !old.contains(row)).unwrap()["is_anonymous"],
+                1
+            );
+        }
+        assert_eq!(
+            body(&call(&auth, request("/get-session", None, ""), 200).await),
+            Value::Null
+        );
+        authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     }
     B::close(connection).await
 }
