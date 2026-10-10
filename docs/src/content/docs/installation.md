@@ -9,11 +9,11 @@ This page builds a working Axum server with email and password authentication on
 
 ## 1. Add the dependencies
 
-Install Alibi `0.4.1` from crates.io:
+Install Alibi `0.5.0` from crates.io:
 
 ```toml title="Cargo.toml"
 [dependencies]
-alibi = { version = "0.4.1", features = ["axum"] }
+alibi = { version = "0.5.0", features = ["axum"] }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
@@ -43,7 +43,7 @@ The library never reads these itself and does not load `.env` files; the code be
 ## 3. Generate the schema
 
 ```bash
-cargo install alibi-cli --version 0.4.1 --locked
+cargo install alibi-cli --version 0.5.0 --locked
 alibi generate -o src/auth_schema.rs
 ```
 
