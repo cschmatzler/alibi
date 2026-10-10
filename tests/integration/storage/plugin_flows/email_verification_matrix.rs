@@ -15,7 +15,8 @@ backend_tests!(
     verify_email_session_adoption,
     verify_email_change_confirmation_chain,
     send_verification_email_matrix,
-    verified_guest_replay_skips_hooks_and_session_issuance
+    verified_guest_replay_skips_hooks_and_session_issuance,
+    verification_after_hook_rejection_commits_user_without_issuing_session
 );
 
 #[derive(Default)]
@@ -437,6 +438,73 @@ async fn verified_guest_replay_skips_hooks_and_session_issuance<B: Backend>(db: 
         &auth,
         &cookies(&foreign),
         "verified-replay-foreign@example.test",
+    )
+    .await;
+    Ok(())
+}
+
+async fn verification_after_hook_rejection_commits_user_without_issuing_session<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let inbox = Arc::new(Inbox::default());
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = calls.clone();
+    let auth = fast_builder::<B>(&connection)
+        .plugin(EmailVerificationPlugin::with_config(
+            EmailVerificationConfig {
+                send_verification_email: Some(inbox.clone()),
+                send_on_sign_up: Some(true),
+                auto_sign_in_after_verification: true,
+                after_email_verification: Some(Arc::new(move |user| {
+                    assert!(user.email_verified);
+                    let _ = observed.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(async {
+                        Err(alibi::AuthError::Upstream {
+                            status: 403,
+                            code: "VERIFICATION_VETO",
+                            message: "Application veto",
+                        })
+                    })
+                })),
+                ..Default::default()
+            },
+        ))
+        .build()
+        .await?;
+    let owner = signup(&auth, "verification-veto-owner@example.test").await;
+    let (_, token) = inbox.take();
+    let foreign = signup(&auth, "verification-veto-foreign@example.test").await;
+    let rows = db.tables(&["accounts", "sessions"]).await?;
+    let response = call(&auth, verify(&token, None, ""), 403).await;
+    assert_eq!(body(&response)["code"], "VERIFICATION_VETO");
+    assert!(!response.headers.contains_key("set-cookie"));
+    let users: Value = serde_json::from_str(&db.table("users").await?)?;
+    let updated = users
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["id"] == body(&owner)["user"]["id"])
+        .unwrap();
+    assert_eq!(updated["email_verified"], json!(1));
+    assert_eq!(db.tables(&["accounts", "sessions"]).await?, rows);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let replay = call(&auth, verify(&token, None, ""), 200).await;
+    assert_eq!(body(&replay), json!({"status":true,"user":null}));
+    assert!(!replay.headers.contains_key("set-cookie"));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(db.tables(&["accounts", "sessions"]).await?, rows);
+    authenticated(
+        &auth,
+        &cookies(&owner),
+        "verification-veto-owner@example.test",
+    )
+    .await;
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "verification-veto-foreign@example.test",
     )
     .await;
     Ok(())
