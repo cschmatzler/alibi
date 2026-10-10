@@ -6,7 +6,8 @@ use async_trait::async_trait;
 
 backend_tests!(
     organization_lifecycle_callbacks_preserve_patch_authority_and_committed_phases,
-    organization_invitation_and_member_callbacks_preserve_actor_and_commit_order
+    organization_invitation_and_member_callbacks_preserve_actor_and_commit_order,
+    organization_update_hooks_preserve_empty_values_and_input_field_fallback
 );
 postgres_tests!(
     organization_lifecycle_callbacks_preserve_patch_authority_and_committed_phases,
@@ -749,4 +750,106 @@ async fn organization_invitation_and_member_callbacks_preserve_actor_and_commit_
         B::close(connection).await?;
     }
     Ok(())
+}
+
+async fn organization_update_hooks_preserve_empty_values_and_input_field_fallback<B: Backend>(
+    db: Db,
+) -> TestResult {
+    #[derive(Debug, Default)]
+    struct Hooks {
+        mode: Mutex<usize>,
+        after: Mutex<Vec<OrganizationUpdatedContext>>,
+    }
+    #[async_trait]
+    impl OrganizationUpdateHooks for Hooks {
+        async fn before_update(
+            &self,
+            _: &OrganizationUpdateContext,
+        ) -> AuthResult<Option<OrganizationUpdatePatch>> {
+            Ok(Some(match *self.mode.lock().unwrap() {
+                0 => OrganizationUpdatePatch {
+                    name: Some(String::new()),
+                    ..Default::default()
+                },
+                1 => OrganizationUpdatePatch {
+                    metadata: Some(Some(Default::default())),
+                    ..Default::default()
+                },
+                _ => OrganizationUpdatePatch {
+                    name: Some("Patched Without Metadata".into()),
+                    ..Default::default()
+                },
+            }))
+        }
+        async fn after_update(&self, c: &OrganizationUpdatedContext) -> AuthResult<()> {
+            self.after.lock().unwrap().push(c.clone());
+            Ok(())
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let hooks = Arc::new(Hooks::default());
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            update_hooks: Some(hooks.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "owner@example.test").await;
+    let org = body(
+        &call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Original","slug":"owned"})),
+                &cookies(&owner),
+            ),
+            200,
+        )
+        .await,
+    );
+    let stable = db
+        .tables(&["users", "accounts", "sessions", "member"])
+        .await?;
+    for mode in 0..3 {
+        *hooks.mode.lock().unwrap() = mode;
+        let result=body(&call(&auth,request("/organization/update",Some(json!({"organizationId":org["id"],"data":{"name":"Submitted","metadata":{"requested":true}}})),&cookies(&owner)),200).await);
+        let expected_name = match mode {
+            0 => "",
+            1 => "Submitted",
+            _ => "Patched Without Metadata",
+        };
+        let expected_meta = if mode == 1 {
+            json!({})
+        } else {
+            json!({"requested":true})
+        };
+        assert_eq!(result["name"], expected_name);
+        assert_eq!(result["metadata"], expected_meta);
+        let after = hooks.after.lock().unwrap().last().unwrap().clone();
+        assert_eq!(after.organization.unwrap().name, expected_name);
+        assert_eq!(
+            db.text(
+                "SELECT name FROM organization WHERE id=$1",
+                &[org["id"].as_str().unwrap()]
+            )
+            .await?
+            .as_deref(),
+            Some(expected_name)
+        );
+        let stored = db
+            .text(
+                "SELECT CAST(metadata AS TEXT) FROM organization WHERE id=$1",
+                &[org["id"].as_str().unwrap()],
+            )
+            .await?
+            .unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&stored)?, expected_meta);
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "member"])
+                .await?,
+            stable
+        );
+    }
+    B::close(connection).await
 }
