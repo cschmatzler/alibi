@@ -18,7 +18,7 @@ use alibi::plugins::jwt::JwtPlugin;
 use alibi::plugins::one_time_token::OneTimeTokenPlugin;
 use alibi::plugins::two_factor::TwoFactorConfig;
 use alibi::plugins::{
-    ApiKeyPlugin, EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin, TwoFactorPlugin,
+    AccountManagementPlugin, ApiKeyPlugin, EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
 use alibi::seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use alibi::utils::json::{self, JsValue};
@@ -235,6 +235,11 @@ impl EndpointHook<TestSchema> for Observer {
     ) -> AuthResult<EndpointResponse> {
         self.app
             .record(format!("{}-after", self.id), call, Some(&response));
+        if self.id == "user" && *self.app.mode.lock().unwrap() == "account-list-headers" {
+            call.set_response_header("x-account-list", "logical");
+            call.queue_response_header("set-cookie", "account-first=owned; Path=/; HttpOnly");
+            call.queue_response_header("set-cookie", "account-second=owned; Path=/; HttpOnly");
+        }
         let hash_phase = self.app.mode.lock().unwrap().starts_with("hash-phase");
         if self.id == "user" && hash_phase {
             self.app.hash_at("after", context).await?;
@@ -482,6 +487,7 @@ pub(crate) async fn router(
                 },
             ))
             .plugin(SessionManagementPlugin::new())
+            .plugin(AccountManagementPlugin::new())
             .plugin(Observer {
                 id: "first",
                 app: app.clone(),
@@ -543,6 +549,7 @@ pub(crate) async fn router(
                 app.events.lock().unwrap().clear();
                 app.ranges.lock().unwrap().clear();
                 let plugin = match input.operation.as_str() {
+                    "listUserAccounts" => "account-management",
                     "createVerificationOTP" | "getVerificationOTP" => "email-otp",
                     "getSession" => "session-management",
                     "signJWT" | "verifyJWT" | "getToken" | "getJwks" => "jwt",
@@ -556,6 +563,7 @@ pub(crate) async fn router(
                 // The control routes real input to the registered operation; hooks and
                 // authentication are exclusively owned by production dispatch.
                 let operation: &'static str = match input.operation.as_str() {
+                    "listUserAccounts" => "listUserAccounts",
                     "createVerificationOTP" => "createVerificationOTP",
                     "getVerificationOTP" => "getVerificationOTP",
                     "getSession" => "getSession",
