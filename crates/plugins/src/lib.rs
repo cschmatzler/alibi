@@ -301,7 +301,7 @@ pub use password_management::{
     PasswordManagementConfig, PasswordManagementPlugin, SendResetPassword,
 };
 pub use phone_number::{PhoneNumberConfig, PhoneNumberPlugin, SendPhoneOtp};
-pub use session_management::SessionManagementPlugin;
+pub use session_management::{GetSessionQuery, GetSessionResponse, SessionManagementPlugin};
 pub use siwe::{SiweConfig, SiwePlugin};
 pub use two_factor::{
     SendTwoFactorOtp, TwoFactorBackupCipher, TwoFactorBackupStorage, TwoFactorConfig,

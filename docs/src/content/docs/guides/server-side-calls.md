@@ -7,32 +7,16 @@ Not every auth operation should be reachable over HTTP. Creating an API key *for
 
 | API | Input | Use it for |
 | --- | --- | --- |
-| `handle_request(AuthRequest)` | A full HTTP-shaped request | Embedding in a framework, proxying, tests, "ask the auth server who this is" |
+| `handle_request(AuthRequest)` | A full HTTP-shaped request | Embedding in a framework, proxying, HTTP middleware |
 | `dispatch_endpoint(ServerEndpoint, EndpointOptions)` | Logical inputs and optional headers | Trusted server operations and any endpoint a plugin exposes in typed form |
 
 ## `handle_request`
 
-Build an `AuthRequest`, get an `AuthResponse`. It runs exactly the pipeline an HTTP request would — middleware, rate limits, CSRF, plugin hooks — so use it when you want those behaviors:
-
-```rust
-use crate::auth_schema::AppAuthSchema;
-use alibi::prelude::{AuthRequest, HttpMethod};
-use alibi::{AuthResult, Alibi};
-use serde_json::Value;
-
-/// Resolve the session behind a `Cookie` header.
-async fn session_for(auth: &Alibi<AppAuthSchema>, cookie: &str) -> AuthResult<Option<Value>> {
-    let mut request = AuthRequest::new(HttpMethod::Get, "/api/auth/get-session");
-    request.headers.insert("cookie".into(), cookie.to_owned());
-    let response = auth.handle_request(request).await?;
-    let body: Value = serde_json::from_slice(&response.body)?;
-    Ok((!body.is_null()).then_some(body))
-}
-```
+Build an `AuthRequest`, get an `AuthResponse`. It runs exactly the pipeline an HTTP request would — middleware, rate limits, CSRF, plugin hooks — so use it when you want those behaviors.
 
 ## `dispatch_endpoint`
 
-Plugins that expose server-only operations publish typed constructors that return a `ServerEndpoint<Output>`. You pass it to `dispatch_endpoint` with optional `EndpointOptions`:
+Plugins that expose logical operations publish typed constructors that return a `ServerEndpoint<Output>`. You pass it to `dispatch_endpoint` with optional `EndpointOptions`:
 
 ```rust
 use alibi::endpoint::EndpointOptions;
@@ -46,7 +30,62 @@ fn options() -> EndpointOptions {
 }
 ```
 
-The output is an `EndpointOutput<T>`; `decode()` turns it into the typed value `T`, `value()` gives the raw JSON, and failures are `EndpointError { error, headers, body }`.
+The output is an `EndpointOutput<T>`; `decode()` turns it into the typed value `T`, `value()` gives the raw JSON, `headers()` retains response headers including every `Set-Cookie` value, and failures are `EndpointError { error, headers, body }`.
+
+### Read the current session with response headers
+
+With `SessionManagementPlugin` installed, call `get_session_endpoint()` with the
+incoming logical headers. No URL or `AuthRequest` is needed:
+
+```rust
+use alibi::endpoint::EndpointOptions;
+use alibi::plugins::session_management::{GetSessionResponse, SessionManagementPlugin};
+use alibi::{Alibi, AuthSchema, Headers};
+use std::collections::HashMap;
+
+async fn session_for<S: AuthSchema>(
+    auth: &Alibi<S>,
+    headers: HashMap<String, String>,
+) -> Result<(Option<GetSessionResponse>, Headers), Box<dyn std::error::Error>> {
+    let output = auth
+        .dispatch_endpoint(
+            SessionManagementPlugin::get_session_endpoint(),
+            EndpointOptions { headers: Some(headers), ..Default::default() },
+        )
+        .await?;
+    Ok((output.decode()?, output.headers().clone()))
+}
+```
+
+`GetSessionResponse` contains the public `SessionView`, `UserView`, and optional
+`needs_refresh` flag. These are the configured output projections, including
+returned additional fields, rather than database rows. An absent or expired
+session returns `None`; an operational failure returns `EndpointError`.
+
+Forward the returned headers to your framework response. Append **each** value
+from `headers.get_all("set-cookie")` separately so renewal and cleanup cookies
+all reach the browser. Headers are always available, matching Better Auth's
+[`returnHeaders: true`](https://better-auth.com/docs/concepts/api) use case.
+
+The operation shares the HTTP get-session handler's cache, refresh, expiry, and
+projection behavior, and runs configured endpoint hooks. Query options are
+available through the typed query:
+
+```rust
+use alibi::plugins::session_management::{GetSessionQuery, SessionManagementPlugin};
+
+let endpoint = SessionManagementPlugin::get_session_endpoint().with_query(&GetSessionQuery {
+    disable_cookie_cache: true,
+    disable_refresh: true,
+})?;
+```
+
+It defaults to GET. For deferred refresh, set
+`EndpointOptions.method = Some(alibi::HttpMethod::Post)`; POST requires
+`session.defer_session_refresh`. If an endpoint hook replaces the output shape,
+`decode()` can fail; `value()` and `headers()` still retain the final result.
+
+### Other operations
 
 **Example: sign a service token and verify it** with the [JWT plugin](/plugins/jwt/):
 
@@ -96,10 +135,11 @@ Without the headers the call fails with `Unauthorized`, exactly like the HTTP ro
 
 Dispatch goes through the **same hooks** as HTTP calls: [endpoint hooks](/concepts/hooks/#endpoint-hooks) registered on the builder and by plugins run for dispatched calls too (with `call.request()` empty). It does **not** pass through HTTP middleware (body limit, rate limits, CORS, CSRF), because there is no HTTP request.
 
-### Server-only operations by plugin
+### Operations by plugin
 
 | Plugin | Constructor | Purpose |
 | --- | --- | --- |
+| Session management | `SessionManagementPlugin::get_session_endpoint` | Read a session and retain response cookies |
 | [API key](/plugins/api-key/) | `ApiKeyPlugin::create_endpoint`, `update_endpoint`, `verify_endpoint`, `delete_all_expired_endpoint` | Provision keys with quota and permissions; verify presented keys |
 | [JWT](/plugins/jwt/) | `JwtPlugin::sign_endpoint`, `verify_endpoint`, `token_endpoint`, `jwks_endpoint` | Service tokens; verify tokens |
 | [One-time token](/plugins/one-time-token/) | `OneTimeTokenPlugin::generate_endpoint`, `verify_endpoint` | Session handoff |
