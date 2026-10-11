@@ -11,6 +11,7 @@ use alibi::{AuthError, AuthResult, CallbackContext};
 use async_trait::async_trait;
 
 backend_tests!(
+    server_phone_consumption_admits_logical_input_and_preserves_identity,
     phone_number_request_and_proof_matrix,
     phone_number_provider_and_sender_failures,
     phone_number_password_reset_effects,
@@ -2019,5 +2020,171 @@ async fn phone_trusted_device_completion_forwards_rotated_owned_proof<B: Backend
         .await?,
         foreign_state
     );
+    B::close(connection).await
+}
+
+struct ConsumptionHook(Arc<Mutex<Vec<&'static str>>>);
+#[async_trait]
+impl<S: AuthSchema> alibi::endpoint::EndpointHook<S> for ConsumptionHook {
+    fn matches_before(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+    ) -> AuthResult<bool> {
+        if call.operation_id() != "consumePhoneNumberOTP" {
+            return Ok(false);
+        }
+        assert!(call.path().is_none());
+        assert!(call.request().is_none());
+        assert!(call.method().is_none());
+        self.0.lock().unwrap().push("matcher");
+        Ok(true)
+    }
+    async fn before(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+    ) -> AuthResult<Option<alibi::endpoint::BeforeEndpointAction>> {
+        assert_eq!(call.path(), Some("/"));
+        assert!(call.request().is_none());
+        self.0.lock().unwrap().push("before");
+        Ok(None)
+    }
+    fn matches_after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+        _: &alibi::endpoint::EndpointResponse,
+    ) -> AuthResult<bool> {
+        Ok(call.operation_id() == "consumePhoneNumberOTP")
+    }
+    async fn after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+        response: alibi::endpoint::EndpointResponse,
+    ) -> AuthResult<alibi::endpoint::EndpointResponse> {
+        assert_eq!(call.path(), Some("/"));
+        assert!(call.request().is_none());
+        assert!(call.method().is_none());
+        self.0.lock().unwrap().push("after");
+        call.queue_response_header("x-phone-consumed", "application-receipt");
+        Ok(response)
+    }
+}
+
+async fn server_phone_consumption_admits_logical_input_and_preserves_identity<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::endpoint::{EndpointOptions, ServerEndpoint};
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let outbox = Arc::new(Outbox::default());
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let auth = fast_builder::<B>(&connection)
+        .endpoint_hook(ConsumptionHook(events.clone()))
+        .plugin(PhoneNumberPlugin::new(PhoneNumberConfig {
+            send_otp: Some(outbox.clone()),
+            sign_up_on_verification: Some(Arc::new(Identity)),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "server-consume-owner@example.test").await;
+    let foreign = signup(&auth, "server-consume-foreign@example.test").await;
+    let users = db.table("users").await?;
+    let accounts = db.table("accounts").await?;
+    let sessions = db.table("sessions").await?;
+    let phone = "+15550000177";
+    let _ = call(
+        &auth,
+        request(
+            "/phone-number/send-otp",
+            Some(json!({"phoneNumber":phone})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let code = outbox.last().code;
+    let proofs = db.table("verifications").await?;
+    let malformed = ServerEndpoint::<Value>::new("phone-number", "consumePhoneNumberOTP")
+        .with_body_value(alibi::utils::json::parse_value(
+            &json!({"phoneNumber":phone,"code":5}).to_string(),
+        )?);
+    let error = auth
+        .dispatch_endpoint(malformed, EndpointOptions::default())
+        .await
+        .unwrap_err();
+    assert_eq!(error.error.status_code(), 400);
+    assert_eq!(
+        error.error.error_payload().1.as_deref(),
+        Some("VALIDATION_ERROR")
+    );
+    assert_eq!(db.table("verifications").await?, proofs);
+    assert_eq!(*events.lock().unwrap(), ["matcher", "before", "after"]);
+    events.lock().unwrap().clear();
+    let wrong = auth
+        .dispatch_endpoint(
+            PhoneNumberPlugin::consume_otp_endpoint(phone, "incorrect"),
+            EndpointOptions::default(),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(wrong.error.status_code(), 400);
+    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(*events.lock().unwrap(), ["matcher", "before", "after"]);
+    events.lock().unwrap().clear();
+    let consume = || PhoneNumberPlugin::consume_otp_endpoint(phone, &code);
+    let output = auth
+        .dispatch_endpoint(consume(), EndpointOptions::default())
+        .await?;
+    assert!(output.decode()?.status);
+    assert_eq!(
+        output.headers().get("x-phone-consumed").map(String::as_str),
+        Some("application-receipt")
+    );
+    assert!(output.headers().get_all("set-cookie").next().is_none());
+    assert_eq!(*events.lock().unwrap(), ["matcher", "before", "after"]);
+    assert_eq!(db.count("verifications").await?, 0);
+    let replay = auth
+        .dispatch_endpoint(consume(), EndpointOptions::default())
+        .await
+        .unwrap_err();
+    assert_eq!(replay.error.status_code(), 400);
+    assert_eq!(
+        replay.error.error_payload().1.as_deref(),
+        Some("OTP_NOT_FOUND")
+    );
+    for error in [&error, &wrong, &replay] {
+        let headers = error
+            .headers
+            .as_ref()
+            .expect("completed application hook headers");
+        assert_eq!(
+            headers.get("x-phone-consumed").map(String::as_str),
+            Some("application-receipt")
+        );
+        assert!(headers.get_all("set-cookie").next().is_none());
+    }
+    let _ = call(
+        &auth,
+        request(
+            "/phone-number/consume-otp",
+            Some(json!({"phoneNumber":phone,"code":code})),
+            "",
+        ),
+        404,
+    )
+    .await;
+    assert_eq!(db.table("users").await?, users);
+    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.table("sessions").await?, sessions);
+    authenticated(&auth, &cookies(&owner), "server-consume-owner@example.test").await;
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "server-consume-foreign@example.test",
+    )
+    .await;
     B::close(connection).await
 }
