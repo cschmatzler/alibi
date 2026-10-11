@@ -185,10 +185,10 @@ fn verification_error(
 pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
     query: &VerifyEmailQuery,
     config: &EmailVerificationConfig,
-    request: &alibi_core::AuthRequest,
+    request: &impl alibi_core::session::SessionRequest,
     ctx: &AuthContext<A>,
+    meta: alibi_core::RequestMeta,
 ) -> AuthResult<VerifyEmailResult> {
-    let meta = alibi_core::RequestMeta::from_request(request);
     let ip_address = meta.ip_address;
     let user_agent = meta.user_agent;
 
@@ -485,7 +485,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
 }
 
 async fn verification_session<S: alibi_core::AuthSchema>(
-    request: &alibi_core::AuthRequest,
+    request: &impl alibi_core::session::SessionRequest,
     ctx: &AuthContext<S>,
 ) -> Option<(UserView, SessionView)> {
     alibi_core::session::cookie_cache::runtime::authenticated(ctx, request, false)

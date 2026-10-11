@@ -15,7 +15,8 @@ use handlers::{send_verification_email_core, verification_url, verify_email_core
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use types::{SendVerificationEmailRequest, VerifyEmailQuery, VerifyEmailResult};
+use types::{SendVerificationEmailRequest, VerifyEmailResult};
+pub use types::{VerifyEmailQuery, VerifyEmailResponse};
 
 /// Trait for custom email sending logic.
 ///
@@ -114,6 +115,59 @@ alibi_core::impl_auth_plugin! {
     extra {
     route_openapi_metadata!(S);
 
+        fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
+            vec![crate::endpoint::definition(
+                "verifyEmail", "verifyEmail", Some("/verify-email"), alibi_core::HttpMethod::Get,
+            )]
+        }
+
+        fn validate_endpoint(
+            &self,
+            call: &alibi_core::endpoint::EndpointCall,
+            _: &AuthContext<S>,
+        ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
+            use crate::authentication_helpers::RequestBody;
+            Ok(alibi_core::endpoint::EndpointInput {
+                body: call.body().cloned(),
+                query: Some(crate::endpoint::validate_fields(
+                    call.query(), "query", VerifyEmailQuery::FIELDS,
+                )?),
+            })
+        }
+
+        async fn on_endpoint(
+            &self,
+            call: &alibi_core::endpoint::EndpointCall,
+            ctx: &AuthContext<S>,
+        ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+            let mut query: VerifyEmailQuery = call.query_as()?;
+            query.callback_url = query.callback_url.filter(|url| !url.is_empty());
+            if call.request().is_some()
+                && let Some(url) = &query.callback_url
+                && !ctx.config.current_origin_check_disabled()
+                && !ctx.config.is_redirect_target_trusted(url)
+            {
+                return Err(AuthError::forbidden("Invalid callbackURL"));
+            }
+            let headers = call.headers().cloned().unwrap_or_default();
+            let meta = alibi_core::RequestMeta {
+                ip_address: Some(ctx.config.advanced.ip_address.resolve_ip(&headers).unwrap_or_default()),
+                user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
+            };
+            let (mut response, token) = match verify_email_core(&query, &self.config, call, ctx, meta).await? {
+                VerifyEmailResult::Redirect { url, session_token } =>
+                    (alibi_core::endpoint::EndpointResponse::redirect(url), session_token),
+                VerifyEmailResult::Json { body, session_token } =>
+                    (alibi_core::endpoint::EndpointResponse::json(&body)?, session_token),
+            };
+            if let Some(token) = token {
+                response.merge_headers(crate::authentication_helpers::session_cookie_headers(
+                    &ctx.config, &token, ctx.session_manager().has_dont_remember_cookie(call),
+                )?);
+            }
+            Ok(response)
+        }
+
         async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
             ctx.extensions.insert(self.config.clone());
             Ok(())
@@ -135,6 +189,14 @@ alibi_core::impl_auth_plugin! {
 }
 
 impl EmailVerificationPlugin {
+    /// Verify an email challenge through the public server API.
+    pub fn verify_email_endpoint(
+        query: &VerifyEmailQuery,
+    ) -> AuthResult<alibi_core::endpoint::ServerEndpoint<VerifyEmailResponse>> {
+        alibi_core::endpoint::ServerEndpoint::new("email-verification", "verifyEmail")
+            .with_query(query)
+    }
+
     async fn handle_send_verification_email(
         &self,
         req: &AuthRequest,
@@ -186,7 +248,15 @@ impl EmailVerificationPlugin {
             callback_url,
         };
 
-        match verify_email_core(&query, &self.config, req, ctx).await? {
+        match verify_email_core(
+            &query,
+            &self.config,
+            req,
+            ctx,
+            alibi_core::RequestMeta::from_request(req),
+        )
+        .await?
+        {
             VerifyEmailResult::Redirect { url, session_token } => {
                 let mut headers = alibi_core::Headers::new();
                 _ = headers.insert("Location".to_owned(), url);
