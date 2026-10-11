@@ -8,7 +8,7 @@ The `alibi` binary generates the Rust source for your auth models. It has one co
 ## Install
 
 ```bash
-cargo install alibi-cli --version 0.5.0 --locked
+cargo install alibi-cli --version 0.6.0 --locked
 ```
 
 ## `generate`
