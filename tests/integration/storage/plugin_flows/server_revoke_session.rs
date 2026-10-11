@@ -1,57 +1,23 @@
 //! Logical session revocation validates first and scopes deletion to genuine authority.
+use super::server_revocation_support::{Observer, options};
 use super::*;
-use alibi::endpoint::{
-    EndpointCall, EndpointHook, EndpointOptions, EndpointResponse, ServerEndpoint,
-};
+use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::session_management::RevokeSessionRequest;
-use alibi::{AuthContext, AuthResult, StatusResponse};
+use alibi::{AuthResult, StatusResponse};
 
 backend_tests!(server_revoke_session_preserves_foreign_authority_and_rejects_revoked_cache);
 
-#[derive(Clone, Default)]
-struct RevocationObserver(Arc<Mutex<Vec<Option<String>>>>);
-#[async_trait::async_trait]
-impl<S: AuthSchema> EndpointHook<S> for RevocationObserver {
-    fn matches_after(
-        &self,
-        call: &EndpointCall,
-        _: &AuthContext<S>,
-        _: &EndpointResponse,
-    ) -> AuthResult<bool> {
-        Ok(call.operation_id() == "revokeSession")
-    }
-    async fn after(
-        &self,
-        call: &EndpointCall,
-        _: &AuthContext<S>,
-        response: EndpointResponse,
-    ) -> AuthResult<EndpointResponse> {
-        assert!(call.request().is_none());
-        assert_eq!(call.path(), Some("/revoke-session"));
-        self.0
-            .lock()
-            .unwrap()
-            .push(call.session().map(|(user, _)| user.id));
-        Ok(response.with_header("x-revocation-result", "logical"))
-    }
-}
 fn revoke_endpoint(token: &str) -> AuthResult<ServerEndpoint<StatusResponse>> {
     SessionManagementPlugin::revoke_session_endpoint(&RevokeSessionRequest {
         token: token.into(),
     })?
     .with_query(&json!({"disableRefresh":true}))
 }
-fn options(response: &AuthResponse) -> EndpointOptions {
-    EndpointOptions {
-        headers: Some([("cookie".into(), cookies(response))].into_iter().collect()),
-        ..Default::default()
-    }
-}
 async fn server_revoke_session_preserves_foreign_authority_and_rejects_revoked_cache<B: Backend>(
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
-    let observer = RevocationObserver::default();
+    let observer = Observer::new("revokeSession", "/revoke-session");
     let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
     config.session.cookie_cache = Some(alibi::CookieCacheConfig {
         enabled: true,
