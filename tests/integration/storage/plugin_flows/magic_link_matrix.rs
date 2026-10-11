@@ -17,6 +17,7 @@ backend_tests!(
     magic_link_configured_quota_blocks_delivery_and_resets_at_configured_window,
     magic_link_returning_verified_owner_retains_credentials_oauth_and_browser_sessions,
     magic_link_redemption_hasher_failure,
+    magic_link_coded_generator_rejection_is_write_free_and_recoverable,
     magic_link_fresh_empty_callback,
     magic_link_delivery_request_context
 );
@@ -581,6 +582,124 @@ async fn magic_link_redemption_hasher_failure<B: Backend>(db: Db) -> TestResult 
         B::close(connection).await?;
     }
     Ok(())
+}
+
+// Compat owner: tests/plugins/magic-link/generator-rejection.test.ts. The
+// issuance matrix covers ordinary failure; this owns coded rejection and retry.
+async fn magic_link_coded_generator_rejection_is_write_free_and_recoverable<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct ControlledGenerator {
+        reject: AtomicBool,
+        receipts: Mutex<Vec<String>>,
+    }
+    #[async_trait]
+    impl MagicLinkTokenGenerator for ControlledGenerator {
+        async fn generate(&self, email: &str) -> AuthResult<String> {
+            self.receipts.lock().unwrap().push(email.to_owned());
+            if self.reject.load(Ordering::SeqCst) {
+                return Err(AuthError::Upstream {
+                    status: 403,
+                    code: "MAGIC_GENERATOR_REJECTED",
+                    message: "Application generator rejected",
+                });
+            }
+            Ok(format!("controlled-link-{email}"))
+        }
+    }
+
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let generator = Arc::new(ControlledGenerator {
+        reject: AtomicBool::new(true),
+        receipts: Mutex::new(Vec::new()),
+    });
+    let outbox = Arc::new(Outbox::default());
+    let auth = fast_builder::<B>(&connection)
+        .plugin(MagicLinkPlugin::new(MagicLinkConfig {
+            generate_token: Some(generator.clone()),
+            send_magic_link: Some(outbox.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let email = "generator-owner@example.test";
+    for table in ["users", "accounts", "sessions", "verifications"] {
+        assert_eq!(db.count(table).await?, 0);
+    }
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    let issue = request("/sign-in/magic-link", Some(json!({"email": email})), "");
+    let denied = call(&auth, issue.clone(), 403).await;
+    assert_eq!(
+        body(&denied),
+        json!({
+            "code": "MAGIC_GENERATOR_REJECTED",
+            "message": "Application generator rejected"
+        })
+    );
+    assert!(cookies(&denied).is_empty());
+    assert_eq!(generator.receipts.lock().unwrap().as_slice(), [email]);
+    assert!(outbox.sent.lock().unwrap().is_empty());
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        before
+    );
+    assert_eq!(
+        body(&call(&auth, request("/get-session", None, ""), 200).await),
+        Value::Null
+    );
+
+    generator.reject.store(false, Ordering::SeqCst);
+    _ = call(&auth, issue, 200).await;
+    assert_eq!(
+        generator.receipts.lock().unwrap().as_slice(),
+        [email, email]
+    );
+    assert_eq!(outbox.sent.lock().unwrap().len(), 1);
+    let delivery = outbox.sent.lock().unwrap().last().unwrap().clone();
+    assert_eq!(delivery.email, email);
+    assert_eq!(delivery.token, format!("controlled-link-{email}"));
+    assert_eq!(
+        db.text("SELECT identifier FROM verifications", &[])
+            .await?
+            .as_deref(),
+        Some(format!("magic-link:{}", delivery.token).as_str())
+    );
+    assert_eq!(db.count("verifications").await?, 1);
+    for table in ["users", "accounts", "sessions"] {
+        assert_eq!(db.count(table).await?, 0);
+    }
+    let verified = call(&auth, redeem(&delivery, &[("callbackURL", "")]), 200).await;
+    assert_eq!(body(&verified)["user"]["email"], email);
+    assert_eq!(body(&verified)["user"]["emailVerified"], true);
+    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("users").await?, 1);
+    assert_eq!(db.count("sessions").await?, 1);
+    authenticated(&auth, &cookies(&verified), email).await;
+    let after = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    let replay = call(&auth, redeem(&delivery, &[("callbackURL", "")]), 302).await;
+    let location = url::Url::parse(replay.headers.get("location").unwrap())?;
+    assert_eq!(
+        location
+            .query_pairs()
+            .find(|(key, _)| key == "error")
+            .unwrap()
+            .1,
+        "INVALID_TOKEN"
+    );
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        after
+    );
+    authenticated(&auth, &cookies(&verified), email).await;
+    B::close(connection).await
 }
 
 async fn magic_link_fresh_empty_callback<B: Backend>(db: Db) -> TestResult {
