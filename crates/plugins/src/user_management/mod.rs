@@ -11,7 +11,8 @@ use async_trait::async_trait;
 use chrono::Duration;
 use handlers::{change_email_core, delete_user_callback_core, delete_user_core};
 use std::sync::Arc;
-use types::{ChangeEmailRequest, DeleteUserRequest, TokenQuery};
+pub use types::DeleteUserRequest;
+use types::{ChangeEmailRequest, TokenQuery};
 pub use update::{BuiltinUserEndpoints, handle_update_user, ok_endpoint, update_user_endpoint};
 
 /// The initialized user's full snapshot passed to application lifecycle hooks.
@@ -224,6 +225,13 @@ impl UserManagementPlugin {
 }
 
 impl UserManagementPlugin {
+    /// Delete the authenticated owner through the public server API.
+    pub fn delete_user_endpoint(
+        body: &DeleteUserRequest,
+    ) -> AuthResult<alibi_core::endpoint::ServerEndpoint<alibi_core::SuccessMessageResponse>> {
+        alibi_core::endpoint::ServerEndpoint::new("user-management", "deleteUser").with_body(body)
+    }
+
     /// `POST /change-email`
     async fn handle_change_email(
         &self,
@@ -318,6 +326,65 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
 
     fn name(&self) -> &'static str {
         "user-management"
+    }
+
+    fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
+        vec![crate::endpoint::definition(
+            "deleteUser",
+            "deleteUser",
+            Some("/delete-user"),
+            HttpMethod::Post,
+        )]
+    }
+
+    fn validate_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
+        use crate::authentication_helpers::RequestBody;
+        Ok(alibi_core::endpoint::EndpointInput {
+            body: Some(crate::endpoint::validate_fields(
+                call.body(),
+                "body",
+                DeleteUserRequest::FIELDS,
+            )?),
+            query: call.query().cloned(),
+        })
+    }
+
+    async fn on_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        let (user, session) = ctx
+            .require_authoritative_session_record(call)
+            .await
+            .map_err(|_| AuthError::Upstream {
+                status: 401,
+                code: "UNAUTHORIZED",
+                message: "Unauthorized",
+            })?;
+        call.record_authenticated_session(ctx.user_view(&user), session.clone());
+        if !self.config.delete_user.enabled {
+            return Ok(
+                alibi_core::endpoint::EndpointResponse::error(AuthError::Api {
+                    status: 404,
+                    code: None,
+                    message: String::new(),
+                })
+                .without_error_body(),
+            );
+        }
+        let body: DeleteUserRequest = call.body_as()?;
+        let response = delete_user_core(&body, &user, &session, call, &self.config, ctx).await?;
+        let deleted =
+            response.message == "User deleted" && body.token.as_deref().is_none_or(str::is_empty);
+        if deleted {
+            alibi_core::session::cookie_cache::runtime::clear_session_cookies(ctx, call)?;
+        }
+        alibi_core::endpoint::EndpointResponse::json(&response)
     }
 
     fn routes(&self) -> Vec<AuthRoute> {

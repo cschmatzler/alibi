@@ -239,7 +239,7 @@ pub(crate) async fn delete_user_core(
     body: &DeleteUserRequest,
     user: &impl AuthUser,
     session: &impl AuthSession,
-    request: &AuthRequest,
+    request: &impl alibi_core::session::SessionRequest,
     config: &UserManagementConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<SuccessMessageResponse> {
@@ -375,7 +375,7 @@ pub(crate) async fn delete_user_core(
 pub(crate) async fn delete_user_callback_core(
     token: &str,
     user: &impl AuthUser,
-    request: &AuthRequest,
+    request: &impl alibi_core::session::SessionRequest,
     clear_cookie_errors: bool,
     config: &UserManagementConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -395,7 +395,7 @@ pub(crate) async fn delete_user_callback_core(
 
 async fn perform_user_deletion(
     user: &impl AuthUser,
-    request: &AuthRequest,
+    request: &impl alibi_core::session::SessionRequest,
     clear_cookie_errors: bool,
     config: &UserManagementConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,

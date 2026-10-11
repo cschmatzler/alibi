@@ -341,7 +341,12 @@ pub(in crate::session::cookie_cache::runtime) async fn authenticated_inner<S: Au
     )))
 }
 
-pub(in crate::session::cookie_cache::runtime) fn cleanup<S: AuthSchema>(
+/// Queue session-cookie retirement, replacing earlier publications and retaining unrelated headers.
+/// Incoming cache chunks are retired through the same cookie-store rules.
+///
+/// # Errors
+/// Returns invalid configured cookie attribute errors.
+pub fn cleanup<S: AuthSchema>(
     ctx: &AuthContext<S>,
     request: &impl SessionRequest,
 ) -> AuthResult<()> {
