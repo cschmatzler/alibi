@@ -162,18 +162,20 @@ pub(crate) async fn reset_password_token_core(
     query: &ResetPasswordTokenQuery,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<String> {
-    if let Some(callback_url) = &query.callback_url {
+    let callback_url = query.callback_url.as_deref().filter(|url| !url.is_empty());
+    if let Some(callback_url) = callback_url {
         validate_redirect_target(callback_url, ctx, "Invalid callbackURL")?;
     }
+    let default_error_url = format!("{}/error", crate::helpers::auth_base_url(&ctx.config));
     let redirect = |param: (&str, &str)| {
         build_redirect_url(
             &ctx.config.base_url,
-            query.callback_url.as_deref(),
+            callback_url.or(Some(default_error_url.as_str())),
             &[param],
         )
     };
 
-    if token.is_empty() || query.callback_url.is_none() {
+    if token.is_empty() || callback_url.is_none() {
         return redirect(("error", "INVALID_TOKEN"));
     }
 
