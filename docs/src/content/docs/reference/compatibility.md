@@ -22,7 +22,7 @@ Parity is established by **one mechanism**: a differential suite that runs the *
 - Negative controls prove the comparator catches drift.
 - The route inventory test fails when the router's routes differ from `capabilities.json`, which lists every upstream route together with the scenarios proving it. All 151 inventoried routes are implemented.
 
-Unit and integration tests check the Rust implementation on its own terms and do not claim parity. The full contract and how to run it are in the [compatibility guide](https://github.com/cschmatzler/better-auth-rs/blob/main/tests/compat/README.md); the audit of the target is in the [upstream target audit](https://github.com/cschmatzler/better-auth-rs/blob/main/tests/compat/audits/upstream-target.md).
+Unit and integration tests check the Rust implementation on its own terms and do not claim parity. The full contract and how to run it are in the [compatibility guide](https://github.com/cschmatzler/better-auth-rs/blob/main/tests/compat/README.md).
 
 ## Native Rust APIs
 

@@ -31,7 +31,6 @@ implementation on its own terms and do not claim parity; see
 | `client-tests/harness/` | Negative controls proving the comparator and gates detect drift |
 | `reference-server/` | The pinned TypeScript runtime; `fixtures/` holds one configuration module per capability |
 | `rust-server/` | The Rust fixture package; `src/fixtures/` mirrors the reference server's fixtures |
-| `audits/{core,plugins}/` | Implementation audits under the same keys as the scenarios; `harness/` audits the comparator itself |
 | `capabilities.json` | Every upstream route with the scenarios that prove each evidence category, or why there are none |
 
 Keep tests focused on observable behavior and independent contracts. Comparator
@@ -122,17 +121,16 @@ Outside devenv, run `bunx playwright install --with-deps chromium` in
 - Account-cookie scenarios authenticate actual compact encrypted cookies with the
   published decoder and retain their complete protected headers and payloads.
   The explicit evidence container tracks random JWT IDs, token rotation and
-  repeated claims without normalizing application JWT-shaped data. See the
-  [comparison regression audit](audits/harness/encrypted-cookie-comparison.md).
+  repeated claims without normalizing application JWT-shaped data.
 - Compact session-cache evidence authenticates complete cookies with the
   published decoder, retains raw ordered chunk cookies and attributes, and
   compares the full user/session projection, version and effective lifetime.
   Cached endpoint reads and physical session storage are separate contracts.
-  See the [cache audit](audits/core/session/cookie-cache-compact.md).
+
 - OAuth proxy evidence uses two real local auth instances and a deterministic
   provider that verifies the actual PKCE exchange. It decrypts and retains the
   complete original package, state and profile, including all relationships and
-  callback URL components. See the [proxy audit](audits/plugins/oauth-proxy/README.md).
+  callback URL components.
 - Harness negative controls deliberately corrupt identity relationships,
   lifetimes, redirects, array structure and cookies. A live HTTP/SDK canary
   confirms wrong session ownership and removed cookie protection are detected.
@@ -381,41 +379,30 @@ The JWT family also exercises normally refreshed token middleware, suppressed
 and deferred reads, original completed-handler snapshots, API-key session
 ownership and exact exposed-header ordering. Payload callbacks receive the
 complete nested session response, including deferred `needsRefresh`; direct
-get-session hooks observe the original stored snapshot. See the
-[interaction audit](audits/plugins/jwt/session-interactions.md) for configuration evidence
-and the pinned expiry-cleanup behavior.
+get-session hooks observe the original stored snapshot.
 
 Organization-team checks use dedicated teams, no-default-team, request-dependent
 limit, and removable-final-team configurations under `/__test/profiles/`. Private
 fixture controls inspect persisted organization state and invoke typed server-only
-team APIs; public flows use the official client and its cookie jar. See the
-[organization-team implementation audit](audits/plugins/organization/teams.md) for the
-supported branches, lifecycle evidence, and remaining integration boundaries.
+team APIs; public flows use the official client and its cookie jar.
 
 Dynamic-role checks add disabled, quota, missing-access-control, delegated-role,
 and asynchronous-policy profiles. They inspect stored permission JSON, tenant
 scopes, member assignments, API-key authority, and controlled overlapping
-permission-cache reloads. See the [dynamic-role implementation audit](audits/plugins/organization/dynamic-roles.md)
-for the configuration contracts, source quirks, review evidence, and remaining
-schema and integration boundaries.
+permission-cache reloads.
 
 SIWE checks use the official `siweClient`, independent signed EIP-191 messages,
 and a local ERC-1271 JSON-RPC provider. They compare wallet/account/session
 ownership, nonce expiry and single use, email reservation, callback context,
 ENS behavior, bans, and overlapping verification. Run
 `devenv shell -- cargo nextest run --test compat sdk::tests::plugins_siwe_client_compat --run-ignored only --no-capture`.
-The [SIWE implementation audit](audits/plugins/siwe/README.md) records the pinned runtime's
-global nonce contract and remaining storage/schema/provider boundaries.
-OpenAPI/reference whole-document proof and remaining configuration branches are tracked in [the OpenAPI audit](audits/plugins/open-api/README.md).
 
 Native user-list filters accept `UserFilterValue::Scalar(String)` or
 `UserFilterValue::Multiple(Vec<String>)`; existing scalar native callers can use
 `filter_value: Some("value".into())`. SeaORM binds array filters to actual model
 columns. `AuthEntity` derives bindings for declared application fields, including
 physical column renames. Manual `SeaOrmUserModel` implementations can override
-`list_users_column` to add typed plugin/application columns. See the
-[admin array-filter audit](audits/plugins/admin/array-filters.md) for actual SQL, SDK,
-custom-model and authorization evidence and the remaining adapter boundaries.
+`list_users_column` to add typed plugin/application columns.
 
 ## Why upstream's own test suite is not run against the Rust server
 
