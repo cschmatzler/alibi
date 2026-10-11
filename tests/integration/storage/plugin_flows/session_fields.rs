@@ -685,6 +685,189 @@ async fn secondary_sessions_run_update_hooks_seaorm_sqlite() -> TestResult {
     SeaOrm::close(connection).await
 }
 
+// Compat owner: core/session/update-projection.test.ts, configured update
+// ordinary-error and api-error callbacks. Store-level hook tests cannot prove
+// HTTP error framing or prevent session cookie publication after rejection.
+#[derive(Clone, Default)]
+struct RejectSessionUpdate {
+    receipts: Arc<Mutex<Vec<(String, String, String)>>>,
+    after: Arc<std::sync::atomic::AtomicUsize>,
+}
+#[async_trait::async_trait]
+impl<S: AuthSchema, H: alibi::store::HookBackend> alibi::store::DatabaseHooks<S, H>
+    for RejectSessionUpdate
+{
+    async fn before_update_session(
+        &self,
+        token: &str,
+        fields: &mut alibi::field_policy::FieldValues,
+        context: &alibi::store::DatabaseHookContext<'_, H>,
+    ) -> alibi::AuthResult<alibi::store::HookControl> {
+        let label = fields.get("label").and_then(JsValue::as_str).unwrap();
+        let request = context
+            .request
+            .as_ref()
+            .expect("HTTP application callback context");
+        self.receipts.lock().unwrap().push((
+            token.to_owned(),
+            label.to_owned(),
+            request.path.clone(),
+        ));
+        match label {
+            "ordinary-error" => Err(alibi::AuthError::internal("application before failed")),
+            "api-error" => Err(alibi::AuthError::Api {
+                status: 403,
+                code: Some("APP_DENIED".into()),
+                message: "Application denied".into(),
+            }),
+            _ => Ok(alibi::store::HookControl::Continue),
+        }
+    }
+    async fn after_update_session(
+        &self,
+        _: &S::Session,
+        _: &alibi::store::DatabaseHookContext<'_, H>,
+    ) -> alibi::AuthResult<()> {
+        let _ = self.after.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+async fn rejected_session_update<S: AuthSchema>(
+    auth: Alibi<S>,
+    db: &Db,
+    hooks: &RejectSessionUpdate,
+) -> TestResult {
+    let owner = signup(&auth, "rejected-session-owner@example.test").await;
+    let sibling = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"rejected-session-owner@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let foreign = signup(&auth, "rejected-session-foreign@example.test").await;
+    let token = body(&owner)["token"].as_str().unwrap().to_owned();
+    let cookie = cookies(&owner);
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    for (label, status) in [("ordinary-error", 500), ("api-error", 403)] {
+        hooks.receipts.lock().unwrap().clear();
+        let denied = call(
+            &auth,
+            request("/update-session", Some(json!({"label":label})), &cookie),
+            status,
+        )
+        .await;
+        if label == "ordinary-error" {
+            assert!(denied.body.is_empty());
+        } else {
+            assert_eq!(
+                body(&denied),
+                json!({"code":"APP_DENIED","message":"Application denied"})
+            );
+        }
+        assert!(denied.headers.get_all("set-cookie").next().is_none());
+        assert_eq!(
+            *hooks.receipts.lock().unwrap(),
+            [(
+                token.clone(),
+                label.to_owned(),
+                "/api/auth/update-session".to_owned()
+            )]
+        );
+        assert_eq!(hooks.after.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "verifications"])
+                .await?,
+            before
+        );
+        for established in [&owner, &sibling, &foreign] {
+            let read = call(
+                &auth,
+                request("/get-session", None, &cookies(established)),
+                200,
+            )
+            .await;
+            assert_eq!(body(&read)["session"]["token"], body(established)["token"]);
+            assert_eq!(body(&read)["user"]["id"], body(established)["user"]["id"]);
+        }
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "verifications"])
+                .await?,
+            before
+        );
+    }
+    // Admit the same authenticated route after the rejected attempts to prove
+    // the configured physical field and surviving cookie still authorize writes.
+    let accepted = call(
+        &auth,
+        request(
+            "/update-session",
+            Some(json!({"label":"accepted"})),
+            &cookie,
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&accepted)["session"]["token"], token);
+    assert_eq!(body(&accepted)["session"]["label"], "accepted");
+    assert_eq!(
+        db.text("SELECT label FROM sessions WHERE token=$1", &[&token])
+            .await?
+            .as_deref(),
+        Some("accepted")
+    );
+    assert_eq!(hooks.after.load(std::sync::atomic::Ordering::SeqCst), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn session_before_hook_rejection_sqlx_sqlite() -> TestResult {
+    let db = Db::sqlite().await?;
+    let (connection, _) = db.migrated::<Sqlx>(SECRET).await?;
+    columns(&db).await?;
+    let (config, _) = config();
+    let hooks = RejectSessionUpdate::default();
+    let auth = AuthBuilder::new(config.clone())
+        .store(
+            alibi::sqlx::SqlxStore::<sqlx_model::Schema>::new(config, connection.clone())
+                .hook(hooks.clone()),
+        )
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .build()
+        .await?;
+    rejected_session_update(auth, &db, &hooks).await?;
+    Sqlx::close(connection).await
+}
+
+#[tokio::test]
+async fn session_before_hook_rejection_seaorm_sqlite() -> TestResult {
+    let db = Db::sqlite().await?;
+    let (connection, _) = db.migrated::<SeaOrm>(SECRET).await?;
+    columns(&db).await?;
+    let (config, _) = config();
+    let hooks = RejectSessionUpdate::default();
+    let auth = AuthBuilder::new(config.clone())
+        .store(
+            alibi::seaorm::SeaOrmStore::<seaorm_model::Schema>::new(config, connection.clone())
+                .hook(hooks.clone()),
+        )
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .build()
+        .await?;
+    rejected_session_update(auth, &db, &hooks).await?;
+    SeaOrm::close(connection).await
+}
+
 struct TransactionProbe;
 #[async_trait::async_trait]
 impl<S: AuthSchema> alibi::store::DatabaseHooks<S, alibi::sqlx::SqlxBackend> for TransactionProbe {
