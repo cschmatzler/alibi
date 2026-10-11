@@ -13,7 +13,8 @@ backend_tests!(
     revoked_cache_identity_retains_physical_organization_membership_checks,
     organization_empty_update_storage_error,
     organization_ignored_default_patch_null_result,
-    organization_fractional_timestamps_project_without_rewriting_owned_rows
+    organization_fractional_timestamps_project_without_rewriting_owned_rows,
+    organization_null_metadata_keeps_storage_and_response_distinctions
 );
 
 fn get(path: &str, query: &[(&str, &str)], cookie: &str) -> AuthRequest {
@@ -1022,6 +1023,175 @@ async fn organization_fractional_timestamps_project_without_rewriting_owned_rows
         &auth,
         &cookies(&foreign),
         "org-timestamp-foreign@example.test",
+    )
+    .await;
+    B::close(connection).await
+}
+
+// Compat owner: organization/set-active-metadata.test.ts. SQL NULL and
+// persisted JSON null have different read and update response contracts.
+async fn organization_null_metadata_keeps_storage_and_response_distinctions<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "metadata-null-owner@example.test").await;
+    let foreign = signup(&auth, "metadata-null-foreign@example.test").await;
+    let cookie = cookies(&owner);
+    for literal in [false, true] {
+        let created = body(
+            &call(
+                &auth,
+                request(
+                    "/organization/create",
+                    Some(json!({
+                        "name":"Nullable Metadata", "slug":format!("metadata-null-{literal}")
+                    })),
+                    &cookie,
+                ),
+                200,
+            )
+            .await,
+        );
+        assert!(created.get("metadata").is_none());
+        let id = created["id"].as_str().unwrap();
+        if literal {
+            assert_eq!(
+                db.execute(
+                    "UPDATE organization SET metadata=$1 WHERE id=$2",
+                    &["null", id]
+                )
+                .await?,
+                1
+            );
+        }
+        let expected = if literal { json!("null") } else { Value::Null };
+        let tables = [
+            "organization",
+            "member",
+            "users",
+            "accounts",
+            "sessions",
+            "verifications",
+        ];
+        let before = db.tables(&tables).await?;
+        for path in [
+            "/organization/get-organization",
+            "/organization/get-full-organization",
+        ] {
+            let fetched =
+                body(&call(&auth, get(path, &[("organizationId", id)], &cookie), 200).await);
+            assert_eq!(fetched["id"], id);
+            assert_eq!(fetched.get("metadata"), Some(&expected));
+        }
+        let listed = body(&call(&auth, request("/organization/list", None, &cookie), 200).await);
+        let row = listed
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == id)
+            .unwrap();
+        assert_eq!(row.get("metadata"), Some(&expected));
+        assert_eq!(db.tables(&tables).await?, before);
+        let updated = body(
+            &call(
+                &auth,
+                request(
+                    "/organization/update",
+                    Some(json!({"organizationId":id,"data":{"name":"Renamed Nullable Metadata"}})),
+                    &cookie,
+                ),
+                200,
+            )
+            .await,
+        );
+        if literal {
+            assert_eq!(updated.get("metadata"), Some(&Value::Null));
+        } else {
+            assert!(updated.get("metadata").is_none());
+        }
+        let after = db.tables(&tables).await?;
+        assert_eq!(after[1..], before[1..]);
+        let mut prior: Vec<Value> = serde_json::from_str(&before[0])?;
+        prior.iter_mut().find(|row| row["id"] == id).unwrap()["name"] =
+            json!("Renamed Nullable Metadata");
+        assert_eq!(serde_json::from_str::<Vec<Value>>(&after[0])?, prior);
+        let selected = body(
+            &call(
+                &auth,
+                request(
+                    "/organization/set-active",
+                    Some(json!({"organizationId":id})),
+                    &cookie,
+                ),
+                200,
+            )
+            .await,
+        );
+        assert_eq!(selected["id"], id);
+        assert_eq!(selected.get("metadata"), Some(&expected));
+        assert!(selected.get("members").is_none());
+        assert!(selected.get("invitations").is_none());
+        let selected_state = db.tables(&tables).await?;
+        let denied = body(
+            &call(
+                &auth,
+                get(
+                    "/organization/get-organization",
+                    &[("organizationId", id)],
+                    &cookies(&foreign),
+                ),
+                403,
+            )
+            .await,
+        );
+        assert_eq!(denied["code"], "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION");
+        let denied_state = db.tables(&tables).await?;
+        for (prior, current, token) in [
+            (
+                &after,
+                &selected_state,
+                body(&owner)["token"].as_str().unwrap().to_owned(),
+            ),
+            (
+                &selected_state,
+                &denied_state,
+                body(&foreign)["token"].as_str().unwrap().to_owned(),
+            ),
+        ] {
+            for index in [0, 1, 2, 3, 5] {
+                assert_eq!(current[index], prior[index]);
+            }
+            let mut prior_sessions: Vec<Value> = serde_json::from_str(&prior[4])?;
+            let mut current_sessions: Vec<Value> = serde_json::from_str(&current[4])?;
+            for rows in [&mut prior_sessions, &mut current_sessions] {
+                let _ = rows
+                    .iter_mut()
+                    .find(|row| row["token"] == token)
+                    .unwrap()
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("updated_at");
+            }
+            assert_eq!(current_sessions, prior_sessions);
+        }
+        assert_eq!(
+            db.text(
+                "SELECT CAST(metadata AS TEXT) FROM organization WHERE id=$1",
+                &[id]
+            )
+            .await?,
+            literal.then(|| "null".to_owned())
+        );
+    }
+    authenticated(&auth, &cookie, "metadata-null-owner@example.test").await;
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "metadata-null-foreign@example.test",
     )
     .await;
     B::close(connection).await
