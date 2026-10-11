@@ -286,3 +286,5 @@ mod server_verify_email;
 mod server_send_verification_email;
 
 mod server_ok;
+
+mod server_delete_user;

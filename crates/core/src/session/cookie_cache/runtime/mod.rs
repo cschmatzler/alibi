@@ -16,7 +16,7 @@ pub use issuance::{
     take_issuance,
 };
 pub(crate) use read::{CacheDecoding, authenticated_with, renew_cache};
-pub use read::{authenticated, read};
+pub use read::{authenticated, cleanup as clear_session_cookies, read};
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug)]
