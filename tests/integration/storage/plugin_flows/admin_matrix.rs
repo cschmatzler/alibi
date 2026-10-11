@@ -24,6 +24,7 @@ backend_tests!(
     admin_colliding_email_rejects_accompanying_profile_mutations,
     admin_update_ban_revokes_every_target_browser_and_preserves_foreign_sessions,
     admin_empty_update_authority_order,
+    admin_self_ban_update_preserves_state_and_live_authority,
     admin_literal_role_input_admission,
     admin_create_role_selector_precedence,
     admin_array_filter_sql_operands,
@@ -1354,6 +1355,65 @@ async fn admin_update_ban_revokes_every_target_browser_and_preserves_foreign_ses
     }
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     authenticated(&auth, &cookies(&admin), "admin@example.test").await;
+    B::close(connection).await
+}
+
+// Compat owner: tests/plugins/admin/self-ban-update.test.ts. The dedicated
+// ban-user guard does not protect update-user or its accompanying profile writes.
+async fn admin_self_ban_update_preserves_state_and_live_authority<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new())
+        .build()
+        .await?;
+    let admin = signup(&auth, "self-ban-admin@example.test").await;
+    let id = promote(&auth, &admin, "admin").await;
+    let cookie = cookies(&admin);
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let mut read = request("/admin/get-user", None, &cookie);
+    _ = read.query.insert("id".into(), id.clone());
+    let visible_before = body(&call(&auth, read.clone(), 200).await);
+
+    let denied = call(
+        &auth,
+        request(
+            "/admin/update-user",
+            Some(json!({
+                "userId": id,
+                "data": {"banned": true, "banReason": "self", "name": "must-not-commit"}
+            })),
+            &cookie,
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&denied)["code"], "YOU_CANNOT_BAN_YOURSELF");
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(body(&call(&auth, read, 200).await), visible_before);
+    let session = call(&auth, request("/get-session", None, &cookie), 200).await;
+    assert_eq!(body(&session)["user"]["id"], id);
+    assert_eq!(body(&session)["session"]["token"], body(&admin)["token"]);
+
+    let accepted = call(
+        &auth,
+        request(
+            "/admin/update-user",
+            Some(json!({"userId": id, "data": {"name": "Still authorized"}})),
+            &cookie,
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&accepted)["id"], id);
+    assert_eq!(body(&accepted)["name"], "Still authorized");
+    assert_eq!(
+        db.text("SELECT name FROM users WHERE id=$1", &[&id])
+            .await?
+            .as_deref(),
+        Some("Still authorized")
+    );
     B::close(connection).await
 }
 
