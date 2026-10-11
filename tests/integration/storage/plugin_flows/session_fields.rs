@@ -736,6 +736,10 @@ impl<S: AuthSchema, H: alibi::store::HookBackend> alibi::store::DatabaseHooks<S,
             request.path.clone(),
         ));
         match label {
+            "mutate" => {
+                let _ = fields.insert("label".into(), JsValue::String("hook-updated".into()));
+                Ok(alibi::store::HookControl::Continue)
+            }
             "cancel" => Ok(alibi::store::HookControl::Cancel),
             "ordinary-error" => Err(alibi::AuthError::internal("application before failed")),
             "api-error" => Err(alibi::AuthError::Api {
@@ -1045,7 +1049,7 @@ async fn renewal_callback_cases<S: AuthSchema>(
     hooks: &RejectSessionUpdate,
 ) -> TestResult {
     use std::sync::atomic::Ordering::SeqCst;
-    for (command, status) in [("ordinary-error", 500), ("api-error", 403)] {
+    for (command, status) in [("ordinary-error", 500), ("api-error", 403), ("mutate", 200)] {
         let email = format!("renewal-{command}-owner@example.test");
         let owner = signup(auth, &email).await;
         let sibling = call(
@@ -1099,6 +1103,93 @@ async fn renewal_callback_cases<S: AuthSchema>(
             )]
         );
         assert_eq!(*hooks.renewal_inputs.lock().unwrap(), [json!({})]);
+        if command == "mutate" {
+            assert_eq!(body(&response)["session"]["token"], token);
+            assert_eq!(body(&response)["session"]["label"], "hook-updated");
+            assert_eq!(body(&response)["user"]["id"], body(&owner)["user"]["id"]);
+            assert_eq!(hooks.after.load(SeqCst), after_before + 1);
+            let observed = hooks.after_records.lock().unwrap().clone();
+            assert_eq!(observed.len(), 1);
+            assert_eq!(observed[0]["path"], "/api/auth/get-session");
+            assert_eq!(observed[0]["record"]["token"], token);
+            assert_eq!(observed[0]["record"]["label"], "hook-updated");
+            let after = db
+                .tables(&["users", "accounts", "sessions", "verifications"])
+                .await?;
+            assert_eq!(after[0], before[0]);
+            assert_eq!(after[1], before[1]);
+            assert_eq!(after[3], before[3]);
+            let prior: Vec<Value> = serde_json::from_str(&before[2])?;
+            let updated: Vec<Value> = serde_json::from_str(&after[2])?;
+            assert_eq!(prior.len(), updated.len());
+            assert_eq!(
+                prior
+                    .iter()
+                    .filter(|row| row["token"] != token)
+                    .collect::<Vec<_>>(),
+                updated
+                    .iter()
+                    .filter(|row| row["token"] != token)
+                    .collect::<Vec<_>>()
+            );
+            let stored = auth.store().get_session(&token).await?.unwrap();
+            assert!(
+                alibi::AuthSession::expires_at(&stored) > Utc::now() + chrono::Duration::days(6)
+            );
+            assert!(
+                response
+                    .headers
+                    .get_all("set-cookie")
+                    .any(|raw| raw.starts_with("better-auth.session_token=")
+                        && !raw.contains("Max-Age=0"))
+            );
+            assert!(cookies(&response).contains("better-auth.session_data="));
+            // Independent physical sentinel proves subsequent browser reads use
+            // the freshly published transformed cache, rather than another DB read.
+            assert_eq!(
+                db.execute(
+                    "UPDATE sessions SET label='renewal-physical-sentinel' WHERE token=$1",
+                    &[&token]
+                )
+                .await?,
+                1
+            );
+            let cached = call(
+                auth,
+                request("/get-session", None, &cookies(&response)),
+                200,
+            )
+            .await;
+            assert_eq!(body(&cached)["session"]["token"], token);
+            assert_eq!(body(&cached)["session"]["label"], "hook-updated");
+            assert_eq!(body(&cached)["user"]["id"], body(&owner)["user"]["id"]);
+            assert_eq!(
+                db.execute(
+                    "UPDATE sessions SET label='hook-updated' WHERE token=$1",
+                    &[&token]
+                )
+                .await?,
+                1
+            );
+            for established in [&sibling, &foreign] {
+                let read = call(
+                    auth,
+                    request("/get-session", None, &cookies(established)),
+                    200,
+                )
+                .await;
+                assert_eq!(body(&read)["session"]["token"], body(established)["token"]);
+                assert_eq!(body(&read)["user"]["id"], body(established)["user"]["id"]);
+            }
+            assert_eq!(
+                db.tables(&["users", "accounts", "sessions", "verifications"])
+                    .await?,
+                after
+            );
+            assert_eq!(hooks.after.load(SeqCst), after_before + 1);
+            *hooks.renewal_command.lock().unwrap() = None;
+            continue;
+        }
         assert_eq!(
             body(&response),
             if command == "api-error" {
