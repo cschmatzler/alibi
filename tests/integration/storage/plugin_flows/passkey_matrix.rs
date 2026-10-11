@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 
 backend_tests!(
     passkey_ceremony_matrix,
+    passkey_signed_backup_changes_preserve_registration_snapshots,
     passkey_concurrent_real_ceremonies_single_owner
 );
 
@@ -291,6 +292,169 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         .await,
     );
     trace.assert("passkey/ceremony-matrix");
+    B::close(connection).await
+}
+
+// Compat owner: tests/plugins/passkey/authentication-snapshot.test.ts.
+// Signed backup-state changes advance verification without replacing the public
+// registration snapshot; the existing matrix starts with an already backed-up key.
+async fn passkey_signed_backup_changes_preserve_registration_snapshots<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(PasskeyPlugin::new().origins(vec![ORIGIN.into()]))
+        .build()
+        .await?;
+    let owner = signup(&auth, "backup-snapshot-owner@example.test").await;
+    let foreign = signup(&auth, "backup-snapshot-foreign@example.test").await;
+    let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
+    let key = Authenticator::new(110, "backup-snapshot-key");
+    let options = call(
+        &auth,
+        request("/passkey/generate-register-options", None, &cookies(&owner)),
+        200,
+    )
+    .await;
+    let client = json!({
+        "type": "webauthn.create",
+        "challenge": body(&options)["challenge"],
+        "origin": ORIGIN
+    });
+    let signed = key.registration(
+        &client,
+        &key.attestation(
+            "localhost",
+            USER_PRESENT | USER_VERIFIED | BACKUP_ELIGIBLE,
+            6,
+        ),
+        false,
+    );
+    _ = call(
+        &auth,
+        request(
+            "/passkey/verify-registration",
+            Some(json!({"response": signed, "name": "Owned device"})),
+            &format!("{}; {}", cookies(&owner), cookies(&options)),
+        ),
+        200,
+    )
+    .await;
+    let initial = body(
+        &call(
+            &auth,
+            request("/passkey/list-user-passkeys", None, &cookies(&owner)),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(initial.as_array().unwrap().len(), 1);
+    assert_eq!(initial[0]["userId"], owner_id);
+    assert_eq!(initial[0]["counter"], 1);
+    assert_eq!(initial[0]["deviceType"], "multiDevice");
+    assert_eq!(initial[0]["backedUp"], false);
+    let initial_physical: Vec<Value> = serde_json::from_str(&db.table("passkeys").await?)?;
+    assert_eq!(initial_physical.len(), 1);
+    _ = call(
+        &auth,
+        request("/sign-out", Some(json!({})), &cookies(&owner)),
+        200,
+    )
+    .await;
+    let stable_identity = db.tables(&["users", "accounts"]).await?;
+    let sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let foreign_session = sessions
+        .iter()
+        .find(|row| row["user_id"] == foreign_id)
+        .unwrap()
+        .clone();
+
+    // The shared authenticator registers counter 1, so these are its next two
+    // genuine assertions. Only the signed assertion turns backup state on.
+    for counter in [2, 3] {
+        let options = call(
+            &auth,
+            request("/passkey/generate-authenticate-options", None, ""),
+            200,
+        )
+        .await;
+        let client = json!({
+            "type": "webauthn.get",
+            "challenge": body(&options)["challenge"],
+            "origin": ORIGIN
+        });
+        let signed = key.assertion(
+            &client,
+            "localhost",
+            USER_PRESENT | USER_VERIFIED | BACKUP_ELIGIBLE | BACKUP_STATE,
+            counter,
+        );
+        let verified = call(
+            &auth,
+            request(
+                "/passkey/verify-authentication",
+                Some(json!({"response": signed})),
+                &cookies(&options),
+            ),
+            200,
+        )
+        .await;
+        assert_eq!(body(&verified)["user"]["id"], owner_id);
+        assert_eq!(body(&verified)["session"]["userId"], owner_id);
+        let cookie = cookies(&verified);
+        authenticated(&auth, &cookie, "backup-snapshot-owner@example.test").await;
+        let listed = body(
+            &call(
+                &auth,
+                request("/passkey/list-user-passkeys", None, &cookie),
+                200,
+            )
+            .await,
+        );
+        let mut expected = initial.clone();
+        expected[0]["counter"] = json!(counter);
+        assert_eq!(listed, expected);
+        let physical: Vec<Value> = serde_json::from_str(&db.table("passkeys").await?)?;
+        assert_eq!(physical.len(), 1);
+        for field in [
+            "id",
+            "user_id",
+            "credential_id",
+            "backed_up",
+            "device_type",
+            "name",
+            "created_at",
+        ] {
+            assert_eq!(physical[0][field], initial_physical[0][field], "{field}");
+        }
+        assert_eq!(physical[0]["counter"], counter);
+        assert_ne!(physical[0]["credential"], initial_physical[0]["credential"]);
+        assert_eq!(db.tables(&["users", "accounts"]).await?, stable_identity);
+        let sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+        assert_eq!(sessions.len(), 2);
+        assert_eq!(
+            sessions.iter().find(|row| row["user_id"] == foreign_id),
+            Some(&foreign_session)
+        );
+        assert_eq!(
+            db.count_where(
+                "SELECT COUNT(*) FROM sessions WHERE user_id=$1",
+                &[&owner_id]
+            )
+            .await?,
+            1
+        );
+        authenticated(
+            &auth,
+            &cookies(&foreign),
+            "backup-snapshot-foreign@example.test",
+        )
+        .await;
+        if counter == 2 {
+            _ = call(&auth, request("/sign-out", Some(json!({})), &cookie), 200).await;
+        }
+    }
     B::close(connection).await
 }
 
