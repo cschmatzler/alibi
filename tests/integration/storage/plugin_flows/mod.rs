@@ -288,3 +288,5 @@ mod server_send_verification_email;
 mod server_ok;
 
 mod server_delete_user;
+
+mod server_delete_user_callback;

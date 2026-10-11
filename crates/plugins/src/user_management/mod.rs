@@ -11,8 +11,8 @@ use async_trait::async_trait;
 use chrono::Duration;
 use handlers::{change_email_core, delete_user_callback_core, delete_user_core};
 use std::sync::Arc;
-pub use types::DeleteUserRequest;
-use types::{ChangeEmailRequest, TokenQuery};
+use types::ChangeEmailRequest;
+pub use types::{DeleteUserCallbackQuery, DeleteUserRequest};
 pub use update::{BuiltinUserEndpoints, handle_update_user, ok_endpoint, update_user_endpoint};
 
 /// The initialized user's full snapshot passed to application lifecycle hooks.
@@ -225,11 +225,71 @@ impl UserManagementPlugin {
 }
 
 impl UserManagementPlugin {
+    /// Complete a delivered deletion proof through the public server API.
+    pub fn delete_user_callback_endpoint(
+        query: &DeleteUserCallbackQuery,
+    ) -> AuthResult<alibi_core::endpoint::ServerEndpoint<alibi_core::SuccessMessageResponse>> {
+        alibi_core::endpoint::ServerEndpoint::new("user-management", "deleteUserCallback")
+            .with_query(query)
+    }
+
     /// Delete the authenticated owner through the public server API.
     pub fn delete_user_endpoint(
         body: &DeleteUserRequest,
     ) -> AuthResult<alibi_core::endpoint::ServerEndpoint<alibi_core::SuccessMessageResponse>> {
         alibi_core::endpoint::ServerEndpoint::new("user-management", "deleteUser").with_body(body)
+    }
+
+    async fn handle_delete_user_callback_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        let query: DeleteUserCallbackQuery = call.query_as()?;
+        if call.request().is_some()
+            && let Some(url) = query.callback_url.as_deref().filter(|url| !url.is_empty())
+            && !ctx.config.current_origin_check_disabled()
+            && !ctx.config.is_redirect_target_trusted(url)
+        {
+            return Err(AuthError::forbidden("Invalid callbackURL"));
+        }
+        if !self.config.delete_user.enabled {
+            return Err(AuthError::Upstream {
+                status: 404,
+                code: "NOT_FOUND",
+                message: "Not found",
+            });
+        }
+        // Source keeps an already established context session, otherwise its
+        // nested getter bypasses cookie cache when server-side authority exists.
+        let mut input = call.clone();
+        if ctx.config.session.has_server_session_store() {
+            alibi_core::endpoint::EndpointContextPatch {
+                query: Some(alibi_core::utils::json::parse_value(
+                    r#"{"disableCookieCache":true}"#,
+                )?),
+                ..Default::default()
+            }
+            .apply(&mut input);
+        }
+        let read = alibi_core::session::cookie_cache::runtime::authenticated(ctx, &input, false)
+            .await
+            .ok()
+            .flatten()
+            .ok_or(AuthError::Upstream {
+                status: 404,
+                code: "FAILED_TO_GET_USER_INFO",
+                message: "Failed to get user info",
+            })?;
+        call.record_authenticated_session(ctx.user_view(&read.user), read.session.clone());
+        let response =
+            delete_user_callback_core(&query.token, &read.user, call, true, &self.config, ctx)
+                .await?;
+        alibi_core::session::cookie_cache::runtime::clear_session_cookies(ctx, call)?;
+        if let Some(url) = query.callback_url.filter(|url| !url.is_empty()) {
+            return Ok(alibi_core::endpoint::EndpointResponse::redirect(url));
+        }
+        alibi_core::endpoint::EndpointResponse::json(&response)
     }
 
     /// `POST /change-email`
@@ -294,7 +354,7 @@ impl UserManagementPlugin {
         let (user, _) = handlers::authoritative_session(req, ctx)
             .await
             .map_err(|_error| AuthError::not_found("Failed to get user info"))?;
-        let query: TokenQuery = serde_json::from_value(serde_json::json!({
+        let query: DeleteUserCallbackQuery = serde_json::from_value(serde_json::json!({
             "token": req.query.get("token").cloned(),
             "callbackURL": req.query.get("callbackURL").cloned(),
         }))
@@ -329,12 +389,20 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
     }
 
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
-        vec![crate::endpoint::definition(
-            "deleteUser",
-            "deleteUser",
-            Some("/delete-user"),
-            HttpMethod::Post,
-        )]
+        vec![
+            crate::endpoint::definition(
+                "deleteUserCallback",
+                "deleteUserCallback",
+                Some("/delete-user/callback"),
+                HttpMethod::Get,
+            ),
+            crate::endpoint::definition(
+                "deleteUser",
+                "deleteUser",
+                Some("/delete-user"),
+                HttpMethod::Post,
+            ),
+        ]
     }
 
     fn validate_endpoint(
@@ -343,6 +411,16 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
         _: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
         use crate::authentication_helpers::RequestBody;
+        if call.operation_id() == "deleteUserCallback" {
+            return Ok(alibi_core::endpoint::EndpointInput {
+                body: call.body().cloned(),
+                query: Some(crate::endpoint::validate_fields(
+                    call.query(),
+                    "query",
+                    DeleteUserCallbackQuery::FIELDS,
+                )?),
+            });
+        }
         Ok(alibi_core::endpoint::EndpointInput {
             body: Some(crate::endpoint::validate_fields(
                 call.body(),
@@ -358,6 +436,9 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
         call: &alibi_core::endpoint::EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        if call.operation_id() == "deleteUserCallback" {
+            return self.handle_delete_user_callback_endpoint(call, ctx).await;
+        }
         let (user, session) = ctx
             .require_authoritative_session_record(call)
             .await

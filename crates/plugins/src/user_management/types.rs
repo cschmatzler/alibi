@@ -29,10 +29,17 @@ impl crate::authentication_helpers::RequestBody for DeleteUserRequest {
     ];
 }
 
-/// Query parameters for token-based verification endpoints.
-#[derive(Debug, Deserialize)]
-pub(crate) struct TokenQuery {
-    pub(crate) token: String,
-    #[serde(rename = "callbackURL")]
-    pub(crate) callback_url: Option<String>,
+/// Query of the public `deleteUserCallback` server operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteUserCallbackQuery {
+    pub token: String,
+    #[serde(rename = "callbackURL", skip_serializing_if = "Option::is_none")]
+    pub callback_url: Option<String>,
+}
+
+impl crate::authentication_helpers::RequestBody for DeleteUserCallbackQuery {
+    const FIELDS: &'static [crate::authentication_helpers::JsonField] = &[
+        crate::authentication_helpers::JsonField::string("token", true),
+        crate::authentication_helpers::JsonField::string("callbackURL", false),
+    ];
 }
