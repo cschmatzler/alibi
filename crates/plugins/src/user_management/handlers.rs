@@ -44,36 +44,14 @@ pub(super) async fn send_email_or_log(
 pub(super) async fn authoritative_session<S: alibi_core::AuthSchema>(
     request: &AuthRequest,
     ctx: &AuthContext<S>,
-) -> AuthResult<(S::User, SessionView)> {
-    let (user, session) = ctx
-        .require_authoritative_session(request)
+) -> AuthResult<(alibi_core::AdapterRecord<S::User>, SessionView)> {
+    Box::pin(ctx.require_authoritative_session_record(request))
         .await
-        .map_err(crate::helpers::unauthorized_if_session_missing)?;
-    let dont_remember =
-        crate::authentication_helpers::dont_remember_preference(request, &ctx.config);
-    if !dont_remember
-        && !ctx.session_manager().request_disables_refresh(request)
-        && ctx
-            .config
-            .session
-            .cookie_cache
-            .as_ref()
-            .is_some_and(|config| config.enabled)
-        && let Some(stored) = ctx.database.get_session(&session.token).await?
-    {
-        for header in alibi_core::session::cookie_cache::runtime::stored_headers(
-            ctx,
-            &user,
-            &stored,
-            &request.headers,
-            false,
-        )
-        .await?
-        {
-            request.queue_response_header("Set-Cookie", header);
-        }
-    }
-    Ok((user, session))
+        .map_err(|_| AuthError::Upstream {
+            status: 401,
+            code: "UNAUTHORIZED",
+            message: "Unauthorized",
+        })
 }
 
 async fn send_verification(
