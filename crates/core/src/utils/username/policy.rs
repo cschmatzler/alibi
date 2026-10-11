@@ -176,6 +176,94 @@ impl UsernameConfig {
             self.validate_value(value, 400).await
         }
     }
+    /// Normalize an untyped passwordless create-hook value without changing
+    /// the string-only contract of configured native callbacks.
+    pub fn normalize_raw_hook_value(&self, value: &JsValue) -> AuthResult<JsValue> {
+        if let JsValue::String(value) = value {
+            return self.normalize(value).map(JsValue::String);
+        }
+        if matches!(self.normalization, UsernameNormalization::Preserve) {
+            return Ok(value.clone());
+        }
+        Err(AuthError::CallbackFailure(Box::new(AuthError::internal(
+            "Username normalization requires a string",
+        ))))
+    }
+    /// The dependency reads raw .length before its default regular expression.
+    /// Numeric and boolean candidates have no length; its regular expression
+    /// applies String coercion independently from later normalization.
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        reason = "Raw JavaScript length comparisons use IEEE754 numbers"
+    )]
+    pub async fn validate_raw_hook_value(&self, value: &JsValue) -> AuthResult<()> {
+        if let JsValue::String(value) = value {
+            return self.validate_hook_value(value).await;
+        }
+        let normalized;
+        let value = if self.validation_order == Some(UsernameValidationOrder::PostNormalization) {
+            normalized = self.normalize_raw_hook_value(value)?;
+            &normalized
+        } else {
+            value
+        };
+        let raw_length = match value {
+            JsValue::String(value) => Some(value.encode_utf16().count() as f64),
+            JsValue::Array(value) => Some(value.len() as f64),
+            JsValue::Object(value) => value
+                .get("length")
+                .map(|length| -> AuthResult<f64> {
+                    Ok(match length {
+                        JsValue::Null => 0.0,
+                        JsValue::Bool(value) => {
+                            if *value {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        }
+                        JsValue::Number(value) => *value,
+                        value => {
+                            let text = value.coerce_string().map_err(|message| {
+                                AuthError::CallbackFailure(Box::new(AuthError::internal(message)))
+                            })?;
+                            crate::utils::javascript::string_to_number(&text).unwrap_or(f64::NAN)
+                        }
+                    })
+                })
+                .transpose()?,
+            _ => None,
+        };
+        let minimum = if self.min_length == 0 {
+            3
+        } else {
+            self.min_length
+        };
+        let maximum = if self.max_length == 0 {
+            30
+        } else {
+            self.max_length
+        };
+        if raw_length.is_some_and(|length| length < minimum as f64) {
+            return Err(UsernameValidationError::TooShort.auth_error(400));
+        }
+        if raw_length.is_some_and(|length| length > maximum as f64) {
+            return Err(UsernameValidationError::TooLong.auth_error(400));
+        }
+        if self.validator.is_some() {
+            return Err(AuthError::CallbackFailure(Box::new(AuthError::internal(
+                "Configured username validation requires a string",
+            ))));
+        }
+        let text = value.coerce_string().map_err(|message| {
+            AuthError::CallbackFailure(Box::new(AuthError::internal(message)))
+        })?;
+        if text.is_empty() || !super::valid_default_characters(&text) {
+            return Err(UsernameValidationError::Invalid.auth_error(400));
+        }
+        Ok(())
+    }
     pub async fn validate_display(&self, value: &str) -> AuthResult<()> {
         if !self.include_display_username {
             return Ok(());
@@ -252,6 +340,39 @@ impl UsernameConfig {
         values: &mut crate::field_policy::FieldValues,
         creation: bool,
     ) -> AuthResult<()> {
+        if username.is_none()
+            && let Some(raw) = values.get("username").cloned()
+            && raw.is_truthy()
+        {
+            let normalized = self.normalize_raw_hook_value(&raw)?;
+            _ = values.insert("username".into(), normalized);
+            if creation
+                && self.include_display_username
+                && values
+                    .get("displayUsername")
+                    .is_none_or(|value| !value.is_truthy())
+            {
+                _ = values.insert("displayUsername".into(), raw);
+            }
+        }
+        if display.is_none()
+            && self.include_display_username
+            && let Some(raw) = values
+                .get("displayUsername")
+                .filter(|raw| raw.is_truthy())
+                .cloned()
+            && self.display_normalizer.is_some()
+        {
+            let raw = raw.as_str().ok_or_else(|| {
+                AuthError::CallbackFailure(Box::new(AuthError::internal(
+                    "Configured display normalization requires a string",
+                )))
+            })?;
+            _ = values.insert(
+                "displayUsername".into(),
+                JsValue::String(self.normalize_display(raw)?),
+            );
+        }
         let original_username = username.clone();
         if let Some(value) = username.as_mut() {
             if !value.is_empty() {
