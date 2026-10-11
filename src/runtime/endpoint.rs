@@ -23,9 +23,15 @@ impl<S: AuthSchema> Alibi<S> {
         endpoint: ServerEndpoint<T>,
         options: EndpointOptions,
     ) -> Result<EndpointOutput<T>, EndpointError> {
-        let plugin = self.get_plugin(endpoint.plugin()).ok_or_else(|| {
-            AuthError::not_found(format!("Plugin {} is not installed", endpoint.plugin()))
-        })?;
+        let builtin = alibi_plugins::user_management::BuiltinUserEndpoints;
+        let plugin = self
+            .get_plugin(endpoint.plugin())
+            .or_else(|| {
+                (endpoint.plugin() == "core").then_some(&builtin as &dyn alibi_core::AuthPlugin<S>)
+            })
+            .ok_or_else(|| {
+                AuthError::not_found(format!("Plugin {} is not installed", endpoint.plugin()))
+            })?;
         let definition = plugin
             .server_endpoints()
             .into_iter()

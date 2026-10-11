@@ -3722,6 +3722,14 @@ const server = Bun.serve({
                 email: user.email,
                 emailVerified: user.emailVerified,
                 twoFactorEnabled: user.twoFactorEnabled,
+                ...(url.searchParams.get("includeProfile") === "true"
+                  ? {
+                      name: user.name,
+                      image: user.image,
+                      createdAt: user.createdAt,
+                      updatedAt: user.updatedAt,
+                    }
+                  : {}),
                 ...(profileName
                   ? { phoneNumber: user.phoneNumber, phoneNumberVerified: user.phoneNumberVerified }
                   : {}),

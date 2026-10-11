@@ -155,6 +155,9 @@ impl UserStore<StatelessSchema> for StatelessStore {
         if let Some(image) = update.image {
             user.image = Some(image);
         }
+        if update.provider_image == Some(serde_json::Value::Null) {
+            user.image = None;
+        }
         if let Some(email_verified) = update.email_verified {
             user.email_verified = email_verified;
         }

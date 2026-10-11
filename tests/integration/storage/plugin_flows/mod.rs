@@ -54,6 +54,7 @@ mod server_account_listing;
 mod server_account_unlink;
 mod server_change_password;
 mod server_endpoints;
+mod server_update_user;
 mod server_verify_password;
 #[cfg(all(feature = "sqlx", feature = "seaorm"))]
 mod session_fields;

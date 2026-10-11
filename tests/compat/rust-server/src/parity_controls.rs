@@ -22,6 +22,8 @@ type Auth = Arc<Alibi<TestSchema>>;
 struct UserQuery {
     user_id: String,
     profile: Option<String>,
+    #[serde(default)]
+    include_profile: bool,
 }
 
 async fn user_state(
@@ -43,6 +45,12 @@ async fn user_state(
         Ok::<_, alibi::AuthError>(json!({
             "user": user.map(|user| {
                 let mut value=json!({"id":user.id(),"email":user.email(),"emailVerified":user.email_verified(),"twoFactorEnabled":user.two_factor_enabled_value()});
+                if query.include_profile {
+                    value["name"]=json!(user.name());
+                    value["image"]=json!(user.image());
+                    value["createdAt"]=json!(user.created_at().to_rfc3339_opts(chrono::SecondsFormat::Millis,true));
+                    value["updatedAt"]=json!(user.updated_at().to_rfc3339_opts(chrono::SecondsFormat::Millis,true));
+                }
                 if query.profile.is_some() {
                     value["phoneNumber"]=json!(user.phone_number());
                     value["phoneNumberVerified"]=json!(user.phone_number_verified());
