@@ -831,3 +831,148 @@ async fn captcha_physical_method_admission<B: Backend>(db: Db) -> TestResult {
     .await;
     B::close(connection).await
 }
+
+// Compat owner: captcha/deadlines.test.ts, real Turnstile response headers.
+// Current-thread execution permits advancing only the Tokio send deadline.
+#[tokio::test(flavor = "current_thread")]
+async fn captcha_headers_deadline_preserves_authentication_after_late_provider_success()
+-> TestResult {
+    captcha_headers_deadline_with::<crate::storage::SeaOrm>(Db::sqlite().await?).await?;
+    captcha_headers_deadline_with::<crate::storage::Sqlx>(Db::sqlite().await?).await
+}
+
+async fn captcha_headers_deadline_with<B: Backend>(db: Db) -> TestResult {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::sync::oneshot;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let address = listener.local_addr()?;
+    let (arrived, received) = oneshot::channel();
+    let (release, held) = oneshot::channel();
+    let (finished, late) = oneshot::channel();
+    let mut tasks = tokio::task::JoinSet::new();
+    let _ = tasks.spawn(async move {
+        let mut arrived = Some(arrived);
+        let mut held = Some(held);
+        let mut finished = Some(finished);
+        for index in 0..2 {
+            let (mut stream, _) = listener.accept().await?;
+            let mut request = Vec::new();
+            let payload = loop {
+                let mut chunk = [0_u8; 8192];
+                let count = stream.read(&mut chunk).await?;
+                if count == 0 { return Err("provider request closed before its actual JSON body".into()); }
+                request.extend_from_slice(&chunk[..count]);
+                let wire = String::from_utf8_lossy(&request);
+                if let Some((_, body)) = wire.split_once("\r\n\r\n")
+                    && let Ok(payload) = serde_json::from_str::<Value>(body) { break payload; }
+            };
+            let request = String::from_utf8(request)?;
+            assert!(request.starts_with("POST /verify HTTP/1.1"));
+            assert_eq!(payload["secret"], "provider-secret");
+            assert_eq!(payload["response"], "deadline-proof");
+            if index == 0 {
+                arrived.take().unwrap().send(()).unwrap();
+                held.take().unwrap().await?;
+            }
+            // A late successful provider reply may fail because the timed-out
+            // client closed its socket. Either result must leave auth unchanged.
+            let result = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 16\r\nConnection: close\r\n\r\n{\"success\":true}").await;
+            if index == 0 { finished.take().unwrap().send(()).unwrap(); }
+            else { result?; }
+        }
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    });
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mut options = TurnstileConfig::new("provider-secret");
+    options.http.site_verify_url = Some(format!("http://{address}/verify").parse()?);
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(
+            CaptchaPlugin::new(CaptchaConfig {
+                provider: CaptchaProvider::CloudflareTurnstile(options),
+                endpoints: vec!["/sign-in/email".into()],
+            })
+            .with_http_client(reqwest::Client::builder().no_proxy().build()?),
+        )
+        .build()
+        .await?;
+    let owner = signup(&auth, "captcha-deadline-owner@example.test").await;
+    let foreign = signup(&auth, "captcha-deadline-foreign@example.test").await;
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    let input = || {
+        let mut req = request(
+            "/sign-in/email",
+            Some(json!({"email":"captcha-deadline-owner@example.test","password":PASSWORD})),
+            "",
+        );
+        _ = req
+            .headers
+            .insert("x-captcha-response".into(), "deadline-proof".into());
+        req
+    };
+    let pending = Box::pin(auth.handle_request(input()));
+    tokio::pin!(pending);
+    tokio::select! {
+        response = &mut pending => panic!("authentication completed before actual provider request: {response:?}"),
+        result = tokio::time::timeout(std::time::Duration::from_secs(5), received) => { result??; }
+    }
+    tokio::time::pause();
+    tokio::time::advance(std::time::Duration::from_secs(11)).await;
+    let response = tokio::time::timeout(std::time::Duration::from_secs(1), &mut pending).await;
+    tokio::time::resume();
+    let rejected = response??;
+    assert_eq!(rejected.status, 500);
+    assert_eq!(
+        body(&rejected),
+        json!({"message":"Something went wrong","code":"UNKNOWN_ERROR"})
+    );
+    assert!(rejected.headers.get_all("set-cookie").next().is_none());
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        before
+    );
+    release.send(()).unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), late).await??;
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        before
+    );
+    let recovered = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        Box::pin(auth.handle_request(input())),
+    )
+    .await??;
+    assert_eq!(recovered.status, 200);
+    assert_eq!(body(&recovered)["user"]["id"], body(&owner)["user"]["id"]);
+    assert_eq!(db.tables(&["users", "accounts"]).await?, before[..2]);
+    let prior: Vec<Value> = serde_json::from_str(&before[2])?;
+    let sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    assert_eq!(sessions.len(), prior.len() + 1);
+    assert!(prior.iter().all(|row| sessions.contains(row)));
+    assert_eq!(db.table("verifications").await?, before[3]);
+    authenticated(
+        &auth,
+        &cookies(&recovered),
+        "captcha-deadline-owner@example.test",
+    )
+    .await;
+    authenticated(
+        &auth,
+        &cookies(&owner),
+        "captcha-deadline-owner@example.test",
+    )
+    .await;
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "captcha-deadline-foreign@example.test",
+    )
+    .await;
+    tokio::time::timeout(std::time::Duration::from_secs(5), tasks.join_next())
+        .await?
+        .unwrap()??;
+    B::close(connection).await
+}
