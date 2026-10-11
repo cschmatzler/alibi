@@ -8,7 +8,10 @@ use alibi::plugins::oauth::{
 };
 use std::collections::{HashMap, HashSet};
 
-backend_tests!(oidc_discovery_signed_grants_assertions_refresh_and_logout);
+backend_tests!(
+    oidc_discovery_signed_grants_assertions_refresh_and_logout,
+    discovered_callback_issuer_rejects_mixup_before_grant_exchange
+);
 postgres_tests!(oidc_discovery_signed_grants_assertions_refresh_and_logout);
 
 async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
@@ -417,4 +420,150 @@ fn verify_assertion(
         "every delivered grant requires a fresh assertion"
     );
     Ok(())
+}
+
+async fn discovered_callback_issuer_rejects_mixup_before_grant_exchange<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let remote = Provider::start("application/json", "{}").await;
+    let issuer = remote.url.as_str();
+    let keys: Value = serde_json::from_str(include_str!("../../../fixtures/one-tap/jwks.json"))?;
+    remote.respond_at(
+        "/discovery",
+        200,
+        json!({
+            "issuer":issuer,
+            "authorization_endpoint":remote.url.join("authorize")?,
+            "token_endpoint":remote.url.join("token")?,
+            "userinfo_endpoint":remote.url.join("profile")?,
+            "jwks_uri":remote.url.join("keys")?,
+            "id_token_signing_alg_values_supported":["RS256"]
+        }),
+    );
+    remote.respond_at("/keys", 200, keys);
+    let mut provider = GenericOAuthConfig::new("mixup-client", "mixup-secret");
+    provider.discovery_url = Some(remote.url.join("discovery")?.into());
+    provider.require_id_token_verification = true;
+    let resolved = provider.resolve().await?.ok_or("discovery failed")?;
+    _ = remote.take();
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(OAuthPlugin::new().add_provider("oidc", resolved.provider))
+        .build()
+        .await?;
+    let foreign = signup(&auth, "mixup-foreign@example.test").await;
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let foreign_rows = [
+        ("users", db.table("users").await?),
+        ("accounts", db.table("accounts").await?),
+        ("sessions", db.table("sessions").await?),
+    ];
+    for stage in ["wrong issuer", "matching issuer"] {
+        let (authorization, cookie) = super::oauth_profiles::begin(&auth, "oidc").await;
+        let now = chrono::Utc::now().timestamp();
+        let claims = json!({"iss":issuer,"aud":"mixup-client","sub":"mixup-owner-sub","email":"mixup-owner@example.test","email_verified":true,"name":"Mixup Owner","iat":now,"exp":now+300,"nonce":authorization["nonce"]});
+        let token = super::oauth_signed::token(&claims, false, "one-tap-local-rs256")?;
+        remote.respond_at("/token", 200, json!({"access_token":"mixup-access","refresh_token":"mixup-refresh","id_token":token,"token_type":"Bearer","expires_in":3600}));
+        let mut input = request("/callback/oidc", None, &cookie);
+        input.set_query_pairs([
+            ("state", authorization["state"].as_str()),
+            ("code", "mixup-valid-grant"),
+            (
+                "iss",
+                if stage == "wrong issuer" {
+                    "https://attacker.example.invalid"
+                } else {
+                    issuer
+                },
+            ),
+        ]);
+        let completed = call(&auth, input, 302).await;
+        let location = url::Url::parse(completed.headers.get("location").unwrap())?;
+        if stage == "wrong issuer" {
+            assert_eq!(location.path(), "/failed");
+            assert_eq!(
+                location
+                    .query_pairs()
+                    .find(|(key, _)| key == "error")
+                    .unwrap()
+                    .1,
+                "issuer_mismatch"
+            );
+            assert!(!cookies(&completed).contains("session_token="));
+            assert!(
+                completed
+                    .headers
+                    .get_all("set-cookie")
+                    .any(|cookie| cookie.contains("state=") && cookie.contains("Max-Age=0"))
+            );
+            assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+            assert!(remote.take().is_empty());
+        } else {
+            assert_eq!(location.path(), "/done");
+            authenticated(&auth, &cookies(&completed), "mixup-owner@example.test").await;
+            let current = body(
+                &call(
+                    &auth,
+                    request("/get-session", None, &cookies(&completed)),
+                    200,
+                )
+                .await,
+            );
+            let rows: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+            let account = rows
+                .iter()
+                .find(|row| row["account_id"] == "mixup-owner-sub")
+                .unwrap();
+            assert_eq!(account["provider_id"], "oidc");
+            assert_eq!(account["user_id"], current["user"]["id"]);
+            let receipts = remote.take();
+            assert_eq!(
+                receipts
+                    .iter()
+                    .filter(|receipt| receipt.path == "/token")
+                    .count(),
+                1
+            );
+            assert!(receipts.iter().all(|receipt| receipt.path != "/profile"));
+            for (table, original) in &foreign_rows {
+                let old_rows: Vec<Value> = serde_json::from_str(original)?;
+                let new_rows: Vec<Value> = serde_json::from_str(&db.table(table).await?)?;
+                assert_eq!(new_rows.len(), 2);
+                assert!(
+                    old_rows.iter().all(|row| new_rows.contains(row)),
+                    "foreign {table}"
+                );
+            }
+        }
+        assert_eq!(db.count("verifications").await?, 0);
+        let committed = db.tables(&["users", "accounts", "sessions"]).await?;
+        let mut replay = request("/callback/oidc", None, &cookie);
+        replay.set_query_pairs([
+            ("state", authorization["state"].as_str()),
+            ("code", "mixup-valid-grant"),
+            ("iss", issuer),
+        ]);
+        let denied = call(&auth, replay, 302).await;
+        let replay_location = url::Url::parse(denied.headers.get("location").unwrap())?;
+        assert_eq!(
+            replay_location
+                .query_pairs()
+                .find(|(key, _)| key == "error")
+                .unwrap()
+                .1,
+            "state_mismatch"
+        );
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions"]).await?,
+            committed
+        );
+        assert!(remote.take().is_empty());
+        authenticated(&auth, &cookies(&foreign), "mixup-foreign@example.test").await;
+    }
+    B::close(connection).await
 }

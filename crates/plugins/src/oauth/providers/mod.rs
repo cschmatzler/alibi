@@ -452,6 +452,8 @@ pub struct OAuthAuthorizationPolicy {
     pub callback_path: Option<String>,
     /// Preserve explicit false separately from absent provider signup configuration.
     pub disable_sign_up_option: Option<bool>,
+    /// Trusted discovery issuer for authorization-response mixup protection.
+    pub issuer: Option<String>,
     /// RP-initiated logout from trusted generic-provider configuration.
     pub end_session: Option<OAuthEndSessionConfig>,
     /// Verify code-grant ID tokens against trusted discovery metadata before profile admission.
@@ -550,6 +552,7 @@ impl Default for OAuthAuthorizationPolicy {
             account_key: None,
             callback_path: None,
             disable_sign_up_option: None,
+            issuer: None,
             end_session: None,
             verify_grant_id_token: false,
             id_token_nonce_binding: false,

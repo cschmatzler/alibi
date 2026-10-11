@@ -388,6 +388,17 @@ pub(in crate::oauth) async fn handle_callback(
         return Ok(redirect_on_error("oauth_provider_not_found", None));
     };
 
+    if let Some(issuer) = merged_2.get("iss").filter(|issuer| !issuer.is_empty())
+        && let Some(expected) = provider
+            .authorization
+            .as_ref()
+            .and_then(|policy| policy.issuer.as_deref())
+            .filter(|issuer| !issuer.is_empty())
+        && issuer != expected
+    {
+        return Ok(redirect_on_error("issuer_mismatch", None));
+    }
+
     let Ok(tokens) = validate_authorization_code_via_provider(
         provider,
         &code,
