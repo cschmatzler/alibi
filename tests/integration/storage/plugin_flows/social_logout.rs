@@ -5,7 +5,10 @@ use super::*;
 use alibi::AccountConfig;
 use alibi::plugins::oauth::{OAuthEndSessionConfig, OAuthProvider};
 
-backend_tests!(sign_out_builds_the_provider_logout_destination);
+backend_tests!(
+    sign_out_builds_the_provider_logout_destination,
+    logout_schema_rejection_preserves_owned_account_and_live_sessions
+);
 
 async fn sign_out_builds_the_provider_logout_destination<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
@@ -140,5 +143,103 @@ async fn sign_out_builds_the_provider_logout_destination<B: Backend>(db: Db) -> 
             ),
         }
     }
+    B::close(connection).await
+}
+
+async fn logout_schema_rejection_preserves_owned_account_and_live_sessions<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mut provider = OAuthProvider::google("logout-client", "logout-secret");
+    provider.authorization.as_mut().unwrap().end_session = Some(OAuthEndSessionConfig {
+        endpoint: "https://idp.example/logout".into(),
+        post_logout_redirect_uri: None,
+    });
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(alibi::plugins::OAuthPlugin::new().add_provider("google", provider))
+        .build()
+        .await?;
+    let owner = signup(&auth, "logout-schema-owner@example.test").await;
+    let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let sibling = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"logout-schema-owner@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let foreign = signup(&auth, "logout-schema-foreign@example.test").await;
+    _ = db.execute("INSERT INTO accounts (id,user_id,account_id,provider_id,id_token,created_at,updated_at) SELECT 'logout-schema-account',user_id,'logout-schema-sub','google','logout-owner-token',created_at,updated_at FROM accounts WHERE user_id=$1 AND provider_id='credential'", &[&owner_id]).await?;
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    for input in [
+        json!({"disableRedirect":"yes"}),
+        json!({"callbackURL":null}),
+        json!({"state":123}),
+    ] {
+        let rejected = call(
+            &auth,
+            request("/sign-out", Some(input), &cookies(&owner)),
+            400,
+        )
+        .await;
+        assert_eq!(body(&rejected)["code"], "VALIDATION_ERROR");
+        assert!(rejected.headers.get("location").is_none());
+        assert!(cookies(&rejected).is_empty());
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "verifications"])
+                .await?,
+            before
+        );
+        authenticated(&auth, &cookies(&owner), "logout-schema-owner@example.test").await;
+    }
+    let retained = db.tables(&["users", "accounts", "verifications"]).await?;
+    let accepted = call(
+        &auth,
+        request(
+            "/sign-out",
+            Some(json!({"disableRedirect":true})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&accepted)["success"], true);
+    assert_eq!(body(&accepted)["redirect"], false);
+    let location = url::Url::parse(body(&accepted)["url"].as_str().unwrap())?;
+    assert_eq!(
+        location.as_str(),
+        "https://idp.example/logout?id_token_hint=logout-owner-token"
+    );
+    assert!(accepted.headers.get("location").is_none());
+    assert_eq!(
+        db.tables(&["users", "accounts", "verifications"]).await?,
+        retained
+    );
+    assert_eq!(db.count("sessions").await?, 2);
+    assert!(
+        body(&call(&auth, request("/get-session", None, &cookies(&owner)), 200).await).is_null()
+    );
+    authenticated(
+        &auth,
+        &cookies(&sibling),
+        "logout-schema-owner@example.test",
+    )
+    .await;
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "logout-schema-foreign@example.test",
+    )
+    .await;
     B::close(connection).await
 }
