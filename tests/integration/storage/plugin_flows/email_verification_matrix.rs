@@ -436,7 +436,11 @@ async fn verified_guest_replay_skips_hooks_and_session_issuance<B: Backend>(db: 
     }
     assert!(body(&call(&auth, request("/get-session", None, ""), 200).await).is_null());
     // The real delivered proof remains usable after both rejected signed proofs.
-    let first = call(&auth, verify(&token, None, ""), 200).await;
+    // Compat owner: core/email-verification/empty-callback.test.ts. An empty
+    // callbackURL stays on the JSON path on both first verification and replay.
+    let first = call(&auth, verify(&token, Some(""), ""), 200).await;
+    assert_eq!(body(&first), json!({"status":true,"user":null}));
+    assert!(!first.headers.contains_key("location"));
     authenticated(
         &auth,
         &cookies(&first),
@@ -446,9 +450,10 @@ async fn verified_guest_replay_skips_hooks_and_session_issuance<B: Backend>(db: 
     assert_eq!(before_count.load(Ordering::SeqCst), 1);
     assert_eq!(after_count.load(Ordering::SeqCst), 1);
     let rows = db.tables(&["users", "accounts", "sessions"]).await?;
-    let replay = call(&auth, verify(&token, None, ""), 200).await;
+    let replay = call(&auth, verify(&token, Some(""), ""), 200).await;
     assert_eq!(body(&replay), json!({"status":true,"user":null}));
     assert!(!replay.headers.contains_key("set-cookie"));
+    assert!(!replay.headers.contains_key("location"));
     let callback = format!("{ORIGIN}/done?mode=replay#verified");
     let redirected = call(&auth, verify(&token, Some(&callback), ""), 302).await;
     assert_eq!(
