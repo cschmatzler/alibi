@@ -250,6 +250,13 @@ async fn admin_remember_me_impersonation<B: Backend>(db: Db) -> TestResult {
     trace.response("impersonate", &impersonate);
     let impersonating = merge(&admin, &cookies(&impersonate));
     assert!(impersonating.contains("admin_session"));
+    // Compat owner: admin/invalid-restoration.test.ts. Rejection must not
+    // consume the active impersonation before restoration authority is valid.
+    let preserved_tables = ["users", "accounts", "sessions", "verifications"];
+    let original_target_token = body(&impersonate)["session"]["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     for (label, cookie) in [
         (
             "without admin cookie",
@@ -264,15 +271,20 @@ async fn admin_remember_me_impersonation<B: Backend>(db: Db) -> TestResult {
             merge(&impersonating, "better-auth.admin_session=forged"),
         ),
     ] {
-        trace.response(
-            label,
-            &Box::pin(auth.handle_request(request(
-                "/admin/stop-impersonating",
-                Some(json!({})),
-                &cookie,
-            )))
-            .await?,
-        );
+        let before = db.tables(&preserved_tables).await?;
+        let denied = call(
+            &auth,
+            request("/admin/stop-impersonating", Some(json!({})), &cookie),
+            500,
+        )
+        .await;
+        assert_eq!(body(&denied)["message"], "Failed to find admin session");
+        assert!(cookies(&denied).is_empty());
+        assert_eq!(db.tables(&preserved_tables).await?, before);
+        let live = body(&call(&auth, request("/get-session", None, &impersonating), 200).await);
+        assert_eq!(live["session"]["token"], original_target_token);
+        assert_eq!(live["user"]["id"], member_id);
+        trace.response(label, &denied);
     }
     let (second_id, second) = promoted::<B>(&auth, "second-admin@example.com", "admin").await;
     let second_impersonation = call(
@@ -291,27 +303,37 @@ async fn admin_remember_me_impersonation<B: Backend>(db: Db) -> TestResult {
         .unwrap()
         .to_owned();
     let mismatched = merge(&impersonating, &foreign);
-    trace.response(
-        "admin cookie of another administrator",
-        &Box::pin(auth.handle_request(request(
-            "/admin/stop-impersonating",
-            Some(json!({})),
-            &mismatched,
-        )))
-        .await?,
-    );
+    let before = db.tables(&preserved_tables).await?;
+    let denied = call(
+        &auth,
+        request("/admin/stop-impersonating", Some(json!({})), &mismatched),
+        500,
+    )
+    .await;
+    assert_eq!(body(&denied)["message"], "Failed to find admin session");
+    assert!(cookies(&denied).is_empty());
+    assert_eq!(db.tables(&preserved_tables).await?, before);
+    let live = body(&call(&auth, request("/get-session", None, &impersonating), 200).await);
+    assert_eq!(live["session"]["token"], original_target_token);
+    assert_eq!(live["user"]["id"], member_id);
+    trace.response("admin cookie of another administrator", &denied);
     _ = db
         .execute("DELETE FROM sessions WHERE user_id = $1", &[&second_id])
         .await?;
-    trace.response(
-        "admin session no longer exists",
-        &Box::pin(auth.handle_request(request(
-            "/admin/stop-impersonating",
-            Some(json!({})),
-            &mismatched,
-        )))
-        .await?,
-    );
+    let before = db.tables(&preserved_tables).await?;
+    let denied = call(
+        &auth,
+        request("/admin/stop-impersonating", Some(json!({})), &mismatched),
+        500,
+    )
+    .await;
+    assert_eq!(body(&denied)["message"], "Failed to find admin session");
+    assert!(cookies(&denied).is_empty());
+    assert_eq!(db.tables(&preserved_tables).await?, before);
+    let live = body(&call(&auth, request("/get-session", None, &impersonating), 200).await);
+    assert_eq!(live["session"]["token"], original_target_token);
+    assert_eq!(live["user"]["id"], member_id);
+    trace.response("admin session no longer exists", &denied);
     let stopped = call(
         &auth,
         request("/admin/stop-impersonating", Some(json!({})), &impersonating),
