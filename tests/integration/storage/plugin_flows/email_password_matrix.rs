@@ -14,11 +14,86 @@ backend_tests!(
     email_password_switches_and_sign_in_guards,
     email_password_signup_without_session_hides_rejections,
     email_password_username_and_verification_flows,
+    username_display_projection_survives_session_lookup,
     signup_and_signin_crypto_errors_precede_principal_publication,
     missing_credential_signin_hashes_once_without_verifier_or_session
 );
 
 struct Deny;
+
+// Compat owner: tests/plugins/username/display-projection.test.ts. The matrix
+// below covers sign-in; this protects the independently serialized session read.
+async fn username_display_projection_survives_session_lookup<B: Backend>(db: Db) -> TestResult {
+    use alibi::utils::username::UsernameNormalization;
+
+    for enabled in [true, false] {
+        let db = db.fresh().await?;
+        let (connection, _) = db.migrated::<B>(SECRET).await?;
+        let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+        let policy = UsernameConfig {
+            include_display_username: enabled,
+            normalization: if enabled {
+                UsernameNormalization::Preserve
+            } else {
+                UsernameNormalization::Lowercase
+            },
+            ..Default::default()
+        };
+        let auth = AuthBuilder::new(config.clone())
+            .store(B::store(Arc::new(config), &connection))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+            .plugin(fast_password().username_config(policy))
+            .plugin(SessionManagementPlugin::new())
+            .build()
+            .await?;
+        let mut input = json!({
+            "email":"display@example.test", "password":PASSWORD,
+            "name":"Display Owner", "username":"Owner_Name"
+        });
+        if enabled {
+            input["displayUsername"] = json!("Shown Owner");
+        }
+        let signup = call(&auth, request("/sign-up/email", Some(input), ""), 200).await;
+        let canonical = if enabled { "Owner_Name" } else { "owner_name" };
+        let signin = call(
+            &auth,
+            request(
+                "/sign-in/username",
+                Some(json!({"username":canonical,"password":PASSWORD})),
+                "",
+            ),
+            200,
+        )
+        .await;
+        let session = call(&auth, request("/get-session", None, &cookies(&signin)), 200).await;
+        let signup_user = body(&signup)["user"].clone();
+        for response in [&signup, &signin, &session] {
+            let user = body(response)["user"].clone();
+            assert_eq!(user["id"], signup_user["id"]);
+            assert_eq!(user["username"], canonical);
+            if enabled {
+                assert_eq!(user["displayUsername"], "Shown Owner");
+            } else {
+                assert!(user.get("displayUsername").is_none());
+            }
+        }
+        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let wrong = call(
+            &auth,
+            request(
+                "/sign-in/username",
+                Some(json!({"username":canonical,"password":"wrong-password"})),
+                "",
+            ),
+            401,
+        )
+        .await;
+        assert_eq!(body(&wrong)["code"], "INVALID_USERNAME_OR_PASSWORD");
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        B::close(connection).await?;
+    }
+    Ok(())
+}
 #[async_trait]
 impl UserInfoValidator for Deny {
     async fn validate(
