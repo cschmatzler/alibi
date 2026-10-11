@@ -320,6 +320,23 @@ export function createTracingFetch(
         }
       }
 
+      let logicalEndpoint: RequestWindow["logicalEndpoint"];
+      if (
+        request.method === "POST" &&
+        /^\/__test\/server-dispatch(?:-cache)?\/call$/.test(url.pathname)
+      ) {
+        try {
+          const response = JSON.parse(responseText);
+          logicalEndpoint = {
+            input: structuredClone(verificationInput),
+            response,
+            digest: createHash("sha256").update(JSON.stringify(response)).digest("hex"),
+          };
+        } catch {
+          /* A non-JSON transport failure cannot authorize a logical issuer. */
+        }
+      }
+
       const memberInput = verificationInput as
         | { body?: { organizationId?: unknown; userId?: unknown } }
         | undefined;
@@ -332,6 +349,7 @@ export function createTracingFetch(
           finishedAt: Date.now(),
           inputDates,
           ...(remoteJwtSigning ? { remoteJwtSigning } : {}),
+          ...(logicalEndpoint ? { logicalEndpoint } : {}),
           ...(remoteJwtObserver ? { remoteJwtObserver } : {}),
           ...(controlObservation ? { controlObservation } : {}),
           ...(request.method === "POST" &&

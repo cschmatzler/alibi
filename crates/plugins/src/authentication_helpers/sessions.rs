@@ -24,13 +24,27 @@ pub(crate) fn with_session_cookies(
     token: &str,
     dont_remember: bool,
 ) -> AuthResult<AuthResponse> {
+    let mut response = response;
+    for (name, value) in session_cookie_headers(config, token, dont_remember)? {
+        response.headers.append(name, value);
+    }
+    Ok(response)
+}
+
+/// Authority cookies shared by physical and logical session issuers.
+pub(crate) fn session_cookie_headers(
+    config: &AuthConfig,
+    token: &str,
+    dont_remember: bool,
+) -> AuthResult<alibi_core::Headers> {
     let max_age = (!dont_remember).then(|| config.session.expires_in.num_seconds());
-    let mut response = response.with_appended_header(
+    let mut headers = alibi_core::Headers::new();
+    headers.append(
         "Set-Cookie",
         create_session_cookie_with_max_age(Some(token), max_age, config)?,
     );
     if dont_remember {
-        response.headers.append(
+        headers.append(
             "Set-Cookie",
             create_session_like_cookie(
                 &related_cookie_name(config, "dont_remember"),
@@ -40,7 +54,7 @@ pub(crate) fn with_session_cookies(
             )?,
         );
     }
-    Ok(response)
+    Ok(headers)
 }
 
 pub(crate) async fn session_response<S: AuthSchema>(
