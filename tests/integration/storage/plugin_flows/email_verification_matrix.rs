@@ -473,6 +473,60 @@ async fn verified_guest_replay_skips_hooks_and_session_issuance<B: Backend>(db: 
         "verified-replay-foreign@example.test",
     )
     .await;
+
+    // Compat owner: core/email-verification/empty-update.test.ts. A signed
+    // empty updateTo is a valid string but is false in the source branch guard:
+    // it must verify the mailbox instead of entering the legacy email change.
+    let empty_email = "empty-update-owner@example.test";
+    let empty_owner = signup(&auth, empty_email).await;
+    let _ = inbox.take();
+    let stable = db
+        .tables(&["accounts", "sessions", "verifications"])
+        .await?;
+    let users_before: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+    let inbox_before = inbox.0.lock().unwrap().clone();
+    let proof =
+        forged(&json!({"email":empty_email,"updateTo":"","iat":946684800,"exp":4102444800_i64}));
+    let verified = call(&auth, verify(&proof, None, ""), 200).await;
+    assert_eq!(body(&verified), json!({"status":true,"user":null}));
+    authenticated(&auth, &cookies(&verified), empty_email).await;
+    let current = body(
+        &call(
+            &auth,
+            request("/get-session", None, &cookies(&verified)),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(current["user"]["id"], body(&empty_owner)["user"]["id"]);
+    assert_eq!(current["user"]["email"], empty_email);
+    assert_eq!(current["user"]["emailVerified"], true);
+    assert_eq!(before_count.load(Ordering::SeqCst), 2);
+    assert_eq!(after_count.load(Ordering::SeqCst), 2);
+    assert_eq!(*inbox.0.lock().unwrap(), inbox_before);
+    let users_after: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+    assert_eq!(users_after.len(), users_before.len());
+    for prior in &users_before {
+        let actual = users_after
+            .iter()
+            .find(|user| user["id"] == prior["id"])
+            .unwrap();
+        if prior["id"] == body(&empty_owner)["user"]["id"] {
+            assert_eq!(actual["email"], empty_email);
+            assert_eq!(actual["email_verified"], 1);
+        } else {
+            assert_eq!(actual, prior);
+        }
+    }
+    let stable_after = db
+        .tables(&["accounts", "sessions", "verifications"])
+        .await?;
+    assert_eq!(stable_after[0], stable[0]);
+    assert_eq!(stable_after[2], stable[2]);
+    let prior_sessions: Vec<Value> = serde_json::from_str(&stable[1])?;
+    let now_sessions: Vec<Value> = serde_json::from_str(&stable_after[1])?;
+    assert_eq!(now_sessions.len(), prior_sessions.len() + 1);
+    assert!(prior_sessions.iter().all(|row| now_sessions.contains(row)));
     Ok(())
 }
 

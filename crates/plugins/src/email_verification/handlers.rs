@@ -212,7 +212,11 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
         return verification_error(query, "USER_NOT_FOUND", "User not found");
     };
 
-    if let Some(update_to) = claims.update_to.as_deref() {
+    if let Some(update_to) = claims
+        .update_to
+        .as_deref()
+        .filter(|email| !email.is_empty())
+    {
         let current_session = verification_session(request, ctx).await;
         if let Some((ref session_user, _)) = current_session
             && session_user.email().unwrap_or_default() != claims.email
