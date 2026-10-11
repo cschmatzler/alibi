@@ -99,6 +99,10 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
         endpoint::definitions(&self.config.jwks_path)
     }
 
+    fn endpoint_hooks(&self) -> Vec<&dyn alibi_core::endpoint::EndpointHook<S>> {
+        vec![self]
+    }
+
     fn validate_endpoint(
         &self,
         call: &alibi_core::endpoint::EndpointCall,

@@ -327,3 +327,66 @@ fn time_seconds(value: &str) -> AuthResult<f64> {
         * sign.unwrap_or(if ago { -1.0 } else { 1.0 });
     Ok((seconds + 0.5).floor())
 }
+
+#[async_trait::async_trait]
+impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for JwtPlugin {
+    fn matches_before(&self, _: &EndpointCall, _: &AuthContext<S>) -> AuthResult<bool> {
+        Ok(false)
+    }
+
+    fn matches_after(
+        &self,
+        call: &EndpointCall,
+        _: &AuthContext<S>,
+        _: &EndpointResponse,
+    ) -> AuthResult<bool> {
+        Ok(call.operation_id() == "get_session"
+            && call.path() == Some("/get-session")
+            && !self.config.disable_setting_jwt_header)
+    }
+
+    async fn after(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+        response: EndpointResponse,
+    ) -> AuthResult<EndpointResponse> {
+        let Some((user, session)) = call.session_hook_snapshot() else {
+            return Ok(response);
+        };
+        let cache = alibi_core::session::cookie_cache::runtime::session_hook_cache_metadata(call);
+        let token = self
+            .sign_session_token(
+                call.request(),
+                ctx,
+                &JwtSession {
+                    user,
+                    session,
+                    needs_refresh: None,
+                    updated_at: cache.as_ref().map(|metadata| metadata.updated_at),
+                    version: cache.and_then(|metadata| metadata.version),
+                },
+            )
+            .await
+            .map_err(super::public_jwt_error)?;
+        let mut expose = response
+            .headers()
+            .get("access-control-expose-headers")
+            .into_iter()
+            .flat_map(|value| value.split(','))
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .fold(Vec::new(), |mut headers, header| {
+                if !headers.iter().any(|existing| existing == header) {
+                    headers.push(header.to_owned());
+                }
+                headers
+            });
+        if !expose.iter().any(|header| header == "set-auth-jwt") {
+            expose.push("set-auth-jwt".to_owned());
+        }
+        Ok(response
+            .with_header("set-auth-jwt", token)
+            .with_header("access-control-expose-headers", expose.join(", ")))
+    }
+}
