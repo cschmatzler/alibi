@@ -764,6 +764,97 @@ export function compareValues(
         })
       : [];
 
+  // A valid empty revokeSession input is a literal, not an issued credential.
+  // Admit only its original hook-frame copies from an intact transport receipt.
+  const emptyRevocationInputs = new Set<string>();
+  const revocationFrame = (value: unknown) => {
+    if (!record(value)) return;
+    const current = record(value.current) ? value.current : undefined;
+    return stableJSON({
+      stage: value.stage,
+      path: value.path,
+      headers: value.headers,
+      body: value.body,
+      current: current && { path: current.path, headers: current.headers, body: current.body },
+    });
+  };
+  for (const producer of tracePairs) {
+    const receipts = [producer.left.logicalEndpoint, producer.right.logicalEndpoint];
+    if (
+      !/^\/__test\/server-dispatch(?:-cache)?\/call$/.test(producer.path) ||
+      producer.a.method !== "POST" ||
+      producer.a.responseStatus !== 200 ||
+      producer.b.responseStatus !== 200 ||
+      !receipts.every(
+        (receipt) =>
+          receipt &&
+          createHash("sha256").update(JSON.stringify(receipt.response)).digest("hex") ===
+            receipt.digest &&
+          record(receipt.input) &&
+          receipt.input.operation === "revokeSession" &&
+          record(receipt.input.body) &&
+          receipt.input.body.token === "" &&
+          record(receipt.input.headers) &&
+          typeof receipt.input.headers.cookie === "string",
+      )
+    ) {
+      continue;
+    }
+    const left = normalizeClientValue(receipts[0]!.response);
+    const right = normalizeClientValue(receipts[1]!.response);
+    const successful = (value: unknown) =>
+      record(value) &&
+      record(value.result) &&
+      value.result.ok === true &&
+      record(value.result.value) &&
+      record(value.result.value.response) &&
+      value.result.value.response.status === true &&
+      Array.isArray(value.events);
+    if (!successful(left) || !successful(right) || !record(left) || !record(right)) continue;
+    const leftEvents = left.events as unknown[];
+    const rightEvents = right.events as unknown[];
+    if (leftEvents.length !== rightEvents.length) continue;
+    const frames = leftEvents.flatMap((event, index) => {
+      const other = rightEvents[index];
+      return record(event) &&
+        record(other) &&
+        event.path === "/revoke-session" &&
+        other.path === "/revoke-session"
+        ? [{ left: revocationFrame(event), right: revocationFrame(other) }]
+        : [];
+    });
+    const collect = (a: unknown, b: unknown, path: string) => {
+      if (record(a) && record(b)) {
+        if (
+          /\.events\.\d+$/.test(path) &&
+          frames.some(
+            (frame) => revocationFrame(a) === frame.left && revocationFrame(b) === frame.right,
+          )
+        ) {
+          if (record(a.body) && record(b.body) && a.body.token === "" && b.body.token === "") {
+            emptyRevocationInputs.add(`${path}.body.token`);
+          }
+          if (
+            record(a.current) &&
+            record(b.current) &&
+            record(a.current.body) &&
+            record(b.current.body) &&
+            a.current.body.token === "" &&
+            b.current.body.token === ""
+          ) {
+            emptyRevocationInputs.add(`${path}.current.body.token`);
+          }
+        }
+        for (const key of Object.keys(a)) {
+          if (Object.hasOwn(b, key)) collect(a[key], b[key], path ? `${path}.${key}` : key);
+        }
+      } else if (Array.isArray(a) && Array.isArray(b)) {
+        a.forEach((item, index) => collect(item, b[index], `${path}.${index}`));
+      }
+    };
+    collect(normalizedLeft, normalizedRight, "");
+  }
+
   // Direct server calls publish headers inside their logical response. Bind a
   // real rotation to its original transport receipt and a later authenticated
   // browser read; a caller's copied token/header cannot authorize itself.
@@ -4660,6 +4751,9 @@ export function compareValues(
           : (opaqueAliases[key] ?? key);
 
       if (opaqueKeys.has(opaqueKey)) {
+        if (opaqueKey === "token" && a === "" && b === "" && emptyRevocationInputs.has(path)) {
+          return;
+        }
         // Pinned custom device generators accept empty/whitespace strings.
         // These are literal codes, never aliases for nonempty credentials.
         if (

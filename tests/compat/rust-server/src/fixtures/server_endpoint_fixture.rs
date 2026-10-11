@@ -571,7 +571,7 @@ pub(crate) async fn router(
                     "changePassword" | "verifyPassword" => "password-management",
                     "listUserAccounts" | "unlinkAccount" => "account-management",
                     "createVerificationOTP" | "getVerificationOTP" => "email-otp",
-                    "getSession" => "session-management",
+                    "getSession" | "revokeSession" => "session-management",
                     "signJWT" | "verifyJWT" | "getToken" | "getJwks" => "jwt",
                     "createOrganization" | "deleteOrganization" | "addMember" | "removeMember" => {
                         "organization"
@@ -591,6 +591,7 @@ pub(crate) async fn router(
                     "createVerificationOTP" => "createVerificationOTP",
                     "getVerificationOTP" => "getVerificationOTP",
                     "getSession" => "getSession",
+                    "revokeSession" => "revokeSession",
                     "signJWT" => "signJWT",
                     "verifyJWT" => "verifyJWT",
                     "getToken" => "getToken",

@@ -37,9 +37,11 @@ pub struct SessionManagementConfig {
     pub require_authentication: bool,
 }
 
-#[derive(Debug, Deserialize)]
-struct RevokeSessionRequest {
-    token: String,
+/// Input for the logical single-session revocation operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RevokeSessionRequest {
+    /// Session token to revoke; foreign and unknown tokens leave storage unchanged.
+    pub token: String,
 }
 
 impl RequestBody for RevokeSessionRequest {
@@ -75,12 +77,21 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
     }
 
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
-        vec![crate::endpoint::definition(
+        let mut endpoints = vec![crate::endpoint::definition(
             "getSession",
             "get_session",
             Some("/get-session"),
             HttpMethod::Get,
-        )]
+        )];
+        if self.config.enable_session_revocation {
+            endpoints.push(crate::endpoint::definition(
+                "revokeSession",
+                "revokeSession",
+                Some("/revoke-session"),
+                HttpMethod::Post,
+            ));
+        }
+        endpoints
     }
 
     fn validate_endpoint(
@@ -88,6 +99,20 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
         call: &EndpointCall,
         _: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
+        if call.operation_id() == "revokeSession" {
+            let body = crate::endpoint::validate_fields(
+                call.body(),
+                "body",
+                RevokeSessionRequest::FIELDS,
+            )?;
+            if call.headers().is_none() {
+                return Err(crate::endpoint::validation("Headers is required"));
+            }
+            return Ok(EndpointInput {
+                body: Some(body),
+                query: call.query().cloned(),
+            });
+        }
         let query = match call.query() {
             None => None,
             Some(JsValue::Object(input)) => Some(JsValue::Object(
@@ -120,6 +145,20 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "revokeSession" {
+            // Sensitive Source middleware re-reads real authority and catches getter failures.
+            let (user, session) = ctx
+                .require_authoritative_session_record(call)
+                .await
+                .map_err(|_| AuthError::Upstream {
+                    status: 401,
+                    code: "UNAUTHORIZED",
+                    message: "Unauthorized",
+                })?;
+            call.record_authenticated_session(ctx.user_view(&user), session);
+            let input: RevokeSessionRequest = call.body_as()?;
+            return EndpointResponse::json(&revoke_session_core(&user, &input.token, ctx).await?);
+        }
         let response = match self.get_session_response(call, ctx).await {
             Ok(value) => EndpointResponse::json(&value)?,
             Err(error) => EndpointResponse::error(error),
@@ -185,6 +224,19 @@ impl SessionManagementPlugin {
     #[must_use]
     pub const fn get_session_endpoint() -> ServerEndpoint<Option<GetSessionResponse>> {
         ServerEndpoint::new("session-management", "getSession")
+    }
+
+    /// Revoke a session belonging to the authoritative current user.
+    ///
+    /// Supply genuine incoming headers through `EndpointOptions::headers`. The
+    /// operation validates input before session admission and preserves logical hooks.
+    ///
+    /// # Errors
+    /// Returns an error if the logical input cannot be serialized.
+    pub fn revoke_session_endpoint(
+        input: &RevokeSessionRequest,
+    ) -> AuthResult<ServerEndpoint<alibi_core::StatusResponse>> {
+        ServerEndpoint::new("session-management", "revokeSession").with_body(input)
     }
 
     #[expect(
