@@ -405,6 +405,37 @@ async fn verified_guest_replay_skips_hooks_and_session_issuance<B: Backend>(db: 
     let owner = signup(&auth, "verified-replay-owner@example.test").await;
     let (_, token) = inbox.take();
     let foreign = signup(&auth, "verified-replay-foreign@example.test").await;
+    // Compat owner: core/email-verification/claim-schema.test.ts. Explicit
+    // null differs from an absent optional claim: serde Option alone would
+    // accept it and permit verification, hooks, and automatic session issuance.
+    let unverified = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    for field in ["updateTo", "requestType"] {
+        let mut claims = json!({
+            "email":"verified-replay-owner@example.test",
+            "iat":946684800,
+            "nbf":946684740,
+            "exp":4102444800_i64
+        });
+        claims[field] = Value::Null;
+        let denied = call(&auth, verify(&forged(&claims), None, ""), 500).await;
+        assert!(
+            denied.body.is_empty(),
+            "null {field} must retain the bare upstream 500"
+        );
+        assert!(denied.headers.get_all("set-cookie").next().is_none());
+        assert_eq!(before_count.load(Ordering::SeqCst), 0);
+        assert_eq!(after_count.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "verifications"])
+                .await?,
+            unverified,
+            "null {field} must not change either principal"
+        );
+    }
+    assert!(body(&call(&auth, request("/get-session", None, ""), 200).await).is_null());
+    // The real delivered proof remains usable after both rejected signed proofs.
     let first = call(&auth, verify(&token, None, ""), 200).await;
     authenticated(
         &auth,
