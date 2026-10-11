@@ -10,12 +10,13 @@ pub(crate) struct RequestPasswordResetRequest {
     pub(crate) redirect_to: Option<String>,
 }
 
-/// Request body for `POST /reset-password`.
-#[derive(Debug, Deserialize, Validate)]
-pub(crate) struct ResetPasswordRequest {
+/// Input for the public `resetPassword` operation and `POST /reset-password`.
+#[derive(Debug, Serialize, Deserialize, Validate)]
+pub struct ResetPasswordRequest {
     #[serde(rename = "newPassword")]
-    pub(crate) new_password: String,
-    pub(crate) token: Option<String>,
+    pub new_password: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
 }
 
 /// Request body for `POST /change-password`.

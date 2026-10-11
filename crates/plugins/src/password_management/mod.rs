@@ -18,10 +18,10 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 pub use types::{
-    ChangePasswordRequest, ChangePasswordResponse, SetPasswordRequest, VerifyPasswordRequest,
-    VerifyPasswordResponse,
+    ChangePasswordRequest, ChangePasswordResponse, ResetPasswordRequest, SetPasswordRequest,
+    VerifyPasswordRequest, VerifyPasswordResponse,
 };
-use types::{RequestPasswordResetRequest, ResetPasswordRequest, ResetPasswordTokenQuery};
+use types::{RequestPasswordResetRequest, ResetPasswordTokenQuery};
 
 const RESET_TOKEN_ROUTE_PREFIX: &str = "/reset-password/";
 
@@ -124,6 +124,12 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
 
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "resetPassword",
+                "resetPassword",
+                Some("/reset-password"),
+                HttpMethod::Post,
+            ),
             crate::endpoint::definition("setPassword", "setPassword", None, HttpMethod::Post),
             crate::endpoint::definition(
                 "changePassword",
@@ -146,24 +152,54 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
         _: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
         use crate::authentication_helpers::RequestBody;
+        let body = crate::endpoint::validate_fields(
+            call.body(),
+            "body",
+            match call.operation_id() {
+                "resetPassword" => ResetPasswordRequest::FIELDS,
+                "verifyPassword" => VerifyPasswordRequest::FIELDS,
+                "setPassword" => SetPasswordRequest::FIELDS,
+                _ => ChangePasswordRequest::FIELDS,
+            },
+        )?;
+        let query = if call.operation_id() == "resetPassword" {
+            call.query()
+                .map(|query| {
+                    crate::endpoint::validate_fields(
+                        Some(query),
+                        "query",
+                        &[crate::authentication_helpers::JsonField::string(
+                            "token", false,
+                        )],
+                    )
+                })
+                .transpose()?
+        } else {
+            call.query().cloned()
+        };
         Ok(alibi_core::endpoint::EndpointInput {
-            body: Some(crate::endpoint::validate_fields(
-                call.body(),
-                "body",
-                match call.operation_id() {
-                    "verifyPassword" => VerifyPasswordRequest::FIELDS,
-                    "setPassword" => SetPasswordRequest::FIELDS,
-                    _ => ChangePasswordRequest::FIELDS,
-                },
-            )?),
-            query: call.query().cloned(),
+            body: Some(body),
+            query,
         })
     }
+
     async fn on_endpoint(
         &self,
         call: &alibi_core::endpoint::EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        if call.operation_id() == "resetPassword" {
+            let mut body: ResetPasswordRequest = call.body_as()?;
+            if body.token.as_ref().is_none_or(String::is_empty) {
+                body.token = call
+                    .query()
+                    .and_then(|query| query.get("token"))
+                    .and_then(alibi_core::utils::json::JsValue::as_str)
+                    .map(str::to_owned);
+            }
+            let response = reset_password_core(&body, &self.config, ctx).await?;
+            return alibi_core::endpoint::EndpointResponse::json(&response);
+        }
         // Source sensitiveSessionMiddleware catches only its nested session getter.
         let (user, session) = ctx
             .require_authoritative_session_record(call)
@@ -253,6 +289,20 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
 }
 
 impl PasswordManagementPlugin {
+    /// Reset the proof owner's password without requiring a caller session.
+    ///
+    /// A nonempty body token takes precedence over the optional logical query token.
+    /// Dispatch consumes the proof once and runs the configured reset callback and hooks.
+    ///
+    /// # Errors
+    /// Returns an error if the logical input cannot be serialized.
+    pub fn reset_password_endpoint(
+        body: &ResetPasswordRequest,
+    ) -> AuthResult<alibi_core::endpoint::ServerEndpoint<alibi_core::StatusResponse>> {
+        alibi_core::endpoint::ServerEndpoint::new("password-management", "resetPassword")
+            .with_body(body)
+    }
+
     /// Set a password for the authoritative caller without exposing an HTTP route.
     ///
     /// Dispatch uses logical session headers and installed hooks. Existing sessions

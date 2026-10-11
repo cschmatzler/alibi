@@ -274,3 +274,5 @@ impl Drop for Provider {
 }
 
 mod server_revoke_session;
+
+mod server_reset_password;

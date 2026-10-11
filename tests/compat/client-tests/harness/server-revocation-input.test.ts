@@ -11,7 +11,8 @@ import { normalizeClientValue } from "../support/normalize";
 import { createTracingFetch, requestWindow, type TraceEntry } from "../support/trace";
 
 const control = "/__test/server-dispatch-cache/call";
-async function capture() {
+async function capture(operation: "revokeSession" | "resetPassword") {
+  let resetToken = "";
   const database = new Database(":memory:");
   let auth: ReturnType<typeof betterAuth>;
   const events: unknown[] = [];
@@ -22,12 +23,19 @@ async function capture() {
       if (new URL(request.url).pathname === control) {
         const input = await request.json();
         events.length = 0;
-        const output = await auth.api.revokeSession({
-          body: input.body,
-          query: input.query,
-          headers: new Headers(input.headers),
-          returnHeaders: true,
-        });
+        const output =
+          operation === "revokeSession"
+            ? await auth.api.revokeSession({
+                body: input.body,
+                query: input.query,
+                headers: new Headers(input.headers),
+                returnHeaders: true,
+              })
+            : await auth.api.resetPassword({
+                body: input.body,
+                query: input.query,
+                returnHeaders: true,
+              });
         return Response.json({
           result: {
             ok: true,
@@ -48,6 +56,9 @@ async function capture() {
       rateLimit: { enabled: false },
       emailAndPassword: {
         enabled: true,
+        sendResetPassword: async ({ token }) => {
+          resetToken = token;
+        },
         password: {
           hash: async (password) => `fast:${password}`,
           verify: async ({ hash, password }) => hash === `fast:${password}`,
@@ -55,10 +66,12 @@ async function capture() {
       },
       hooks: {
         after: createAuthMiddleware(async (ctx) => {
-          if (ctx.path === "/revoke-session") {
+          if (
+            ctx.path === (operation === "resetPassword" ? "/reset-password" : "/revoke-session")
+          ) {
             const frame = {
               path: ctx.path,
-              headers: Object.fromEntries(ctx.headers!),
+              headers: ctx.headers ? Object.fromEntries(ctx.headers) : null,
               body: ctx.body,
             };
             events.push({ stage: "user-after", ...frame, current: frame });
@@ -86,14 +99,21 @@ async function capture() {
       .getSetCookie()
       .map((raw) => raw.split(";")[0])
       .join("; ");
+    if (operation === "resetPassword") {
+      await auth.api.requestPasswordReset({ body: { email: "empty-revocation@fixture.test" } });
+      expect(resetToken.length).toBeGreaterThan(0);
+    }
     const response = await fetch(`${baseURL}${control}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        operation: "revokeSession",
-        body: { token: "" },
-        headers: { cookie },
-        query: { disableRefresh: true },
+        operation,
+        body:
+          operation === "resetPassword"
+            ? { token: "", newPassword: "replacement-password-205" }
+            : { token: "" },
+        ...(operation === "revokeSession" ? { headers: { cookie } } : {}),
+        query: operation === "resetPassword" ? { token: resetToken } : { disableRefresh: true },
       }),
     });
     expect(response.status).toBe(200);
@@ -144,47 +164,62 @@ async function capture() {
     database.close();
   }
 }
-test("actual accepted empty revocation input requires its original hook receipt", async () => {
-  const captured = await capture();
-  const context: ComparisonContext = {
-    leftBaseURL: captured.baseURL,
-    rightBaseURL: captured.baseURL,
-    leftStartedAt: captured.startedAt,
-    rightStartedAt: captured.startedAt,
-    leftFinishedAt: captured.finishedAt,
-    rightFinishedAt: captured.finishedAt,
-    leftRequestWindows: captured.windows,
-    rightRequestWindows: captured.windows,
-  };
-  const compare = (right = captured.value, options = context) =>
-    compareValues(captured.value, right, options);
-  expect(compare()).toEqual([]);
-  expect(
-    compare(captured.value, { ...context, rightRequestWindows: undefined }).length,
-  ).toBeGreaterThan(0);
-  const badDigest = structuredClone(captured.windows);
-  badDigest[1]!.logicalEndpoint!.digest = "forged";
-  expect(
-    compare(captured.value, { ...context, rightRequestWindows: badDigest }).length,
-  ).toBeGreaterThan(0);
-  const wrongOperation = structuredClone(captured.windows);
-  (wrongOperation[1]!.logicalEndpoint!.input as { operation: string }).operation = "verifyPassword";
-  expect(
-    compare(captured.value, { ...context, rightRequestWindows: wrongOperation }).length,
-  ).toBeGreaterThan(0);
-  const different = structuredClone(captured.value);
-  different.observation.output.events[0]!.body.token = "nonempty-token";
-  expect(compare(different).length).toBeGreaterThan(0);
-  const unrelatedFrame = structuredClone(captured.value);
-  unrelatedFrame.observation.output.events[0]!.path = "/verify-password";
-  expect(compare(unrelatedFrame).some((diff) => diff.reason === "empty identity or token")).toBe(
-    true,
-  );
-  const issued = structuredClone(captured.value);
-  issued.observation.output.result.value.response.token = "";
-  expect(
-    compareValues(issued, issued, context).some(
-      (diff) => diff.reason === "empty identity or token",
-    ),
-  ).toBe(true);
-});
+for (const operation of ["revokeSession", "resetPassword"] as const) {
+  test(`actual accepted empty ${operation} input requires its original hook receipt`, async () => {
+    const captured = await capture(operation);
+    const context: ComparisonContext = {
+      leftBaseURL: captured.baseURL,
+      rightBaseURL: captured.baseURL,
+      leftStartedAt: captured.startedAt,
+      rightStartedAt: captured.startedAt,
+      leftFinishedAt: captured.finishedAt,
+      rightFinishedAt: captured.finishedAt,
+      leftRequestWindows: captured.windows,
+      rightRequestWindows: captured.windows,
+    };
+    const compare = (right = captured.value, options = context) =>
+      compareValues(captured.value, right, options);
+    expect(compare()).toEqual([]);
+    expect(
+      compare(captured.value, { ...context, rightRequestWindows: undefined }).length,
+    ).toBeGreaterThan(0);
+    const badDigest = structuredClone(captured.windows);
+    badDigest[1]!.logicalEndpoint!.digest = "forged";
+    expect(
+      compare(captured.value, { ...context, rightRequestWindows: badDigest }).length,
+    ).toBeGreaterThan(0);
+    const wrongOperation = structuredClone(captured.windows);
+    (wrongOperation[1]!.logicalEndpoint!.input as { operation: string }).operation =
+      "verifyPassword";
+    expect(
+      compare(captured.value, { ...context, rightRequestWindows: wrongOperation }).length,
+    ).toBeGreaterThan(0);
+    if (operation === "resetPassword") {
+      const missingProof = structuredClone(captured.windows);
+      (missingProof[1]!.logicalEndpoint!.input as { query?: unknown }).query = {};
+      expect(
+        compare(captured.value, { ...context, rightRequestWindows: missingProof }).length,
+      ).toBeGreaterThan(0);
+      const emptyProof = structuredClone(captured.windows);
+      (emptyProof[1]!.logicalEndpoint!.input as { query?: unknown }).query = { token: "" };
+      expect(
+        compare(captured.value, { ...context, rightRequestWindows: emptyProof }).length,
+      ).toBeGreaterThan(0);
+    }
+    const different = structuredClone(captured.value);
+    different.observation.output.events[0]!.body.token = "nonempty-token";
+    expect(compare(different).length).toBeGreaterThan(0);
+    const unrelatedFrame = structuredClone(captured.value);
+    unrelatedFrame.observation.output.events[0]!.path = "/verify-password";
+    expect(compare(unrelatedFrame).some((diff) => diff.reason === "empty identity or token")).toBe(
+      true,
+    );
+    const issued = structuredClone(captured.value);
+    issued.observation.output.result.value.response.token = "";
+    expect(
+      compareValues(issued, issued, context).some(
+        (diff) => diff.reason === "empty identity or token",
+      ),
+    ).toBe(true);
+  });
+}
