@@ -15,11 +15,85 @@ backend_tests!(
     email_password_signup_without_session_hides_rejections,
     email_password_username_and_verification_flows,
     username_display_projection_survives_session_lookup,
+    username_availability_utf16_bounds_precede_default_character_validation,
     signup_and_signin_crypto_errors_precede_principal_publication,
     missing_credential_signin_hashes_once_without_verifier_or_session
 );
 
 struct Deny;
+
+// Compat owner: tests/plugins/username/availability-utf16.test.ts. The
+// default guest endpoint checks UTF-16 bounds before its character validator.
+async fn username_availability_utf16_bounds_precede_default_character_validation<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .build()
+        .await?;
+    let owner = call(
+        &auth,
+        request(
+            "/sign-up/email",
+            Some(json!({"email":"availability-owner@example.test","name":"Username owner","password":PASSWORD,"username":"taken_name"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    for (username, code) in [
+        ("😀".to_owned(), "USERNAME_TOO_SHORT"),
+        ("😀😀".to_owned(), "INVALID_USERNAME"),
+        (format!("{}😀", "a".repeat(29)), "USERNAME_TOO_LONG"),
+    ] {
+        let denied = call(
+            &auth,
+            request(
+                "/is-username-available",
+                Some(json!({"username":username})),
+                "",
+            ),
+            422,
+        )
+        .await;
+        assert_eq!(body(&denied)["code"], code, "{username}");
+        assert!(denied.headers.get_all("set-cookie").next().is_none());
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "verifications"])
+                .await?,
+            before
+        );
+    }
+    for (username, available) in [("fresh_ascii", true), ("TAKEN_NAME", false)] {
+        let result = call(
+            &auth,
+            request(
+                "/is-username-available",
+                Some(json!({"username":username})),
+                "",
+            ),
+            200,
+        )
+        .await;
+        assert_eq!(body(&result), json!({"available":available}));
+        assert!(result.headers.get_all("set-cookie").next().is_none());
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "verifications"])
+                .await?,
+            before
+        );
+    }
+    authenticated(&auth, &cookies(&owner), "availability-owner@example.test").await;
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        before
+    );
+    B::close(connection).await
+}
 
 // Compat owner: tests/plugins/username/display-projection.test.ts. The matrix
 // below covers sign-in; this protects the independently serialized session read.
