@@ -105,16 +105,16 @@
   },
   {
     "revoke=false: no callback": {
-      "status": 302,
+      "status": 400,
       "headers": {
-        "location": [
-          "http://localhost:43219/api/auth/error?error=INVALID_TOKEN"
-        ],
         "content-type": [
           "application/json"
         ]
       },
-      "body": ""
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v2>] Invalid input: expected string, received undefined"
+      }
     }
   },
   {
@@ -150,7 +150,7 @@
       "status": 302,
       "headers": {
         "location": [
-          "http://localhost:43219/reset?token=<v2>"
+          "http://localhost:43219/reset?token=<v3>"
         ],
         "content-type": [
           "application/json"
@@ -164,7 +164,7 @@
       "status": 302,
       "headers": {
         "location": [
-          "http://localhost:43219/reset?token=<v2>&x=1"
+          "http://localhost:43219/reset?token=<v3>&x=1"
         ],
         "content-type": [
           "application/json"
@@ -178,7 +178,7 @@
       "status": 302,
       "headers": {
         "location": [
-          "http://localhost:43219/reset?token=<v2>#frag"
+          "http://localhost:43219/reset?token=<v3>#frag"
         ],
         "content-type": [
           "application/json"
@@ -211,7 +211,7 @@
       },
       "body": {
         "code": "VALIDATION_ERROR",
-        "message": "[<v3>] Invalid input: expected string, received number"
+        "message": "[<v4>] Invalid input: expected string, received number"
       }
     }
   },
@@ -448,16 +448,16 @@
   },
   {
     "revoke=true: no callback": {
-      "status": 302,
+      "status": 400,
       "headers": {
-        "location": [
-          "http://localhost:43219/api/auth/error?error=INVALID_TOKEN"
-        ],
         "content-type": [
           "application/json"
         ]
       },
-      "body": ""
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v2>] Invalid input: expected string, received undefined"
+      }
     }
   },
   {
@@ -493,7 +493,7 @@
       "status": 302,
       "headers": {
         "location": [
-          "http://localhost:43219/reset?token=<v4>"
+          "http://localhost:43219/reset?token=<v5>"
         ],
         "content-type": [
           "application/json"
@@ -507,7 +507,7 @@
       "status": 302,
       "headers": {
         "location": [
-          "http://localhost:43219/reset?token=<v4>&x=1"
+          "http://localhost:43219/reset?token=<v5>&x=1"
         ],
         "content-type": [
           "application/json"
@@ -521,7 +521,7 @@
       "status": 302,
       "headers": {
         "location": [
-          "http://localhost:43219/reset?token=<v4>#frag"
+          "http://localhost:43219/reset?token=<v5>#frag"
         ],
         "content-type": [
           "application/json"
@@ -554,7 +554,7 @@
       },
       "body": {
         "code": "VALIDATION_ERROR",
-        "message": "[<v3>] Invalid input: expected string, received number"
+        "message": "[<v4>] Invalid input: expected string, received number"
       }
     }
   },
