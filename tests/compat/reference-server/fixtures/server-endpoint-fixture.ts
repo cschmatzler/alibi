@@ -316,6 +316,17 @@ export function createServerEndpointFixture(
       }),
       after: createAuthMiddleware(async (ctx) => {
         events.push({ stage: "user-after", ...snapshot(ctx) });
+        if (mode === "account-list-headers") {
+          ctx.setHeader("x-account-list", "logical");
+          ctx.context.responseHeaders!.append(
+            "set-cookie",
+            "account-first=owned; Path=/; HttpOnly",
+          );
+          ctx.context.responseHeaders!.append(
+            "set-cookie",
+            "account-second=owned; Path=/; HttpOnly",
+          );
+        }
         if (mode.startsWith("hash-phase")) {
           hashPhase = "after";
           await ctx.context.password.hash(HASH_PASSWORD);

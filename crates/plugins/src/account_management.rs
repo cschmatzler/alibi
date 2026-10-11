@@ -36,10 +36,46 @@ alibi_core::impl_auth_plugin! {
 
  extra {
     route_openapi_metadata!(S);
+
+    fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
+        vec![crate::endpoint::definition(
+            "listUserAccounts", "listUserAccounts", Some("/list-accounts"),
+            alibi_core::HttpMethod::Get,
+        )]
+    }
+
+    async fn on_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        let (user, session) = ctx.require_cached_session(call).await.map_err(|error| {
+            if matches!(error, AuthError::Unauthenticated | AuthError::SessionNotFound) {
+                super::organization::handlers::extension_common::org_error(401, "UNAUTHORIZED")
+            } else {
+                error
+            }
+        })?;
+        call.record_authenticated_session(match &user {
+            alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+            alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
+        }, session);
+        alibi_core::endpoint::EndpointResponse::json(&list_accounts_core(&user, ctx).await?)
+    }
  }
 }
 
 impl AccountManagementPlugin {
+    /// List the authenticated caller's linked accounts through logical endpoint hooks.
+    ///
+    /// The result retains configured account output fields and parsed scopes, while
+    /// omitting credentials. Supply incoming headers using `EndpointOptions`.
+    #[must_use]
+    pub const fn list_accounts_endpoint()
+    -> alibi_core::endpoint::ServerEndpoint<Vec<serde_json::Map<String, serde_json::Value>>> {
+        alibi_core::endpoint::ServerEndpoint::new("account-management", "listUserAccounts")
+    }
+
     async fn handle_list_accounts(
         &self,
         req: &AuthRequest,
