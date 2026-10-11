@@ -388,11 +388,8 @@ impl EmailOtpPlugin {
             .get_metadata("username.enabled")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        let ignored = if username_enabled {
-            &[][..]
-        } else {
-            &["username", "displayUsername"][..]
-        };
+        // Additional user inputs apply only when creating a new identity.
+        let ignored = &["username", "displayUsername"][..];
         let body: SignInRequest =
             match crate::authentication_helpers::parse_body_with_ignored_fields(req, ignored) {
                 Ok(value) => value,
@@ -408,6 +405,14 @@ impl EmailOtpPlugin {
             Some(user) => user,
             None if self.config.disable_sign_up => return Err(invalid_otp()),
             None => {
+                let body = if username_enabled {
+                    match parse_body::<SignInRequest>(req) {
+                        Ok(value) => value,
+                        Err(response) => return Ok(response),
+                    }
+                } else {
+                    body
+                };
                 let mut data = CreateUser::new()
                     .with_email(email)
                     .with_name(body.name.unwrap_or_default())

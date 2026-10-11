@@ -1,5 +1,5 @@
 //! Email OTP issuance limits, request validation, reset and change-email policy.
-use super::auth_probe::{fast_builder, raw};
+use super::auth_probe::{fast_builder, fast_password, raw};
 use super::*;
 use crate::snapshot::Trace;
 use alibi::plugins::email_otp::{
@@ -18,7 +18,8 @@ backend_tests!(
     verification_otp_transformed_owner,
     verification_otp_creation_retry,
     verification_otp_cache_set_failure,
-    verification_otp_creation_veto
+    verification_otp_creation_veto,
+    email_otp_returning_owner_ignores_creation_only_username_inputs
 );
 
 #[derive(Default)]
@@ -1161,5 +1162,153 @@ async fn verification_otp_creation_veto<B: Backend>(db: Db) -> TestResult {
     }
     assert_eq!(hook.0.lock().unwrap().len(), 1);
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+// Passwordless creation must exercise the same enabled username policy as compat.
+fn username_builder<B: Backend>(connection: &B::Connection) -> alibi::AuthBuilder<B::Schema> {
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    alibi::AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(fast_password().enable_username(true))
+        .plugin(SessionManagementPlugin::new())
+}
+
+// Compat owner: email-otp/returning-owner-inputs.test.ts. Existing verified
+// identities ignore signup-only username fields after consuming a real OTP.
+async fn email_otp_returning_owner_ignores_creation_only_username_inputs<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mailbox = Arc::new(Mailbox::default());
+    let auth = username_builder::<B>(&connection)
+        .plugin(plugin(&mailbox, EmailOtpConfig::default()))
+        .build()
+        .await?;
+    let email = "otp-returning-input-owner@example.test";
+    let owner = call(
+        &auth,
+        request(
+            "/sign-up/email",
+            Some(json!({
+                "email":email,"name":"Established Owner","password":PASSWORD,
+                "username":"established_owner","displayUsername":"Established Owner"
+            })),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let foreign = signup(&auth, "otp-returning-input-foreign@example.test").await;
+    let _ = call(
+        &auth,
+        request(
+            "/email-otp/send-verification-otp",
+            Some(json!({"email":email,"type":"email-verification"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let verification = mailbox.take();
+    let _ = call(
+        &auth,
+        request(
+            "/email-otp/verify-email",
+            Some(json!({"email":email,"otp":verification.otp})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    let original_user =
+        body(&call(&auth, request("/get-session", None, &cookies(&owner)), 200).await)["user"]
+            .clone();
+    assert_eq!(original_user["emailVerified"], true);
+    let _ = call(
+        &auth,
+        request(
+            "/email-otp/send-verification-otp",
+            Some(json!({"email":email,"type":"sign-in"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let proof = mailbox.take();
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    let accepted = call(
+        &auth,
+        request(
+            "/sign-in/email-otp",
+            Some(json!({
+                "email":email,"otp":proof.otp,"username":5,"displayUsername":{"unexpected":true},
+                "name":"Ignored New Name","image":"https://ignored.example.test/image.png"
+            })),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&accepted)["user"], original_user);
+    let current = body(
+        &call(
+            &auth,
+            request("/get-session", None, &cookies(&accepted)),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(current["user"], original_user);
+    assert_eq!(current["session"]["token"], body(&accepted)["token"]);
+    let after = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    assert_eq!(after[0], before[0]);
+    assert_eq!(after[1], before[1]);
+    let prior_sessions: Vec<Value> = serde_json::from_str(&before[2])?;
+    let sessions: Vec<Value> = serde_json::from_str(&after[2])?;
+    assert_eq!(sessions.len(), prior_sessions.len() + 1);
+    assert!(prior_sessions.iter().all(|row| sessions.contains(row)));
+    assert_eq!(db.count("verifications").await?, 0);
+    assert!(mailbox.0.lock().unwrap().is_empty());
+    let replay = call(
+        &auth,
+        request(
+            "/sign-in/email-otp",
+            Some(json!({"email":email,"otp":proof.otp})),
+            "",
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&replay)["code"], "INVALID_OTP");
+    assert!(cookies(&replay).is_empty());
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        after
+    );
+    authenticated(&auth, &cookies(&owner), email).await;
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "otp-returning-input-foreign@example.test",
+    )
+    .await;
+    let credentials = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":email,"password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&credentials)["user"]["id"], original_user["id"]);
     B::close(connection).await
 }
