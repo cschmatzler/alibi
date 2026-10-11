@@ -8,13 +8,36 @@ use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod};
 
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
-    vec![crate::endpoint::definition(
-        "getAccessToken",
-        "getAccessToken",
-        Some("/get-access-token"),
-        HttpMethod::Post,
-    )]
+    vec![
+        crate::endpoint::definition(
+            "getAccessToken",
+            "getAccessToken",
+            Some("/get-access-token"),
+            HttpMethod::Post,
+        ),
+        crate::endpoint::definition(
+            "refreshToken",
+            "refreshToken",
+            Some("/refresh-token"),
+            HttpMethod::Post,
+        ),
+    ]
 }
+/// Public result of the `refreshToken` server operation.
+/// Provider-defined token scalars are preserved in the decoded result.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthRefreshResult {
+    pub access_token: Option<serde_json::Value>,
+    pub refresh_token: Option<serde_json::Value>,
+    pub id_token: Option<serde_json::Value>,
+    pub access_token_expires_at: Option<String>,
+    pub refresh_token_expires_at: Option<String>,
+    pub scope: Option<String>,
+    pub provider_id: String,
+    pub account_id: Option<String>,
+}
+
 fn selection_input(call: &EndpointCall) -> AuthResult<serde_json::Value> {
     Ok(alibi_core::utils::json::from_value(
         call.body().cloned().unwrap_or(JsValue::Null),
@@ -35,6 +58,21 @@ impl OAuthPlugin {
         selection: OAuthAccountSelection,
         user_id: Option<&str>,
     ) -> ServerEndpoint<OAuthAccessToken> {
+        Self::account_endpoint("getAccessToken", selection, user_id)
+    }
+    /// Refresh an owned provider grant through installed server hooks.
+    #[must_use]
+    pub fn refresh_token_endpoint(
+        selection: OAuthAccountSelection,
+        user_id: Option<&str>,
+    ) -> ServerEndpoint<OAuthRefreshResult> {
+        Self::account_endpoint("refreshToken", selection, user_id)
+    }
+    fn account_endpoint<T>(
+        operation: &'static str,
+        selection: OAuthAccountSelection,
+        user_id: Option<&str>,
+    ) -> ServerEndpoint<T> {
         let mut input = JsValue::Object(match selection {
             OAuthAccountSelection::Id(id) => [("accountId".into(), JsValue::String(id))]
                 .into_iter()
@@ -46,9 +84,9 @@ impl OAuthPlugin {
         if let (Some(user), JsValue::Object(input)) = (user_id, &mut input) {
             let _ = input.insert("userId".into(), JsValue::String(user.into()));
         }
-        ServerEndpoint::new("oauth", "getAccessToken").with_body_value(input)
+        ServerEndpoint::new("oauth", operation).with_body_value(input)
     }
-    pub(super) async fn call_access_endpoint(
+    pub(super) async fn call_account_endpoint(
         &self,
         call: &EndpointCall,
         ctx: &AuthContext<impl AuthSchema>,
@@ -95,14 +133,30 @@ impl OAuthPlugin {
                 })?
                 .to_owned()
         };
-        let (value, cookies) = super::account::get_access_token_for_selection(
-            &self.config,
-            call,
-            ctx,
-            &user_id,
-            selection,
-        )
-        .await?;
+        let (value, cookies) = if call.operation_id() == "refreshToken" {
+            Box::pin(super::account::refresh_token_for_selection(
+                &self.config,
+                call,
+                ctx,
+                &user_id,
+                selection,
+            ))
+            .await?
+        } else {
+            let (value, cookies) = super::account::get_access_token_for_selection(
+                &self.config,
+                call,
+                ctx,
+                &user_id,
+                selection,
+            )
+            .await?;
+            (
+                serde_json::to_value(value)
+                    .map_err(|error| AuthError::internal(error.to_string()))?,
+                cookies,
+            )
+        };
         let mut response = EndpointResponse::json(&value)?;
         for cookie in cookies {
             response = response.with_header("set-cookie", cookie);

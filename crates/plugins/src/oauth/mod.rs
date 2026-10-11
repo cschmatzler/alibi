@@ -20,11 +20,11 @@ mod providers;
 pub(crate) mod state;
 
 mod types;
-
 use alibi_core::AuthResult;
 use alibi_core::{AuthContext, AuthPlugin, AuthRoute};
 use alibi_core::{AuthRequest, AuthResponse, HttpMethod};
 use async_trait::async_trait;
+pub use endpoint::OAuthRefreshResult;
 pub(crate) use handlers::{
     OAuthProcessPolicy, OAuthSignInError, create_account_cookie_headers, process_oauth_sign_in,
 };
@@ -108,7 +108,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
         call: &alibi_core::endpoint::EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
-        self.call_access_endpoint(call, ctx).await
+        self.call_account_endpoint(call, ctx).await
     }
 
     fn routes(&self) -> Vec<AuthRoute> {

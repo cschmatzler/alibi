@@ -592,13 +592,13 @@ pub(crate) async fn router(
             async move {
                 use alibi::plugins::oauth::{OAuthAccountApi, OAuthAccountSelection};
                 use axum::response::IntoResponse;
-                if body["operation"] == "get-access-token" {
+                if body["operation"] == "get-access-token" || body["operation"] == "refresh-token" {
                     let input = body.get("selection").cloned().unwrap_or_else(|| {
                         let mut input = json!({"accountId":body["accountId"]});
                         if let Some(user) = body.get("userId") { input["userId"] = user.clone(); }
                         input
                     });
-                    let endpoint = alibi::endpoint::ServerEndpoint::<Value>::new("oauth", "getAccessToken").with_body(&input).unwrap();
+                    let endpoint = alibi::endpoint::ServerEndpoint::<Value>::new("oauth", if body["operation"] == "refresh-token" { "refreshToken" } else { "getAccessToken" }).with_body(&input).unwrap();
                     let options = alibi::endpoint::EndpointOptions {
                         headers: body.get("logicalHeaders").map(|headers|serde_json::from_value(headers.clone()).unwrap()),
                         request: body.get("physicalRequest").and_then(Value::as_bool).filter(|value|*value).map(|_|alibi::AuthRequest::new(alibi::HttpMethod::Get,"/incoming-request")),
@@ -717,6 +717,6 @@ async fn user(State(f): State<Fixture>) -> Json<Value> {
 struct AccessServerHook;
 #[async_trait::async_trait]
 impl<S:alibi::AuthSchema> alibi::endpoint::EndpointHook<S> for AccessServerHook {
- fn matches_after(&self,call:&alibi::endpoint::EndpointCall,_:&alibi::AuthContext<S>,_:&alibi::endpoint::EndpointResponse)->AuthResult<bool>{Ok(call.operation_id()=="getAccessToken"&&call.request().is_none())}
+ fn matches_after(&self,call:&alibi::endpoint::EndpointCall,_:&alibi::AuthContext<S>,_:&alibi::endpoint::EndpointResponse)->AuthResult<bool>{Ok(matches!(call.operation_id(), "getAccessToken" | "refreshToken")&&call.request().is_none())}
  async fn after(&self,_:&alibi::endpoint::EndpointCall,_:&alibi::AuthContext<S>,response:alibi::endpoint::EndpointResponse)->AuthResult<alibi::endpoint::EndpointResponse>{Ok(response.with_header("set-cookie","application_a=first; Path=/; HttpOnly").with_header("set-cookie","application_b=second; Path=/; HttpOnly"))}
 }
