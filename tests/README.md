@@ -53,11 +53,7 @@ The fast, in-process compat contract checks run by default and launch no upstrea
 
 CI also runs the PostgreSQL, Redis and exact-clock cases in service-backed profiles (see [Store backends](#store-backends)). The clock profile writes a separate JUnit report so it cannot overwrite the default-suite report. A filtered nextest invocation also labels nonmatching tests as skipped; those are different from `#[ignore]` cases.
 
-### Audited surface and coverage
-
-The [native surface ledger](../reports/native-surface/matrix.json) inventories the HTTP routes, server-only operations, OAuth providers, callback and policy groups, and the core, storage, framework and generated-schema contracts. Each entry names the native test that owns it, and registered integration cases record their backend variants. It is a review artifact, not a test that compares copied lists. The [verification receipt](../reports/native-surface/verification.json) records the commands, results and source fingerprint of the latest audit.
-
-[Production line execution](../reports/native-surface/current.json) is measured from the combined default and PostgreSQL runs. It is a diagnostic alongside reviewed assertions, not proof of every input, branch or configuration combination. The ledger records dormant declarations, unsupported model defaults, documentation-only examples and external provider limitations. Redis and fixed-clock checks are validated separately and are not part of that percentage.
+### Coverage
 
 To reproduce combined coverage in the development shell, with a disposable PostgreSQL configured in `BETTER_AUTH_TEST_POSTGRES_URL`:
 
@@ -70,7 +66,7 @@ cargo llvm-cov report --locked --package '*' --ignore-filename-regex '(tests/|sc
 lcov --add-tracefile coverage/native-audit/raw.info --filter region --rc c_file_extensions=rs --rc function_coverage=0 --rc derive_function_end_line=0 --output-file coverage/native-audit/lcov.info
 ```
 
-Start from a clean instrumented workspace so obsolete test binaries are excluded, and retain profiles explicitly for the second run. The recorded JSON keeps only workspace production paths (`src/` and `crates/`).
+Start from a clean instrumented workspace so obsolete test binaries are excluded, and retain profiles explicitly for the second run.
 
 ### Contract owners
 
@@ -113,8 +109,7 @@ tests/
 │   ├── openapi_contract/   in-process shapes against upstream's OpenAPI document
 │   ├── client-tests/       Bun differential suite (scenarios, comparator, harness controls)
 │   ├── reference-server/   the pinned TypeScript runtime and its fixtures
-│   ├── rust-server/        the Rust fixture server mirroring reference-server
-│   └── audits/             per-capability implementation audits
+│   └── rust-server/        the Rust fixture server mirroring reference-server
 ├── repo/                   Cargo target `repo`
 ├── support/                helpers shared by `integration` and `compat`
 └── fixtures/               pinned vectors (SIWE, JWT, OAuth, One Tap) and CLI output
@@ -145,8 +140,7 @@ BETTER_AUTH_TEST_REDIS_URL=redis://... TEST_RATE_LIMIT_REDIS_URL=redis://... \
   cargo nextest run --features redis-cache --profile redis --run-ignored only -E 'test(redis)'
 ```
 
-Use isolated disposable services. Fixed-clock proofs retain their existing setup
-in `compat/audits/plugins/admin/`. They distinguish an admin ban expiring exactly
+Use isolated disposable services. Fixed-clock proofs distinguish an admin ban expiring exactly
 now from one expiring a millisecond before or after, and check mutation-hook
 ordering. A moving wall clock cannot reliably exercise equality; the proof clock
 controls `CLOCK_REALTIME` without adding a production clock-injection API.

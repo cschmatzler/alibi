@@ -36,3 +36,7 @@ AGENTS.md
 /.env.*.local
 /secrets.*.json
 !/secrets.*.sops.json
+
+# Local audit artifacts
+/reports/
+/tests/compat/audits/
