@@ -31,7 +31,8 @@ backend_tests!(
     admin_repeated_query_validation_before_auth,
     admin_date_callback_error_identity,
     admin_stored_timestamp_precision_survives_public_projections,
-    admin_impersonation_operator_metadata
+    admin_impersonation_operator_metadata,
+    admin_missing_tampered_and_revoked_sessions_reject_without_writes
 );
 
 async fn promote<S: AuthSchema>(auth: &Alibi<S>, response: &AuthResponse, role: &str) -> String {
@@ -2273,5 +2274,156 @@ async fn admin_impersonation_operator_metadata<B: Backend>(db: Db) -> TestResult
     assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
     authenticated(&auth, &cookies(&target), "target@example.test").await;
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+// Compat owner: admin/guest-wire.test.ts. Valid admin inputs must retain the
+// bare unauthorized wire contract for absent, invalid and retired authority.
+async fn admin_missing_tampered_and_revoked_sessions_reject_without_writes<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "guest-wire-owner@example.test").await;
+    let owner_id = promote(&auth, &owner, "admin").await;
+    let target = signup(&auth, "guest-wire-target@example.test").await;
+    let target_id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
+    let target_token = body(&target)["token"].as_str().unwrap().to_owned();
+    let foreign = signup(&auth, "guest-wire-foreign@example.test").await;
+    let retired = signup(&auth, "guest-wire-retired@example.test").await;
+    let retired_id = promote(&auth, &retired, "admin").await;
+    let retired_cookie = cookies(&retired);
+    let _ = call(
+        &auth,
+        request("/sign-out", Some(json!({})), &retired_cookie),
+        200,
+    )
+    .await;
+    assert_eq!(
+        db.count_where(
+            "SELECT COUNT(*) FROM sessions WHERE user_id=$1",
+            &[&retired_id]
+        )
+        .await?,
+        0
+    );
+    let owner_cookie = cookies(&owner);
+    let pair = owner_cookie
+        .split("; ")
+        .find(|pair| pair.starts_with("better-auth.session_token="))
+        .unwrap();
+    let (name, encoded) = pair.split_once('=').unwrap();
+    let signed = url::form_urlencoded::parse(format!("v={encoded}").as_bytes())
+        .next()
+        .unwrap()
+        .1
+        .into_owned();
+    let (token, signature) = signed.rsplit_once('.').unwrap();
+    assert_eq!(token, body(&owner)["token"].as_str().unwrap());
+    let replacement = if signature.starts_with('A') { 'B' } else { 'A' };
+    let altered = format!("{token}.{replacement}{}", &signature[1..]);
+    let tampered = format!(
+        "{name}={}",
+        url::form_urlencoded::byte_serialize(altered.as_bytes()).collect::<String>()
+    );
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    let posts = [
+        (
+            "/admin/set-role",
+            json!({"userId":target_id,"role":"admin"}),
+        ),
+        (
+            "/admin/create-user",
+            json!({"email":"guest-wire-denied-create@example.test","password":PASSWORD,"name":"Guest Creation"}),
+        ),
+        (
+            "/admin/update-user",
+            json!({"userId":target_id,"data":{"name":"Guest Mutation"}}),
+        ),
+        ("/admin/list-user-sessions", json!({"userId":target_id})),
+        (
+            "/admin/ban-user",
+            json!({"userId":target_id,"banReason":"Guest Ban"}),
+        ),
+        ("/admin/unban-user", json!({"userId":target_id})),
+        ("/admin/impersonate-user", json!({"userId":target_id})),
+        ("/admin/stop-impersonating", json!({})),
+        (
+            "/admin/revoke-user-session",
+            json!({"sessionToken":target_token}),
+        ),
+        ("/admin/revoke-user-sessions", json!({"userId":target_id})),
+        ("/admin/remove-user", json!({"userId":target_id})),
+        (
+            "/admin/set-user-password",
+            json!({"userId":target_id,"newPassword":"replacement-password-123"}),
+        ),
+        (
+            "/admin/has-permission",
+            json!({"permissions":{"user":["get"]},"userId":owner_id,"role":"admin"}),
+        ),
+    ];
+    for cookie in ["", tampered.as_str(), retired_cookie.as_str()] {
+        let mut requests: Vec<AuthRequest> = posts
+            .iter()
+            .map(|(path, value)| request(path, Some(value.clone()), cookie))
+            .collect();
+        for (path, query) in [
+            ("/admin/get-user", vec![("id", target_id.as_str())]),
+            ("/admin/list-users", vec![("limit", "10")]),
+        ] {
+            let mut get = request(path, None, cookie);
+            get.set_query_pairs(query);
+            requests.push(get);
+        }
+        for req in requests {
+            let response = call(&auth, req, 401).await;
+            assert!(response.body.is_empty());
+            assert_eq!(
+                response.headers.get("content-type").map(String::as_str),
+                Some("application/json")
+            );
+            assert!(cookies(&response).is_empty());
+            assert_eq!(
+                db.tables(&["users", "accounts", "sessions", "verifications"])
+                    .await?,
+                before
+            );
+        }
+    }
+    let denied = body(
+        &call(
+            &auth,
+            request(
+                "/admin/ban-user",
+                Some(json!({"userId":target_id})),
+                &cookies(&foreign),
+            ),
+            403,
+        )
+        .await,
+    );
+    assert_eq!(denied["code"], "YOU_ARE_NOT_ALLOWED_TO_BAN_USERS");
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        before
+    );
+    let mut get = request("/admin/get-user", None, &owner_cookie);
+    get.set_query_pairs([("id", target_id.as_str())]);
+    assert_eq!(body(&call(&auth, get, 200).await)["id"], target_id);
+    authenticated(&auth, &owner_cookie, "guest-wire-owner@example.test").await;
+    authenticated(&auth, &cookies(&target), "guest-wire-target@example.test").await;
+    authenticated(&auth, &cookies(&foreign), "guest-wire-foreign@example.test").await;
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        before
+    );
     B::close(connection).await
 }
