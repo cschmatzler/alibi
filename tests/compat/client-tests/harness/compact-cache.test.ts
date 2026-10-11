@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
 
 import { betterAuth } from "better-auth";
+import { createAuthMiddleware } from "better-auth/api";
 import { getCookieCache } from "better-auth/cookies";
 import { getMigrations } from "better-auth/db/migration";
 
@@ -19,14 +20,31 @@ type Atom = {
   effectiveMaxAgeSeconds: number;
 };
 
-async function observe(baseURL: string, maxAge = 300.25, version?: string) {
+async function observe(
+  baseURL: string,
+  maxAge = 300.25,
+  version?: string,
+  captureDetached = false,
+) {
   const database = new Database(":memory:");
+  let detached: { headers: { cookie: string } } | undefined;
   const options = {
     baseURL,
     secret,
     database,
     rateLimit: { enabled: false },
     emailAndPassword: { enabled: true },
+    ...(captureDetached
+      ? {
+          hooks: {
+            after: createAuthMiddleware(async (ctx) => {
+              if (ctx.path === "/sign-out") {
+                detached = { headers: { cookie: ctx.headers!.get("cookie")! } };
+              }
+            }),
+          },
+        }
+      : {}),
     session: {
       cookieCache: {
         enabled: true,
@@ -80,10 +98,18 @@ async function observe(baseURL: string, maxAge = 300.25, version?: string) {
   }
 
   const atom = { token, envelope, decoded, observedAt, effectiveMaxAgeSeconds: maxAge };
+  if (captureDetached) {
+    const output = await auth.api.signOut({ headers: new Headers({ cookie: values.join("; ") }) });
+    expect(output.success).toBe(true);
+    expect(output.url).toBeUndefined();
+    expect(output.redirect).toBeUndefined();
+    expect(detached).toBeDefined();
+  }
   const end = Date.now();
   database.close();
   return {
     signup,
+    detached,
     compactSessionCache: atom,
     start,
     end,
@@ -430,5 +456,67 @@ test("logical getSession callback cache clocks require the exact authenticated i
           difference.reason.includes("authenticated input cookie receipt"),
       ),
     ).toBe(true);
+  }
+});
+
+test("cache-only request headers require real publication proof and preserve literal cookie scaffolding", async () => {
+  const left = await observe("http://localhost:3100", 300, undefined, true);
+  const right = await observe("http://localhost:3200", 300, undefined, true);
+  const window = (value: typeof left) => ({
+    startedAt: value.start,
+    finishedAt: value.end,
+    inputDates: {},
+    issuedSessionCookie: value.rawCookies
+      .find((raw) => raw.startsWith("better-auth.session_token="))!
+      .split(";")[0]!,
+  });
+  const ctx: ComparisonContext = {
+    ...context(left, right),
+    sessionCookieSecret: secret,
+    leftRequestWindows: [window(left)],
+    rightRequestWindows: [window(right)],
+  };
+  const observation = (value: typeof left) => ({
+    traces: [
+      {
+        method: "POST",
+        path: "/api/auth/sign-up/email",
+        responseStatus: 200,
+        responseBody: value.signup,
+      },
+    ],
+    observation: {
+      compactSessionCache: {
+        ...value.compactSessionCache,
+        rawCookies: value.rawCookies.filter((raw) => raw.startsWith("better-auth.session_data=")),
+      },
+      detached: value.detached!,
+    },
+  });
+  const a = observation(left);
+  const b = observation(right);
+  expect(compareValues(a, b, ctx)).toEqual([]);
+  const rejectedHeader = (diffs: ReturnType<typeof compareValues>) =>
+    expect(diffs.some((diff) => diff.path === "observation.detached.headers.cookie")).toBe(true);
+  rejectedHeader(compareValues(a, b, { ...ctx, leftRequestWindows: [], rightRequestWindows: [] }));
+  const { compactSessionCache, ...withoutPublication } = b.observation;
+  expect(compactSessionCache.token).toBe(right.compactSessionCache.token);
+  rejectedHeader(compareValues(a, { ...b, observation: withoutPublication }, ctx));
+  for (const cookie of [
+    b.observation.detached.headers.cookie + "=",
+    b.observation.detached.headers.cookie + "; caller=changed",
+    "better-auth.session_data=" +
+      signed(right.compactSessionCache, (v) => {
+        v.session.user.name = "Changed owner";
+      }).token,
+    b.observation.detached.headers.cookie + "; better-auth.session_data=unissued",
+  ]) {
+    rejectedHeader(
+      compareValues(
+        a,
+        { ...b, observation: { ...b.observation, detached: { headers: { cookie } } } },
+        ctx,
+      ),
+    );
   }
 });

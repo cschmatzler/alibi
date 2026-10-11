@@ -1,6 +1,7 @@
 use super::StatusResponse;
 use super::authentication_helpers::{
-    JsonField, RequestBody, json_type, parse_body, validation_response, with_session_cookies,
+    JsonField, JsonFieldKind, RequestBody, json_type, parse_body, validation_response,
+    with_session_cookies,
 };
 use super::helpers::{
     admin_plugin_enabled, delete_session_cookie_headers, unauthorized_if_unauthenticated,
@@ -48,6 +49,39 @@ impl RequestBody for RevokeSessionRequest {
     const FIELDS: &'static [JsonField] = &[JsonField::string("token", true)];
 }
 
+/// Optional input for public server sign-out and provider logout destinations.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignOutRequest {
+    #[serde(rename = "callbackURL", skip_serializing_if = "Option::is_none")]
+    pub callback_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disable_redirect: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+}
+impl RequestBody for SignOutRequest {
+    const FIELDS: &'static [JsonField] = &[
+        JsonField::string("callbackURL", false),
+        JsonField {
+            name: "disableRedirect",
+            kind: JsonFieldKind::Boolean,
+            required: false,
+        },
+        JsonField::string("state", false),
+    ];
+}
+
+/// Public sign-out output, including an optional provider logout destination.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignOutResponse {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redirect: Option<bool>,
+}
+
 /// Public get-session output, including configured fields and cached projections.
 /// An absent or expired session is represented by `Option<GetSessionResponse>::None`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,6 +117,12 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
             Some("/get-session"),
             HttpMethod::Get,
         )];
+        endpoints.push(crate::endpoint::definition(
+            "signOut",
+            "signOut",
+            Some("/sign-out"),
+            HttpMethod::Post,
+        ));
         if self.config.enable_session_listing {
             endpoints.push(crate::endpoint::definition(
                 "listSessions",
@@ -113,6 +153,21 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
         call: &EndpointCall,
         _: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
+        if call.operation_id() == "signOut" {
+            let body = call
+                .body()
+                .map(|body| {
+                    crate::endpoint::validate_fields(Some(body), "body", SignOutRequest::FIELDS)
+                })
+                .transpose()?;
+            if call.headers().is_none() {
+                return Err(crate::endpoint::validation("Headers is required"));
+            }
+            return Ok(EndpointInput {
+                body,
+                query: call.query().cloned(),
+            });
+        }
         if call.operation_id() == "listSessions" {
             if call.headers().is_none() {
                 return Err(crate::endpoint::validation("Headers is required"));
@@ -175,6 +230,22 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "signOut" {
+            let body = if call.body().is_some() {
+                call.body_as()?
+            } else {
+                SignOutRequest::default()
+            };
+            let response = self.sign_out_response(call, &body, ctx).await?;
+            let mut result =
+                EndpointResponse::value(alibi_core::utils::json::from_slice(&response.body)?);
+            for (name, value) in response.headers {
+                if !name.eq_ignore_ascii_case("content-type") {
+                    result = result.with_header(name, value);
+                }
+            }
+            return Ok(result);
+        }
         if call.operation_id() == "listSessions" {
             let (user, session) = ctx
                 .require_cached_session(call)
@@ -297,6 +368,14 @@ impl SessionManagementPlugin {
     #[must_use]
     pub const fn get_session_endpoint() -> ServerEndpoint<Option<GetSessionResponse>> {
         ServerEndpoint::new("session-management", "getSession")
+    }
+
+    /// Sign out using the incoming signed session token and return cookie updates.
+    /// Guests are accepted. Supply logical headers in `EndpointOptions::headers`;
+    /// optionally pass [`SignOutRequest`] with `with_body` for provider logout.
+    #[must_use]
+    pub const fn sign_out_endpoint() -> ServerEndpoint<SignOutResponse> {
+        ServerEndpoint::new("session-management", "signOut")
     }
 
     /// List the fresh authenticated caller's active sessions through logical hooks.
@@ -523,13 +602,22 @@ impl SessionManagementPlugin {
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body = if req.body.is_some() {
-            match parse_body::<super::oauth::logout::SignOutRequest>(req) {
+            match parse_body::<SignOutRequest>(req) {
                 Ok(body) => body,
                 Err(response) => return Ok(response),
             }
         } else {
-            super::oauth::logout::SignOutRequest::default()
+            SignOutRequest::default()
         };
+        self.sign_out_response(req, &body, ctx).await
+    }
+
+    async fn sign_out_response(
+        &self,
+        req: &impl SessionRequest,
+        body: &SignOutRequest,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
         let mut current_user = None;
         if let Some(token) = ctx.session_manager().extract_session_token(req) {
             if let Ok(Some(session)) = ctx.database.get_session(&token).await {
@@ -551,30 +639,23 @@ impl SessionManagementPlugin {
             }
         }
 
-        let mut response = AuthResponse::json(200, &SuccessResponse { success: true })?;
-        for cookie in delete_session_cookie_headers(&ctx.config)? {
+        let mut response = AuthResponse::json(
+            200,
+            &SignOutResponse {
+                success: true,
+                url: None,
+                redirect: None,
+            },
+        )?;
+        for cookie in alibi_core::session::cookie_cache::runtime::session_cleanup_headers(
+            &ctx.config,
+            req.session_headers(),
+            false,
+        )? {
             response.headers.append("Set-Cookie", cookie);
         }
-        for (logical, account) in [("session_data", false), ("account_data", true)] {
-            if account && !ctx.config.account.store_account_cookie {
-                continue;
-            }
-            let base = alibi_core::utils::cookie_utils::related_cookie_name(&ctx.config, logical);
-            for header in alibi_core::session::cookie_cache::runtime::chunked_cookie_headers(
-                &base,
-                "",
-                Some(0.0),
-                &ctx.config,
-                &req.headers,
-                account,
-            )? {
-                if !header.starts_with(&format!("{base}=")) {
-                    response.headers.append("Set-Cookie", header);
-                }
-            }
-        }
         if let Some(user_id) = current_user
-            && let Some(url) = super::oauth::logout::provider_logout_url(&user_id, &body, ctx).await
+            && let Some(url) = super::oauth::logout::provider_logout_url(&user_id, body, ctx).await
         {
             let redirect = body.disable_redirect != Some(true);
             response.body = AuthResponse::json(

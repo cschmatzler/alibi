@@ -3832,6 +3832,32 @@ export function compareValues(
     const right = [...b.matchAll(pattern)];
 
     if (!left.length && !right.length) {
+      if (!setCookie) {
+        const cache = /(?:^|;\s*)(better-auth\.session_data)=([^;\s]*)/g;
+        const lc = [...a.matchAll(cache)];
+        const rc = [...b.matchAll(cache)];
+        if (!lc.length && !rc.length) return false;
+        if (lc.length !== 1 || rc.length !== 1) {
+          fail(path, "cache-only cookie presence or duplication differs");
+          return true;
+        }
+        const pair = compactHeaderIssuances.get(JSON.stringify([lc[0]![2], rc[0]![2]]));
+        if (!pair) {
+          fail(path, "cache-only cookie does not match corresponding authenticated publication");
+          return true;
+        }
+        const scaffold = (raw: string, match: RegExpMatchArray) => {
+          const start = match.index! + match[0].length - match[2]!.length;
+          return (
+            raw.slice(0, start) + "<verified-cache-cookie>" + raw.slice(start + match[2]!.length)
+          );
+        };
+        if (scaffold(a, lc[0]!) !== scaffold(b, rc[0]!)) {
+          fail(path, "cache-only cookie header bytes differ");
+        }
+        identity(pair[0], pair[1], path, "token");
+        return true;
+      }
       // Individually retained cache headers must address a complete authenticated
       // publication receipt, just like the cache alongside a signed token header.
       const cache = /^(better-auth\.session_data)=([^;,\s]*)/;
