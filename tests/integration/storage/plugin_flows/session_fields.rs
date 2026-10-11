@@ -105,6 +105,12 @@ fn config() -> (AuthConfig, AsyncObservation) {
             FieldConfig::new(json!({"type":"string"}))
                 .default_value(json!("initial"))
                 .on_update(|| JsValue::String("application-update-default".into()))
+                .transform_output(|value| async move {
+                    if value.as_ref().and_then(JsValue::as_str) == Some("throw") {
+                        return Err(alibi::AuthError::internal("application output failed"));
+                    }
+                    Ok(value)
+                })
                 .validate_output(|_| panic!("Output validator metadata must not execute")),
         ),
         (
@@ -695,6 +701,43 @@ struct RejectSessionUpdate {
     after_records: Arc<Mutex<Vec<Value>>>,
     renewal_command: Arc<Mutex<Option<(String, String)>>>,
     renewal_inputs: Arc<Mutex<Vec<Value>>>,
+    projected_updates: Arc<Mutex<Vec<Value>>>,
+}
+#[async_trait::async_trait]
+impl<S: AuthSchema> alibi::store::AdapterAfterHook<S> for RejectSessionUpdate {
+    async fn after_write(
+        &self,
+        event: &alibi::store::AdapterEvent<S>,
+        _: &dyn alibi::store::AuthStore<S>,
+    ) -> alibi::AuthResult<()> {
+        if let alibi::store::AdapterEvent::SessionUpdated(record) = event {
+            self.projected_updates
+                .lock()
+                .unwrap()
+                .push(json!(record.raw_snapshot().values()));
+        }
+        Ok(())
+    }
+}
+#[async_trait::async_trait]
+impl<S: AuthSchema> alibi::AuthPlugin<S> for RejectSessionUpdate {
+    fn name(&self) -> &'static str {
+        "session-projection-observer"
+    }
+    fn routes(&self) -> Vec<alibi::AuthRoute> {
+        Vec::new()
+    }
+    async fn on_request(
+        &self,
+        _: &AuthRequest,
+        _: &alibi::AuthContext<S>,
+    ) -> alibi::AuthResult<Option<AuthResponse>> {
+        Ok(None)
+    }
+    async fn on_init(&self, context: &mut alibi::AuthInitContext<S>) -> alibi::AuthResult<()> {
+        context.register_adapter_after_hook(Arc::new(self.clone()));
+        Ok(())
+    }
 }
 #[async_trait::async_trait]
 impl<S: AuthSchema, H: alibi::store::HookBackend> alibi::store::DatabaseHooks<S, H>
@@ -1041,6 +1084,90 @@ async fn rejected_session_update<S: AuthSchema>(
         before_cancel
     );
     assert_eq!(hooks.after.load(std::sync::atomic::Ordering::SeqCst), 2);
+    // Compat owner: configured update throw in update-projection.test.ts.
+    // Physical adapter callbacks run before output conversion; the public
+    // after observer must remain silent when conversion fails after commit.
+    let prior = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    hooks.receipts.lock().unwrap().clear();
+    hooks.after_records.lock().unwrap().clear();
+    hooks.projected_updates.lock().unwrap().clear();
+    let after_before = hooks.after.load(std::sync::atomic::Ordering::SeqCst);
+    let failed = call(
+        &auth,
+        request("/update-session", Some(json!({"label":"throw"})), &cookie),
+        500,
+    )
+    .await;
+    assert!(failed.body.is_empty());
+    assert!(failed.headers.get_all("set-cookie").next().is_none());
+    assert_eq!(
+        *hooks.receipts.lock().unwrap(),
+        [(
+            token.clone(),
+            "throw".to_owned(),
+            "/api/auth/update-session".to_owned()
+        )]
+    );
+    assert_eq!(
+        hooks.after.load(std::sync::atomic::Ordering::SeqCst),
+        after_before + 1
+    );
+    let physical_after = hooks.after_records.lock().unwrap().clone();
+    assert_eq!(physical_after.len(), 1);
+    assert_eq!(physical_after[0]["path"], "/api/auth/update-session");
+    assert_eq!(physical_after[0]["record"]["token"], token);
+    assert_eq!(physical_after[0]["record"]["label"], "throw");
+    assert!(hooks.projected_updates.lock().unwrap().is_empty());
+    let committed = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    assert_eq!(committed[0], prior[0]);
+    assert_eq!(committed[1], prior[1]);
+    assert_eq!(committed[3], prior[3]);
+    let before_rows: Vec<Value> = serde_json::from_str(&prior[2])?;
+    let after_rows: Vec<Value> = serde_json::from_str(&committed[2])?;
+    assert_eq!(before_rows.len(), after_rows.len());
+    assert_eq!(
+        before_rows
+            .iter()
+            .filter(|row| row["token"] != token)
+            .collect::<Vec<_>>(),
+        after_rows
+            .iter()
+            .filter(|row| row["token"] != token)
+            .collect::<Vec<_>>()
+    );
+    let physical = auth.store().get_session(&token).await?.unwrap();
+    assert_eq!(alibi::AuthSession::token(&physical), token);
+    assert_eq!(
+        alibi::AuthSession::user_id(&physical).as_ref(),
+        body(&owner)["user"]["id"].as_str().unwrap()
+    );
+    assert_eq!(
+        after_rows.iter().find(|row| row["token"] == token).unwrap()["label"],
+        "throw"
+    );
+    for established in [&owner, &sibling, &foreign] {
+        let cached = call(
+            &auth,
+            request("/get-session", None, &cookies(established)),
+            200,
+        )
+        .await;
+        assert_eq!(
+            body(&cached)["session"]["token"],
+            body(established)["token"]
+        );
+        assert_eq!(body(&cached)["user"]["id"], body(established)["user"]["id"]);
+    }
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        committed
+    );
+    assert!(hooks.projected_updates.lock().unwrap().is_empty());
     renewal_callback_cases(&auth, db, hooks).await?;
     Ok(())
 }
@@ -1384,6 +1511,7 @@ async fn session_before_hook_rejection_sqlx_sqlite() -> TestResult {
         .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .plugin(super::auth_probe::fast_password())
         .plugin(SessionManagementPlugin::new())
+        .plugin(hooks.clone())
         .build()
         .await?;
     rejected_session_update(auth, &db, &hooks).await?;
@@ -1405,6 +1533,7 @@ async fn session_before_hook_rejection_seaorm_sqlite() -> TestResult {
         .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .plugin(super::auth_probe::fast_password())
         .plugin(SessionManagementPlugin::new())
+        .plugin(hooks.clone())
         .build()
         .await?;
     rejected_session_update(auth, &db, &hooks).await?;
