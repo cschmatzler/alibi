@@ -693,6 +693,8 @@ struct RejectSessionUpdate {
     receipts: Arc<Mutex<Vec<(String, String, String)>>>,
     after: Arc<std::sync::atomic::AtomicUsize>,
     after_records: Arc<Mutex<Vec<Value>>>,
+    renewal_command: Arc<Mutex<Option<(String, String)>>>,
+    renewal_inputs: Arc<Mutex<Vec<Value>>>,
 }
 #[async_trait::async_trait]
 impl<S: AuthSchema, H: alibi::store::HookBackend> alibi::store::DatabaseHooks<S, H>
@@ -704,7 +706,26 @@ impl<S: AuthSchema, H: alibi::store::HookBackend> alibi::store::DatabaseHooks<S,
         fields: &mut alibi::field_policy::FieldValues,
         context: &alibi::store::DatabaseHookContext<'_, H>,
     ) -> alibi::AuthResult<alibi::store::HookControl> {
-        let label = fields.get("label").and_then(JsValue::as_str).unwrap();
+        let renewal = self.renewal_command.lock().unwrap().clone();
+        let label = if let Some((owner, command)) = renewal.filter(|(owner, _)| owner == token) {
+            assert_eq!(owner, token);
+            assert!(
+                fields.is_empty(),
+                "expiry renewal enters the hook with no configured input fields"
+            );
+            self.renewal_inputs
+                .lock()
+                .unwrap()
+                .push(serde_json::to_value(&*fields)?);
+            command
+        } else {
+            fields
+                .get("label")
+                .and_then(JsValue::as_str)
+                .unwrap()
+                .to_owned()
+        };
+        let label = label.as_str();
         let request = context
             .request
             .as_ref()
@@ -1011,6 +1032,116 @@ async fn rejected_session_update<S: AuthSchema>(
         before_cancel
     );
     assert_eq!(hooks.after.load(std::sync::atomic::Ordering::SeqCst), 2);
+    renewal_callback_cases(&auth, db, hooks).await?;
+    Ok(())
+}
+
+// Compat owner: core/session/update-projection.test.ts expiry renewal callbacks.
+// Store-only updates and SQL-trigger failures do not exercise application hook
+// context or error identity from the public due-session read.
+async fn renewal_callback_cases<S: AuthSchema>(
+    auth: &Alibi<S>,
+    db: &Db,
+    hooks: &RejectSessionUpdate,
+) -> TestResult {
+    use std::sync::atomic::Ordering::SeqCst;
+    for (command, status) in [("ordinary-error", 500), ("api-error", 403)] {
+        let email = format!("renewal-{command}-owner@example.test");
+        let owner = signup(auth, &email).await;
+        let sibling = call(
+            auth,
+            request(
+                "/sign-in/email",
+                Some(json!({"email":email,"password":PASSWORD})),
+                "",
+            ),
+            200,
+        )
+        .await;
+        let foreign = signup(auth, &format!("renewal-{command}-foreign@example.test")).await;
+        let token = body(&owner)["token"].as_str().unwrap().to_owned();
+        let cookie = cookies(&owner);
+        // Operator setup bypasses callbacks to make only this owner's real row due.
+        db.set_timestamp(
+            "sessions",
+            "expires_at",
+            ("token", &token),
+            Utc::now() + chrono::Duration::hours(1),
+        )
+        .await?;
+        assert_eq!(
+            db.execute(
+                "UPDATE sessions SET hidden=$1 WHERE token=$2",
+                &[command, &token]
+            )
+            .await?,
+            1
+        );
+        *hooks.renewal_command.lock().unwrap() = Some((token.clone(), command.to_owned()));
+        hooks.receipts.lock().unwrap().clear();
+        hooks.renewal_inputs.lock().unwrap().clear();
+        hooks.after_records.lock().unwrap().clear();
+        let after_before = hooks.after.load(SeqCst);
+        let before = db
+            .tables(&["users", "accounts", "sessions", "verifications"])
+            .await?;
+        let mut due_read = request("/get-session", None, &cookie);
+        let _ = due_read
+            .query
+            .insert("disableCookieCache".into(), "true".into());
+        let response = call(auth, due_read, status).await;
+        assert_eq!(
+            *hooks.receipts.lock().unwrap(),
+            [(
+                token.clone(),
+                command.to_owned(),
+                "/api/auth/get-session".to_owned()
+            )]
+        );
+        assert_eq!(*hooks.renewal_inputs.lock().unwrap(), [json!({})]);
+        assert_eq!(
+            body(&response),
+            if command == "api-error" {
+                json!({"code":"APP_DENIED","message":"Application denied"})
+            } else {
+                json!({"code":"FAILED_TO_GET_SESSION","message":"Failed to get session"})
+            }
+        );
+        assert!(response.headers.get_all("set-cookie").next().is_none());
+        assert_eq!(hooks.after.load(SeqCst), after_before);
+        assert!(hooks.after_records.lock().unwrap().is_empty());
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "verifications"])
+                .await?,
+            before
+        );
+        *hooks.renewal_command.lock().unwrap() = None;
+        let mut physical = request("/get-session", None, &cookie);
+        let _ = physical
+            .query
+            .insert("disableCookieCache".into(), "true".into());
+        let _ = physical
+            .query
+            .insert("disableRefresh".into(), "true".into());
+        let original = call(auth, physical, 200).await;
+        assert_eq!(body(&original)["session"]["token"], token);
+        assert_eq!(body(&original)["user"]["id"], body(&owner)["user"]["id"]);
+        for established in [&sibling, &foreign] {
+            let read = call(
+                auth,
+                request("/get-session", None, &cookies(established)),
+                200,
+            )
+            .await;
+            assert_eq!(body(&read)["session"]["token"], body(established)["token"]);
+            assert_eq!(body(&read)["user"]["id"], body(established)["user"]["id"]);
+        }
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "verifications"])
+                .await?,
+            before
+        );
+    }
     Ok(())
 }
 
