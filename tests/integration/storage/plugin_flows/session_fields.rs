@@ -715,6 +715,7 @@ impl<S: AuthSchema, H: alibi::store::HookBackend> alibi::store::DatabaseHooks<S,
             request.path.clone(),
         ));
         match label {
+            "cancel" => Ok(alibi::store::HookControl::Cancel),
             "ordinary-error" => Err(alibi::AuthError::internal("application before failed")),
             "api-error" => Err(alibi::AuthError::Api {
                 status: 403,
@@ -920,6 +921,96 @@ async fn rejected_session_update<S: AuthSchema>(
         db.tables(&["users", "accounts", "verifications"]).await?,
         stable_principals
     );
+    // Compat owner: core/session/update-projection.test.ts configured cancel.
+    // Unlike a before-hook error, cancellation reports a missing updated row
+    // and clears browser authority while leaving the original physical token.
+    let before_cancel = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    hooks.receipts.lock().unwrap().clear();
+    hooks.after_records.lock().unwrap().clear();
+    let cancelled = call(
+        &auth,
+        request("/update-session", Some(json!({"label":"cancel"})), &cookie),
+        401,
+    )
+    .await;
+    assert_eq!(
+        body(&cancelled),
+        json!({"code":"FAILED_TO_GET_SESSION","message":"Failed to get session"})
+    );
+    assert_eq!(
+        *hooks.receipts.lock().unwrap(),
+        [(
+            token.clone(),
+            "cancel".to_owned(),
+            "/api/auth/update-session".to_owned()
+        )]
+    );
+    assert_eq!(hooks.after.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert!(hooks.after_records.lock().unwrap().is_empty());
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        before_cancel
+    );
+    let mut browser: std::collections::BTreeMap<_, _> = cookie
+        .split("; ")
+        .filter_map(|pair| pair.split_once('='))
+        .collect();
+    let deleted: Vec<_> = cancelled.headers.get_all("set-cookie").collect();
+    assert_eq!(deleted.len(), 3);
+    for name in [
+        "better-auth.session_token",
+        "better-auth.session_data",
+        "better-auth.dont_remember",
+    ] {
+        let deletion = deleted
+            .iter()
+            .find(|value| value.starts_with(&format!("{name}=")))
+            .unwrap();
+        assert_eq!(
+            deletion.split(';').next(),
+            Some(format!("{name}=").as_str())
+        );
+        assert!(
+            deletion
+                .split(';')
+                .any(|attribute| attribute.trim() == "Max-Age=0")
+        );
+        let _ = browser.remove(name);
+    }
+    let cleared_cookie = browser
+        .into_iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect::<Vec<_>>()
+        .join("; ");
+    let guest = call(&auth, request("/get-session", None, &cleared_cookie), 200).await;
+    assert!(body(&guest).is_null());
+    let mut physical = request("/get-session", None, &cookie);
+    let _ = physical
+        .query
+        .insert("disableCookieCache".into(), "true".into());
+    let surviving = call(&auth, physical, 200).await;
+    assert_eq!(body(&surviving)["session"]["token"], token);
+    assert_eq!(body(&surviving)["session"]["label"], "after-error");
+    assert_eq!(body(&surviving)["user"]["id"], body(&owner)["user"]["id"]);
+    for established in [&sibling, &foreign] {
+        let read = call(
+            &auth,
+            request("/get-session", None, &cookies(established)),
+            200,
+        )
+        .await;
+        assert_eq!(body(&read)["session"]["token"], body(established)["token"]);
+        assert_eq!(body(&read)["user"]["id"], body(established)["user"]["id"]);
+    }
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        before_cancel
+    );
+    assert_eq!(hooks.after.load(std::sync::atomic::Ordering::SeqCst), 2);
     Ok(())
 }
 
