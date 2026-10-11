@@ -692,6 +692,7 @@ async fn secondary_sessions_run_update_hooks_seaorm_sqlite() -> TestResult {
 struct RejectSessionUpdate {
     receipts: Arc<Mutex<Vec<(String, String, String)>>>,
     after: Arc<std::sync::atomic::AtomicUsize>,
+    after_records: Arc<Mutex<Vec<Value>>>,
 }
 #[async_trait::async_trait]
 impl<S: AuthSchema, H: alibi::store::HookBackend> alibi::store::DatabaseHooks<S, H>
@@ -725,10 +726,22 @@ impl<S: AuthSchema, H: alibi::store::HookBackend> alibi::store::DatabaseHooks<S,
     }
     async fn after_update_session(
         &self,
-        _: &S::Session,
-        _: &alibi::store::DatabaseHookContext<'_, H>,
+        session: &S::Session,
+        context: &alibi::store::DatabaseHookContext<'_, H>,
     ) -> alibi::AuthResult<()> {
         let _ = self.after.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let record = serde_json::to_value(session)?;
+        let request = context
+            .request
+            .as_ref()
+            .expect("HTTP application callback context");
+        self.after_records.lock().unwrap().push(json!({
+            "record":record,
+            "path":request.path
+        }));
+        if record["label"] == "after-error" {
+            return Err(alibi::AuthError::internal("application after failed"));
+        }
         Ok(())
     }
 }
@@ -823,6 +836,90 @@ async fn rejected_session_update<S: AuthSchema>(
         Some("accepted")
     );
     assert_eq!(hooks.after.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+    // Compat owner: core/session/update-projection.test.ts configured update
+    // after-error. A postcommit callback failure must not roll back the row or
+    // publish a successful replacement cookie; store-only proofs miss framing.
+    let stable_principals = db.tables(&["users", "accounts", "verifications"]).await?;
+    let prior_sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let unaffected: Vec<_> = prior_sessions
+        .iter()
+        .filter(|row| row["token"] != token)
+        .cloned()
+        .collect();
+    hooks.after_records.lock().unwrap().clear();
+    hooks.receipts.lock().unwrap().clear();
+    let failed = call(
+        &auth,
+        request(
+            "/update-session",
+            Some(json!({"label":"after-error"})),
+            &cookie,
+        ),
+        500,
+    )
+    .await;
+    assert!(failed.body.is_empty());
+    assert!(failed.headers.get_all("set-cookie").next().is_none());
+    assert_eq!(
+        *hooks.receipts.lock().unwrap(),
+        [(
+            token.clone(),
+            "after-error".to_owned(),
+            "/api/auth/update-session".to_owned()
+        )]
+    );
+    let observed = hooks.after_records.lock().unwrap().clone();
+    assert_eq!(observed.len(), 1);
+    assert_eq!(observed[0]["path"], "/api/auth/update-session");
+    assert_eq!(observed[0]["record"]["token"], token);
+    assert_eq!(observed[0]["record"]["user_id"], body(&owner)["user"]["id"]);
+    assert_eq!(observed[0]["record"]["label"], "after-error");
+    assert_eq!(hooks.after.load(std::sync::atomic::Ordering::SeqCst), 2);
+    let committed: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    assert_eq!(committed.len(), prior_sessions.len());
+    assert_eq!(
+        committed
+            .iter()
+            .filter(|row| row["token"] != token)
+            .cloned()
+            .collect::<Vec<_>>(),
+        unaffected
+    );
+    assert_eq!(
+        committed.iter().find(|row| row["token"] == token).unwrap()["label"],
+        "after-error"
+    );
+    assert_eq!(
+        db.tables(&["users", "accounts", "verifications"]).await?,
+        stable_principals
+    );
+    let mut physical_read = request("/get-session", None, &cookie);
+    _ = physical_read
+        .query
+        .insert("disableCookieCache".into(), "true".into());
+    let current = call(&auth, physical_read, 200).await;
+    assert_eq!(body(&current)["session"]["token"], token);
+    assert_eq!(body(&current)["session"]["label"], "after-error");
+    assert_eq!(body(&current)["user"]["id"], body(&owner)["user"]["id"]);
+    for established in [&sibling, &foreign] {
+        let read = call(
+            &auth,
+            request("/get-session", None, &cookies(established)),
+            200,
+        )
+        .await;
+        assert_eq!(body(&read)["session"]["token"], body(established)["token"]);
+        assert_eq!(body(&read)["user"]["id"], body(established)["user"]["id"]);
+    }
+    assert_eq!(
+        serde_json::from_str::<Vec<Value>>(&db.table("sessions").await?)?,
+        committed
+    );
+    assert_eq!(
+        db.tables(&["users", "accounts", "verifications"]).await?,
+        stable_principals
+    );
     Ok(())
 }
 
