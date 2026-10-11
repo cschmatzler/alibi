@@ -17,7 +17,8 @@ backend_tests!(
     username_display_projection_survives_session_lookup,
     username_availability_utf16_bounds_precede_default_character_validation,
     signup_and_signin_crypto_errors_precede_principal_publication,
-    missing_credential_signin_hashes_once_without_verifier_or_session
+    missing_credential_signin_hashes_once_without_verifier_or_session,
+    explicit_null_username_does_not_derive_login_alias_from_display
 );
 
 struct Deny;
@@ -617,4 +618,132 @@ async fn missing_credential_signin_hashes_once_without_verifier_or_session<B: Ba
         B::close(connection).await?;
     }
     Ok(())
+}
+
+// Compat owner: username/null-display-derivation.test.ts. An explicitly null
+// username must not create a login alias from its display-only field.
+async fn explicit_null_username_does_not_derive_login_alias_from_display<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .build()
+        .await?;
+    let display = "occupied_display";
+    let foreign = call(
+        &auth,
+        request(
+            "/sign-up/email",
+            Some(json!({
+                "email":"null-display-foreign@example.test", "name":"Foreign Owner",
+                "password":"foreign-password-123", "username":display
+            })),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let foreign_id = body(&foreign)["user"]["id"].clone();
+    let email = "null-display-owner@example.test";
+    let owner = call(
+        &auth,
+        request(
+            "/sign-up/email",
+            Some(json!({
+                "email":email, "name":"Display Only Owner", "password":PASSWORD,
+                "username":null, "displayUsername":display
+            })),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let tables = ["users", "accounts", "sessions", "verifications"];
+    let before = db.tables(&tables).await?;
+    for response in [
+        &owner,
+        &call(&auth, request("/get-session", None, &cookies(&owner)), 200).await,
+    ] {
+        let user = body(response)["user"].clone();
+        assert_eq!(user["id"], owner_id);
+        assert_eq!(user.get("username"), Some(&Value::Null));
+        assert_eq!(user["displayUsername"], display);
+    }
+    let users: Vec<Value> = serde_json::from_str(&before[0])?;
+    let stored = users.iter().find(|row| row["id"] == owner_id).unwrap();
+    assert_eq!(stored.get("username"), Some(&Value::Null));
+    assert_eq!(stored["display_username"], display);
+    let omitted = call(
+        &auth,
+        request(
+            "/sign-up/email",
+            Some(json!({
+                "email":"omitted-display-owner@example.test", "name":"Omitted Owner",
+                "password":PASSWORD, "displayUsername":display
+            })),
+            "",
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&omitted)["code"], "USERNAME_IS_ALREADY_TAKEN");
+    assert!(cookies(&omitted).is_empty());
+    let denied = call(
+        &auth,
+        request(
+            "/sign-in/username",
+            Some(json!({"username":display,"password":PASSWORD})),
+            "",
+        ),
+        401,
+    )
+    .await;
+    assert_eq!(body(&denied)["code"], "INVALID_USERNAME_OR_PASSWORD");
+    assert!(cookies(&denied).is_empty());
+    assert_eq!(db.tables(&tables).await?, before);
+    let available = call(
+        &auth,
+        request(
+            "/is-username-available",
+            Some(json!({"username":display})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&available), json!({"available":false}));
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "null-display-foreign@example.test",
+    )
+    .await;
+    let foreign_session = body(
+        &call(
+            &auth,
+            request("/get-session", None, &cookies(&foreign)),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(foreign_session["user"]["id"], foreign_id);
+    assert_eq!(db.tables(&tables).await?, before);
+    // The omitted field remains the supported derivation path for a new alias.
+    let derived = call(
+        &auth,
+        request(
+            "/sign-up/email",
+            Some(json!({
+                "email":"derived-display-owner@example.test", "name":"Derived Owner",
+                "password":PASSWORD, "displayUsername":"Fresh_Display"
+            })),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&derived)["user"]["username"], "fresh_display");
+    assert_eq!(body(&derived)["user"]["displayUsername"], "Fresh_Display");
+    B::close(connection).await
 }
