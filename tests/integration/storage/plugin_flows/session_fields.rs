@@ -736,6 +736,10 @@ impl<S: AuthSchema, H: alibi::store::HookBackend> alibi::store::DatabaseHooks<S,
             request.path.clone(),
         ));
         match label {
+            "after-error" if fields.is_empty() => {
+                let _ = fields.insert("label".into(), JsValue::String("after-error".into()));
+                Ok(alibi::store::HookControl::Continue)
+            }
             "renewal-cancel" => Ok(alibi::store::HookControl::Cancel),
             "mutate" => {
                 let _ = fields.insert("label".into(), JsValue::String("hook-updated".into()));
@@ -1055,6 +1059,7 @@ async fn renewal_callback_cases<S: AuthSchema>(
         ("api-error", 403),
         ("mutate", 200),
         ("renewal-cancel", 401),
+        ("after-error", 500),
     ] {
         let email = format!("renewal-{command}-owner@example.test");
         let owner = signup(auth, &email).await;
@@ -1109,6 +1114,74 @@ async fn renewal_callback_cases<S: AuthSchema>(
             )]
         );
         assert_eq!(*hooks.renewal_inputs.lock().unwrap(), [json!({})]);
+        // A real postcommit callback failure differs from a before rejection:
+        // the expiry and hook-injected label are durable, without new cookies.
+        if command == "after-error" {
+            assert_eq!(
+                body(&response),
+                json!({"code":"FAILED_TO_GET_SESSION","message":"Failed to get session"})
+            );
+            assert!(response.headers.get_all("set-cookie").next().is_none());
+            assert_eq!(hooks.after.load(SeqCst), after_before + 1);
+            let observed = hooks.after_records.lock().unwrap().clone();
+            assert_eq!(observed.len(), 1);
+            assert_eq!(observed[0]["path"], "/api/auth/get-session");
+            assert_eq!(observed[0]["record"]["token"], token);
+            assert_eq!(observed[0]["record"]["user_id"], body(&owner)["user"]["id"]);
+            assert_eq!(observed[0]["record"]["label"], "after-error");
+            let committed = db
+                .tables(&["users", "accounts", "sessions", "verifications"])
+                .await?;
+            assert_eq!(committed[0], before[0]);
+            assert_eq!(committed[1], before[1]);
+            assert_eq!(committed[3], before[3]);
+            let prior: Vec<Value> = serde_json::from_str(&before[2])?;
+            let updated: Vec<Value> = serde_json::from_str(&committed[2])?;
+            assert_eq!(prior.len(), updated.len());
+            assert_eq!(
+                prior
+                    .iter()
+                    .filter(|row| row["token"] != token)
+                    .collect::<Vec<_>>(),
+                updated
+                    .iter()
+                    .filter(|row| row["token"] != token)
+                    .collect::<Vec<_>>()
+            );
+            let stored = auth.store().get_session(&token).await?.unwrap();
+            assert!(
+                alibi::AuthSession::expires_at(&stored) > Utc::now() + chrono::Duration::days(6)
+            );
+            *hooks.renewal_command.lock().unwrap() = None;
+            let mut physical = request("/get-session", None, &cookie);
+            let _ = physical
+                .query
+                .insert("disableCookieCache".into(), "true".into());
+            let _ = physical
+                .query
+                .insert("disableRefresh".into(), "true".into());
+            let surviving = call(auth, physical, 200).await;
+            assert_eq!(body(&surviving)["session"]["token"], token);
+            assert_eq!(body(&surviving)["session"]["label"], "after-error");
+            assert_eq!(body(&surviving)["user"]["id"], body(&owner)["user"]["id"]);
+            for established in [&sibling, &foreign] {
+                let read = call(
+                    auth,
+                    request("/get-session", None, &cookies(established)),
+                    200,
+                )
+                .await;
+                assert_eq!(body(&read)["session"]["token"], body(established)["token"]);
+                assert_eq!(body(&read)["user"]["id"], body(established)["user"]["id"]);
+            }
+            assert_eq!(
+                db.tables(&["users", "accounts", "sessions", "verifications"])
+                    .await?,
+                committed
+            );
+            assert_eq!(hooks.after.load(SeqCst), after_before + 1);
+            continue;
+        }
         if command == "mutate" {
             assert_eq!(body(&response)["session"]["token"], token);
             assert_eq!(body(&response)["session"]["label"], "hook-updated");
