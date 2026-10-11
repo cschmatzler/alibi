@@ -148,6 +148,45 @@ async fn api_key_configuration_limits<B: Backend>(db: Db) -> TestResult {
             if response.status == 200 {
                 let created = body(&response);
                 key_id = created["id"].as_str().map(str::to_owned);
+                // Compat owner: api-key/name-policy.test.ts. An omitted optional
+                // name is SQL NULL and remains an explicit JSON null after
+                // loading the persisted row through both owned read routes.
+                if text == r#"{"expiresIn":129600}"# {
+                    assert_eq!(created.get("name"), Some(&Value::Null));
+                    let id = key_id.as_deref().unwrap();
+                    assert_eq!(
+                        db.count_where(
+                            "SELECT COUNT(*) FROM api_keys WHERE id=$1 AND name IS NULL",
+                            &[id]
+                        )
+                        .await?,
+                        1
+                    );
+                    let before_reads = db
+                        .tables(&["users", "accounts", "sessions", "api_keys"])
+                        .await?;
+                    let mut read = request("/api-key/get", None, &owner);
+                    read.set_query_pairs([("id", id)]);
+                    let loaded = body(&call(&auth, read, 200).await);
+                    assert_eq!(loaded["id"], id);
+                    assert_eq!(loaded.get("name"), Some(&Value::Null));
+                    assert!(loaded.get("key").is_none());
+                    let listed =
+                        body(&call(&auth, request("/api-key/list", None, &owner), 200).await);
+                    let loaded = listed["apiKeys"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|row| row["id"] == id)
+                        .unwrap();
+                    assert_eq!(loaded.get("name"), Some(&Value::Null));
+                    assert!(loaded.get("key").is_none());
+                    assert_eq!(
+                        db.tables(&["users", "accounts", "sessions", "api_keys"])
+                            .await?,
+                        before_reads
+                    );
+                }
                 trace.value(
                     &format!("{label} {text} key"),
                     json!({
