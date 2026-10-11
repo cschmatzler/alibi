@@ -22,7 +22,7 @@ pub(crate) async fn request_password_reset_core(
     config: &PasswordManagementConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<RequestPasswordResetResponse> {
-    if let Some(redirect_to) = &body.redirect_to {
+    if let Some(redirect_to) = body.redirect_to.as_deref().filter(|url| !url.is_empty()) {
         validate_redirect_target(redirect_to, ctx, "Invalid redirectURL")?;
     }
 
