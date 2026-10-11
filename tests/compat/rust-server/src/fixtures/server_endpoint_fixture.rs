@@ -235,6 +235,11 @@ impl EndpointHook<TestSchema> for Observer {
     ) -> AuthResult<EndpointResponse> {
         self.app
             .record(format!("{}-after", self.id), call, Some(&response));
+        if self.id == "user" && *self.app.mode.lock().unwrap() == "profile-headers" {
+            call.set_response_header("x-profile-result", "logical");
+            call.queue_response_header("set-cookie", "profile-first=owned; Path=/; HttpOnly");
+            call.queue_response_header("set-cookie", "profile-second=owned; Path=/; HttpOnly");
+        }
         if self.id == "user" && *self.app.mode.lock().unwrap() == "change-password-headers" {
             call.set_response_header("x-password-result", "logical");
             call.queue_response_header("set-cookie", "password-first=owned; Path=/; HttpOnly");
@@ -374,12 +379,17 @@ impl ApiKeyValidator for Application {
         Ok(true)
     }
 }
+fn present_input<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<JsValue>, D::Error> {
+    JsValue::deserialize(deserializer).map(Some)
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Input {
     operation: String,
     mode: Option<String>,
+    #[serde(default, deserialize_with = "present_input")]
     body: Option<JsValue>,
+    #[serde(default, deserialize_with = "present_input")]
     query: Option<JsValue>,
     headers: Option<HashMap<String, String>>,
     #[serde(default)]
@@ -557,6 +567,7 @@ pub(crate) async fn router(
                 app.events.lock().unwrap().clear();
                 app.ranges.lock().unwrap().clear();
                 let plugin = match input.operation.as_str() {
+                    "updateUser" => "core",
                     "changePassword" | "verifyPassword" => "password-management",
                     "listUserAccounts" | "unlinkAccount" => "account-management",
                     "createVerificationOTP" | "getVerificationOTP" => "email-otp",
@@ -574,6 +585,7 @@ pub(crate) async fn router(
                 let operation: &'static str = match input.operation.as_str() {
                     "changePassword" => "changePassword",
                     "verifyPassword" => "verifyPassword",
+                    "updateUser" => "updateUser",
                     "listUserAccounts" => "listUserAccounts",
                     "unlinkAccount" => "unlinkAccount",
                     "createVerificationOTP" => "createVerificationOTP",

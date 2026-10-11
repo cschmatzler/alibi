@@ -13,6 +13,7 @@ pub struct CreateUser {
     /// Trusted raw provider text scalars, never accepted from HTTP user input.
     #[serde(skip)]
     pub provider_name: Option<serde_json::Value>,
+    /// Trusted raw provider image scalar.
     #[serde(skip)]
     pub provider_image: Option<serde_json::Value>,
     #[serde(flatten, default)]
@@ -52,6 +53,7 @@ pub struct UpdateUser {
     /// Trusted raw provider text scalars, never accepted from HTTP user input.
     #[serde(skip)]
     pub provider_name: Option<serde_json::Value>,
+    /// Trusted raw image scalar, also used for validated profile image removal.
     #[serde(skip)]
     pub provider_image: Option<serde_json::Value>,
     #[serde(flatten, default)]

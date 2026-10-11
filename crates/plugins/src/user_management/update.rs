@@ -1,4 +1,5 @@
 use alibi_core::entity::AuthUser;
+use alibi_core::session::SessionRequest;
 use alibi_core::utils::json::JsValue;
 use alibi_core::utils::username::UsernameConfig;
 use alibi_core::{
@@ -6,22 +7,124 @@ use alibi_core::{
     UpdateUser, UpdateUserRequest,
 };
 
-/// Handle user profile update.
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep field validation and user-update callbacks adjacent to the persistence operation"
-)]
+/// Build the builtin profile-update operation, including configured input fields.
+///
+/// # Errors
+/// Returns an error if the logical body cannot be serialized.
+pub fn update_user_endpoint(
+    body: &impl serde::Serialize,
+) -> AuthResult<alibi_core::endpoint::ServerEndpoint<alibi_core::StatusResponse>> {
+    alibi_core::endpoint::ServerEndpoint::new("core", "updateUser").with_body(body)
+}
+
+/// Builtin owner used by the host runtime independently of optional user plugins.
+#[doc(hidden)]
+pub struct BuiltinUserEndpoints;
+#[async_trait::async_trait]
+impl<S: alibi_core::AuthSchema> alibi_core::AuthPlugin<S> for BuiltinUserEndpoints {
+    fn name(&self) -> &'static str {
+        "core"
+    }
+    fn routes(&self) -> Vec<alibi_core::AuthRoute> {
+        Vec::new()
+    }
+    fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
+        vec![crate::endpoint::definition(
+            "updateUser",
+            "updateUser",
+            Some("/update-user"),
+            alibi_core::HttpMethod::Post,
+        )]
+    }
+    fn validate_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
+        let body = call
+            .body()
+            .filter(|body| body.as_object().is_some())
+            .ok_or_else(|| {
+                crate::endpoint::validation(format!(
+                    "[body] Invalid input: expected record, received {}",
+                    crate::authentication_helpers::json_type(call.body())
+                ))
+            })?;
+        Ok(alibi_core::endpoint::EndpointInput {
+            body: Some(body.clone()),
+            query: call.query().cloned(),
+        })
+    }
+    async fn on_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        context: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        let body = call
+            .body()
+            .ok_or_else(|| AuthError::bad_request("Missing profile input"))?;
+        let (user, session) = context
+            .require_cached_session(call)
+            .await
+            .map_err(crate::helpers::unauthorized_if_session_missing)?;
+        call.record_authenticated_session(context.user_view(&user), session.clone());
+        let response = update_user_core(call, body, user, session, context).await?;
+        if response.status >= 400 {
+            return Err(crate::endpoint::error_response(response));
+        }
+        // Logical ctx.json returns a value; HTTP serialization adds its content type.
+        // Application headers remain in the actual endpoint response accumulator.
+        let mut result = alibi_core::endpoint::EndpointResponse::value(
+            alibi_core::utils::json::from_slice(&response.body)?,
+        );
+        for (name, value) in response.headers {
+            if !name.eq_ignore_ascii_case("content-type") {
+                result = result.with_header(name, value);
+            }
+        }
+        Ok(result)
+    }
+    async fn on_request(
+        &self,
+        _: &AuthRequest,
+        _: &AuthContext<S>,
+    ) -> AuthResult<Option<AuthResponse>> {
+        Ok(None)
+    }
+}
+
+/// Handle user profile update through the shared profile lifecycle.
+///
+/// # Errors
+/// Returns actual input, authentication, adapter, or publication failures.
 pub async fn handle_update_user<S: alibi_core::AuthSchema>(
     req: &AuthRequest,
     context: &AuthContext<S>,
 ) -> AuthResult<AuthResponse> {
-    let (current_user, current_session) = context
+    // Preserve the HTTP owner's admission before JSON decoding.
+    let (user, session) = context
         .require_cached_session(req)
         .await
         .map_err(crate::helpers::unauthorized_if_session_missing)?;
-    let body: serde_json::Value = req
-        .body_as_json()
-        .map_err(|e| AuthError::bad_request(format!("Invalid JSON: {e}")))?;
+    _ = req
+        .body_as_json::<serde_json::Value>()
+        .map_err(|error| AuthError::bad_request(format!("Invalid JSON: {error}")))?;
+    let raw_body: JsValue = req.body_as_json()?;
+    update_user_core(req, &raw_body, user, session, context).await
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep field validation and callbacks adjacent to their profile persistence owner"
+)]
+async fn update_user_core<S: alibi_core::AuthSchema>(
+    req: &impl SessionRequest,
+    raw_body: &JsValue,
+    current_user: alibi_core::AuthenticatedUser<S>,
+    current_session: alibi_core::SessionView,
+    context: &AuthContext<S>,
+) -> AuthResult<AuthResponse> {
+    let body: serde_json::Value = raw_body.to_json_value()?;
     let Some(body) = body.as_object() else {
         let actual = match &body {
             serde_json::Value::Null => "null",
@@ -60,7 +163,6 @@ pub async fn handle_update_user<S: alibi_core::AuthSchema>(
         });
     }
 
-    let raw_body: JsValue = req.body_as_json()?;
     crate::last_login_method::reject_last_login_method_input(
         context,
         raw_body.get("lastLoginMethod"),
@@ -132,7 +234,9 @@ pub async fn handle_update_user<S: alibi_core::AuthSchema>(
         .and_then(serde_json::Value::as_bool)
         == Some(true)
         && body.get("phoneNumber") == Some(&serde_json::Value::Null);
+    let clear_image = body.get("image") == Some(&serde_json::Value::Null);
     let has_changes = additional_fields.has_input_fields()
+        || clear_image
         || clear_phone
         || update_req.name.is_some()
         || update_req.image.is_some()
@@ -145,6 +249,7 @@ pub async fn handle_update_user<S: alibi_core::AuthSchema>(
 
     let update_user = UpdateUser {
         additional_fields,
+        provider_image: clear_image.then_some(serde_json::Value::Null),
         phone_number: clear_phone.then_some(None),
         name: update_req.name,
         image: update_req.image,
@@ -171,6 +276,9 @@ pub async fn handle_update_user<S: alibi_core::AuthSchema>(
             let mut user = context.user_view(&current_user);
             if let Some(name) = update_user.name {
                 user.name = Some(name);
+            }
+            if clear_image {
+                user.image = None;
             }
             if let Some(image) = update_user.image {
                 user.image = Some(image);

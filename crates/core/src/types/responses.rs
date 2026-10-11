@@ -7,7 +7,7 @@ pub struct OkResponse {
 }
 
 /// Generic `{ status: bool }` response.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct StatusResponse {
     pub status: bool,
 }
