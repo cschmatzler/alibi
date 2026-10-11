@@ -14,6 +14,7 @@ backend_tests!(
     phone_number_request_and_proof_matrix,
     phone_number_provider_and_sender_failures,
     phone_number_password_reset_effects,
+    phone_password_reset_retains_established_sessions_by_default,
     phone_number_signup_and_update_inputs,
     phone_signin_distinguishes_missing_null_and_empty_credentials,
     phone_self_update_consumes_proof_without_changing_owner_or_callbacks,
@@ -495,6 +496,215 @@ async fn phone_number_password_reset_effects<B: Backend>(db: Db) -> TestResult {
     }
     trace.assert("phone-number/password-reset-effects");
     Ok(())
+}
+
+// Compat owner: tests/plugins/phone-number/reset-retains-sessions.test.ts.
+// The reset matrix starts without credentials; this protects replacing an
+// established credential without revoking either browser or a foreign owner.
+async fn phone_password_reset_retains_established_sessions_by_default<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let outbox = Arc::new(Outbox::default());
+    let auth = fast_builder::<B>(&connection)
+        .plugin(PhoneNumberPlugin::new(PhoneNumberConfig {
+            send_otp: Some(outbox.clone()),
+            send_password_reset_otp: Some(outbox.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let phone = "+15550000105";
+    let email = "retained-phone-owner@example.test";
+    let old_password = "original-password123";
+    let new_password = "changed-password123";
+    let owner = call(
+        &auth,
+        request(
+            "/sign-up/email",
+            Some(json!({"email":email,"name":"Retained owner","password":old_password,"phoneNumber":phone})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let owner_cookie = cookies(&owner);
+    _ = call(
+        &auth,
+        request(
+            "/phone-number/send-otp",
+            Some(json!({"phoneNumber":phone})),
+            &owner_cookie,
+        ),
+        200,
+    )
+    .await;
+    let verified = call(
+        &auth,
+        request(
+            "/phone-number/verify",
+            Some(json!({"phoneNumber":phone,"code":outbox.last().code,"disableSession":true})),
+            &owner_cookie,
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&verified)["user"]["phoneNumberVerified"], true);
+    let sibling = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":email,"password":old_password})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let foreign = signup(&auth, "retained-phone-foreign@example.test").await;
+    let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
+    let principals = db.tables(&["users", "sessions"]).await?;
+    let accounts_before: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    let credential_before = accounts_before
+        .iter()
+        .find(|row| row["user_id"] == owner_id && row["provider_id"] == "credential")
+        .unwrap();
+    let foreign_accounts_before: Vec<_> = accounts_before
+        .iter()
+        .filter(|row| row["user_id"] == foreign_id)
+        .cloned()
+        .collect();
+    assert_eq!(
+        db.count_where(
+            "SELECT COUNT(*) FROM sessions WHERE user_id=$1",
+            &[&owner_id]
+        )
+        .await?,
+        2
+    );
+    _ = call(
+        &auth,
+        request(
+            "/phone-number/request-password-reset",
+            Some(json!({"phoneNumber":phone})),
+            &owner_cookie,
+        ),
+        200,
+    )
+    .await;
+    let delivery = outbox.last();
+    assert_eq!(delivery.phone_number, phone);
+    let identifier = format!("{phone}-request-password-reset");
+    assert_eq!(
+        db.count_where(
+            "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+            &[&identifier]
+        )
+        .await?,
+        1
+    );
+    let reset = call(
+        &auth,
+        request(
+            "/phone-number/reset-password",
+            Some(json!({"phoneNumber":phone,"otp":delivery.code,"newPassword":new_password})),
+            &owner_cookie,
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&reset), json!({"status":true}));
+    assert!(reset.headers.get_all("set-cookie").next().is_none());
+    assert_eq!(
+        db.count_where(
+            "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+            &[&identifier]
+        )
+        .await?,
+        0
+    );
+    assert_eq!(db.tables(&["users", "sessions"]).await?, principals);
+    let accounts_after: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    assert_eq!(accounts_after.len(), accounts_before.len());
+    let credential_after = accounts_after
+        .iter()
+        .find(|row| row["id"] == credential_before["id"])
+        .unwrap();
+    assert_ne!(credential_after["password"], credential_before["password"]);
+    let unchanged = |row: &Value| {
+        let mut fields = row.as_object().unwrap().clone();
+        _ = fields.remove("password");
+        _ = fields.remove("updated_at");
+        fields
+    };
+    assert_eq!(unchanged(credential_after), unchanged(credential_before));
+    let foreign_accounts_after: Vec<_> = accounts_after
+        .iter()
+        .filter(|row| row["user_id"] == foreign_id)
+        .cloned()
+        .collect();
+    assert_eq!(foreign_accounts_after, foreign_accounts_before);
+    for established in [&owner, &sibling, &foreign] {
+        let session = call(
+            &auth,
+            request("/get-session", None, &cookies(established)),
+            200,
+        )
+        .await;
+        assert_eq!(
+            body(&session)["session"]["token"],
+            body(established)["token"]
+        );
+        assert_eq!(
+            body(&session)["user"]["id"],
+            body(established)["user"]["id"]
+        );
+    }
+    let rejected = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":email,"password":old_password})),
+            "",
+        ),
+        401,
+    )
+    .await;
+    assert_eq!(body(&rejected)["code"], "INVALID_EMAIL_OR_PASSWORD");
+    assert_eq!(db.tables(&["users", "sessions"]).await?, principals);
+    let accepted = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":email,"password":new_password})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&accepted)["user"]["id"], owner_id);
+    let after_login = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    let replay = call(
+        &auth,
+        request(
+            "/phone-number/reset-password",
+            Some(
+                json!({"phoneNumber":phone,"otp":delivery.code,"newPassword":"must-not-commit123"}),
+            ),
+            &owner_cookie,
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&replay)["code"], "OTP_NOT_FOUND");
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        after_login
+    );
+    B::close(connection).await
 }
 
 async fn phone_number_signup_and_update_inputs<B: Backend>(db: Db) -> TestResult {
