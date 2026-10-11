@@ -736,6 +736,7 @@ impl<S: AuthSchema, H: alibi::store::HookBackend> alibi::store::DatabaseHooks<S,
             request.path.clone(),
         ));
         match label {
+            "renewal-cancel" => Ok(alibi::store::HookControl::Cancel),
             "mutate" => {
                 let _ = fields.insert("label".into(), JsValue::String("hook-updated".into()));
                 Ok(alibi::store::HookControl::Continue)
@@ -1049,7 +1050,12 @@ async fn renewal_callback_cases<S: AuthSchema>(
     hooks: &RejectSessionUpdate,
 ) -> TestResult {
     use std::sync::atomic::Ordering::SeqCst;
-    for (command, status) in [("ordinary-error", 500), ("api-error", 403), ("mutate", 200)] {
+    for (command, status) in [
+        ("ordinary-error", 500),
+        ("api-error", 403),
+        ("mutate", 200),
+        ("renewal-cancel", 401),
+    ] {
         let email = format!("renewal-{command}-owner@example.test");
         let owner = signup(auth, &email).await;
         let sibling = call(
@@ -1190,15 +1196,69 @@ async fn renewal_callback_cases<S: AuthSchema>(
             *hooks.renewal_command.lock().unwrap() = None;
             continue;
         }
-        assert_eq!(
-            body(&response),
-            if command == "api-error" {
-                json!({"code":"APP_DENIED","message":"Application denied"})
-            } else {
+        if command == "renewal-cancel" {
+            assert_eq!(
+                body(&response),
                 json!({"code":"FAILED_TO_GET_SESSION","message":"Failed to get session"})
+            );
+            let deleted: Vec<_> = response.headers.get_all("set-cookie").collect();
+            assert!(deleted.iter().all(|raw| {
+                let (name, value) = raw.split(';').next().unwrap().split_once('=').unwrap();
+                [
+                    "better-auth.session_token",
+                    "better-auth.session_data",
+                    "better-auth.dont_remember",
+                ]
+                .contains(&name)
+                    && value.is_empty()
+                    && raw
+                        .split(';')
+                        .skip(1)
+                        .any(|attribute| attribute.trim() == "Max-Age=0")
+            }));
+            let mut browser: std::collections::BTreeMap<_, _> = cookie
+                .split("; ")
+                .filter_map(|pair| pair.split_once('='))
+                .collect();
+            for name in [
+                "better-auth.session_token",
+                "better-auth.session_data",
+                "better-auth.dont_remember",
+            ] {
+                let deletion = deleted
+                    .iter()
+                    .find(|cookie| cookie.starts_with(&format!("{name}=")))
+                    .unwrap();
+                assert_eq!(
+                    deletion.split(';').next(),
+                    Some(format!("{name}=").as_str())
+                );
+                assert!(
+                    deletion
+                        .split(';')
+                        .skip(1)
+                        .any(|attribute| attribute.trim() == "Max-Age=0")
+                );
+                let _ = browser.remove(name);
             }
-        );
-        assert!(response.headers.get_all("set-cookie").next().is_none());
+            let cleared = browser
+                .into_iter()
+                .map(|(name, value)| format!("{name}={value}"))
+                .collect::<Vec<_>>()
+                .join("; ");
+            let guest = call(auth, request("/get-session", None, &cleared), 200).await;
+            assert!(body(&guest).is_null());
+        } else {
+            assert_eq!(
+                body(&response),
+                if command == "api-error" {
+                    json!({"code":"APP_DENIED","message":"Application denied"})
+                } else {
+                    json!({"code":"FAILED_TO_GET_SESSION","message":"Failed to get session"})
+                }
+            );
+            assert!(response.headers.get_all("set-cookie").next().is_none());
+        }
         assert_eq!(hooks.after.load(SeqCst), after_before);
         assert!(hooks.after_records.lock().unwrap().is_empty());
         assert_eq!(
