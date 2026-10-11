@@ -87,6 +87,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
             for (operation, path) in [
                 ("revokeSession", "/revoke-session"),
                 ("revokeOtherSessions", "/revoke-other-sessions"),
+                ("revokeSessions", "/revoke-sessions"),
             ] {
                 endpoints.push(crate::endpoint::definition(
                     operation,
@@ -104,7 +105,10 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
         call: &EndpointCall,
         _: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
-        if matches!(call.operation_id(), "revokeSession" | "revokeOtherSessions") {
+        if matches!(
+            call.operation_id(),
+            "revokeSession" | "revokeOtherSessions" | "revokeSessions"
+        ) {
             let body = if call.operation_id() == "revokeSession" {
                 Some(crate::endpoint::validate_fields(
                     call.body(),
@@ -154,7 +158,10 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        if matches!(call.operation_id(), "revokeSession" | "revokeOtherSessions") {
+        if matches!(
+            call.operation_id(),
+            "revokeSession" | "revokeOtherSessions" | "revokeSessions"
+        ) {
             // Sensitive Source middleware re-reads real authority and catches getter failures.
             let (user, session) = ctx
                 .require_authoritative_session_record(call)
@@ -168,8 +175,10 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
             let response = if call.operation_id() == "revokeSession" {
                 let input: RevokeSessionRequest = call.body_as()?;
                 revoke_session_core(&user, &input.token, ctx).await?
-            } else {
+            } else if call.operation_id() == "revokeOtherSessions" {
                 revoke_other_sessions_core(user.id(), &session, ctx).await?
+            } else {
+                revoke_sessions_core(user.id(), ctx).await?
             };
             return EndpointResponse::json(&response);
         }
@@ -258,6 +267,13 @@ impl SessionManagementPlugin {
     #[must_use]
     pub const fn revoke_other_sessions_endpoint() -> ServerEndpoint<alibi_core::StatusResponse> {
         ServerEndpoint::new("session-management", "revokeOtherSessions")
+    }
+
+    /// Revoke all sessions belonging to the authoritative current user.
+    /// Supply incoming logical headers in `EndpointOptions::headers`.
+    #[must_use]
+    pub const fn revoke_sessions_endpoint() -> ServerEndpoint<alibi_core::StatusResponse> {
+        ServerEndpoint::new("session-management", "revokeSessions")
     }
 
     #[expect(

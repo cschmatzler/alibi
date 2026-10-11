@@ -1,52 +1,18 @@
 //! Genuine bulk revocation preserves current authority and expired physical rows.
+use super::server_revocation_support::{Observer, options};
 use super::*;
-use alibi::endpoint::{
-    EndpointCall, EndpointHook, EndpointOptions, EndpointResponse, ServerEndpoint,
-};
-use alibi::{AuthContext, AuthResult, StatusResponse};
+use alibi::endpoint::{EndpointOptions, ServerEndpoint};
+use alibi::{AuthResult, StatusResponse};
 backend_tests!(server_revoke_other_sessions_preserves_current_and_expired_authority);
-#[derive(Clone, Default)]
-struct Observer(Arc<Mutex<Vec<Option<String>>>>);
-#[async_trait::async_trait]
-impl<S: AuthSchema> EndpointHook<S> for Observer {
-    fn matches_after(
-        &self,
-        call: &EndpointCall,
-        _: &AuthContext<S>,
-        _: &EndpointResponse,
-    ) -> AuthResult<bool> {
-        Ok(call.operation_id() == "revokeOtherSessions")
-    }
-    async fn after(
-        &self,
-        call: &EndpointCall,
-        _: &AuthContext<S>,
-        response: EndpointResponse,
-    ) -> AuthResult<EndpointResponse> {
-        assert!(call.request().is_none());
-        assert_eq!(call.path(), Some("/revoke-other-sessions"));
-        self.0
-            .lock()
-            .unwrap()
-            .push(call.session().map(|(user, _)| user.id));
-        Ok(response.with_header("x-revocation-result", "logical"))
-    }
-}
 fn endpoint() -> AuthResult<ServerEndpoint<StatusResponse>> {
     SessionManagementPlugin::revoke_other_sessions_endpoint()
         .with_query(&json!({"disableRefresh":true}))
-}
-fn options(response: &AuthResponse) -> EndpointOptions {
-    EndpointOptions {
-        headers: Some([("cookie".into(), cookies(response))].into_iter().collect()),
-        ..Default::default()
-    }
 }
 async fn server_revoke_other_sessions_preserves_current_and_expired_authority<B: Backend>(
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
-    let observer = Observer::default();
+    let observer = Observer::new("revokeOtherSessions", "/revoke-other-sessions");
     let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
     config.session.cookie_cache = Some(alibi::CookieCacheConfig {
         enabled: true,
