@@ -764,10 +764,10 @@ export function compareValues(
         })
       : [];
 
-  // A valid empty revokeSession input is a literal, not an issued credential.
+  // Accepted empty server token inputs are literals, not issued credentials.
   // Admit only its original hook-frame copies from an intact transport receipt.
-  const emptyRevocationInputs = new Set<string>();
-  const revocationFrame = (value: unknown) => {
+  const emptyServerTokenInputs = new Set<string>();
+  const serverTokenFrame = (value: unknown) => {
     if (!record(value)) return;
     const current = record(value.current) ? value.current : undefined;
     return stableJSON({
@@ -791,15 +791,25 @@ export function compareValues(
           createHash("sha256").update(JSON.stringify(receipt.response)).digest("hex") ===
             receipt.digest &&
           record(receipt.input) &&
-          receipt.input.operation === "revokeSession" &&
           record(receipt.input.body) &&
           receipt.input.body.token === "" &&
-          record(receipt.input.headers) &&
-          typeof receipt.input.headers.cookie === "string",
+          ((receipt.input.operation === "revokeSession" &&
+            record(receipt.input.headers) &&
+            typeof receipt.input.headers.cookie === "string") ||
+            (receipt.input.operation === "resetPassword" &&
+              typeof receipt.input.body.newPassword === "string" &&
+              record(receipt.input.query) &&
+              typeof receipt.input.query.token === "string" &&
+              receipt.input.query.token.length > 0)),
       )
     ) {
       continue;
     }
+    const leftInput = receipts[0]!.input as Record<string, unknown>;
+    const rightInput = receipts[1]!.input as Record<string, unknown>;
+    if (leftInput.operation !== rightInput.operation) continue;
+    const endpointPath =
+      leftInput.operation === "resetPassword" ? "/reset-password" : "/revoke-session";
     const left = normalizeClientValue(receipts[0]!.response);
     const right = normalizeClientValue(receipts[1]!.response);
     const successful = (value: unknown) =>
@@ -818,9 +828,9 @@ export function compareValues(
       const other = rightEvents[index];
       return record(event) &&
         record(other) &&
-        event.path === "/revoke-session" &&
-        other.path === "/revoke-session"
-        ? [{ left: revocationFrame(event), right: revocationFrame(other) }]
+        event.path === endpointPath &&
+        other.path === endpointPath
+        ? [{ left: serverTokenFrame(event), right: serverTokenFrame(other) }]
         : [];
     });
     const collect = (a: unknown, b: unknown, path: string) => {
@@ -828,11 +838,11 @@ export function compareValues(
         if (
           /\.events\.\d+$/.test(path) &&
           frames.some(
-            (frame) => revocationFrame(a) === frame.left && revocationFrame(b) === frame.right,
+            (frame) => serverTokenFrame(a) === frame.left && serverTokenFrame(b) === frame.right,
           )
         ) {
           if (record(a.body) && record(b.body) && a.body.token === "" && b.body.token === "") {
-            emptyRevocationInputs.add(`${path}.body.token`);
+            emptyServerTokenInputs.add(`${path}.body.token`);
           }
           if (
             record(a.current) &&
@@ -842,7 +852,7 @@ export function compareValues(
             a.current.body.token === "" &&
             b.current.body.token === ""
           ) {
-            emptyRevocationInputs.add(`${path}.current.body.token`);
+            emptyServerTokenInputs.add(`${path}.current.body.token`);
           }
         }
         for (const key of Object.keys(a)) {
@@ -4777,7 +4787,7 @@ export function compareValues(
           : (opaqueAliases[key] ?? key);
 
       if (opaqueKeys.has(opaqueKey)) {
-        if (opaqueKey === "token" && a === "" && b === "" && emptyRevocationInputs.has(path)) {
+        if (opaqueKey === "token" && a === "" && b === "" && emptyServerTokenInputs.has(path)) {
           return;
         }
         // Pinned custom device generators accept empty/whitespace strings.
