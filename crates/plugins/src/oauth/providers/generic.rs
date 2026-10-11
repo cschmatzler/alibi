@@ -223,6 +223,7 @@ impl GenericOAuthConfig {
                     post_logout_redirect_uri: self.post_logout_redirect_uri,
                 })
         };
+        policy.issuer.clone_from(&metadata.issuer);
         policy.verify_grant_id_token = metadata.jwks_url.is_some();
         policy.id_token_nonce_binding =
             policy.verify_grant_id_token && !self.disable_id_token_nonce_binding;
