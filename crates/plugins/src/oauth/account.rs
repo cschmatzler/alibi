@@ -394,7 +394,23 @@ async fn handle_refresh_token_for_user(
         };
         session.user_id
     };
-    let mut account = selection.resolve(req, &user_id, ctx).await?;
+    let (value, headers) =
+        refresh_token_for_selection(config, req, ctx, &user_id, selection).await?;
+    let mut response = AuthResponse::json(200, &value)?;
+    for header in headers {
+        response.headers.append("set-cookie", header);
+    }
+    Ok(response)
+}
+
+pub(super) async fn refresh_token_for_selection(
+    config: &OAuthConfig,
+    req: &impl AccountRequest,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
+    user_id: &str,
+    selection: OAuthAccountSelection,
+) -> AuthResult<(serde_json::Value, Vec<String>)> {
+    let mut account = selection.resolve(req, user_id, ctx).await?;
     let provider = config.providers.get(&account.provider_id).ok_or_else(|| {
         AuthError::bad_request(format!(
             "Provider {} is not supported.",
@@ -407,10 +423,14 @@ async fn handle_refresh_token_for_user(
             .as_ref()
             .is_some_and(|policy| !policy.supports_refresh)
     {
-        return Ok(AuthResponse::json(
-            400,
-            &serde_json::json!({"code":"TOKEN_REFRESH_NOT_SUPPORTED","message":format!("Provider {} does not support token refreshing.",account.provider_id)}),
-        )?);
+        return Err(AuthError::Api {
+            status: 400,
+            code: Some("TOKEN_REFRESH_NOT_SUPPORTED".into()),
+            message: format!(
+                "Provider {} does not support token refreshing.",
+                account.provider_id
+            ),
+        });
     }
     let stored_refresh = account
         .refresh_token
@@ -424,13 +444,9 @@ async fn handle_refresh_token_for_user(
     )
     .map_err(|_error| refresh_token_failure())?
     .unwrap_or_default();
-    let tokens = refresh_tokens_via_provider(
-        provider,
-        &refresh_token,
-        Some(super::providers::OAuthRefreshContext { request: req }),
-    )
-    .await
-    .map_err(|_error| refresh_token_failure())?;
+    let tokens = refresh_tokens_via_provider(provider, &refresh_token, req.refresh_context())
+        .await
+        .map_err(|_error| refresh_token_failure())?;
     persist_tokens(&mut account, &tokens, ctx, provider)
         .await
         .map_err(|_error| refresh_token_failure())?;
@@ -444,11 +460,11 @@ async fn handle_refresh_token_for_user(
         access_token: tokens.access_token,
         access_token_expires_at: tokens
             .access_token_expires_at
-            .map(|value| value.to_rfc3339()),
+            .map(|value| value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
         refresh_token: Some(tokens.refresh_token.unwrap_or(refresh_token)),
         refresh_token_expires_at: account
             .refresh_token_expires_at
-            .map(|value| value.to_rfc3339()),
+            .map(|value| value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
         scope: account.scope.clone(),
         id_token: account.id_token.clone(),
         provider_id: account.provider_id.clone(),
@@ -484,13 +500,14 @@ async fn handle_refresh_token_for_user(
             _ = object.insert("idToken".into(), value.clone());
         }
     }
-    token_response(
-        &response,
-        &account,
-        matches!(selection, OAuthAccountSelection::Cookie),
-        req,
-        ctx,
-    )
+    let headers = if matches!(selection, OAuthAccountSelection::Cookie)
+        && ctx.config.account.store_account_cookie
+    {
+        create_account_cookie_headers(&ctx.config, &account, req)?
+    } else {
+        Vec::new()
+    };
+    Ok((response, headers))
 }
 
 async fn handle_account_info_for_user(

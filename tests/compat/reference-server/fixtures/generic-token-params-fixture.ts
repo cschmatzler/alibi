@@ -153,7 +153,7 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
         basePath: path,
         hooks: {
           after: createAuthMiddleware(async (ctx) => {
-            if (!ctx.request && ctx.path === "/get-access-token") {
+            if (!ctx.request && ["/get-access-token", "/refresh-token"].includes(ctx.path)) {
               ctx.context.responseHeaders ??= new Headers();
               ctx.context.responseHeaders.append(
                 "set-cookie",
@@ -504,7 +504,16 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
           });
         }
         if (body.operation === "refresh-token") {
-          return instance.api.refreshToken({ body: selection, asResponse: true });
+          return instance.api.refreshToken({
+            body: (Object.hasOwn(body, "selection") ? body.selection : selection) as Parameters<
+              typeof instance.api.refreshToken
+            >[0]["body"],
+            ...(body.logicalHeaders ? { headers: new Headers(body.logicalHeaders) } : {}),
+            ...(body.physicalRequest
+              ? { request: new Request(new URL("/incoming-request", request.url)) }
+              : {}),
+            asResponse: true,
+          });
         }
         return instance.api.accountInfo({ query: selection, asResponse: true });
       }

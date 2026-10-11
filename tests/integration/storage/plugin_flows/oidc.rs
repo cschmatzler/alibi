@@ -323,24 +323,15 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
     assert_eq!(db.table("accounts").await?, accounts);
     drop(remote.take());
 
-    remote.respond_at("/token", 200, json!({"access_token":"rotated-access","refresh_token":"rotated-refresh","token_type":"Bearer","expires_in":3600}));
-    let refresh = OAuthAccountApi::refresh_token(&owner, select(), auth.context()).await?;
-    assert_eq!(body(&refresh)["accessToken"], "rotated-access");
-    assert_eq!(
-        db.text("SELECT access_token FROM accounts WHERE id=$1", &[&account])
-            .await?
-            .as_deref(),
-        Some("rotated-access")
-    );
-    assert_eq!(
-        db.text(
-            "SELECT refresh_token FROM accounts WHERE id=$1",
-            &[&account]
-        )
-        .await?
-        .as_deref(),
-        Some("rotated-refresh")
-    );
+    Box::pin(refresh_owned_grant(
+        &auth,
+        &db,
+        &remote,
+        (&owner, &account, &delivered_id_token),
+        &outsider,
+        &account_events,
+    ))
+    .await?;
     let exchanges = remote.take();
     let grant = exchanges
         .iter()
@@ -677,6 +668,130 @@ async fn discovered_callback_issuer_rejects_mixup_before_grant_exchange<B: Backe
 fn access_endpoint(input: &Value) -> alibi::AuthResult<alibi::endpoint::ServerEndpoint<Value>> {
     alibi::endpoint::ServerEndpoint::new("oauth", "getAccessToken").with_body(input)
 }
+async fn refresh_owned_grant<S: AuthSchema>(
+    auth: &Alibi<S>,
+    db: &Db,
+    remote: &Provider,
+    owner_account_token: (&str, &str, &str),
+    outsider: &AuthResponse,
+    account_events: &Arc<Mutex<Vec<&'static str>>>,
+) -> TestResult {
+    let (owner, account, delivered_id_token) = owner_account_token;
+    let before_refresh = db.tables(&["users", "accounts", "sessions"]).await?;
+    for (options, status) in [
+        (
+            alibi::endpoint::EndpointOptions {
+                headers: Some(HashMap::new()),
+                ..Default::default()
+            },
+            401,
+        ),
+        (
+            alibi::endpoint::EndpointOptions {
+                request: Some(request("/incoming-request", None, "")),
+                ..Default::default()
+            },
+            401,
+        ),
+        (
+            alibi::endpoint::EndpointOptions {
+                headers: Some([("cookie".into(), cookies(outsider))].into_iter().collect()),
+                ..Default::default()
+            },
+            400,
+        ),
+    ] {
+        let denied = Box::pin(
+            auth.dispatch_endpoint(
+                alibi::endpoint::ServerEndpoint::<Value>::new("oauth", "refreshToken")
+                    .with_body(&json!({"accountId":account,"userId":owner}))?,
+                options,
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(denied.error.status_code(), status);
+        assert_eq!(denied.body_absent, status == 401);
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions"]).await?,
+            before_refresh
+        );
+        assert!(remote.take().is_empty());
+    }
+    remote.respond_at("/token", 200, json!({"access_token":"rotated-access","refresh_token":"rotated-refresh","token_type":"Bearer","expires_in":3600}));
+    account_events.lock().unwrap().clear();
+    let refresh = Box::pin(auth.dispatch_endpoint(
+        OAuthPlugin::refresh_token_endpoint(
+            OAuthAccountSelection::Id(account.to_owned()),
+            Some(owner),
+        ),
+        alibi::endpoint::EndpointOptions::default(),
+    ))
+    .await?;
+    let decoded = refresh.decode()?;
+    assert_eq!(decoded.access_token, Some(json!("rotated-access")));
+    assert_eq!(decoded.refresh_token, Some(json!("rotated-refresh")));
+    assert_eq!(decoded.account_id.as_deref(), Some(account));
+    assert_eq!(decoded.id_token, Some(json!(delivered_id_token)));
+    let persisted = auth
+        .context()
+        .database
+        .get_user_accounts_record(owner)
+        .await?;
+    let expiry = persisted
+        .iter()
+        .find(|row| row.id().as_ref() == account)
+        .unwrap()
+        .access_token_expires_at()
+        .unwrap()
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    assert_eq!(
+        decoded.access_token_expires_at.as_deref(),
+        Some(expiry.as_str())
+    );
+    assert_eq!(
+        refresh
+            .headers()
+            .get_all("set-cookie")
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        [
+            "application_a=first; Path=/; HttpOnly",
+            "application_b=second; Path=/; HttpOnly"
+        ]
+    );
+    assert_eq!(*account_events.lock().unwrap(), ["before", "after"]);
+    assert_eq!(
+        db.text("SELECT access_token FROM accounts WHERE id=$1", &[account])
+            .await?
+            .as_deref(),
+        Some("rotated-access")
+    );
+    assert_eq!(
+        db.text("SELECT refresh_token FROM accounts WHERE id=$1", &[account])
+            .await?
+            .as_deref(),
+        Some("rotated-refresh")
+    );
+    assert_eq!(
+        db.tables(&["users", "sessions"]).await?,
+        vec![before_refresh[0].clone(), before_refresh[2].clone()]
+    );
+    let before_accounts: Vec<Value> = serde_json::from_str(&before_refresh[1])?;
+    let after_accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    assert_eq!(
+        after_accounts
+            .iter()
+            .filter(|row| row["id"] != account)
+            .collect::<Vec<_>>(),
+        before_accounts
+            .iter()
+            .filter(|row| row["id"] != account)
+            .collect::<Vec<_>>()
+    );
+    Ok(())
+}
+
 struct AccessOperationHook(Arc<Mutex<Vec<&'static str>>>);
 #[async_trait::async_trait]
 impl<S: AuthSchema> alibi::endpoint::EndpointHook<S> for AccessOperationHook {
@@ -685,14 +800,24 @@ impl<S: AuthSchema> alibi::endpoint::EndpointHook<S> for AccessOperationHook {
         call: &alibi::endpoint::EndpointCall,
         _: &alibi::AuthContext<S>,
     ) -> alibi::AuthResult<bool> {
-        Ok(call.operation_id() == "getAccessToken")
+        Ok(matches!(
+            call.operation_id(),
+            "getAccessToken" | "refreshToken"
+        ))
     }
     async fn before(
         &self,
         call: &alibi::endpoint::EndpointCall,
         _: &alibi::AuthContext<S>,
     ) -> alibi::AuthResult<Option<alibi::endpoint::BeforeEndpointAction>> {
-        assert_eq!(call.path(), Some("/get-access-token"));
+        assert_eq!(
+            call.path(),
+            Some(if call.operation_id() == "refreshToken" {
+                "/refresh-token"
+            } else {
+                "/get-access-token"
+            })
+        );
         self.0.lock().unwrap().push("before");
         Ok(None)
     }
@@ -702,7 +827,10 @@ impl<S: AuthSchema> alibi::endpoint::EndpointHook<S> for AccessOperationHook {
         _: &alibi::AuthContext<S>,
         _: &alibi::endpoint::EndpointResponse,
     ) -> alibi::AuthResult<bool> {
-        Ok(call.operation_id() == "getAccessToken")
+        Ok(matches!(
+            call.operation_id(),
+            "getAccessToken" | "refreshToken"
+        ))
     }
     async fn after(
         &self,
