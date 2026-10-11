@@ -37,7 +37,12 @@ impl EmailPasswordPlugin {
         signup_req.email = signup_req.email.to_lowercase();
         if self.config.enable_username {
             let policy = &self.config.username;
-            if signup_req.username.is_none()
+            let mut callback_body = req.body_as_json::<alibi_core::utils::json::JsValue>()?;
+            let username_omitted = matches!(
+                &callback_body,
+                alibi_core::utils::json::JsValue::Object(body) if !body.contains_key("username")
+            );
+            if username_omitted
                 && let Some(display) = &signup_req.display_username
                 && policy.value_error(display).await?.is_none()
             {
@@ -72,7 +77,6 @@ impl EmailPasswordPlugin {
             if !policy.include_display_username {
                 signup_req.display_username = None;
             }
-            let mut callback_body = req.body_as_json::<alibi_core::utils::json::JsValue>()?;
             if let alibi_core::utils::json::JsValue::Object(body) = &mut callback_body {
                 if let Some(value) = &signup_req.username {
                     _ = body.insert(
