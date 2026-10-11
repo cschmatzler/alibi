@@ -347,6 +347,38 @@ fn plugin_fields(entity: &'static str, application: &Application) -> FieldConfig
     }
     fields
 }
+impl Application {
+    fn record_completed(&self, request: &impl alibi::session::SessionRequest, path: &str) {
+            let snapshot =
+                alibi::session::cookie_cache::runtime::published_session_snapshot(request);
+            let record = snapshot
+                .as_ref()
+                .map(|snapshot| json!({"user":snapshot.user(),"session":snapshot.session()}));
+            let user_output = snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.user_output());
+            let session_output = snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.session_output());
+            self.events.lock().expect("application receipts").push(json!({
+                "phase":"completed", "path":path, "record":record,
+                "userOmittedPresent":snapshot.as_ref().map(|_| user_output.is_some_and(|output| output.contains_field("omitted"))),
+                "userOmittedUndefined":snapshot.as_ref().map(|snapshot| !snapshot.user().extension_fields.contains_key("omitted")),
+                "sessionOmittedPresent":snapshot.as_ref().map(|_| session_output.is_some_and(|output| output.contains_field("omitted"))),
+                "sessionOmittedUndefined":snapshot.as_ref().map(|snapshot| !snapshot.session().extension_fields.contains_key("omitted"))
+            }));
+    }
+}
+#[async_trait::async_trait]
+impl alibi::endpoint::EndpointHook<ApplicationSchema> for Application {
+    fn matches_after(&self, call: &alibi::endpoint::EndpointCall, _: &alibi::AuthContext<ApplicationSchema>, _: &alibi::endpoint::EndpointResponse) -> AuthResult<bool> {
+        Ok(self.mode == "cached" && call.request().is_none())
+    }
+    async fn after(&self, call: &alibi::endpoint::EndpointCall, _: &alibi::AuthContext<ApplicationSchema>, response: alibi::endpoint::EndpointResponse) -> AuthResult<alibi::endpoint::EndpointResponse> {
+        self.record_completed(call, call.path().unwrap_or("/"));
+        Ok(response)
+    }
+}
 #[async_trait::async_trait]
 impl AuthPlugin<ApplicationSchema> for Application {
     fn name(&self) -> &'static str {
@@ -361,6 +393,7 @@ impl AuthPlugin<ApplicationSchema> for Application {
     fn session_fields(&self) -> FieldConfigs {
         plugin_fields("session", self)
     }
+    fn endpoint_hooks(&self) -> Vec<&dyn alibi::endpoint::EndpointHook<ApplicationSchema>> { vec![self] }
     fn routes(&self) -> Vec<AuthRoute> {
         Vec::new()
     }
@@ -377,26 +410,7 @@ impl AuthPlugin<ApplicationSchema> for Application {
         _: &alibi::AuthContext<ApplicationSchema>,
         response: alibi::AuthResponse,
     ) -> AuthResult<alibi::AuthResponse> {
-        if self.mode == "cached" {
-            let snapshot =
-                alibi::session::cookie_cache::runtime::published_session_snapshot(request);
-            let record = snapshot
-                .as_ref()
-                .map(|snapshot| json!({"user":snapshot.user(),"session":snapshot.session()}));
-            let user_output = snapshot
-                .as_ref()
-                .and_then(|snapshot| snapshot.user_output());
-            let session_output = snapshot
-                .as_ref()
-                .and_then(|snapshot| snapshot.session_output());
-            self.events.lock().expect("application receipts").push(json!({
-                "phase":"completed", "path":request.path(), "record":record,
-                "userOmittedPresent":snapshot.as_ref().map(|_| user_output.is_some_and(|output| output.contains_field("omitted"))),
-                "userOmittedUndefined":snapshot.as_ref().map(|snapshot| !snapshot.user().extension_fields.contains_key("omitted")),
-                "sessionOmittedPresent":snapshot.as_ref().map(|_| session_output.is_some_and(|output| output.contains_field("omitted"))),
-                "sessionOmittedUndefined":snapshot.as_ref().map(|snapshot| !snapshot.session().extension_fields.contains_key("omitted"))
-            }));
-        }
+        if self.mode == "cached" { self.record_completed(request, request.path()); }
         Ok(response)
     }
     async fn on_init(&self, context: &mut AuthInitContext<ApplicationSchema>) -> AuthResult<()> {
@@ -708,10 +722,24 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
         }));
     }
     let auth = Arc::new(builder.build().await?);
-    Ok((
-        Router::new().nest(&path, auth.clone().axum_router().with_state(auth)),
-        application,
-    ))
+    let control = auth.clone();
+    let router = Router::new().nest(&path, auth.clone().axum_router().with_state(auth));
+    let router = router.route(&format!("/__test/additional-fields/{mode}/update-session"), post(move |Json(input): Json<Value>| {
+        let auth = control.clone();
+        async move {
+            let headers = input.get("headers").map(|headers| serde_json::from_value(headers.clone()).unwrap());
+            let endpoint = alibi::endpoint::ServerEndpoint::<JsValue>::new("session-management", "updateSession")
+                .with_body(&input["body"])?
+                .with_query(&json!({"disableRefresh":true}))?;
+            let output = auth.dispatch_endpoint(endpoint, alibi::endpoint::EndpointOptions { headers, ..Default::default() }).await
+                .map_err(|error| error.error)?;
+            let mut headers: std::collections::HashMap<_,_> = output.headers().iter().map(|(name,value)|(name.to_ascii_lowercase(),value.clone())).collect();
+            let cookies: Vec<_> = output.headers().get_all("set-cookie").cloned().collect();
+            if !cookies.is_empty() { drop(headers.insert("set-cookie".into(),cookies.join(", "))); }
+            Ok::<_,AuthError>(Json(json!({"result":{"ok":true,"value":{"response":output.value(),"headers":headers,"cookies":cookies}}})))
+        }
+    }));
+    Ok((router, application))
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

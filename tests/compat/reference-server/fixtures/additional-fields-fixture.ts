@@ -598,6 +598,40 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
     async handle(request: Request) {
       const url = new URL(request.url);
 
+      const direct = url.pathname.match(/^\/__test\/additional-fields\/([^/]+)\/update-session$/);
+      if (direct && request.method === "POST") {
+        const mode = direct[1]!;
+        const name = mode === "normal" ? "additional-fields" : `additional-${mode}-fields`;
+        const profile = profiles.get(`/__test/profiles/${name}/api/auth`);
+        if (!profile) {
+          return Response.json({ message: "Unknown application" }, { status: 404 });
+        }
+        const input = (await request.json()) as {
+          body: Record<string, unknown>;
+          headers: Record<string, string>;
+        };
+        const output = await profile.api.updateSession({
+          body: input.body,
+          headers: new Headers(input.headers),
+          query: { disableRefresh: true },
+          returnHeaders: true,
+        });
+        return Response.json({
+          result: {
+            ok: true,
+            value: {
+              response: output.response,
+              headers: {
+                ...Object.fromEntries(output.headers),
+                ...(output.headers.has("set-cookie")
+                  ? { "set-cookie": output.headers.get("set-cookie") }
+                  : {}),
+              },
+              cookies: output.headers.getSetCookie(),
+            },
+          },
+        });
+      }
       if (
         url.pathname !== "/__test/additional-fields/state" &&
         url.pathname !== "/__test/additional-fields/rewind-session"

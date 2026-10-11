@@ -246,6 +246,7 @@
         "set-cookie": [
           "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
           "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
           "better-auth.dont_remember=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
         ]
       },

@@ -10,7 +10,7 @@ use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
 use alibi_core::entity::{AuthSession, AuthUser};
-use alibi_core::field_policy::{FieldInputError, SessionFields};
+use alibi_core::field_policy::{FieldInputError, FieldValues, SessionFields};
 use alibi_core::session::SessionRequest;
 use alibi_core::utils::cookie_utils::{related_cookie_name, verify_cookie_value};
 use alibi_core::utils::json::JsValue;
@@ -82,6 +82,12 @@ pub struct SignOutResponse {
     pub redirect: Option<bool>,
 }
 
+/// Result of a current-session update, including configured public session fields.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateSessionResponse {
+    pub session: SessionView,
+}
+
 /// Public get-session output, including configured fields and cached projections.
 /// An absent or expired session is represented by `Option<GetSessionResponse>::None`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,6 +124,12 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
             HttpMethod::Get,
         )];
         endpoints.push(crate::endpoint::definition(
+            "updateSession",
+            "updateSession",
+            Some("/update-session"),
+            HttpMethod::Post,
+        ));
+        endpoints.push(crate::endpoint::definition(
             "signOut",
             "signOut",
             Some("/sign-out"),
@@ -153,6 +165,18 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
         call: &EndpointCall,
         _: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
+        if call.operation_id() == "updateSession" {
+            if !matches!(call.body(), Some(JsValue::Object(_))) {
+                return Err(crate::endpoint::validation(format!(
+                    "[body] Invalid input: expected record, received {}",
+                    json_type(call.body()),
+                )));
+            }
+            return Ok(EndpointInput {
+                body: call.body().cloned(),
+                query: call.query().cloned(),
+            });
+        }
         if call.operation_id() == "signOut" {
             let body = call
                 .body()
@@ -230,6 +254,9 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "updateSession" {
+            return self.update_session_endpoint_response(call, ctx).await;
+        }
         if call.operation_id() == "signOut" {
             let body = if call.body().is_some() {
                 call.body_as()?
@@ -412,10 +439,74 @@ impl SessionManagementPlugin {
         ServerEndpoint::new("session-management", "revokeSessions")
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Keep validated session field updates and persistence callbacks in request order"
-    )]
+    /// Update configured fields for the authenticated current session.
+    /// Supply genuine logical session headers in `EndpointOptions::headers`.
+    ///
+    /// # Errors
+    /// Returns an error if the logical input cannot be serialized.
+    pub fn update_session_endpoint(
+        input: &impl Serialize,
+    ) -> AuthResult<ServerEndpoint<UpdateSessionResponse>> {
+        ServerEndpoint::new("session-management", "updateSession").with_body(input)
+    }
+
+    async fn update_session_endpoint_response<S: alibi_core::AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let (user, session) = ctx
+            .require_cached_session(call)
+            .await
+            .map_err(unauthorized_if_unauthenticated)?;
+        call.record_authenticated_session(
+            match &user {
+                alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+                alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
+            },
+            session.clone(),
+        );
+        let input = call
+            .body()
+            .and_then(JsValue::as_object)
+            .ok_or_else(|| crate::endpoint::validation("[body] Invalid input: expected record"))?;
+        let allowed = parse_session_update_fields(input, ctx).map_err(|error| match error {
+            FieldInputError::Validation { code, message } => AuthError::Api {
+                status: 400,
+                code: Some(code.into()),
+                message,
+            },
+            FieldInputError::Transform(error) => error,
+        })?;
+        let response = self
+            .update_session_response(call, ctx, &user, &session, allowed)
+            .await?;
+        let value: JsValue = alibi_core::utils::json::from_slice(&response.body)?;
+        let mut result = if response.status >= 400 {
+            EndpointResponse::error(AuthError::Api {
+                status: response.status,
+                code: value
+                    .get("code")
+                    .and_then(JsValue::as_str)
+                    .map(str::to_owned),
+                message: value
+                    .get("message")
+                    .and_then(JsValue::as_str)
+                    .unwrap_or_default()
+                    .into(),
+            })
+            .with_error_body(value)
+        } else {
+            EndpointResponse::value(value)
+        };
+        for (name, value) in response.headers {
+            if !name.eq_ignore_ascii_case("content-type") {
+                result = result.with_header(name, value);
+            }
+        }
+        Ok(result)
+    }
+
     async fn handle_update_session(
         &self,
         req: &AuthRequest,
@@ -475,11 +566,7 @@ impl SessionManagementPlugin {
             }
             Err(error) => return Err(error),
         };
-        let fields = ctx.extensions.get::<SessionFields>().map_or_else(
-            || SessionFields(ctx.config.session.additional_fields.clone()),
-            |fields| (*fields).clone(),
-        );
-        let allowed = match fields.parse_update(input) {
+        let allowed = match parse_session_update_fields(input, ctx) {
             Ok(allowed) => allowed,
             Err(FieldInputError::Validation { code, message }) => {
                 return Ok(AuthResponse::json(
@@ -492,6 +579,18 @@ impl SessionManagementPlugin {
             }
             Err(FieldInputError::Transform(error)) => return Err(error),
         };
+        self.update_session_response(req, ctx, &user, &session, allowed)
+            .await
+    }
+
+    async fn update_session_response<S: alibi_core::AuthSchema>(
+        &self,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+        user: &alibi_core::AuthenticatedUser<S>,
+        session: &SessionView,
+        allowed: FieldValues,
+    ) -> AuthResult<AuthResponse> {
         if !allowed.has_input_fields() {
             return Ok(AuthResponse::json(
                 400,
@@ -520,10 +619,10 @@ impl SessionManagementPlugin {
             return Ok(response);
         };
 
-        alibi_core::session::cookie_cache::runtime::emit_issuance(ctx, &user, &updated).await?;
+        alibi_core::session::cookie_cache::runtime::emit_issuance(ctx, user, &updated).await?;
 
         let preference = related_cookie_name(&ctx.config, "dont_remember");
-        let dont_remember = req.header("cookie").is_some_and(|header| {
+        let dont_remember = req.session_headers().get("cookie").is_some_and(|header| {
             cookie::Cookie::split_parse(header)
                 .flatten()
                 .find(|cookie| cookie.name() == preference)
@@ -846,6 +945,18 @@ fn revocation_storage_error(error: AuthError) -> AuthError {
         code: "INTERNAL_SERVER_ERROR",
         message: "Internal Server Error",
     }
+}
+
+/// Parse application fields after admission, shared by HTTP and logical callers.
+fn parse_session_update_fields(
+    input: &indexmap::IndexMap<String, JsValue>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
+) -> Result<FieldValues, FieldInputError> {
+    let fields = ctx.extensions.get::<SessionFields>().map_or_else(
+        || SessionFields(ctx.config.session.additional_fields.clone()),
+        |fields| (*fields).clone(),
+    );
+    fields.parse_update(input)
 }
 
 // LCOV_EXCL_START
