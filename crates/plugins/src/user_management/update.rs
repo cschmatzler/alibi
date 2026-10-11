@@ -17,6 +17,12 @@ pub fn update_user_endpoint(
     alibi_core::endpoint::ServerEndpoint::new("core", "updateUser").with_body(body)
 }
 
+/// Build the public health-check operation without requiring credentials or input.
+#[must_use]
+pub fn ok_endpoint() -> alibi_core::endpoint::ServerEndpoint<alibi_core::OkResponse> {
+    alibi_core::endpoint::ServerEndpoint::new("core", "ok")
+}
+
 /// Builtin owner used by the host runtime independently of optional user plugins.
 #[doc(hidden)]
 pub struct BuiltinUserEndpoints;
@@ -29,18 +35,27 @@ impl<S: alibi_core::AuthSchema> alibi_core::AuthPlugin<S> for BuiltinUserEndpoin
         Vec::new()
     }
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
-        vec![crate::endpoint::definition(
-            "updateUser",
-            "updateUser",
-            Some("/update-user"),
-            alibi_core::HttpMethod::Post,
-        )]
+        vec![
+            crate::endpoint::definition("ok", "ok", Some("/ok"), alibi_core::HttpMethod::Get),
+            crate::endpoint::definition(
+                "updateUser",
+                "updateUser",
+                Some("/update-user"),
+                alibi_core::HttpMethod::Post,
+            ),
+        ]
     }
     fn validate_endpoint(
         &self,
         call: &alibi_core::endpoint::EndpointCall,
         _: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
+        if call.operation_id() == "ok" {
+            return Ok(alibi_core::endpoint::EndpointInput {
+                body: call.body().cloned(),
+                query: call.query().cloned(),
+            });
+        }
         let body = call
             .body()
             .filter(|body| body.as_object().is_some())
@@ -60,6 +75,11 @@ impl<S: alibi_core::AuthSchema> alibi_core::AuthPlugin<S> for BuiltinUserEndpoin
         call: &alibi_core::endpoint::EndpointCall,
         context: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        if call.operation_id() == "ok" {
+            return alibi_core::endpoint::EndpointResponse::json(&alibi_core::OkResponse {
+                ok: true,
+            });
+        }
         let body = call
             .body()
             .ok_or_else(|| AuthError::bad_request("Missing profile input"))?;

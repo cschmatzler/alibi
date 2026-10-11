@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 /// Generic `{ ok: bool }` response used by `/ok` and `/error` endpoints.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct OkResponse {
     pub ok: bool,
 }
