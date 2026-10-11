@@ -83,6 +83,14 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
             Some("/get-session"),
             HttpMethod::Get,
         )];
+        if self.config.enable_session_listing {
+            endpoints.push(crate::endpoint::definition(
+                "listSessions",
+                "listSessions",
+                Some("/list-sessions"),
+                HttpMethod::Get,
+            ));
+        }
         if self.config.enable_session_revocation {
             for (operation, path) in [
                 ("revokeSession", "/revoke-session"),
@@ -105,6 +113,15 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
         call: &EndpointCall,
         _: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
+        if call.operation_id() == "listSessions" {
+            if call.headers().is_none() {
+                return Err(crate::endpoint::validation("Headers is required"));
+            }
+            return Ok(EndpointInput {
+                body: call.body().cloned(),
+                query: call.query().cloned(),
+            });
+        }
         if matches!(
             call.operation_id(),
             "revokeSession" | "revokeOtherSessions" | "revokeSessions"
@@ -158,6 +175,39 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "listSessions" {
+            let (user, session) = ctx
+                .require_cached_session(call)
+                .await
+                .map_err(unauthorized_if_unauthenticated)?;
+            call.record_authenticated_session(
+                match &user {
+                    alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+                    alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
+                },
+                session.clone(),
+            );
+            if !ctx.session_manager().is_session_fresh(&session) {
+                return Err(AuthError::Upstream {
+                    status: 403,
+                    code: "SESSION_NOT_FRESH",
+                    message: "Session is not fresh",
+                });
+            }
+            let sessions = match list_sessions_core(user.id(), ctx).await {
+                Ok(sessions) => sessions,
+                Err(error) => {
+                    tracing::error!(error = %error, "Session listing failed");
+                    return Ok(EndpointResponse::error(AuthError::Api {
+                        status: 500,
+                        code: None,
+                        message: String::new(),
+                    })
+                    .with_error_body(JsValue::Null));
+                }
+            };
+            return EndpointResponse::json(&sessions);
+        }
         if matches!(
             call.operation_id(),
             "revokeSession" | "revokeOtherSessions" | "revokeSessions"
@@ -247,6 +297,13 @@ impl SessionManagementPlugin {
     #[must_use]
     pub const fn get_session_endpoint() -> ServerEndpoint<Option<GetSessionResponse>> {
         ServerEndpoint::new("session-management", "getSession")
+    }
+
+    /// List the fresh authenticated caller's active sessions through logical hooks.
+    /// Supply incoming logical headers in `EndpointOptions::headers`.
+    #[must_use]
+    pub const fn list_sessions_endpoint() -> ServerEndpoint<Vec<SessionView>> {
+        ServerEndpoint::new("session-management", "listSessions")
     }
 
     /// Revoke a session belonging to the authoritative current user.
@@ -547,13 +604,10 @@ impl SessionManagementPlugin {
                 message: "Session is not fresh",
             });
         }
-        let Ok(mut sessions) = list_sessions_core(user.id(), ctx).await else {
+        let Ok(sessions) = list_sessions_core(user.id(), ctx).await else {
             tracing::error!("Session listing failed");
             return Ok(AuthResponse::new(500).with_header("content-type", "application/json"));
         };
-        if admin_plugin_enabled(ctx) {
-            sessions.retain(|listed| listed.impersonated_by.is_none());
-        }
         Ok(AuthResponse::json(200, &sessions)?)
     }
 
@@ -626,11 +680,15 @@ pub(crate) async fn list_sessions_core(
         .get_active_user_sessions_record(user_id.as_ref())
         .await?;
     let now = chrono::Utc::now();
-    Ok(sessions
+    let mut sessions: Vec<_> = sessions
         .iter()
         .filter(|session| session.expires_at() > now && session.active())
         .map(|session| ctx.session_view(session))
-        .collect())
+        .collect();
+    if admin_plugin_enabled(ctx) {
+        sessions.retain(|listed| listed.impersonated_by.is_none());
+    }
+    Ok(sessions)
 }
 
 pub(crate) async fn revoke_session_core(

@@ -54,6 +54,7 @@ mod server_account_listing;
 mod server_account_unlink;
 mod server_change_password;
 mod server_endpoints;
+mod server_list_sessions;
 mod server_revocation_support;
 mod server_revoke_other_sessions;
 mod server_revoke_sessions;
