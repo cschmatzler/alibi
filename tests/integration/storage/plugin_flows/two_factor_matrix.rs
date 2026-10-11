@@ -14,6 +14,7 @@ backend_tests!(
     two_factor_forged_trust_proofs,
     two_factor_otp_budget_and_session_choices,
     two_factor_numeric_options_and_damaged_factor,
+    two_factor_nonpositive_otp_generation_preserves_admission_and_authority,
     two_factor_otp_resends_are_consumed_once_across_real_requests,
     two_factor_reenrollment_retains_row_policy,
     two_factor_pending_unverified_totp_backup_recovery,
@@ -658,6 +659,111 @@ async fn two_factor_numeric_options_and_damaged_factor<B: Backend>(db: Db) -> Te
         B::close(connection).await?;
     }
     trace.assert("two-factor/numeric-options-and-damage");
+    Ok(())
+}
+
+// Compat owner: the nonpositive OTP scenario in two-factor/otp-config.test.ts.
+// The numeric response matrix uses a pending enrolled owner; this protects
+// admission order and the original unenrolled owner's physical authority.
+async fn two_factor_nonpositive_otp_generation_preserves_admission_and_authority<B: Backend>(
+    parent: Db,
+) -> TestResult {
+    for digits in [0.0, -1.0] {
+        let db = parent.fresh().await?;
+        let (connection, _) = db.migrated::<B>(SECRET).await?;
+        let outbox = Arc::new(Outbox::default());
+        let auth = super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(TwoFactorPlugin::with_config(TwoFactorConfig {
+                send_otp: Some(outbox.clone()),
+                otp_digits: digits,
+                ..Default::default()
+            }))
+            .build()
+            .await?;
+        let guest = call(
+            &auth,
+            request("/two-factor/send-otp", Some(json!({})), ""),
+            401,
+        )
+        .await;
+        assert_eq!(body(&guest)["code"], "INVALID_TWO_FACTOR_COOKIE");
+        assert!(guest.headers.get_all("set-cookie").next().is_none());
+        assert!(outbox.0.lock().unwrap().is_empty());
+        assert_eq!(db.count("verifications").await?, 0);
+        let owner = signup(&auth, "nonpositive-otp-owner@example.test").await;
+        let cookie = cookies(&owner);
+        let before = db
+            .tables(&[
+                "users",
+                "accounts",
+                "sessions",
+                "verifications",
+                "two_factor",
+            ])
+            .await?;
+        assert_eq!(db.count("two_factor").await?, 0);
+        assert_eq!(db.count("verifications").await?, 0);
+        let malformed = call(
+            &auth,
+            request(
+                "/two-factor/send-otp",
+                Some(json!({"trustDevice": null})),
+                &cookie,
+            ),
+            400,
+        )
+        .await;
+        assert_eq!(body(&malformed)["code"], "VALIDATION_ERROR");
+        assert!(malformed.headers.get_all("set-cookie").next().is_none());
+        assert!(outbox.0.lock().unwrap().is_empty());
+        assert_eq!(
+            db.tables(&[
+                "users",
+                "accounts",
+                "sessions",
+                "verifications",
+                "two_factor"
+            ])
+            .await?,
+            before
+        );
+        let failed = call(
+            &auth,
+            request("/two-factor/send-otp", Some(json!({})), &cookie),
+            500,
+        )
+        .await;
+        assert!(failed.body.is_empty());
+        assert!(failed.headers.get_all("set-cookie").next().is_none());
+        assert!(outbox.0.lock().unwrap().is_empty());
+        assert_eq!(
+            db.tables(&[
+                "users",
+                "accounts",
+                "sessions",
+                "verifications",
+                "two_factor"
+            ])
+            .await?,
+            before
+        );
+        let current = call(&auth, request("/get-session", None, &cookie), 200).await;
+        assert_eq!(body(&current)["user"]["id"], body(&owner)["user"]["id"]);
+        assert_eq!(body(&current)["user"]["twoFactorEnabled"], false);
+        assert_eq!(body(&current)["session"]["token"], body(&owner)["token"]);
+        assert_eq!(
+            db.tables(&[
+                "users",
+                "accounts",
+                "sessions",
+                "verifications",
+                "two_factor"
+            ])
+            .await?,
+            before
+        );
+        B::close(connection).await?;
+    }
     Ok(())
 }
 
