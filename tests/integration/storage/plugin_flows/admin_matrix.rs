@@ -30,6 +30,7 @@ backend_tests!(
     admin_array_filter_sql_operands,
     admin_repeated_query_validation_before_auth,
     admin_date_callback_error_identity,
+    admin_stored_timestamp_precision_survives_public_projections,
     admin_impersonation_operator_metadata
 );
 
@@ -1961,6 +1962,126 @@ async fn admin_repeated_query_validation_before_auth<B: Backend>(db: Db) -> Test
         }
     }
     assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    B::close(connection).await
+}
+
+// Compat owner: tests/plugins/admin/timestamp-precision.test.ts. Shared date
+// serializer tests do not prove that admin read, mutation and list projections
+// retain physical creation precision while exposing JavaScript milliseconds.
+async fn admin_stored_timestamp_precision_survives_public_projections<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new())
+        .build()
+        .await?;
+    let admin = signup(&auth, "timestamp-admin@example.test").await;
+    let admin_id = promote(&auth, &admin, "admin").await;
+    let target_email = "timestamp-target@example.test";
+    let target = signup(&auth, target_email).await;
+    let target_id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
+    let stable_authority = db.tables(&["accounts", "sessions"]).await?;
+    let mut read = request("/admin/get-user", None, &cookies(&admin));
+    _ = read.query.insert("id".into(), target_id.clone());
+    let mut list = request("/admin/list-users", None, &cookies(&admin));
+    list.set_query_pairs([
+        ("searchField", "email"),
+        ("searchOperator", "contains"),
+        ("searchValue", target_email),
+    ]);
+
+    for fraction in ["145927", "145927123", "145000"] {
+        let created_at = format!("2026-09-30T22:11:23.{fraction}Z");
+        let updated_at = "2026-09-30T22:12:34.321456Z";
+        assert_eq!(
+            db.execute(
+                "UPDATE users SET created_at=$1, updated_at=$2 WHERE id=$3",
+                &[&created_at, updated_at, &target_id],
+            )
+            .await?,
+            1
+        );
+        let physical_before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let user = body(&call(&auth, read.clone(), 200).await);
+        assert_eq!(user["id"], target_id);
+        assert_eq!(user["createdAt"], "2026-09-30T22:11:23.145Z");
+        assert_eq!(user["updatedAt"], "2026-09-30T22:12:34.321Z");
+        let denied = call(
+            &auth,
+            request(
+                "/admin/set-role",
+                Some(json!({"userId": admin_id, "role": "user"})),
+                &cookies(&target),
+            ),
+            403,
+        )
+        .await;
+        assert!(denied.headers.get_all("set-cookie").next().is_none());
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions"]).await?,
+            physical_before
+        );
+
+        let update = call(
+            &auth,
+            request(
+                "/admin/set-role",
+                Some(json!({"userId": target_id, "role": "user"})),
+                &cookies(&admin),
+            ),
+            200,
+        )
+        .await;
+        let updated_user = body(&update)["user"].clone();
+        assert_eq!(updated_user["id"], target_id);
+        assert_eq!(updated_user["role"], "user");
+        assert_eq!(updated_user["createdAt"], "2026-09-30T22:11:23.145Z");
+        let updated_wire = updated_user["updatedAt"].as_str().unwrap();
+        assert_eq!(updated_wire.len(), 24);
+        assert_eq!(updated_wire.as_bytes()[19], b'.');
+        assert!(updated_wire.ends_with('Z'));
+        let persisted = auth.store().get_user_by_id(&target_id).await?.unwrap();
+        assert_eq!(
+            chrono::DateTime::parse_from_rfc3339(updated_wire)?.timestamp_millis(),
+            alibi::AuthUser::updated_at(&persisted).timestamp_millis()
+        );
+        let listed = body(&call(&auth, list.clone(), 200).await);
+        assert_eq!(listed["users"].as_array().unwrap().len(), 1);
+        assert_eq!(listed["users"][0], updated_user);
+        let stored_created = db
+            .text("SELECT created_at FROM users WHERE id=$1", &[&target_id])
+            .await?
+            .unwrap();
+        assert_eq!(
+            chrono::DateTime::parse_from_rfc3339(&stored_created)?,
+            chrono::DateTime::parse_from_rfc3339(&created_at)?
+        );
+        assert_eq!(
+            db.tables(&["accounts", "sessions"]).await?,
+            stable_authority
+        );
+        for established in [&admin, &target] {
+            let session = call(
+                &auth,
+                request("/get-session", None, &cookies(established)),
+                200,
+            )
+            .await;
+            assert_eq!(
+                body(&session)["user"]["id"],
+                body(established)["user"]["id"]
+            );
+            assert_eq!(
+                body(&session)["session"]["token"],
+                body(established)["token"]
+            );
+        }
+        assert_eq!(
+            db.tables(&["accounts", "sessions"]).await?,
+            stable_authority
+        );
+    }
     B::close(connection).await
 }
 
