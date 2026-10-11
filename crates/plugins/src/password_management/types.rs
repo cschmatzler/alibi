@@ -121,3 +121,17 @@ impl crate::authentication_helpers::RequestBody for RequestPasswordResetRequest 
         crate::authentication_helpers::JsonField::string("redirectTo", false),
     ];
 }
+
+/// Required logical query for `requestPasswordResetCallback`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ResetPasswordCallbackQuery {
+    #[serde(rename = "callbackURL")]
+    pub callback_url: String,
+}
+impl crate::authentication_helpers::RequestBody for ResetPasswordCallbackQuery {
+    const FIELDS: &'static [crate::authentication_helpers::JsonField] =
+        &[crate::authentication_helpers::JsonField::string(
+            "callbackURL",
+            true,
+        )];
+}

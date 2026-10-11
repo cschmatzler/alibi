@@ -28,6 +28,7 @@ pub struct ServerEndpoint<T> {
     name: &'static str,
     body: Option<JsValue>,
     query: Option<JsValue>,
+    params: Option<JsValue>,
     output: PhantomData<fn() -> T>,
 }
 
@@ -39,6 +40,7 @@ impl<T> ServerEndpoint<T> {
             name,
             body: None,
             query: None,
+            params: None,
             output: PhantomData,
         }
     }
@@ -71,6 +73,28 @@ impl<T> ServerEndpoint<T> {
     pub fn with_query_value(mut self, query: JsValue) -> Self {
         self.query = Some(query);
         self
+    }
+
+    /// Supply logical path parameters independently of an HTTP request.
+    ///
+    /// # Errors
+    /// Returns an error if application input cannot be serialized.
+    pub fn with_params(mut self, params: &impl Serialize) -> AuthResult<Self> {
+        self.params = Some(crate::utils::json::parse_value(
+            &crate::utils::json::to_string(params)?,
+        )?);
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn with_params_value(mut self, params: JsValue) -> Self {
+        self.params = Some(params);
+        self
+    }
+
+    #[must_use]
+    pub const fn params(&self) -> Option<&JsValue> {
+        self.params.as_ref()
     }
 
     #[must_use]
@@ -131,6 +155,7 @@ pub struct EndpointCall {
     method: Option<HttpMethod>,
     body: Option<JsValue>,
     query: Option<JsValue>,
+    params: Option<JsValue>,
     headers: Option<HashMap<String, String>>,
     request: Option<AuthRequest>,
     default_method: HttpMethod,
@@ -153,6 +178,7 @@ impl EndpointCall {
             method: options.method,
             body,
             query,
+            params: None,
             headers: options.headers.map(|headers| {
                 headers
                     .into_iter()
@@ -239,6 +265,18 @@ impl EndpointCall {
     #[must_use]
     pub const fn query(&self) -> Option<&JsValue> {
         self.query.as_ref()
+    }
+
+    /// Retain supplied logical parameters in every genuine callback frame.
+    #[must_use]
+    pub fn with_params_value(mut self, params: JsValue) -> Self {
+        self.params = Some(params);
+        self
+    }
+
+    #[must_use]
+    pub const fn params(&self) -> Option<&JsValue> {
+        self.params.as_ref()
     }
 
     #[must_use]
@@ -441,6 +479,7 @@ pub struct EndpointContextPatch {
     pub path: Option<String>,
     pub body: Option<JsValue>,
     pub query: Option<JsValue>,
+    pub params: Option<JsValue>,
     pub headers: Option<HashMap<String, String>>,
 }
 
@@ -457,6 +496,7 @@ impl EndpointContextPatch {
         }
         merge_optional(&mut self.body, patch.body);
         merge_optional(&mut self.query, patch.query);
+        merge_optional(&mut self.params, patch.params);
         if let Some(headers) = patch.headers {
             self.headers.get_or_insert_with(HashMap::new).extend(
                 headers
@@ -478,6 +518,7 @@ impl EndpointContextPatch {
         }
         merge_optional(&mut call.body, self.body);
         merge_optional(&mut call.query, self.query);
+        merge_optional(&mut call.params, self.params);
         if let Some(headers) = self.headers {
             call.headers
                 .get_or_insert_with(HashMap::new)
@@ -534,6 +575,7 @@ pub struct EndpointInput {
 pub struct EndpointResponse {
     result: Result<JsValue, AuthError>,
     error_body: Option<JsValue>,
+    error_body_absent: bool,
     headers: Headers,
     status: Option<u16>,
 }
@@ -544,6 +586,7 @@ impl EndpointResponse {
         Self {
             result: Ok(value),
             error_body: None,
+            error_body_absent: false,
             headers: Headers::new(),
             status: None,
         }
@@ -563,13 +606,40 @@ impl EndpointResponse {
         Self {
             result: Err(error),
             error_body: None,
+            error_body_absent: false,
             headers: Headers::new(),
             status,
         }
     }
 
+    /// Preserve an intentional redirect error, including its absent body and Location.
+    #[must_use]
+    pub fn redirect(location: impl Into<String>) -> Self {
+        Self::error(AuthError::Api {
+            status: 302,
+            code: None,
+            message: String::new(),
+        })
+        .without_error_body()
+        .with_header("location", location)
+    }
+
+    /// Retain the distinction between an absent error body and an explicit JSON null.
+    #[must_use]
+    pub fn without_error_body(mut self) -> Self {
+        self.error_body = None;
+        self.error_body_absent = true;
+        self
+    }
+
+    #[must_use]
+    pub const fn error_body_is_absent(&self) -> bool {
+        self.error_body_absent
+    }
+
     #[must_use]
     pub fn with_error_body(mut self, body: JsValue) -> Self {
+        self.error_body_absent = false;
         self.error_body = Some(body);
         self
     }
@@ -619,11 +689,13 @@ impl EndpointResponse {
     pub fn replace(&mut self, value: JsValue) {
         self.result = Ok(value);
         self.error_body = None;
+        self.error_body_absent = false;
     }
 
     pub fn replace_error(&mut self, error: AuthError) {
         self.result = Err(error);
         self.error_body = None;
+        self.error_body_absent = false;
     }
 
     pub fn into_output<T>(self) -> Result<EndpointOutput<T>, EndpointError> {
@@ -638,6 +710,7 @@ impl EndpointResponse {
                 error,
                 headers: Some(self.headers),
                 body: self.error_body.map(Box::new),
+                body_absent: self.error_body_absent,
             }),
         }
     }
@@ -734,6 +807,8 @@ pub struct EndpointError {
     pub error: AuthError,
     pub headers: Option<Headers>,
     pub body: Option<Box<JsValue>>,
+    /// True when the API intentionally supplied no body, including redirect errors.
+    pub body_absent: bool,
 }
 
 impl From<AuthError> for EndpointError {
@@ -742,6 +817,7 @@ impl From<AuthError> for EndpointError {
             error,
             headers: None,
             body: None,
+            body_absent: false,
         }
     }
 }
