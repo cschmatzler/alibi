@@ -6,6 +6,7 @@
 )]
 use super::super::{SeaOrm, Sqlx};
 use super::*;
+use alibi::AuthResult;
 use alibi::config::CookieCacheConfig;
 use alibi::field_policy::FieldConfig;
 use alibi::utils::json::JsValue;
@@ -1579,4 +1580,218 @@ async fn sqlx_hooks_run_statements_inside_the_auth_transaction() -> TestResult {
         Some("rewritten-by-hook")
     );
     Sqlx::close(connection).await
+}
+
+#[derive(Clone, Default)]
+struct LogicalSessionObserver(Arc<Mutex<Vec<Value>>>);
+#[async_trait::async_trait]
+impl<S: AuthSchema> alibi::endpoint::EndpointHook<S> for LogicalSessionObserver {
+    fn matches_after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+        _: &alibi::endpoint::EndpointResponse,
+    ) -> AuthResult<bool> {
+        Ok(call.operation_id() == "updateSession")
+    }
+    async fn after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+        response: alibi::endpoint::EndpointResponse,
+    ) -> AuthResult<alibi::endpoint::EndpointResponse> {
+        assert!(call.request().is_none());
+        assert_eq!(call.path(), Some("/update-session"));
+        let snapshot = alibi::session::cookie_cache::runtime::published_session_snapshot(call)
+            .expect("actual cache publication must precede the callback");
+        self.0
+            .lock()
+            .unwrap()
+            .push(json!({"user":snapshot.user(),"session":snapshot.session()}));
+        Ok(response)
+    }
+}
+
+// The same application's public logical operation owns field projection and cache publication.
+fn logical_config() -> AuthConfig {
+    let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    config.session.cookie_cache = Some(CookieCacheConfig {
+        enabled: true,
+        max_age: 300.0,
+        ..Default::default()
+    });
+    config.session.additional_fields.extend([
+        (
+            "label".into(),
+            FieldConfig::new(json!({"type":"string"}))
+                .default_value(json!("session-initial"))
+                .transform_output(|value| async move {
+                    Ok(value.map(|value| {
+                        JsValue::Object([("stored".into(), value)].into_iter().collect())
+                    }))
+                }),
+        ),
+        (
+            "hidden".into(),
+            FieldConfig::new(json!({"type":"string"}))
+                .hidden()
+                .default_value(json!("session-secret")),
+        ),
+    ]);
+    config
+}
+async fn logical_session_update<S: AuthSchema>(
+    auth: Alibi<S>,
+    db: &Db,
+    observer: &LogicalSessionObserver,
+) -> TestResult {
+    use super::server_revocation_support::options;
+    let owner = signup(&auth, "logical-fields-owner@example.test").await;
+    let sibling = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"logical-fields-owner@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let foreign = signup(&auth, "logical-fields-foreign@example.test").await;
+    let token = body(&owner)["token"].as_str().unwrap().to_owned();
+    let current = |rows: Vec<Value>| {
+        rows.into_iter()
+            .filter(|row| row["token"] != token)
+            .collect::<Vec<_>>()
+    };
+    let before: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let original = before
+        .iter()
+        .find(|row| row["token"] == token)
+        .unwrap()
+        .clone();
+    let others = current(before);
+    let principals = db.tables(&["users", "accounts"]).await?;
+    let input = json!({
+        "label":"logical-update", "hidden":"logical-private",
+        "token":body(&foreign)["token"], "userId":body(&foreign)["user"]["id"],
+        "expiresAt":"2099-01-01T00:00:00.000Z",
+    });
+    let endpoint = SessionManagementPlugin::update_session_endpoint(&input)?
+        .with_query(&json!({"disableRefresh":true}))?;
+    let updated = auth.dispatch_endpoint(endpoint, options(&owner)).await?;
+    let output = updated.decode()?;
+    {
+        let events = observer.0.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0]["session"]["label"],
+            json!({"stored":"logical-update"})
+        );
+        assert_eq!(events[0]["session"]["hidden"], json!("logical-private"));
+        assert_eq!(events[0]["session"]["token"], token);
+        assert_eq!(events[0]["user"]["id"], body(&owner)["user"]["id"]);
+    }
+    assert_eq!(
+        output.session.extension_fields["label"],
+        json!({"stored":"logical-update"})
+    );
+    assert_eq!(output.session.token, token);
+    assert_eq!(output.session.user_id, body(&owner)["user"]["id"]);
+    assert!(!output.session.extension_fields.contains_key("hidden"));
+    assert_eq!(
+        db.text("SELECT label FROM sessions WHERE token=$1", &[&token])
+            .await?
+            .as_deref(),
+        Some("logical-update")
+    );
+    assert_eq!(
+        db.text("SELECT hidden FROM sessions WHERE token=$1", &[&token])
+            .await?
+            .as_deref(),
+        Some("logical-private")
+    );
+    let after: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let actual = after.iter().find(|row| row["token"] == token).unwrap();
+    for field in ["id", "user_id", "token", "expires_at", "created_at"] {
+        assert_eq!(
+            actual[field], original[field],
+            "immutable session field {field}"
+        );
+    }
+    assert_eq!(current(after), others);
+    assert_eq!(db.tables(&["users", "accounts"]).await?, principals);
+    let clears: Vec<_> = updated.headers().get_all("set-cookie").cloned().collect();
+    assert!(
+        clears
+            .iter()
+            .any(|raw| raw.starts_with("better-auth.session_token="))
+    );
+    assert!(
+        clears
+            .iter()
+            .any(|raw| raw.starts_with("better-auth.session_data="))
+    );
+    let receipt = clears
+        .iter()
+        .map(|raw| raw.split(';').next().unwrap())
+        .collect::<Vec<_>>()
+        .join("; ");
+    let cached = call(&auth, request("/get-session", None, &receipt), 200).await;
+    assert_eq!(
+        body(&cached)["session"]["label"],
+        json!({"stored":"logical-update"})
+    );
+    assert!(body(&cached)["session"].get("hidden").is_none());
+    authenticated(
+        &auth,
+        &cookies(&sibling),
+        "logical-fields-owner@example.test",
+    )
+    .await;
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "logical-fields-foreign@example.test",
+    )
+    .await;
+    Ok(())
+}
+#[tokio::test]
+async fn logical_session_update_sqlx_sqlite() -> TestResult {
+    let db = Db::sqlite().await?;
+    let (connection, _) = db.migrated::<Sqlx>(SECRET).await?;
+    columns(&db).await?;
+    let config = logical_config();
+    let observer = LogicalSessionObserver::default();
+    let auth = AuthBuilder::new(config.clone())
+        .store(alibi::sqlx::SqlxStore::<sqlx_model::Schema>::new(
+            config,
+            connection.clone(),
+        ))
+        .endpoint_hook(observer.clone())
+        .plugin(super::auth_probe::fast_password())
+        .build()
+        .await?;
+    logical_session_update(auth, &db, &observer).await?;
+    Sqlx::close(connection).await
+}
+#[tokio::test]
+async fn logical_session_update_seaorm_sqlite() -> TestResult {
+    let db = Db::sqlite().await?;
+    let (connection, _) = db.migrated::<SeaOrm>(SECRET).await?;
+    columns(&db).await?;
+    let config = logical_config();
+    let observer = LogicalSessionObserver::default();
+    let auth = AuthBuilder::new(config.clone())
+        .store(alibi::seaorm::SeaOrmStore::<seaorm_model::Schema>::new(
+            config,
+            connection.clone(),
+        ))
+        .endpoint_hook(observer.clone())
+        .plugin(super::auth_probe::fast_password())
+        .build()
+        .await?;
+    logical_session_update(auth, &db, &observer).await?;
+    SeaOrm::close(connection).await
 }
