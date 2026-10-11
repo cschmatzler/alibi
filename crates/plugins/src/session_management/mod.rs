@@ -84,12 +84,17 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
             HttpMethod::Get,
         )];
         if self.config.enable_session_revocation {
-            endpoints.push(crate::endpoint::definition(
-                "revokeSession",
-                "revokeSession",
-                Some("/revoke-session"),
-                HttpMethod::Post,
-            ));
+            for (operation, path) in [
+                ("revokeSession", "/revoke-session"),
+                ("revokeOtherSessions", "/revoke-other-sessions"),
+            ] {
+                endpoints.push(crate::endpoint::definition(
+                    operation,
+                    operation,
+                    Some(path),
+                    HttpMethod::Post,
+                ));
+            }
         }
         endpoints
     }
@@ -99,17 +104,21 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
         call: &EndpointCall,
         _: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
-        if call.operation_id() == "revokeSession" {
-            let body = crate::endpoint::validate_fields(
-                call.body(),
-                "body",
-                RevokeSessionRequest::FIELDS,
-            )?;
+        if matches!(call.operation_id(), "revokeSession" | "revokeOtherSessions") {
+            let body = if call.operation_id() == "revokeSession" {
+                Some(crate::endpoint::validate_fields(
+                    call.body(),
+                    "body",
+                    RevokeSessionRequest::FIELDS,
+                )?)
+            } else {
+                call.body().cloned()
+            };
             if call.headers().is_none() {
                 return Err(crate::endpoint::validation("Headers is required"));
             }
             return Ok(EndpointInput {
-                body: Some(body),
+                body,
                 query: call.query().cloned(),
             });
         }
@@ -145,7 +154,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        if call.operation_id() == "revokeSession" {
+        if matches!(call.operation_id(), "revokeSession" | "revokeOtherSessions") {
             // Sensitive Source middleware re-reads real authority and catches getter failures.
             let (user, session) = ctx
                 .require_authoritative_session_record(call)
@@ -155,9 +164,14 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
                     code: "UNAUTHORIZED",
                     message: "Unauthorized",
                 })?;
-            call.record_authenticated_session(ctx.user_view(&user), session);
-            let input: RevokeSessionRequest = call.body_as()?;
-            return EndpointResponse::json(&revoke_session_core(&user, &input.token, ctx).await?);
+            call.record_authenticated_session(ctx.user_view(&user), session.clone());
+            let response = if call.operation_id() == "revokeSession" {
+                let input: RevokeSessionRequest = call.body_as()?;
+                revoke_session_core(&user, &input.token, ctx).await?
+            } else {
+                revoke_other_sessions_core(user.id(), &session, ctx).await?
+            };
+            return EndpointResponse::json(&response);
         }
         let response = match self.get_session_response(call, ctx).await {
             Ok(value) => EndpointResponse::json(&value)?,
@@ -237,6 +251,13 @@ impl SessionManagementPlugin {
         input: &RevokeSessionRequest,
     ) -> AuthResult<ServerEndpoint<alibi_core::StatusResponse>> {
         ServerEndpoint::new("session-management", "revokeSession").with_body(input)
+    }
+
+    /// Revoke the current user's other active sessions, retaining the current session.
+    /// Supply incoming logical headers in `EndpointOptions::headers`.
+    #[must_use]
+    pub const fn revoke_other_sessions_endpoint() -> ServerEndpoint<alibi_core::StatusResponse> {
+        ServerEndpoint::new("session-management", "revokeOtherSessions")
     }
 
     #[expect(

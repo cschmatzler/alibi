@@ -1,88 +1,18 @@
 import { expect } from "bun:test";
 
-import { z } from "zod";
-
-import { cacheReceipt } from "../../../support/compact-cache-receipt";
 import { compatScenario } from "../../../support/scenario";
+import { issueSession, revocationObservation } from "../../../support/server-session-revocation";
 import { readUserState } from "../../../support/verification";
 
-const observation = z.object({
-  result: z
-    .object({
-      ok: z.boolean(),
-      status: z.number().optional(),
-      body: z
-        .object({ code: z.string().optional(), message: z.string().optional() })
-        .passthrough()
-        .optional(),
-      value: z
-        .object({
-          response: z.object({ status: z.boolean() }),
-          headers: z.record(z.string(), z.string()),
-        })
-        .optional(),
-    })
-    .passthrough(),
-  events: z.array(
-    z
-      .object({
-        stage: z.string(),
-        path: z.string().nullable(),
-        request: z.unknown(),
-        session: z
-          .object({ user: z.object({ id: z.string() }) })
-          .passthrough()
-          .nullable(),
-      })
-      .passthrough(),
-  ),
-});
 compatScenario(
   "logical revokeSession scopes deletion and rejects revoked cached authority",
   async (ctx) => {
     const profile = "server-dispatch-cache";
     const ownerEmail = ctx.uniqueEmail("logical-revoke-owner");
-    async function issue(name: string, email: string, signIn = false) {
-      let headers = new Headers();
-      const actor = ctx.actor(name, profile);
-      const fetchOptions = {
-        onSuccess({ response }: { response: Response }) {
-          headers = new Headers(response.headers);
-        },
-      };
-      const result = signIn
-        ? await actor.client.signIn.email({
-            email,
-            password: "Correct-Horse-Password-205",
-            fetchOptions,
-          })
-        : await actor.client.signUp.email({
-            name,
-            email,
-            password: "Correct-Horse-Password-205",
-            fetchOptions,
-          });
-      expect(result.error).toBeNull();
-      const cookie = headers
-        .getSetCookie()
-        .map((raw) => raw.split(";")[0])
-        .join("; ");
-      expect(cookie).toContain("better-auth.session_data=");
-      return {
-        result,
-        headers: { cookie },
-        publication: {
-          body: result.data,
-          headers: Object.fromEntries(
-            [...headers].filter(([name]) => !["date", "content-length"].includes(name)),
-          ),
-          ...(await cacheReceipt(headers)),
-        },
-      };
-    }
-    const owner = await issue("logical-revoke-owner", ownerEmail);
-    const other = await issue("logical-revoke-other", ownerEmail, true);
-    const foreign = await issue(
+    const owner = await issueSession(ctx, "logical-revoke-owner", ownerEmail);
+    const other = await issueSession(ctx, "logical-revoke-other", ownerEmail, true);
+    const foreign = await issueSession(
+      ctx,
       "logical-revoke-foreign",
       ctx.uniqueEmail("logical-revoke-foreign"),
     );
@@ -104,7 +34,7 @@ compatScenario(
         },
       });
       expect(result.status).toBe(200);
-      return observation.parse(result.body);
+      return revocationObservation.parse(result.body);
     }
     const before = await state();
     const malformed = [];
