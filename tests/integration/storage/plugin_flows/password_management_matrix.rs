@@ -1570,12 +1570,16 @@ async fn reset_delivery_failures_retain_genuine_redeemable_proof_and_principals<
         let owner = signup(&auth, "owner@example.test").await;
         let foreign = signup(&auth, "foreign@example.test").await;
         let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        // Compat owner: core/password/empty-redirect.test.ts. Empty redirectTo
+        // passes the optional string schema and source truthiness check, and
+        // still creates a real redeemable proof; the failure modes keep /reset.
+        let redirect_to = if mode == "ok" { "" } else { "/reset" };
         let start = chrono::Utc::now();
         let sent = call(
             &auth,
             request(
                 "/request-password-reset",
-                Some(json!({"email":"owner@example.test","redirectTo":"/reset"})),
+                Some(json!({"email":"owner@example.test","redirectTo":redirect_to})),
                 "",
             ),
             200,
@@ -1587,6 +1591,14 @@ async fn reset_delivery_failures_retain_genuine_redeemable_proof_and_principals<
         assert_eq!(receipt.len(), 1);
         let (url, token) = receipt.first().unwrap();
         assert!(url.contains(token));
+        assert_eq!(
+            url::Url::parse(url)?
+                .query_pairs()
+                .find(|(name, _)| name == "callbackURL")
+                .unwrap()
+                .1,
+            redirect_to
+        );
         let proof = auth
             .context()
             .verifications()
@@ -1602,7 +1614,7 @@ async fn reset_delivery_failures_retain_genuine_redeemable_proof_and_principals<
             &auth,
             request(
                 "/request-password-reset",
-                Some(json!({"email":"missing@example.test","redirectTo":"/reset"})),
+                Some(json!({"email":"missing@example.test","redirectTo":redirect_to})),
                 "",
             ),
             200,
@@ -1610,6 +1622,18 @@ async fn reset_delivery_failures_retain_genuine_redeemable_proof_and_principals<
         .await;
         assert_eq!(delivery.seen.lock().unwrap().len(), 1);
         assert_eq!(db.table("verifications").await?, proof_before);
+        if mode == "ok" {
+            let rejected = call(
+                &auth,
+                request("/request-password-reset", Some(json!({"email":"owner@example.test","redirectTo":"https://foreign.fixture.test/reset"})), ""),
+                403,
+            ).await;
+            assert_eq!(body(&rejected)["code"], "INVALID_REDIRECT_URL");
+            assert!(rejected.headers.get_all("set-cookie").next().is_none());
+            assert_eq!(delivery.seen.lock().unwrap().len(), 1);
+            assert_eq!(db.table("verifications").await?, proof_before);
+            assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        }
         let reset = call(
             &auth,
             request(
