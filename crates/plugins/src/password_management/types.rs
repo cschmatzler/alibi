@@ -33,6 +33,21 @@ pub struct ChangePasswordRequest {
     pub revoke_other_sessions: Option<bool>,
 }
 
+/// Input for the trusted, pathless `setPassword` server operation.
+#[derive(Debug, Serialize, Deserialize, Validate)]
+pub struct SetPasswordRequest {
+    #[serde(rename = "newPassword")]
+    pub new_password: String,
+}
+
+impl crate::authentication_helpers::RequestBody for SetPasswordRequest {
+    const FIELDS: &'static [crate::authentication_helpers::JsonField] =
+        &[crate::authentication_helpers::JsonField::string(
+            "newPassword",
+            true,
+        )];
+}
+
 /// Request body for `POST /verify-password`.
 #[derive(Debug, Serialize, Deserialize, Validate)]
 pub struct VerifyPasswordRequest {

@@ -18,7 +18,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 pub use types::{
-    ChangePasswordRequest, ChangePasswordResponse, VerifyPasswordRequest, VerifyPasswordResponse,
+    ChangePasswordRequest, ChangePasswordResponse, SetPasswordRequest, VerifyPasswordRequest,
+    VerifyPasswordResponse,
 };
 use types::{RequestPasswordResetRequest, ResetPasswordRequest, ResetPasswordTokenQuery};
 
@@ -123,6 +124,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
 
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
         vec![
+            crate::endpoint::definition("setPassword", "setPassword", None, HttpMethod::Post),
             crate::endpoint::definition(
                 "changePassword",
                 "changePassword",
@@ -150,6 +152,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
                 "body",
                 match call.operation_id() {
                     "verifyPassword" => VerifyPasswordRequest::FIELDS,
+                    "setPassword" => SetPasswordRequest::FIELDS,
                     _ => ChangePasswordRequest::FIELDS,
                 },
             )?),
@@ -171,6 +174,13 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
                 message: "Unauthorized",
             })?;
         call.record_authenticated_session(ctx.user_view(&user), session);
+        if call.operation_id() == "setPassword" {
+            let body: SetPasswordRequest = call.body_as()?;
+            set_password::set_password_for_user(&user, &body.new_password, ctx).await?;
+            return alibi_core::endpoint::EndpointResponse::json(&alibi_core::StatusResponse {
+                status: true,
+            });
+        }
         if call.operation_id() == "verifyPassword" {
             let body: VerifyPasswordRequest = call.body_as()?;
             return alibi_core::endpoint::EndpointResponse::json(
@@ -243,6 +253,20 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
 }
 
 impl PasswordManagementPlugin {
+    /// Set a password for the authoritative caller without exposing an HTTP route.
+    ///
+    /// Dispatch uses logical session headers and installed hooks. Existing sessions
+    /// remain active, and only the caller's credential account can be created or filled.
+    ///
+    /// # Errors
+    /// Returns an error if the logical input cannot be serialized.
+    pub fn set_password_endpoint(
+        body: &SetPasswordRequest,
+    ) -> AuthResult<alibi_core::endpoint::ServerEndpoint<alibi_core::StatusResponse>> {
+        alibi_core::endpoint::ServerEndpoint::new("password-management", "setPassword")
+            .with_body(body)
+    }
+
     /// Verify the current caller's password using genuine logical session headers.
     ///
     /// # Errors

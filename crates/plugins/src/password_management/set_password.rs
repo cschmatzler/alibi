@@ -26,6 +26,15 @@ pub async fn set_password<S: AuthSchema>(
         .require_authoritative_session(request)
         .await
         .map_err(crate::helpers::unauthorized_if_unauthenticated)?;
+    set_password_for_user(&user, new_password, context).await
+}
+
+/// Shared credential work after entry-point-specific authoritative admission.
+pub(super) async fn set_password_for_user<S: AuthSchema>(
+    user: &impl AuthUser,
+    new_password: &str,
+    context: &AuthContext<S>,
+) -> AuthResult<()> {
     let policy = context.extensions.get::<EmailPasswordConfig>();
     let (minimum, maximum) = crate::email_password::password_length_limits(context);
     let length = new_password.encode_utf16().count();
