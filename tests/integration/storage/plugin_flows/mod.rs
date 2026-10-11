@@ -284,3 +284,5 @@ mod server_reset_password_callback;
 mod server_verify_email;
 
 mod server_send_verification_email;
+
+mod server_ok;

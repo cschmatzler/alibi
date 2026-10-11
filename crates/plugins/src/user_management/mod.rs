@@ -12,7 +12,7 @@ use chrono::Duration;
 use handlers::{change_email_core, delete_user_callback_core, delete_user_core};
 use std::sync::Arc;
 use types::{ChangeEmailRequest, DeleteUserRequest, TokenQuery};
-pub use update::{BuiltinUserEndpoints, handle_update_user, update_user_endpoint};
+pub use update::{BuiltinUserEndpoints, handle_update_user, ok_endpoint, update_user_endpoint};
 
 /// The initialized user's full snapshot passed to application lifecycle hooks.
 pub type UserInfo = UserView;
