@@ -1,5 +1,6 @@
 import { createPrivateKeyJwtClientAssertionGetter } from "@better-auth/core/oauth2";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
+import { createAuthMiddleware } from "better-auth/api";
 import { genericOAuth } from "better-auth/plugins";
 
 import assertionKeys from "../../fixtures/client-assertion-keys.json";
@@ -150,6 +151,21 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
       betterAuth<BetterAuthOptions>({
         ...base,
         basePath: path,
+        hooks: {
+          after: createAuthMiddleware(async (ctx) => {
+            if (!ctx.request && ctx.path === "/get-access-token") {
+              ctx.context.responseHeaders ??= new Headers();
+              ctx.context.responseHeaders.append(
+                "set-cookie",
+                "application_a=first; Path=/; HttpOnly",
+              );
+              ctx.context.responseHeaders.append(
+                "set-cookie",
+                "application_b=second; Path=/; HttpOnly",
+              );
+            }
+          }),
+        },
         ...(mode.startsWith("base-")
           ? {
               baseURL: {
@@ -466,6 +482,9 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
           operation: string;
           userId?: string;
           accountId: string;
+          selection?: unknown;
+          logicalHeaders?: Record<string, string>;
+          physicalRequest?: boolean;
         };
         const instance = profiles.get("/__test/profiles/generic-token-none/api/auth")!;
         const selection = {
@@ -473,7 +492,16 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
           ...(body.userId ? { userId: body.userId } : {}),
         };
         if (body.operation === "get-access-token") {
-          return instance.api.getAccessToken({ body: selection, asResponse: true });
+          return instance.api.getAccessToken({
+            body: (Object.hasOwn(body, "selection") ? body.selection : selection) as Parameters<
+              typeof instance.api.getAccessToken
+            >[0]["body"],
+            ...(body.logicalHeaders ? { headers: new Headers(body.logicalHeaders) } : {}),
+            ...(body.physicalRequest
+              ? { request: new Request(new URL("/incoming-request", request.url)) }
+              : {}),
+            asResponse: true,
+          });
         }
         if (body.operation === "refresh-token") {
           return instance.api.refreshToken({ body: selection, asResponse: true });

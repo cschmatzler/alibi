@@ -1,5 +1,7 @@
 mod account;
+mod endpoint;
 pub use account::{OAuthAccountApi, OAuthAccountSelection};
+pub use types::AccessTokenResponse as OAuthAccessToken;
 mod client_assertion;
 pub use client_assertion::OAuthPrivateKeyJwtOptions;
 
@@ -89,6 +91,24 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
 
     fn name(&self) -> &'static str {
         "oauth"
+    }
+
+    fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
+        endpoint::definitions()
+    }
+    fn validate_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
+        endpoint::validate(call)
+    }
+    async fn on_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        self.call_access_endpoint(call, ctx).await
     }
 
     fn routes(&self) -> Vec<AuthRoute> {

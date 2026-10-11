@@ -1,6 +1,7 @@
 //! Discovery, signed grants, client authentication, trusted account operations
 //! and RP logout, through the public native boundaries and a recording peer.
 use super::*;
+use alibi::AuthAccount;
 use alibi::plugins::OAuthPlugin;
 use alibi::plugins::oauth::{
     GenericOAuthConfig, OAuthAccountApi, OAuthAccountSelection, OAuthPrivateKeyJwtOptions,
@@ -47,7 +48,9 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
     assert_eq!(discovery[0].path, "/discovery");
     assert_eq!(discovery[0].headers["x-discovery-key"], "operator-owned");
     let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let account_events = Arc::new(Mutex::new(Vec::new()));
     let auth = builder::<B>(&connection)
+        .endpoint_hook(AccessOperationHook(account_events.clone()))
         .plugin(OAuthPlugin::new().add_provider("oidc", resolved.provider))
         .build()
         .await?;
@@ -153,8 +156,48 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
         .await?
         .unwrap();
     let select = || OAuthAccountSelection::Id(account.clone());
-    let access = OAuthAccountApi::get_access_token(&owner, select(), auth.context()).await?;
-    assert_eq!(body(&access)["accessToken"], "initial-access");
+    let access = Box::pin(auth.dispatch_endpoint(
+        OAuthPlugin::get_access_token_endpoint(
+            OAuthAccountSelection::Id(account.clone()),
+            Some(&owner),
+        ),
+        alibi::endpoint::EndpointOptions::default(),
+    ))
+    .await?;
+    assert_eq!(
+        access.decode()?.access_token.as_deref(),
+        Some("initial-access")
+    );
+    let persisted = auth
+        .context()
+        .database
+        .get_user_accounts_record(&owner)
+        .await?;
+    let expiry = persisted
+        .iter()
+        .find(|row| row.id().as_ref() == account)
+        .unwrap()
+        .access_token_expires_at()
+        .unwrap()
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    assert_eq!(
+        access.decode()?.access_token_expires_at.as_deref(),
+        Some(expiry.as_str())
+    );
+
+    assert_eq!(
+        access
+            .headers()
+            .get_all("set-cookie")
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        [
+            "application_a=first; Path=/; HttpOnly",
+            "application_b=second; Path=/; HttpOnly"
+        ]
+    );
+    assert_eq!(*account_events.lock().unwrap(), ["before", "after"]);
+
     assert!(remote.take().is_empty());
     let outsider = signup(&auth, "outsider@example.test").await;
     let outsider_id = body(&outsider)["user"]["id"].as_str().unwrap().to_owned();
@@ -176,6 +219,69 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
     );
     assert!(remote.take().is_empty());
     assert_eq!(db.table("accounts").await?, accounts);
+    for options in [
+        alibi::endpoint::EndpointOptions {
+            headers: Some(std::collections::HashMap::new()),
+            ..Default::default()
+        },
+        alibi::endpoint::EndpointOptions {
+            request: Some(request("/incoming-request", None, "")),
+            ..Default::default()
+        },
+    ] {
+        let denied = Box::pin(auth.dispatch_endpoint(
+            access_endpoint(&json!({"accountId":account,"userId":owner}))?,
+            options,
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(denied.error.status_code(), 401);
+        assert!(denied.body_absent);
+        assert_eq!(db.table("accounts").await?, accounts);
+        assert!(remote.take().is_empty());
+    }
+    let wrong = Box::pin(
+        auth.dispatch_endpoint(
+            access_endpoint(&json!({"accountId":account,"userId":owner}))?,
+            alibi::endpoint::EndpointOptions {
+                headers: Some(
+                    [("cookie".into(), cookies(&outsider))]
+                        .into_iter()
+                        .collect(),
+                ),
+                ..Default::default()
+            },
+        ),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(wrong.error.status_code(), 400);
+    assert_eq!(db.table("accounts").await?, accounts);
+    assert!(remote.take().is_empty());
+    let selected = Box::pin(
+        auth.dispatch_endpoint(
+            access_endpoint(&json!({"accountId":account,"userId":outsider_id}))?,
+            alibi::endpoint::EndpointOptions {
+                headers: Some(
+                    [("cookie".into(), cookies(&accepted))]
+                        .into_iter()
+                        .collect(),
+                ),
+                ..Default::default()
+            },
+        ),
+    )
+    .await?;
+    assert_eq!(selected.decode()?["accessToken"], "initial-access");
+    let malformed = Box::pin(auth.dispatch_endpoint(
+        access_endpoint(&json!({"accountId":5,"userId":owner}))?,
+        alibi::endpoint::EndpointOptions::default(),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(malformed.error.status_code(), 400);
+    assert_eq!(db.table("accounts").await?, accounts);
+    assert!(remote.take().is_empty());
     // HTTP selectors must not turn a body/query userId into trusted authority.
     for (route, method) in [
         ("/account-info", HttpMethod::Get),
@@ -566,4 +672,50 @@ async fn discovered_callback_issuer_rejects_mixup_before_grant_exchange<B: Backe
         authenticated(&auth, &cookies(&foreign), "mixup-foreign@example.test").await;
     }
     B::close(connection).await
+}
+
+fn access_endpoint(input: &Value) -> alibi::AuthResult<alibi::endpoint::ServerEndpoint<Value>> {
+    alibi::endpoint::ServerEndpoint::new("oauth", "getAccessToken").with_body(input)
+}
+struct AccessOperationHook(Arc<Mutex<Vec<&'static str>>>);
+#[async_trait::async_trait]
+impl<S: AuthSchema> alibi::endpoint::EndpointHook<S> for AccessOperationHook {
+    fn matches_before(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+    ) -> alibi::AuthResult<bool> {
+        Ok(call.operation_id() == "getAccessToken")
+    }
+    async fn before(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+    ) -> alibi::AuthResult<Option<alibi::endpoint::BeforeEndpointAction>> {
+        assert_eq!(call.path(), Some("/get-access-token"));
+        self.0.lock().unwrap().push("before");
+        Ok(None)
+    }
+    fn matches_after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+        _: &alibi::endpoint::EndpointResponse,
+    ) -> alibi::AuthResult<bool> {
+        Ok(call.operation_id() == "getAccessToken")
+    }
+    async fn after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+        response: alibi::endpoint::EndpointResponse,
+    ) -> alibi::AuthResult<alibi::endpoint::EndpointResponse> {
+        self.0.lock().unwrap().push("after");
+        if call.request().is_some() {
+            return Ok(response);
+        }
+        Ok(response
+            .with_header("set-cookie", "application_a=first; Path=/; HttpOnly")
+            .with_header("set-cookie", "application_b=second; Path=/; HttpOnly"))
+    }
 }
