@@ -579,6 +579,7 @@ pub(crate) async fn router(
                 app.ranges.lock().unwrap().clear();
                 let plugin = match input.operation.as_str() {
                     "updateUser" => "core",
+                    "verifyEmail" => "email-verification",
                     "changePassword" | "verifyPassword" | "setPassword" | "resetPassword" | "requestPasswordReset" | "requestPasswordResetCallback" => "password-management",
                     "listUserAccounts" | "unlinkAccount" => "account-management",
                     "createVerificationOTP" | "getVerificationOTP" => "email-otp",
@@ -601,6 +602,7 @@ pub(crate) async fn router(
                     "requestPasswordReset" => "requestPasswordReset",
                     "requestPasswordResetCallback" => "requestPasswordResetCallback",
                     "updateUser" => "updateUser",
+                    "verifyEmail" => "verifyEmail",
                     "listUserAccounts" => "listUserAccounts",
                     "unlinkAccount" => "unlinkAccount",
                     "createVerificationOTP" => "createVerificationOTP",

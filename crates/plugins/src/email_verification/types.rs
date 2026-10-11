@@ -1,5 +1,5 @@
 use crate::authentication_helpers::{JsonField, JsonFieldKind, RequestBody};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct SendVerificationEmailRequest {
@@ -20,11 +20,11 @@ impl RequestBody for SendVerificationEmailRequest {
 }
 
 /// Query parameters for `GET /verify-email`.
-#[derive(Debug, Deserialize)]
-pub(crate) struct VerifyEmailQuery {
-    pub(crate) token: String,
-    #[serde(rename = "callbackURL")]
-    pub(crate) callback_url: Option<String>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifyEmailQuery {
+    pub token: String,
+    #[serde(rename = "callbackURL", skip_serializing_if = "Option::is_none")]
+    pub callback_url: Option<String>,
 }
 
 /// Result of the verify-email core function.
@@ -37,4 +37,18 @@ pub(crate) enum VerifyEmailResult {
         body: serde_json::Value,
         session_token: Option<String>,
     },
+}
+
+impl RequestBody for VerifyEmailQuery {
+    const FIELDS: &'static [JsonField] = &[
+        JsonField::string("token", true),
+        JsonField::string("callbackURL", false),
+    ];
+}
+
+/// Successful result of the public `verifyEmail` server operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifyEmailResponse {
+    pub status: bool,
+    pub user: Option<alibi_core::wire::UserView>,
 }
