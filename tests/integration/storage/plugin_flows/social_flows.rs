@@ -21,7 +21,8 @@ backend_tests!(
     valid_form_post_preserves_issued_state_and_escaped_query_until_get,
     different_email_opt_in_links_unlinks_and_relinks_original_owner,
     disabled_implicit_linking_preserves_explicit_and_returning_account_authority,
-    oauth_verification_cache_recovery
+    oauth_verification_cache_recovery,
+    idp_initiated_bounce_requires_fresh_proof_before_accepting_grant
 );
 
 #[derive(Clone)]
@@ -1140,5 +1141,137 @@ async fn oauth_verification_cache_recovery<B: Backend>(db: Db) -> TestResult {
         assert!(before.iter().all(|r| now.contains(r)));
     }
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
+    B::close(connection).await
+}
+
+async fn idp_initiated_bounce_requires_fresh_proof_before_accepting_grant<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let social = Social::start().await;
+    let auth = social
+        .auth_with::<B>(
+            &connection,
+            AccountConfig::default(),
+            |provider| provider.allow_idp_initiated = true,
+            |builder| builder.plugin(super::auth_probe::fast_password()),
+        )
+        .await?;
+    let foreign = signup(&auth, "idp-foreign@example.test").await;
+    social
+        .profile
+        .set("idp-subject", "idp-owner@example.test", true);
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    assert_eq!(db.count("verifications").await?, 0);
+    let bounced = callback(&auth, &[("code", "unsolicited-grant")], "").await;
+    assert_eq!(bounced.status, 302);
+    let authorization = url::Url::parse(bounced.headers.get("location").unwrap())?;
+    assert_eq!(
+        authorization.origin().ascii_serialization(),
+        "https://accounts.google.com"
+    );
+    let fields: std::collections::BTreeMap<_, _> =
+        authorization.query_pairs().into_owned().collect();
+    let state = fields.get("state").unwrap();
+    assert!(state.len() > 20);
+    assert_eq!(
+        fields.get("code_challenge_method").map(String::as_str),
+        Some("S256")
+    );
+    assert!(fields.get("code_challenge").unwrap().len() > 40);
+    let cookie = cookies(&bounced);
+    assert!(!cookie.is_empty());
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.count("verifications").await?, 1);
+    assert!(social.provider.requests.lock().unwrap().is_empty());
+    let pending = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    let wrong = callback(
+        &auth,
+        &[("code", "wrong-grant"), ("state", "unissued-state")],
+        &cookie,
+    )
+    .await;
+    assert_eq!(wrong.status, 302);
+    assert!(
+        wrong
+            .headers
+            .get("location")
+            .unwrap()
+            .contains("error=state_mismatch")
+    );
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        pending
+    );
+    assert!(social.provider.requests.lock().unwrap().is_empty());
+    let accepted = callback(&auth, &[("code", "real-grant"), ("state", state)], &cookie).await;
+    assert_eq!(accepted.status, 302);
+    let destination = url::Url::parse(accepted.headers.get("location").unwrap())?;
+    assert_eq!(destination.origin().ascii_serialization(), ORIGIN);
+    assert_eq!(destination.path(), "/");
+    authenticated(&auth, &cookies(&accepted), "idp-owner@example.test").await;
+    assert_eq!(db.count("verifications").await?, 0);
+    let user_id = db
+        .text(
+            "SELECT id FROM users WHERE email='idp-owner@example.test'",
+            &[],
+        )
+        .await?
+        .unwrap();
+    assert_eq!(db.count("users").await?, 2);
+    assert_eq!(db.count("sessions").await?, 2);
+    assert_eq!(
+        db.text(
+            "SELECT user_id FROM accounts WHERE provider_id='google' AND account_id='idp-subject'",
+            &[]
+        )
+        .await?
+        .as_deref(),
+        Some(user_id.as_str())
+    );
+    let receipts = social.provider.take();
+    assert_eq!(receipts.len(), 1);
+    let grant: std::collections::BTreeMap<_, _> = url::form_urlencoded::parse(&receipts[0].body)
+        .into_owned()
+        .collect();
+    assert_eq!(grant.get("code").map(String::as_str), Some("real-grant"));
+    let verifier = grant.get("code_verifier").unwrap();
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use sha2::{Digest as _, Sha256};
+    assert_eq!(
+        URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes())),
+        fields["code_challenge"]
+    );
+    let after = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    for (old, now) in before.iter().zip(after.iter()) {
+        let old: Vec<Value> = serde_json::from_str(old)?;
+        let now: Vec<Value> = serde_json::from_str(now)?;
+        assert!(old.iter().all(|row| now.contains(row)));
+    }
+    let replay = callback(
+        &auth,
+        &[("code", "replayed-grant"), ("state", state)],
+        &cookie,
+    )
+    .await;
+    assert!(
+        replay
+            .headers
+            .get("location")
+            .unwrap()
+            .contains("error=state_mismatch")
+    );
+    assert!(social.provider.requests.lock().unwrap().is_empty());
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        after
+    );
+    authenticated(&auth, &cookies(&foreign), "idp-foreign@example.test").await;
     B::close(connection).await
 }
