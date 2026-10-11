@@ -20,8 +20,8 @@ use std::sync::Arc;
 use types::ResetPasswordTokenQuery;
 pub use types::{
     ChangePasswordRequest, ChangePasswordResponse, RequestPasswordResetRequest,
-    RequestPasswordResetResponse, ResetPasswordRequest, SetPasswordRequest, VerifyPasswordRequest,
-    VerifyPasswordResponse,
+    RequestPasswordResetResponse, ResetPasswordCallbackQuery, ResetPasswordRequest,
+    SetPasswordRequest, VerifyPasswordRequest, VerifyPasswordResponse,
 };
 
 const RESET_TOKEN_ROUTE_PREFIX: &str = "/reset-password/";
@@ -126,6 +126,12 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
         vec![
             crate::endpoint::definition(
+                "requestPasswordResetCallback",
+                "resetPasswordCallback",
+                Some("/reset-password/:token"),
+                HttpMethod::Get,
+            ),
+            crate::endpoint::definition(
                 "requestPasswordReset",
                 "requestPasswordReset",
                 Some("/request-password-reset"),
@@ -159,6 +165,16 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
         _: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
         use crate::authentication_helpers::RequestBody;
+        if call.operation_id() == "resetPasswordCallback" {
+            return Ok(alibi_core::endpoint::EndpointInput {
+                body: call.body().cloned(),
+                query: Some(crate::endpoint::validate_fields(
+                    call.query(),
+                    "query",
+                    ResetPasswordCallbackQuery::FIELDS,
+                )?),
+            });
+        }
         let body = crate::endpoint::validate_fields(
             call.body(),
             "body",
@@ -196,6 +212,21 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
         call: &alibi_core::endpoint::EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        if call.operation_id() == "resetPasswordCallback" {
+            let params = call
+                .params()
+                .filter(|value| !value.is_null())
+                .ok_or_else(|| AuthError::internal("Missing reset password callback parameters"))?;
+            let token = params
+                .get("token")
+                .filter(|value| value.is_truthy())
+                .map(|value| value.coerce_string().map_err(AuthError::internal))
+                .transpose()?;
+            let query: ResetPasswordTokenQuery = call.query_as()?;
+            let location =
+                reset_password_token_core(token.as_deref(), &query, ctx, call.request()).await?;
+            return Ok(alibi_core::endpoint::EndpointResponse::redirect(location));
+        }
         if call.operation_id() == "requestPasswordReset" {
             let body: RequestPasswordResetRequest = call.body_as()?;
             let response =
@@ -303,6 +334,25 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
 }
 
 impl PasswordManagementPlugin {
+    /// Inspect a reset proof and preserve the intentional redirect API error.
+    ///
+    /// The proof remains available for `resetPassword`. Logical parameters and
+    /// response Location headers remain available to installed hooks and the caller.
+    ///
+    /// # Errors
+    /// Returns an error if logical input cannot be serialized.
+    pub fn request_password_reset_callback_endpoint(
+        token: &str,
+        query: &ResetPasswordCallbackQuery,
+    ) -> AuthResult<alibi_core::endpoint::ServerEndpoint<()>> {
+        alibi_core::endpoint::ServerEndpoint::new(
+            "password-management",
+            "requestPasswordResetCallback",
+        )
+        .with_params(&serde_json::json!({"token": token}))?
+        .with_query(query)
+    }
+
     /// Deliver an owned, redeemable reset proof using logical server dispatch.
     ///
     /// The operation does not require a caller session. Redirect trust checks apply
@@ -469,7 +519,9 @@ impl PasswordManagementPlugin {
         let query = ResetPasswordTokenQuery {
             callback_url: Some(callback_url.clone()),
         };
-        let url = reset_password_token_core(token, &query, ctx).await?;
+        let url =
+            reset_password_token_core((!token.is_empty()).then_some(token), &query, ctx, Some(req))
+                .await?;
         let mut headers = alibi_core::Headers::new();
         _ = headers.insert("Location", url);
         _ = headers.insert("content-type", "application/json");

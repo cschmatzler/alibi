@@ -42,8 +42,12 @@ impl<S: AuthSchema> Alibi<S> {
                     endpoint.name()
                 ))
             })?;
+        let params = endpoint.params().cloned();
         let (body, query) = endpoint.input();
-        let call = EndpointCall::new(&definition, body, query, options);
+        let mut call = EndpointCall::new(&definition, body, query, options);
+        if let Some(params) = params {
+            call = call.with_params_value(params);
+        }
         if let Some(request) = call.request() {
             request
                 .extensions()
@@ -93,6 +97,7 @@ impl<S: AuthSchema> Alibi<S> {
             let headers = call.take_response_headers();
             let action = action.map_err(|error| EndpointError {
                 body: None,
+                body_absent: false,
                 headers: if is_endpoint_api_error(&error) {
                     Some(headers.clone())
                 } else {

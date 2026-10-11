@@ -59,7 +59,7 @@ fn error_body(error: &AuthError) -> Value {
     body
 }
 fn returned(response: Option<&EndpointResponse>) -> Value {
-    response.map_or(Value::Null,|response| match response.result(){Ok(value)=>serde_json::to_value(value).unwrap(),Err(error)=>value!({"api":true,"status":error.status_code(),"body":response.error_body().map_or_else(||error_body(error),|body|serde_json::to_value(body).unwrap())})})
+    response.map_or(Value::Null,|response| match response.result(){Ok(value)=>serde_json::to_value(value).unwrap(),Err(error) if response.error_body_is_absent()=>value!({"api":true,"status":error.status_code()}),Err(error)=>value!({"api":true,"status":error.status_code(),"body":response.error_body().map_or_else(||error_body(error),|body|serde_json::to_value(body).unwrap())})})
 }
 fn input_snapshot(call: &EndpointCall) -> Value {
     let observed_session = call.session().map(|(user, session)| {
@@ -72,7 +72,9 @@ fn input_snapshot(call: &EndpointCall) -> Value {
         }
         snapshot
     });
-    value!({"pathPresent":true,"path":call.path(),"methodPresent":call.has_method(),"method":call.method().map(|method|format!("{method:?}").to_uppercase()),"bodyPresent":call.has_body(),"body":call.body(),"queryPresent":call.has_query(),"query":call.query(),"headers":call.headers(),"request":call.request().map(|request|value!({"url":request.url().map(|url|url.as_str()),"method":format!("{:?}",request.method()).to_uppercase(),"headers":request.headers,"query":request.query,"body":request.body.as_ref().map(|body|String::from_utf8_lossy(body).into_owned())})),"session":observed_session})
+    let mut snapshot = value!({"pathPresent":true,"path":call.path(),"methodPresent":call.has_method(),"method":call.method().map(|method|format!("{method:?}").to_uppercase()),"bodyPresent":call.has_body(),"body":call.body(),"queryPresent":call.has_query(),"query":call.query(),"headers":call.headers(),"request":call.request().map(|request|value!({"url":request.url().map(|url|url.as_str()),"method":format!("{:?}",request.method()).to_uppercase(),"headers":request.headers,"query":request.query,"body":request.body.as_ref().map(|body|String::from_utf8_lossy(body).into_owned())})),"session":observed_session});
+    if let Some(params) = call.params() { snapshot["params"] = serde_json::to_value(params).unwrap(); }
+    snapshot
 }
 fn snapshot(call: &EndpointCall, response: Option<&EndpointResponse>) -> Value {
     let mut snapshot = input_snapshot(call);
@@ -158,6 +160,12 @@ impl EndpointHook<TestSchema> for Observer {
         let mode = self.app.mode.lock().unwrap().clone();
         if self.id == "user" && mode.starts_with("hash-phase") {
             self.app.hash_at("before", context).await?;
+        }
+        if self.id == "user" && mode == "callback-params" {
+            return Ok(Some(BeforeEndpointAction::Patch(Box::new(EndpointContextPatch {
+                params: Some(json::parse_value(&value!({"token":call.body().and_then(|body|body.get("token"))}).to_string())?),
+                ..Default::default()
+            }))));
         }
         if self.id == "user" && mode == "reset-app" {
             self.app
@@ -391,6 +399,8 @@ struct Input {
     body: Option<JsValue>,
     #[serde(default, deserialize_with = "present_input")]
     query: Option<JsValue>,
+    #[serde(default, deserialize_with = "present_input")]
+    params: Option<JsValue>,
     headers: Option<HashMap<String, String>>,
     #[serde(default)]
     physical_request: bool,
@@ -424,7 +434,7 @@ fn outcome(result: Result<alibi::endpoint::EndpointOutput<JsValue>, EndpointErro
                 AuthError::Internal(message) => message.clone(),
                 error => error.error_payload().2,
             };
-            value!({"ok":false,"name":if api{"APIError"}else{"Error"},"status":if api{Some(error.error.status_code())}else{None},"body":error.body.map_or_else(||if api{error_body(&error.error)}else{Value::Null},|body|serde_json::to_value(body).unwrap()),"message":message,"headers":error.headers.map(|headers|header_snapshot(&headers))})
+            value!({"ok":false,"name":if api{"APIError"}else{"Error"},"status":if api{Some(error.error.status_code())}else{None},"body":if error.body_absent {Value::Null} else {error.body.map_or_else(||if api{error_body(&error.error)}else{Value::Null},|body|serde_json::to_value(body).unwrap())},"message":message,"headers":error.headers.map(|headers|header_snapshot(&headers))})
         }
     }
 }
@@ -569,7 +579,7 @@ pub(crate) async fn router(
                 app.ranges.lock().unwrap().clear();
                 let plugin = match input.operation.as_str() {
                     "updateUser" => "core",
-                    "changePassword" | "verifyPassword" | "setPassword" | "resetPassword" | "requestPasswordReset" => "password-management",
+                    "changePassword" | "verifyPassword" | "setPassword" | "resetPassword" | "requestPasswordReset" | "requestPasswordResetCallback" => "password-management",
                     "listUserAccounts" | "unlinkAccount" => "account-management",
                     "createVerificationOTP" | "getVerificationOTP" => "email-otp",
                     "getSession" | "revokeSession" | "revokeOtherSessions" | "revokeSessions" | "listSessions" | "signOut" | "updateSession" => "session-management",
@@ -589,6 +599,7 @@ pub(crate) async fn router(
                     "setPassword" => "setPassword",
                     "resetPassword" => "resetPassword",
                     "requestPasswordReset" => "requestPasswordReset",
+                    "requestPasswordResetCallback" => "requestPasswordResetCallback",
                     "updateUser" => "updateUser",
                     "listUserAccounts" => "listUserAccounts",
                     "unlinkAccount" => "unlinkAccount",
@@ -625,6 +636,9 @@ pub(crate) async fn router(
                 }
                 if let Some(query) = input.query {
                     endpoint = endpoint.with_query_value(query);
+                }
+                if let Some(params) = input.params {
+                    endpoint = endpoint.with_params_value(params);
                 }
                 let logical_headers = input.headers.or_else(|| {
                     input.logical_request_headers.then(|| parts.headers.iter().map(|(name,value)| (name.to_string(),value.to_str().unwrap().to_owned())).collect())

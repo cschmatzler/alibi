@@ -242,7 +242,9 @@ fn render_http_endpoint_response(
                 status,
                 &alibi_core::ErrorCodeMessageResponse { code, message },
             )?;
-            if let Some(body) = response.error_body() {
+            if response.error_body_is_absent() {
+                rendered.body.clear();
+            } else if let Some(body) = response.error_body() {
                 rendered.body = alibi_core::utils::json::to_vec(body)?;
             }
             rendered

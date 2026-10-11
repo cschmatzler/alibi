@@ -47,6 +47,7 @@ type Context = {
   method?: unknown;
   body?: unknown;
   query?: unknown;
+  params?: unknown;
   headers?: Headers;
   request?: Request;
   context: { session?: unknown; returned?: unknown };
@@ -64,6 +65,7 @@ function inputSnapshot(ctx: Context) {
     query: ctx.query ?? null,
     headers: ctx.headers ? Object.fromEntries(ctx.headers) : null,
     request: requestSnapshot(ctx.request),
+    ...(ctx.params === undefined ? {} : { params: ctx.params }),
     session: ctx.context.session ?? null,
   };
 }
@@ -289,6 +291,13 @@ export function createServerEndpointFixture(
           await ctx.context.password.hash(HASH_PASSWORD);
         }
 
+        if (mode === "callback-params") {
+          return {
+            context: {
+              params: { token: (ctx.body as { token: string }).token },
+            },
+          };
+        }
         if (mode === "reset-app") {
           serial = 0;
         }
@@ -471,6 +480,9 @@ export function createServerEndpointFixture(
 
       if (Object.hasOwn(input, "query")) {
         args.query = input.query;
+      }
+      if (Object.hasOwn(input, "params")) {
+        args.params = input.params;
       }
 
       if (Object.hasOwn(input, "headers")) {

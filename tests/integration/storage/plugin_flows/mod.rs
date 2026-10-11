@@ -278,3 +278,5 @@ mod server_revoke_session;
 mod server_reset_password;
 
 mod server_request_password_reset;
+
+mod server_reset_password_callback;
