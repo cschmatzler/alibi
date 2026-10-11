@@ -434,6 +434,7 @@ pub(crate) async fn router(
     database: DatabaseConnection,
     profile: &str,
     compact: bool,
+    reset_sender: Arc<dyn alibi::plugins::password_management::SendResetPassword>,
 ) -> AuthResult<Router> {
     let path = format!("/__test/profiles/{profile}/api/auth");
     let control_path = format!("/__test/{profile}");
@@ -504,7 +505,7 @@ pub(crate) async fn router(
             .plugin(SessionManagementPlugin::new())
             .plugin(AccountManagementPlugin::new())
             .plugin(PasswordManagementPlugin::with_config(alibi::plugins::PasswordManagementConfig {
-                password_hasher: Some(Arc::new(app.clone())), ..Default::default()
+                password_hasher: Some(Arc::new(app.clone())), send_reset_password: Some(reset_sender), ..Default::default()
             }))
             .plugin(Observer {
                 id: "first",
@@ -568,7 +569,7 @@ pub(crate) async fn router(
                 app.ranges.lock().unwrap().clear();
                 let plugin = match input.operation.as_str() {
                     "updateUser" => "core",
-                    "changePassword" | "verifyPassword" | "setPassword" | "resetPassword" => "password-management",
+                    "changePassword" | "verifyPassword" | "setPassword" | "resetPassword" | "requestPasswordReset" => "password-management",
                     "listUserAccounts" | "unlinkAccount" => "account-management",
                     "createVerificationOTP" | "getVerificationOTP" => "email-otp",
                     "getSession" | "revokeSession" | "revokeOtherSessions" | "revokeSessions" | "listSessions" | "signOut" | "updateSession" => "session-management",
@@ -587,6 +588,7 @@ pub(crate) async fn router(
                     "verifyPassword" => "verifyPassword",
                     "setPassword" => "setPassword",
                     "resetPassword" => "resetPassword",
+                    "requestPasswordReset" => "requestPasswordReset",
                     "updateUser" => "updateUser",
                     "listUserAccounts" => "listUserAccounts",
                     "unlinkAccount" => "unlinkAccount",
