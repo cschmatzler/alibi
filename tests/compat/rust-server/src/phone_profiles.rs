@@ -263,7 +263,6 @@ impl PhoneVerificationHook for Callback {
 #[derive(Clone)]
 pub(super) struct Runtime {
     pub auth: Arc<Alibi<TestSchema>>,
-    pub plugin: PhoneNumberPlugin,
 }
 pub(super) type Runtimes = Arc<HashMap<String, Runtime>>;
 #[derive(Deserialize)]
@@ -274,13 +273,6 @@ struct DeliveryQuery {
     purpose: Option<String>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ConsumeRequest {
-    profile: String,
-    phone_number: String,
-    code: String,
-}
 
 pub(super) async fn build(
     config: &AuthConfig,
@@ -389,6 +381,7 @@ pub(super) async fn build(
                     database.clone(),
                 ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
+                .endpoint_hook(ConsumeReceipt)
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(passwords)
                 .plugin(SessionManagementPlugin::new())
@@ -405,7 +398,7 @@ pub(super) async fn build(
             &config.base_path,
             auth.clone().axum_router().with_state(auth.clone()),
         );
-        _ = runtimes.insert(name.into(), Runtime { auth, plugin });
+        _ = runtimes.insert(name.into(), Runtime { auth });
     }
     let callbacks = controls.clone();
     let verifier_controls = controls.clone();
@@ -440,30 +433,38 @@ pub(super) async fn build(
         )
         .route(
             "/__test/phone-consume-otp",
-            post(move |Json(body): Json<ConsumeRequest>| {
+            post(move |Json(body): Json<Value>| {
                 let runtimes = selected_runtimes.clone();
                 async move {
-                    let result = async {
-                        let selected = runtimes.get(&body.profile).ok_or_else(|| {
-                            alibi::AuthError::bad_request("unknown fixture profile")
-                        })?;
-                        selected
-                            .plugin
-                            .consume_otp(selected.auth.context(), &body.phone_number, &body.code)
-                            .await?;
-                        Ok::<_, alibi::AuthError>(json!({"status":true}))
-                    }
-                    .await;
-                    match result {
-                        Ok(value) => Json(value).into_response(),
-                        Err(error) => (
-                            axum::http::StatusCode::from_u16(error.status_code()).unwrap(),
-                            Json(
-                                serde_json::from_slice::<Value>(&error.to_auth_response().body)
-                                    .unwrap(),
-                            ),
-                        )
-                            .into_response(),
+                    let Some(selected) = body.get("profile").and_then(Value::as_str).and_then(|profile| runtimes.get(profile)) else {
+                        return (axum::http::StatusCode::BAD_REQUEST, Json(json!({"message":"invalid server operation"}))).into_response();
+                    };
+                    let mut input = body;
+                    if let Some(object) = input.as_object_mut() { let _ = object.remove("profile"); }
+                    let input = alibi::utils::json::parse_value(&input.to_string()).unwrap();
+                    let endpoint = alibi::endpoint::ServerEndpoint::<Value>::new("phone-number", "consumePhoneNumberOTP").with_body_value(input);
+                    match selected.auth.dispatch_endpoint(endpoint, alibi::endpoint::EndpointOptions::default()).await {
+                        Ok(output) => {
+                            let mut response = Json(output.decode().unwrap()).into_response();
+                            for (name, value) in output.headers() {
+                                let _ = response.headers_mut().append(axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap(), axum::http::HeaderValue::from_str(value).unwrap());
+                            }
+                            response
+                        },
+                        Err(error) => {
+                            let status = error.error.status_code();
+                            let body = error.body.as_ref().map_or_else(
+                                || serde_json::from_slice::<Value>(&error.error.to_auth_response().body).unwrap(),
+                                |body| serde_json::to_value(body).unwrap(),
+                            );
+                            let mut response = (axum::http::StatusCode::from_u16(status).unwrap(), Json(body)).into_response();
+                            if let Some(headers) = &error.headers {
+                                for (name, value) in headers {
+                                    let _ = response.headers_mut().append(axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap(), axum::http::HeaderValue::from_str(value).unwrap());
+                                }
+                            }
+                            response
+                        },
                     }
                 }
             }),
@@ -490,4 +491,17 @@ pub(super) async fn build(
         }),
     );
     Ok((router, consume_runtimes))
+}
+
+
+struct ConsumeReceipt;
+#[async_trait]
+impl<S: alibi::AuthSchema> alibi::endpoint::EndpointHook<S> for ConsumeReceipt {
+    fn matches_before(&self, _: &alibi::endpoint::EndpointCall, _: &alibi::AuthContext<S>) -> AuthResult<bool> { Ok(false) }
+    fn matches_after(&self, call: &alibi::endpoint::EndpointCall, _: &alibi::AuthContext<S>, _: &alibi::endpoint::EndpointResponse) -> AuthResult<bool> { Ok(call.operation_id() == "consumePhoneNumberOTP") }
+    async fn after(&self, call: &alibi::endpoint::EndpointCall, _: &alibi::AuthContext<S>, response: alibi::endpoint::EndpointResponse) -> AuthResult<alibi::endpoint::EndpointResponse> {
+        assert!(call.request().is_none());
+        call.queue_response_header("x-phone-consumed", "application-receipt");
+        Ok(response)
+    }
 }

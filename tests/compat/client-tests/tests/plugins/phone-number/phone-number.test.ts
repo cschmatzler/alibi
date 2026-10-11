@@ -479,30 +479,53 @@ compatScenario(
   async (ctx) => {
     const profile = "phone-signup";
     const client = phoneClient(ctx, profile);
+    const owner = await client.signUp.email({
+      email: ctx.uniqueEmail("phone-consume-owner"),
+      password: "password123",
+      name: "Consume Owner",
+    });
+    const userId = z.object({ user: z.object({ id: z.string() }) }).parse(owner.data).user.id;
+    const before = await readPhoneState(ctx, profile, userId);
     const phoneNumber = uniquePhone(ctx, "phone-consume");
     await client.phoneNumber.sendOtp({ phoneNumber });
     const code = await readPhoneOtp(ctx, phoneNumber);
-    const wrong = await ctx.rawRequest({
-      path: "/__test/phone-consume-otp",
-      method: "POST",
-      json: { profile, phoneNumber, code: "incorrect" },
+    async function consume(proof: unknown) {
+      const response = await ctx.actor().fetch(`${ctx.baseURL}/__test/phone-consume-otp`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ profile, phoneNumber, code: proof }),
+      });
+      return {
+        status: response.status,
+        body: (await response.json()) as unknown,
+        receipt: response.headers.get("x-phone-consumed"),
+        cookies: response.headers.getSetCookie(),
+      };
+    }
+    const malformed = await consume(5);
+    expect(malformed.status).toBe(400);
+    expect(malformed.body).toEqual({
+      code: "VALIDATION_ERROR",
+      message: "[body.code] Invalid input: expected string, received number",
     });
+    expect(await verificationCount(ctx, phoneNumber)).toBe(1);
+    expect(await readPhoneState(ctx, profile, userId)).toEqual(before);
+    const wrong = await consume("incorrect");
     expect(wrong.status).toBe(400);
-
-    const consumed = await ctx.rawRequest({
-      path: "/__test/phone-consume-otp",
-      method: "POST",
-      json: { profile, phoneNumber, code },
-    });
+    expect(await verificationCount(ctx, phoneNumber)).toBe(1);
+    const consumed = await consume(code);
+    expect(consumed.status).toBe(200);
+    expect(consumed.receipt).toBe("application-receipt");
     expect(consumed.body).toEqual({ status: true });
     expect(await verificationCount(ctx, phoneNumber)).toBe(0);
 
-    const replay = await ctx.rawRequest({
-      path: "/__test/phone-consume-otp",
-      method: "POST",
-      json: { profile, phoneNumber, code },
-    });
+    const replay = await consume(code);
     expect(replay.status).toBe(400);
+
+    for (const result of [malformed, wrong, consumed, replay]) {
+      expect(result.receipt).toBe("application-receipt");
+      expect(result.cookies).toEqual([]);
+    }
 
     const publicAttempt = await phoneRequest(ctx, profile, "/phone-number/consume-otp", {
       phoneNumber,
@@ -511,9 +534,10 @@ compatScenario(
     expect(publicAttempt.status).toBe(404);
 
     const session = await client.getSession();
-    expect(session.data).toBeNull();
+    expect(session.data?.user.id).toBe(userId);
+    expect(await readPhoneState(ctx, profile, userId)).toEqual(before);
 
-    return { wrong, consumed, replay, publicAttempt, session };
+    return { malformed, wrong, consumed, replay, publicAttempt, session };
   },
   [],
   30_000,

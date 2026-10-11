@@ -3,12 +3,14 @@
 //! [`PhoneNumberPlugin::consume_otp`] is a server-only verification operation.
 //! It does not create users or sessions and never registers a public route.
 
+mod endpoint;
 mod handlers;
 
 mod types;
 
 use alibi_core::{AuthContext, AuthRequest, AuthResult, AuthSchema};
 use async_trait::async_trait;
+pub use endpoint::PhoneOtpConsumption;
 use std::sync::Arc;
 pub use types::{PhoneNumberVerification, PhoneOtpDelivery};
 pub(crate) use types::{parse_signup_phone, reject_verified_input};
@@ -140,6 +142,10 @@ alibi_core::impl_auth_plugin! {
     }
     extra {
     route_openapi_metadata!(S);
+        fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> { endpoint::definitions() }
+        fn validate_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointInput> { endpoint::validate(call) }
+        async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> { self.call_endpoint(call, ctx).await }
+
 
         fn rate_limits(&self) -> Vec<alibi_core::PluginRateLimit> {
             vec![alibi_core::PluginRateLimit { matches: |path| path.starts_with("/phone-number"), limit: alibi_core::EndpointRateLimit { window_seconds: 60.0, max_requests: 10.0 } }]

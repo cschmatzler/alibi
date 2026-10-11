@@ -1,5 +1,5 @@
 import { type BetterAuthOptions, betterAuth } from "better-auth";
-import { APIError } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { phoneNumber, twoFactor } from "better-auth/plugins";
 
@@ -99,6 +99,19 @@ export async function createPhoneFixture(
           : {}),
       },
       emailVerification: { ...base.emailVerification, sendOnSignUp: false },
+      hooks: {
+        after: createAuthMiddleware(async (ctx) => {
+          if (
+            ctx.path === "/" &&
+            !ctx.request &&
+            ctx.body &&
+            "phoneNumber" in ctx.body &&
+            "code" in ctx.body
+          ) {
+            ctx.setHeader("x-phone-consumed", "application-receipt");
+          }
+        }),
+      },
       plugins: [
         twoFactor({
           otpOptions: {
@@ -266,31 +279,17 @@ export async function createPhoneFixture(
       const selected =
         typeof record.profile === "string" ? profiles.get(record.profile) : undefined;
 
-      if (!selected || typeof record.phoneNumber !== "string" || typeof record.code !== "string") {
+      if (!selected) {
         return Response.json({ message: "invalid server operation" }, { status: 400 });
       }
 
-      try {
-        return Response.json(
-          await selected.api.consumePhoneNumberOTP({
-            body: { phoneNumber: record.phoneNumber, code: record.code },
-          }),
-        );
-      } catch (error) {
-        if (error instanceof APIError) {
-          return Response.json(error.body, {
-            status:
-              typeof error.status === "number"
-                ? error.status
-                : error.status === "BAD_REQUEST"
-                  ? 400
-                  : error.status === "FORBIDDEN"
-                    ? 403
-                    : 500,
-          });
-        }
-        throw error;
-      }
+      return selected.api.consumePhoneNumberOTP({
+        body: { phoneNumber: record.phoneNumber, code: record.code } as {
+          phoneNumber: string;
+          code: string;
+        },
+        asResponse: true,
+      });
     },
   };
 }
