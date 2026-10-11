@@ -516,7 +516,7 @@ pub(crate) async fn router(
             .plugin(SessionManagementPlugin::new())
             .plugin(alibi::plugins::EmailVerificationPlugin::new()
                 .custom_send_verification_email(verification_sender).send_on_sign_up(false))
-            .plugin(alibi::plugins::UserManagementPlugin::new().delete_user_enabled(true))
+            .plugin(alibi::plugins::UserManagementPlugin::new().delete_user_enabled(true).change_email_enabled(true))
             .plugin(AccountManagementPlugin::new())
             .plugin(PasswordManagementPlugin::with_config(alibi::plugins::PasswordManagementConfig {
                 password_hasher: Some(Arc::new(app.clone())), send_reset_password: Some(reset_sender), ..Default::default()
@@ -584,7 +584,7 @@ pub(crate) async fn router(
                 let plugin = match input.operation.as_str() {
                     "updateUser" | "ok" => "core",
                     "verifyEmail" | "sendVerificationEmail" => "email-verification",
-                    "deleteUser" | "deleteUserCallback" => "user-management",
+                    "deleteUser" | "deleteUserCallback" | "changeEmail" => "user-management",
                     "changePassword" | "verifyPassword" | "setPassword" | "resetPassword" | "requestPasswordReset" | "requestPasswordResetCallback" => "password-management",
                     "listUserAccounts" | "unlinkAccount" => "account-management",
                     "createVerificationOTP" | "getVerificationOTP" => "email-otp",
@@ -612,6 +612,7 @@ pub(crate) async fn router(
                     "sendVerificationEmail" => "sendVerificationEmail",
                     "deleteUser" => "deleteUser",
                     "deleteUserCallback" => "deleteUserCallback",
+                    "changeEmail" => "changeEmail",
                     "listUserAccounts" => "listUserAccounts",
                     "unlinkAccount" => "unlinkAccount",
                     "createVerificationOTP" => "createVerificationOTP",

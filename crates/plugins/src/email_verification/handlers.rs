@@ -488,9 +488,13 @@ async fn verification_session<S: alibi_core::AuthSchema>(
     request: &impl alibi_core::session::SessionRequest,
     ctx: &AuthContext<S>,
 ) -> Option<(UserView, SessionView)> {
-    alibi_core::session::cookie_cache::runtime::authenticated(ctx, request, false)
+    let read = alibi_core::session::cookie_cache::runtime::authenticated(ctx, request, false)
         .await
         .ok()
-        .flatten()
-        .map(|read| (ctx.user_view(&read.user), read.session))
+        .flatten()?;
+    let user = ctx.user_view(&read.user);
+    if let Some(call) = request.endpoint_call() {
+        call.record_authenticated_session(user.clone(), read.session.clone());
+    }
+    Some((user, read.session))
 }

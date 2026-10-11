@@ -11,8 +11,7 @@ use async_trait::async_trait;
 use chrono::Duration;
 use handlers::{change_email_core, delete_user_callback_core, delete_user_core};
 use std::sync::Arc;
-use types::ChangeEmailRequest;
-pub use types::{DeleteUserCallbackQuery, DeleteUserRequest};
+pub use types::{ChangeEmailRequest, DeleteUserCallbackQuery, DeleteUserRequest};
 pub use update::{BuiltinUserEndpoints, handle_update_user, ok_endpoint, update_user_endpoint};
 
 /// The initialized user's full snapshot passed to application lifecycle hooks.
@@ -225,6 +224,13 @@ impl UserManagementPlugin {
 }
 
 impl UserManagementPlugin {
+    /// Start an authenticated mailbox change through the public server API.
+    pub fn change_email_endpoint(
+        body: &ChangeEmailRequest,
+    ) -> AuthResult<alibi_core::endpoint::ServerEndpoint<alibi_core::StatusResponse>> {
+        alibi_core::endpoint::ServerEndpoint::new("user-management", "changeEmail").with_body(body)
+    }
+
     /// Complete a delivered deletion proof through the public server API.
     pub fn delete_user_callback_endpoint(
         query: &DeleteUserCallbackQuery,
@@ -391,6 +397,12 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
         vec![
             crate::endpoint::definition(
+                "changeEmail",
+                "changeEmail",
+                Some("/change-email"),
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
                 "deleteUserCallback",
                 "deleteUserCallback",
                 Some("/delete-user/callback"),
@@ -425,7 +437,11 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
             body: Some(crate::endpoint::validate_fields(
                 call.body(),
                 "body",
-                DeleteUserRequest::FIELDS,
+                if call.operation_id() == "changeEmail" {
+                    ChangeEmailRequest::FIELDS
+                } else {
+                    DeleteUserRequest::FIELDS
+                },
             )?),
             query: call.query().cloned(),
         })
@@ -448,6 +464,25 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
                 message: "Unauthorized",
             })?;
         call.record_authenticated_session(ctx.user_view(&user), session.clone());
+        if call.operation_id() == "changeEmail" {
+            if !self.config.change_email.enabled {
+                return Err(AuthError::bad_request("Change email is disabled"));
+            }
+            let body: ChangeEmailRequest = call.body_as()?;
+            let projection = change_email_core(&body, &user, &session, &self.config, ctx).await?;
+            let mut response =
+                alibi_core::endpoint::EndpointResponse::json(&alibi_core::StatusResponse {
+                    status: true,
+                })?;
+            if projection.is_some() {
+                response.merge_headers(crate::authentication_helpers::session_cookie_headers(
+                    &ctx.config,
+                    &session.token,
+                    ctx.session_manager().has_dont_remember_cookie(call),
+                )?);
+            }
+            return Ok(response);
+        }
         if !self.config.delete_user.enabled {
             return Ok(
                 alibi_core::endpoint::EndpointResponse::error(AuthError::Api {
