@@ -14,7 +14,8 @@ backend_tests!(
     organization_empty_update_storage_error,
     organization_ignored_default_patch_null_result,
     organization_fractional_timestamps_project_without_rewriting_owned_rows,
-    organization_null_metadata_keeps_storage_and_response_distinctions
+    organization_null_metadata_keeps_storage_and_response_distinctions,
+    organization_selection_verifies_first_cookie_without_rotating_authority
 );
 
 fn get(path: &str, query: &[(&str, &str)], cookie: &str) -> AuthRequest {
@@ -1192,6 +1193,191 @@ async fn organization_null_metadata_keeps_storage_and_response_distinctions<B: B
         &auth,
         &cookies(&foreign),
         "metadata-null-foreign@example.test",
+    )
+    .await;
+    B::close(connection).await
+}
+
+// Compat owner: organization/set-active-cookies.test.ts. Generic session
+// preference tests do not cover selection cookies and the physical expiry rewrite.
+async fn organization_selection_verifies_first_cookie_without_rotating_authority<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::with_config(
+            OrganizationConfig::default(),
+        ))
+        .build()
+        .await?;
+    let owner = signup(&auth, "selection-cookie-owner@example.test").await;
+    let _ = call(
+        &auth,
+        request("/sign-out", Some(json!({})), &cookies(&owner)),
+        200,
+    )
+    .await;
+    let signed_in = call(&auth, request("/sign-in/email", Some(json!({
+        "email":"selection-cookie-owner@example.test", "password":PASSWORD, "rememberMe":false
+    })), ""), 200).await;
+    let token = body(&signed_in)["token"].as_str().unwrap().to_owned();
+    let owner_id = body(&signed_in)["user"]["id"].as_str().unwrap().to_owned();
+    let emitted: Vec<_> = signed_in.headers.get_all("set-cookie").collect();
+    let session_cookie = emitted
+        .iter()
+        .find(|value| value.starts_with("better-auth.session_token="))
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    let preference = emitted
+        .iter()
+        .find(|value| value.starts_with("better-auth.dont_remember="))
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    assert!(preference.starts_with("better-auth.dont_remember=true."));
+    let valid = format!("{session_cookie}; {preference}");
+    let tampered = preference.replacen("=true.", "=false.", 1);
+    let invalid_first = format!("{session_cookie}; {tampered}; {preference}");
+    let valid_first = format!("{valid}; {tampered}");
+    let created = call(&auth, request("/organization/create", Some(json!({
+        "name":"Cookie Preference", "slug":"cookie-preference", "metadata":{"guard":"retained"}
+    })), &valid), 200).await;
+    let id = body(&created)["id"].as_str().unwrap().to_owned();
+    let foreign = signup(&auth, "selection-cookie-foreign@example.test").await;
+    let _ = call(
+        &auth,
+        request(
+            "/organization/create",
+            Some(json!({
+                "name":"Foreign Cookie", "slug":"foreign-cookie"
+            })),
+            &cookies(&foreign),
+        ),
+        200,
+    )
+    .await;
+    let tables = [
+        "users",
+        "accounts",
+        "organization",
+        "member",
+        "sessions",
+        "verifications",
+    ];
+    let before = db.tables(&tables).await?;
+    let prior: Vec<Value> = serde_json::from_str(&before[4])?;
+    let original = prior.iter().find(|row| row["token"] == token).unwrap();
+    assert_eq!(original["user_id"], owner_id);
+    assert_eq!(original["active_organization_id"], id);
+    let initial = body(&call(&auth, request("/get-session", None, &valid), 200).await);
+    let issued_expiry =
+        chrono::DateTime::parse_from_rfc3339(initial["session"]["expiresAt"].as_str().unwrap())?;
+    assert!(issued_expiry.signed_duration_since(chrono::Utc::now()) > chrono::Duration::hours(23));
+    assert!(issued_expiry.signed_duration_since(chrono::Utc::now()) <= chrono::Duration::days(1));
+    let mut persistent_expiry = None;
+    let mut previous = before.clone();
+    for (selected, header, browser) in [
+        (true, valid.as_str(), Some(true)),
+        (false, valid.as_str(), Some(true)),
+        (false, valid.as_str(), None),
+        (true, invalid_first.as_str(), Some(false)),
+        (false, invalid_first.as_str(), Some(false)),
+        (true, valid_first.as_str(), Some(true)),
+    ] {
+        let response = call(
+            &auth,
+            request(
+                "/organization/set-active",
+                Some(json!({
+                    "organizationId":if selected {json!(id)} else {Value::Null}
+                })),
+                header,
+            ),
+            200,
+        )
+        .await;
+        if selected {
+            assert_eq!(body(&response)["id"], id);
+        } else {
+            assert_eq!(body(&response), Value::Null);
+        }
+        let emitted: Vec<_> = response.headers.get_all("set-cookie").collect();
+        match browser {
+            None => assert!(emitted.is_empty()),
+            Some(true) => {
+                assert_eq!(emitted.len(), 2);
+                assert_eq!(emitted[0].split(';').next().unwrap(), session_cookie);
+                assert_eq!(emitted[1].split(';').next().unwrap(), preference);
+                for value in emitted {
+                    assert!(!value.to_ascii_lowercase().contains("max-age="));
+                    assert!(!value.to_ascii_lowercase().contains("expires="));
+                }
+            }
+            Some(false) => {
+                assert!(!emitted.is_empty());
+                for value in emitted {
+                    assert_eq!(value.split(';').next().unwrap(), session_cookie);
+                    assert!(value.to_ascii_lowercase().contains("max-age=604800"));
+                }
+            }
+        }
+        let current = db.tables(&tables).await?;
+        if browser.is_none() {
+            assert_eq!(current, previous);
+        }
+        previous.clone_from(&current);
+        for index in [0, 1, 2, 3, 5] {
+            assert_eq!(current[index], before[index]);
+        }
+        let mut expected = prior.clone();
+        let mut actual: Vec<Value> = serde_json::from_str(&current[4])?;
+        let active = actual.iter().find(|row| row["token"] == token).unwrap();
+        if browser == Some(false) && persistent_expiry.is_none() {
+            assert_ne!(active["expires_at"], original["expires_at"]);
+            persistent_expiry = Some(active["expires_at"].clone());
+            let state = body(&call(&auth, request("/get-session", None, &valid), 200).await);
+            let extended = chrono::DateTime::parse_from_rfc3339(
+                state["session"]["expiresAt"].as_str().unwrap(),
+            )?;
+            assert!(extended.signed_duration_since(issued_expiry) > chrono::Duration::days(5));
+            assert!(extended.signed_duration_since(chrono::Utc::now()) > chrono::Duration::days(6));
+        }
+        let expected_owner = expected
+            .iter_mut()
+            .find(|row| row["token"] == token)
+            .unwrap();
+        expected_owner["active_organization_id"] = if selected { json!(id) } else { Value::Null };
+        if let Some(expiry) = &persistent_expiry {
+            expected_owner["expires_at"] = expiry.clone();
+        }
+        for rows in [&mut expected, &mut actual] {
+            _ = rows
+                .iter_mut()
+                .find(|row| row["token"] == token)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .remove("updated_at");
+        }
+        assert_eq!(actual, expected);
+        let state = body(&call(&auth, request("/get-session", None, &valid), 200).await);
+        assert_eq!(state["session"]["token"], token);
+        assert_eq!(state["user"]["id"], owner_id);
+        assert_eq!(
+            state["session"]["activeOrganizationId"],
+            if selected { json!(id) } else { Value::Null }
+        );
+    }
+    authenticated(&auth, &valid, "selection-cookie-owner@example.test").await;
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "selection-cookie-foreign@example.test",
     )
     .await;
     B::close(connection).await
