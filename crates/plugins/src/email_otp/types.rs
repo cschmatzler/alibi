@@ -75,9 +75,9 @@ pub(super) struct SignInRequest {
     pub otp: String,
     pub name: Option<String>,
     pub image: Option<String>,
-    pub username: Option<String>,
+    pub username: Option<alibi_core::utils::json::JsValue>,
     #[serde(rename = "displayUsername")]
-    pub display_username: Option<String>,
+    pub display_username: Option<alibi_core::utils::json::JsValue>,
 }
 
 #[derive(Deserialize)]

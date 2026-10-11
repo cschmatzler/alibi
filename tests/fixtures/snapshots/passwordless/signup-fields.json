@@ -175,16 +175,9 @@
   },
   {
     "numeric username": {
-      "status": 400,
-      "headers": {
-        "content-type": [
-          "application/json"
-        ]
-      },
-      "body": {
-        "code": "VALIDATION_ERROR",
-        "message": "[body] Invalid input"
-      }
+      "status": 500,
+      "headers": {},
+      "body": ""
     }
   },
   {

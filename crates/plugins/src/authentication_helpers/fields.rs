@@ -25,6 +25,15 @@ pub(crate) async fn prepare_additional_user_fields(
         .map(|policy| (*policy).clone())
         .unwrap_or_default();
     let mut input = indexmap::IndexMap::new();
+    // Passwordless endpoint fields are untyped extension input. Retain their
+    // raw values through schema parsing and the actual username hook stage.
+    for key in ["username", "displayUsername"] {
+        if (key != "displayUsername" || policy.include_display_username)
+            && let Some(value) = data.additional_fields.get(key)
+        {
+            _ = input.insert(key.into(), value.clone());
+        }
+    }
     if let Some(username) = &data.username {
         _ = input.insert(
             "username".into(),
@@ -53,14 +62,38 @@ pub(crate) async fn prepare_additional_user_fields(
         .and_then(alibi_core::utils::json::JsValue::as_str)
         .map(str::to_owned);
     let Some(username) = data
-        .username
-        .as_deref()
-        .filter(|username| !username.is_empty())
+        .additional_fields
+        .get("username")
+        .filter(|username| username.is_truthy())
     else {
         return Ok(());
     };
-    policy.validate_hook_value(username).await?;
-    let username = policy.normalize(username)?;
+    policy.validate_raw_hook_value(username).await?;
+    let username = policy.normalize_raw_hook_value(username)?;
+    // Lookup uses the adapter's scalar affinity rather than converting before
+    // the hook. This keeps normalization:false numeric values admissible.
+    let username = match username {
+        alibi_core::utils::json::JsValue::String(value) => value,
+        value => {
+            let scalar = match alibi_core::store::adapter::RawFieldValue::from_js(&value)? {
+                alibi_core::store::adapter::RawFieldValue::Integer(value) => {
+                    alibi_core::store::NumericTextInput::Integer(value)
+                }
+                alibi_core::store::adapter::RawFieldValue::Number(value) => {
+                    alibi_core::store::NumericTextInput::Real(value)
+                }
+                alibi_core::store::adapter::RawFieldValue::Bool(value) => {
+                    alibi_core::store::NumericTextInput::Integer(i64::from(value))
+                }
+                _ => {
+                    return Err(AuthError::CallbackFailure(Box::new(AuthError::internal(
+                        "Username cannot bind to a scalar field",
+                    ))));
+                }
+            };
+            ctx.database.coerce_user_text_number(scalar).await?
+        }
+    };
     if ctx
         .database
         .get_user_by_username(&username)
@@ -74,10 +107,16 @@ pub(crate) async fn prepare_additional_user_fields(
         });
     }
     if let Some(display) = data
-        .display_username
-        .as_deref()
-        .filter(|value| !value.is_empty())
+        .additional_fields
+        .get("displayUsername")
+        .filter(|value| value.is_truthy())
+        && policy.display_validator.is_some()
     {
+        let display = display.as_str().ok_or_else(|| {
+            AuthError::CallbackFailure(Box::new(AuthError::internal(
+                "Configured display validation requires a string",
+            )))
+        })?;
         policy.validate_display(display).await?;
     }
     Ok(())

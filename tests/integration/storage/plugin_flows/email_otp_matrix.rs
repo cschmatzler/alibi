@@ -19,7 +19,9 @@ backend_tests!(
     verification_otp_creation_retry,
     verification_otp_cache_set_failure,
     verification_otp_creation_veto,
-    email_otp_returning_owner_ignores_creation_only_username_inputs
+    email_otp_returning_owner_ignores_creation_only_username_inputs,
+    email_otp_new_owner_malformed_username_consumes_proof_before_hook_failure,
+    email_otp_raw_username_creation_preserves_hook_admission_and_scalar_storage
 );
 
 #[derive(Default)]
@@ -1311,4 +1313,225 @@ async fn email_otp_returning_owner_ignores_creation_only_username_inputs<B: Back
     .await;
     assert_eq!(body(&credentials)["user"]["id"], original_user["id"]);
     B::close(connection).await
+}
+
+// Compat owner: email-otp/new-owner-malformed-username.test.ts. A real proof is
+// consumed before the username create hook attempts default normalization.
+async fn email_otp_new_owner_malformed_username_consumes_proof_before_hook_failure<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mailbox = Arc::new(Mailbox::default());
+    let auth = username_builder::<B>(&connection)
+        .plugin(plugin(&mailbox, EmailOtpConfig::default()))
+        .build()
+        .await?;
+    let foreign = signup(&auth, "otp-malformed-foreign@example.test").await;
+    let email = "otp-malformed-new-owner@example.test";
+    let _ = call(
+        &auth,
+        request(
+            "/email-otp/send-verification-otp",
+            Some(json!({"email":email,"type":"sign-in"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let proof = mailbox.take();
+    assert_eq!(db.count("verifications").await?, 1);
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let rejected = call(
+        &auth,
+        request(
+            "/sign-in/email-otp",
+            Some(json!({"email":email,"otp":proof.otp,"username":5})),
+            "",
+        ),
+        500,
+    )
+    .await;
+    assert!(rejected.body.is_empty());
+    assert!(rejected.headers.get_all("set-cookie").next().is_none());
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.count("verifications").await?, 0);
+    let replay = call(
+        &auth,
+        request(
+            "/sign-in/email-otp",
+            Some(json!({"email":email,"otp":proof.otp,"username":"Recovered_Owner"})),
+            "",
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&replay)["code"], "INVALID_OTP");
+    assert!(replay.headers.get_all("set-cookie").next().is_none());
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.count("verifications").await?, 0);
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "otp-malformed-foreign@example.test",
+    )
+    .await;
+    let _ = call(
+        &auth,
+        request(
+            "/email-otp/send-verification-otp",
+            Some(json!({"email":email,"type":"sign-in"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let fresh = mailbox.take();
+    let accepted = call(&auth, request("/sign-in/email-otp", Some(json!({"email":email,"otp":fresh.otp,"username":"Recovered_Owner","displayUsername":"Recovered Owner"})), ""), 200).await;
+    let user = body(&accepted)["user"].clone();
+    assert_eq!(user["email"], email);
+    assert_eq!(user["emailVerified"], true);
+    assert_eq!(user["username"], "recovered_owner");
+    assert_eq!(user["displayUsername"], "Recovered Owner");
+    assert_eq!(db.count("users").await?, 2);
+    assert_eq!(db.count("accounts").await?, 1);
+    assert_eq!(db.count("sessions").await?, 2);
+    assert_eq!(db.count("verifications").await?, 0);
+    let current = body(
+        &call(
+            &auth,
+            request("/get-session", None, &cookies(&accepted)),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(current["user"], user);
+    assert_eq!(current["session"]["token"], body(&accepted)["token"]);
+    let committed = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    let replay = call(
+        &auth,
+        request(
+            "/sign-in/email-otp",
+            Some(json!({"email":email,"otp":fresh.otp,"username":"Recovered_Owner"})),
+            "",
+        ),
+        400,
+    )
+    .await;
+    assert_eq!(body(&replay)["code"], "INVALID_OTP");
+    assert!(replay.headers.get_all("set-cookie").next().is_none());
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        committed
+    );
+    assert!(mailbox.0.lock().unwrap().is_empty());
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "otp-malformed-foreign@example.test",
+    )
+    .await;
+    B::close(connection).await
+}
+
+async fn email_otp_raw_username_creation_preserves_hook_admission_and_scalar_storage<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::plugins::email_password::{UsernameConfig, UsernameNormalization};
+    for (label, value, preserve, status, expected_username, expected_display) in [
+        ("negative", json!(-1), false, 400, Value::Null, Value::Null),
+        ("zero", json!(0), false, 200, json!("0"), Value::Null),
+        ("false", json!(false), false, 200, json!("0"), Value::Null),
+        ("preserve", json!(5), true, 200, json!("5"), json!("5")),
+    ] {
+        let db = db.fresh().await?;
+        let (connection, _) = db.migrated::<B>(SECRET).await?;
+        let mailbox = Arc::new(Mailbox::default());
+        let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+        let auth = AuthBuilder::new(config.clone())
+            .store(B::store(Arc::new(config), &connection))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+            .plugin(
+                fast_password()
+                    .enable_username(true)
+                    .username_config(UsernameConfig {
+                        normalization: if preserve {
+                            UsernameNormalization::Preserve
+                        } else {
+                            UsernameNormalization::Lowercase
+                        },
+                        ..Default::default()
+                    }),
+            )
+            .plugin(SessionManagementPlugin::new())
+            .plugin(plugin(&mailbox, EmailOtpConfig::default()))
+            .build()
+            .await?;
+        let foreign = signup(&auth, "raw-otp-foreign@example.test").await;
+        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let email = format!("raw-{label}@example.test");
+        let _ = call(
+            &auth,
+            request(
+                "/email-otp/send-verification-otp",
+                Some(json!({"email":email,"type":"sign-in"})),
+                "",
+            ),
+            200,
+        )
+        .await;
+        let proof = mailbox.take();
+        let response = call(
+            &auth,
+            request(
+                "/sign-in/email-otp",
+                Some(json!({"email":email,"otp":proof.otp,"username":value})),
+                "",
+            ),
+            status,
+        )
+        .await;
+        assert_eq!(db.count("verifications").await?, 0);
+        if status == 400 {
+            assert_eq!(body(&response)["code"], "INVALID_USERNAME");
+            assert!(response.headers.get_all("set-cookie").next().is_none());
+            assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        } else {
+            let user = body(&response)["user"].clone();
+            assert_eq!(user["username"], expected_username);
+            assert_eq!(user["displayUsername"], expected_display);
+            assert_eq!(user["emailVerified"], true);
+            let current = body(
+                &call(
+                    &auth,
+                    request("/get-session", None, &cookies(&response)),
+                    200,
+                )
+                .await,
+            );
+            assert_eq!(current["user"], user);
+            assert_eq!(current["session"]["token"], body(&response)["token"]);
+            assert_eq!(db.count("users").await?, 2);
+            assert_eq!(db.count("accounts").await?, 1);
+            assert_eq!(db.count("sessions").await?, 2);
+        }
+        let stable = db.tables(&["users", "accounts", "sessions"]).await?;
+        let replay = call(
+            &auth,
+            request(
+                "/sign-in/email-otp",
+                Some(json!({"email":email,"otp":proof.otp,"username":"recovery"})),
+                "",
+            ),
+            400,
+        )
+        .await;
+        assert_eq!(body(&replay)["code"], "INVALID_OTP");
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stable);
+        authenticated(&auth, &cookies(&foreign), "raw-otp-foreign@example.test").await;
+        B::close(connection).await?;
+    }
+    Ok(())
 }

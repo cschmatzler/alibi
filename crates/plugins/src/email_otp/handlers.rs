@@ -418,8 +418,14 @@ impl EmailOtpPlugin {
                     .with_name(body.name.unwrap_or_default())
                     .with_email_verified(true);
                 data.image = body.image;
-                data.username = body.username;
-                data.display_username = body.display_username;
+                if let Some(username) = body.username {
+                    _ = data.additional_fields.insert("username".into(), username);
+                }
+                if let Some(display) = body.display_username {
+                    _ = data
+                        .additional_fields
+                        .insert("displayUsername".into(), display);
+                }
                 super::super::helpers::apply_default_role(ctx, &mut data);
                 prepare_additional_user_fields(ctx, &mut data).await?;
                 ctx.database
