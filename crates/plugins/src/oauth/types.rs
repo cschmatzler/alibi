@@ -88,8 +88,9 @@ pub(super) struct SocialSignInResponse {
     pub user: Option<UserView>,
 }
 
-#[derive(Debug, Serialize)]
-pub(super) struct AccessTokenResponse {
+/// Public result of the `getAccessToken` server operation.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AccessTokenResponse {
     #[serde(rename = "accessToken")]
     pub access_token: Option<String>,
     #[serde(

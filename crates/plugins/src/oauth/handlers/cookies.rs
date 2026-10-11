@@ -5,7 +5,6 @@ use crate::oauth::state::create_account_cookie_value;
 use crate::oauth::state::create_cookie_state_value;
 use crate::oauth::state::decode_account_cookie_value;
 use crate::oauth::state::state_cookie_name;
-use alibi_core::AuthRequest;
 use alibi_core::AuthResponse;
 use alibi_core::AuthResult;
 use alibi_core::utils::cookie_utils::sign_cookie_value;
@@ -34,7 +33,7 @@ pub(in crate::oauth::handlers) fn account_cookie_max_age(config: &alibi_core::Au
 pub(crate) fn create_account_cookie_headers(
     config: &alibi_core::AuthConfig,
     payload: &AccountCookiePayload,
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
 ) -> AuthResult<Vec<String>> {
     let max_age = account_cookie_max_age(config);
     let value = create_account_cookie_value(config, payload, max_age)?;
@@ -43,17 +42,17 @@ pub(crate) fn create_account_cookie_headers(
         &value,
         Some(max_age),
         config,
-        &req.headers,
+        req.session_headers(),
         true,
     )
 }
 
 pub(in crate::oauth) fn decode_account_cookie(
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     config: &alibi_core::AuthConfig,
 ) -> AuthResult<Option<AccountCookiePayload>> {
     let Some(value) = alibi_core::session::cookie_cache::runtime::chunked_cookie_value(
-        &req.headers,
+        req.session_headers(),
         &account_cookie_name(config),
     ) else {
         return Ok(None);

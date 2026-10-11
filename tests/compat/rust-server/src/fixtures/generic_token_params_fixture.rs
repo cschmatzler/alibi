@@ -552,6 +552,7 @@ pub(crate) async fn router(
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(SessionManagementPlugin::new())
                 .plugin(OAuthPlugin::new().add_provider("generic", provider))
+                .endpoint_hook(AccessServerHook)
                 .build()
                 .await?,
         );
@@ -591,6 +592,34 @@ pub(crate) async fn router(
             async move {
                 use alibi::plugins::oauth::{OAuthAccountApi, OAuthAccountSelection};
                 use axum::response::IntoResponse;
+                if body["operation"] == "get-access-token" {
+                    let input = body.get("selection").cloned().unwrap_or_else(|| {
+                        let mut input = json!({"accountId":body["accountId"]});
+                        if let Some(user) = body.get("userId") { input["userId"] = user.clone(); }
+                        input
+                    });
+                    let endpoint = alibi::endpoint::ServerEndpoint::<Value>::new("oauth", "getAccessToken").with_body(&input).unwrap();
+                    let options = alibi::endpoint::EndpointOptions {
+                        headers: body.get("logicalHeaders").map(|headers|serde_json::from_value(headers.clone()).unwrap()),
+                        request: body.get("physicalRequest").and_then(Value::as_bool).filter(|value|*value).map(|_|alibi::AuthRequest::new(alibi::HttpMethod::Get,"/incoming-request")),
+                        ..Default::default()
+                    };
+                    return match auth.dispatch_endpoint(endpoint, options).await {
+                        Ok(output) => {
+                            let mut response = Json(output.decode().unwrap()).into_response();
+                            for (name,value) in output.headers() { response.headers_mut().append(axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),axum::http::HeaderValue::from_str(value).unwrap()); }
+                            response
+                        },
+                        Err(error) => {
+                            let native=error.error.to_auth_response();
+                            let bytes=if error.body_absent {Vec::new()} else {error.body.map_or(native.body,|value|serde_json::to_vec(&*value).unwrap())};
+                            let mut response=(axum::http::StatusCode::from_u16(native.status).unwrap(),bytes).into_response();
+                            response.headers_mut().insert(axum::http::header::CONTENT_TYPE,axum::http::HeaderValue::from_static("application/json"));
+                            if let Some(headers)=error.headers {for(name,value)in headers {response.headers_mut().append(axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),axum::http::HeaderValue::from_str(&value).unwrap());}}
+                            response
+                        }
+                    };
+                }
                 let user = body["userId"].as_str().unwrap_or_default();
                 let selection = OAuthAccountSelection::Id(
                     body["accountId"].as_str().unwrap_or_default().to_owned(),
@@ -683,4 +712,11 @@ async fn token(State(f): State<Fixture>, headers: HeaderMap, body: String) -> Js
 }
 async fn user(State(f): State<Fixture>) -> Json<Value> {
     Json(f.control.lock().await.get("profile").cloned().unwrap_or_else(||json!({"id":"generic-subject","email":"generic@example.invalid","name":"Generic Name","email_verified":true})))
+}
+
+struct AccessServerHook;
+#[async_trait::async_trait]
+impl<S:alibi::AuthSchema> alibi::endpoint::EndpointHook<S> for AccessServerHook {
+ fn matches_after(&self,call:&alibi::endpoint::EndpointCall,_:&alibi::AuthContext<S>,_:&alibi::endpoint::EndpointResponse)->AuthResult<bool>{Ok(call.operation_id()=="getAccessToken"&&call.request().is_none())}
+ async fn after(&self,_:&alibi::endpoint::EndpointCall,_:&alibi::AuthContext<S>,response:alibi::endpoint::EndpointResponse)->AuthResult<alibi::endpoint::EndpointResponse>{Ok(response.with_header("set-cookie","application_a=first; Path=/; HttpOnly").with_header("set-cookie","application_b=second; Path=/; HttpOnly"))}
 }

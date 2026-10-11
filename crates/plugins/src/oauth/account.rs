@@ -20,6 +20,21 @@ pub enum OAuthAccountSelection {
     Cookie,
 }
 
+pub(super) trait AccountRequest: alibi_core::session::SessionRequest {
+    fn refresh_context(&self) -> Option<super::providers::OAuthRefreshContext<'_>>;
+}
+impl AccountRequest for AuthRequest {
+    fn refresh_context(&self) -> Option<super::providers::OAuthRefreshContext<'_>> {
+        Some(super::providers::OAuthRefreshContext { request: self })
+    }
+}
+impl AccountRequest for alibi_core::endpoint::EndpointCall {
+    fn refresh_context(&self) -> Option<super::providers::OAuthRefreshContext<'_>> {
+        self.request()
+            .map(|request| super::providers::OAuthRefreshContext { request })
+    }
+}
+
 impl OAuthAccountSelection {
     fn from_body(req: &AuthRequest) -> Result<Self, String> {
         let value = req
@@ -37,7 +52,7 @@ impl OAuthAccountSelection {
         ))
     }
 
-    fn from_value(value: &serde_json::Value) -> Result<Self, String> {
+    pub(super) fn from_value(value: &serde_json::Value) -> Result<Self, String> {
         let object = value
             .as_object()
             .ok_or_else(|| "Invalid input".to_owned())?;
@@ -75,7 +90,7 @@ impl OAuthAccountSelection {
 
     async fn resolve(
         &self,
-        req: &AuthRequest,
+        req: &impl alibi_core::session::SessionRequest,
         user_id: &str,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AccountCookiePayload> {
@@ -220,7 +235,7 @@ async fn persist_tokens(
 async fn valid_access_token(
     account: &mut AccountCookiePayload,
     config: &OAuthConfig,
-    req: &AuthRequest,
+    req: &impl AccountRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(AccessTokenResponse, bool)> {
     let provider = config.providers.get(&account.provider_id).ok_or_else(|| {
@@ -248,13 +263,9 @@ async fn valid_access_token(
         let refresh_token = maybe_decrypt_with_config(Some(stored_refresh), encrypted, &ctx.config)
             .map_err(|_error| access_token_failure())?
             .unwrap_or_default();
-        let tokens = refresh_tokens_via_provider(
-            provider,
-            &refresh_token,
-            Some(super::providers::OAuthRefreshContext { request: req }),
-        )
-        .await
-        .map_err(|_error| access_token_failure())?;
+        let tokens = refresh_tokens_via_provider(provider, &refresh_token, req.refresh_context())
+            .await
+            .map_err(|_error| access_token_failure())?;
         persist_tokens(account, &tokens, ctx, provider)
             .await
             .map_err(|_error| access_token_failure())?;
@@ -278,7 +289,7 @@ async fn valid_access_token(
                 .as_ref()
                 .and_then(|tokens| tokens.access_token_expires_at)
                 .or(original.access_token_expires_at)
-                .map(|value| value.to_rfc3339()),
+                .map(|value| value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
             scopes: scopes(account),
             id_token: refreshed
                 .as_ref()
@@ -331,9 +342,30 @@ async fn handle_get_access_token_for_user(
         };
         session.user_id
     };
-    let mut account = selection.resolve(req, &user_id, ctx).await?;
-    let (response, refreshed) = valid_access_token(&mut account, config, req, ctx).await?;
-    token_response(&response, &account, refreshed, req, ctx)
+    let (value, headers) =
+        get_access_token_for_selection(config, req, ctx, &user_id, selection).await?;
+    let mut response = AuthResponse::json(200, &value)?;
+    for header in headers {
+        response.headers.append("set-cookie", header);
+    }
+    Ok(response)
+}
+
+pub(super) async fn get_access_token_for_selection(
+    config: &OAuthConfig,
+    request: &impl AccountRequest,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
+    user_id: &str,
+    selection: OAuthAccountSelection,
+) -> AuthResult<(AccessTokenResponse, Vec<String>)> {
+    let mut account = selection.resolve(request, user_id, ctx).await?;
+    let (value, refreshed) = valid_access_token(&mut account, config, request, ctx).await?;
+    let headers = if refreshed && ctx.config.account.store_account_cookie {
+        create_account_cookie_headers(&ctx.config, &account, request)?
+    } else {
+        Vec::new()
+    };
+    Ok((value, headers))
 }
 
 async fn handle_refresh_token_for_user(
