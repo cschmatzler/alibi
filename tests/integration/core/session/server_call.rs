@@ -5,6 +5,7 @@ use alibi::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointHook, EndpointOptions,
     EndpointResponse,
 };
+use alibi::plugins::jwt::JwtPlugin;
 use alibi::plugins::{GetSessionQuery, GetSessionResponse, SessionManagementPlugin};
 use alibi::utils::json::JsValue;
 use alibi::{
@@ -26,6 +27,24 @@ async fn absent_session_is_a_typed_none_with_response_headers() {
     .build()
     .await
     .unwrap();
+    for query in [
+        JsValue::Array(Vec::new()),
+        JsValue::String("invalid".into()),
+    ] {
+        let error = auth
+            .dispatch_endpoint(
+                SessionManagementPlugin::get_session_endpoint().with_query_value(query),
+                EndpointOptions {
+                    headers: Some(Default::default()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error.error, alibi::AuthError::Api {
+            status: 400, code: Some(code), ..
+        } if code == "VALIDATION_ERROR"));
+    }
     let output = auth
         .dispatch_endpoint(
             SessionManagementPlugin::get_session_endpoint(),
@@ -38,6 +57,7 @@ async fn absent_session_is_a_typed_none_with_response_headers() {
         .unwrap();
     let session: Option<GetSessionResponse> = output.decode().unwrap();
     assert!(session.is_none());
+    assert_eq!(output.status(), None);
     let headers: &Headers = output.headers();
     assert_eq!(
         headers.get("cache-control").map(String::as_str),
@@ -331,6 +351,19 @@ struct SessionHooks;
 
 #[async_trait]
 impl<S: AuthSchema> EndpointHook<S> for SessionHooks {
+    fn matches_before(&self, call: &EndpointCall, _: &AuthContext<S>) -> AuthResult<bool> {
+        Ok(call.operation_id() == "get_session")
+    }
+
+    fn matches_after(
+        &self,
+        call: &EndpointCall,
+        _: &AuthContext<S>,
+        _: &EndpointResponse,
+    ) -> AuthResult<bool> {
+        Ok(call.operation_id() == "get_session")
+    }
+
     async fn before(
         &self,
         call: &EndpointCall,
@@ -356,8 +389,13 @@ impl<S: AuthSchema> EndpointHook<S> for SessionHooks {
         let (user, session) = call.session().unwrap();
         assert_eq!(user.id, session.user_id);
         let mut value = response.result().as_ref().unwrap().to_json_value()?;
-        *value.pointer_mut("/user/name").unwrap() = json!("Hook name");
-        response.replace(JsValue::from(value));
+        if value.is_null() {
+            assert!(session.expires_at < Utc::now());
+            assert!(call.virtual_session().is_none());
+        } else {
+            *value.pointer_mut("/user/name").unwrap() = json!("Hook name");
+            response.replace(JsValue::from(value));
+        }
         Ok(response
             .with_header("set-cookie", "hook_a=one; Path=/")
             .with_header("Set-Cookie", "hook_b=two; Path=/"))
@@ -367,12 +405,34 @@ impl<S: AuthSchema> EndpointHook<S> for SessionHooks {
 async fn endpoint_hooks_patch_input_and_project_the_final_response<B: Backend>(
     db: Db,
 ) -> TestResult {
-    let auth = builder::<B>(&db, config())
-        .await?
-        .endpoint_hook(SessionHooks)
-        .build()
+    let auth = Box::pin(
+        builder::<B>(&db, config())
+            .await?
+            .plugin(JwtPlugin::new())
+            .endpoint_hook(SessionHooks)
+            .build(),
+    )
+    .await?;
+    let (user_id, token, cookie) = issue(&auth).await?;
+    let foreign_user = auth
+        .store()
+        .create_user(
+            CreateUser::new()
+                .with_email("foreign-session-owner@fixture.test")
+                .with_name("Foreign owner"),
+        )
         .await?;
-    let (_, token, cookie) = issue(&auth).await?;
+    let foreign_session = auth
+        .session_manager()
+        .create_session(&foreign_user, None, None)
+        .await?;
+    let foreign_token = foreign_session.token().to_owned();
+    let foreign_expiry = auth
+        .store()
+        .get_session(&foreign_token)
+        .await?
+        .unwrap()
+        .expires_at();
     auth.store()
         .update_session_expiry(&token, Utc::now() + Duration::hours(1))
         .await?;
@@ -382,12 +442,11 @@ async fn endpoint_hooks_patch_input_and_project_the_final_response<B: Backend>(
         .await?
         .unwrap()
         .expires_at();
-    let output = auth
-        .dispatch_endpoint(
-            SessionManagementPlugin::get_session_endpoint(),
-            options(&cookie),
-        )
-        .await?;
+    let output = Box::pin(auth.dispatch_endpoint(
+        SessionManagementPlugin::get_session_endpoint(),
+        options(&cookie),
+    ))
+    .await?;
     let session = output.decode()?.unwrap();
     assert_eq!(session.user.name.as_deref(), Some("Hook name"));
     assert_eq!(session.session.token, token);
@@ -402,6 +461,66 @@ async fn endpoint_hooks_patch_input_and_project_the_final_response<B: Backend>(
     assert_eq!(
         cookies(output.headers()),
         ["hook_a=one; Path=/", "hook_b=two; Path=/"]
+    );
+    let jwt = output
+        .headers()
+        .get("set-auth-jwt")
+        .expect("JWT publication from logical session hooks");
+    assert!(
+        output
+            .headers()
+            .get("access-control-expose-headers")
+            .unwrap()
+            .split(',')
+            .any(|name| name.trim() == "set-auth-jwt")
+    );
+    let verified = Box::pin(auth.dispatch_endpoint(
+        JwtPlugin::verify_endpoint(jwt.clone(), None),
+        EndpointOptions::default(),
+    ))
+    .await?
+    .decode()?
+    .payload
+    .unwrap();
+    assert_eq!(
+        verified.get("sub").and_then(Value::as_str),
+        Some(user_id.as_str())
+    );
+
+    auth.store()
+        .update_session_expiry(&token, Utc::now() - Duration::hours(1))
+        .await?;
+    let expired = Box::pin(auth.dispatch_endpoint(
+        SessionManagementPlugin::get_session_endpoint(),
+        options(&cookie),
+    ))
+    .await?;
+    assert!(expired.decode()?.is_none());
+    let jwt = expired
+        .headers()
+        .get("set-auth-jwt")
+        .expect("expired lookup remains visible to completed hooks");
+    let verified = Box::pin(auth.dispatch_endpoint(
+        JwtPlugin::verify_endpoint(jwt.clone(), None),
+        EndpointOptions::default(),
+    ))
+    .await?
+    .decode()?
+    .payload
+    .unwrap();
+    assert_eq!(
+        verified.get("sub").and_then(Value::as_str),
+        Some(user_id.as_str())
+    );
+    assert!(auth.store().get_session(&token).await?.is_none());
+    let foreign_session = auth.store().get_session(&foreign_token).await?.unwrap();
+    assert_eq!(foreign_session.user_id(), foreign_user.id());
+    assert_eq!(foreign_session.expires_at(), foreign_expiry);
+    assert!(
+        cookies(expired.headers())
+            .iter()
+            .any(|cookie| cookie.starts_with("better-auth.session_token=")
+                && cookie.contains("Max-Age=0"))
     );
     Ok(())
 }

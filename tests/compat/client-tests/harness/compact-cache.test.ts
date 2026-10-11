@@ -82,7 +82,13 @@ async function observe(baseURL: string, maxAge = 300.25, version?: string) {
   const atom = { token, envelope, decoded, observedAt, effectiveMaxAgeSeconds: maxAge };
   const end = Date.now();
   database.close();
-  return { signup, compactSessionCache: atom, start, end };
+  return {
+    signup,
+    compactSessionCache: atom,
+    start,
+    end,
+    rawCookies: response.headers.getSetCookie(),
+  };
 }
 
 function context(
@@ -336,5 +342,93 @@ test("compact authentication rejects declared nonfinite copies of the actual nul
         compareValues(wrongCopy(left), wrongCopy(right), context(left, right)).length,
       ).toBeGreaterThan(0);
     }
+  }
+});
+
+test("logical getSession callback cache clocks require the exact authenticated input receipt", async () => {
+  const left = await observe("http://localhost:3100", 300);
+  const right = await observe("http://localhost:3200", 300);
+  const window = (value: typeof left) => ({
+    startedAt: value.start,
+    finishedAt: value.end,
+    inputDates: {},
+    issuedSessionCookie: value.rawCookies
+      .find((cookie) => cookie.startsWith("better-auth.session_token="))!
+      .split(";")[0]!,
+  });
+  const ctx: ComparisonContext = {
+    ...context(left, right),
+    sessionCookieSecret: secret,
+    leftRequestWindows: [window(left)],
+    rightRequestWindows: [window(right)],
+  };
+  const observation = (value: typeof left) => {
+    const headers = { cookie: value.rawCookies.map((cookie) => cookie.split(";")[0]).join("; ") };
+    const session = normalizeClientValue(value.compactSessionCache.decoded);
+    return {
+      traces: [
+        {
+          method: "POST",
+          path: "/api/auth/sign-up/email",
+          responseStatus: 200,
+          responseBody: value.signup,
+        },
+      ],
+      observation: {
+        compactSessionCache: {
+          ...value.compactSessionCache,
+          rawCookies: value.rawCookies.filter((cookie) =>
+            cookie.startsWith("better-auth.session_data="),
+          ),
+        },
+        read: {
+          events: [
+            {
+              stage: "user-after",
+              path: "/get-session",
+              request: null,
+              headers,
+              session,
+              current: {
+                path: "/get-session",
+                request: null,
+                headers,
+                session: structuredClone(session),
+              },
+            },
+          ],
+        },
+      },
+    };
+  };
+  const a = observation(left);
+  const b = observation(right);
+  expect(compareValues(a, b, ctx)).toEqual([]);
+  for (const mutate of [
+    (value: any) => {
+      value.observation.read.events[0].session.updatedAt += 1;
+    },
+    (value: any) => {
+      value.observation.read.events[0].current.session.updatedAt += 1;
+    },
+    (value: any) => {
+      value.observation.read.events[0].session.user.name = "another owner";
+    },
+    (value: any) => {
+      delete value.observation.compactSessionCache;
+    },
+    (value: any) => {
+      value.observation.read.events[0].headers.cookie = "better-auth.session_data=unissued";
+    },
+  ]) {
+    const bad = structuredClone(b);
+    mutate(bad);
+    expect(
+      compareValues(a, bad, ctx).some(
+        (difference) =>
+          /\.events\.0\.(?:current\.)?session\.updatedAt$/.test(difference.path) &&
+          difference.reason.includes("authenticated input cookie receipt"),
+      ),
+    ).toBe(true);
   }
 });

@@ -62,7 +62,17 @@ fn returned(response: Option<&EndpointResponse>) -> Value {
     response.map_or(Value::Null,|response| match response.result(){Ok(value)=>serde_json::to_value(value).unwrap(),Err(error)=>value!({"api":true,"status":error.status_code(),"body":response.error_body().map_or_else(||error_body(error),|body|serde_json::to_value(body).unwrap())})})
 }
 fn input_snapshot(call: &EndpointCall) -> Value {
-    value!({"pathPresent":true,"path":call.path(),"methodPresent":call.has_method(),"method":call.method().map(|method|format!("{method:?}").to_uppercase()),"bodyPresent":call.has_body(),"body":call.body(),"queryPresent":call.has_query(),"query":call.query(),"headers":call.headers(),"request":call.request().map(|request|value!({"url":request.url().map(|url|url.as_str()),"method":format!("{:?}",request.method()).to_uppercase(),"headers":request.headers,"query":request.query,"body":request.body.as_ref().map(|body|String::from_utf8_lossy(body).into_owned())})),"session":call.session().map(|(user,session)|value!({"user":user,"session":session}))})
+    let observed_session = call.session().map(|(user, session)| {
+        let mut snapshot = value!({"user":user,"session":session});
+        if call.operation_id() == "get_session" {
+            if let Some(metadata) = alibi::session::cookie_cache::runtime::session_hook_cache_metadata(call) {
+                snapshot["updatedAt"] = value!(metadata.updated_at);
+                if let Some(version) = metadata.version { snapshot["version"] = value!(version); }
+            }
+        }
+        snapshot
+    });
+    value!({"pathPresent":true,"path":call.path(),"methodPresent":call.has_method(),"method":call.method().map(|method|format!("{method:?}").to_uppercase()),"bodyPresent":call.has_body(),"body":call.body(),"queryPresent":call.has_query(),"query":call.query(),"headers":call.headers(),"request":call.request().map(|request|value!({"url":request.url().map(|url|url.as_str()),"method":format!("{:?}",request.method()).to_uppercase(),"headers":request.headers,"query":request.query,"body":request.body.as_ref().map(|body|String::from_utf8_lossy(body).into_owned())})),"session":observed_session})
 }
 fn snapshot(call: &EndpointCall, response: Option<&EndpointResponse>) -> Value {
     let mut snapshot = input_snapshot(call);
@@ -370,7 +380,7 @@ struct Input {
 fn header_snapshot(headers: &alibi::Headers) -> HashMap<String, String> {
     let mut values: HashMap<_, _> = headers
         .iter()
-        .map(|(name, value)| (name.clone(), value.clone()))
+        .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
         .collect();
     let cookies: Vec<_> = headers.get_all("set-cookie").cloned().collect();
     if !cookies.is_empty() {
@@ -382,7 +392,7 @@ fn outcome(result: Result<alibi::endpoint::EndpointOutput<JsValue>, EndpointErro
     match result {
         Ok(output) => {
             let mut result =
-                value!({"headers":header_snapshot(output.headers()),"response":output.value()});
+                value!({"headers":header_snapshot(output.headers()),"cookies":output.headers().get_all("set-cookie").cloned().collect::<Vec<_>>(),"response":output.value()});
             if let Some(status) = output.status() {
                 result["status"] = value!(status);
             }
@@ -534,6 +544,7 @@ pub(crate) async fn router(
                 app.ranges.lock().unwrap().clear();
                 let plugin = match input.operation.as_str() {
                     "createVerificationOTP" | "getVerificationOTP" => "email-otp",
+                    "getSession" => "session-management",
                     "signJWT" | "verifyJWT" | "getToken" | "getJwks" => "jwt",
                     "createOrganization" | "deleteOrganization" | "addMember" | "removeMember" => {
                         "organization"
@@ -547,6 +558,7 @@ pub(crate) async fn router(
                 let operation: &'static str = match input.operation.as_str() {
                     "createVerificationOTP" => "createVerificationOTP",
                     "getVerificationOTP" => "getVerificationOTP",
+                    "getSession" => "getSession",
                     "signJWT" => "signJWT",
                     "verifyJWT" => "verifyJWT",
                     "getToken" => "getToken",

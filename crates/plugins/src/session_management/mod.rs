@@ -86,14 +86,32 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
     fn validate_endpoint(
         &self,
         call: &EndpointCall,
-        _ctx: &AuthContext<S>,
+        _: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
+        let query = match call.query() {
+            None => None,
+            Some(JsValue::Object(input)) => Some(JsValue::Object(
+                input
+                    .iter()
+                    .filter(|(name, _)| {
+                        ["disableCookieCache", "disableRefresh"].contains(&name.as_str())
+                    })
+                    .map(|(name, value)| (name.clone(), JsValue::Bool(value.is_truthy())))
+                    .collect(),
+            )),
+            Some(value) => {
+                return Err(crate::endpoint::validation(format!(
+                    "[query] Invalid input: expected object, received {}",
+                    json_type(Some(value)),
+                )));
+            }
+        };
         if call.headers().is_none() {
             return Err(crate::endpoint::validation("Headers is required"));
         }
         Ok(EndpointInput {
             body: call.body().cloned(),
-            query: call.query().cloned(),
+            query,
         })
     }
 
@@ -103,12 +121,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let response = match self.get_session_response(call, ctx).await {
-            Ok(value) => {
-                if let Some(value) = &value {
-                    call.record_authenticated_session(value.user.clone(), value.session.clone());
-                }
-                EndpointResponse::json(&value)?.with_status(200)
-            }
+            Ok(value) => EndpointResponse::json(&value)?,
             Err(error) => EndpointResponse::error(error),
         };
         Ok(response
@@ -329,16 +342,22 @@ impl SessionManagementPlugin {
                 message: "POST method requires deferSessionRefresh to be enabled in session config",
             });
         }
-        let Some(read) = alibi_core::session::cookie_cache::runtime::authenticated(ctx, req, true)
-            .await
-            .map_err(|error| match error {
-                error @ (AuthError::Upstream { .. } | AuthError::Api { .. }) => error,
-                _ => AuthError::Upstream {
-                    status: 500,
-                    code: "FAILED_TO_GET_SESSION",
-                    message: "Failed to get session",
-                },
-            })?
+        let read = alibi_core::session::cookie_cache::runtime::authenticated(ctx, req, true).await;
+        // Completed hooks observe the actual pre-expiry lookup, even when the
+        // session is retired and the public result is null. No authority is installed.
+        if let Some(call) = req.endpoint_call()
+            && let Some((user, session)) = call.session_hook_snapshot()
+        {
+            call.record_authenticated_session(user, session);
+        }
+        let Some(read) = read.map_err(|error| match error {
+            error @ (AuthError::Upstream { .. } | AuthError::Api { .. }) => error,
+            _ => AuthError::Upstream {
+                status: 500,
+                code: "FAILED_TO_GET_SESSION",
+                message: "Failed to get session",
+            },
+        })?
         else {
             return Ok(None);
         };

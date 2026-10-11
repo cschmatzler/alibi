@@ -467,6 +467,7 @@ export function createServerEndpointFixture(
                 ? { "set-cookie": value.headers.get("set-cookie") }
                 : {}),
             },
+            cookies: value.headers.getSetCookie(),
             response: value.response,
             ...(Object.hasOwn(value, "status") ? { status: value.status } : {}),
           },

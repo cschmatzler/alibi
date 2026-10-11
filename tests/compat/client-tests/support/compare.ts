@@ -3036,6 +3036,7 @@ export function compareValues(
   }
 
   const compactHeaderIssuances = new Map<string, readonly [string, string]>();
+  const compactHookSnapshots = new Map<string, readonly [unknown, unknown]>();
 
   function observedCompactHeaders(a: unknown, b: unknown, path = "", applicationData = false) {
     if (applicationData || traceShape(path)) {
@@ -3062,6 +3063,21 @@ export function compareValues(
           const rightCookies = compactCookieHeaders(other);
           const left = child.decoded;
           const right = other.decoded;
+
+          // The signed compact receipt owns the complete callback snapshot,
+          // including its outer cache clock. A callback copy cannot own itself.
+          if (
+            record(left) &&
+            record(right) &&
+            record(left.user) &&
+            record(right.user) &&
+            record(left.session) &&
+            record(right.session) &&
+            left.user.id === left.session.userId &&
+            right.user.id === right.session.userId
+          ) {
+            compactHookSnapshots.set(JSON.stringify([child.token, other.token]), [left, right]);
+          }
 
           if (
             leftCookies?.length !== 1 ||
@@ -3110,6 +3126,66 @@ export function compareValues(
     }
   }
   observedCompactHeaders(normalizedLeft, normalizedRight);
+  function compactHookClock(a: number, b: number, path: string): boolean {
+    const match = /^(.*)\.events\.(\d+)\.(current\.)?session\.updatedAt$/.exec(path);
+    if (!match) return false;
+    const at = (value: unknown, target: string): unknown =>
+      target
+        .split(".")
+        .reduce<unknown>(
+          (node, key) =>
+            (record(node) || Array.isArray(node)) && Object.hasOwn(node, key)
+              ? (node as Record<string, unknown>)[key]
+              : undefined,
+          value,
+        );
+    const leftEvent = at(normalizedLeft, `${match[1]}.events.${match[2]}`);
+    const rightEvent = at(normalizedRight, `${match[1]}.events.${match[2]}`);
+    if (!record(leftEvent) || !record(rightEvent)) return false;
+    const stages = ["user-after", "first-after", "second-after"];
+    if (!stages.includes(String(leftEvent.stage)) || leftEvent.stage !== rightEvent.stage) {
+      return false;
+    }
+    const left = match[3] ? leftEvent.current : leftEvent;
+    const right = match[3] ? rightEvent.current : rightEvent;
+    if (
+      !record(left) ||
+      !record(right) ||
+      left.path !== "/get-session" ||
+      right.path !== "/get-session" ||
+      left.request !== null ||
+      right.request !== null ||
+      !record(left.headers) ||
+      !record(right.headers)
+    ) {
+      return false;
+    }
+    const token = (header: unknown): string | undefined => {
+      if (typeof header !== "string") return;
+      const matches = [...header.matchAll(/(?:^|;\s*)better-auth\.session_data=([^;\s]*)/g)];
+      if (matches.length !== 1) return;
+      try {
+        return decodeURIComponent(matches[0]![1]!);
+      } catch {
+        return;
+      }
+    };
+    const lt = token(left.headers.cookie);
+    const rt = token(right.headers.cookie);
+    const receipt = lt && rt ? compactHookSnapshots.get(JSON.stringify([lt, rt])) : undefined;
+    if (
+      !receipt ||
+      !exactCacheCopy(left.session, receipt[0]) ||
+      !exactCacheCopy(right.session, receipt[1]) ||
+      !record(receipt[0]) ||
+      !record(receipt[1]) ||
+      a !== receipt[0].updatedAt ||
+      b !== receipt[1].updatedAt
+    ) {
+      fail(path, "getSession cache callback does not match its authenticated input cookie receipt");
+    }
+    return true;
+  }
   function authenticatedSessionCache(
     value: Record<string, unknown>,
     start: number,
@@ -3528,7 +3604,32 @@ export function compareValues(
     const right = [...b.matchAll(pattern)];
 
     if (!left.length && !right.length) {
-      return false;
+      // Individually retained cache headers must address a complete authenticated
+      // publication receipt, just like the cache alongside a signed token header.
+      const cache = /^(better-auth\.session_data)=([^;,\s]*)/;
+      const lc = setCookie ? cache.exec(a) : null;
+      const rc = setCookie ? cache.exec(b) : null;
+      if (!lc && !rc) return false;
+      if (!lc || !rc || lc[1] !== rc[1]) {
+        fail(path, "compact cookie presence or name differs");
+        return true;
+      }
+      const leftCookie = Cookie.parse(a);
+      const rightCookie = Cookie.parse(b);
+      if (lc[2] === "" && rc[2] === "" && leftCookie?.maxAge === 0 && rightCookie?.maxAge === 0) {
+        if (a !== b) fail(path, "compact cookie retirement attributes differ");
+        return true;
+      }
+      const pair = compactHeaderIssuances.get(JSON.stringify([lc[2], rc[2]]));
+      if (!pair) {
+        fail(path, "compact cookie does not match authenticated corresponding session issuance");
+        return true;
+      }
+      if (a.slice(lc[0].length) !== b.slice(rc[0].length)) {
+        fail(path, "compact cookie header bytes or attributes differ");
+      }
+      identity(pair[0], pair[1], path, "token");
+      return true;
     }
 
     if (left.length !== 1 || right.length !== 1 || left[0]![1] !== right[0]![1]) {
@@ -3538,6 +3639,23 @@ export function compareValues(
 
     const av = left[0]![2]!;
     const bv = right[0]![2]!;
+    // A retirement is intentionally unsigned. Preserve every literal header
+    // byte, and require a real Max-Age=0 tombstone on both sides.
+    const retired = (raw: string, name: string) =>
+      raw
+        .split(/,\s*(?=[^;,\s]+=)/)
+        .map((value) => Cookie.parse(value))
+        .find((cookie) => cookie?.key === name);
+    if (
+      setCookie &&
+      av === "" &&
+      bv === "" &&
+      retired(a, left[0]![1]!)?.maxAge === 0 &&
+      retired(b, right[0]![1]!)?.maxAge === 0
+    ) {
+      if (a !== b) fail(path, "signed session cookie retirement attributes differ");
+      return true;
+    }
     const ac = signedCookie(av);
     const bc = signedCookie(bv);
 
@@ -4225,6 +4343,17 @@ export function compareValues(
     }
 
     if (
+      !applicationData &&
+      !jwtPayload &&
+      !traceShape(path) &&
+      typeof a === "number" &&
+      typeof b === "number" &&
+      compactHookClock(a, b, path)
+    ) {
+      return;
+    }
+
+    if (
       compactCache &&
       typeof a === "number" &&
       typeof b === "number" &&
@@ -4245,8 +4374,9 @@ export function compareValues(
       if (
         !applicationData &&
         !jwtPayload &&
-        /\.headers\.(?:cookie|set-cookie)$/.test(path) &&
-        sessionHeader(a, b, path, key === "set-cookie")
+        (/\.headers\.(?:cookie|set-cookie)$/.test(path) ||
+          /\.result\.value\.cookies\.\d+$/.test(path)) &&
+        sessionHeader(a, b, path, key === "set-cookie" || /\.cookies\.\d+$/.test(path))
       ) {
         return;
       }

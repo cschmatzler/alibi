@@ -1,5 +1,6 @@
 import { expect } from "bun:test";
 
+import { cacheReceipt } from "../../../support/compact-cache-receipt";
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 
@@ -157,6 +158,7 @@ for (const mode of phases) {
       if (mode === "cancel") {
         expect(stages).toEqual(["user-before", "first-matcher", "first-before"]);
         expect(observed.result.value).toEqual({
+          cookies: [],
           headers: { "x-before": "cancel" },
           response: { cancelled: true, body: input },
         });
@@ -521,6 +523,14 @@ compatScenario(
     expect(verifiedPhysical.payload.sub).toBe(signed.user.id);
     expect(verifiedPhysical.payload.email).toBe(signed.user.email);
 
+    // Identical claims signed within one second can produce the same token.
+    // Keep the cross-runtime identity comparison independent of clock boundaries.
+    const previousSecond = verifiedPhysical.payload.iat!;
+    expect(Number.isInteger(previousSecond)).toBe(true);
+    while (Math.floor(Date.now() / 1000) <= previousSecond) {
+      await Bun.sleep(Math.max(1, (previousSecond + 1) * 1000 - Date.now()));
+    }
+
     const virtual = await call(ctx, {
       operation: "getToken",
       headers: { "x-api-key": issued.key.key },
@@ -532,6 +542,8 @@ compatScenario(
       createLocalJWKSet(jwks.result.value.response),
     );
     expect(verifiedVirtual.payload.sub).toBe(signed.user.id);
+    expect(verifiedVirtual.payload.iat!).toBeGreaterThan(previousSecond);
+    expect(virtual.result.value.response.token).not.toBe(physical.result.value.response.token);
 
     const explicit = await call(ctx, {
       operation: "signJWT",
@@ -894,44 +906,6 @@ for (const [mode, physicalRequest] of [
 }
 
 const dispatchSecret = "compat-test-only-key-not-real-minimum-32chars";
-
-async function cacheReceipt(headers: Headers) {
-  const { createHmac } = await import("node:crypto");
-  const { getCookieCache } = await import("better-auth/cookies");
-  const rawCookies = headers
-    .getSetCookie()
-    .filter((raw) => raw.startsWith("better-auth.session_data="));
-  expect(rawCookies).toHaveLength(1);
-
-  const token = decodeURIComponent(
-    rawCookies[0]!.split(";")[0]!.slice("better-auth.session_data=".length),
-  );
-  const envelope = JSON.parse(Buffer.from(token, "base64url").toString());
-  const observedAt = Date.now();
-  expect(envelope.signature).toBe(
-    createHmac("sha256", dispatchSecret)
-      .update(JSON.stringify({ ...envelope.session, expiresAt: envelope.expiresAt }))
-      .digest("base64url"),
-  );
-
-  const decoded = await getCookieCache(new Headers({ cookie: rawCookies[0]!.split(";")[0]! }), {
-    secret: dispatchSecret,
-    strategy: "compact",
-    isSecure: false,
-  });
-  expect(decoded).not.toBeNull();
-
-  return {
-    compactSessionCache: {
-      token,
-      envelope,
-      decoded,
-      observedAt,
-      effectiveMaxAgeSeconds: 300,
-      rawCookies,
-    },
-  };
-}
 
 for (const mode of ["ordinary", "cached", "cached-version"] as const) {
   compatScenario(
