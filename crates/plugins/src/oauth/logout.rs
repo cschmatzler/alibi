@@ -1,29 +1,8 @@
 //! RP-initiated provider logout after local session revocation.
 use super::OAuthConfig;
-use crate::authentication_helpers::{JsonField, JsonFieldKind, RequestBody};
+use crate::session_management::SignOutRequest;
 use alibi_core::{AuthContext, AuthSchema, entity::AuthAccount};
-use serde::Deserialize;
 use std::collections::HashSet;
-
-#[derive(Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct SignOutRequest {
-    #[serde(rename = "callbackURL")]
-    pub callback_url: Option<String>,
-    pub disable_redirect: Option<bool>,
-    pub state: Option<String>,
-}
-impl RequestBody for SignOutRequest {
-    const FIELDS: &'static [JsonField] = &[
-        JsonField::string("callbackURL", false),
-        JsonField {
-            name: "disableRedirect",
-            kind: JsonFieldKind::Boolean,
-            required: false,
-        },
-        JsonField::string("state", false),
-    ];
-}
 
 pub(crate) async fn provider_logout_url<S: AuthSchema>(
     user_id: &str,

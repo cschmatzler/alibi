@@ -58,6 +58,7 @@ mod server_list_sessions;
 mod server_revocation_support;
 mod server_revoke_other_sessions;
 mod server_revoke_sessions;
+mod server_sign_out;
 mod server_update_user;
 mod server_verify_password;
 #[cfg(all(feature = "sqlx", feature = "seaorm"))]
