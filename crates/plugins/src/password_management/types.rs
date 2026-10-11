@@ -1,13 +1,17 @@
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-/// Request body for `POST /request-password-reset`.
-#[derive(Debug, Deserialize, Validate)]
-pub(crate) struct RequestPasswordResetRequest {
+/// Input for `requestPasswordReset` and `POST /request-password-reset`.
+#[derive(Debug, Serialize, Deserialize, Validate)]
+pub struct RequestPasswordResetRequest {
     #[validate(email(message = "Invalid email address"))]
-    pub(crate) email: String,
-    #[serde(rename = "redirectTo")]
-    pub(crate) redirect_to: Option<String>,
+    pub email: String,
+    #[serde(
+        default,
+        rename = "redirectTo",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub redirect_to: Option<String>,
 }
 
 /// Input for the public `resetPassword` operation and `POST /reset-password`.
@@ -77,9 +81,9 @@ pub(crate) struct ResetPasswordTokenQuery {
 
 /// Response body for `POST /request-password-reset`.
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct RequestPasswordResetResponse {
-    pub(crate) status: bool,
-    pub(crate) message: String,
+pub struct RequestPasswordResetResponse {
+    pub status: bool,
+    pub message: String,
 }
 
 /// Response body for `POST /change-password`.
@@ -104,5 +108,16 @@ impl crate::authentication_helpers::RequestBody for ChangePasswordRequest {
             kind: crate::authentication_helpers::JsonFieldKind::Boolean,
             required: false,
         },
+    ];
+}
+
+impl crate::authentication_helpers::RequestBody for RequestPasswordResetRequest {
+    const FIELDS: &'static [crate::authentication_helpers::JsonField] = &[
+        crate::authentication_helpers::JsonField {
+            name: "email",
+            kind: crate::authentication_helpers::JsonFieldKind::Email,
+            required: true,
+        },
+        crate::authentication_helpers::JsonField::string("redirectTo", false),
     ];
 }

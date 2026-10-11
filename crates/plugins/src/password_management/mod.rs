@@ -17,11 +17,12 @@ pub use set_password::set_password;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use types::ResetPasswordTokenQuery;
 pub use types::{
-    ChangePasswordRequest, ChangePasswordResponse, ResetPasswordRequest, SetPasswordRequest,
-    VerifyPasswordRequest, VerifyPasswordResponse,
+    ChangePasswordRequest, ChangePasswordResponse, RequestPasswordResetRequest,
+    RequestPasswordResetResponse, ResetPasswordRequest, SetPasswordRequest, VerifyPasswordRequest,
+    VerifyPasswordResponse,
 };
-use types::{RequestPasswordResetRequest, ResetPasswordTokenQuery};
 
 const RESET_TOKEN_ROUTE_PREFIX: &str = "/reset-password/";
 
@@ -125,6 +126,12 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
         vec![
             crate::endpoint::definition(
+                "requestPasswordReset",
+                "requestPasswordReset",
+                Some("/request-password-reset"),
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
                 "resetPassword",
                 "resetPassword",
                 Some("/reset-password"),
@@ -156,6 +163,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
             call.body(),
             "body",
             match call.operation_id() {
+                "requestPasswordReset" => RequestPasswordResetRequest::FIELDS,
                 "resetPassword" => ResetPasswordRequest::FIELDS,
                 "verifyPassword" => VerifyPasswordRequest::FIELDS,
                 "setPassword" => SetPasswordRequest::FIELDS,
@@ -188,6 +196,12 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
         call: &alibi_core::endpoint::EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        if call.operation_id() == "requestPasswordReset" {
+            let body: RequestPasswordResetRequest = call.body_as()?;
+            let response =
+                request_password_reset_core(&body, &self.config, ctx, call.request()).await?;
+            return alibi_core::endpoint::EndpointResponse::json(&response);
+        }
         if call.operation_id() == "resetPassword" {
             let mut body: ResetPasswordRequest = call.body_as()?;
             if body.token.as_ref().is_none_or(String::is_empty) {
@@ -289,6 +303,20 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
 }
 
 impl PasswordManagementPlugin {
+    /// Deliver an owned, redeemable reset proof using logical server dispatch.
+    ///
+    /// The operation does not require a caller session. Redirect trust checks apply
+    /// when a physical request is supplied, matching the reference server API.
+    ///
+    /// # Errors
+    /// Returns an error if the logical input cannot be serialized.
+    pub fn request_password_reset_endpoint(
+        body: &RequestPasswordResetRequest,
+    ) -> AuthResult<alibi_core::endpoint::ServerEndpoint<RequestPasswordResetResponse>> {
+        alibi_core::endpoint::ServerEndpoint::new("password-management", "requestPasswordReset")
+            .with_body(body)
+    }
+
     /// Reset the proof owner's password without requiring a caller session.
     ///
     /// A nonempty body token takes precedence over the optional logical query token.
@@ -353,7 +381,7 @@ impl PasswordManagementPlugin {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
-        let response = request_password_reset_core(&body, &self.config, ctx).await?;
+        let response = request_password_reset_core(&body, &self.config, ctx, Some(req)).await?;
         Ok(AuthResponse::json(200, &response)?)
     }
 

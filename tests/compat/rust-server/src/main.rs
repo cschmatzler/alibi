@@ -873,17 +873,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let physical_cookie_router = physical_cookie_fixture::router(&config, database.clone()).await?;
     let api_error_router = fixtures::api_error_fixture::router(&config, database.clone()).await?;
     let dispatch_router = dispatch_fixture::router(&config, database.clone()).await?;
+    let dispatch_reset_sender: Arc<dyn SendResetPassword> = Arc::new(CompatResetSender {
+        outbox: reset_outbox.clone(),
+        mode: reset_password_mode.clone(),
+    });
     let server_endpoint_router =
-        server_endpoint_fixture::router(&config, database.clone(), "server-dispatch", false)
+        server_endpoint_fixture::router(&config, database.clone(), "server-dispatch", false, dispatch_reset_sender.clone())
             .await?;
     let server_endpoint_cache_router =
-        server_endpoint_fixture::router(&config, database.clone(), "server-dispatch-cache", true)
+        server_endpoint_fixture::router(&config, database.clone(), "server-dispatch-cache", true, dispatch_reset_sender.clone())
             .await?;
     let server_endpoint_version_router = server_endpoint_fixture::router(
         &config,
         database.clone(),
         "server-dispatch-cache-version",
         true,
+        dispatch_reset_sender,
     )
     .await?;
     let bearer_router =
