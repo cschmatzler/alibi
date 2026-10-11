@@ -593,7 +593,17 @@ async fn returning_social_signin_preserves_previously_granted_scopes<B: Backend>
         .await,
     );
     let owner_id = current["user"]["id"].clone();
-    _=db.execute("UPDATE accounts SET scope='calendar,drive' WHERE account_id=$1 AND provider_id='google'",&["social-sub"]).await?;
+    _=db.execute("UPDATE accounts SET scope='calendar,drive',created_at='2026-10-02T06:19:31.630828Z',updated_at='2026-10-02T06:20:00.145927123Z' WHERE account_id=$1 AND provider_id='google'",&["social-sub"]).await?;
+    let original_wire = body(
+        &call(
+            &auth,
+            request("/list-accounts", None, &cookies(&initial)),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(original_wire[0]["createdAt"], "2026-10-02T06:19:31.630Z");
+    assert_eq!(original_wire[0]["updatedAt"], "2026-10-02T06:20:00.145Z");
     let before: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
     let original = before
         .iter()
@@ -653,6 +663,19 @@ async fn returning_social_signin_preserves_previously_granted_scopes<B: Backend>
     assert_eq!(listed[0]["id"], original["id"]);
     assert_eq!(listed[0]["accountId"], "social-sub");
     assert_eq!(listed[0]["scopes"], json!(["calendar", "drive"]));
+    assert_eq!(listed[0]["createdAt"], original_wire[0]["createdAt"]);
+    let updated_wire = listed[0]["updatedAt"].as_str().unwrap();
+    let fraction = updated_wire.split('.').nth(1).unwrap();
+    assert_eq!(
+        fraction.len(),
+        4,
+        "public account dates use three fractional digits plus Z"
+    );
+    let digits = fraction.strip_suffix('Z').unwrap();
+    assert!(digits.bytes().all(|byte| byte.is_ascii_digit()));
+    let physical_created =
+        chrono::DateTime::parse_from_rfc3339(updated["created_at"].as_str().unwrap())?;
+    assert_eq!(physical_created.timestamp_subsec_nanos(), 630_828_000);
     assert_eq!(db.table("users").await?, users);
     let new_sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
     assert_eq!(new_sessions.len(), sessions.len() + 1);
