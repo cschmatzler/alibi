@@ -22,7 +22,8 @@ backend_tests!(
     different_email_opt_in_links_unlinks_and_relinks_original_owner,
     disabled_implicit_linking_preserves_explicit_and_returning_account_authority,
     oauth_verification_cache_recovery,
-    idp_initiated_bounce_requires_fresh_proof_before_accepting_grant
+    idp_initiated_bounce_requires_fresh_proof_before_accepting_grant,
+    skipping_oauth_cookie_binding_still_requires_and_consumes_issued_state
 );
 
 #[derive(Clone)]
@@ -1274,4 +1275,171 @@ async fn idp_initiated_bounce_requires_fresh_proof_before_accepting_grant<B: Bac
     );
     authenticated(&auth, &cookies(&foreign), "idp-foreign@example.test").await;
     B::close(connection).await
+}
+
+async fn skipping_oauth_cookie_binding_still_requires_and_consumes_issued_state<B: Backend>(
+    db: Db,
+) -> TestResult {
+    for skip in [false, true] {
+        for mismatched in [false, true] {
+            let db = db.fresh().await?;
+            let (connection, _) = db.migrated::<B>(SECRET).await?;
+            let social = Social::start().await;
+            let account = AccountConfig {
+                skip_state_cookie_check: skip,
+                ..Default::default()
+            };
+            let auth = social
+                .auth_with::<B>(
+                    &connection,
+                    account,
+                    |_| {},
+                    |builder| builder.plugin(super::auth_probe::fast_password()),
+                )
+                .await?;
+            let foreign = signup(&auth, "skip-cookie-foreign@example.test").await;
+            social.profile.set(
+                "skip-cookie-subject",
+                "skip-cookie-owner@example.test",
+                true,
+            );
+            let (state, initiator_cookie) = authorize(
+                &auth,
+                "/sign-in/social",
+                json!({"provider":"google","callbackURL":"/state-complete"}),
+                "",
+            )
+            .await;
+            let receiver_cookie = if mismatched {
+                authorize(
+                    &auth,
+                    "/sign-in/social",
+                    json!({
+                        "provider":"google","callbackURL":"/other-state"
+                    }),
+                    "",
+                )
+                .await
+                .1
+            } else {
+                String::new()
+            };
+            let before = db
+                .tables(&["users", "accounts", "sessions", "verifications"])
+                .await?;
+            let invalid = callback(
+                &auth,
+                &[("code", "unissued-code"), ("state", "never-issued")],
+                &receiver_cookie,
+            )
+            .await;
+            assert_eq!(invalid.status, 302);
+            assert!(
+                invalid
+                    .headers
+                    .get("location")
+                    .unwrap()
+                    .contains("error=state_mismatch")
+            );
+            assert!(invalid.headers.get_all("set-cookie").next().is_none());
+            assert_eq!(
+                db.tables(&["users", "accounts", "sessions", "verifications"])
+                    .await?,
+                before
+            );
+            assert!(social.provider.requests.lock().unwrap().is_empty());
+            let received = callback(
+                &auth,
+                &[("code", "real-code"), ("state", &state)],
+                &receiver_cookie,
+            )
+            .await;
+            let accepted = if skip {
+                received
+            } else {
+                assert_eq!(received.status, 302);
+                assert!(
+                    received
+                        .headers
+                        .get("location")
+                        .unwrap()
+                        .contains("error=state_mismatch")
+                );
+                assert!(received.headers.get_all("set-cookie").next().is_none());
+                assert_eq!(
+                    db.tables(&["users", "accounts", "sessions", "verifications"])
+                        .await?,
+                    before
+                );
+                assert!(social.provider.requests.lock().unwrap().is_empty());
+                callback(
+                    &auth,
+                    &[("code", "real-code"), ("state", &state)],
+                    &initiator_cookie,
+                )
+                .await
+            };
+            assert_eq!(accepted.status, 302);
+            assert_eq!(
+                accepted.headers.get("location").map(String::as_str),
+                Some("/state-complete")
+            );
+            authenticated(&auth, &cookies(&accepted), "skip-cookie-owner@example.test").await;
+            assert_eq!(db.count("users").await?, 2);
+            assert_eq!(db.count("sessions").await?, 2);
+            assert_eq!(db.count("verifications").await?, i64::from(mismatched));
+            let owner_id = db
+                .text(
+                    "SELECT id FROM users WHERE email='skip-cookie-owner@example.test'",
+                    &[],
+                )
+                .await?
+                .unwrap();
+            assert_eq!(db.text("SELECT user_id FROM accounts WHERE provider_id='google' AND account_id='skip-cookie-subject'", &[]).await?.as_deref(), Some(owner_id.as_str()));
+            let receipts = social.provider.take();
+            assert_eq!(receipts.len(), 1);
+            let grant: std::collections::BTreeMap<_, _> =
+                url::form_urlencoded::parse(&receipts[0].body)
+                    .into_owned()
+                    .collect();
+            assert_eq!(grant.get("code").map(String::as_str), Some("real-code"));
+            let after = db
+                .tables(&["users", "accounts", "sessions", "verifications"])
+                .await?;
+            for (old, now) in before.iter().take(3).zip(after.iter()) {
+                let old: Vec<Value> = serde_json::from_str(old)?;
+                let now: Vec<Value> = serde_json::from_str(now)?;
+                assert!(old.iter().all(|row| now.contains(row)));
+            }
+            let replay = callback(
+                &auth,
+                &[("code", "replayed-code"), ("state", &state)],
+                &receiver_cookie,
+            )
+            .await;
+            assert_eq!(replay.status, 302);
+            assert!(
+                replay
+                    .headers
+                    .get("location")
+                    .unwrap()
+                    .contains("error=state_mismatch")
+            );
+            assert!(replay.headers.get_all("set-cookie").next().is_none());
+            assert!(social.provider.requests.lock().unwrap().is_empty());
+            assert_eq!(
+                db.tables(&["users", "accounts", "sessions", "verifications"])
+                    .await?,
+                after
+            );
+            authenticated(
+                &auth,
+                &cookies(&foreign),
+                "skip-cookie-foreign@example.test",
+            )
+            .await;
+            B::close(connection).await?;
+        }
+    }
+    Ok(())
 }
