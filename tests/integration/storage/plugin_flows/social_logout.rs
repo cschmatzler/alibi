@@ -7,7 +7,8 @@ use alibi::plugins::oauth::{OAuthEndSessionConfig, OAuthProvider};
 
 backend_tests!(
     sign_out_builds_the_provider_logout_destination,
-    logout_schema_rejection_preserves_owned_account_and_live_sessions
+    logout_schema_rejection_preserves_owned_account_and_live_sessions,
+    logout_selects_newest_eligible_owned_account
 );
 
 async fn sign_out_builds_the_provider_logout_destination<B: Backend>(db: Db) -> TestResult {
@@ -241,5 +242,113 @@ async fn logout_schema_rejection_preserves_owned_account_and_live_sessions<B: Ba
         "logout-schema-foreign@example.test",
     )
     .await;
+    B::close(connection).await
+}
+
+async fn logout_selects_newest_eligible_owned_account<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let provider = |endpoint: &str| {
+        let mut provider = OAuthProvider::google("logout-order-client", "logout-order-secret");
+        provider.authorization.as_mut().unwrap().end_session = Some(OAuthEndSessionConfig {
+            endpoint: endpoint.into(),
+            post_logout_redirect_uri: None,
+        });
+        provider
+    };
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(
+            alibi::plugins::OAuthPlugin::new()
+                .add_provider("primary", provider("https://primary.example/logout"))
+                .add_provider("backup", provider("https://backup.example/logout"))
+                .add_provider("invalid", provider("not a URL")),
+        )
+        .build()
+        .await?;
+    let owner = signup(&auth, "logout-order-owner@example.test").await;
+    let foreign = signup(&auth, "logout-order-foreign@example.test").await;
+    let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
+    for (provider_id, account_id, token, updated) in [
+        (
+            "backup",
+            "backup-account",
+            "backup-token",
+            "2020-01-01T00:00:00Z",
+        ),
+        (
+            "primary",
+            "older-account",
+            "older-token",
+            "2021-01-01T00:00:00Z",
+        ),
+        (
+            "primary",
+            "newer-account",
+            "newer-token",
+            "2022-01-01T00:00:00Z",
+        ),
+        (
+            "invalid",
+            "invalid-account",
+            "invalid-token",
+            "2023-01-01T00:00:00Z",
+        ),
+        (
+            "unregistered",
+            "unknown-account",
+            "unknown-token",
+            "2024-01-01T00:00:00Z",
+        ),
+    ] {
+        _ = db.execute("INSERT INTO accounts (id,user_id,account_id,provider_id,id_token,created_at,updated_at) VALUES ($1,$2,$1,$3,$4,$5,$5)", &[account_id,&owner_id,provider_id,token,updated]).await?;
+    }
+    _ = db.execute("INSERT INTO accounts (id,user_id,account_id,provider_id,id_token,created_at,updated_at) VALUES ('foreign-account',$1,'foreign-account','primary','foreign-token','2025-01-01T00:00:00Z','2025-01-01T00:00:00Z')", &[&foreign_id]).await?;
+    let preserved = db.tables(&["users", "accounts", "verifications"]).await?;
+    let completed = call(
+        &auth,
+        request(
+            "/sign-out",
+            Some(json!({"disableRedirect":true})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&completed)["success"], true);
+    assert_eq!(body(&completed)["redirect"], false);
+    assert_eq!(
+        body(&completed)["url"],
+        "https://primary.example/logout?id_token_hint=newer-token"
+    );
+    assert!(completed.headers.get("location").is_none());
+    assert_eq!(
+        db.tables(&["users", "accounts", "verifications"]).await?,
+        preserved
+    );
+    assert_eq!(db.count("sessions").await?, 1);
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "logout-order-foreign@example.test",
+    )
+    .await;
+    let replay = call(
+        &auth,
+        request("/sign-out", Some(json!({})), &cookies(&owner)),
+        200,
+    )
+    .await;
+    assert_eq!(body(&replay), json!({"success":true}));
+    assert!(replay.headers.get("location").is_none());
+    assert_eq!(
+        db.tables(&["users", "accounts", "verifications"]).await?,
+        preserved
+    );
+    assert_eq!(db.count("sessions").await?, 1);
     B::close(connection).await
 }
