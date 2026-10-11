@@ -17,11 +17,10 @@ pub use set_password::set_password;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-pub use types::{ChangePasswordRequest, ChangePasswordResponse};
-use types::{
-    RequestPasswordResetRequest, ResetPasswordRequest, ResetPasswordTokenQuery,
-    VerifyPasswordRequest,
+pub use types::{
+    ChangePasswordRequest, ChangePasswordResponse, VerifyPasswordRequest, VerifyPasswordResponse,
 };
+use types::{RequestPasswordResetRequest, ResetPasswordRequest, ResetPasswordTokenQuery};
 
 const RESET_TOKEN_ROUTE_PREFIX: &str = "/reset-password/";
 
@@ -123,13 +122,22 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
     }
 
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
-        vec![crate::endpoint::definition(
-            "changePassword",
-            "changePassword",
-            Some("/change-password"),
-            HttpMethod::Post,
-        )]
+        vec![
+            crate::endpoint::definition(
+                "changePassword",
+                "changePassword",
+                Some("/change-password"),
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
+                "verifyPassword",
+                "verifyPassword",
+                Some("/verify-password"),
+                HttpMethod::Post,
+            ),
+        ]
     }
+
     fn validate_endpoint(
         &self,
         call: &alibi_core::endpoint::EndpointCall,
@@ -140,7 +148,10 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
             body: Some(crate::endpoint::validate_fields(
                 call.body(),
                 "body",
-                ChangePasswordRequest::FIELDS,
+                match call.operation_id() {
+                    "verifyPassword" => VerifyPasswordRequest::FIELDS,
+                    _ => ChangePasswordRequest::FIELDS,
+                },
             )?),
             query: call.query().cloned(),
         })
@@ -150,7 +161,6 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
         call: &alibi_core::endpoint::EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
-        let body: ChangePasswordRequest = call.body_as()?;
         // Source sensitiveSessionMiddleware catches only its nested session getter.
         let (user, session) = ctx
             .require_authoritative_session_record(call)
@@ -161,6 +171,14 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
                 message: "Unauthorized",
             })?;
         call.record_authenticated_session(ctx.user_view(&user), session);
+        if call.operation_id() == "verifyPassword" {
+            let body: VerifyPasswordRequest = call.body_as()?;
+            return alibi_core::endpoint::EndpointResponse::json(
+                &verify_password_core(&body, &user, &self.config, ctx).await?,
+            );
+        }
+        let body: ChangePasswordRequest = call.body_as()?;
+
         let headers = call.headers().cloned().unwrap_or_default();
         let meta = RequestMeta {
             ip_address: Some(
@@ -225,6 +243,17 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
 }
 
 impl PasswordManagementPlugin {
+    /// Verify the current caller's password using genuine logical session headers.
+    ///
+    /// # Errors
+    /// Returns an error if the logical input cannot be serialized.
+    pub fn verify_password_endpoint(
+        body: &VerifyPasswordRequest,
+    ) -> AuthResult<alibi_core::endpoint::ServerEndpoint<VerifyPasswordResponse>> {
+        alibi_core::endpoint::ServerEndpoint::new("password-management", "verifyPassword")
+            .with_body(body)
+    }
+
     /// Change the authenticated caller's password and retain every response cookie/header.
     ///
     /// Input is validated after installed before-hook patches. Incoming logical headers

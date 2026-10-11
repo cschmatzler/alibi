@@ -557,7 +557,7 @@ pub(crate) async fn router(
                 app.events.lock().unwrap().clear();
                 app.ranges.lock().unwrap().clear();
                 let plugin = match input.operation.as_str() {
-                    "changePassword" => "password-management",
+                    "changePassword" | "verifyPassword" => "password-management",
                     "listUserAccounts" | "unlinkAccount" => "account-management",
                     "createVerificationOTP" | "getVerificationOTP" => "email-otp",
                     "getSession" => "session-management",
@@ -573,6 +573,7 @@ pub(crate) async fn router(
                 // authentication are exclusively owned by production dispatch.
                 let operation: &'static str = match input.operation.as_str() {
                     "changePassword" => "changePassword",
+                    "verifyPassword" => "verifyPassword",
                     "listUserAccounts" => "listUserAccounts",
                     "unlinkAccount" => "unlinkAccount",
                     "createVerificationOTP" => "createVerificationOTP",
