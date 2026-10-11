@@ -23,7 +23,8 @@ backend_tests!(
     unverified_social_sign_in_delegates_to_the_otp_override,
     ambiguous_provider_accounts_fail_closed,
     returning_social_signin_preserves_previously_granted_scopes,
-    orphan_oauth_binding_never_adopts_same_email_owner
+    orphan_oauth_binding_never_adopts_same_email_owner,
+    local_email_verification_gates_implicit_oauth_adoption
 );
 
 struct Deny;
@@ -744,5 +745,107 @@ async fn orphan_oauth_binding_never_adopts_same_email_owner<B: Backend>(db: Db) 
     assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
     assert_eq!(db.count("verifications").await?, 0);
     authenticated(&auth, &cookies(&owner), "orphan-owner@example.test").await;
+    B::close(connection).await
+}
+
+async fn local_email_verification_gates_implicit_oauth_adoption<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let social = Social::start().await;
+    let mut provider =
+        alibi::plugins::oauth::OAuthProvider::google("local-gate-client", "local-gate-secret");
+    provider.token_url = social.provider.url.join("token")?.into();
+    provider.get_user_info = Some(Arc::new(social.profile.clone()));
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(EmailVerificationPlugin::new())
+        .plugin(alibi::plugins::OAuthPlugin::new().add_provider("google", provider))
+        .build()
+        .await?;
+    let owner = signup(&auth, "local-gate-owner@example.test").await;
+    let foreign = signup(&auth, "local-gate-foreign@example.test").await;
+    let owner_id = body(&owner)["user"]["id"].clone();
+    assert_eq!(body(&owner)["user"]["emailVerified"], false);
+    social
+        .profile
+        .set("local-gate-sub", "local-gate-owner@example.test", true);
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let (state, cookie) = authorize(
+        &auth,
+        "/sign-in/social",
+        json!({"provider":"google","callbackURL":"/local-gate-complete"}),
+        "",
+    )
+    .await;
+    let denied = callback(&auth, &[("code", "grant"), ("state", &state)], &cookie).await;
+    assert_eq!(denied.status, 302);
+    let location = url::Url::parse(denied.headers.get("location").unwrap())?;
+    assert_eq!(
+        location
+            .query_pairs()
+            .find(|(key, _)| key == "error")
+            .unwrap()
+            .1,
+        "account_not_linked"
+    );
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.count("verifications").await?, 0);
+    assert!(!cookies(&denied).contains("session_token="));
+    assert_eq!(social.provider.take().len(), 1);
+    let proof = jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        &json!({"email":"local-gate-owner@example.test","iat":chrono::Utc::now().timestamp(),"exp":chrono::Utc::now().timestamp()+300}),
+        &jsonwebtoken::EncodingKey::from_secret(SECRET.as_bytes()),
+    )?;
+    let mut verify = request("/verify-email", None, "");
+    verify.set_query_pairs([("token", proof.as_str())]);
+    let verified = call(&auth, verify, 200).await;
+    assert_eq!(body(&verified), json!({"status":true,"user":null}));
+    assert!(cookies(&verified).is_empty());
+    let users = db.table("users").await?;
+    let accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    let sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let (state, cookie) = authorize(
+        &auth,
+        "/sign-in/social",
+        json!({"provider":"google","callbackURL":"/local-gate-complete"}),
+        "",
+    )
+    .await;
+    let accepted = callback(&auth, &[("code", "grant"), ("state", &state)], &cookie).await;
+    assert_eq!(accepted.status, 302);
+    assert_eq!(
+        accepted.headers.get("location").map(String::as_str),
+        Some("/local-gate-complete")
+    );
+    let current = body(
+        &call(
+            &auth,
+            request("/get-session", None, &cookies(&accepted)),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(current["user"]["id"], owner_id);
+    assert_eq!(current["user"]["emailVerified"], true);
+    assert_eq!(db.table("users").await?, users);
+    let new_accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    assert_eq!(new_accounts.len(), accounts.len() + 1);
+    assert!(accounts.iter().all(|row| new_accounts.contains(row)));
+    let binding = new_accounts
+        .iter()
+        .find(|row| row["account_id"] == "local-gate-sub")
+        .unwrap();
+    assert_eq!(binding["user_id"], owner_id);
+    let new_sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    assert_eq!(new_sessions.len(), sessions.len() + 1);
+    assert!(sessions.iter().all(|row| new_sessions.contains(row)));
+    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(social.provider.take().len(), 1);
+    authenticated(&auth, &cookies(&owner), "local-gate-owner@example.test").await;
+    authenticated(&auth, &cookies(&foreign), "local-gate-foreign@example.test").await;
     B::close(connection).await
 }
