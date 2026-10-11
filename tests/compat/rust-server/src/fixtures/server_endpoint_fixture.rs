@@ -445,6 +445,7 @@ pub(crate) async fn router(
     profile: &str,
     compact: bool,
     reset_sender: Arc<dyn alibi::plugins::password_management::SendResetPassword>,
+    verification_sender: Arc<dyn alibi::plugins::email_verification::SendVerificationEmail>,
 ) -> AuthResult<Router> {
     let path = format!("/__test/profiles/{profile}/api/auth");
     let control_path = format!("/__test/{profile}");
@@ -513,6 +514,8 @@ pub(crate) async fn router(
                 },
             ))
             .plugin(SessionManagementPlugin::new())
+            .plugin(alibi::plugins::EmailVerificationPlugin::new()
+                .custom_send_verification_email(verification_sender).send_on_sign_up(false))
             .plugin(AccountManagementPlugin::new())
             .plugin(PasswordManagementPlugin::with_config(alibi::plugins::PasswordManagementConfig {
                 password_hasher: Some(Arc::new(app.clone())), send_reset_password: Some(reset_sender), ..Default::default()
@@ -579,7 +582,7 @@ pub(crate) async fn router(
                 app.ranges.lock().unwrap().clear();
                 let plugin = match input.operation.as_str() {
                     "updateUser" => "core",
-                    "verifyEmail" => "email-verification",
+                    "verifyEmail" | "sendVerificationEmail" => "email-verification",
                     "changePassword" | "verifyPassword" | "setPassword" | "resetPassword" | "requestPasswordReset" | "requestPasswordResetCallback" => "password-management",
                     "listUserAccounts" | "unlinkAccount" => "account-management",
                     "createVerificationOTP" | "getVerificationOTP" => "email-otp",
@@ -603,6 +606,7 @@ pub(crate) async fn router(
                     "requestPasswordResetCallback" => "requestPasswordResetCallback",
                     "updateUser" => "updateUser",
                     "verifyEmail" => "verifyEmail",
+                    "sendVerificationEmail" => "sendVerificationEmail",
                     "listUserAccounts" => "listUserAccounts",
                     "unlinkAccount" => "unlinkAccount",
                     "createVerificationOTP" => "createVerificationOTP",

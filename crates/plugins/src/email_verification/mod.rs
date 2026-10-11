@@ -15,8 +15,8 @@ use handlers::{send_verification_email_core, verification_url, verify_email_core
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use types::{SendVerificationEmailRequest, VerifyEmailResult};
-pub use types::{VerifyEmailQuery, VerifyEmailResponse};
+use types::VerifyEmailResult;
+pub use types::{SendVerificationEmailRequest, VerifyEmailQuery, VerifyEmailResponse};
 
 /// Trait for custom email sending logic.
 ///
@@ -116,9 +116,14 @@ alibi_core::impl_auth_plugin! {
     route_openapi_metadata!(S);
 
         fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
-            vec![crate::endpoint::definition(
-                "verifyEmail", "verifyEmail", Some("/verify-email"), alibi_core::HttpMethod::Get,
-            )]
+            vec![
+                crate::endpoint::definition(
+                    "sendVerificationEmail", "sendVerificationEmail", Some("/send-verification-email"), alibi_core::HttpMethod::Post,
+                ),
+                crate::endpoint::definition(
+                    "verifyEmail", "verifyEmail", Some("/verify-email"), alibi_core::HttpMethod::Get,
+                ),
+            ]
         }
 
         fn validate_endpoint(
@@ -127,6 +132,14 @@ alibi_core::impl_auth_plugin! {
             _: &AuthContext<S>,
         ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
             use crate::authentication_helpers::RequestBody;
+            if call.operation_id() == "sendVerificationEmail" {
+                return Ok(alibi_core::endpoint::EndpointInput {
+                    body: Some(crate::endpoint::validate_fields(
+                        call.body(), "body", SendVerificationEmailRequest::FIELDS,
+                    )?),
+                    query: call.query().cloned(),
+                });
+            }
             Ok(alibi_core::endpoint::EndpointInput {
                 body: call.body().cloned(),
                 query: Some(crate::endpoint::validate_fields(
@@ -140,6 +153,17 @@ alibi_core::impl_auth_plugin! {
             call: &alibi_core::endpoint::EndpointCall,
             ctx: &AuthContext<S>,
         ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+            if call.operation_id() == "sendVerificationEmail" {
+                let body: SendVerificationEmailRequest = call.body_as()?;
+                let current = alibi_core::session::cookie_cache::runtime::authenticated(ctx, call, false)
+                    .await.ok().flatten();
+                if let Some(read) = &current {
+                    call.record_authenticated_session(ctx.user_view(&read.user), read.session.clone());
+                }
+                return alibi_core::endpoint::EndpointResponse::json(
+                    &send_verification_email_core(&body, current.as_ref().map(|read| &read.user), &self.config, ctx).await?,
+                );
+            }
             let mut query: VerifyEmailQuery = call.query_as()?;
             query.callback_url = query.callback_url.filter(|url| !url.is_empty());
             if call.request().is_some()
@@ -189,6 +213,14 @@ alibi_core::impl_auth_plugin! {
 }
 
 impl EmailVerificationPlugin {
+    /// Deliver an email verification challenge through the public server API.
+    pub fn send_verification_email_endpoint(
+        body: &SendVerificationEmailRequest,
+    ) -> AuthResult<alibi_core::endpoint::ServerEndpoint<alibi_core::StatusResponse>> {
+        alibi_core::endpoint::ServerEndpoint::new("email-verification", "sendVerificationEmail")
+            .with_body(body)
+    }
+
     /// Verify an email challenge through the public server API.
     pub fn verify_email_endpoint(
         query: &VerifyEmailQuery,

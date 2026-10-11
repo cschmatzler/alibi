@@ -1,11 +1,12 @@
 use crate::authentication_helpers::{JsonField, JsonFieldKind, RequestBody};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
-pub(crate) struct SendVerificationEmailRequest {
-    pub(crate) email: String,
-    #[serde(rename = "callbackURL")]
-    pub(crate) callback_url: Option<String>,
+/// Body of the public `sendVerificationEmail` server operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SendVerificationEmailRequest {
+    pub email: String,
+    #[serde(rename = "callbackURL", skip_serializing_if = "Option::is_none")]
+    pub callback_url: Option<String>,
 }
 
 impl RequestBody for SendVerificationEmailRequest {

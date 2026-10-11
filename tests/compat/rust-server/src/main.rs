@@ -877,11 +877,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         outbox: reset_outbox.clone(),
         mode: reset_password_mode.clone(),
     });
+    let dispatch_verification_sender: Arc<dyn SendVerificationEmail> = Arc::new(CompatVerificationSender {
+        outbox: verification_outbox.clone(),
+    });
     let server_endpoint_router =
-        server_endpoint_fixture::router(&config, database.clone(), "server-dispatch", false, dispatch_reset_sender.clone())
+        server_endpoint_fixture::router(&config, database.clone(), "server-dispatch", false, dispatch_reset_sender.clone(), dispatch_verification_sender.clone())
             .await?;
     let server_endpoint_cache_router =
-        server_endpoint_fixture::router(&config, database.clone(), "server-dispatch-cache", true, dispatch_reset_sender.clone())
+        server_endpoint_fixture::router(&config, database.clone(), "server-dispatch-cache", true, dispatch_reset_sender.clone(), dispatch_verification_sender.clone())
             .await?;
     let server_endpoint_version_router = server_endpoint_fixture::router(
         &config,
@@ -889,6 +892,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "server-dispatch-cache-version",
         true,
         dispatch_reset_sender,
+        dispatch_verification_sender,
     )
     .await?;
     let bearer_router =
