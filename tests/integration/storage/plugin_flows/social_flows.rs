@@ -276,6 +276,79 @@ async fn redirect_linking_outcomes<B: Backend>(db: Db) -> TestResult {
         &callback(&disabled, &[("code", "grant"), ("state", &state)], &cookies).await,
     );
     trace.assert("social/redirect-linking");
+
+    // Disabling adoption of another identity must retain first signup and the
+    // authority of an exact provider binding on later sign-in.
+    social
+        .profile
+        .set("disabled-first-sub", "disabled-first@example.test", true);
+    let preserved_accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    let preserved_users: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+    let preserved_sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let mut first_account: Option<Value> = None;
+    let mut first_user: Option<Value> = None;
+    for stage in ["first signup", "exact returning binding"] {
+        let (state, cookie) = authorize(
+            &disabled,
+            "/sign-in/social",
+            json!({"provider":"google","callbackURL":"/disabled-complete"}),
+            "",
+        )
+        .await;
+        let completed = callback(&disabled, &[("code", "grant"), ("state", &state)], &cookie).await;
+        assert_eq!(completed.status, 302, "{stage}");
+        assert_eq!(
+            completed.headers.get("location").map(String::as_str),
+            Some("/disabled-complete"),
+            "{stage}"
+        );
+        let current = body(
+            &call(
+                &disabled,
+                request("/get-session", None, &super::cookies(&completed)),
+                200,
+            )
+            .await,
+        );
+        assert_eq!(current["user"]["email"], "disabled-first@example.test");
+        let accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+        let binding = accounts
+            .iter()
+            .find(|row| row["account_id"] == "disabled-first-sub")
+            .unwrap();
+        assert_eq!(binding["user_id"], current["user"]["id"]);
+        assert_eq!(binding["provider_id"], "google");
+        if let Some(original) = &first_account {
+            for field in [
+                "id",
+                "user_id",
+                "account_id",
+                "provider_id",
+                "created_at",
+                "scope",
+            ] {
+                assert_eq!(binding[field], original[field], "{stage}/{field}");
+            }
+            assert_eq!(current["user"]["id"], first_user.as_ref().unwrap()["id"]);
+        } else {
+            first_account = Some(binding.clone());
+            first_user = Some(current["user"].clone());
+        }
+        assert_eq!(accounts.len(), preserved_accounts.len() + 1);
+        assert!(preserved_accounts.iter().all(|row| accounts.contains(row)));
+        let users: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+        assert_eq!(users.len(), preserved_users.len() + 1);
+        assert!(preserved_users.iter().all(|row| users.contains(row)));
+        let sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+        assert_eq!(
+            sessions.len(),
+            preserved_sessions.len() + if stage == "first signup" { 1 } else { 2 }
+        );
+        assert!(preserved_sessions.iter().all(|row| sessions.contains(row)));
+        assert_eq!(db.count("verifications").await?, 0);
+    }
+    authenticated(&disabled, &owner, "social@example.com").await;
+    authenticated(&disabled, &intruder, "intruder@example.com").await;
     B::close(connection).await
 }
 
