@@ -764,6 +764,143 @@ export function compareValues(
         })
       : [];
 
+  // Direct server calls publish headers inside their logical response. Bind a
+  // real rotation to its original transport receipt and a later authenticated
+  // browser read; a caller's copied token/header cannot authorize itself.
+  const primaryCookie = (raw: unknown) => {
+    if (typeof raw !== "string") return;
+    const matches = [...raw.matchAll(/(?:^|;\s*|,\s*)(better-auth\.session_token)=([^;,\s]*)/g)];
+    return matches.length === 1 ? `${matches[0]![1]}=${matches[0]![2]}` : undefined;
+  };
+  for (const producer of tracePairs) {
+    const profile = /^\/__test\/(server-dispatch(?:-cache)?)\/call$/.exec(producer.path);
+    const left = producer.left.logicalEndpoint;
+    const right = producer.right.logicalEndpoint;
+    if (
+      !profile ||
+      producer.a.method !== "POST" ||
+      producer.a.responseStatus !== 200 ||
+      producer.b.responseStatus !== 200 ||
+      !left ||
+      !right
+    ) {
+      continue;
+    }
+    const authentic = (receipt: NonNullable<RequestWindow["logicalEndpoint"]>) =>
+      createHash("sha256").update(JSON.stringify(receipt.response)).digest("hex") ===
+      receipt.digest;
+    if (
+      !authentic(left) ||
+      !authentic(right) ||
+      !record(left.input) ||
+      !record(right.input) ||
+      left.input.operation !== "changePassword" ||
+      right.input.operation !== "changePassword" ||
+      !record(left.input.body) ||
+      !record(right.input.body) ||
+      left.input.body.revokeOtherSessions !== true ||
+      right.input.body.revokeOtherSessions !== true ||
+      !record(left.input.headers) ||
+      !record(right.input.headers)
+    ) {
+      continue;
+    }
+    const incomingLeft = primaryCookie(left.input.headers.cookie);
+    const incomingRight = primaryCookie(right.input.headers.cookie);
+    if (!incomingLeft || !incomingRight) continue;
+    const previousLeft = signedCookie(incomingLeft.slice(incomingLeft.indexOf("=") + 1));
+    const previousRight = signedCookie(incomingRight.slice(incomingRight.indexOf("=") + 1));
+    if (previousLeft.error || previousRight.error) continue;
+    const previousPair = JSON.stringify([previousLeft.token, previousRight.token]);
+    const owner = issuances.get(previousPair);
+    const authPath = `/__test/profiles/${profile[1]}/api/auth`;
+    if (!owner || owner.authPath !== authPath || !signedCookieIssuances.has(previousPair)) continue;
+    const returned = (response: unknown) => {
+      if (
+        !record(response) ||
+        !record(response.result) ||
+        response.result.ok !== true ||
+        !record(response.result.value) ||
+        !record(response.result.value.response) ||
+        !record(response.result.value.response.user) ||
+        !record(response.result.value.headers)
+      ) {
+        return;
+      }
+      return response.result.value;
+    };
+    const a = returned(left.response);
+    const b = returned(right.response);
+    if (!a || !b) continue;
+    const outputLeft = a.response as Record<string, unknown>;
+    const outputRight = b.response as Record<string, unknown>;
+    const at = outputLeft.token;
+    const bt = outputRight.token;
+    const issuedLeft = primaryCookie((a.headers as Record<string, unknown>)["set-cookie"]);
+    const issuedRight = primaryCookie((b.headers as Record<string, unknown>)["set-cookie"]);
+    if (
+      typeof at !== "string" ||
+      typeof bt !== "string" ||
+      at === previousLeft.token ||
+      bt === previousRight.token ||
+      (outputLeft.user as Record<string, unknown>).id !== owner.leftUser ||
+      (outputRight.user as Record<string, unknown>).id !== owner.rightUser ||
+      !issuedCookie(issuedLeft, at, authPath) ||
+      !issuedCookie(issuedRight, bt, authPath)
+    ) {
+      continue;
+    }
+    const observer = tracePairs.find((read) => {
+      if (
+        read.path !== `${authPath}/get-session` ||
+        read.a.method !== "GET" ||
+        read.a.responseStatus !== 200 ||
+        read.b.responseStatus !== 200 ||
+        read.left.startedAt < producer.left.finishedAt ||
+        read.right.startedAt < producer.right.finishedAt ||
+        !issuedCookie(read.left.sessionCookie, at, authPath) ||
+        !issuedCookie(read.right.sessionCookie, bt, authPath)
+      ) {
+        return false;
+      }
+      const valid = (body: unknown, token: string, userId: string, window: RequestWindow) =>
+        record(body) &&
+        record(body.user) &&
+        record(body.session) &&
+        body.user.id === userId &&
+        body.session.userId === userId &&
+        body.session.token === token &&
+        isDate(body.session.createdAt) &&
+        Date.parse(body.session.createdAt) >= window.startedAt - 5 &&
+        Date.parse(body.session.createdAt) <= window.finishedAt &&
+        isDate(body.session.expiresAt) &&
+        Date.parse(body.session.expiresAt) > window.finishedAt;
+      return (
+        valid(read.a.responseBody, at, owner.leftUser, producer.left) &&
+        valid(read.b.responseBody, bt, owner.rightUser, producer.right)
+      );
+    });
+    if (!observer) continue;
+    const receipt = {
+      left: producer.left,
+      right: producer.right,
+      leftUser: owner.leftUser,
+      rightUser: owner.rightUser,
+      authPath,
+    };
+    const pair = JSON.stringify([at, bt]);
+    issuances.set(pair, receipt);
+    signedCookieIssuances.add(pair);
+    cookieOwners.set(JSON.stringify([issuedLeft, issuedRight]), receipt);
+    identity(at, bt, `${producer.path}.rotation`, "token");
+    collectResponseDates(
+      observer.a.responseBody,
+      observer.b.responseBody,
+      producer.left,
+      producer.right,
+    );
+  }
+
   // Pinned org-member-addition uses default persisted seven-day sessions.
   // createOrganization updates only the authenticated token's active organization
   // (crud-org.mjs / adapter.mjs). A later public get-session supplies the complete

@@ -19,14 +19,18 @@ pub(crate) struct ResetPasswordRequest {
 }
 
 /// Request body for `POST /change-password`.
-#[derive(Debug, Deserialize, Validate)]
-pub(crate) struct ChangePasswordRequest {
+#[derive(Debug, Serialize, Deserialize, Validate)]
+pub struct ChangePasswordRequest {
     #[serde(rename = "newPassword")]
-    pub(crate) new_password: String,
+    pub new_password: String,
     #[serde(rename = "currentPassword")]
-    pub(crate) current_password: String,
-    #[serde(default, rename = "revokeOtherSessions")]
-    pub(crate) revoke_other_sessions: Option<bool>,
+    pub current_password: String,
+    #[serde(
+        default,
+        rename = "revokeOtherSessions",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub revoke_other_sessions: Option<bool>,
 }
 
 /// Request body for `POST /verify-password`.
@@ -50,10 +54,10 @@ pub(crate) struct RequestPasswordResetResponse {
 }
 
 /// Response body for `POST /change-password`.
-#[derive(Debug, Serialize)]
-pub(crate) struct ChangePasswordResponse<U> {
-    pub(crate) token: Option<String>,
-    pub(crate) user: U,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChangePasswordResponse<U> {
+    pub token: Option<String>,
+    pub user: U,
 }
 
 impl crate::authentication_helpers::RequestBody for ResetPasswordRequest {

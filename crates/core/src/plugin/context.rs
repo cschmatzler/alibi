@@ -18,6 +18,49 @@ pub struct AuthContext<S: AuthSchema> {
     pub extensions: ContextExtensions,
 }
 
+/// Sensitive admission keeps the real input and output channel while ignoring
+/// previously established virtual authority and stateful cookie caches.
+struct AuthoritativeSessionInput<'a, R> {
+    original: &'a R,
+    logical: Option<crate::endpoint::EndpointCall>,
+    stateful: bool,
+}
+impl<R: SessionRequest> SessionRequest for AuthoritativeSessionInput<'_, R> {
+    // The owner scopes the normalized nested getter explicitly. Returning the
+    // original call here would discard the authoritative query override.
+    fn session_headers(&self) -> &std::collections::HashMap<String, String> {
+        self.original.session_headers()
+    }
+    fn session_method(&self) -> &crate::HttpMethod {
+        self.logical.as_ref().map_or_else(
+            || self.original.session_method(),
+            SessionRequest::session_method,
+        )
+    }
+    fn session_query_truthy(&self, name: &str) -> bool {
+        (self.stateful && name == "disableCookieCache")
+            || self.logical.as_ref().map_or_else(
+                || self.original.session_query_truthy(name),
+                |call| call.session_query_truthy(name),
+            )
+    }
+    fn extensions(&self) -> &crate::types::RequestExtensions {
+        self.original.extensions()
+    }
+    fn virtual_session<S: AuthSchema>(&self, _: &AuthContext<S>) -> Option<SessionView> {
+        None
+    }
+    fn take_response_headers(&self) -> crate::Headers {
+        self.original.take_response_headers()
+    }
+    fn queue_response_header(&self, name: impl Into<String>, value: impl Into<String>) {
+        self.original.queue_response_header(name, value);
+    }
+    fn set_session_hook_snapshot(&self, user: UserView, session: SessionView) {
+        self.original.set_session_hook_snapshot(user, session);
+    }
+}
+
 fn insert_null(fields: &mut BTreeMap<String, serde_json::Value>, name: &str) {
     _ = fields.insert(name.to_owned(), serde_json::Value::Null);
 }
@@ -637,12 +680,43 @@ impl<S: AuthSchema> AuthContext<S> {
     /// Propagates authentication, storage and output callback failures.
     pub async fn require_authoritative_session_record(
         &self,
-        req: &AuthRequest,
+        req: &impl SessionRequest,
     ) -> AuthResult<(AdapterRecord<S::User>, SessionView)> {
-        let physical = self.physical_request(req);
-        let read = crate::session::cookie_cache::runtime::authenticated(self, &physical, false)
-            .await?
-            .ok_or(AuthError::Unauthenticated)?;
+        crate::session::cookie_cache::runtime::clear_established_session::<S>(req);
+        let stateful = self.config.session.has_server_session_store();
+        let logical = req.endpoint_call().map(|call| {
+            call.clear_authenticated_session();
+            let mut nested = call.session_read_context();
+            if stateful {
+                let mut query = match nested.query().cloned() {
+                    Some(crate::utils::json::JsValue::Object(query)) => query,
+                    _ => indexmap::IndexMap::default(),
+                };
+                _ = query.insert(
+                    "disableCookieCache".into(),
+                    crate::utils::json::JsValue::Bool(true),
+                );
+                crate::endpoint::EndpointContextPatch {
+                    query: Some(crate::utils::json::JsValue::Object(query)),
+                    ..Default::default()
+                }
+                .apply(&mut nested);
+            }
+            nested
+        });
+        let authoritative = AuthoritativeSessionInput {
+            original: req,
+            logical: logical.clone(),
+            stateful,
+        };
+        let read =
+            crate::session::cookie_cache::runtime::authenticated(self, &authoritative, false);
+        let read = if let Some(logical) = logical {
+            crate::endpoint::with_endpoint_call_context(logical, read).await
+        } else {
+            read.await
+        }?
+        .ok_or(AuthError::Unauthenticated)?;
         match read.user {
             AuthenticatedUser::Stored(user) => Ok((user, read.session)),
             AuthenticatedUser::Cached(user) if self.config.session.stateless => {

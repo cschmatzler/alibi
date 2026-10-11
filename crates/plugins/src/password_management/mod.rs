@@ -17,9 +17,10 @@ pub use set_password::set_password;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+pub use types::{ChangePasswordRequest, ChangePasswordResponse};
 use types::{
-    ChangePasswordRequest, RequestPasswordResetRequest, ResetPasswordRequest,
-    ResetPasswordTokenQuery, VerifyPasswordRequest,
+    RequestPasswordResetRequest, ResetPasswordRequest, ResetPasswordTokenQuery,
+    VerifyPasswordRequest,
 };
 
 const RESET_TOKEN_ROUTE_PREFIX: &str = "/reset-password/";
@@ -121,6 +122,69 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
         "password-management"
     }
 
+    fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
+        vec![crate::endpoint::definition(
+            "changePassword",
+            "changePassword",
+            Some("/change-password"),
+            HttpMethod::Post,
+        )]
+    }
+    fn validate_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
+        use crate::authentication_helpers::RequestBody;
+        Ok(alibi_core::endpoint::EndpointInput {
+            body: Some(crate::endpoint::validate_fields(
+                call.body(),
+                "body",
+                ChangePasswordRequest::FIELDS,
+            )?),
+            query: call.query().cloned(),
+        })
+    }
+    async fn on_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        let body: ChangePasswordRequest = call.body_as()?;
+        // Source sensitiveSessionMiddleware catches only its nested session getter.
+        let (user, session) = ctx
+            .require_authoritative_session_record(call)
+            .await
+            .map_err(|_| AuthError::Upstream {
+                status: 401,
+                code: "UNAUTHORIZED",
+                message: "Unauthorized",
+            })?;
+        call.record_authenticated_session(ctx.user_view(&user), session);
+        let headers = call.headers().cloned().unwrap_or_default();
+        let meta = RequestMeta {
+            ip_address: Some(
+                ctx.config
+                    .advanced
+                    .ip_address
+                    .resolve_ip(&headers)
+                    .unwrap_or_default(),
+            ),
+            user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
+        };
+        let (response, token) =
+            change_password_core(&body, &user, &self.config, &meta, ctx).await?;
+        let mut response = alibi_core::endpoint::EndpointResponse::json(&response)?;
+        if let Some(token) = token {
+            response.merge_headers(crate::authentication_helpers::session_cookie_headers(
+                &ctx.config,
+                &token,
+                ctx.session_manager().has_dont_remember_cookie(call),
+            )?);
+        }
+        Ok(response)
+    }
+
     async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
         ctx.extensions.insert(self.config.clone());
         Ok(())
@@ -161,6 +225,22 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
 }
 
 impl PasswordManagementPlugin {
+    /// Change the authenticated caller's password and retain every response cookie/header.
+    ///
+    /// Input is validated after installed before-hook patches. Incoming logical headers
+    /// authorize the operation; no physical HTTP request is required.
+    ///
+    /// # Errors
+    /// Returns an error if the logical input cannot be serialized.
+    pub fn change_password_endpoint(
+        body: &ChangePasswordRequest,
+    ) -> AuthResult<
+        alibi_core::endpoint::ServerEndpoint<ChangePasswordResponse<alibi_core::UserView>>,
+    > {
+        alibi_core::endpoint::ServerEndpoint::new("password-management", "changePassword")
+            .with_body(body)
+    }
+
     async fn handle_request_password_reset(
         &self,
         req: &AuthRequest,

@@ -316,6 +316,17 @@ export function createServerEndpointFixture(
       }),
       after: createAuthMiddleware(async (ctx) => {
         events.push({ stage: "user-after", ...snapshot(ctx) });
+        if (mode === "change-password-headers") {
+          ctx.setHeader("x-password-result", "logical");
+          ctx.context.responseHeaders!.append(
+            "set-cookie",
+            "password-first=owned; Path=/; HttpOnly",
+          );
+          ctx.context.responseHeaders!.append(
+            "set-cookie",
+            "password-second=owned; Path=/; HttpOnly",
+          );
+        }
         if (mode === "account-list-headers") {
           ctx.setHeader("x-account-list", "logical");
           ctx.context.responseHeaders!.append(

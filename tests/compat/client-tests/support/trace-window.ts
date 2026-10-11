@@ -37,6 +37,8 @@ export type RequestWindow = {
     body: unknown;
     digest: string;
   };
+  /** Original direct server-call input and library response, before client projection. */
+  logicalEndpoint?: { input: unknown; response: unknown; digest: string };
   memberAdditionOwner?: { organizationId: string; userId: string };
   jwtKeyringInput?: { profile: string; operation: string };
   /** Exact application error destination supplied to an actual OAuth grant. */

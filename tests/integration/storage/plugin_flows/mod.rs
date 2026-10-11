@@ -52,6 +52,7 @@ mod screening_matrix;
 mod secondary_sessions;
 mod server_account_listing;
 mod server_account_unlink;
+mod server_change_password;
 mod server_endpoints;
 #[cfg(all(feature = "sqlx", feature = "seaorm"))]
 mod session_fields;

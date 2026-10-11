@@ -367,6 +367,12 @@ impl EndpointCall {
         self.state.lock_unpoisoned().principal.clone()
     }
 
+    pub(crate) fn clear_authenticated_session(&self) {
+        let mut state = self.state.lock_unpoisoned();
+        state.session = None;
+        state.principal = None;
+    }
+
     pub fn record_authenticated_session(&self, user: UserView, session: SessionView) {
         self.state.lock_unpoisoned().principal = Some((user, session));
     }

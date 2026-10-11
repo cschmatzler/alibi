@@ -18,7 +18,7 @@ use alibi::plugins::jwt::JwtPlugin;
 use alibi::plugins::one_time_token::OneTimeTokenPlugin;
 use alibi::plugins::two_factor::TwoFactorConfig;
 use alibi::plugins::{
-    AccountManagementPlugin, ApiKeyPlugin, EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin, TwoFactorPlugin,
+    AccountManagementPlugin, ApiKeyPlugin, EmailPasswordPlugin, OrganizationPlugin, PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
 use alibi::seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use alibi::utils::json::{self, JsValue};
@@ -235,6 +235,11 @@ impl EndpointHook<TestSchema> for Observer {
     ) -> AuthResult<EndpointResponse> {
         self.app
             .record(format!("{}-after", self.id), call, Some(&response));
+        if self.id == "user" && *self.app.mode.lock().unwrap() == "change-password-headers" {
+            call.set_response_header("x-password-result", "logical");
+            call.queue_response_header("set-cookie", "password-first=owned; Path=/; HttpOnly");
+            call.queue_response_header("set-cookie", "password-second=owned; Path=/; HttpOnly");
+        }
         if self.id == "user" && *self.app.mode.lock().unwrap() == "account-list-headers" {
             call.set_response_header("x-account-list", "logical");
             call.queue_response_header("set-cookie", "account-first=owned; Path=/; HttpOnly");
@@ -488,6 +493,9 @@ pub(crate) async fn router(
             ))
             .plugin(SessionManagementPlugin::new())
             .plugin(AccountManagementPlugin::new())
+            .plugin(PasswordManagementPlugin::with_config(alibi::plugins::PasswordManagementConfig {
+                password_hasher: Some(Arc::new(app.clone())), ..Default::default()
+            }))
             .plugin(Observer {
                 id: "first",
                 app: app.clone(),
@@ -549,6 +557,7 @@ pub(crate) async fn router(
                 app.events.lock().unwrap().clear();
                 app.ranges.lock().unwrap().clear();
                 let plugin = match input.operation.as_str() {
+                    "changePassword" => "password-management",
                     "listUserAccounts" | "unlinkAccount" => "account-management",
                     "createVerificationOTP" | "getVerificationOTP" => "email-otp",
                     "getSession" => "session-management",
@@ -563,6 +572,7 @@ pub(crate) async fn router(
                 // The control routes real input to the registered operation; hooks and
                 // authentication are exclusively owned by production dispatch.
                 let operation: &'static str = match input.operation.as_str() {
+                    "changePassword" => "changePassword",
                     "listUserAccounts" => "listUserAccounts",
                     "unlinkAccount" => "unlinkAccount",
                     "createVerificationOTP" => "createVerificationOTP",

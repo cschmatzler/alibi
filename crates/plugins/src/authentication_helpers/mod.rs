@@ -10,7 +10,7 @@ pub(crate) use fields::{
 };
 pub(crate) use notifications::{run_notification, run_owned_notification};
 pub(crate) use sessions::{
-    dont_remember_preference, revoke_unproven_access, session_response,
+    dont_remember_preference, revoke_unproven_access, session_cookie_headers, session_response,
     session_response_with_remember, with_session_cookies,
 };
 pub(crate) use validation::{
