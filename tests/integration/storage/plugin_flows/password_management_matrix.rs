@@ -635,6 +635,29 @@ async fn expired_delivered_reset_redirect_replaces_error_and_preserves_fragment<
     let unchanged = db
         .tables(&["users", "accounts", "sessions", "verifications"])
         .await?;
+    // Compat owner: core/password/required-callback.test.ts. Missing differs
+    // from an explicitly empty callback: the public query schema rejects it
+    // before origin checks, proof lookup, or any redirect response.
+    let absent = call(
+        &auth,
+        get(delivered.path().strip_prefix("/api/auth").unwrap(), &[]),
+        400,
+    )
+    .await;
+    assert_eq!(
+        body(&absent),
+        json!({
+            "code":"VALIDATION_ERROR",
+            "message":"[query.callbackURL] Invalid input: expected string, received undefined"
+        })
+    );
+    assert!(!absent.headers.contains_key("location"));
+    assert!(absent.headers.get_all("set-cookie").next().is_none());
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        unchanged
+    );
     let denied = call(
         &auth,
         get(

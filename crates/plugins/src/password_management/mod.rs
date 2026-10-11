@@ -250,8 +250,13 @@ impl PasswordManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
+        let callback_url = req.query.get("callbackURL").ok_or(AuthError::Upstream {
+            status: 400,
+            code: "VALIDATION_ERROR",
+            message: "[query.callbackURL] Invalid input: expected string, received undefined",
+        })?;
         let query = ResetPasswordTokenQuery {
-            callback_url: req.query.get("callbackURL").cloned(),
+            callback_url: Some(callback_url.clone()),
         };
         let url = reset_password_token_core(token, &query, ctx).await?;
         let mut headers = alibi_core::Headers::new();
