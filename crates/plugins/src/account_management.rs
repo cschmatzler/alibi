@@ -1,9 +1,14 @@
-use super::StatusResponse;
 use super::authentication_helpers::{JsonField, RequestBody, parse_body};
 use alibi_core::entity::{AuthAccount, AuthUser};
 use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use validator::Validate;
+
+/// Successful deletion of the authenticated caller's selected linked account.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnlinkAccountOutput {
+    pub status: bool,
+}
 
 /// Account management plugin for listing and unlinking user accounts.
 pub struct AccountManagementPlugin {
@@ -38,10 +43,23 @@ alibi_core::impl_auth_plugin! {
     route_openapi_metadata!(S);
 
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
-        vec![crate::endpoint::definition(
-            "listUserAccounts", "listUserAccounts", Some("/list-accounts"),
-            alibi_core::HttpMethod::Get,
-        )]
+        vec![
+            crate::endpoint::definition("listUserAccounts", "listUserAccounts", Some("/list-accounts"), alibi_core::HttpMethod::Get),
+            crate::endpoint::definition("unlinkAccount", "unlinkAccount", Some("/unlink-account"), alibi_core::HttpMethod::Post),
+        ]
+    }
+
+    fn validate_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
+        let body = if call.operation_id() == "unlinkAccount" {
+            Some(crate::endpoint::validate_fields(call.body(), "body", UnlinkAccountRequest::FIELDS)?)
+        } else {
+            call.body().cloned()
+        };
+        Ok(alibi_core::endpoint::EndpointInput { body, query: call.query().cloned() })
     }
 
     async fn on_endpoint(
@@ -49,6 +67,11 @@ alibi_core::impl_auth_plugin! {
         call: &alibi_core::endpoint::EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        if call.operation_id() == "unlinkAccount" {
+            let body: UnlinkAccountRequest = call.body_as()?;
+            let user = unlink_session(call, ctx).await?;
+            return alibi_core::endpoint::EndpointResponse::json(&unlink_account_core(&user, &body.account_id, ctx).await?);
+        }
         let (user, session) = ctx.require_cached_session(call).await.map_err(|error| {
             if matches!(error, AuthError::Unauthenticated | AuthError::SessionNotFound) {
                 super::organization::handlers::extension_common::org_error(401, "UNAUTHORIZED")
@@ -76,6 +99,22 @@ impl AccountManagementPlugin {
         alibi_core::endpoint::ServerEndpoint::new("account-management", "listUserAccounts")
     }
 
+    /// Unlink a selected account using logical incoming headers and installed endpoint hooks.
+    #[must_use]
+    pub fn unlink_account_endpoint(
+        account_id: impl Into<String>,
+    ) -> alibi_core::endpoint::ServerEndpoint<UnlinkAccountOutput> {
+        alibi_core::endpoint::ServerEndpoint::new("account-management", "unlinkAccount")
+            .with_body_value(alibi_core::utils::json::JsValue::Object(
+                [(
+                    "accountId".into(),
+                    alibi_core::utils::json::JsValue::String(account_id.into()),
+                )]
+                .into_iter()
+                .collect(),
+            ))
+    }
+
     async fn handle_list_accounts(
         &self,
         req: &AuthRequest,
@@ -92,13 +131,12 @@ impl AccountManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = ctx.require_cached_session(req).await?;
-
         let unlink_req: UnlinkAccountRequest = match parse_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
 
+        let user = unlink_session(req, ctx).await?;
         let response = unlink_account_core(&user, &unlink_req.account_id, ctx).await?;
         Ok(AuthResponse::json(200, &response)?)
     }
@@ -136,11 +174,44 @@ pub(crate) async fn list_accounts_core(
         .collect()
 }
 
+async fn unlink_session<S: alibi_core::AuthSchema>(
+    request: &impl alibi_core::session::SessionRequest,
+    ctx: &AuthContext<S>,
+) -> AuthResult<alibi_core::AuthenticatedUser<S>> {
+    let (user, session) = ctx.require_cached_session(request).await.map_err(|error| {
+        if matches!(
+            error,
+            AuthError::Unauthenticated | AuthError::SessionNotFound
+        ) {
+            super::organization::handlers::extension_common::org_error(401, "UNAUTHORIZED")
+        } else {
+            error
+        }
+    })?;
+    if let Some(call) = request.endpoint_call() {
+        call.record_authenticated_session(
+            match &user {
+                alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+                alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
+            },
+            session.clone(),
+        );
+    }
+    if !ctx.session_manager().is_session_fresh(&session) {
+        return Err(AuthError::Upstream {
+            status: 403,
+            code: "SESSION_NOT_FRESH",
+            message: "Session is not fresh",
+        });
+    }
+    Ok(user)
+}
+
 pub(crate) async fn unlink_account_core(
     user: &impl AuthUser,
     account_id: &str,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
-) -> AuthResult<StatusResponse> {
+) -> AuthResult<UnlinkAccountOutput> {
     let accounts = ctx.database.get_user_accounts(&user.id()).await?;
     if accounts.len() == 1 && !ctx.config.account.account_linking.allow_unlinking_all {
         return Err(AuthError::bad_request("You can't unlink your last account"));
@@ -150,5 +221,5 @@ pub(crate) async fn unlink_account_core(
         .find(|account| account.id() == account_id)
         .ok_or_else(|| AuthError::bad_request("Account not found"))?;
     ctx.database.delete_account(&account.id()).await?;
-    Ok(StatusResponse { status: true })
+    Ok(UnlinkAccountOutput { status: true })
 }
