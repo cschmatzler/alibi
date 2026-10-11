@@ -12,7 +12,8 @@ backend_tests!(
     organization_selection_returns_stored_metadata_text_without_rewriting_rows,
     revoked_cache_identity_retains_physical_organization_membership_checks,
     organization_empty_update_storage_error,
-    organization_ignored_default_patch_null_result
+    organization_ignored_default_patch_null_result,
+    organization_fractional_timestamps_project_without_rewriting_owned_rows
 );
 
 fn get(path: &str, query: &[(&str, &str)], cookie: &str) -> AuthRequest {
@@ -902,5 +903,126 @@ async fn organization_ignored_default_patch_null_result<B: Backend>(db: Db) -> T
             .execute("DROP TRIGGER organization_update_ignore", &[])
             .await?;
     }
+    B::close(connection).await
+}
+
+// Compat owner: organization/timestamps.test.ts. These real adapter reads
+// must project JavaScript millisecond dates while retaining stored precision.
+async fn organization_fractional_timestamps_project_without_rewriting_owned_rows<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(OrganizationPlugin::new())
+        .build()
+        .await?;
+    let email = "org-timestamp-owner@example.test";
+    let owner = signup(&auth, email).await;
+    let foreign = signup(&auth, "org-timestamp-foreign@example.test").await;
+    let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let created = call(
+        &auth,
+        request(
+            "/organization/create",
+            Some(json!({"name":"Timestamp Organization","slug":"timestamp-organization"})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    let created_body = body(&created);
+    let organization_id = created_body["id"].as_str().unwrap();
+    let member_id = created_body["members"][0]["id"].as_str().unwrap();
+    let source = "2001-02-03T04:05:06.227234Z";
+    let expected = "2001-02-03T04:05:06.227Z";
+    assert_eq!(
+        db.execute(
+            "UPDATE organization SET created_at=$1 WHERE id=$2",
+            &[source, organization_id]
+        )
+        .await?,
+        1
+    );
+    assert_eq!(
+        db.execute(
+            "UPDATE member SET created_at=$1 WHERE id=$2",
+            &[source, member_id]
+        )
+        .await?,
+        1
+    );
+    let before = db
+        .tables(&[
+            "organization",
+            "member",
+            "users",
+            "accounts",
+            "sessions",
+            "verifications",
+        ])
+        .await?;
+    let cookie = cookies(&owner);
+    let full = body(
+        &call(
+            &auth,
+            get(
+                "/organization/get-full-organization",
+                &[("organizationId", organization_id)],
+                &cookie,
+            ),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(full["id"], organization_id);
+    assert_eq!(full["createdAt"], expected);
+    assert_eq!(full["members"].as_array().unwrap().len(), 1);
+    let member = &full["members"][0];
+    assert_eq!(member["id"], member_id);
+    assert_eq!(member["organizationId"], organization_id);
+    assert_eq!(member["userId"], owner_id);
+    assert_eq!(member["role"], "owner");
+    assert_eq!(member["user"]["id"], owner_id);
+    assert_eq!(member["user"]["email"], email);
+    assert_eq!(member["createdAt"], expected);
+    let active = body(
+        &call(
+            &auth,
+            request("/organization/get-active-member", None, &cookie),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(active, *member);
+    assert_eq!(
+        db.tables(&[
+            "organization",
+            "member",
+            "users",
+            "accounts",
+            "sessions",
+            "verifications"
+        ])
+        .await?,
+        before
+    );
+    for (table, id) in [("organization", organization_id), ("member", member_id)] {
+        let sql = format!("SELECT CAST(created_at AS TEXT) FROM {table} WHERE id=$1");
+        let persisted = db
+            .text(&sql, &[id])
+            .await?
+            .ok_or("timestamp row disappeared")?;
+        assert_eq!(
+            chrono::DateTime::parse_from_rfc3339(&persisted)?,
+            chrono::DateTime::parse_from_rfc3339(source)?
+        );
+    }
+    authenticated(&auth, &cookie, email).await;
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "org-timestamp-foreign@example.test",
+    )
+    .await;
     B::close(connection).await
 }
