@@ -609,6 +609,84 @@ async fn expired_delivered_reset_redirect_replaces_error_and_preserves_fragment<
         200,
     )
     .await;
+    // Compat owner: core/password/empty-callback.test.ts. Omitting redirectTo
+    // delivers an explicitly empty callbackURL, which must reject the callback
+    // without consuming the genuine proof or disclosing it in the error URL.
+    let _ = call(
+        &auth,
+        request(
+            "/request-password-reset",
+            Some(json!({"email":"expired-reset-owner@example.test"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let (empty_url, retained_token) = mailbox.0.lock().unwrap().pop().unwrap();
+    let delivered = url::Url::parse(&empty_url)?;
+    assert_eq!(
+        delivered
+            .query_pairs()
+            .find(|(name, _)| name == "callbackURL")
+            .unwrap()
+            .1,
+        ""
+    );
+    let unchanged = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    let denied = call(
+        &auth,
+        get(
+            delivered.path().strip_prefix("/api/auth").unwrap(),
+            &[("callbackURL", "")],
+        ),
+        302,
+    )
+    .await;
+    assert_eq!(
+        denied.headers.get("location").map(String::as_str),
+        Some(format!("{ORIGIN}/api/auth/error?error=INVALID_TOKEN").as_str())
+    );
+    assert!(denied.body.is_empty());
+    assert!(denied.headers.get_all("set-cookie").next().is_none());
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        unchanged
+    );
+    let callback = "/reset?application=retained#details";
+    let accepted = call(
+        &auth,
+        get(
+            delivered.path().strip_prefix("/api/auth").unwrap(),
+            &[("callbackURL", callback)],
+        ),
+        302,
+    )
+    .await;
+    let mut expected = url::Url::parse(ORIGIN)?.join(callback)?;
+    _ = expected
+        .query_pairs_mut()
+        .append_pair("token", &retained_token);
+    assert_eq!(
+        accepted.headers.get("location").map(String::as_str),
+        Some(expected.as_str())
+    );
+    assert!(accepted.body.is_empty());
+    assert!(accepted.headers.get_all("set-cookie").next().is_none());
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        unchanged
+    );
+    authenticated(&auth, &cookies(&owner), "expired-reset-owner@example.test").await;
+    authenticated(
+        &auth,
+        &cookies(&foreign),
+        "expired-reset-foreign@example.test",
+    )
+    .await;
     Ok(())
 }
 

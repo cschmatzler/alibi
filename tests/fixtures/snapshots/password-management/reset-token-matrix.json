@@ -108,7 +108,7 @@
       "status": 302,
       "headers": {
         "location": [
-          "http://localhost:43219/error?error=INVALID_TOKEN"
+          "http://localhost:43219/api/auth/error?error=INVALID_TOKEN"
         ],
         "content-type": [
           "application/json"
@@ -451,7 +451,7 @@
       "status": 302,
       "headers": {
         "location": [
-          "http://localhost:43219/error?error=INVALID_TOKEN"
+          "http://localhost:43219/api/auth/error?error=INVALID_TOKEN"
         ],
         "content-type": [
           "application/json"
