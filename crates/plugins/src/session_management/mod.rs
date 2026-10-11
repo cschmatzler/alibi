@@ -5,11 +5,15 @@ use super::authentication_helpers::{
 use super::helpers::{
     admin_plugin_enabled, delete_session_cookie_headers, unauthorized_if_unauthenticated,
 };
+use alibi_core::endpoint::{
+    EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
+};
 use alibi_core::entity::{AuthSession, AuthUser};
 use alibi_core::field_policy::{FieldInputError, SessionFields};
+use alibi_core::session::SessionRequest;
 use alibi_core::utils::cookie_utils::{related_cookie_name, verify_cookie_value};
 use alibi_core::utils::json::JsValue;
-use alibi_core::wire::SessionView;
+use alibi_core::wire::{SessionView, UserView};
 use alibi_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     HttpMethod, SuccessResponse,
@@ -42,12 +46,24 @@ impl RequestBody for RevokeSessionRequest {
     const FIELDS: &'static [JsonField] = &[JsonField::string("token", true)];
 }
 
-#[derive(Debug, Serialize)]
-struct GetSessionResponse<S, U> {
-    session: S,
-    user: U,
+/// Public get-session output, including configured fields and cached projections.
+/// An absent or expired session is represented by `Option<GetSessionResponse>::None`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetSessionResponse {
+    pub session: SessionView,
+    pub user: UserView,
     #[serde(rename = "needsRefresh", skip_serializing_if = "Option::is_none")]
-    needs_refresh: Option<bool>,
+    pub needs_refresh: Option<bool>,
+}
+
+/// Options for [`SessionManagementPlugin::get_session_endpoint`].
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct GetSessionQuery {
+    /// Bypass the cookie cache and read the session from storage.
+    pub disable_cookie_cache: bool,
+    /// Suppress stored-session refresh for this call.
+    pub disable_refresh: bool,
 }
 
 #[async_trait]
@@ -56,6 +72,48 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
 
     fn name(&self) -> &'static str {
         "session-management"
+    }
+
+    fn server_endpoints(&self) -> Vec<EndpointDefinition> {
+        vec![crate::endpoint::definition(
+            "getSession",
+            "get_session",
+            Some("/get-session"),
+            HttpMethod::Get,
+        )]
+    }
+
+    fn validate_endpoint(
+        &self,
+        call: &EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointInput> {
+        if call.headers().is_none() {
+            return Err(crate::endpoint::validation("Headers is required"));
+        }
+        Ok(EndpointInput {
+            body: call.body().cloned(),
+            query: call.query().cloned(),
+        })
+    }
+
+    async fn on_endpoint(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let response = match self.get_session_response(call, ctx).await {
+            Ok(value) => {
+                if let Some(value) = &value {
+                    call.record_authenticated_session(value.user.clone(), value.session.clone());
+                }
+                EndpointResponse::json(&value)?.with_status(200)
+            }
+            Err(error) => EndpointResponse::error(error),
+        };
+        Ok(response
+            .with_header("cache-control", "no-store")
+            .with_header("pragma", "no-cache"))
     }
 
     fn routes(&self) -> Vec<AuthRoute> {
@@ -105,6 +163,17 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
 }
 
 impl SessionManagementPlugin {
+    /// Read the current session through installed endpoint hooks and return its headers.
+    ///
+    /// Pass incoming logical headers in `EndpointOptions::headers`. The output decodes
+    /// to `Option<GetSessionResponse>` and retains all cookie updates in `headers()`.
+    /// Use `with_query(&GetSessionQuery { .. })` for cache/refresh options, and
+    /// `EndpointOptions::method` for POST when deferred session refresh is enabled.
+    #[must_use]
+    pub const fn get_session_endpoint() -> ServerEndpoint<Option<GetSessionResponse>> {
+        ServerEndpoint::new("session-management", "getSession")
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "Keep validated session field updates and persistence callbacks in request order"
@@ -239,27 +308,10 @@ impl SessionManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let response =
-            if req.method() == &HttpMethod::Post && !ctx.config.session.defer_session_refresh {
-                AuthError::Upstream {
-                status: 405,
-                code: "METHOD_NOT_ALLOWED_DEFER_SESSION_REQUIRED",
-                message: "POST method requires deferSessionRefresh to be enabled in session config",
-            }.to_auth_response()
-            } else {
-                match self.get_session_response(req, ctx).await {
-                    Ok(response) => response,
-                    Err(error @ (AuthError::Upstream { .. } | AuthError::Api { .. })) => {
-                        error.to_auth_response()
-                    }
-                    Err(_) => AuthError::Upstream {
-                        status: 500,
-                        code: "FAILED_TO_GET_SESSION",
-                        message: "Failed to get session",
-                    }
-                    .to_auth_response(),
-                }
-            };
+        let response = match self.get_session_response(req, ctx).await {
+            Ok(response) => AuthResponse::json(200, &response)?,
+            Err(error) => error.to_auth_response(),
+        };
         Ok(response
             .with_header("cache-control", "no-store")
             .with_header("pragma", "no-cache"))
@@ -267,25 +319,37 @@ impl SessionManagementPlugin {
 
     async fn get_session_response(
         &self,
-        req: &AuthRequest,
+        req: &impl SessionRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
-    ) -> AuthResult<AuthResponse> {
-        let Some(read) =
-            alibi_core::session::cookie_cache::runtime::authenticated(ctx, req, true).await?
-        else {
-            return Ok(AuthResponse::json(200, &serde_json::Value::Null)?);
-        };
-        Ok(AuthResponse::json(
-            200,
-            &GetSessionResponse {
-                session: read.session,
-                user: match read.user {
-                    alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(&user),
-                    alibi_core::AuthenticatedUser::Cached(user) => *user,
+    ) -> AuthResult<Option<GetSessionResponse>> {
+        if req.session_method() == &HttpMethod::Post && !ctx.config.session.defer_session_refresh {
+            return Err(AuthError::Upstream {
+                status: 405,
+                code: "METHOD_NOT_ALLOWED_DEFER_SESSION_REQUIRED",
+                message: "POST method requires deferSessionRefresh to be enabled in session config",
+            });
+        }
+        let Some(read) = alibi_core::session::cookie_cache::runtime::authenticated(ctx, req, true)
+            .await
+            .map_err(|error| match error {
+                error @ (AuthError::Upstream { .. } | AuthError::Api { .. }) => error,
+                _ => AuthError::Upstream {
+                    status: 500,
+                    code: "FAILED_TO_GET_SESSION",
+                    message: "Failed to get session",
                 },
-                needs_refresh: read.needs_refresh,
+            })?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(GetSessionResponse {
+            session: read.session,
+            user: match read.user {
+                alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(&user),
+                alibi_core::AuthenticatedUser::Cached(user) => *user,
             },
-        )?)
+            needs_refresh: read.needs_refresh,
+        }))
     }
 
     async fn handle_sign_out(
