@@ -1,13 +1,25 @@
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-#[derive(Debug, Deserialize, Validate)]
-pub(crate) struct ChangeEmailRequest {
+/// Body of the public `changeEmail` server operation.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+pub struct ChangeEmailRequest {
     #[serde(rename = "newEmail")]
     #[validate(email(message = "Invalid email address"))]
-    pub(crate) new_email: String,
-    #[serde(rename = "callbackURL")]
-    pub(crate) callback_url: Option<String>,
+    pub new_email: String,
+    #[serde(rename = "callbackURL", skip_serializing_if = "Option::is_none")]
+    pub callback_url: Option<String>,
+}
+
+impl crate::authentication_helpers::RequestBody for ChangeEmailRequest {
+    const FIELDS: &'static [crate::authentication_helpers::JsonField] = &[
+        crate::authentication_helpers::JsonField {
+            name: "newEmail",
+            kind: crate::authentication_helpers::JsonFieldKind::Email,
+            required: true,
+        },
+        crate::authentication_helpers::JsonField::string("callbackURL", false),
+    ];
 }
 
 /// Body of the public `deleteUser` server operation.

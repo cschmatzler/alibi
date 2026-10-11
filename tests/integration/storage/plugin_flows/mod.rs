@@ -290,3 +290,5 @@ mod server_ok;
 mod server_delete_user;
 
 mod server_delete_user_callback;
+
+mod server_change_email;
