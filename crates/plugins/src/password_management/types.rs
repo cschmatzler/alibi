@@ -34,9 +34,22 @@ pub struct ChangePasswordRequest {
 }
 
 /// Request body for `POST /verify-password`.
-#[derive(Debug, Deserialize, Validate)]
-pub(crate) struct VerifyPasswordRequest {
-    pub(crate) password: String,
+#[derive(Debug, Serialize, Deserialize, Validate)]
+pub struct VerifyPasswordRequest {
+    pub password: String,
+}
+
+/// Result of successful current-owner password verification.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VerifyPasswordResponse {
+    pub status: bool,
+}
+
+impl crate::authentication_helpers::RequestBody for VerifyPasswordRequest {
+    const FIELDS: &'static [crate::authentication_helpers::JsonField] =
+        &[crate::authentication_helpers::JsonField::string(
+            "password", true,
+        )];
 }
 
 /// Query parameters for `GET /reset-password/{token}`.

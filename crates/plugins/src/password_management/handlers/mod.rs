@@ -1,7 +1,7 @@
 use super::types::{
     ChangePasswordRequest, ChangePasswordResponse, RequestPasswordResetRequest,
     RequestPasswordResetResponse, ResetPasswordRequest, ResetPasswordTokenQuery,
-    VerifyPasswordRequest,
+    VerifyPasswordRequest, VerifyPasswordResponse,
 };
 use super::{PasswordManagementConfig, StatusResponse};
 use crate::helpers::{get_credential_account, get_credential_password_hash};
@@ -270,7 +270,7 @@ pub(crate) async fn verify_password_core(
     user: &impl AuthUser,
     config: &PasswordManagementConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
-) -> AuthResult<StatusResponse> {
+) -> AuthResult<VerifyPasswordResponse> {
     let (_, maximum) = crate::email_password::password_length_limits(ctx);
     if body.password.encode_utf16().count() > maximum {
         return Err(AuthError::bad_request("Password too long"));
@@ -299,7 +299,7 @@ pub(crate) async fn verify_password_core(
             other => other,
         })?;
 
-    Ok(StatusResponse { status: true })
+    Ok(VerifyPasswordResponse { status: true })
 }
 
 fn validate_redirect_target(
