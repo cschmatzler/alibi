@@ -61,11 +61,12 @@ compatScenario(
     }
     const proofsBefore = await proofCount();
     const browser = magicLinkClient(ctx, "new-browser");
-    async function issue(body: unknown, headers?: Record<string, string>) {
+    async function issue(body: unknown, headers?: Record<string, string>, originalRequest = false) {
       return ctx.rawRequest({
         path: "/__test/server-api/magic-link-sign-in",
         method: "POST",
-        json: { body, ...(headers ? { headers } : {}) },
+        headers: { origin: new URL(ctx.baseURL).origin },
+        json: { body, originalRequest, ...(headers ? { headers } : {}) },
       });
     }
     const missingHeaders = await issue({ email });
@@ -74,6 +75,9 @@ compatScenario(
       code: "VALIDATION_ERROR",
       message: "Headers is required",
     });
+    const requestOnlyIssue = await issue({ email }, undefined, true);
+    expect(requestOnlyIssue.status).toBe(400);
+    expect(requestOnlyIssue.body).toEqual(missingHeaders.body);
     const invalid = await issue({ email, metadata: [] }, {});
     expect(invalid.status).toBe(400);
     expect((invalid.body as any).code).toBe("VALIDATION_ERROR");
@@ -112,14 +116,18 @@ compatScenario(
     }
     const stored = await ctx.readVerificationState({ identifier: `magic-link:${delivered.token}` });
     expect(stored).toHaveLength(1);
-    async function verify(query: unknown, headers?: Record<string, string>) {
+    async function verify(
+      query: unknown,
+      headers?: Record<string, string>,
+      originalRequest = false,
+    ) {
       const response = await ctx
         .actor("new-browser")
         .fetch(`${ctx.baseURL}/__test/server-api/magic-link-verify`, {
           method: "POST",
           redirect: "manual",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ query, ...(headers ? { headers } : {}) }),
+          headers: { "content-type": "application/json", origin: new URL(ctx.baseURL).origin },
+          body: JSON.stringify({ query, originalRequest, ...(headers ? { headers } : {}) }),
         });
       return {
         status: response.status,
@@ -131,6 +139,12 @@ compatScenario(
     const noHeaders = await verify({ token: delivered.token });
     expect(noHeaders.status).toBe(400);
     expect(noHeaders.body).toEqual({ code: "VALIDATION_ERROR", message: "Headers is required" });
+    const requestOnlyVerify = await verify({ token: delivered.token }, undefined, true);
+    expect(requestOnlyVerify.status).toBe(400);
+    expect(requestOnlyVerify.body).toEqual(noHeaders.body);
+    expect(
+      await ctx.readVerificationState({ identifier: `magic-link:${delivered.token}` }),
+    ).toEqual(stored);
     const invalidQuery = await verify({ token: 42 }, {});
     expect(invalidQuery.status).toBe(400);
     expect(invalidQuery.body.code).toBe("VALIDATION_ERROR");
@@ -200,6 +214,8 @@ compatScenario(
       proof,
       login,
       before,
+      requestOnlyIssue,
+      requestOnlyVerify,
       missingHeaders,
       invalid,
       issued,

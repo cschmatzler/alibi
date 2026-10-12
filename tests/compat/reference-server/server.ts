@@ -2293,6 +2293,7 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
     return auth.api.magicLinkVerify({
       query: input?.query as Parameters<typeof auth.api.magicLinkVerify>[0]["query"],
       ...(input?.headers ? { headers: new Headers(input.headers as Record<string, string>) } : {}),
+      ...(input?.originalRequest ? { request } : {}),
       asResponse: true,
     });
   }
@@ -2301,6 +2302,7 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
     return auth.api.signInMagicLink({
       body: input?.body as Parameters<typeof auth.api.signInMagicLink>[0]["body"],
       ...(input?.headers ? { headers: new Headers(input.headers as Record<string, string>) } : {}),
+      ...(input?.originalRequest ? { request } : {}),
       asResponse: true,
     });
   }
