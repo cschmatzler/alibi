@@ -2147,6 +2147,16 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
     }
     try {
+      if (body?.operation === "server-list-team-members") {
+        const response = await selected.api.listTeamMembers({
+          ...(Object.hasOwn(body, "query")
+            ? { query: body.query as Parameters<typeof selected.api.listTeamMembers>[0]["query"] }
+            : {}),
+          ...(body.headers ? { headers: new Headers(body.headers as Record<string, string>) } : {}),
+          asResponse: true,
+        });
+        return jsonResponse(await response.json(), { status: response.status });
+      }
       if (body?.operation === "server-list-user-teams") {
         const response = await selected.api.listUserTeams({
           ...(Object.hasOwn(body, "query")
