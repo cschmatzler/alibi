@@ -63,8 +63,8 @@ impl MultiSessionPlugin {
         )
     }
 
-    fn cookie_value(req: &AuthRequest, name: &str) -> Option<String> {
-        req.headers
+    fn cookie_value(req: &impl alibi_core::session::SessionRequest, name: &str) -> Option<String> {
+        req.session_headers()
             .get("cookie")
             .into_iter()
             .flat_map(|header| cookie::Cookie::split_parse(header).flatten())
@@ -74,7 +74,7 @@ impl MultiSessionPlugin {
     }
 
     fn set_active_cookie(
-        req: &AuthRequest,
+        req: &impl alibi_core::session::SessionRequest,
         ctx: &AuthContext<impl AuthSchema>,
         token: &str,
         response: &mut AuthResponse,
@@ -196,7 +196,7 @@ impl MultiSessionPlugin {
 
     /// The cookie name and verified token a request's `sessionToken` selects.
     fn selected_token(
-        req: &AuthRequest,
+        req: &impl alibi_core::session::SessionRequest,
         ctx: &AuthContext<impl AuthSchema>,
         body: &SessionTokenRequest,
     ) -> AuthResult<(String, String)> {
@@ -217,6 +217,15 @@ impl MultiSessionPlugin {
             Ok(body) => body,
             Err(response) => return Ok(response),
         };
+        self.set_active_core(req, ctx, body).await
+    }
+
+    async fn set_active_core<S: AuthSchema>(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<S>,
+        body: SessionTokenRequest,
+    ) -> AuthResult<AuthResponse> {
         let (name, token) = Self::selected_token(req, ctx, &body)?;
         let session = ctx.database.get_session_record(&token).await?;
         let session = session.filter(|session| session.expires_at() > Utc::now());
@@ -315,10 +324,20 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
         call: &alibi_core::endpoint::EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
-        let output = self.list(call, ctx).await?;
-        let mut response = alibi_core::endpoint::EndpointResponse::value(
-            alibi_core::utils::json::from_slice(&output.body)?,
-        );
+        let output = if call.operation_id() == "setActiveSession" {
+            self.set_active_core(call, ctx, call.body_as()?).await?
+        } else {
+            self.list(call, ctx).await?
+        };
+        let mut response = if output.status >= 400 {
+            alibi_core::endpoint::EndpointResponse::error(crate::endpoint::error_response(
+                output.clone(),
+            ))
+        } else {
+            alibi_core::endpoint::EndpointResponse::value(alibi_core::utils::json::from_slice(
+                &output.body,
+            )?)
+        };
         response.set_status(Some(output.status));
         response.merge_headers(output.headers);
         Ok(response)
