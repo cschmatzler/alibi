@@ -57,6 +57,7 @@ async fn duplicate_signup_preserves_identity_and_filters_synthetic_output<B: Bac
                 Box::pin(async move {
                     assert_eq!(user.id, expected_owner);
                     assert_eq!(user.name.as_deref(), Some("Native owner"));
+                    let request = request.expect("HTTP signup supplies its genuine request");
                     assert_eq!(request.path, "/sign-up/email");
                     assert_eq!(request.body_as_json::<Value>()?["name"], "Submitted Name");
                     observed.lock().unwrap().push("existing");
@@ -211,6 +212,7 @@ async fn duplicate_privacy_hashes_before_notification_without_replacing_credenti
                 Box::pin(async move {
                     assert_eq!(user.id, id);
                     assert_eq!(user.name.as_deref(), Some("Native owner"));
+                    let r = r.expect("HTTP signup supplies its genuine request");
                     assert_eq!(r.headers["x-privacy-marker"], "original-request");
                     assert_eq!(
                         r.body_as_json::<Value>()?["password"],
@@ -327,6 +329,7 @@ async fn existing_signup_notification_waits_or_remains_owned_in_background<B: Ba
                 let owner_id = owner_id.clone();
                 Box::pin(async move {
                     assert_eq!(u.id, owner_id);
+                    let request = request.expect("HTTP signup supplies its genuine request");
                     assert_eq!(request.headers["x-notification-marker"], "owned-request");
                     e.notify_one();
                     r.notified().await;

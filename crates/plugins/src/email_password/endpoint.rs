@@ -9,14 +9,33 @@ use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod, RequestMeta};
 
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
-    vec![crate::endpoint::definition(
-        "signInEmail",
-        "signInEmail",
-        Some("/sign-in/email"),
-        HttpMethod::Post,
-    )]
+    vec![
+        crate::endpoint::definition(
+            "signInEmail",
+            "signInEmail",
+            Some("/sign-in/email"),
+            HttpMethod::Post,
+        ),
+        crate::endpoint::definition(
+            "signUpEmail",
+            "signUpWithEmailAndPassword",
+            Some("/sign-up/email"),
+            HttpMethod::Post,
+        ),
+    ]
 }
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "signUpWithEmailAndPassword" {
+        _ = crate::endpoint::validate_fields(
+            call.body(),
+            "body",
+            super::SignUpEmailRequest::FIELDS,
+        )?;
+        return Ok(EndpointInput {
+            body: call.body().cloned(),
+            query: call.query().cloned(),
+        });
+    }
     let mut body =
         crate::endpoint::validate_fields(call.body(), "body", SignInEmailRequest::FIELDS)?;
     if let JsValue::Object(body) = &mut body {
@@ -36,11 +55,21 @@ impl EmailPasswordPlugin {
     ) -> AuthResult<ServerEndpoint<SignInEmailResponse>> {
         ServerEndpoint::new("email-password", "signInEmail").with_body(body)
     }
+    /// Create a credential owner through the installed sign-up service and hooks.
+    pub fn sign_up_email_endpoint(
+        body: &super::SignUpEmailRequest,
+    ) -> AuthResult<ServerEndpoint<super::SignUpEmailResponse<alibi_core::field_policy::FieldOutput>>>
+    {
+        ServerEndpoint::new("email-password", "signUpEmail").with_body(body)
+    }
     pub(super) async fn call_sign_in_endpoint(
         &self,
         call: &EndpointCall,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "signUpWithEmailAndPassword" {
+            return self.call_signup_endpoint(call, ctx).await;
+        }
         let body: SignInEmailRequest = call.body_as()?;
         if let Some(request) = call.request() {
             alibi_core::middleware::CsrfMiddleware::new(
@@ -110,5 +139,64 @@ impl EmailPasswordPlugin {
                 Ok(output)
             }
         }
+    }
+    async fn call_signup_endpoint(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<EndpointResponse> {
+        let raw = call.body().cloned().unwrap_or(JsValue::Null);
+        let mut parsed = raw.clone();
+        if !self.config.enable_username
+            && let JsValue::Object(body) = &mut parsed
+        {
+            _ = body.shift_remove("username");
+            _ = body.shift_remove("displayUsername");
+        }
+        let mut body: super::SignUpEmailRequest = alibi_core::utils::json::from_value(parsed)?;
+        if let Some(request) = call.request() {
+            alibi_core::middleware::CsrfMiddleware::new(
+                alibi_core::middleware::CsrfConfig::new(),
+                ctx.config.clone(),
+            )
+            .check_login_origin(request)?;
+            if let Some(url) = body.callback_url.as_deref().filter(|url| !url.is_empty())
+                && !ctx.config.current_origin_check_disabled()
+                && !ctx.config.is_redirect_target_trusted(url)
+            {
+                return Err(AuthError::forbidden("Invalid callbackURL"));
+            }
+        }
+        if let Some(response) = self.prepare_signup_input(&mut body, raw, call, ctx).await? {
+            return Err(crate::endpoint::error_response(response));
+        }
+        alibi_core::session::cookie_cache::runtime::set_issuance_preference(
+            call,
+            body.remember_me == Some(false),
+        );
+        let headers = call.headers().cloned().unwrap_or_default();
+        let meta = RequestMeta {
+            ip_address: Some(
+                ctx.config
+                    .advanced
+                    .ip_address
+                    .resolve_ip(&headers)
+                    .unwrap_or_default(),
+            ),
+            user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
+        };
+        let (value, cookies) = Box::pin(super::sign_up_core(
+            call.request(),
+            &body,
+            &self.config,
+            &meta,
+            ctx,
+        ))
+        .await?;
+        let mut response = EndpointResponse::json(&value)?;
+        for cookie in cookies.into_iter().flatten() {
+            response = response.with_header("set-cookie", cookie);
+        }
+        Ok(response)
     }
 }

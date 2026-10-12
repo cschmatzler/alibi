@@ -3,31 +3,36 @@ use crate::authentication_helpers::{JsonField, JsonFieldKind, RequestBody};
 use alibi_core::AuthError;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
-#[derive(Clone, Debug, Deserialize, Validate)]
-pub(crate) struct SignUpRequest {
+/// Input for the public `signUpEmail` server operation.
+#[derive(Clone, Debug, Serialize, Deserialize, Validate)]
+pub struct SignUpRequest {
     #[serde(flatten, default)]
-    pub(in crate::email_password) additional_fields:
-        indexmap::IndexMap<String, alibi_core::utils::json::JsValue>,
-    #[serde(rename = "lastLoginMethod")]
-    pub(in crate::email_password) last_login_method: Option<alibi_core::utils::json::JsValue>,
+    pub additional_fields: indexmap::IndexMap<String, alibi_core::utils::json::JsValue>,
+    #[serde(rename = "lastLoginMethod", skip_serializing_if = "Option::is_none")]
+    pub last_login_method: Option<alibi_core::utils::json::JsValue>,
     #[validate(length(min = 1, message = "Name is required"))]
-    pub(in crate::email_password) name: String,
+    pub name: String,
     #[validate(email(message = "Invalid email address"))]
-    pub(in crate::email_password) email: String,
+    pub email: String,
     #[validate(length(min = 1, message = "Password is required"))]
-    pub(in crate::email_password) password: String,
-    pub(in crate::email_password) username: Option<String>,
-    #[serde(rename = "displayUsername")]
-    pub(in crate::email_password) display_username: Option<String>,
-    #[serde(rename = "callbackURL")]
-    pub(in crate::email_password) callback_url: Option<String>,
-    pub(in crate::email_password) image: Option<String>,
-    #[serde(rename = "rememberMe")]
-    pub(in crate::email_password) remember_me: Option<bool>,
-    #[serde(rename = "phoneNumber")]
-    pub(in crate::email_password) phone_number: Option<alibi_core::utils::json::JsValue>,
-    #[serde(rename = "phoneNumberVerified")]
-    pub(in crate::email_password) phone_number_verified: Option<alibi_core::utils::json::JsValue>,
+    pub password: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    #[serde(rename = "displayUsername", skip_serializing_if = "Option::is_none")]
+    pub display_username: Option<String>,
+    #[serde(rename = "callbackURL", skip_serializing_if = "Option::is_none")]
+    pub callback_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    #[serde(rename = "rememberMe", skip_serializing_if = "Option::is_none")]
+    pub remember_me: Option<bool>,
+    #[serde(rename = "phoneNumber", skip_serializing_if = "Option::is_none")]
+    pub phone_number: Option<alibi_core::utils::json::JsValue>,
+    #[serde(
+        rename = "phoneNumberVerified",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub phone_number_verified: Option<alibi_core::utils::json::JsValue>,
 }
 
 impl RequestBody for SignUpRequest {
@@ -99,10 +104,11 @@ pub(in crate::email_password) struct IsUsernameAvailableResponse {
     pub(in crate::email_password) available: bool,
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct SignUpResponse<U> {
-    pub(in crate::email_password) token: Option<String>,
-    pub(in crate::email_password) user: U,
+/// Created or synthetic public user returned by `signUpEmail`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignUpResponse<U> {
+    pub token: Option<String>,
+    pub user: U,
 }
 
 /// A completed credential session returned by `signInEmail`.
@@ -155,4 +161,29 @@ pub enum SignInEmailResponse {
         #[serde(rename = "twoFactorMethods")]
         two_factor_methods: Vec<String>,
     },
+}
+
+impl SignUpRequest {
+    /// Construct core sign-up input; application/plugin fields remain available.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        email: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            email: email.into(),
+            password: password.into(),
+            additional_fields: indexmap::IndexMap::default(),
+            last_login_method: None,
+            username: None,
+            display_username: None,
+            callback_url: None,
+            image: None,
+            remember_me: None,
+            phone_number: None,
+            phone_number_verified: None,
+        }
+    }
 }

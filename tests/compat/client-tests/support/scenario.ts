@@ -95,7 +95,7 @@ type ScenarioServerContext = {
     body: unknown;
   }>;
   expireInvitation(args: { invitationId: string; expiresAt: string }): Promise<unknown>;
-  readUserState(args: { userId: string }): Promise<unknown>;
+  readUserState(args: { userId: string; includeProfile?: boolean }): Promise<unknown>;
   readDeviceState(args: { deviceCode: string }): Promise<unknown>;
   expireDevice(args: { deviceCode: string; expiresAt: string }): Promise<unknown>;
   readVerificationState(args: { identifier: string }): Promise<unknown>;
@@ -134,7 +134,7 @@ type ScenarioServerContext = {
     refreshTokenExpiresAt?: string | null;
     scope?: string | null;
   }): Promise<string>;
-  readUserState(args: { userId: string }): Promise<unknown>;
+  readUserState(args: { userId: string; includeProfile?: boolean }): Promise<unknown>;
   readVerificationEmail(args: { email: string }): Promise<unknown>;
   readTwoFactorOtp(args: { email: string }): Promise<unknown>;
   readChangeEmailConfirmation(args: { email: string }): Promise<unknown>;

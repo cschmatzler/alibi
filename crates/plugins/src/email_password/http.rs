@@ -34,10 +34,38 @@ impl EmailPasswordPlugin {
             Arc::clone(&ctx.config),
         )
         .check_form_origin(req)?;
+        if let Some(response) = self
+            .prepare_signup_input(&mut signup_req, req.body_as_json()?, req, ctx)
+            .await?
+        {
+            return Ok(response);
+        }
+
+        alibi_core::session::cookie_cache::runtime::set_issuance_preference(
+            req,
+            signup_req.remember_me == Some(false),
+        );
+        let meta = RequestMeta::from_request(req);
+        let (response, cookies) =
+            sign_up_core(Some(req), &signup_req, &self.config, &meta, ctx).await?;
+        let mut response = AuthResponse::json(200, &response)?;
+        for cookie in cookies.into_iter().flatten() {
+            response.headers.append("Set-Cookie", cookie);
+        }
+        Ok(response)
+    }
+
+    pub(super) async fn prepare_signup_input(
+        &self,
+        signup_req: &mut SignUpRequest,
+        raw: alibi_core::utils::json::JsValue,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
+    ) -> AuthResult<Option<AuthResponse>> {
         signup_req.email = signup_req.email.to_lowercase();
         if self.config.enable_username {
             let policy = &self.config.username;
-            let mut callback_body = req.body_as_json::<alibi_core::utils::json::JsValue>()?;
+            let mut callback_body = raw;
             let username_omitted = matches!(
                 &callback_body,
                 alibi_core::utils::json::JsValue::Object(body) if !body.contains_key("username")
@@ -56,11 +84,11 @@ impl EmailPasswordPlugin {
                     .await?
                     .is_some()
                 {
-                    return username_error_response(
+                    return Ok(Some(username_error_response(
                         400,
                         "USERNAME_IS_ALREADY_TAKEN",
                         MESSAGE_USERNAME_IS_ALREADY_TAKEN,
-                    );
+                    )?));
                 }
             }
             if let Some(display) = &signup_req.display_username {
@@ -95,17 +123,7 @@ impl EmailPasswordPlugin {
                 .insert(alibi_core::hooks::TransformedRequestBody(callback_body));
         }
 
-        alibi_core::session::cookie_cache::runtime::set_issuance_preference(
-            req,
-            signup_req.remember_me == Some(false),
-        );
-        let meta = RequestMeta::from_request(req);
-        let (response, cookies) = sign_up_core(req, &signup_req, &self.config, &meta, ctx).await?;
-        let mut response = AuthResponse::json(200, &response)?;
-        for cookie in cookies.into_iter().flatten() {
-            response.headers.append("Set-Cookie", cookie);
-        }
-        Ok(response)
+        Ok(None)
     }
 
     pub(in crate::email_password) async fn handle_sign_in(

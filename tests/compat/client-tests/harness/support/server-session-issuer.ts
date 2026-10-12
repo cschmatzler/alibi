@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { expect } from "bun:test";
+import { createHash } from "node:crypto";
 
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
@@ -11,7 +12,9 @@ import { createTracingFetch, requestWindow, type TraceEntry } from "../../suppor
 export const secret = "compat-test-only-key-not-real-minimum-32chars";
 export const authPath = "/__test/profiles/server-dispatch-cache/api/auth";
 const control = "/__test/server-dispatch-cache/call";
-export async function captureSessionIssuer(operation: "signInEmail" | "changePassword") {
+export async function captureSessionIssuer(
+  operation: "signInEmail" | "changePassword" | "signUpEmail",
+) {
   const database = new Database(":memory:");
   let auth: ReturnType<typeof betterAuth>;
   const server = Bun.serve({
@@ -29,7 +32,9 @@ export async function captureSessionIssuer(operation: "signInEmail" | "changePas
         const value =
           operation === "signInEmail"
             ? await auth.api.signInEmail(args)
-            : await auth.api.changePassword(args);
+            : operation === "signUpEmail"
+              ? await auth.api.signUpEmail(args)
+              : await auth.api.changePassword(args);
         return Response.json({
           result: {
             ok: true,
@@ -88,11 +93,17 @@ export async function captureSessionIssuer(operation: "signInEmail" | "changePas
         body:
           operation === "signInEmail"
             ? { email: "ROTATION@FIXTURE.TEST", password: "initial-password-123" }
-            : {
-                currentPassword: "initial-password-123",
-                newPassword: "rotated-password-123",
-                revokeOtherSessions: true,
-              },
+            : operation === "signUpEmail"
+              ? {
+                  name: "Created Owner",
+                  email: "CREATION@FIXTURE.TEST",
+                  password: "initial-password-123",
+                }
+              : {
+                  currentPassword: "initial-password-123",
+                  newPassword: "rotated-password-123",
+                  revokeOtherSessions: true,
+                },
       }),
     });
     expect(rotation.status).toBe(200);
@@ -108,7 +119,36 @@ export async function captureSessionIssuer(operation: "signInEmail" | "changePas
     expect(restored.status).toBe(200);
     const restoredBody = await restored.json();
     expect(restoredBody.session.token).toBe(output.result.value.response.token);
+    const userId = output.result.value.response.user.id;
+    const user = database
+      .query<{ id: string; email: string; createdAt: number }, [string]>(
+        "SELECT * FROM user WHERE id=?",
+      )
+      .get(userId)!;
+    const accounts = database.query("SELECT * FROM account WHERE userId=?").all(userId);
+    const sessions = database
+      .query<{ id: string; token: string; userId: string; expiresAt: number }, [string]>(
+        "SELECT * FROM session WHERE userId=?",
+      )
+      .all(userId);
+    const physicalBody = {
+      user: { ...user, createdAt: new Date(user.createdAt).toISOString() },
+      accounts,
+      sessions: sessions.map((row) => ({
+        ...row,
+        expiresAt: new Date(row.expiresAt).toISOString(),
+      })),
+    };
+    const physicalObservations = [
+      {
+        kind: "session" as const,
+        owner: userId,
+        body: physicalBody,
+        digest: createHash("sha256").update(JSON.stringify(physicalBody)).digest("hex"),
+      },
+    ];
     return {
+      physicalObservations,
       value: normalizeClientValue({
         observation: { signup: signupBody, output, published, restored: restoredBody },
         traces,

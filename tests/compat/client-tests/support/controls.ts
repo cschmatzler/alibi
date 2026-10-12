@@ -75,8 +75,14 @@ async function getControl(baseURL: string, path: string, params: Record<string, 
   return response.json().catch(() => null);
 }
 
-export async function readUserState(baseURL: string, args: { userId: string }): Promise<unknown> {
-  return getControl(baseURL, "/__test/user-state", args);
+export async function readUserState(
+  baseURL: string,
+  args: { userId: string; includeProfile?: boolean },
+): Promise<unknown> {
+  return getControl(baseURL, "/__test/user-state", {
+    userId: args.userId,
+    ...(args.includeProfile ? { includeProfile: "true" } : {}),
+  });
 }
 
 export async function resetServerState(baseURL: string) {
