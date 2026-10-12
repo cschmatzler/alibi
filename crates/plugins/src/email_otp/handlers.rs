@@ -517,11 +517,19 @@ impl EmailOtpPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        use alibi_core::AuthAccount;
         let body: PasswordRequest = match parse_body(req) {
             Ok(value) => value,
             Err(response) => return Ok(response),
         };
+        self.reset_password_core(ctx, body).await
+    }
+
+    pub(super) async fn reset_password_core(
+        &self,
+        ctx: &AuthContext<impl AuthSchema>,
+        body: PasswordRequest,
+    ) -> AuthResult<AuthResponse> {
+        use alibi_core::AuthAccount;
         let email = body.email.to_lowercase();
         let settings = self.password_settings(ctx);
         alibi_core::utils::password::validate_password(

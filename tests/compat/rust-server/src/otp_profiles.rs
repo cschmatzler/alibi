@@ -645,6 +645,37 @@ pub(super) async fn router(
             }
         }),
     );
+    let reset_runtimes = runtimes.clone();
+    router = router.route(
+        "/__test/server-api/email-otp-reset",
+        post(move |Json(input): Json<Value>| {
+            let runtimes = reset_runtimes.clone();
+            async move {
+                let selected = runtimes.get("default").unwrap();
+                let mut endpoint = alibi::endpoint::ServerEndpoint::<Value>::new(
+                    "email-otp",
+                    "resetPasswordEmailOTP",
+                );
+                if let Some(body) = input.get("body") {
+                    endpoint = endpoint.with_body(body).unwrap();
+                }
+                match selected
+                    .auth
+                    .dispatch_endpoint(endpoint, Default::default())
+                    .await
+                {
+                    Ok(output) => output.into_response().unwrap().into_response(),
+                    Err(error) => {
+                        let mut response = error.error.to_auth_response();
+                        if let Some(body) = error.body {
+                            response.body = serde_json::to_vec(&*body).unwrap();
+                        }
+                        response.into_response()
+                    }
+                }
+            }
+        }),
+    );
     let retrieval_runtimes = runtimes.clone();
     router = router.route(
         "/__test/server-api/email-otp-get",
