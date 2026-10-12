@@ -11,6 +11,7 @@ use alibi::{AuthError, AuthResult, CallbackContext};
 use async_trait::async_trait;
 
 backend_tests!(
+    server_phone_verification_preserves_consumption_and_authority,
     server_phone_sign_in_publishes_owned_usable_sessions,
     server_phone_otp_delivery_persists_consumable_proof_without_browser_authority,
     server_phone_consumption_admits_logical_input_and_preserves_identity,
@@ -2399,5 +2400,185 @@ async fn server_phone_sign_in_publishes_owned_usable_sessions<B: Backend>(db: Db
         );
     }
     assert_eq!(db.count("sessions").await?, 5);
+    Ok(())
+}
+
+async fn server_phone_verification_preserves_consumption_and_authority<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::endpoint::{EndpointOptions, ServerEndpoint};
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let outbox = Arc::new(Outbox::default());
+    let auth = Box::pin(
+        fast_builder::<B>(&connection)
+            .plugin(PhoneNumberPlugin::new(PhoneNumberConfig {
+                send_otp: Some(outbox.clone()),
+                ..Default::default()
+            }))
+            .build(),
+    )
+    .await?;
+    let phone = "+15550000477";
+    let email = "server-phone-verification@example.test";
+    let owner = Box::pin(call(
+        &auth,
+        request(
+            "/sign-up/email",
+            Some(
+                json!({"email":email,"password":PASSWORD,"name":"Phone Owner","phoneNumber":phone}),
+            ),
+            "",
+        ),
+        200,
+    ))
+    .await;
+    let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let foreign = Box::pin(signup(
+        &auth,
+        "server-phone-verification-foreign@example.test",
+    ))
+    .await;
+    let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
+    let initial_sessions = db.table("sessions").await?;
+    let accounts = db.table("accounts").await?;
+    let _ = Box::pin(auth.dispatch_endpoint(
+        PhoneNumberPlugin::send_otp_endpoint(phone),
+        EndpointOptions::default(),
+    ))
+    .await?;
+    let code = outbox.last().code;
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    let invoke = |input: &Value| {
+        ServerEndpoint::<Value>::new("phone-number", "verifyPhoneNumber").with_body(input)
+    };
+    let malformed = Box::pin(auth.dispatch_endpoint(
+        invoke(&json!({"phoneNumber":phone,"code":42}))?,
+        EndpointOptions::default(),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(malformed.error.status_code(), 400);
+    assert_eq!(
+        malformed.error.error_payload().1.as_deref(),
+        Some("VALIDATION_ERROR")
+    );
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        before
+    );
+    let wrong = Box::pin(auth.dispatch_endpoint(
+        invoke(&json!({"phoneNumber":phone,"code":"wrong"}))?,
+        EndpointOptions::default(),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(wrong.error.status_code(), 400);
+    assert_eq!(
+        wrong.error.error_payload().1.as_deref(),
+        Some("INVALID_OTP")
+    );
+    use alibi::AuthVerification;
+    assert_eq!(
+        auth.store()
+            .get_verification_by_identifier(phone)
+            .await?
+            .unwrap()
+            .value(),
+        format!("{code}:1")
+    );
+    let input: alibi::plugins::phone_number::PhoneVerificationInput = serde_json::from_value(
+        json!({"phoneNumber":phone,"code":code,"disableSession":true,"username":"ignored","userId":foreign_id}),
+    )?;
+    let verified = Box::pin(auth.dispatch_endpoint(
+        PhoneNumberPlugin::verify_endpoint(&input)?,
+        EndpointOptions::default(),
+    ))
+    .await?;
+    let value = verified.decode()?;
+    assert!(value.status);
+    assert!(value.token.is_none());
+    assert_eq!(value.user.id, owner_id);
+    assert_eq!(value.user.phone_number_verified, Some(true));
+    assert_eq!(db.table("sessions").await?, initial_sessions);
+    assert!(verified.headers().get_all("set-cookie").next().is_none());
+    assert_eq!(db.count("verifications").await?, 0);
+    let _ = Box::pin(auth.dispatch_endpoint(
+        PhoneNumberPlugin::send_otp_endpoint(phone),
+        EndpointOptions::default(),
+    ))
+    .await?;
+    let signed_in = Box::pin(auth.dispatch_endpoint(
+        invoke(&json!({"phoneNumber":phone,"code":outbox.last().code}))?,
+        EndpointOptions::default(),
+    ))
+    .await?;
+    let session_value = signed_in.decode()?;
+    assert_eq!(session_value["user"]["id"], owner_id);
+    let response = signed_in.into_response()?;
+    Box::pin(authenticated(&auth, &cookies(&response), email)).await;
+    assert_eq!(db.count("sessions").await?, 3);
+    let new_phone = "+15550000478";
+    let _ = Box::pin(auth.dispatch_endpoint(
+        PhoneNumberPlugin::send_otp_endpoint(new_phone),
+        EndpointOptions::default(),
+    ))
+    .await?;
+    let sessions = db.table("sessions").await?;
+    let updated = Box::pin(auth.dispatch_endpoint(invoke(&json!({"phoneNumber":new_phone,"code":outbox.last().code,"updatePhoneNumber":true,"userId":foreign_id}))?,EndpointOptions {
+        headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()), ..Default::default()
+    })).await?;
+    let value = updated.decode()?;
+    assert_eq!(value["user"]["id"], owner_id);
+    assert_eq!(value["user"]["phoneNumber"], new_phone);
+    assert_eq!(value["token"], body(&owner)["token"]);
+    assert!(updated.headers().get_all("set-cookie").next().is_none());
+    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("accounts").await?, accounts);
+    Box::pin(authenticated(
+        &auth,
+        &cookies(&foreign),
+        "server-phone-verification-foreign@example.test",
+    ))
+    .await;
+    let denied_phone = "+15550000479";
+    let _ = Box::pin(auth.dispatch_endpoint(
+        PhoneNumberPlugin::send_otp_endpoint(denied_phone),
+        EndpointOptions::default(),
+    ))
+    .await?;
+    let identities = db.tables(&["users", "accounts", "sessions"]).await?;
+    let denied = Box::pin(auth.dispatch_endpoint(
+        invoke(
+            &json!({"phoneNumber":denied_phone,"code":outbox.last().code,"updatePhoneNumber":true}),
+        )?,
+        EndpointOptions::default(),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(denied.error.status_code(), 401);
+    assert_eq!(
+        denied.error.error_payload().1.as_deref(),
+        Some("USER_NOT_FOUND")
+    );
+    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions"]).await?,
+        identities
+    );
+    let replay = Box::pin(auth.dispatch_endpoint(
+        invoke(
+            &json!({"phoneNumber":denied_phone,"code":outbox.last().code,"updatePhoneNumber":true}),
+        )?,
+        EndpointOptions::default(),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(
+        replay.error.error_payload().1.as_deref(),
+        Some("OTP_NOT_FOUND")
+    );
     Ok(())
 }

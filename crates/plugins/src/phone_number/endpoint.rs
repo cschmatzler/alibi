@@ -1,7 +1,7 @@
 //! Phone challenge delivery and consumption through installed logical endpoint dispatch.
 use super::{
     PhoneNumberPlugin,
-    types::{ResetRequest, SendRequest, SignInRequest},
+    types::{ResetRequest, SendRequest, SignInRequest, VerifyRequest},
 };
 use crate::authentication_helpers::JsonField;
 use crate::endpoint::{definition, validate_fields};
@@ -58,8 +58,36 @@ pub enum PhoneSignInResponse {
     },
 }
 
+/// Proof and optional authority policy for phone verification. Creation fields are retained.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PhoneVerificationInput {
+    pub phone_number: String,
+    pub code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disable_session: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub update_phone_number: Option<bool>,
+    #[serde(flatten)]
+    pub additional_fields: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Verified ownership, with either existing, newly issued, or disabled session authority.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PhoneVerificationResult {
+    pub status: bool,
+    pub token: Option<String>,
+    pub user: Box<alibi_core::UserView>,
+}
+
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
+        definition(
+            "verifyPhoneNumber",
+            "verifyPhoneNumber",
+            Some("/phone-number/verify"),
+            HttpMethod::Post,
+        ),
         definition(
             "signInPhoneNumber",
             "signInPhoneNumber",
@@ -100,6 +128,17 @@ const CONSUME_FIELDS: &[JsonField] = &[
 ];
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "verifyPhoneNumber" {
+        let _ = validate_fields(
+            call.body(),
+            "body",
+            <VerifyRequest as crate::authentication_helpers::RequestBody>::FIELDS,
+        )?;
+        return Ok(EndpointInput {
+            body: call.body().cloned(),
+            query: call.query().cloned(),
+        });
+    }
     Ok(EndpointInput {
         body: Some(validate_fields(
             call.body(),
@@ -120,6 +159,16 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
 }
 
 impl PhoneNumberPlugin {
+    /// Verify a phone proof and apply the requested identity/session policy.
+    ///
+    /// # Errors
+    /// Returns an error if verification input cannot be serialized.
+    pub fn verify_endpoint(
+        input: &PhoneVerificationInput,
+    ) -> AuthResult<ServerEndpoint<PhoneVerificationResult>> {
+        ServerEndpoint::new("phone-number", "verifyPhoneNumber").with_body(input)
+    }
+
     /// Admit phone credentials and publish an owned session or second-factor challenge.
     ///
     /// # Errors
@@ -189,6 +238,7 @@ impl PhoneNumberPlugin {
     ) -> AuthResult<EndpointResponse> {
         if call.operation_id() != "consumePhoneNumberOTP" {
             let output = match call.operation_id() {
+                "verifyPhoneNumber" => self.verify_core(call, ctx, call.body_as()?).await?,
                 "signInPhoneNumber" => self.sign_in_core(call, ctx, call.body_as()?).await?,
                 "sendPhoneNumberOTP" => {
                     self.send_otp_core(ctx, call.request(), call.body_as::<SendRequest>()?)

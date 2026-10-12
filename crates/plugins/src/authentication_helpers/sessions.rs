@@ -3,8 +3,8 @@ use alibi_core::utils::cookie_utils::{
     sign_cookie_value, verify_cookie_value,
 };
 use alibi_core::{
-    AuthAccount, AuthConfig, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult,
-    AuthSchema, AuthSession, AuthUser, CreateVerification, UpdateUser,
+    AuthAccount, AuthConfig, AuthContext, AuthError, AuthResponse, AuthResult, AuthSchema,
+    AuthSession, AuthUser, CreateVerification, UpdateUser,
 };
 use chrono::{Duration, Utc};
 use serde_json::Value;
@@ -62,7 +62,7 @@ pub(crate) fn session_cookie_headers(
 
 pub(crate) async fn session_response<S: AuthSchema>(
     ctx: &AuthContext<S>,
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     user: alibi_core::AdapterRecord<S::User>,
 ) -> AuthResult<(Value, AuthResponse)> {
     session_response_with_remember(ctx, req, user, None).await

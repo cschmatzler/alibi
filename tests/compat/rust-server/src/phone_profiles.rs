@@ -404,6 +404,7 @@ pub(super) async fn build(
     let reset_controls = controls.clone();
     let consume_runtimes = Arc::new(runtimes);
     for (path, operation) in [
+        ("/__test/server-api/phone-verification", "verifyPhoneNumber"),
         ("/__test/server-api/phone-sign-in", "signInPhoneNumber"),
         (
             "/__test/server-api/phone-reset-password",
