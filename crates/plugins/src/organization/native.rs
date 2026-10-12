@@ -214,6 +214,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             HttpMethod::Post,
         ),
         definition(
+            "deleteOrgRole",
+            "deleteOrgRole",
+            Some("/organization/delete-role"),
+            HttpMethod::Post,
+        ),
+        definition(
             "deleteOrganizationRole",
             "deleteOrganizationRole",
             Some("/organization/delete-role"),
@@ -399,10 +405,13 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                 .body_as()
                 .map_err(|error| validation(error.to_string()))?;
         }
-        "deleteOrganizationRole" => {
+        "deleteOrganizationRole" | "deleteOrgRole" => {
             let _: types::RoleQuery = call
                 .body_as()
                 .map_err(|error| validation(error.to_string()))?;
+            if call.operation_id() == "deleteOrgRole" && call.headers().is_none() {
+                return Err(validation("Headers is required"));
+            }
         }
         "getOrgRole" => {
             if call.has_query() {
@@ -724,10 +733,18 @@ impl OrganizationPlugin {
     /// Construct a typed native call through installed dispatch hooks.
     /// # Errors
     /// Returns a serialization error for input that cannot be represented.
+    pub fn delete_org_role_endpoint(
+        input: &types::RoleQuery,
+    ) -> AuthResult<ServerEndpoint<types::SuccessResponse>> {
+        ServerEndpoint::new("organization", "deleteOrgRole").with_body(input)
+    }
+    /// Construct role deletion through the canonical server API.
+    /// # Errors
+    /// Returns a serialization error for input that cannot be represented.
     pub fn delete_role_endpoint(
         input: &types::RoleQuery,
     ) -> AuthResult<ServerEndpoint<types::SuccessResponse>> {
-        ServerEndpoint::new("organization", "deleteOrganizationRole").with_body(input)
+        Self::delete_org_role_endpoint(input)
     }
     /// Construct a typed native call through installed dispatch hooks.
     /// # Errors
@@ -1060,6 +1077,7 @@ pub(super) async fn execute<S: AuthSchema>(
         | "createOrgRole"
         | "updateOrganizationRole"
         | "deleteOrganizationRole"
+        | "deleteOrgRole"
         | "getOrganizationRole"
         | "getOrgRole"
         | "listOrgRoles"
@@ -1067,7 +1085,7 @@ pub(super) async fn execute<S: AuthSchema>(
             let path = match call.operation_id() {
                 "createOrganizationRole" | "createOrgRole" => "/organization/create-role",
                 "updateOrganizationRole" => "/organization/update-role",
-                "deleteOrganizationRole" => "/organization/delete-role",
+                "deleteOrganizationRole" | "deleteOrgRole" => "/organization/delete-role",
                 "getOrganizationRole" | "getOrgRole" => "/organization/get-role",
                 "listOrganizationRoles" | "listOrgRoles" => "/organization/list-roles",
                 _ => return Err(AuthError::not_found("Unknown operation")),
