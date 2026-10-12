@@ -219,6 +219,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             HttpMethod::Post,
         ),
         definition(
+            "getOrgRole",
+            "getOrgRole",
+            Some("/organization/get-role"),
+            HttpMethod::Get,
+        ),
+        definition(
             "getOrganizationRole",
             "getOrganizationRole",
             Some("/organization/get-role"),
@@ -390,6 +396,16 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
             let _: types::RoleQuery = call
                 .body_as()
                 .map_err(|error| validation(error.to_string()))?;
+        }
+        "getOrgRole" => {
+            if call.has_query() {
+                let _: types::RoleQuery = call
+                    .query_as()
+                    .map_err(|error| validation(error.to_string()))?;
+            }
+            if call.headers().is_none() {
+                return Err(validation("Headers is required"));
+            }
         }
         "getOrganizationRole" => {
             let _: types::RoleQuery = call
@@ -691,10 +707,18 @@ impl OrganizationPlugin {
     /// Construct a typed native call through installed dispatch hooks.
     /// # Errors
     /// Returns a serialization error for input that cannot be represented.
+    pub fn get_org_role_endpoint(
+        input: &types::RoleQuery,
+    ) -> AuthResult<ServerEndpoint<types::RoleResponse>> {
+        ServerEndpoint::new("organization", "getOrgRole").with_query(input)
+    }
+    /// Construct a role read through the canonical server API.
+    /// # Errors
+    /// Returns a serialization error for input that cannot be represented.
     pub fn get_role_endpoint(
         input: &types::RoleQuery,
     ) -> AuthResult<ServerEndpoint<types::RoleResponse>> {
-        ServerEndpoint::new("organization", "getOrganizationRole").with_query(input)
+        Self::get_org_role_endpoint(input)
     }
     /// Construct a typed native call through installed dispatch hooks.
     /// # Errors
@@ -1004,12 +1028,13 @@ pub(super) async fn execute<S: AuthSchema>(
         | "updateOrganizationRole"
         | "deleteOrganizationRole"
         | "getOrganizationRole"
+        | "getOrgRole"
         | "listOrganizationRoles" => {
             let path = match call.operation_id() {
                 "createOrganizationRole" | "createOrgRole" => "/organization/create-role",
                 "updateOrganizationRole" => "/organization/update-role",
                 "deleteOrganizationRole" => "/organization/delete-role",
-                "getOrganizationRole" => "/organization/get-role",
+                "getOrganizationRole" | "getOrgRole" => "/organization/get-role",
                 "listOrganizationRoles" => "/organization/list-roles",
                 _ => return Err(AuthError::not_found("Unknown operation")),
             };

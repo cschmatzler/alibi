@@ -1,0 +1,170 @@
+import { expect } from "bun:test";
+
+import { authProfilePath } from "../../../support/profiles";
+import { compatScenario } from "../../../support/scenario";
+
+compatScenario(
+  "canonical getOrgRole reads stored permissions within organization and member authority",
+  async (ctx) => {
+    const profile = "org-teams-dynamic";
+    async function signup(name: string) {
+      let cookie = "";
+      const actor = ctx.actor(name, profile);
+      const user = await actor.client.signUp.email({
+        name,
+        email: ctx.uniqueEmail(name),
+        password: "Password123!",
+        fetchOptions: {
+          onSuccess({ response }) {
+            cookie = response.headers
+              .getSetCookie()
+              .map((raw) => raw.split(";")[0])
+              .join("; ");
+          },
+        },
+      });
+      expect(user.error).toBeNull();
+      return { actor, user, headers: { cookie } };
+    }
+    const owner = await signup("role-read-owner");
+    const member = await signup("role-read-member");
+    const outsider = await signup("role-read-outsider");
+    async function http(actor: typeof owner, path: string, body: Record<string, unknown>) {
+      const response = await actor.actor.fetch(ctx.baseURL + authProfilePath(profile) + path, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...actor.headers },
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(200);
+      return response.json();
+    }
+    const first = await http(owner, "/organization/create", {
+      name: "First role organization",
+      slug: ctx.uniqueToken("first-read-org"),
+    });
+    const firstRole = await http(owner, "/organization/create-role", {
+      role: "FirstReader",
+      permission: { ac: ["read"] },
+    });
+    const invitation = await http(owner, "/organization/invite-member", {
+      email: member.user.data!.user.email,
+      role: "member",
+    });
+    const accepted = await http(member, "/organization/accept-invitation", {
+      invitationId: invitation.id,
+    });
+    await http(owner, "/organization/create-role", {
+      role: "TeamOnly",
+      permission: { team: ["create"] },
+    });
+    await http(owner, "/organization/update-member-role", {
+      memberId: accepted.member.id,
+      role: "teamonly",
+    });
+    const second = await http(owner, "/organization/create", {
+      name: "Second role organization",
+      slug: ctx.uniqueToken("second-read-org"),
+    });
+    const secondRole = await http(owner, "/organization/create-role", {
+      role: "SecondReader",
+      permission: { team: ["create"] },
+    });
+    async function state(id: string) {
+      const response = await ctx.rawRequest({
+        path: `/__test/organization-state?${new URLSearchParams({ profile, organizationId: id })}`,
+      });
+      expect(response.status).toBe(200);
+      return response.body;
+    }
+    const before = [await state(first.id), await state(second.id)];
+    async function invoke(input: Record<string, unknown>) {
+      return ctx.rawRequest({
+        path: "/__test/organization-api",
+        method: "POST",
+        json: { profile, operation: "server-get-role", ...input },
+      });
+    }
+    const reads = [];
+    for (const [query, role] of [
+      [{ organizationId: first.id, roleId: firstRole.roleData.id }, firstRole.roleData],
+      [{ organizationId: first.id, roleName: "firstreader" }, firstRole.roleData],
+      [{ roleName: "secondreader" }, secondRole.roleData],
+      [
+        { organizationId: first.id, roleName: "firstreader", roleId: "wrong-id" },
+        firstRole.roleData,
+      ],
+      [
+        { organizationId: first.id, roleName: "", roleId: firstRole.roleData.id },
+        firstRole.roleData,
+      ],
+    ] as const) {
+      const response = await invoke({ query, headers: owner.headers });
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(role);
+      reads.push(response);
+    }
+    const denials = [];
+    for (const [input, status, code] of [
+      [{ query: { roleId: firstRole.roleData.id } }, 400, "VALIDATION_ERROR"],
+      [{ query: { roleId: firstRole.roleData.id }, headers: {} }, 401, "UNAUTHORIZED"],
+      [
+        {
+          query: { organizationId: first.id, roleId: firstRole.roleData.id },
+          headers: outsider.headers,
+        },
+        403,
+        "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
+      ],
+      [
+        {
+          query: { organizationId: first.id, roleId: firstRole.roleData.id },
+          headers: member.headers,
+        },
+        403,
+        "YOU_ARE_NOT_ALLOWED_TO_READ_A_ROLE",
+      ],
+      [
+        {
+          query: { organizationId: second.id, roleId: firstRole.roleData.id },
+          headers: owner.headers,
+        },
+        400,
+        "ROLE_NOT_FOUND",
+      ],
+      [{ query: { roleName: "missing-role" }, headers: owner.headers }, 400, "ROLE_NOT_FOUND"],
+      [{ query: { roleName: "SecondReader" }, headers: owner.headers }, 400, "ROLE_NOT_FOUND"],
+      [
+        {
+          query: {
+            organizationId: first.id,
+            roleName: "missing-role",
+            roleId: firstRole.roleData.id,
+          },
+          headers: owner.headers,
+        },
+        400,
+        "ROLE_NOT_FOUND",
+      ],
+    ] as const) {
+      const response = await invoke(input);
+      expect(response.status).toBe(status);
+      expect((response.body as { code: string }).code).toBe(code);
+      denials.push(response);
+    }
+    const after = [await state(first.id), await state(second.id)];
+    expect(after).toEqual(before);
+    return ctx.snapshot({
+      owner: owner.user,
+      member: member.user,
+      outsider: outsider.user,
+      first,
+      firstRole,
+      second,
+      secondRole,
+      before,
+      reads,
+      denials,
+      after,
+    });
+  },
+);

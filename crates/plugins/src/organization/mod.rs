@@ -298,7 +298,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
             .into_iter()
             .filter(|endpoint| {
                 (endpoint.name != "listOrganizationTeams" || self.config.teams.enabled)
-                    && (endpoint.name != "createOrgRole"
+                    && (!matches!(endpoint.name, "createOrgRole" | "getOrgRole")
                         || self.config.dynamic_access_control.enabled)
             })
             .collect()
