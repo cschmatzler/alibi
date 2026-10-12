@@ -404,6 +404,7 @@ pub(super) async fn build(
     let reset_controls = controls.clone();
     let consume_runtimes = Arc::new(runtimes);
     for (path, operation) in [
+        ("/__test/server-api/phone-sign-in", "signInPhoneNumber"),
         (
             "/__test/server-api/phone-reset-password",
             "resetPasswordPhoneNumber",
@@ -430,7 +431,15 @@ pub(super) async fn build(
                     }
                     match selected
                         .auth
-                        .dispatch_endpoint(endpoint, alibi::endpoint::EndpointOptions::default())
+                        .dispatch_endpoint(
+                            endpoint,
+                            alibi::endpoint::EndpointOptions {
+                                headers: input.get("headers").map(|headers| {
+                                    serde_json::from_value(headers.clone()).unwrap()
+                                }),
+                                ..Default::default()
+                            },
+                        )
                         .await
                     {
                         Ok(output) => output.into_response().unwrap().into_response(),

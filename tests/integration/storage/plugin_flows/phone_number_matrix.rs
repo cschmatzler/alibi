@@ -11,6 +11,7 @@ use alibi::{AuthError, AuthResult, CallbackContext};
 use async_trait::async_trait;
 
 backend_tests!(
+    server_phone_sign_in_publishes_owned_usable_sessions,
     server_phone_otp_delivery_persists_consumable_proof_without_browser_authority,
     server_phone_consumption_admits_logical_input_and_preserves_identity,
     phone_number_request_and_proof_matrix,
@@ -2273,5 +2274,130 @@ async fn server_phone_otp_delivery_persists_consumable_proof_without_browser_aut
         Some("SEND_OTP_NOT_IMPLEMENTED")
     );
     assert_eq!(db.count("verifications").await?, 0);
+    Ok(())
+}
+
+async fn server_phone_sign_in_publishes_owned_usable_sessions<B: Backend>(db: Db) -> TestResult {
+    use alibi::endpoint::{EndpointOptions, ServerEndpoint};
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = Box::pin(
+        fast_builder::<B>(&connection)
+            .plugin(PhoneNumberPlugin::new(PhoneNumberConfig::default()))
+            .build(),
+    )
+    .await?;
+    let phone = "+15550000377";
+    let email = "server-phone-login@example.test";
+    let owner = Box::pin(call(
+        &auth,
+        request(
+            "/sign-up/email",
+            Some(
+                json!({"email":email,"password":PASSWORD,"name":"Phone Owner","phoneNumber":phone}),
+            ),
+            "",
+        ),
+        200,
+    ))
+    .await;
+    let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let foreign = Box::pin(signup(&auth, "server-phone-foreign@example.test")).await;
+    let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
+    let before = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    for (input, status, code) in [
+        (
+            json!({"phoneNumber":42,"password":PASSWORD}),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (
+            json!({"phoneNumber":phone,"password":PASSWORD,"rememberMe":"no"}),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (
+            json!({"phoneNumber":phone,"password":"wrong-password"}),
+            401,
+            "INVALID_PHONE_NUMBER_OR_PASSWORD",
+        ),
+        (
+            json!({"phoneNumber":"+15559999999","password":PASSWORD}),
+            401,
+            "INVALID_PHONE_NUMBER_OR_PASSWORD",
+        ),
+    ] {
+        let error = Box::pin(auth.dispatch_endpoint(
+            ServerEndpoint::<Value>::new("phone-number", "signInPhoneNumber").with_body(&input)?,
+            EndpointOptions::default(),
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(error.error.status_code(), status);
+        assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "verifications"])
+                .await?,
+            before
+        );
+    }
+    let identities = db.tables(&["users", "accounts", "verifications"]).await?;
+    for remember in [None, Some(false), Some(true)] {
+        let mut input = json!({"phoneNumber":phone,"password":PASSWORD,"userId":foreign_id});
+        if let Some(remember) = remember {
+            input["rememberMe"] = json!(remember);
+        }
+        let output = Box::pin(
+            auth.dispatch_endpoint(
+                ServerEndpoint::<Value>::new("phone-number", "signInPhoneNumber")
+                    .with_body(&input)?,
+                EndpointOptions {
+                    headers: Some(
+                        [
+                            ("user-agent".into(), "server-phone-sdk".into()),
+                            ("x-forwarded-for".into(), "198.51.100.27".into()),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await?;
+        let value = output.decode()?;
+        assert_eq!(value["user"]["id"], owner_id);
+        let token = value["token"].as_str().unwrap();
+        let session = auth.store().get_session(token).await?.unwrap();
+        use alibi::AuthSession;
+        assert_eq!(session.user_id(), owner_id);
+        assert_eq!(session.user_agent(), Some("server-phone-sdk"));
+        assert_eq!(session.ip_address(), Some("198.51.100.27"));
+        let ttl = (session.expires_at() - chrono::Utc::now()).num_seconds();
+        let expected = if remember == Some(false) {
+            86400
+        } else {
+            auth.config().session.expires_in.num_seconds()
+        };
+        assert!((expected - 2..=expected).contains(&ttl));
+        let response = output.into_response()?;
+        let cookie = cookies(&response);
+        let token_cookie = response
+            .headers
+            .get_all("set-cookie")
+            .find(|value| value.contains("session_token="))
+            .unwrap();
+        assert_eq!(
+            token_cookie.to_ascii_lowercase().contains("max-age="),
+            remember != Some(false)
+        );
+        Box::pin(authenticated(&auth, &cookie, email)).await;
+        assert_eq!(
+            db.tables(&["users", "accounts", "verifications"]).await?,
+            identities
+        );
+    }
+    assert_eq!(db.count("sessions").await?, 5);
     Ok(())
 }

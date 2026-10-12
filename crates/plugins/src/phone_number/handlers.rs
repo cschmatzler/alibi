@@ -217,10 +217,6 @@ impl PhoneNumberPlugin {
         .map_err(crate::helpers::callback_failure)?;
         AuthResponse::json(200, &json!({"message":"code sent"})).map_err(AuthError::from)
     }
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Keep phone proof validation, verification policy, and session issuance in request order"
-    )]
     pub(super) async fn sign_in(
         &self,
         req: &AuthRequest,
@@ -230,6 +226,19 @@ impl PhoneNumberPlugin {
             Ok(body) => body,
             Err(response) => return Ok(response),
         };
+        self.sign_in_core(req, ctx, body).await
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Preserve credential admission and session publication order"
+    )]
+    pub(super) async fn sign_in_core(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+        body: SignInRequest,
+    ) -> AuthResult<AuthResponse> {
         self.validate_phone(&body.phone_number).await?;
         let settings = password_settings(ctx);
         alibi_core::utils::password::validate_password(&body.password, 0, settings.maximum, ctx)?;
@@ -247,7 +256,7 @@ impl PhoneNumberPlugin {
             if let Some(sender) = &self.config.send_otp {
                 self.deliver(
                     ctx,
-                    Some(req),
+                    req.physical_request(),
                     sender.clone(),
                     PhoneOtpDelivery {
                         phone_number: body.phone_number,
