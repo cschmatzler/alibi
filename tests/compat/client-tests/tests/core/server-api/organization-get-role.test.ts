@@ -207,6 +207,130 @@ compatScenario(
       await state(emptyOrganization.id),
     ];
     expect(after).toEqual(before);
+    const updateDenials = [];
+    for (const [input, status, code] of [
+      [{ body: { roleId: firstRole.roleData.id, data: {} } }, 400, "VALIDATION_ERROR"],
+      [{ body: { roleId: firstRole.roleData.id, data: {} }, headers: {} }, 401, "UNAUTHORIZED"],
+      [
+        {
+          body: { organizationId: first.id, roleId: firstRole.roleData.id, data: {} },
+          headers: outsider.headers,
+        },
+        403,
+        "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
+      ],
+      [
+        {
+          body: { organizationId: first.id, roleId: firstRole.roleData.id, data: {} },
+          headers: member.headers,
+        },
+        403,
+        "YOU_ARE_NOT_ALLOWED_TO_UPDATE_A_ROLE",
+      ],
+      [
+        {
+          body: { organizationId: second.id, roleId: firstRole.roleData.id, data: {} },
+          headers: owner.headers,
+        },
+        400,
+        "ROLE_NOT_FOUND",
+      ],
+      [
+        {
+          body: {
+            organizationId: first.id,
+            roleId: firstRole.roleData.id,
+            data: { roleName: "owner" },
+          },
+          headers: owner.headers,
+        },
+        400,
+        "ROLE_NAME_IS_ALREADY_TAKEN",
+      ],
+      [
+        {
+          body: {
+            organizationId: first.id,
+            roleId: firstRole.roleData.id,
+            data: { roleName: "teamonly" },
+          },
+          headers: owner.headers,
+        },
+        400,
+        "ROLE_NAME_IS_ALREADY_TAKEN",
+      ],
+      [
+        {
+          body: {
+            organizationId: first.id,
+            roleId: firstRole.roleData.id,
+            data: { permission: { invented: ["read"] } },
+          },
+          headers: owner.headers,
+        },
+        400,
+        "INVALID_RESOURCE",
+      ],
+    ] as const) {
+      const response = await invoke({ operation: "server-update-role", ...input });
+      expect(response.status).toBe(status);
+      expect((response.body as { code: string }).code).toBe(code);
+      updateDenials.push(response);
+    }
+    expect([
+      await state(first.id),
+      await state(second.id),
+      await state(emptyOrganization.id),
+    ]).toEqual(before);
+    const updatedById = await invoke({
+      operation: "server-update-role",
+      body: {
+        organizationId: first.id,
+        roleId: firstRole.roleData.id,
+        data: { roleName: "FirstRenamed", permission: { team: ["create"] }, id: "forged" },
+      },
+      headers: owner.headers,
+    });
+    expect(updatedById.status).toBe(200);
+    expect(updatedById.body).toMatchObject({
+      success: true,
+      roleData: {
+        id: firstRole.roleData.id,
+        organizationId: first.id,
+        role: "firstrenamed",
+        permission: { team: ["create"] },
+      },
+    });
+    const updatedRead = await invoke({
+      query: { organizationId: first.id, roleId: firstRole.roleData.id },
+      headers: owner.headers,
+    });
+    expect(updatedRead.status).toBe(200);
+    expect(updatedRead.body).toMatchObject({
+      id: firstRole.roleData.id,
+      role: "firstrenamed",
+      permission: { team: ["create"] },
+    });
+    const updatedByName = await invoke({
+      operation: "server-update-role",
+      body: { roleName: "secondreader", data: { roleName: "SecondRenamed" } },
+      headers: owner.headers,
+    });
+    expect(updatedByName.status).toBe(200);
+    expect(updatedByName.body).toMatchObject({
+      success: true,
+      roleData: {
+        id: secondRole.roleData.id,
+        organizationId: second.id,
+        role: "secondrenamed",
+        permission: { team: ["create"] },
+      },
+    });
+    const beforeDeletion = [
+      await state(first.id),
+      await state(second.id),
+      await state(emptyOrganization.id),
+    ];
     const deleteDenials = [];
     for (const [input, status, code] of [
       [{ body: { roleId: firstRole.roleData.id } }, 400, "VALIDATION_ERROR"],
@@ -270,7 +394,7 @@ compatScenario(
       await state(first.id),
       await state(second.id),
       await state(emptyOrganization.id),
-    ]).toEqual(before);
+    ]).toEqual(beforeDeletion);
     const deletedById = await invoke({
       operation: "server-delete-role",
       body: { organizationId: first.id, roleId: firstRole.roleData.id, id: "forged" },
@@ -286,14 +410,14 @@ compatScenario(
     expect((missing.body as { code: string }).code).toBe("ROLE_NOT_FOUND");
     const deletedByName = await invoke({
       operation: "server-delete-role",
-      body: { roleName: "secondreader" },
+      body: { roleName: "secondrenamed" },
       headers: owner.headers,
     });
     expect(deletedByName.status).toBe(200);
     expect(deletedByName.body).toEqual({ success: true });
     const repeated = await invoke({
       operation: "server-delete-role",
-      body: { roleName: "secondreader" },
+      body: { roleName: "secondrenamed" },
       headers: owner.headers,
     });
     expect(repeated.status).toBe(400);
@@ -327,6 +451,11 @@ compatScenario(
       lists,
       listDenials,
       after,
+      updateDenials,
+      updatedById,
+      updatedRead,
+      updatedByName,
+      beforeDeletion,
       deleteDenials,
       deletedById,
       missing,
