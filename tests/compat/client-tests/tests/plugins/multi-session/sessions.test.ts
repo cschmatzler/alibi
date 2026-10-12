@@ -17,11 +17,22 @@ type Profile = Extract<
   `multi-session${string}`
 >;
 
-function multiClient(ctx: Context, profile: Profile = "multi-session", actor = "browser") {
+function multiClient(
+  ctx: Context,
+  profile: Profile = "multi-session",
+  actor = "browser",
+  onResponse?: (response: Response) => void,
+) {
   return createAuthClient({
     baseURL: `${ctx.baseURL}${authProfilePath(profile)}`,
     plugins: [multiSessionClient()],
-    fetchOptions: { customFetchImpl: ctx.actor(actor, profile).fetch },
+    fetchOptions: {
+      customFetchImpl: async (input, init) => {
+        const response = await ctx.actor(actor, profile).fetch(input, init);
+        onResponse?.(response);
+        return response;
+      },
+    },
   });
 }
 
@@ -45,7 +56,34 @@ for (const profile of [
       ? "multiple browser sessions retain accounts switch active identity and revoke with fallback"
       : `${profile} retain accounts switch active identity and revoke with fallback`,
     async (ctx) => {
-      const client = multiClient(ctx, profile);
+      const path = `${ctx.baseURL}${authProfilePath(profile)}`;
+      const jar = new CookieJar();
+      const client = multiClient(ctx, profile, "browser", (response) => {
+        for (const raw of response.headers.getSetCookie()) {
+          jar.setCookieSync(raw, path);
+        }
+      });
+      async function serverList(
+        headers?: Record<string, string>,
+        originalRequest = false,
+        wireCookie?: string,
+      ) {
+        const response = await ctx
+          .actor("browser", profile)
+          .fetch(`${ctx.baseURL}/__test/server-api/multi-session-list`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              ...(wireCookie ? { cookie: wireCookie, origin: new URL(ctx.baseURL).origin } : {}),
+            },
+            body: JSON.stringify({ profile, originalRequest, ...(headers ? { headers } : {}) }),
+          });
+        return {
+          status: response.status,
+          body: (await response.json()) as any,
+          cookieCount: response.headers.getSetCookie().length,
+        };
+      }
       const alice = await client.signUp.email({
         email: ctx.uniqueEmail("multi-alice"),
         password: "password123",
@@ -64,14 +102,48 @@ for (const profile of [
         throw new Error("two user sessions expected");
       }
 
-      const list = await client.multiSession.listDeviceSessions();
-      expect(list.error).toBeNull();
-      expect(list.data).toHaveLength(2);
-      expect(list.data?.map((item) => item.user.id)).toEqual([
+      const beforeList = await Promise.all([
+        ctx.readUserState({ userId: alice.data.user.id }),
+        ctx.readUserState({ userId: bob.data.user.id }),
+      ]);
+      const missingHeaders = await serverList();
+      expect(missingHeaders.status).toBe(400);
+      expect(missingHeaders.body).toEqual({
+        code: "VALIDATION_ERROR",
+        message: "Headers is required",
+      });
+      const empty = [];
+      for (const headers of [{}, { cookie: "invalid_multi-proof=bad" }] as Record<
+        string,
+        string
+      >[]) {
+        const response = await serverList(headers);
+        expect(response.status).toBe(200);
+        expect(response.body).toEqual([]);
+        expect(response.cookieCount).toBe(0);
+        empty.push(response);
+      }
+      const list = await serverList({ cookie: jar.getCookieStringSync(path) });
+      expect(list.status).toBe(200);
+      expect(list.body).toHaveLength(2);
+      expect(list.cookieCount).toBe(0);
+      expect(list.body.map((item: any) => item.user.id)).toEqual([
         bob.data.user.id,
         alice.data.user.id,
       ]);
+      expect(
+        await Promise.all([
+          ctx.readUserState({ userId: alice.data.user.id }),
+          ctx.readUserState({ userId: bob.data.user.id }),
+        ]),
+      ).toEqual(beforeList);
 
+      const originalList = await serverList(undefined, true, jar.getCookieStringSync(path));
+      expect(originalList.status).toBe(400);
+      expect(originalList.body).toEqual(missingHeaders.body);
+      const overridden = await serverList({}, true, jar.getCookieStringSync(path));
+      expect(overridden.status).toBe(200);
+      expect(overridden.body).toEqual([]);
       const select = await client.multiSession.setActive({ sessionToken: alice.data.token });
       expect(select.error).toBeNull();
       expect(select.data?.session.token).toBe(alice.data.token);
@@ -135,6 +207,10 @@ for (const profile of [
       return {
         alice,
         bob,
+        originalList,
+        overridden,
+        missingHeaders,
+        empty,
         list,
         select,
         active,
