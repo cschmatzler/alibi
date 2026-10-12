@@ -637,7 +637,7 @@ pub(in crate::oauth) async fn handle_link_social(
         return AuthResponse::json(200, &response).map_err(AuthError::from);
     }
 
-    let flow = match link_social_core(&body, &session, config, ctx).await {
+    let flow = match link_social_core(&body, &session, config, Some(req), ctx).await {
         Err(error @ AuthError::Config(_)) => {
             tracing::error!(%error, "OAuth linking authorization configuration failed");
             return Ok(AuthResponse::new(500));

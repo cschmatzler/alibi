@@ -161,11 +161,18 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
           after: createAuthMiddleware(async (ctx) => {
             if (
               !ctx.request &&
-              ["/get-access-token", "/refresh-token", "/account-info", "/sign-in/social"].includes(
-                ctx.path,
-              )
+              [
+                "/get-access-token",
+                "/refresh-token",
+                "/account-info",
+                "/sign-in/social",
+                "/link-social",
+              ].includes(ctx.path)
             ) {
               ctx.context.responseHeaders ??= new Headers();
+              if (ctx.path === "/link-social" && ctx.context.session?.user) {
+                ctx.context.responseHeaders.set("x-linked-owner", ctx.context.session.user.email);
+              }
               ctx.context.responseHeaders.append(
                 "set-cookie",
                 "application_a=first; Path=/; HttpOnly",
@@ -504,6 +511,16 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
           accountId: body.accountId,
           ...(body.userId ? { userId: body.userId } : {}),
         };
+        if (body.operation === "link-social") {
+          return instance.api.linkSocialAccount({
+            body: body.logicalBody as Parameters<typeof instance.api.linkSocialAccount>[0]["body"],
+            ...(body.logicalHeaders ? { headers: new Headers(body.logicalHeaders) } : {}),
+            ...(body.physicalRequest
+              ? { request: new Request(new URL("/incoming-request", request.url)) }
+              : {}),
+            asResponse: true,
+          });
+        }
         if (body.operation === "sign-in-social") {
           return instance.api.signInSocial({
             body: body.logicalBody as Parameters<typeof instance.api.signInSocial>[0]["body"],

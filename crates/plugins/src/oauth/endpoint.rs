@@ -33,6 +33,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             Some("/sign-in/social"),
             HttpMethod::Post,
         ),
+        crate::endpoint::definition(
+            "linkSocialAccount",
+            "linkSocialAccount",
+            Some("/link-social"),
+            HttpMethod::Post,
+        ),
     ]
 }
 /// Public result of the `refreshToken` server operation.
@@ -62,7 +68,7 @@ fn selection_input(call: &EndpointCall) -> AuthResult<serde_json::Value> {
     )?)
 }
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
-    if call.operation_id() == "socialSignIn" {
+    if matches!(call.operation_id(), "socialSignIn" | "linkSocialAccount") {
         return validate_social(call);
     }
     _ = OAuthAccountSelection::from_value(&selection_input(call)?).map_err(|message| {
@@ -277,7 +283,17 @@ fn validate_social(call: &EndpointCall) -> AuthResult<EndpointInput> {
             required: false,
         },
     ];
-    let mut body = crate::endpoint::validate_fields(call.body(), "body", fields)?;
+    let linking = call.operation_id() == "linkSocialAccount";
+    let fields = fields
+        .iter()
+        .filter(|field| !linking || field.name != "newUserCallbackURL")
+        .map(|field| JsonField {
+            name: field.name,
+            kind: field.kind,
+            required: field.required,
+        })
+        .collect::<Vec<_>>();
+    let mut body = crate::endpoint::validate_fields(call.body(), "body", &fields)?;
     if let Some(scopes) = call.body().and_then(|body| body.get("scopes")) {
         let values = scopes.as_array().ok_or_else(|| {
             crate::endpoint::validation(format!(
@@ -319,11 +335,27 @@ fn validate_social(call: &EndpointCall) -> AuthResult<EndpointInput> {
                 required: false,
             },
         ];
-        _ = crate::endpoint::validate_fields(Some(token), "body.idToken", token_fields)?;
+        let token_fields = token_fields
+            .iter()
+            .filter(|field| !linking || field.name != "user")
+            .map(|field| JsonField {
+                name: field.name,
+                kind: field.kind,
+                required: field.required,
+            })
+            .collect::<Vec<_>>();
+        let parsed_token =
+            crate::endpoint::validate_fields(Some(token), "body.idToken", &token_fields)?;
+        if linking && let JsValue::Object(body) = &mut body {
+            _ = body.insert("idToken".into(), parsed_token);
+        }
     }
     let parsed: super::OAuthSocialSignInRequest =
         alibi_core::utils::json::from_value(body.clone())?;
     super::handlers::validate_authorization_params(parsed.additional_params.as_ref())?;
+    if linking && call.headers().is_none() {
+        return Err(crate::endpoint::validation("Headers is required"));
+    }
     Ok(EndpointInput {
         body: Some(body),
         query: call.query().cloned(),
@@ -331,6 +363,62 @@ fn validate_social(call: &EndpointCall) -> AuthResult<EndpointInput> {
 }
 
 impl OAuthPlugin {
+    /// Link a provider account to the verified session owner through installed server hooks.
+    pub fn link_social_account_endpoint(
+        body: &super::OAuthLinkSocialRequest,
+    ) -> AuthResult<ServerEndpoint<super::OAuthSocialSignInResponse>> {
+        ServerEndpoint::new("oauth", "linkSocialAccount").with_body(body)
+    }
+    pub(super) async fn call_link_endpoint(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<EndpointResponse> {
+        let body: super::OAuthLinkSocialRequest = call.body_as()?;
+        let (user, session) =
+            ctx.require_cached_session(call)
+                .await
+                .map_err(|_| AuthError::Upstream {
+                    status: 401,
+                    code: "UNAUTHORIZED",
+                    message: "Unauthorized",
+                })?;
+        call.record_authenticated_session(ctx.user_view(&user), session.clone());
+        if let Some(token) = &body.id_token {
+            let provider = self
+                .config
+                .providers
+                .get(&body.provider)
+                .ok_or_else(|| AuthError::not_found("Provider not found"))?;
+            return EndpointResponse::json(
+                &Box::pin(super::handlers::link_with_id_token_core(
+                    &body, token, provider, &session, ctx,
+                ))
+                .await?,
+            );
+        }
+        let flow = match Box::pin(super::handlers::link_social_core(
+            &body,
+            &session,
+            &self.config,
+            call.request(),
+            ctx,
+        ))
+        .await
+        {
+            Ok(flow) => flow,
+            Err(AuthError::Config(_)) => {
+                return Ok(EndpointResponse::error(AuthError::Api {
+                    status: 500,
+                    code: None,
+                    message: String::new(),
+                })
+                .without_error_body());
+            }
+            Err(error) => return Err(error),
+        };
+        flow_response(&flow, &ctx.config)
+    }
     /// Initiate social sign-in or admit an ID token through installed server hooks.
     pub fn sign_in_social_endpoint(
         body: &super::OAuthSocialSignInRequest,
@@ -392,23 +480,27 @@ impl OAuthPlugin {
             }
             Err(error) => return Err(error),
         };
-        let mut response = EndpointResponse::json(&flow.response)?;
-        if flow.response.redirect
-            && let Some(url) = &flow.response.url
-        {
-            response = response.with_header("location", url);
-        }
-        let cookie = match ctx.config.account.store_state_strategy {
-            alibi_core::OAuthStateStrategy::Automatic
-            | alibi_core::OAuthStateStrategy::Database => super::handlers::state_cookie_header(
-                &ctx.config,
-                ctx.config.current_secret(),
-                &flow.state,
-            )?,
-            alibi_core::OAuthStateStrategy::Cookie => {
-                super::handlers::cookie_state_header(&ctx.config, &flow.payload)?
-            }
-        };
-        Ok(response.with_header("set-cookie", cookie))
+        flow_response(&flow, &ctx.config)
     }
+}
+
+fn flow_response(
+    flow: &super::handlers::InitiatedOAuthFlow,
+    config: &alibi_core::AuthConfig,
+) -> AuthResult<EndpointResponse> {
+    let mut response = EndpointResponse::json(&flow.response)?;
+    if flow.response.redirect
+        && let Some(url) = &flow.response.url
+    {
+        response = response.with_header("location", url);
+    }
+    let cookie = match config.account.store_state_strategy {
+        alibi_core::OAuthStateStrategy::Automatic | alibi_core::OAuthStateStrategy::Database => {
+            super::handlers::state_cookie_header(config, config.current_secret(), &flow.state)?
+        }
+        alibi_core::OAuthStateStrategy::Cookie => {
+            super::handlers::cookie_state_header(config, &flow.payload)?
+        }
+    };
+    Ok(response.with_header("set-cookie", cookie))
 }

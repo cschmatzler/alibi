@@ -371,10 +371,11 @@ pub(in crate::oauth) async fn social_sign_in_core(
     .await
 }
 
-pub(in crate::oauth::handlers) async fn link_social_core(
+pub(in crate::oauth) async fn link_social_core(
     body: &LinkSocialRequest,
     session: &impl AuthSession,
     config: &OAuthConfig,
+    request: Option<&alibi_core::AuthRequest>,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<InitiatedOAuthFlow> {
     let provider = config
@@ -385,10 +386,13 @@ pub(in crate::oauth::handlers) async fn link_social_core(
     let callback_url = body
         .callback_url
         .clone()
+        .filter(|url| !url.is_empty())
         .unwrap_or_else(|| ctx.config.base_url.clone());
-    validate_redirect_target(&callback_url, ctx, "Invalid callbackURL")?;
-    if let Some(error_callback_url) = body.error_callback_url.as_deref() {
-        validate_redirect_target(error_callback_url, ctx, "Invalid errorCallbackURL")?;
+    if request.is_some() {
+        validate_redirect_target(&callback_url, ctx, "Invalid callbackURL")?;
+        if let Some(error_callback_url) = body.error_callback_url.as_deref() {
+            validate_redirect_target(error_callback_url, ctx, "Invalid errorCallbackURL")?;
+        }
     }
 
     let user = ctx
@@ -408,7 +412,7 @@ pub(in crate::oauth::handlers) async fn link_social_core(
             new_user_callback_url: None,
             error_callback_url: body.error_callback_url.clone(),
             scopes: body.scopes.as_deref(),
-            login_hint: None,
+            login_hint: body.login_hint.as_deref(),
             additional_params: body.additional_params.as_ref(),
             authorization_params: body.authorization_params.as_ref(),
             request_sign_up: body.request_sign_up,

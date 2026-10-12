@@ -605,6 +605,7 @@ pub(crate) async fn router(
                     Some("get-access-token") => "getAccessToken",
                     Some("refresh-token") => "refreshToken",
                     Some("sign-in-social") => "signInSocial",
+                    Some("link-social") => "linkSocialAccount",
                     _ => "accountInfo",
                 };
                 let endpoint = alibi::endpoint::ServerEndpoint::<Value>::new("oauth", operation);
@@ -732,7 +733,33 @@ async fn user(State(f): State<Fixture>, request: axum::extract::Request) -> Json
 
 struct AccessServerHook;
 #[async_trait::async_trait]
-impl<S:alibi::AuthSchema> alibi::endpoint::EndpointHook<S> for AccessServerHook {
- fn matches_after(&self,call:&alibi::endpoint::EndpointCall,_:&alibi::AuthContext<S>,_:&alibi::endpoint::EndpointResponse)->AuthResult<bool>{Ok(matches!(call.operation_id(), "getAccessToken" | "refreshToken" | "accountInfo" | "socialSignIn")&&call.request().is_none())}
- async fn after(&self,_:&alibi::endpoint::EndpointCall,_:&alibi::AuthContext<S>,response:alibi::endpoint::EndpointResponse)->AuthResult<alibi::endpoint::EndpointResponse>{Ok(response.with_header("set-cookie","application_a=first; Path=/; HttpOnly").with_header("set-cookie","application_b=second; Path=/; HttpOnly"))}
+impl<S: alibi::AuthSchema> alibi::endpoint::EndpointHook<S> for AccessServerHook {
+    fn matches_after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+        _: &alibi::endpoint::EndpointResponse,
+    ) -> AuthResult<bool> {
+        Ok(matches!(
+            call.operation_id(),
+            "getAccessToken" | "refreshToken" | "accountInfo" | "socialSignIn" | "linkSocialAccount"
+        ) && call.request().is_none())
+    }
+    async fn after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+        mut response: alibi::endpoint::EndpointResponse,
+    ) -> AuthResult<alibi::endpoint::EndpointResponse> {
+        if call.operation_id() == "linkSocialAccount" {
+            if let Some((user, _)) = call.session() {
+                if let Some(email) = user.email {
+                    response = response.with_header("x-linked-owner", email);
+                }
+            }
+        }
+        Ok(response
+            .with_header("set-cookie", "application_a=first; Path=/; HttpOnly")
+            .with_header("set-cookie", "application_b=second; Path=/; HttpOnly"))
+    }
 }
