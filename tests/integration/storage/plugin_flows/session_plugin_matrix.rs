@@ -133,6 +133,7 @@ async fn multi_session_limits_and_revocation<B: Backend>(db: Db) -> TestResult {
     let mut trace = Trace::default();
     let mut jar = String::new();
     let mut tokens = Vec::new();
+    let mut last_cookie = String::new();
     for name in ["first", "second", "third"] {
         let response = call(
             &auth,
@@ -148,6 +149,7 @@ async fn multi_session_limits_and_revocation<B: Backend>(db: Db) -> TestResult {
             200,
         )
         .await;
+        last_cookie = cookies(&response);
         tokens.push(body(&response)["token"].as_str().unwrap().to_owned());
         jar = merge(&jar, &cookies(&response));
         trace.value(
@@ -324,28 +326,75 @@ async fn multi_session_limits_and_revocation<B: Backend>(db: Db) -> TestResult {
     trace.response("select with remember-me proof", &selected);
 
     let active = merge(&jar, &cookies(&selected));
-    let revoked = call(
-        &auth,
-        request(
-            "/multi-session/revoke",
-            Some(json!({"sessionToken": tokens[0]})),
-            &active,
+    let endpoint = |body: &Value| {
+        ServerEndpoint::<Value>::new("multi-session", "revokeDeviceSession").with_body(body)
+    };
+    let before_revoke = db.tables(&["users", "accounts", "sessions"]).await?;
+    for (input, headers, status, code) in [
+        (
+            json!({"sessionToken":tokens[0]}),
+            None,
+            400,
+            "VALIDATION_ERROR",
         ),
-        200,
-    )
-    .await;
+        (
+            json!({"sessionToken":42}),
+            Some(active.clone()),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (
+            json!({"sessionToken":tokens[0]}),
+            Some(String::new()),
+            401,
+            "UNAUTHORIZED",
+        ),
+        (
+            json!({"sessionToken":tokens[0]}),
+            Some(last_cookie.clone()),
+            401,
+            "INVALID_SESSION_TOKEN",
+        ),
+    ] {
+        let error = Box::pin(auth.dispatch_endpoint(
+            endpoint(&input)?,
+            EndpointOptions {
+                headers: headers.map(|cookie| [("cookie".into(), cookie)].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(error.error.status_code(), status);
+        assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
+    }
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions"]).await?,
+        before_revoke
+    );
+    let revoked = Box::pin(auth.dispatch_endpoint(
+        endpoint(&json!({"sessionToken":tokens[0],"userId":"foreign-selector"}))?,
+        EndpointOptions {
+            headers: Some([("cookie".into(), active.clone())].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await?;
+    assert_eq!(revoked.decode()?, json!({"status":true}));
+    let revoked = revoked.into_response()?;
     trace.response("revoke the active device", &revoked);
     let rest = merge(&active, &cookies(&revoked));
-    let revoked_second = call(
-        &auth,
-        request(
-            "/multi-session/revoke",
-            Some(json!({"sessionToken": tokens[1]})),
-            &rest,
-        ),
-        200,
-    )
-    .await;
+    Box::pin(authenticated(&auth, &rest, "device-second@example.com")).await;
+    let revoked_second = Box::pin(auth.dispatch_endpoint(
+        MultiSessionPlugin::revoke_device_session_endpoint(tokens[1].clone()),
+        EndpointOptions {
+            headers: Some([("cookie".into(), rest.clone())].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await?;
+    assert!(revoked_second.decode()?.status);
+    let revoked_second = revoked_second.into_response()?;
     trace.response("revoke the last active device", &revoked_second);
     let none_left = merge(&rest, &cookies(&revoked_second));
     trace.response(

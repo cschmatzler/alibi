@@ -12,8 +12,20 @@ pub struct DeviceSession {
     pub session: Box<alibi_core::wire::SessionView>,
 }
 
+/// A selected device session was revoked and its browser proof retired.
+#[derive(Debug, Deserialize)]
+pub struct DeviceSessionRevoked {
+    pub status: bool,
+}
+
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
+        definition(
+            "revokeDeviceSession",
+            "revokeDeviceSession",
+            Some("/multi-session/revoke"),
+            HttpMethod::Post,
+        ),
         definition(
             "listDeviceSessions",
             "listDeviceSessions",
@@ -30,7 +42,10 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
-    let body = if call.operation_id() == "setActiveSession" {
+    let body = if matches!(
+        call.operation_id(),
+        "setActiveSession" | "revokeDeviceSession"
+    ) {
         Some(validate_fields(
             call.body(),
             "body",
@@ -49,6 +64,23 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
 }
 
 impl MultiSessionPlugin {
+    /// Revoke a device proof under the caller's authenticated session.
+    #[must_use]
+    pub fn revoke_device_session_endpoint(
+        session_token: impl Into<String>,
+    ) -> ServerEndpoint<DeviceSessionRevoked> {
+        ServerEndpoint::new("multi-session", "revokeDeviceSession").with_body_value(
+            alibi_core::utils::json::JsValue::Object(
+                [(
+                    "sessionToken".into(),
+                    alibi_core::utils::json::JsValue::String(session_token.into()),
+                )]
+                .into_iter()
+                .collect(),
+            ),
+        )
+    }
+
     /// Select an account using its genuine signed device proof.
     #[must_use]
     pub fn set_active_session_endpoint(

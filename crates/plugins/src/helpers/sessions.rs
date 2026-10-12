@@ -5,11 +5,11 @@ use alibi_core::entity::AuthUser;
 use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, UpdateUser};
 use chrono::Utc;
 
-/// Source ordinary HTTP middleware admits the authenticated cache snapshot.
+/// Source ordinary middleware admits the authenticated cache snapshot.
 /// Only the nested read is caught; subsequent storage and callback errors keep
 /// their own endpoint contract.
 pub(crate) async fn ordinary_session<S: alibi_core::AuthSchema>(
-    request: &AuthRequest,
+    request: &impl alibi_core::session::SessionRequest,
     ctx: &AuthContext<S>,
 ) -> AuthResult<(alibi_core::AuthenticatedUser<S>, alibi_core::SessionView)> {
     ctx.require_cached_session(request)
