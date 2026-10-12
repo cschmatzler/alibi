@@ -1,0 +1,39 @@
+//! Shared application hook observing genuine logical admin principals.
+use super::*;
+use alibi::endpoint::{EndpointCall, EndpointHook, EndpointResponse};
+use alibi::{AuthContext, AuthResult};
+
+pub(super) struct AdminObserver;
+#[async_trait::async_trait]
+impl<S: AuthSchema> EndpointHook<S> for AdminObserver {
+    fn matches_after(
+        &self,
+        call: &EndpointCall,
+        _: &AuthContext<S>,
+        _: &EndpointResponse,
+    ) -> AuthResult<bool> {
+        Ok(matches!(call.operation_id(), "getUser" | "setUserRole"))
+    }
+    async fn after(
+        &self,
+        call: &EndpointCall,
+        _: &AuthContext<S>,
+        mut response: EndpointResponse,
+    ) -> AuthResult<EndpointResponse> {
+        assert!(call.request().is_none());
+        assert_eq!(
+            call.path(),
+            Some(if call.operation_id() == "getUser" {
+                "/admin/get-user"
+            } else {
+                "/admin/set-role"
+            })
+        );
+        if let Some((user, _)) = call.session() {
+            response = response.with_header("x-admin-principal", user.id);
+        }
+        Ok(response
+            .with_header("set-cookie", "application_a=first; Path=/; HttpOnly")
+            .with_header("set-cookie", "application_b=second; Path=/; HttpOnly"))
+    }
+}

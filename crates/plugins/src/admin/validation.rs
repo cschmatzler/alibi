@@ -181,8 +181,13 @@ fn valid_permissions(value: Option<&JsValue>) -> bool {
 }
 
 pub(super) fn body<T: DeserializeOwned + 'static>(req: &AuthRequest) -> Result<T, AuthResponse> {
-    let value = parse(req)?;
-    let route = req.path.rsplit('/').next().unwrap_or_default();
+    body_value(req.path.rsplit('/').next().unwrap_or_default(), parse(req)?)
+}
+
+pub(super) fn body_value<T: DeserializeOwned + 'static>(
+    route: &str,
+    value: Option<JsValue>,
+) -> Result<T, AuthResponse> {
     let Some(JsValue::Object(mut input)) = value else {
         let mut issues = vec![expected("body", "object", value.as_ref())];
         if route == "has-permission" {

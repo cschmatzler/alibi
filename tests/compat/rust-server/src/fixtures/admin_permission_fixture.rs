@@ -194,7 +194,12 @@ pub(crate) async fn router(
                 let auth = &profiles[input["profile"].as_str().unwrap_or("admin-standard")];
                 let mut endpoint =
                     alibi::endpoint::ServerEndpoint::<alibi::utils::json::JsValue>::new(
-                        "admin", "getUser",
+                        "admin",
+                        if input["operation"] == "setRole" {
+                            "setRole"
+                        } else {
+                            "getUser"
+                        },
                     );
                 if let Some(query) = input.get("query") {
                     endpoint = endpoint.with_query(query).unwrap();
@@ -344,7 +349,7 @@ impl<S: alibi::AuthSchema> alibi::endpoint::EndpointHook<S> for AdminServerObser
         _: &alibi::AuthContext<S>,
         _: &alibi::endpoint::EndpointResponse,
     ) -> AuthResult<bool> {
-        Ok(call.operation_id() == "getUser" && call.request().is_none())
+        Ok(matches!(call.operation_id(), "getUser" | "setUserRole") && call.request().is_none())
     }
     async fn after(
         &self,

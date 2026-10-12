@@ -3,10 +3,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Role input accepted by TypeScript admin routes.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum RoleInput {
+pub enum RoleInput {
+    /// One literal role name.
     One(String),
+    /// Literal names stored in order as a comma-separated role.
     Many(Vec<String>),
 }
 
@@ -26,10 +28,13 @@ impl RoleInput {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub(crate) struct SetRoleRequest {
+/// Input for the admin role assignment server operation.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SetRoleRequest {
     #[serde(rename = "userId")]
+    /// The target user identifier.
     pub user_id: String,
+    /// Literal role names to assign.
     pub role: RoleInput,
 }
 
@@ -206,8 +211,10 @@ impl AdminUserView {
     }
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct UserResponse<U> {
+/// Public admin operation result containing a safe user projection.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UserResponse<U> {
+    /// The requested user after the operation.
     pub user: U,
 }
 

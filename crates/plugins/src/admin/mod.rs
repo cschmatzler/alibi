@@ -33,7 +33,12 @@ use handlers::{
     unban_user_core, update_user_core,
 };
 use std::collections::HashMap;
-pub use types::AdminUserView as AdminUserOutput;
+pub use types::{
+    AdminUserView as AdminUserOutput, RoleInput as AdminRoleInput,
+    SetRoleRequest as AdminSetRoleRequest,
+};
+/// Safe user result returned by admin mutation operations.
+pub type AdminUserResponse = types::UserResponse<AdminUserOutput>;
 use types::{
     AdminUpdateUserRequest, BanUserRequest, CreateUserRequest, HasPermissionRequest,
     ListUsersQueryParams, RevokeSessionRequest, SetRoleRequest, SetUserPasswordRequest,
@@ -138,7 +143,7 @@ alibi_core::impl_auth_plugin! {
 
         fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> { endpoint::definitions() }
         fn validate_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, _: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointInput> { endpoint::validate(call) }
-        async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> { self.call_get_user(call, ctx).await }
+        async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> { self.call_admin_endpoint(call, ctx).await }
 
         fn session_fields(&self) -> alibi_core::field_policy::FieldConfigs {
             std::iter::once(("impersonatedBy".into(), alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"})).read_only())).collect()

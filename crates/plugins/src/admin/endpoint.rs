@@ -1,5 +1,8 @@
 //! Installed admin server operations share authorization and stored output with HTTP.
-use super::{AdminPlugin, MESSAGE_GET_USER, get_user_core, types::GetUserQuery};
+use super::{
+    AdminPlugin, MESSAGE_CHANGE_ROLE, MESSAGE_GET_USER, get_user_core, set_role_core,
+    types::{GetUserQuery, SetRoleRequest},
+};
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
@@ -7,15 +10,34 @@ use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod};
 
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
-    vec![crate::endpoint::definition(
-        "getUser",
-        "getUser",
-        Some("/admin/get-user"),
-        HttpMethod::Get,
-    )]
+    vec![
+        crate::endpoint::definition(
+            "getUser",
+            "getUser",
+            Some("/admin/get-user"),
+            HttpMethod::Get,
+        ),
+        crate::endpoint::definition(
+            "setRole",
+            "setUserRole",
+            Some("/admin/set-role"),
+            HttpMethod::Post,
+        ),
+    ]
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "setUserRole" {
+        let body: SetRoleRequest = super::validation::body_value("set-role", call.body().cloned())
+            .map_err(crate::endpoint::error_response)?;
+        if call.headers().is_none() {
+            return Err(crate::endpoint::validation("Headers is required"));
+        }
+        return Ok(EndpointInput {
+            body: Some(JsValue::from(serde_json::to_value(body)?)),
+            query: call.query().cloned(),
+        });
+    }
     let query = crate::endpoint::validate_fields(
         call.query(),
         "query",
@@ -38,7 +60,14 @@ impl AdminPlugin {
         ))
     }
 
-    pub(super) async fn call_get_user(
+    /// Assign literal roles through installed server policy and hooks.
+    pub fn set_role_endpoint(
+        body: &super::AdminSetRoleRequest,
+    ) -> AuthResult<ServerEndpoint<super::AdminUserResponse>> {
+        ServerEndpoint::new("admin", "setRole").with_body(body)
+    }
+
+    pub(super) async fn call_admin_endpoint(
         &self,
         call: &EndpointCall,
         ctx: &AuthContext<impl AuthSchema>,
@@ -55,6 +84,11 @@ impl AdminPlugin {
         };
         let principal = ctx.user_view(&user);
         call.record_authenticated_session(principal.clone(), session);
+        if call.operation_id() == "setUserRole" {
+            self.authorize(&principal, "user", "set-role", MESSAGE_CHANGE_ROLE)?;
+            let body: SetRoleRequest = call.body_as()?;
+            return EndpointResponse::json(&set_role_core(&body, &self.config, ctx).await?);
+        }
         self.authorize(&principal, "user", "get", MESSAGE_GET_USER)?;
         let query: GetUserQuery = call.query_as()?;
         EndpointResponse::json(&get_user_core(&query, ctx).await?)
