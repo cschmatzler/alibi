@@ -2,6 +2,8 @@
 //! signature verification, including contract-wallet RPC providers.
 
 mod config;
+mod endpoint;
+pub use endpoint::SiweNonceResponse;
 
 mod crypto;
 
@@ -46,6 +48,10 @@ impl SiwePlugin {
         if let Err(response) = validation::nonce_body(request) {
             return Ok(response);
         }
+        self.issue_nonce(ctx).await
+    }
+
+    async fn issue_nonce<S: AuthSchema>(&self, ctx: &AuthContext<S>) -> AuthResult<AuthResponse> {
         let nonce = match self.config.nonce_provider.get_nonce().await {
             Ok(nonce) => nonce,
             Err(SiweCallbackError::Api(response)) => return Ok(response),
@@ -417,6 +423,9 @@ alibi_core::impl_auth_plugin! {
 
  extra {
     route_openapi_metadata!(S);
+    fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> { endpoint::definitions() }
+    fn validate_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointInput> { endpoint::validate(call) }
+    async fn on_endpoint(&self, _call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> { endpoint::execute(self, ctx).await }
  }
 }
 

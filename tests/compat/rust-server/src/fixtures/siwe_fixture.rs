@@ -19,6 +19,7 @@ use axum::{
     Json, Router,
     extract::State,
     http::StatusCode,
+    response::IntoResponse,
     routing::{get, post},
 };
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -398,6 +399,42 @@ pub(crate) async fn router(
         .ok_or_else(|| alibi::AuthError::internal("SIWE fixture missing primary profile"))?;
     Ok(router.merge(
         Router::new()
+            .route(
+                "/__test/server-api/siwe-nonce",
+                post(
+                    move |State(control): State<ControlState>,
+                          Json(input): Json<alibi::utils::json::JsValue>| async move {
+                        let operation = match input
+                            .get("operation")
+                            .and_then(alibi::utils::json::JsValue::as_str)
+                        {
+                            Some("getSiweNonce") => "getSiweNonce",
+                            Some("getNonce") => "getNonce",
+                            _ => return StatusCode::BAD_REQUEST.into_response(),
+                        };
+                        let mut endpoint = alibi::endpoint::ServerEndpoint::<
+                            alibi::utils::json::JsValue,
+                        >::new("siwe", operation);
+                        if let Some(body) = input.get("body") {
+                            endpoint = endpoint.with_body_value(body.clone());
+                        }
+                        match control
+                            .auth
+                            .dispatch_endpoint(endpoint, Default::default())
+                            .await
+                        {
+                            Ok(output) => output.into_response().unwrap().into_response(),
+                            Err(error) => {
+                                let mut response = error.error.to_auth_response();
+                                if let Some(body) = error.body {
+                                    response.body = serde_json::to_vec(&*body).unwrap();
+                                }
+                                response.into_response()
+                            }
+                        }
+                    },
+                ),
+            )
             .route("/__test/siwe-state", get(persisted))
             .route("/__test/siwe-control", post(configure))
             .route("/__test/siwe-rpc", post(rpc))
