@@ -1,6 +1,7 @@
 pub mod access;
 
 mod callbacks;
+mod endpoint;
 
 pub(super) mod handlers;
 
@@ -32,6 +33,7 @@ use handlers::{
     unban_user_core, update_user_core,
 };
 use std::collections::HashMap;
+pub use types::AdminUserView as AdminUserOutput;
 use types::{
     AdminUpdateUserRequest, BanUserRequest, CreateUserRequest, HasPermissionRequest,
     ListUsersQueryParams, RevokeSessionRequest, SetRoleRequest, SetUserPasswordRequest,
@@ -133,6 +135,10 @@ alibi_core::impl_auth_plugin! {
     }
     extra {
     route_openapi_metadata!(S);
+
+        fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> { endpoint::definitions() }
+        fn validate_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, _: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointInput> { endpoint::validate(call) }
+        async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> { self.call_get_user(call, ctx).await }
 
         fn session_fields(&self) -> alibi_core::field_policy::FieldConfigs {
             std::iter::once(("impersonatedBy".into(), alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"})).read_only())).collect()

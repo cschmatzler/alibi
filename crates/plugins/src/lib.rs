@@ -251,7 +251,7 @@ pub(crate) mod test_helpers {
 pub use account_management::AccountManagementPlugin;
 pub use admin::{
     AdminBannedUserMessage, AdminBannedUserMessageHandler, AdminConfig, AdminPlugin,
-    RolePermissions,
+    AdminUserOutput, RolePermissions,
 };
 pub use alibi_core::PasswordHasher;
 pub use anonymous::{

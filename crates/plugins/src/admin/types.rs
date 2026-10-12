@@ -162,11 +162,18 @@ impl<T: alibi_core::entity::AuthUser> From<&T> for PhysicalAdminUserView {
     }
 }
 
-#[derive(Debug, Serialize)]
+/// Public admin user projection, including returned application fields.
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(transparent)]
-pub(crate) struct AdminUserView(serde_json::Map<String, serde_json::Value>);
+pub struct AdminUserView(serde_json::Map<String, serde_json::Value>);
 
 impl AdminUserView {
+    /// Access the safe public user fields.
+    #[must_use]
+    pub const fn values(&self) -> &serde_json::Map<String, serde_json::Value> {
+        &self.0
+    }
+
     pub(crate) fn from_output<S: alibi_core::AuthSchema>(
         ctx: &alibi_core::AuthContext<S>,
         user: &alibi_core::AdapterRecord<S::User>,
