@@ -2,6 +2,7 @@ pub mod access;
 
 mod callbacks;
 mod endpoint;
+mod listing;
 
 pub(super) mod handlers;
 
@@ -31,13 +32,15 @@ use handlers::{
 };
 use std::collections::HashMap;
 pub use types::{
-    AdminUpdateUserRequest, AdminUserView as AdminUserOutput,
+    AdminListUsersQuery, AdminUpdateUserRequest, AdminUserView as AdminUserOutput,
     CreateUserRequest as AdminCreateUserRequest, HasPermissionRequest as AdminPermissionRequest,
     PermissionResponse as AdminPermissionResponse, RoleInput as AdminRoleInput,
     SetRoleRequest as AdminSetRoleRequest,
 };
 /// Safe user result returned by admin mutation operations.
 pub type AdminUserResponse = types::UserResponse<AdminUserOutput>;
+/// Safe user page returned by the listUsers server operation.
+pub type AdminListUsersResponse = types::ListUsersResponse<AdminUserOutput>;
 use types::{
     BanUserRequest, CreateUserRequest, HasPermissionRequest, ListUsersQueryParams,
     RevokeSessionRequest, SetRoleRequest, SetUserPasswordRequest, UserIdRequest,
@@ -335,7 +338,21 @@ impl AdminPlugin {
         };
         self.authorize(&user, "user", "list", MESSAGE_LIST_USERS)?;
         let query = ListUsersQueryParams {
-            limit: req.query.get("limit").and_then(|value| value.parse().ok()),
+            source_limit: req
+                .query
+                .get("limit")
+                .and_then(|value| alibi_core::utils::javascript::string_to_number(value))
+                .filter(|value| !value.is_nan() && *value != 0.0),
+            source_offset: req
+                .query
+                .get("offset")
+                .and_then(|value| alibi_core::utils::javascript::string_to_number(value))
+                .filter(|value| !value.is_nan() && *value != 0.0),
+            limit: req
+                .query
+                .get("limit")
+                .and_then(|value| value.parse().ok())
+                .filter(|value| *value > 0),
             offset: req.query.get("offset").and_then(|value| value.parse().ok()),
             search_field: req.query.get("searchField").cloned(),
             search_value: req.query.get("searchValue").cloned(),
