@@ -55,6 +55,7 @@ mod server_account_unlink;
 mod server_admin_ban_user;
 mod server_admin_create_user;
 mod server_admin_get_user;
+mod server_admin_impersonate_user;
 mod server_admin_list_user_sessions;
 mod server_admin_list_users;
 mod server_admin_permission;

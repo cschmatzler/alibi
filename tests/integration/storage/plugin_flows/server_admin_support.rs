@@ -27,6 +27,7 @@ impl<S: AuthSchema> EndpointHook<S> for AdminObserver {
                 | "revokeUserSessions"
                 | "removeUser"
                 | "setUserPassword"
+                | "impersonateUser"
         ))
     }
     async fn after(
@@ -40,6 +41,8 @@ impl<S: AuthSchema> EndpointHook<S> for AdminObserver {
             call.path(),
             Some(if call.operation_id() == "getUser" {
                 "/admin/get-user"
+            } else if call.operation_id() == "impersonateUser" {
+                "/admin/impersonate-user"
             } else if call.operation_id() == "setUserPassword" {
                 "/admin/set-user-password"
             } else if call.operation_id() == "removeUser" {
