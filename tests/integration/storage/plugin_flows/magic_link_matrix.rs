@@ -472,6 +472,24 @@ async fn magic_link_returning_verified_owner_retains_credentials_oauth_and_brows
         Some("VALIDATION_ERROR")
     );
     assert_eq!(missing.error.error_payload().2, "Headers is required");
+    let mut original_issue = AuthRequest::new(HttpMethod::Post, "/sign-in/magic-link");
+    _ = original_issue
+        .headers
+        .insert("origin".into(), ORIGIN.into());
+    let request_only_issue = Box::pin(auth.dispatch_endpoint(
+        endpoint(&json!({"email":"VERIFIED@EXAMPLE.TEST"}))?,
+        EndpointOptions {
+            request: Some(original_issue),
+            ..Default::default()
+        },
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(request_only_issue.error.status_code(), 400);
+    assert_eq!(
+        request_only_issue.error.error_payload().2,
+        "Headers is required"
+    );
     let invalid = Box::pin(auth.dispatch_endpoint(
         endpoint(&json!({"email":"VERIFIED@EXAMPLE.TEST","metadata":[]}))?,
         EndpointOptions {
@@ -550,6 +568,25 @@ async fn magic_link_returning_verified_owner_retains_credentials_oauth_and_brows
     .unwrap_err();
     assert_eq!(no_headers.error.status_code(), 400);
     assert_eq!(no_headers.error.error_payload().2, "Headers is required");
+    let mut original_verify = AuthRequest::new(HttpMethod::Get, "/magic-link/verify");
+    _ = original_verify
+        .headers
+        .insert("origin".into(), ORIGIN.into());
+    let request_only_verify = Box::pin(auth.dispatch_endpoint(
+        verify(&json!({"token":delivery.token}))?,
+        EndpointOptions {
+            request: Some(original_verify),
+            ..Default::default()
+        },
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(request_only_verify.error.status_code(), 400);
+    assert_eq!(
+        request_only_verify.error.error_payload().2,
+        "Headers is required"
+    );
+    assert_eq!(db.table("verifications").await?, proofs);
     let invalid_query = Box::pin(auth.dispatch_endpoint(
         verify(&json!({"token":42}))?,
         EndpointOptions {

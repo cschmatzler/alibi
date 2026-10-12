@@ -1281,13 +1281,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }),
         )
-        .route("/__test/server-api/magic-link-verify", post(move |Json(input): Json<serde_json::Value>| {
+        .route("/__test/server-api/magic-link-verify", post(move |request: axum::extract::Request| {
             let auth = auth_for_magic_verify.clone();
             async move {
+                let (parts,body)=request.into_parts();
+                let bytes=axum::body::to_bytes(body,1024*1024).await.unwrap();
+                let input:serde_json::Value=serde_json::from_slice(&bytes).unwrap();
+                let original = if input["originalRequest"].as_bool()==Some(true) {
+                    let mut request=alibi::AuthRequest::new(alibi::HttpMethod::Post,parts.uri.path())
+                        .with_url(url::Url::parse(&format!("http://{}{}",parts.headers.get("host").unwrap().to_str().unwrap(),parts.uri)).unwrap());
+                    request.headers=parts.headers.iter().filter_map(|(name,value)|value.to_str().ok().map(|value|(name.to_string(),value.to_owned()))).collect();
+                    request.body=Some(bytes.to_vec());
+                    Some(request)
+                } else {None};
                 let mut endpoint = alibi::endpoint::ServerEndpoint::<alibi::utils::json::JsValue>::new("magic-link", "magicLinkVerify");
                 if let Some(query) = input.get("query") { endpoint = endpoint.with_query(query).unwrap(); }
                 match auth.dispatch_endpoint(endpoint, alibi::endpoint::EndpointOptions {
                     headers: input.get("headers").map(|headers| serde_json::from_value(headers.clone()).unwrap()),
+                    request:original,
                     ..Default::default()
                 }).await {
                     Ok(output) => output.into_response().unwrap().into_response(),
@@ -1300,13 +1311,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }))
-        .route("/__test/server-api/magic-link-sign-in", post(move |Json(input): Json<serde_json::Value>| {
+        .route("/__test/server-api/magic-link-sign-in", post(move |request: axum::extract::Request| {
             let auth = auth_for_magic_sign_in.clone();
             async move {
+                let (parts,body)=request.into_parts();
+                let bytes=axum::body::to_bytes(body,1024*1024).await.unwrap();
+                let input:serde_json::Value=serde_json::from_slice(&bytes).unwrap();
+                let original = if input["originalRequest"].as_bool()==Some(true) {
+                    let mut request=alibi::AuthRequest::new(alibi::HttpMethod::Post,parts.uri.path())
+                        .with_url(url::Url::parse(&format!("http://{}{}",parts.headers.get("host").unwrap().to_str().unwrap(),parts.uri)).unwrap());
+                    request.headers=parts.headers.iter().filter_map(|(name,value)|value.to_str().ok().map(|value|(name.to_string(),value.to_owned()))).collect();
+                    request.body=Some(bytes.to_vec());
+                    Some(request)
+                } else {None};
                 let mut endpoint = alibi::endpoint::ServerEndpoint::<alibi::utils::json::JsValue>::new("magic-link", "signInMagicLink");
                 if let Some(body) = input.get("body") { endpoint = endpoint.with_body(body).unwrap(); }
                 match auth.dispatch_endpoint(endpoint, alibi::endpoint::EndpointOptions {
                     headers: input.get("headers").map(|headers| serde_json::from_value(headers.clone()).unwrap()),
+                    request:original,
                     ..Default::default()
                 }).await {
                     Ok(output) => output.into_response().unwrap().into_response(),

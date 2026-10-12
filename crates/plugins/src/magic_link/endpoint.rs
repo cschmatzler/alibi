@@ -73,7 +73,7 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
             query: call.query().cloned(),
         }
     };
-    if call.headers().is_none() && call.request().is_none() {
+    if call.headers().is_none() {
         return Err(validation("Headers is required"));
     }
     Ok(input)
