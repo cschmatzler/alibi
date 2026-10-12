@@ -13,6 +13,10 @@ pub trait SessionRequest: Send + Sync {
     fn endpoint_call(&self) -> Option<&crate::endpoint::EndpointCall> {
         None
     }
+    /// The original physical request, when the caller supplied one.
+    fn physical_request(&self) -> Option<&AuthRequest> {
+        None
+    }
     fn session_headers(&self) -> &HashMap<String, String>;
     fn session_method(&self) -> &HttpMethod;
     fn session_query_truthy(&self, name: &str) -> bool;
@@ -27,6 +31,9 @@ pub trait SessionRequest: Send + Sync {
 }
 
 impl SessionRequest for AuthRequest {
+    fn physical_request(&self) -> Option<&AuthRequest> {
+        Some(self)
+    }
     fn session_headers(&self) -> &HashMap<String, String> {
         &self.headers
     }
@@ -54,6 +61,9 @@ impl SessionRequest for AuthRequest {
 }
 
 impl SessionRequest for crate::endpoint::EndpointCall {
+    fn physical_request(&self) -> Option<&AuthRequest> {
+        self.request()
+    }
     fn endpoint_call(&self) -> Option<&crate::endpoint::EndpointCall> {
         Some(self)
     }

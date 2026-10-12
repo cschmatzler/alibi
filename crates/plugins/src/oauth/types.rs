@@ -197,3 +197,22 @@ impl LinkSocialRequest {
         }
     }
 }
+
+/// Validated input shared by the OAuth callback's logical query and POST body.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OAuthCallbackInput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iss: Option<String>,
+}

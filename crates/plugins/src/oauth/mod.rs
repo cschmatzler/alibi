@@ -58,7 +58,7 @@ pub(crate) use state::{
     CapturedOAuthServerContext, OAuthServerContext, RecoveredOAuthServerContext,
 };
 pub use types::{
-    LinkSocialRequest as OAuthLinkSocialRequest, OAuthIdTokenRequest,
+    LinkSocialRequest as OAuthLinkSocialRequest, OAuthCallbackInput, OAuthIdTokenRequest,
     SocialSignInRequest as OAuthSocialSignInRequest,
     SocialSignInResponse as OAuthSocialSignInResponse,
 };
@@ -116,6 +116,9 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
         call: &alibi_core::endpoint::EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        if call.operation_id() == "handleOAuthCallback" {
+            return self.call_callback_endpoint(call, ctx).await;
+        }
         if call.operation_id() == "linkSocialAccount" {
             return self.call_link_endpoint(call, ctx).await;
         }
