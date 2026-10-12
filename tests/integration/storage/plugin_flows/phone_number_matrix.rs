@@ -2490,7 +2490,7 @@ async fn server_phone_verification_preserves_consumption_and_authority<B: Backen
         format!("{code}:1")
     );
     let input: alibi::plugins::phone_number::PhoneVerificationInput = serde_json::from_value(
-        json!({"phoneNumber":phone,"code":code,"disableSession":true,"username":"ignored","userId":foreign_id}),
+        json!({"phoneNumber":phone,"code":code,"disableSession":true,"username":42,"displayUsername":{"ignored":true},"userId":foreign_id}),
     )?;
     let verified = Box::pin(auth.dispatch_endpoint(
         PhoneNumberPlugin::verify_endpoint(&input)?,
@@ -2502,6 +2502,10 @@ async fn server_phone_verification_preserves_consumption_and_authority<B: Backen
     assert!(value.token.is_none());
     assert_eq!(value.user.id, owner_id);
     assert_eq!(value.user.phone_number_verified, Some(true));
+    assert_eq!(value.user.name.as_deref(), Some("Phone Owner"));
+    assert_eq!(value.user.email.as_deref(), Some(email));
+    assert!(value.user.username.is_none());
+    assert!(value.user.display_username.is_none());
     assert_eq!(db.table("sessions").await?, initial_sessions);
     assert!(verified.headers().get_all("set-cookie").next().is_none());
     assert_eq!(db.count("verifications").await?, 0);

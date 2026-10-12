@@ -479,8 +479,22 @@ impl PhoneNumberPlugin {
                 );
             user.phone_number = Some(body.phone_number.clone());
             user.phone_number_verified = Some(true);
-            user.username = body.username;
-            user.display_username = body.display_username;
+            // Extension input belongs to new-user schema parsing and hooks.
+            // Existing owners never admit or mutate these creation-only fields.
+            if ctx
+                .get_metadata("username.enabled")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+            {
+                if let Some(username) = body.username {
+                    _ = user.additional_fields.insert("username".into(), username);
+                }
+                if let Some(display) = body.display_username {
+                    _ = user
+                        .additional_fields
+                        .insert("displayUsername".into(), display);
+                }
+            }
             user.image = body.image;
             crate::helpers::apply_default_role(ctx, &mut user);
             prepare_additional_user_fields(ctx, &mut user).await?;

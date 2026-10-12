@@ -83,15 +83,23 @@ compatScenario(
       phoneNumber,
       code,
       disableSession: true,
-      username: "ignored",
+      username: 42,
+      displayUsername: { ignored: true },
       userId: foreignId,
     });
     expect(verified.status).toBe(200);
     expect(verified.body).toMatchObject({
       status: true,
       token: null,
-      user: { id: ownerId, phoneNumberVerified: true },
+      user: {
+        id: ownerId,
+        phoneNumberVerified: true,
+        email: before.owner.user!.email,
+        name: "Phone Owner",
+      },
     });
+    expect(verified.body.user.username).toEqual(before.owner.user!.username);
+    expect(verified.body.user.displayUsername).toEqual(before.owner.user!.displayUsername);
     expect(verified.cookieCount).toBe(0);
     expect(await verificationCount(ctx, phoneNumber)).toBe(0);
     expect((await readPhoneState(ctx, profile, ownerId)).sessions).toEqual(before.owner.sessions);
