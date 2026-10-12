@@ -251,10 +251,11 @@ pub(crate) mod test_helpers {
 pub use account_management::AccountManagementPlugin;
 pub use admin::{
     AdminBanUserRequest, AdminBannedUserMessage, AdminBannedUserMessageHandler, AdminConfig,
-    AdminCreateUserRequest, AdminListUsersQuery, AdminListUsersResponse, AdminPermissionRequest,
-    AdminPermissionResponse, AdminPlugin, AdminRoleInput, AdminSetRoleRequest,
-    AdminSetUserPasswordRequest, AdminSuccessResponse, AdminUpdateUserRequest, AdminUserOutput,
-    AdminUserResponse, AdminUserSessionsResponse, RolePermissions,
+    AdminCreateUserRequest, AdminImpersonationResponse, AdminListUsersQuery,
+    AdminListUsersResponse, AdminPermissionRequest, AdminPermissionResponse, AdminPlugin,
+    AdminRoleInput, AdminSetRoleRequest, AdminSetUserPasswordRequest, AdminSuccessResponse,
+    AdminUpdateUserRequest, AdminUserOutput, AdminUserResponse, AdminUserSessionsResponse,
+    RolePermissions,
 };
 pub use alibi_core::PasswordHasher;
 pub use anonymous::{

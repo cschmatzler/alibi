@@ -1,6 +1,7 @@
 pub mod access;
 
 mod callbacks;
+mod cookies;
 mod endpoint;
 mod listing;
 
@@ -10,7 +11,7 @@ pub(super) mod types;
 
 mod validation;
 
-use crate::helpers::{delete_session_cookie_headers, get_cookie};
+use crate::helpers::get_cookie;
 pub use access::RolePermissions;
 use access::{has_permission, is_admin_role, is_admin_user_id};
 use alibi_core::entity::AuthUser;
@@ -24,11 +25,10 @@ pub(crate) use callbacks::BannedUserMessagePolicy;
 pub use callbacks::{AdminBannedUserMessage, AdminBannedUserMessageHandler};
 use handlers::AdminDateOperationError;
 use handlers::{
-    AdminSessionCookiePayload, ban_user_core, create_admin_session_cookie_value, create_user_core,
-    decode_admin_session_cookie_value, get_user_core, has_permission_core, impersonate_user_core,
-    list_user_sessions_core, list_users_core, remove_user_core, revoke_user_session_core,
-    revoke_user_sessions_core, set_role_core, set_user_password_core, stop_impersonating_core,
-    unban_user_core, update_user_core,
+    ban_user_core, create_user_core, decode_admin_session_cookie_value, get_user_core,
+    has_permission_core, impersonate_user_core, list_user_sessions_core, list_users_core,
+    remove_user_core, revoke_user_session_core, revoke_user_sessions_core, set_role_core,
+    set_user_password_core, stop_impersonating_core, unban_user_core, update_user_core,
 };
 use std::collections::HashMap;
 pub use types::{
@@ -38,6 +38,9 @@ pub use types::{
     RoleInput as AdminRoleInput, SetRoleRequest as AdminSetRoleRequest,
     SetUserPasswordRequest as AdminSetUserPasswordRequest, SuccessResponse as AdminSuccessResponse,
 };
+/// Stored impersonation session and safe user returned by the server operation.
+pub type AdminImpersonationResponse =
+    types::SessionUserResponse<alibi_core::wire::SessionView, alibi_core::wire::UserView>;
 /// Safe user result returned by admin mutation operations.
 pub type AdminUserResponse = types::UserResponse<AdminUserOutput>;
 /// Safe user page returned by the listUsers server operation.
@@ -457,53 +460,15 @@ impl AdminPlugin {
             Err(AdminDateOperationError::InvalidDate) => return Ok(AuthResponse::new(500)),
             Err(AdminDateOperationError::Auth(error)) => return Err(error),
         };
-        let dont_remember = get_cookie(req, &related_cookie_name(&ctx.config, "dont_remember"))
-            .and_then(|value| {
-                alibi_core::utils::cookie_utils::verify_cookie_value(
-                    &value,
-                    ctx.config.current_secret(),
-                )
-            })
-            .is_some_and(|value| !value.is_empty());
-        let admin_cookie = create_admin_session_cookie_value(
-            ctx.config.current_secret(),
-            &AdminSessionCookiePayload {
-                session_token: session.token.clone(),
-                dont_remember,
-            },
-            ctx.config.session.expires_in,
-        )?;
-        let admin_cookie_name = related_cookie_name(&ctx.config, "admin_session");
-
         let mut auth_response = AuthResponse::json(200, &response)?;
-        for cookie in delete_session_cookie_headers(&ctx.config)? {
-            auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
+        for (name, value) in cookies::impersonation_cookie_headers(
+            &ctx.config,
+            &req.headers,
+            &session.token,
+            &token,
+        )? {
+            auth_response.headers.append(name, value);
         }
-        auth_response = auth_response.with_appended_header(
-            "Set-Cookie",
-            create_session_like_cookie(
-                &admin_cookie_name,
-                &admin_cookie,
-                Some(ctx.config.session.expires_in.num_seconds()),
-                &ctx.config,
-            )?,
-        );
-        auth_response = auth_response.with_appended_header(
-            "Set-Cookie",
-            create_session_cookie_with_max_age(Some(&token), None, &ctx.config)?,
-        );
-        auth_response = auth_response.with_appended_header(
-            "Set-Cookie",
-            create_session_like_cookie(
-                &related_cookie_name(&ctx.config, "dont_remember"),
-                &alibi_core::utils::cookie_utils::sign_cookie_value(
-                    "true",
-                    ctx.config.current_secret(),
-                ),
-                None,
-                &ctx.config,
-            )?,
-        );
         Ok(auth_response)
     }
 

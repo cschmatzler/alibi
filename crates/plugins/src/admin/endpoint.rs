@@ -1,10 +1,11 @@
 //! Installed admin server operations share authorization and stored output with HTTP.
 use super::{
     AdminPlugin, MESSAGE_BAN_USERS, MESSAGE_CHANGE_ROLE, MESSAGE_DELETE_USERS, MESSAGE_GET_USER,
-    MESSAGE_LIST_USER_SESSIONS, MESSAGE_LIST_USERS, MESSAGE_REVOKE_USER_SESSIONS,
-    MESSAGE_SET_USER_PASSWORD, MESSAGE_UPDATE_USERS, ban_user_core, create_user_core,
-    get_user_core, list_user_sessions_core, list_users_core, remove_user_core,
-    revoke_user_session_core, revoke_user_sessions_core, set_role_core, set_user_password_core,
+    MESSAGE_IMPERSONATE_USERS, MESSAGE_LIST_USER_SESSIONS, MESSAGE_LIST_USERS,
+    MESSAGE_REVOKE_USER_SESSIONS, MESSAGE_SET_USER_PASSWORD, MESSAGE_UPDATE_USERS, ban_user_core,
+    create_user_core, get_user_core, impersonate_user_core, list_user_sessions_core,
+    list_users_core, remove_user_core, revoke_user_session_core, revoke_user_sessions_core,
+    set_role_core, set_user_password_core,
     types::{
         AdminUpdateUserRequest, BanUserRequest, CreateUserRequest, GetUserQuery,
         HasPermissionRequest, PermissionResponse, RevokeSessionRequest, SetRoleRequest,
@@ -25,6 +26,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             "getUser",
             Some("/admin/get-user"),
             HttpMethod::Get,
+        ),
+        crate::endpoint::definition(
+            "impersonateUser",
+            "impersonateUser",
+            Some("/admin/impersonate-user"),
+            HttpMethod::Post,
         ),
         crate::endpoint::definition(
             "setUserPassword",
@@ -102,6 +109,19 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "impersonateUser" {
+        let body: UserIdRequest =
+            super::validation::body_value("impersonate-user", call.body().cloned())
+                .map_err(crate::endpoint::error_response)?;
+        return Ok(EndpointInput {
+            body: Some(JsValue::Object(
+                [("userId".into(), JsValue::String(body.user_id))]
+                    .into_iter()
+                    .collect(),
+            )),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "setUserPassword" {
         let body: SetUserPasswordRequest =
             super::validation::body_value("set-user-password", call.body().cloned())
@@ -295,6 +315,18 @@ impl AdminPlugin {
         ))
     }
 
+    /// Create an impersonation session and publish cookies through authoritative admin policy.
+    #[must_use]
+    pub fn impersonate_user_endpoint(
+        user_id: impl Into<String>,
+    ) -> ServerEndpoint<super::AdminImpersonationResponse> {
+        ServerEndpoint::new("admin", "impersonateUser").with_body_value(JsValue::Object(
+            [("userId".into(), JsValue::String(user_id.into()))]
+                .into_iter()
+                .collect(),
+        ))
+    }
+
     /// Replace or create a credential through authoritative admin policy and server hooks.
     ///
     /// # Errors
@@ -448,7 +480,50 @@ impl AdminPlugin {
             .without_error_body());
         };
         let principal = ctx.user_view(&user);
-        call.record_authenticated_session(principal.clone(), session);
+        call.record_authenticated_session(principal.clone(), session.clone());
+        if call.operation_id() == "impersonateUser" {
+            self.authorize(&principal, "user", "impersonate", MESSAGE_IMPERSONATE_USERS)?;
+            let body: UserIdRequest = call.body_as()?;
+            let headers = call.headers().cloned().unwrap_or_default();
+            let ip = ctx
+                .config
+                .advanced
+                .ip_address
+                .resolve_ip(&headers)
+                .unwrap_or_default();
+            let agent = headers.get("user-agent").cloned().unwrap_or_default();
+            return match impersonate_user_core(
+                &body,
+                principal.id.as_str(),
+                principal.role.as_deref(),
+                Some(&ip),
+                Some(&agent),
+                &self.config,
+                ctx,
+            )
+            .await
+            {
+                Ok((user, token)) => {
+                    let mut response = EndpointResponse::json(&user)?;
+                    response.merge_headers(super::cookies::impersonation_cookie_headers(
+                        &ctx.config,
+                        &headers,
+                        &session.token,
+                        &token,
+                    )?);
+                    Ok(response)
+                }
+                Err(super::AdminDateOperationError::Auth(error)) => Err(error),
+                Err(super::AdminDateOperationError::InvalidDate) => {
+                    Ok(EndpointResponse::error(AuthError::Api {
+                        status: 500,
+                        code: None,
+                        message: String::new(),
+                    })
+                    .without_error_body())
+                }
+            };
+        }
         if call.operation_id() == "setUserPassword" {
             self.authorize(
                 &principal,

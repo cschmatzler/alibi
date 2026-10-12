@@ -300,9 +300,12 @@ pub struct UserResponse<U> {
     pub user: U,
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct SessionUserResponse<S, U> {
+/// Session and safe user published by an administrative session operation.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SessionUserResponse<S, U> {
+    /// The persisted session owned by the operation.
     pub session: S,
+    /// The user whose session is active after the operation.
     pub user: U,
 }
 

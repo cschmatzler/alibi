@@ -11,8 +11,8 @@ use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
 use alibi_core::field_policy::FieldValues;
 use alibi_core::wire::{SessionView, UserView};
 use alibi_core::{AuthContext, AuthError, AuthResult, CreateAccount, CreateSession, UpdateUser};
-use chrono::{DateTime, Duration, Utc};
-use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use chrono::{DateTime, Utc};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
 
 const MESSAGE_USER_NOT_FOUND: &str = "User not found";
@@ -84,33 +84,19 @@ fn date_after_seconds(seconds: f64) -> Result<DateTime<Utc>, AdminDateOperationE
         .ok_or(AdminDateOperationError::InvalidDate)
 }
 
-pub(crate) fn create_admin_session_cookie_value(
-    secret: &str,
-    payload: &AdminSessionCookiePayload,
-    max_age: Duration,
-) -> AuthResult<String> {
-    let now = Utc::now();
-    let claims = AdminSessionCookieClaims {
-        session_token: payload.session_token.clone(),
-        dont_remember: payload.dont_remember,
-        exp: usize::try_from((now + max_age).timestamp()).map_err(|_error| {
-            AuthError::internal("Session expiration is outside the supported range")
-        })?,
-        iat: usize::try_from(now.timestamp()).map_err(|_error| {
-            AuthError::internal("Session timestamp is outside the supported range")
-        })?,
-    };
-    Ok(encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
-    )?)
-}
-
 pub(crate) fn decode_admin_session_cookie_value(
     secret: &str,
     token: &str,
 ) -> AuthResult<AdminSessionCookiePayload> {
+    if let Some(payload) = alibi_core::utils::cookie_utils::verify_cookie_value(token, secret) {
+        let mut parts = payload.split(':');
+        return Ok(AdminSessionCookiePayload {
+            session_token: parts.next().unwrap_or_default().to_owned(),
+            dont_remember: parts.next().is_some_and(|flag| !flag.is_empty()),
+        });
+    }
+    // Existing Alibi installations issued JWT cookies; keep those restorable
+    // while all new cookies use the reference's signed payload.
     let mut validation = Validation::new(Algorithm::HS256);
     validation.validate_exp = true;
     let claims = decode::<AdminSessionCookieClaims>(
