@@ -171,6 +171,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             HttpMethod::Post,
         ),
         definition(
+            "listOrganizationTeams",
+            "listOrganizationTeams",
+            Some("/organization/list-teams"),
+            HttpMethod::Get,
+        ),
+        definition(
             "listTeams",
             "listTeams",
             Some("/organization/list-teams"),
@@ -335,6 +341,16 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
             let _: types::TeamMemberRequest = call
                 .body_as()
                 .map_err(|error| validation(error.to_string()))?;
+        }
+        "listOrganizationTeams" => {
+            if call.has_query() {
+                let _: types::TeamQuery = call
+                    .query_as()
+                    .map_err(|error| validation(error.to_string()))?;
+            }
+            if call.headers().is_none() {
+                return Err(validation("Headers is required"));
+            }
         }
         "listTeams" => {
             let _: types::TeamQuery = call
@@ -604,8 +620,16 @@ impl OrganizationPlugin {
     /// Construct a typed native call through installed dispatch hooks.
     /// # Errors
     /// Returns a serialization error for input that cannot be represented.
+    pub fn list_organization_teams_endpoint(
+        input: &types::TeamQuery,
+    ) -> AuthResult<ServerEndpoint<Vec<Team>>> {
+        ServerEndpoint::new("organization", "listOrganizationTeams").with_query(input)
+    }
+    /// Construct a team listing through the canonical server API.
+    /// # Errors
+    /// Returns a serialization error for input that cannot be represented.
     pub fn list_teams_endpoint(input: &types::TeamQuery) -> AuthResult<ServerEndpoint<Vec<Team>>> {
-        ServerEndpoint::new("organization", "listTeams").with_query(input)
+        Self::list_organization_teams_endpoint(input)
     }
     /// Construct a typed native call through installed dispatch hooks.
     /// # Errors
@@ -914,8 +938,16 @@ pub(super) async fn execute<S: AuthSchema>(
         "hasPermission" => EndpointResponse::json(
             &handlers::has_permission_core(&call.body_as()?, &user, &session, config, ctx).await?,
         ),
-        "createTeam" | "updateTeam" | "removeTeam" | "setActiveTeam" | "addTeamMember"
-        | "removeTeamMember" | "listTeams" | "listUserTeams" | "listTeamMembers" => {
+        "createTeam"
+        | "updateTeam"
+        | "removeTeam"
+        | "setActiveTeam"
+        | "addTeamMember"
+        | "removeTeamMember"
+        | "listTeams"
+        | "listOrganizationTeams"
+        | "listUserTeams"
+        | "listTeamMembers" => {
             let path = match call.operation_id() {
                 "createTeam" => "/organization/create-team",
                 "updateTeam" => "/organization/update-team",
@@ -923,7 +955,7 @@ pub(super) async fn execute<S: AuthSchema>(
                 "setActiveTeam" => "/organization/set-active-team",
                 "addTeamMember" => "/organization/add-team-member",
                 "removeTeamMember" => "/organization/remove-team-member",
-                "listTeams" => "/organization/list-teams",
+                "listTeams" | "listOrganizationTeams" => "/organization/list-teams",
                 "listUserTeams" => "/organization/list-user-teams",
                 "listTeamMembers" => "/organization/list-team-members",
                 _ => return Err(AuthError::not_found("Unknown operation")),

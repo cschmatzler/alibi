@@ -175,6 +175,7 @@ export function organizationInvitationLifecycleFixture(
     profiles,
     async server(request: Request) {
       const input = (await request.json()) as {
+        operation?: "listOrganizationTeams";
         body?: {
           email: string;
           role: string | string[];
@@ -184,7 +185,17 @@ export function organizationInvitationLifecycleFixture(
         headers?: Record<string, string>;
         query?: unknown;
       };
-      return profiles.get("org-invite-limit-none")!.api.createInvitation({
+      const auth = profiles.get("org-invite-limit-none")!;
+      if (input.operation === "listOrganizationTeams") {
+        return auth.api.listOrganizationTeams({
+          ...(Object.hasOwn(input, "query")
+            ? { query: input.query as { organizationId?: string } }
+            : {}),
+          ...(input.headers ? { headers: new Headers(input.headers) } : {}),
+          asResponse: true,
+        });
+      }
+      return auth.api.createInvitation({
         body: input.body!,
         ...(input.headers ? { headers: new Headers(input.headers) } : {}),
         ...(Object.hasOwn(input, "query") ? { query: input.query } : {}),

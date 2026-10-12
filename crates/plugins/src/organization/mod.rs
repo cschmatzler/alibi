@@ -295,6 +295,11 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
 
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
         endpoint::definitions()
+            .into_iter()
+            .filter(|endpoint| {
+                endpoint.name != "listOrganizationTeams" || self.config.teams.enabled
+            })
+            .collect()
     }
     fn validate_endpoint(
         &self,

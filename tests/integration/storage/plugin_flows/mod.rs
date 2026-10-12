@@ -320,3 +320,5 @@ mod server_oauth_support;
 mod server_organization_create_invitation;
 
 mod server_organization_check_slug;
+
+mod server_organization_list_teams;
