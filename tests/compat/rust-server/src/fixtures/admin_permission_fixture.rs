@@ -195,7 +195,9 @@ pub(crate) async fn router(
                 let mut endpoint =
                     alibi::endpoint::ServerEndpoint::<alibi::utils::json::JsValue>::new(
                         "admin",
-                        if input["operation"] == "removeUser" {
+                        if input["operation"] == "setUserPassword" {
+                            "setUserPassword"
+                        } else if input["operation"] == "removeUser" {
                             "removeUser"
                         } else if input["operation"] == "revokeUserSessions" {
                             "revokeUserSessions"
@@ -383,6 +385,7 @@ impl<S: alibi::AuthSchema> alibi::endpoint::EndpointHook<S> for AdminServerObser
                 | "revokeUserSession"
                 | "revokeUserSessions"
                 | "removeUser"
+                | "setUserPassword"
         ) && call.request().is_none())
     }
     async fn after(

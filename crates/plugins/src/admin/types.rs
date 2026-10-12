@@ -144,12 +144,25 @@ pub(crate) struct RevokeSessionRequest {
     pub session_token: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub(crate) struct SetUserPasswordRequest {
+/// Input for an authoritative administrative password update.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SetUserPasswordRequest {
+    /// The stored user whose credential should be replaced or created.
     #[serde(rename = "userId")]
     pub user_id: String,
+    /// The new password, subject to the installed password policy.
     #[serde(rename = "newPassword")]
     pub new_password: String,
+}
+impl SetUserPasswordRequest {
+    /// Set a password for the specified user without revoking existing sessions.
+    #[must_use]
+    pub fn new(user_id: impl Into<String>, new_password: impl Into<String>) -> Self {
+        Self {
+            user_id: user_id.into(),
+            new_password: new_password.into(),
+        }
+    }
 }
 
 /// Input for trusted or session-based admin permission evaluation.
