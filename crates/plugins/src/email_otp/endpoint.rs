@@ -33,6 +33,26 @@ pub struct EmailOtpVerification {
     pub user: Box<alibi_core::UserView>,
 }
 
+/// Sign-in credentials with schema-defined fields retained for new identities.
+#[derive(Debug, Deserialize, serde::Serialize)]
+pub struct EmailOtpSignInInput {
+    pub email: String,
+    pub otp: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    #[serde(flatten)]
+    pub additional_fields: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Authority published after consuming a sign-in proof.
+#[derive(Debug, Deserialize)]
+pub struct EmailOtpSignInResult {
+    pub token: String,
+    pub user: Box<alibi_core::UserView>,
+}
+
 const FIELDS: &[JsonField] = &[
     JsonField::string("email", true),
     JsonField {
@@ -49,6 +69,12 @@ const FIELDS: &[JsonField] = &[
 
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
+        definition(
+            "signInEmailOTP",
+            "signInWithEmailOTP",
+            Some("/sign-in/email-otp"),
+            HttpMethod::Post,
+        ),
         definition(
             "verifyEmailOTP",
             "verifyEmailOTP",
@@ -83,6 +109,17 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "signInWithEmailOTP" {
+        let _ = validate_fields(
+            call.body(),
+            "body",
+            <super::types::SignInRequest as crate::authentication_helpers::RequestBody>::FIELDS,
+        )?;
+        return Ok(EndpointInput {
+            body: call.body().cloned(),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "verifyEmailOTP" {
         return Ok(EndpointInput {
             body: Some(validate_fields(
@@ -117,6 +154,16 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
 }
 
 impl EmailOtpPlugin {
+    /// Consume a sign-in proof and apply returning-user or signup policy.
+    ///
+    /// # Errors
+    /// Returns an error if the supplied sign-in input cannot be serialized.
+    pub fn sign_in_email_otp_endpoint(
+        input: &EmailOtpSignInInput,
+    ) -> AuthResult<ServerEndpoint<EmailOtpSignInResult>> {
+        ServerEndpoint::new("email-otp", "signInEmailOTP").with_body(input)
+    }
+
     /// Consume a mailbox proof and apply verification/session policy.
     #[must_use]
     pub fn verify_email_otp_endpoint(
@@ -190,7 +237,7 @@ impl EmailOtpPlugin {
         }
         if matches!(
             call.operation_id(),
-            "sendEmailVerificationOTP" | "verifyEmailOTP"
+            "sendEmailVerificationOTP" | "verifyEmailOTP" | "signInWithEmailOTP"
         ) {
             if call.operation_id() == "sendEmailVerificationOTP"
                 && let Some(request) = call.request()
@@ -201,11 +248,22 @@ impl EmailOtpPlugin {
                 )
                 .check_login_origin(request)?;
             }
-            let output = if call.operation_id() == "sendEmailVerificationOTP" {
-                self.send_verification_core(call.request(), ctx, call.body_as()?)
-                    .await?
-            } else {
-                self.verify_email_core(call, ctx, call.body_as()?).await?
+            let output = match call.operation_id() {
+                "sendEmailVerificationOTP" => {
+                    self.send_verification_core(call.request(), ctx, call.body_as()?)
+                        .await?
+                }
+                "signInWithEmailOTP" => {
+                    let raw = call.body().cloned().unwrap_or(JsValue::Null);
+                    let mut parsed = raw.clone();
+                    if let JsValue::Object(fields) = &mut parsed {
+                        let _ = fields.shift_remove("username");
+                        let _ = fields.shift_remove("displayUsername");
+                    }
+                    let body = alibi_core::utils::json::from_value(parsed)?;
+                    self.sign_in_core(call, ctx, body, raw).await?
+                }
+                _ => self.verify_email_core(call, ctx, call.body_as()?).await?,
             };
             let mut response = if output.status >= 400 {
                 EndpointResponse::error(crate::endpoint::error_response(output.clone()))

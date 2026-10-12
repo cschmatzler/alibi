@@ -398,12 +398,6 @@ impl EmailOtpPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        // Extra user inputs come from the configured schema. An absent username
-        // plugin must not deserialize, validate or persist its additional fields.
-        let username_enabled = ctx
-            .get_metadata("username.enabled")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
         // Additional user inputs apply only when creating a new identity.
         let ignored = &["username", "displayUsername"][..];
         let body: SignInRequest =
@@ -411,6 +405,20 @@ impl EmailOtpPlugin {
                 Ok(value) => value,
                 Err(response) => return Ok(response),
             };
+        self.sign_in_core(req, ctx, body, req.body_as_json()?).await
+    }
+
+    pub(super) async fn sign_in_core(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+        body: SignInRequest,
+        raw: alibi_core::utils::json::JsValue,
+    ) -> AuthResult<AuthResponse> {
+        let username_enabled = ctx
+            .get_metadata("username.enabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         let email = body.email.to_lowercase();
         self.consume_code(ctx, &identifier(EmailOtpType::SignIn, &email), &body.otp)
             .await?;
@@ -421,14 +429,17 @@ impl EmailOtpPlugin {
             Some(user) => user,
             None if self.config.disable_sign_up => return Err(invalid_otp()),
             None => {
-                let body = if username_enabled {
-                    match parse_body::<SignInRequest>(req) {
-                        Ok(value) => value,
-                        Err(response) => return Ok(response),
-                    }
-                } else {
-                    body
-                };
+                let mut body = body;
+                if username_enabled {
+                    body.username = raw
+                        .get("username")
+                        .filter(|value| !matches!(value, alibi_core::utils::json::JsValue::Null))
+                        .cloned();
+                    body.display_username = raw
+                        .get("displayUsername")
+                        .filter(|value| !matches!(value, alibi_core::utils::json::JsValue::Null))
+                        .cloned();
+                }
                 let mut data = CreateUser::new()
                     .with_email(email)
                     .with_name(body.name.unwrap_or_default())
