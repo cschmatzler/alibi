@@ -33,11 +33,11 @@ pub(crate) use signin::sign_in_username_core;
 pub use signup::{CustomSyntheticUserCallback, ExistingUserSignupCallback, SyntheticUserContext};
 use std::io::Write;
 use std::sync::Arc;
-pub use types::IsUsernameAvailableResponse;
 pub(crate) use types::SignInCoreResult;
 pub(crate) use types::SignInResponse;
 pub(crate) use types::SignUpRequest;
 pub(crate) use types::SignUpResponse;
+pub use types::{IsUsernameAvailableResponse, SignInUsernameRequest};
 pub use types::{
     SignInEmailResponse, SignInRequest as SignInEmailRequest, SignInResponse as SignInEmailSession,
 };

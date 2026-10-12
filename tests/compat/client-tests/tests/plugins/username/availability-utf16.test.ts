@@ -21,12 +21,6 @@ compatScenario(
       username: "taken_name",
     });
     expect(signup.error).toBeNull();
-    const login = await owner.client.signIn.username({
-      username: "taken_name",
-      password: "password123",
-    });
-    expect(login.error).toBeNull();
-    expect(login.data?.user.id).toBe(signup.data!.user.id);
     const physical = async () => {
       const response = await ctx.rawRequest({
         path: `/__test/signup-policy/state?profile=${profile}`,
@@ -40,6 +34,49 @@ compatScenario(
         verifications: state.verifications,
       };
     };
+    const beforeLogin = await physical();
+    async function signIn(body: unknown) {
+      const response = await owner.fetch(`${ctx.baseURL}/__test/server-api/username-sign-in`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          profile,
+          body,
+          headers: { "user-agent": "Username-SDK", "x-forwarded-for": "203.0.113.67" },
+        }),
+      });
+      return {
+        status: response.status,
+        body: (await response.json()) as any,
+        cookieCount: response.headers.getSetCookie().length,
+        persistent: response.headers
+          .getSetCookie()
+          .find((raw) => raw.startsWith("better-auth.session_token="))
+          ?.includes("Max-Age="),
+      };
+    }
+    const loginErrors = [];
+    for (const [input, status, code] of [
+      [{ username: 42, password: "password123" }, 400, "VALIDATION_ERROR"],
+      [{ username: "taken_name", password: "wrong-password" }, 401, "INVALID_USERNAME_OR_PASSWORD"],
+      [{ username: "missing_name", password: "password123" }, 401, "INVALID_USERNAME_OR_PASSWORD"],
+    ] as const) {
+      const denied = await signIn(input);
+      expect(denied.status).toBe(status);
+      expect(denied.body.code).toBe(code);
+      loginErrors.push(denied);
+    }
+    expect(await physical()).toEqual(beforeLogin);
+    const login = await signIn({
+      username: "TAKEN_NAME",
+      password: "password123",
+      rememberMe: false,
+      userId: "foreign-selector",
+    });
+    expect(login.status).toBe(200);
+    expect(login.body.user.id).toBe(signup.data!.user.id);
+    expect(login.cookieCount).toBeGreaterThan(0);
+    expect(login.persistent).toBe(false);
     const before = await physical();
     async function invoke(body: unknown) {
       const response = await guest.fetch(`${ctx.baseURL}/__test/server-api/username-available`, {
@@ -80,10 +117,13 @@ compatScenario(
     expect(await physical()).toEqual(before);
     const session = await owner.client.getSession();
     expect(session.data?.user.id).toBe(signup.data!.user.id);
+    expect(session.data?.session.userAgent).toBe("Username-SDK");
+    expect(session.data?.session.ipAddress).toBe("203.0.113.67");
     expect((await guest.client.getSession()).data).toBeNull();
     expect(await physical()).toEqual(before);
     return {
       signup: ctx.snapshot(signup),
+      loginErrors,
       login: ctx.snapshot(login),
       denied,
       available: ctx.snapshot(available),

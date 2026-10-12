@@ -25,6 +25,12 @@ pub(super) fn definitions(username_enabled: bool) -> Vec<EndpointDefinition> {
     ];
     if username_enabled {
         definitions.push(crate::endpoint::definition(
+            "signInUsername",
+            "signInUsername",
+            Some("/sign-in/username"),
+            HttpMethod::Post,
+        ));
+        definitions.push(crate::endpoint::definition(
             "isUsernameAvailable",
             "isUsernameAvailable",
             Some("/is-username-available"),
@@ -34,6 +40,25 @@ pub(super) fn definitions(username_enabled: bool) -> Vec<EndpointDefinition> {
     definitions
 }
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "signInUsername" {
+        return Ok(EndpointInput {
+            body: Some(crate::endpoint::validate_fields(
+                call.body(),
+                "body",
+                &[
+                    crate::authentication_helpers::JsonField::string("username", true),
+                    crate::authentication_helpers::JsonField::string("password", true),
+                    crate::authentication_helpers::JsonField {
+                        name: "rememberMe",
+                        kind: crate::authentication_helpers::JsonFieldKind::Boolean,
+                        required: false,
+                    },
+                    crate::authentication_helpers::JsonField::string("callbackURL", false),
+                ],
+            )?),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "isUsernameAvailable" {
         return Ok(EndpointInput {
             body: Some(crate::endpoint::validate_fields(
@@ -70,6 +95,16 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
     })
 }
 impl EmailPasswordPlugin {
+    /// Sign in using the installed username policy and credential service.
+    ///
+    /// # Errors
+    /// Returns an error if the input cannot be serialized.
+    pub fn sign_in_username_endpoint(
+        input: &super::SignInUsernameRequest,
+    ) -> AuthResult<ServerEndpoint<SignInEmailResponse>> {
+        ServerEndpoint::new("email-password", "signInUsername").with_body(input)
+    }
+
     /// Check a guest-supplied username through the installed username policy.
     #[must_use]
     pub fn is_username_available_endpoint(
@@ -102,6 +137,33 @@ impl EmailPasswordPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "signInUsername" {
+            let body: super::SignInUsernameRequest = call.body_as()?;
+            alibi_core::session::cookie_cache::runtime::set_issuance_preference(
+                call,
+                body.remember_me == Some(false),
+            );
+            let headers = call.headers().cloned().unwrap_or_default();
+            let meta = RequestMeta {
+                ip_address: Some(
+                    ctx.config
+                        .advanced
+                        .ip_address
+                        .resolve_ip(&headers)
+                        .unwrap_or_default(),
+                ),
+                user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
+            };
+            let output = self.username_sign_in_core(call, ctx, body, &meta).await?;
+            let mut response = if output.status >= 400 {
+                EndpointResponse::error(crate::endpoint::error_response(output.clone()))
+            } else {
+                EndpointResponse::value(alibi_core::utils::json::from_slice(&output.body)?)
+            };
+            response.set_status(Some(output.status));
+            response.merge_headers(output.headers);
+            return Ok(response);
+        }
         if call.operation_id() == "isUsernameAvailable" {
             let output = self
                 .username_availability_core(ctx, call.body_as()?)

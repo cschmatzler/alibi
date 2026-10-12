@@ -2277,6 +2277,15 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       asResponse: true,
     });
   }
+  if (url.pathname === "/__test/server-api/username-sign-in" && request.method === "POST") {
+    const input = await readJson(request);
+    const selected = signupPolicyFixture.profiles.get(input?.profile ?? "signup-username")!;
+    return (selected.api as any).signInUsername({
+      body: input?.body,
+      ...(input?.headers ? { headers: new Headers(input.headers as Record<string, string>) } : {}),
+      asResponse: true,
+    });
+  }
   if (url.pathname === "/__test/server-api/username-available" && request.method === "POST") {
     const input = await readJson(request);
     const selected = signupPolicyFixture.profiles.get(input?.profile ?? "signup-username")!;

@@ -43,6 +43,106 @@ async fn username_availability_utf16_bounds_precede_default_character_validation
         200,
     )
     .await;
+    let before_login = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    let login_endpoint = |body: &Value| {
+        ServerEndpoint::<Value>::new("email-password", "signInUsername").with_body(body)
+    };
+    for (input, status, code) in [
+        (
+            json!({"username":42,"password":PASSWORD}),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (
+            json!({"username":"taken_name","password":"wrong-password"}),
+            401,
+            "INVALID_USERNAME_OR_PASSWORD",
+        ),
+        (
+            json!({"username":"missing_name","password":PASSWORD}),
+            401,
+            "INVALID_USERNAME_OR_PASSWORD",
+        ),
+    ] {
+        let denied =
+            Box::pin(auth.dispatch_endpoint(login_endpoint(&input)?, EndpointOptions::default()))
+                .await
+                .unwrap_err();
+        assert_eq!(denied.error.status_code(), status);
+        assert_eq!(denied.error.error_payload().1.as_deref(), Some(code));
+    }
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        before_login
+    );
+    let login = Box::pin(
+        auth.dispatch_endpoint(
+            EmailPasswordPlugin::sign_in_username_endpoint(
+                &alibi::plugins::email_password::SignInUsernameRequest {
+                    username: "TAKEN_NAME".into(),
+                    password: PASSWORD.into(),
+                    remember_me: Some(false),
+                    callback_url: None,
+                },
+            )?,
+            EndpointOptions {
+                headers: Some(
+                    [
+                        ("user-agent".into(), "Username-SDK".into()),
+                        ("x-forwarded-for".into(), "203.0.113.67".into()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+                ..Default::default()
+            },
+        ),
+    )
+    .await?;
+    let typed = login.decode()?;
+    let alibi::plugins::email_password::SignInEmailResponse::Session(session) = typed else {
+        panic!("username credentials must issue an owner session");
+    };
+    assert_eq!(
+        session.user.id,
+        body(&owner)["user"]["id"].as_str().unwrap()
+    );
+    assert_eq!(
+        db.text(
+            "SELECT user_agent FROM sessions WHERE token=$1",
+            &[&session.token]
+        )
+        .await?
+        .as_deref(),
+        Some("Username-SDK")
+    );
+    assert_eq!(
+        db.text(
+            "SELECT ip_address FROM sessions WHERE token=$1",
+            &[&session.token]
+        )
+        .await?
+        .as_deref(),
+        Some("203.0.113.67")
+    );
+    let login = login.into_response()?;
+    let token_cookie = login
+        .headers
+        .get_all("set-cookie")
+        .find(|raw| raw.starts_with("better-auth.session_token="))
+        .unwrap();
+    assert!(!token_cookie.contains("Max-Age="));
+    Box::pin(authenticated(
+        &auth,
+        &cookies(&login),
+        "availability-owner@example.test",
+    ))
+    .await;
+    assert_eq!(db.count("sessions").await?, 2);
+    assert_eq!(db.table("accounts").await?, before_login[1]);
     let before = db
         .tables(&["users", "accounts", "sessions", "verifications"])
         .await?;
