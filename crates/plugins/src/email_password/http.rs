@@ -317,6 +317,14 @@ impl EmailPasswordPlugin {
             Err(resp) => return Ok(resp),
         };
 
+        self.username_availability_core(ctx, body).await
+    }
+
+    pub(super) async fn username_availability_core(
+        &self,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
+        body: IsUsernameAvailableRequest,
+    ) -> AuthResult<AuthResponse> {
         if body.username.is_empty() {
             return username_error_response(422, "INVALID_USERNAME", "Username is invalid");
         }

@@ -2277,6 +2277,11 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       asResponse: true,
     });
   }
+  if (url.pathname === "/__test/server-api/username-available" && request.method === "POST") {
+    const input = await readJson(request);
+    const selected = signupPolicyFixture.profiles.get(input?.profile ?? "signup-username")!;
+    return (selected.api as any).isUsernameAvailable({ body: input?.body, asResponse: true });
+  }
   if (url.pathname === "/__test/server-api/multi-session-revoke" && request.method === "POST") {
     const input = await readJson(request);
     const selected = multipleSessionFixture.profiles.get(

@@ -33,6 +33,7 @@ pub(crate) use signin::sign_in_username_core;
 pub use signup::{CustomSyntheticUserCallback, ExistingUserSignupCallback, SyntheticUserContext};
 use std::io::Write;
 use std::sync::Arc;
+pub use types::IsUsernameAvailableResponse;
 pub(crate) use types::SignInCoreResult;
 pub(crate) use types::SignInResponse;
 pub(crate) use types::SignUpRequest;
@@ -206,7 +207,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
     }
 
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
-        endpoint::definitions()
+        endpoint::definitions(self.config.enable_username)
     }
     fn validate_endpoint(
         &self,
