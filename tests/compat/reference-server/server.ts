@@ -100,8 +100,8 @@ import { providerBatchFixture } from "./fixtures/provider-batch-fixture";
 import { railwayProviderFixture } from "./fixtures/railway-provider-fixture";
 import { createRateLimitFixture } from "./fixtures/rate-limit-fixture";
 import { redditProviderFixture } from "./fixtures/reddit-provider-fixture";
-import { createServerErrorFixture } from "./fixtures/server-error-fixture";
 import { createServerEndpointFixture } from "./fixtures/server-endpoint-fixture";
+import { createServerErrorFixture } from "./fixtures/server-error-fixture";
 import { createSessionAdapterFailureFixture } from "./fixtures/session-adapter-failure-fixture";
 import { sessionCookieCacheFixture } from "./fixtures/session-cookie-cache-fixture";
 import { createSessionFieldsFixture } from "./fixtures/session-fields-fixture";
@@ -2721,6 +2721,12 @@ const server = Bun.serve({
         if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return profile.handler(request);
         }
+      }
+      if (
+        url.pathname === "/__test/organization-invitation-life/server" &&
+        request.method === "POST"
+      ) {
+        return organizationInvitationLifecycle.server(request);
       }
       if (
         url.pathname === "/__test/organization-invitation-life/configure" &&

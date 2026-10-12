@@ -316,3 +316,5 @@ mod server_change_email;
 
 mod server_callback_oauth;
 mod server_oauth_support;
+
+mod server_organization_create_invitation;

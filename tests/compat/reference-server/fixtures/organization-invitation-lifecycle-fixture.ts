@@ -173,6 +173,24 @@ export function organizationInvitationLifecycleFixture(
   }
   return {
     profiles,
+    async server(request: Request) {
+      const input = (await request.json()) as {
+        body?: {
+          email: string;
+          role: string | string[];
+          organizationId?: string;
+          resend?: boolean;
+        };
+        headers?: Record<string, string>;
+        query?: unknown;
+      };
+      return profiles.get("org-invite-limit-none")!.api.createInvitation({
+        body: input.body!,
+        ...(input.headers ? { headers: new Headers(input.headers) } : {}),
+        ...(Object.hasOwn(input, "query") ? { query: input.query } : {}),
+        asResponse: true,
+      });
+    },
     reset() {
       mode = "off";
       receipts.length = 0;

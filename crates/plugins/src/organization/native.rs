@@ -57,6 +57,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             HttpMethod::Post,
         ),
         definition(
+            "createInvitation",
+            "createOrganizationInvitation",
+            Some("/organization/invite-member"),
+            HttpMethod::Post,
+        ),
+        definition(
             "inviteMember",
             "inviteMember",
             Some("/organization/invite-member"),
@@ -244,9 +250,12 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                 .body_as()
                 .map_err(|error| validation(error.to_string()))?;
         }
-        "inviteMember" => {
+        "inviteMember" | "createOrganizationInvitation" => {
             _ = handlers::org_input::invitation_create_value(call.body())
                 .map_err(error_response)?;
+            if call.operation_id() == "createOrganizationInvitation" && call.headers().is_none() {
+                return Err(validation("Headers is required"));
+            }
         }
         "getInvitation" => {
             let _: types::GetInvitationQuery = call
@@ -438,10 +447,18 @@ impl OrganizationPlugin {
     /// Construct a typed native call through installed dispatch hooks.
     /// # Errors
     /// Returns a serialization error for input that cannot be represented.
+    pub fn create_invitation_endpoint(
+        input: &types::InviteMemberRequest,
+    ) -> AuthResult<ServerEndpoint<InvitationView>> {
+        ServerEndpoint::new("organization", "createInvitation").with_body(input)
+    }
+    /// Construct an invitation through the canonical server API.
+    /// # Errors
+    /// Returns a serialization error for input that cannot be represented.
     pub fn invite_member_endpoint(
         input: &types::InviteMemberRequest,
     ) -> AuthResult<ServerEndpoint<InvitationView>> {
-        ServerEndpoint::new("organization", "inviteMember").with_body(input)
+        Self::create_invitation_endpoint(input)
     }
     /// Construct a typed native call through installed dispatch hooks.
     /// # Errors
@@ -821,7 +838,7 @@ pub(super) async fn execute<S: AuthSchema>(
             &handlers::org::leave_organization_core(&call.body_as()?, &user, &session, config, ctx)
                 .await?,
         ),
-        "inviteMember" => {
+        "inviteMember" | "createOrganizationInvitation" => {
             let body = handlers::org_input::invitation_create_value(call.body())
                 .map_err(error_response)?;
             EndpointResponse::json(
