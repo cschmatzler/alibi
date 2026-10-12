@@ -152,8 +152,10 @@ pub struct DeleteKeyRequest {
 }
 
 /// Query parameters accepted by `GET /api-key/list`.
-#[derive(Debug, Default)]
-pub(crate) struct ListKeysQuery {
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListKeysQuery {
     pub config_id: Option<String>,
     pub organization_id: Option<String>,
     pub limit: Option<usize>,
@@ -222,8 +224,8 @@ impl ListKeysQuery {
 }
 
 /// Paginated API key response; absent pagination parameters are omitted.
-#[derive(Debug, Serialize)]
-pub(crate) struct ListKeysResponse {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListKeysResponse {
     #[serde(rename = "apiKeys")]
     pub api_keys: Vec<ApiKeyView>,
     pub total: usize,

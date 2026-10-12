@@ -1,9 +1,10 @@
 use super::{
     ApiKeyCallbackContext, ApiKeyErrorCode, ApiKeyErrorMessage, ApiKeyPlugin, ApiKeyReferences,
     ApiKeyValidationError, ApiKeyVerificationError, CreateKeyRequest, CreateKeyResponse,
-    DeleteExpiredApiKeysResponse, DeleteKeyRequest, UpdateKeyRequest, VerifyApiKey,
+    DeleteExpiredApiKeysResponse, DeleteKeyRequest, ListKeysQuery, ListKeysResponse,
+    UpdateKeyRequest, VerifyApiKey,
 };
-use crate::authentication_helpers::JsonField;
+use crate::authentication_helpers::{JsonField, JsonFieldKind, field_issue, json_type};
 use crate::endpoint::{definition, validate_fields};
 use alibi_core::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointDefinition, EndpointHook,
@@ -75,6 +76,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             HttpMethod::Post,
         ),
         definition(
+            "listApiKeys",
+            "listApiKeys",
+            Some("/api-key/list"),
+            HttpMethod::Get,
+        ),
+        definition(
             "updateApiKey",
             "updateApiKey",
             Some("/api-key/update"),
@@ -84,6 +91,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "listApiKeys" {
+        return Ok(EndpointInput {
+            body: call.body().cloned(),
+            query: call.query().map(validate_list_query).transpose()?,
+        });
+    }
     if call.operation_id() == "getApiKey" {
         return Ok(EndpointInput {
             body: call.body().cloned(),
@@ -107,6 +120,83 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
         body,
         query: call.query().cloned(),
     })
+}
+
+fn validate_list_query(query: &JsValue) -> AuthResult<JsValue> {
+    let object = query.as_object().ok_or_else(|| {
+        crate::endpoint::validation(format!(
+            "[query] Invalid input: expected object, received {}",
+            json_type(Some(query)),
+        ))
+    })?;
+    let mut output = indexmap::IndexMap::new();
+    let mut issues = Vec::new();
+    for name in [
+        "configId",
+        "organizationId",
+        "limit",
+        "offset",
+        "sortBy",
+        "sortDirection",
+    ] {
+        let Some(value) = object.get(name) else {
+            continue;
+        };
+        let path = format!("[query.{name}]");
+        if matches!(name, "limit" | "offset") {
+            let number = match value {
+                JsValue::Null => Some(0.0),
+                JsValue::Bool(value) => Some(f64::from(*value)),
+                JsValue::Number(value) => Some(*value),
+                value => value
+                    .coerce_string()
+                    .ok()
+                    .and_then(|value| alibi_core::utils::javascript::string_to_number(&value)),
+            }
+            .unwrap_or(f64::NAN);
+            if !number.is_finite() {
+                issues.push(format!(
+                    "{path} Invalid input: expected number, received {}",
+                    if number.is_nan() { "NaN" } else { "number" }
+                ));
+            } else if number.fract() != 0.0 {
+                issues.push(format!(
+                    "{path} Invalid input: expected int, received number"
+                ));
+            } else {
+                if number > 9_007_199_254_740_991.0 {
+                    issues.push(format!(
+                        "{path} Too big: expected int to be <=9007199254740991"
+                    ));
+                }
+                if number < -9_007_199_254_740_991.0 {
+                    issues.push(format!(
+                        "{path} Too small: expected int to be >=-9007199254740991"
+                    ));
+                }
+                if number < 0.0 {
+                    issues.push(format!("{path} Too small: expected number to be >=0"));
+                }
+                _ = output.insert(name.to_owned(), JsValue::Number(number));
+            }
+        } else {
+            let kind = if name == "sortDirection" {
+                JsonFieldKind::OneOf(&["asc", "desc"])
+            } else {
+                JsonFieldKind::String
+            };
+            if let Some(issue) = field_issue(kind, Some(value), json_type(Some(value))) {
+                issues.push(format!("{path} {issue}"));
+            } else {
+                _ = output.insert(name.to_owned(), value.clone());
+            }
+        }
+    }
+    if issues.is_empty() {
+        Ok(JsValue::Object(output))
+    } else {
+        Err(crate::endpoint::validation(issues.join("; ")))
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -323,12 +413,43 @@ impl ApiKeyPlugin {
         ServerEndpoint::new("api-key", "deleteApiKey").with_body(body)
     }
 
+    /// List visible keys through installed hooks and authenticated ownership policy.
+    /// # Errors
+    /// Returns an error if query serialization fails.
+    pub fn list_endpoint(query: &ListKeysQuery) -> AuthResult<ServerEndpoint<ListKeysResponse>> {
+        ServerEndpoint::new("api-key", "listApiKeys").with_query(query)
+    }
+
     pub(super) async fn call_endpoint<S: AuthSchema>(
         &self,
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         match call.operation_id() {
+            "listApiKeys" => {
+                let query: ListKeysQuery = if call.query().is_some() {
+                    call.query_as()?
+                } else {
+                    ListKeysQuery::default()
+                };
+                let (user, _) = ctx.require_cached_session(call).await.map_err(|error| {
+                    if matches!(
+                        error,
+                        AuthError::Unauthenticated | AuthError::SessionNotFound
+                    ) {
+                        AuthError::Api {
+                            status: 401,
+                            code: Some("UNAUTHORIZED".into()),
+                            message: "Unauthorized".into(),
+                        }
+                    } else {
+                        error
+                    }
+                })?;
+                EndpointResponse::json(
+                    &super::handlers::list_keys_core(user.id(), &query, self, ctx).await?,
+                )
+            }
             "deleteApiKey" => {
                 let body: DeleteKeyRequest = call.body_as()?;
                 let (user, _) = ctx.require_cached_session(call).await.map_err(|error| {
