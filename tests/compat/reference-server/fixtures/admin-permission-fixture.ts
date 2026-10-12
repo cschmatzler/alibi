@@ -56,6 +56,7 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
                 "/admin/list-users",
                 "/admin/list-user-sessions",
                 "/admin/unban-user",
+                "/admin/ban-user",
               ].includes(ctx.path) &&
               !ctx.request
             ) {
@@ -213,7 +214,8 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
               | "adminUpdateUser"
               | "listUsers"
               | "listUserSessions"
-              | "unbanUser";
+              | "unbanUser"
+              | "banUser";
             profile?: string;
             query?: unknown;
             body?: unknown;
@@ -222,6 +224,14 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
           const auth = profiles.get(
             `/__test/profiles/${input.profile ?? "admin-standard"}/api/auth`,
           )!;
+          if (input.operation === "banUser") {
+            return auth.api.banUser({
+              body: input.body as { userId: string; banReason?: string; banExpiresIn?: number },
+              ...(Object.hasOwn(input, "query") ? { query: input.query } : {}),
+              ...(input.headers ? { headers: new Headers(input.headers) } : {}),
+              asResponse: true,
+            });
+          }
           if (input.operation === "unbanUser") {
             return auth.api.unbanUser({
               body: input.body as { userId: string },
