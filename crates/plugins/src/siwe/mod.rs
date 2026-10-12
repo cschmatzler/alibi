@@ -3,7 +3,8 @@
 
 mod config;
 mod endpoint;
-pub use endpoint::SiweNonceResponse;
+pub use endpoint::{SiweNonceResponse, SiweVerificationResponse, SiweVerifiedUser};
+pub use validation::SiweVerificationInput;
 
 mod crypto;
 
@@ -86,6 +87,15 @@ impl SiwePlugin {
             Ok(body) => body,
             Err(response) => return Ok(response),
         };
+        self.verify_response(request, ctx, body).await
+    }
+
+    async fn verify_response<S: AuthSchema>(
+        &self,
+        request: &AuthRequest,
+        ctx: &AuthContext<S>,
+        body: VerifyBody,
+    ) -> AuthResult<AuthResponse> {
         match self.verify(request, ctx, body).await {
             Ok(response) | Err(SiweCallbackError::Api(response)) => Ok(response),
             Err(error) => Ok(AuthResponse::json(
@@ -424,8 +434,8 @@ alibi_core::impl_auth_plugin! {
  extra {
     route_openapi_metadata!(S);
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> { endpoint::definitions() }
-    fn validate_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointInput> { endpoint::validate(call) }
-    async fn on_endpoint(&self, _call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> { endpoint::execute(self, ctx).await }
+    fn validate_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointInput> { endpoint::validate(self, call) }
+    async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> { endpoint::execute(self, call, ctx).await }
  }
 }
 

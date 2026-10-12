@@ -1,13 +1,19 @@
-use crate::authentication_helpers::is_valid_email;
+use crate::authentication_helpers::{is_valid_email, json_type};
+use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthRequest, AuthResponse, types::ParsedRequestBody};
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-#[derive(Debug)]
-pub(super) struct VerifyBody {
+/// Signed SIWE arguments shared by HTTP and server callers.
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SiweVerificationInput {
     pub message: String,
     pub signature: String,
     pub email: Option<String>,
 }
+
+pub(super) type VerifyBody = SiweVerificationInput;
 
 fn error(message: &str) -> AuthResponse {
     AuthResponse::json(400, &json!({"message":message,"code":"VALIDATION_ERROR"}))
@@ -132,38 +138,54 @@ pub(super) fn verify_body(
     request: &AuthRequest,
     anonymous: bool,
 ) -> Result<VerifyBody, AuthResponse> {
-    let body = body(request, false)?;
+    let body = JsValue::from(Value::Object(body(request, false)?));
+    verify_value(Some(&body), anonymous)
+}
+
+pub(super) fn verify_value(
+    value: Option<&JsValue>,
+    anonymous: bool,
+) -> Result<VerifyBody, AuthResponse> {
+    let body = value.and_then(JsValue::as_object).ok_or_else(|| {
+        error(&format!(
+            "[body] Invalid input: expected object, received {}",
+            json_type(value)
+        ))
+    })?;
     let mut errors = Vec::new();
     let mut aborted = false;
     for field in ["message", "signature"] {
         match body.get(field) {
-            Some(Value::String(value)) if value.is_empty() => errors.push(format!(
+            Some(JsValue::String(value)) if value.is_empty() => errors.push(format!(
                 "[body.{field}] Too small: expected string to have >=1 characters"
             )),
-            Some(Value::String(_)) => {}
+            Some(JsValue::String(_)) => {}
             value => {
                 aborted = true;
                 errors.push(format!(
                     "[body.{field}] Invalid input: expected string, received {}",
-                    received(value)
+                    json_type(value)
                 ));
             }
         }
     }
     match body.get("email") {
-        Some(Value::String(email)) if !is_valid_email(email) => {
+        Some(JsValue::String(email)) if !is_valid_email(email) => {
             errors.push("[body.email] Invalid email address".to_owned());
         }
-        None | Some(Value::String(_)) => {}
+        None | Some(JsValue::String(_)) => {}
         value => {
             aborted = true;
             errors.push(format!(
                 "[body.email] Invalid input: expected string, received {}",
-                received(value)
+                json_type(value)
             ));
         }
     }
-    if let Some(unknown) = unknown_keys(&body, &["message", "signature", "email"]) {
+    if let Some(unknown) = unknown_field_keys(
+        body.keys().map(String::as_str),
+        &["message", "signature", "email"],
+    ) {
         errors.push(unknown);
         aborted = true;
     }
@@ -171,7 +193,7 @@ pub(super) fn verify_body(
         && !aborted
         && body
             .get("email")
-            .and_then(Value::as_str)
+            .and_then(JsValue::as_str)
             .is_none_or(str::is_empty)
     {
         errors.push(
@@ -185,14 +207,17 @@ pub(super) fn verify_body(
     Ok(VerifyBody {
         message: body
             .get("message")
-            .and_then(Value::as_str)
+            .and_then(JsValue::as_str)
             .unwrap_or_default()
             .to_owned(),
         signature: body
             .get("signature")
-            .and_then(Value::as_str)
+            .and_then(JsValue::as_str)
             .unwrap_or_default()
             .to_owned(),
-        email: body.get("email").and_then(Value::as_str).map(str::to_owned),
+        email: body
+            .get("email")
+            .and_then(JsValue::as_str)
+            .map(str::to_owned),
     })
 }

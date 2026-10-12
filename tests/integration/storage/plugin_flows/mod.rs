@@ -84,6 +84,7 @@ mod server_sign_in_social;
 mod server_sign_out;
 mod server_sign_up_email;
 mod server_siwe_nonce;
+mod server_siwe_verify;
 mod server_update_session;
 mod server_update_user;
 mod server_verify_password;
