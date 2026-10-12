@@ -865,6 +865,18 @@ pub(super) async fn execute<S: AuthSchema>(
             .await?,
         );
     }
+    if call.operation_id() == "removeTeam" && call.request().is_none() && call.headers().is_none() {
+        let body: types::RemoveTeamRequest = call.body_as()?;
+        let organization_id = body
+            .organization_id
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| handlers::extension_common::org_error(400, "NO_ACTIVE_ORGANIZATION"))?;
+        handlers::team::remove_team_core(&organization_id, &body.team_id, None, ctx, config)
+            .await?;
+        return EndpointResponse::json(&types::MessageResponse {
+            message: "Team removed successfully.".into(),
+        });
+    }
     if call.operation_id() == "listUserInvitations" {
         let query: types::ListUserInvitationsQuery = call.query_as()?;
         if let Some(email) = query.email.as_deref().filter(|email| !email.is_empty()) {
