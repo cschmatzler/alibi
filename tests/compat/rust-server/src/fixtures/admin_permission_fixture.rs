@@ -195,7 +195,9 @@ pub(crate) async fn router(
                 let mut endpoint =
                     alibi::endpoint::ServerEndpoint::<alibi::utils::json::JsValue>::new(
                         "admin",
-                        if input["operation"] == "createUser" {
+                        if input["operation"] == "userHasPermission" {
+                            "userHasPermission"
+                        } else if input["operation"] == "createUser" {
                             "createUser"
                         } else if input["operation"] == "setRole" {
                             "setRole"
@@ -353,7 +355,7 @@ impl<S: alibi::AuthSchema> alibi::endpoint::EndpointHook<S> for AdminServerObser
     ) -> AuthResult<bool> {
         Ok(matches!(
             call.operation_id(),
-            "getUser" | "setUserRole" | "createUser"
+            "getUser" | "setUserRole" | "createUser" | "userHasPermission"
         ) && call.request().is_none())
     }
     async fn after(

@@ -2,7 +2,9 @@
 use super::{
     AdminPlugin, MESSAGE_CHANGE_ROLE, MESSAGE_GET_USER, create_user_core, get_user_core,
     set_role_core,
-    types::{CreateUserRequest, GetUserQuery, SetRoleRequest},
+    types::{
+        CreateUserRequest, GetUserQuery, HasPermissionRequest, PermissionResponse, SetRoleRequest,
+    },
 };
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
@@ -17,6 +19,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             "getUser",
             Some("/admin/get-user"),
             HttpMethod::Get,
+        ),
+        crate::endpoint::definition(
+            "userHasPermission",
+            "userHasPermission",
+            Some("/admin/has-permission"),
+            HttpMethod::Post,
         ),
         crate::endpoint::definition(
             "createUser",
@@ -34,6 +42,15 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "userHasPermission" {
+        let body: HasPermissionRequest =
+            super::validation::body_value("has-permission", call.body().cloned())
+                .map_err(crate::endpoint::error_response)?;
+        return Ok(EndpointInput {
+            body: Some(JsValue::from(serde_json::to_value(body)?)),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "createUser" {
         let body: CreateUserRequest =
             super::validation::body_value("create-user", call.body().cloned())
@@ -91,11 +108,71 @@ impl AdminPlugin {
         ServerEndpoint::new("admin", "createUser").with_body(body)
     }
 
+    /// Evaluate permissions through the installed admin policy and server hooks.
+    /// Trusted selectors apply only without a Request or headers; a session always wins.
+    pub fn user_has_permission_endpoint(
+        body: &super::AdminPermissionRequest,
+    ) -> AuthResult<ServerEndpoint<super::AdminPermissionResponse>> {
+        ServerEndpoint::new("admin", "userHasPermission").with_body(body)
+    }
+
+    async fn call_permission_endpoint(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<EndpointResponse> {
+        let body: HasPermissionRequest = call.body_as()?;
+        let requested = body.permissions.as_ref().ok_or_else(|| {
+            message_error("invalid permission check. no permission(s) were passed.")
+        })?;
+        let read = ctx.require_authoritative_session_record(call).await.ok();
+        let (user_id, role) = if let Some((user, session)) = read {
+            let user = ctx.user_view(&user);
+            call.record_authenticated_session(user.clone(), session);
+            (Some(user.id), user.role)
+        } else {
+            if call.request().is_some() || call.headers().is_some() {
+                return Ok(EndpointResponse::error(AuthError::Api {
+                    status: 401,
+                    code: None,
+                    message: String::new(),
+                })
+                .without_error_body());
+            }
+            let id = body.user_id.as_ref().filter(|id| !id.is_empty());
+            if let Some(role) = body.role.as_ref().filter(|role| !role.is_empty()) {
+                (id.cloned(), Some(role.clone()))
+            } else if let Some(id) = id {
+                let user = ctx
+                    .database
+                    .get_user_by_id_record(id)
+                    .await?
+                    .ok_or_else(|| message_error("user not found"))?;
+                let user = ctx.user_view(&user);
+                (Some(user.id), user.role)
+            } else {
+                return Err(message_error("user id or role is required"));
+            }
+        };
+        EndpointResponse::json(&PermissionResponse {
+            error: None,
+            success: super::access::has_permission(
+                user_id.as_deref(),
+                role.as_deref(),
+                &self.config,
+                requested,
+            ),
+        })
+    }
+
     pub(super) async fn call_admin_endpoint(
         &self,
         call: &EndpointCall,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "userHasPermission" {
+            return self.call_permission_endpoint(call, ctx).await;
+        }
         // The reference middleware resolves a fresh authoritative session and
         // converts a failed nested session read to an absent session.
         let read = ctx.require_authoritative_session_record(call).await.ok();
@@ -133,5 +210,13 @@ impl AdminPlugin {
         self.authorize(&principal, "user", "get", MESSAGE_GET_USER)?;
         let query: GetUserQuery = call.query_as()?;
         EndpointResponse::json(&get_user_core(&query, ctx).await?)
+    }
+}
+
+fn message_error(message: &str) -> AuthError {
+    AuthError::Api {
+        status: 400,
+        code: None,
+        message: message.into(),
     }
 }
