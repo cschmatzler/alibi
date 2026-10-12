@@ -398,9 +398,25 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                 .map_err(|error| validation(error.to_string()))?;
         }
         "listUserTeams" => {
-            let _: types::TeamQuery = call
-                .query_as()
-                .map_err(|error| validation(error.to_string()))?;
+            let query = if call.has_query() {
+                Some(validate_fields(
+                    call.query(),
+                    "query",
+                    &[
+                        JsonField::string("organizationId", false),
+                        JsonField::string("userId", false),
+                    ],
+                )?)
+            } else {
+                None
+            };
+            if call.headers().is_none() {
+                return Err(validation("Headers is required"));
+            }
+            return Ok(EndpointInput {
+                body: call.body().cloned(),
+                query,
+            });
         }
         "listTeamMembers" => {
             let _: types::TeamQuery = call
