@@ -26,6 +26,7 @@ use axum::{
     Json, Router,
     extract::Query,
     http::StatusCode,
+    response::IntoResponse,
     routing::{get, post},
 };
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -732,6 +733,7 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
             routes,
         );
     }
+    let selection_profiles = profiles.clone();
     let operation_profiles = profiles.clone();
     let operation_database = database.clone();
     let team_backups = Arc::new(tokio::sync::Mutex::new(
@@ -970,6 +972,29 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                     },
                 };
                 match result { Ok(value) => (StatusCode::OK, Json(value)), Err(error) if signed => (StatusCode::from_u16(error.status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR), Json(json!({"status":error.status_code()}))), Err(error) => failure(error) }
+            }
+        }))
+        .route("/__test/server-api/organization-set-active-team", post(move |Json(input): Json<Value>| {
+            let profiles = selection_profiles.clone();
+            async move {
+                let name = input.get("profile").and_then(Value::as_str).unwrap_or("org-teams-no-default");
+                let Some(profile) = profiles.iter().find(|profile| profile.name == name) else {
+                    return failure(AuthError::bad_request("Unknown fixture profile")).into_response();
+                };
+                let mut endpoint = alibi::endpoint::ServerEndpoint::<alibi::utils::json::JsValue>::new("organization", "setActiveTeam");
+                if let Some(body) = input.get("body") { endpoint = endpoint.with_body(body).unwrap(); }
+                let options = alibi::endpoint::EndpointOptions {
+                    headers: input.get("headers").map(|headers| serde_json::from_value(headers.clone()).unwrap()),
+                    ..Default::default()
+                };
+                match profile.auth.dispatch_endpoint(endpoint, options).await {
+                    Ok(output) => output.into_response().unwrap().into_response(),
+                    Err(error) => {
+                        let mut response = error.error.to_auth_response();
+                        if let Some(body) = error.body { response.body = serde_json::to_vec(&*body).unwrap(); }
+                        response.into_response()
+                    }
+                }
             }
         }))
         .route("/__test/organization-state", get(move |Query(query): Query<OrganizationQuery>| {

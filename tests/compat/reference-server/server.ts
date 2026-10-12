@@ -2139,6 +2139,21 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       invitations,
     });
   }
+  if (
+    url.pathname === "/__test/server-api/organization-set-active-team" &&
+    request.method === "POST"
+  ) {
+    const body = await readJson(request);
+    const selected = teamProfiles.get(
+      typeof body?.profile === "string" ? body.profile : "org-teams-no-default",
+    )?.auth;
+    if (!selected) return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
+    return selected.api.setActiveTeam({
+      body: body?.body as Parameters<typeof selected.api.setActiveTeam>[0]["body"],
+      ...(body?.headers ? { headers: new Headers(body.headers as Record<string, string>) } : {}),
+      asResponse: true,
+    });
+  }
   if (url.pathname === "/__test/organization-api" && request.method === "POST") {
     const body = await readJson(request);
     const profileName = typeof body?.profile === "string" ? body.profile : "org-teams";
