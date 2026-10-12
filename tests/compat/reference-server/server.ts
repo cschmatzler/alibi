@@ -2157,6 +2157,15 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       asResponse: true,
     });
   }
+  if (url.pathname === "/__test/server-api/phone-send-otp" && request.method === "POST") {
+    const input = await readJson(request);
+    const selected = phoneFixture.profiles.get(input?.profile ?? "phone-default");
+    if (!selected) return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
+    return selected.api.sendPhoneNumberOTP({
+      body: input?.body as Parameters<typeof selected.api.sendPhoneNumberOTP>[0]["body"],
+      asResponse: true,
+    });
+  }
   if (url.pathname === "/__test/server-api/email-otp-get" && request.method === "POST") {
     const input = await readJson(request);
     const selected = typeof input?.profile === "string" ? otpProfiles.get(input.profile) : auth;

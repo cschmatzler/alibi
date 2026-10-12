@@ -10,7 +10,7 @@ mod types;
 
 use alibi_core::{AuthContext, AuthRequest, AuthResult, AuthSchema};
 use async_trait::async_trait;
-pub use endpoint::PhoneOtpConsumption;
+pub use endpoint::{PhoneOtpConsumption, PhoneOtpSent};
 use std::sync::Arc;
 pub use types::{PhoneNumberVerification, PhoneOtpDelivery};
 pub(crate) use types::{parse_signup_phone, reject_verified_input};

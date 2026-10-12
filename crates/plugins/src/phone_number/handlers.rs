@@ -32,12 +32,12 @@ impl PhoneNumberPlugin {
     async fn deliver(
         &self,
         ctx: &AuthContext<impl AuthSchema>,
-        req: &AuthRequest,
+        req: Option<&AuthRequest>,
         sender: Arc<dyn super::SendPhoneOtp>,
         delivery: PhoneOtpDelivery,
         policy: alibi_core::AwaitedNotificationErrorPolicy,
     ) -> AuthResult<()> {
-        let context = alibi_core::CallbackContext::new(ctx, Some(req));
+        let context = alibi_core::CallbackContext::new(ctx, req);
         crate::authentication_helpers::run_owned_notification(
             ctx,
             async move { sender.send(&delivery, &context).await },
@@ -185,6 +185,15 @@ impl PhoneNumberPlugin {
             Ok(body) => body,
             Err(response) => return Ok(response),
         };
+        self.send_otp_core(ctx, Some(req), body).await
+    }
+
+    pub(super) async fn send_otp_core(
+        &self,
+        ctx: &AuthContext<impl AuthSchema>,
+        request: Option<&AuthRequest>,
+        body: SendRequest,
+    ) -> AuthResult<AuthResponse> {
         let sender = self.config.send_otp.as_ref().ok_or_else(|| {
             phone_error(501, "SEND_OTP_NOT_IMPLEMENTED", "sendOTP not implemented")
         })?;
@@ -196,7 +205,7 @@ impl PhoneNumberPlugin {
         };
         self.deliver(
             ctx,
-            req,
+            request,
             sender.clone(),
             PhoneOtpDelivery {
                 phone_number: body.phone_number,
@@ -238,7 +247,7 @@ impl PhoneNumberPlugin {
             if let Some(sender) = &self.config.send_otp {
                 self.deliver(
                     ctx,
-                    req,
+                    Some(req),
                     sender.clone(),
                     PhoneOtpDelivery {
                         phone_number: body.phone_number,
@@ -510,7 +519,7 @@ impl PhoneNumberPlugin {
         {
             self.deliver(
                 ctx,
-                req,
+                Some(req),
                 sender.clone(),
                 PhoneOtpDelivery {
                     phone_number: body.phone_number,
