@@ -10,7 +10,7 @@ import { readOtp, deliveredOtpCount } from "../../plugins/email-otp/helpers";
 
 for (const current of [false, true]) {
   compatScenario(
-    `server email change request preserves proof and delivery scope with current verification ${current}`,
+    `server email change lifecycle preserves proof and caller authority with current verification ${current}`,
     async (ctx) => {
       const profile = current ? "passwordless-proof" : "passwordless-disabled";
       const actor = ctx.actor("owner", profile);
@@ -32,9 +32,20 @@ for (const current of [false, true]) {
         },
       });
       expect(owner.error).toBeNull();
-      const foreign = await ctx
-        .actor("foreign", profile)
-        .client.signUp.email({ email: otherEmail, password: "password123", name: "Foreign" });
+      let foreignCookie = "";
+      const foreign = await ctx.actor("foreign", profile).client.signUp.email({
+        email: otherEmail,
+        password: "password123",
+        name: "Foreign",
+        fetchOptions: {
+          onSuccess({ response }) {
+            foreignCookie = response.headers
+              .getSetCookie()
+              .map((raw) => raw.split(";")[0])
+              .join("; ");
+          },
+        },
+      });
       expect(foreign.error).toBeNull();
       const before = await readUserState(ctx, owner.data!.user.id);
       const foreignBefore = await readUserState(ctx, foreign.data!.user.id);
@@ -110,9 +121,53 @@ for (const current of [false, true]) {
       expect(disabled.status).toBe(400);
       expect(disabled.body).toEqual({ message: "Change email with OTP is disabled" });
       expect(await storedVerification(ctx, identifier)).toEqual(targetProof);
-      const changed = await actor.client.emailOtp.changeEmail({ newEmail, otp });
-      expect(changed.error).toBeNull();
-      expect(changed.data).toEqual({ success: true });
+      async function complete(body: unknown, credentials?: string) {
+        const response = await ctx
+          .actor("completion-sdk", profile)
+          .fetch(`${ctx.baseURL}/__test/server-api/email-otp-change`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              profile,
+              body,
+              ...(credentials ? { headers: { cookie: credentials } } : {}),
+            }),
+          });
+        return {
+          status: response.status,
+          body: (await response.json()) as any,
+          cookieCount: response.headers.getSetCookie().length,
+        };
+      }
+      const completionInvalid = await complete({ newEmail, otp: 42 }, cookie);
+      expect(completionInvalid.status).toBe(400);
+      expect(completionInvalid.body.code).toBe("VALIDATION_ERROR");
+      expect(await storedVerification(ctx, identifier)).toEqual(targetProof);
+      const completionUnauthenticated = await complete({ newEmail, otp });
+      expect(completionUnauthenticated.status).toBe(401);
+      expect(await storedVerification(ctx, identifier)).toEqual(targetProof);
+      const foreignAttempt = await complete({ newEmail, otp }, foreignCookie);
+      expect(foreignAttempt.status).toBe(400);
+      expect(foreignAttempt.body.code).toBe("INVALID_OTP");
+      expect(await storedVerification(ctx, identifier)).toEqual(targetProof);
+      const completionWrong = await complete({ newEmail, otp: "wrong" }, cookie);
+      expect(completionWrong.status).toBe(400);
+      expect(completionWrong.body.code).toBe("INVALID_OTP");
+      const changed = await complete(
+        { newEmail: newEmail.toUpperCase(), otp, userId: foreign.data!.user.id },
+        cookie,
+      );
+      expect(changed.status).toBe(200);
+      expect(changed.body).toEqual({ success: true });
+      expect(changed.cookieCount).toBeGreaterThan(0);
+      expect(
+        (await ctx.actor("completion-sdk", profile).client.getSession()).data!.user.email,
+      ).toBe(newEmail);
+      const completed = await readUserState(ctx, owner.data!.user.id);
+      const replay = await complete({ newEmail, otp }, cookie);
+      expect(replay.status).toBe(400);
+      expect(replay.body.message).toBe("Email is the same");
+      expect(await readUserState(ctx, owner.data!.user.id)).toEqual(completed);
       expect(await verificationCount(ctx, identifier)).toBe(0);
       expect((await actor.client.getSession()).data!.user.email).toBe(newEmail);
       expect(await readUserState(ctx, foreign.data!.user.id)).toEqual(foreignBefore);
@@ -124,7 +179,12 @@ for (const current of [false, true]) {
         issued,
         hidden,
         disabled,
+        completionInvalid,
+        completionUnauthenticated,
+        foreignAttempt,
+        completionWrong,
         changed,
+        replay,
       });
     },
   );
