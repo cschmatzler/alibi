@@ -250,6 +250,22 @@ export async function createSiweFixture(
   async function handle(request: Request): Promise<Response | null> {
     const path = new URL(request.url).pathname;
 
+    if (path === "/__test/server-api/siwe-verify" && request.method === "POST") {
+      const input = await request.json();
+      const selected = profiles.get("/__test/profiles/siwe/api/auth")!;
+      const api = selected.api as unknown as {
+        verifySiweMessage: (options: {
+          body?: unknown;
+          request?: Request;
+          asResponse: true;
+        }) => Promise<Response>;
+      };
+      return api.verifySiweMessage({
+        ...(Object.hasOwn(input, "body") ? { body: input.body } : {}),
+        ...(input.physicalRequest ? { request } : {}),
+        asResponse: true,
+      });
+    }
     if (path === "/__test/server-api/siwe-nonce" && request.method === "POST") {
       const input = await request.json();
       const selected = profiles.get("/__test/profiles/siwe/api/auth")!;

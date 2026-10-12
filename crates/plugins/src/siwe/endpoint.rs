@@ -1,5 +1,5 @@
 //! SIWE nonce operations use the real issuer without constructing an HTTP request.
-use super::{SiwePlugin, validation};
+use super::{SiwePlugin, SiweVerificationInput, validation};
 use crate::authentication_helpers::json_type;
 use crate::endpoint::{definition, error_response};
 use alibi_core::endpoint::{
@@ -15,8 +15,30 @@ pub struct SiweNonceResponse {
     pub nonce: String,
 }
 
+/// Wallet identity selected by a successful SIWE proof.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SiweVerifiedUser {
+    pub id: String,
+    pub wallet_address: String,
+    pub chain_id: f64,
+}
+/// Result of signature verification and session issuance.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SiweVerificationResponse {
+    pub success: bool,
+    pub token: String,
+    pub user: SiweVerifiedUser,
+}
+
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
+        definition(
+            "verifySiweMessage",
+            "verifySiweMessage",
+            Some("/siwe/verify"),
+            HttpMethod::Post,
+        ),
         definition(
             "getSiweNonce",
             "getSiweNonce",
@@ -32,7 +54,18 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
     ]
 }
 
-pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+pub(super) fn validate(plugin: &SiwePlugin, call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "verifySiweMessage" {
+        _ = validation::verify_value(call.body(), plugin.config.anonymous)
+            .map_err(error_response)?;
+        if call.request().is_none() {
+            return Err(crate::endpoint::validation("Request is required"));
+        }
+        return Ok(EndpointInput {
+            body: call.body().cloned(),
+            query: call.query().cloned(),
+        });
+    }
     if let Some(value) = call.body() {
         let object = value.as_object().ok_or_else(|| {
             crate::endpoint::validation(format!(
@@ -53,6 +86,14 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
 }
 
 impl SiwePlugin {
+    /// Verify a signed proof using the original request supplied in call options.
+    /// # Errors
+    /// Returns a serialization error if the input cannot be represented.
+    pub fn verify_message_endpoint(
+        input: &SiweVerificationInput,
+    ) -> AuthResult<ServerEndpoint<SiweVerificationResponse>> {
+        ServerEndpoint::new("siwe", "verifySiweMessage").with_body(input)
+    }
     /// Generate and persist a nonce through installed server dispatch hooks.
     #[must_use]
     pub fn get_siwe_nonce_endpoint() -> ServerEndpoint<SiweNonceResponse> {
@@ -67,9 +108,19 @@ impl SiwePlugin {
 
 pub(super) async fn execute<S: AuthSchema>(
     plugin: &SiwePlugin,
+    call: &EndpointCall,
     ctx: &AuthContext<S>,
 ) -> AuthResult<EndpointResponse> {
-    let output = plugin.issue_nonce(ctx).await?;
+    let output = if call.operation_id() == "verifySiweMessage" {
+        let request = call
+            .request()
+            .ok_or_else(|| crate::endpoint::validation("Request is required"))?;
+        plugin
+            .verify_response(request, ctx, call.body_as()?)
+            .await?
+    } else {
+        plugin.issue_nonce(ctx).await?
+    };
     let body = alibi_core::utils::json::from_slice::<JsValue>(&output.body)?;
     let mut response = if output.status >= 400 {
         EndpointResponse::error(error_response(output.clone())).with_error_body(body)
