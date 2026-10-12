@@ -59,6 +59,20 @@ pub struct EmailOtpResetRequested {
     pub success: bool,
 }
 
+/// Scoped reset proof and replacement credential for the public server operation.
+#[derive(Debug, Deserialize, serde::Serialize)]
+pub struct EmailOtpPasswordResetInput {
+    pub email: String,
+    pub otp: String,
+    pub password: String,
+}
+
+/// A replacement credential was committed without issuing browser authority.
+#[derive(Debug, Deserialize)]
+pub struct EmailOtpPasswordReset {
+    pub success: bool,
+}
+
 const FIELDS: &[JsonField] = &[
     JsonField::string("email", true),
     JsonField {
@@ -75,6 +89,12 @@ const FIELDS: &[JsonField] = &[
 
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
+        definition(
+            "resetPasswordEmailOTP",
+            "resetPasswordWithEmailOTP",
+            Some("/email-otp/reset-password"),
+            HttpMethod::Post,
+        ),
         definition(
             "requestPasswordResetEmailOTP",
             "requestPasswordResetWithEmailOTP",
@@ -127,6 +147,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "resetPasswordWithEmailOTP" {
+        return Ok(EndpointInput {
+            body:Some(validate_fields(call.body(),"body",<super::types::PasswordRequest as crate::authentication_helpers::RequestBody>::FIELDS)?),
+            query:call.query().cloned(),
+        });
+    }
     if matches!(
         call.operation_id(),
         "requestPasswordResetWithEmailOTP" | "forgetPasswordWithEmailOTP"
@@ -185,6 +211,16 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
 }
 
 impl EmailOtpPlugin {
+    /// Consume a reset proof and replace or create the owner's credential.
+    ///
+    /// # Errors
+    /// Returns an error if reset input cannot be serialized.
+    pub fn reset_password_email_otp_endpoint(
+        input: &EmailOtpPasswordResetInput,
+    ) -> AuthResult<ServerEndpoint<EmailOtpPasswordReset>> {
+        ServerEndpoint::new("email-otp", "resetPasswordEmailOTP").with_body(input)
+    }
+
     /// Request a scoped reset proof without exposing whether the mailbox exists.
     #[must_use]
     pub fn request_password_reset_email_otp_endpoint(
@@ -288,6 +324,7 @@ impl EmailOtpPlugin {
                 | "signInWithEmailOTP"
                 | "requestPasswordResetWithEmailOTP"
                 | "forgetPasswordWithEmailOTP"
+                | "resetPasswordWithEmailOTP"
         ) {
             if call.operation_id() == "sendEmailVerificationOTP"
                 && let Some(request) = call.request()
@@ -316,6 +353,9 @@ impl EmailOtpPlugin {
                 "requestPasswordResetWithEmailOTP" | "forgetPasswordWithEmailOTP" => {
                     self.request_password_reset_core(call.request(), ctx, call.body_as()?)
                         .await?
+                }
+                "resetPasswordWithEmailOTP" => {
+                    self.reset_password_core(ctx, call.body_as()?).await?
                 }
                 _ => self.verify_email_core(call, ctx, call.body_as()?).await?,
             };

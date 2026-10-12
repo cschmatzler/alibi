@@ -2260,6 +2260,13 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
     }
     return selected.api.requestPasswordResetEmailOTP(args);
   }
+  if (url.pathname === "/__test/server-api/email-otp-reset" && request.method === "POST") {
+    const input = await readJson(request);
+    return auth.api.resetPasswordEmailOTP({
+      body: input?.body as Parameters<typeof auth.api.resetPasswordEmailOTP>[0]["body"],
+      asResponse: true,
+    });
+  }
   if (url.pathname === "/__test/server-api/email-otp-get" && request.method === "POST") {
     const input = await readJson(request);
     const selected = typeof input?.profile === "string" ? otpProfiles.get(input.profile) : auth;
