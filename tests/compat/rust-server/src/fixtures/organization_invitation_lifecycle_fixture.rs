@@ -324,10 +324,17 @@ pub(crate) async fn router(
             let auth = server_auth.clone();
             async move {
                 use axum::response::IntoResponse;
+                let operation = if input.get("operation").and_then(Value::as_str)
+                    == Some("listOrganizationTeams")
+                {
+                    "listOrganizationTeams"
+                } else {
+                    "createInvitation"
+                };
                 let mut endpoint =
                     alibi::endpoint::ServerEndpoint::<alibi::utils::json::JsValue>::new(
                         "organization",
-                        "createInvitation",
+                        operation,
                     );
                 if let Some(body) = input.get("body") {
                     endpoint = endpoint.with_body(body).unwrap();
