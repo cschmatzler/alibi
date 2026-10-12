@@ -52,6 +52,7 @@ mod screening_matrix;
 mod secondary_sessions;
 mod server_account_listing;
 mod server_account_unlink;
+mod server_admin_get_user;
 mod server_change_password;
 mod server_endpoints;
 mod server_link_social_account;

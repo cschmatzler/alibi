@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 
 import { type BetterAuthOptions, betterAuth } from "better-auth";
-import { APIError } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { admin, twoFactor, username } from "better-auth/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
 
@@ -18,6 +18,7 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
     "admin-impersonation-legacy",
     "admin-impersonation-no-base",
     "admin-standard",
+    "admin-server-cache",
     "admin-deny-all",
     "admin-exact-role",
     "admin-empty-role",
@@ -35,6 +36,35 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
       path,
       betterAuth({
         ...base,
+        ...(name === "admin-server-cache"
+          ? {
+              session: {
+                ...base.session,
+                cookieCache: { enabled: true, strategy: "compact", maxAge: 300 },
+              },
+            }
+          : {}),
+        hooks: {
+          after: createAuthMiddleware(async (ctx) => {
+            if (ctx.path === "/admin/get-user" && !ctx.request) {
+              ctx.context.responseHeaders ??= new Headers();
+              if (ctx.context.session?.user.email) {
+                ctx.context.responseHeaders.set(
+                  "x-admin-principal",
+                  ctx.context.session.user.email,
+                );
+              }
+              ctx.context.responseHeaders.append(
+                "set-cookie",
+                "application_a=first; Path=/; HttpOnly",
+              );
+              ctx.context.responseHeaders.append(
+                "set-cookie",
+                "application_b=second; Path=/; HttpOnly",
+              );
+            }
+          }),
+        },
         ...(name === "admin-duration-hook-error"
           ? {
               databaseHooks: {
@@ -160,6 +190,25 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
     handle(request: Request) {
       const url = new URL(request.url);
 
+      if (url.pathname === "/__test/admin/server-api" && request.method === "POST") {
+        return (async () => {
+          const input = (await request.json()) as {
+            profile?: string;
+            query?: unknown;
+            body?: unknown;
+            headers?: Record<string, string>;
+          };
+          const auth = profiles.get(
+            `/__test/profiles/${input.profile ?? "admin-standard"}/api/auth`,
+          )!;
+          return auth.api.getUser({
+            query: input.query as { id: string },
+            ...(Object.hasOwn(input, "body") ? { body: input.body } : {}),
+            ...(input.headers ? { headers: new Headers(input.headers) } : {}),
+            asResponse: true,
+          });
+        })();
+      }
       if (url.pathname === "/__test/admin-user-timestamps" && request.method === "POST") {
         return request
           .json()

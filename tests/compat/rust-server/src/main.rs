@@ -57,7 +57,8 @@ async fn private_json_content_type(
         // whose Response keeps application/json rather than Response.json's charset.
         && path != "/__test/api-key-hook/verify"
         && path != "/__test/phone-consume-otp"
-        && path != "/__test/generic-token/server-api";
+        && path != "/__test/generic-token/server-api"
+        && path != "/__test/admin/server-api";
     let mut response = next.run(request).await;
     if private_control
         && axum::body::HttpBody::size_hint(response.body())

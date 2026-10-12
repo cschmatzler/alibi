@@ -60,12 +60,14 @@ pub(crate) async fn router(
     database: DatabaseConnection,
 ) -> AuthResult<Router> {
     let mut router = Router::new();
+    let mut profiles = HashMap::new();
     for name in [
         "admin-impersonation-privileged",
         "admin-impersonation-ordinary",
         "admin-impersonation-legacy",
         "admin-impersonation-no-base",
         "admin-standard",
+        "admin-server-cache",
         "admin-deny-all",
         "admin-exact-role",
         "admin-empty-role",
@@ -79,7 +81,15 @@ pub(crate) async fn router(
         "admin-duration-hook-error",
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
-        let config = config.clone().base_path(&path);
+        let mut config = config.clone().base_path(&path);
+        if name == "admin-server-cache" {
+            config = config.session_cookie_cache(alibi::CookieCacheConfig {
+                enabled: true,
+                max_age: 300.0,
+                ..Default::default()
+            });
+        }
+
         let roles = if name.starts_with("admin-role-") {
             HashMap::from([
                 (
@@ -123,6 +133,7 @@ pub(crate) async fn router(
             AuthBuilder::<TestSchema>::new(config.clone())
                 .store(store)
                 .rate_limit(RateLimitConfig::new().enabled(false))
+                .endpoint_hook(AdminServerObserver)
                 .plugin(EmailPasswordPlugin::new())
                 .plugin(SessionManagementPlugin::new())
                 .plugin(TwoFactorPlugin::new())
@@ -171,8 +182,72 @@ pub(crate) async fn router(
                 .build()
                 .await?,
         );
-        router = router.nest(&path, auth.clone().axum_router().with_state(auth));
+        router = router.nest(&path, auth.clone().axum_router().with_state(auth.clone()));
+        profiles.insert(name, auth);
     }
+    router = router.route(
+        "/__test/admin/server-api",
+        post(move |Json(input): Json<Value>| {
+            let profiles = profiles.clone();
+            async move {
+                use axum::response::IntoResponse;
+                let auth = &profiles[input["profile"].as_str().unwrap_or("admin-standard")];
+                let mut endpoint =
+                    alibi::endpoint::ServerEndpoint::<alibi::utils::json::JsValue>::new(
+                        "admin", "getUser",
+                    );
+                if let Some(query) = input.get("query") {
+                    endpoint = endpoint.with_query(query).unwrap();
+                }
+                if let Some(body) = input.get("body") {
+                    endpoint = endpoint.with_body(body).unwrap();
+                }
+                let options = alibi::endpoint::EndpointOptions {
+                    headers: input
+                        .get("headers")
+                        .map(|value| serde_json::from_value(value.clone()).unwrap()),
+                    ..Default::default()
+                };
+                let response = match auth.dispatch_endpoint(endpoint, options).await {
+                    Ok(output) => output.into_response().unwrap(),
+                    Err(error) => {
+                        let mut response = error.error.to_auth_response();
+                        if error.body_absent {
+                            response.body.clear();
+                        }
+                        if let Some(body) = error.body {
+                            response.body = serde_json::to_vec(&*body).unwrap();
+                        }
+                        if let Some(headers) = error.headers {
+                            for (name, value) in headers {
+                                if name.eq_ignore_ascii_case("set-cookie") {
+                                    response.headers.append(name, value);
+                                } else {
+                                    drop(response.headers.insert(name, value));
+                                }
+                            }
+                        }
+                        response
+                    }
+                };
+                let mut wire = (
+                    axum::http::StatusCode::from_u16(response.status).unwrap(),
+                    response.body,
+                )
+                    .into_response();
+                for (name, value) in response.headers {
+                    let name = axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap();
+                    let value = axum::http::HeaderValue::from_str(&value).unwrap();
+                    if name == axum::http::header::SET_COOKIE {
+                        wire.headers_mut().append(name, value);
+                    } else {
+                        wire.headers_mut().insert(name, value);
+                    }
+                }
+                wire
+            }
+        }),
+    );
     let state_store = Arc::new(crate::backend::store::<TestSchema>(
         config.clone(),
         database,
@@ -258,4 +333,32 @@ async fn state(
     Ok(Json(
         json!({"user":{"id":user.id,"email":user.email,"name":user.name,"role":user.role,"banned":user.banned,"banReason":user.ban_reason,"banExpires":user.ban_expires,"createdAt":user.created_at,"updatedAt":user.updated_at},"accounts":accounts.into_iter().map(|a|json!({"id":a.id,"userId":a.user_id,"providerId":a.provider_id,"accountId":a.account_id})).collect::<Vec<_>>(),"sessions":sessions.into_iter().map(|s|json!({"id":s.id,"userId":s.user_id,"token":s.token,"impersonatedBy":s.impersonated_by,"createdAt":s.created_at,"expiresAt":s.expires_at})).collect::<Vec<_>>()}),
     ))
+}
+
+struct AdminServerObserver;
+#[async_trait::async_trait]
+impl<S: alibi::AuthSchema> alibi::endpoint::EndpointHook<S> for AdminServerObserver {
+    fn matches_after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+        _: &alibi::endpoint::EndpointResponse,
+    ) -> AuthResult<bool> {
+        Ok(call.operation_id() == "getUser" && call.request().is_none())
+    }
+    async fn after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+        mut response: alibi::endpoint::EndpointResponse,
+    ) -> AuthResult<alibi::endpoint::EndpointResponse> {
+        if let Some((user, _)) = call.session() {
+            if let Some(email) = user.email {
+                response = response.with_header("x-admin-principal", email);
+            }
+        }
+        Ok(response
+            .with_header("set-cookie", "application_a=first; Path=/; HttpOnly")
+            .with_header("set-cookie", "application_b=second; Path=/; HttpOnly"))
+    }
 }

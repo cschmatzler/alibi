@@ -836,6 +836,7 @@ export const FIXTURE_PROFILES = [
   "admin-role-manager",
   "admin-role-creator",
   "admin-standard",
+  "admin-server-cache",
   "admin-deny-all",
   "admin-exact-role",
   "admin-empty-role",
