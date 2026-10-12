@@ -141,9 +141,11 @@ impl Validate for UpdateKeyRequest {
     }
 }
 
-#[derive(Debug, Deserialize, Validate)]
+/// Parameters for deleting one API key as an authenticated caller.
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct DeleteKeyRequest {
+pub struct DeleteKeyRequest {
     #[serde(default, deserialize_with = "present")]
     pub config_id: Option<String>,
     pub key_id: String,

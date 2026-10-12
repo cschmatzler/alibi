@@ -1,7 +1,7 @@
 use super::{
     ApiKeyCallbackContext, ApiKeyErrorCode, ApiKeyErrorMessage, ApiKeyPlugin, ApiKeyReferences,
     ApiKeyValidationError, ApiKeyVerificationError, CreateKeyRequest, CreateKeyResponse,
-    DeleteExpiredApiKeysResponse, UpdateKeyRequest, VerifyApiKey,
+    DeleteExpiredApiKeysResponse, DeleteKeyRequest, UpdateKeyRequest, VerifyApiKey,
 };
 use crate::authentication_helpers::JsonField;
 use crate::endpoint::{definition, validate_fields};
@@ -41,6 +41,12 @@ pub struct GetKeyQuery {
     pub id: String,
 }
 
+/// Result of deleting an API key through the authenticated server API.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteKeyResponse {
+    pub success: bool,
+}
+
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
         definition("verifyApiKey", "verifyApiKey", None, HttpMethod::Post),
@@ -61,6 +67,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             "getApiKey",
             Some("/api-key/get"),
             HttpMethod::Get,
+        ),
+        definition(
+            "deleteApiKey",
+            "deleteApiKey",
+            Some("/api-key/delete"),
+            HttpMethod::Post,
         ),
         definition(
             "updateApiKey",
@@ -86,7 +98,7 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
         });
     }
     let body = match call.operation_id() {
-        "verifyApiKey" | "createApiKey" | "updateApiKey" => {
+        "verifyApiKey" | "createApiKey" | "updateApiKey" | "deleteApiKey" => {
             Some(validate_key_body(call.body(), call.operation_id())?)
         }
         _ => call.body().cloned(),
@@ -115,6 +127,10 @@ fn key_fields(operation: &str) -> &'static [(&'static str, KeyFieldKind, bool, b
             ("configId", String, false, false),
             ("key", String, true, false),
             ("permissions", Permissions, false, false),
+        ],
+        "deleteApiKey" => &[
+            ("configId", String, false, false),
+            ("keyId", String, true, false),
         ],
         "createApiKey" => &[
             ("configId", String, false, false),
@@ -298,12 +314,44 @@ impl ApiKeyPlugin {
         ServerEndpoint::new("api-key", "getApiKey").with_query(query)
     }
 
+    /// Delete an owned key through installed hooks and authenticated policy.
+    /// # Errors
+    /// Returns an error if body serialization fails.
+    pub fn delete_endpoint(
+        body: &DeleteKeyRequest,
+    ) -> AuthResult<ServerEndpoint<DeleteKeyResponse>> {
+        ServerEndpoint::new("api-key", "deleteApiKey").with_body(body)
+    }
+
     pub(super) async fn call_endpoint<S: AuthSchema>(
         &self,
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         match call.operation_id() {
+            "deleteApiKey" => {
+                let body: DeleteKeyRequest = call.body_as()?;
+                let (user, _) = ctx.require_cached_session(call).await.map_err(|error| {
+                    if matches!(
+                        error,
+                        AuthError::Unauthenticated | AuthError::SessionNotFound
+                    ) {
+                        AuthError::Api {
+                            status: 401,
+                            code: Some("UNAUTHORIZED".into()),
+                            message: "Unauthorized".into(),
+                        }
+                    } else {
+                        error
+                    }
+                })?;
+                if user.banned() {
+                    return Err(AuthError::authentication_failed("User is banned"));
+                }
+                EndpointResponse::json(
+                    &super::handlers::delete_key_core(&body, user.id(), self, ctx).await?,
+                )
+            }
             "getApiKey" => {
                 let query: GetKeyQuery = call.query_as()?;
                 let (user, _) = ctx.require_cached_session(call).await.map_err(|error| {

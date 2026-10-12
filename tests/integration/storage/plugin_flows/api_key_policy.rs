@@ -1896,6 +1896,33 @@ async fn banned_api_key_owner_can_verify_but_cannot_use_synthetic_deletion_autho
     let denied = call(&auth, input, 401).await;
     assert_eq!(body(&denied)["code"], "USER_BANNED");
     assert!(!denied.headers.contains_key("set-cookie"));
+    let logical = Box::pin(
+        auth.dispatch_endpoint(
+            alibi::endpoint::ServerEndpoint::<alibi::utils::json::JsValue>::new(
+                "api-key",
+                "deleteApiKey",
+            )
+            .with_body(&json!({"keyId":id}))?,
+            alibi::endpoint::EndpointOptions {
+                headers: Some([("x-api-key".into(), secret.into())].into_iter().collect()),
+                ..Default::default()
+            },
+        ),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(logical.error.status_code(), 401);
+    assert_eq!(
+        body(&logical.error.to_auth_response())["code"],
+        "USER_BANNED"
+    );
+    assert!(
+        logical
+            .headers
+            .as_ref()
+            .is_none_or(|headers| !headers.contains_key("set-cookie"))
+    );
+
     assert_eq!(
         db.text("SELECT key FROM api_keys WHERE id=$1", &[id])
             .await?,

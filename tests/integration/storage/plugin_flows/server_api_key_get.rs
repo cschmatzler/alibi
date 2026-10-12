@@ -4,8 +4,8 @@ use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{ApiKeyPlugin, api_key::ApiKeyConfig};
 use alibi::utils::json::JsValue;
 
-backend_tests!(server_get_api_key_preserves_owner_authority_and_redaction);
-async fn server_get_api_key_preserves_owner_authority_and_redaction<B: Backend>(
+backend_tests!(server_api_key_read_delete_lifecycle_preserves_owner_authority);
+async fn server_api_key_read_delete_lifecycle_preserves_owner_authority<B: Backend>(
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
@@ -134,5 +134,92 @@ async fn server_get_api_key_preserves_owner_authority_and_redaction<B: Backend>(
     assert_eq!(typed.value(), &expected);
     assert_eq!(typed.decode()?.id, key_id);
     assert_eq!(db.tables(&["users", "sessions", "api_keys"]).await?, before);
+    let deletion = || ServerEndpoint::<JsValue>::new("api-key", "deleteApiKey");
+    for (input, options, status, code) in [
+        (None, EndpointOptions::default(), 400, "VALIDATION_ERROR"),
+        (
+            Some(json!({})),
+            credentials(&owner),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (
+            Some(json!({"keyId":42})),
+            credentials(&owner),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (
+            Some(json!({"keyId":key_id,"configId":42})),
+            credentials(&owner),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (
+            Some(json!({"keyId":key_id})),
+            EndpointOptions::default(),
+            401,
+            "UNAUTHORIZED",
+        ),
+        (
+            Some(json!({"keyId":key_id})),
+            credentials(&outsider),
+            404,
+            "KEY_NOT_FOUND",
+        ),
+        (
+            Some(json!({"keyId":"missing-key"})),
+            credentials(&owner),
+            404,
+            "KEY_NOT_FOUND",
+        ),
+        (
+            Some(json!({"keyId":key_id,"configId":"secondary"})),
+            credentials(&owner),
+            404,
+            "KEY_NOT_FOUND",
+        ),
+    ] {
+        let mut call = deletion();
+        if let Some(body) = input {
+            call = call.with_body(&body)?;
+        }
+        let error = Box::pin(auth.dispatch_endpoint(call, options))
+            .await
+            .unwrap_err();
+        assert_eq!(error.error.status_code(), status);
+        assert_eq!(body(&error.error.to_auth_response())["code"], code);
+    }
+    assert_eq!(db.tables(&["users", "sessions", "api_keys"]).await?, before);
+    let removed = Box::pin(
+        auth.dispatch_endpoint(
+            ApiKeyPlugin::delete_endpoint(&alibi::plugins::api_key::DeleteKeyRequest {
+                config_id: None,
+                key_id: key_id.clone(),
+            })?
+            .with_body(&json!({"keyId":key_id,"ignored":{"nested":true}}))?,
+            credentials(&owner),
+        ),
+    )
+    .await?;
+    assert_eq!(removed.value().get("success"), Some(&JsValue::Bool(true)));
+    assert!(removed.decode()?.success);
+    let after = db.tables(&["users", "sessions", "api_keys"]).await?;
+    assert_eq!(&after[..2], &before[..2]);
+    assert_eq!(after[2], "[]");
+    for call in [
+        deletion().with_body(&json!({"keyId":key_id}))?,
+        endpoint().with_query(&json!({"id":key_id}))?,
+    ] {
+        let error = Box::pin(auth.dispatch_endpoint(call, credentials(&owner)))
+            .await
+            .unwrap_err();
+        assert_eq!(error.error.status_code(), 404);
+        assert_eq!(
+            body(&error.error.to_auth_response())["code"],
+            "KEY_NOT_FOUND"
+        );
+    }
+    assert_eq!(db.tables(&["users", "sessions", "api_keys"]).await?, after);
     B::close(connection).await
 }
