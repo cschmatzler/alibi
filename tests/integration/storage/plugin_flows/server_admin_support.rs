@@ -20,6 +20,7 @@ impl<S: AuthSchema> EndpointHook<S> for AdminObserver {
                 | "userHasPermission"
                 | "adminUpdateUser"
                 | "listUsers"
+                | "adminListUserSessions"
         ))
     }
     async fn after(
@@ -33,6 +34,8 @@ impl<S: AuthSchema> EndpointHook<S> for AdminObserver {
             call.path(),
             Some(if call.operation_id() == "getUser" {
                 "/admin/get-user"
+            } else if call.operation_id() == "adminListUserSessions" {
+                "/admin/list-user-sessions"
             } else if call.operation_id() == "listUsers" {
                 "/admin/list-users"
             } else if call.operation_id() == "adminUpdateUser" {

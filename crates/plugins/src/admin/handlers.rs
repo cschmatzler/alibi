@@ -557,11 +557,9 @@ pub(crate) async fn list_user_sessions_core(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<ListSessionsResponse<SessionView>> {
     let sessions = ctx.database.get_user_sessions_record(&body.user_id).await?;
-    let now = Utc::now();
     Ok(ListSessionsResponse {
         sessions: sessions
             .iter()
-            .filter(|session| session.expires_at() > now && session.active())
             .map(|session| ctx.session_view(session))
             .collect(),
     })
