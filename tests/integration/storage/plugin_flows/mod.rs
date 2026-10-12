@@ -73,6 +73,7 @@ mod server_api_key_get;
 mod server_api_key_list;
 mod server_change_password;
 mod server_email_otp_check;
+mod server_email_otp_verify;
 mod server_endpoints;
 mod server_link_social_account;
 mod server_list_sessions;
