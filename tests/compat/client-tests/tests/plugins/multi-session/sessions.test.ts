@@ -144,25 +144,81 @@ for (const profile of [
       const overridden = await serverList({}, true, jar.getCookieStringSync(path));
       expect(overridden.status).toBe(200);
       expect(overridden.body).toEqual([]);
-      const select = await client.multiSession.setActive({ sessionToken: alice.data.token });
-      expect(select.error).toBeNull();
-      expect(select.data?.session.token).toBe(alice.data.token);
-
+      const otherClient = multiClient(ctx, profile, "outsider");
+      const otherResponse = await ctx.actor("outsider", profile).fetch(`${path}/sign-up/email`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: ctx.uniqueEmail("multi-outsider"),
+          password: "password123",
+          name: "Other Browser",
+          rememberMe: false,
+        }),
+      });
+      expect(otherResponse.status).toBe(200);
+      const other = (await otherResponse.json()) as { user: { id: string }; token: string };
+      const preference = otherResponse.headers
+        .getSetCookie()
+        .find((raw) => raw.includes("dont_remember="))!
+        .split(";")[0]!;
+      expect(preference).not.toBe("");
+      async function serverSelect(body: unknown, headers?: Record<string, string>) {
+        const response = await ctx
+          .actor("browser", profile)
+          .fetch(`${ctx.baseURL}/__test/server-api/multi-session-select`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ profile, body, ...(headers ? { headers } : {}) }),
+          });
+        for (const raw of response.headers.getSetCookie()) {
+          jar.setCookieSync(raw, path);
+        }
+        return {
+          status: response.status,
+          body: (await response.json()) as any,
+          cookieCount: response.headers.getSetCookie().length,
+          persistent: response.headers
+            .getSetCookie()
+            .filter((raw) => !raw.includes("dont_remember="))
+            .some((raw) => raw.includes("Max-Age=")),
+        };
+      }
+      const beforeSelection = await Promise.all([
+        ctx.readUserState({ userId: alice.data.user.id }),
+        ctx.readUserState({ userId: bob.data.user.id }),
+        ctx.readUserState({ userId: other.user.id }),
+      ]);
+      const selectionErrors = [];
+      for (const [body, headers, status, code] of [
+        [{ sessionToken: alice.data.token }, undefined, 400, "VALIDATION_ERROR"],
+        [{ sessionToken: 42 }, { cookie: jar.getCookieStringSync(path) }, 400, "VALIDATION_ERROR"],
+        [{ sessionToken: alice.data.token }, {}, 401, "INVALID_SESSION_TOKEN"],
+      ] as const) {
+        const denied = await serverSelect(body, headers);
+        expect(denied.status).toBe(status);
+        expect(denied.body.code).toBe(code);
+        selectionErrors.push(denied);
+      }
+      const select = await serverSelect(
+        { sessionToken: alice.data.token, userId: other.user.id },
+        { cookie: `${jar.getCookieStringSync(path)}; ${preference}` },
+      );
+      expect(select.status).toBe(200);
+      expect(select.body.session.token).toBe(alice.data.token);
+      expect(select.body.user.id).toBe(alice.data.user.id);
+      expect(select.cookieCount).toBeGreaterThan(0);
+      expect(select.persistent).toBe(false);
+      expect(
+        await Promise.all([
+          ctx.readUserState({ userId: alice.data.user.id }),
+          ctx.readUserState({ userId: bob.data.user.id }),
+          ctx.readUserState({ userId: other.user.id }),
+        ]),
+      ).toEqual(beforeSelection);
       const active = await client.getSession();
       expect(active.data?.user.id).toBe(alice.data.user.id);
-
-      const outsider = await multiClient(ctx, profile, "outsider").multiSession.setActive({
-        sessionToken: alice.data.token,
-      });
-      expect(outsider.error?.code).toBe("INVALID_SESSION_TOKEN");
-
-      const otherClient = multiClient(ctx, profile, "outsider");
-      const other = await otherClient.signUp.email({
-        email: ctx.uniqueEmail("multi-outsider"),
-        password: "password123",
-        name: "Other Browser",
-      });
-      expect(other.error).toBeNull();
+      const outsider = await serverSelect({ sessionToken: alice.data.token }, {});
+      expect(outsider.body.code).toBe("INVALID_SESSION_TOKEN");
 
       const foreignRevoke = await otherClient.multiSession.revoke({
         sessionToken: alice.data.token,
@@ -172,7 +228,7 @@ for (const profile of [
       const unchanged = stateSchema.parse(await ctx.readUserState({ userId: alice.data.user.id }));
       expect(unchanged.sessions).toHaveLength(1);
       expect(unchanged.sessions[0]?.token).toBe(alice.data.token);
-      expect((await otherClient.getSession()).data?.user.id).toBe(other.data?.user.id);
+      expect((await otherClient.getSession()).data?.user.id).toBe(other.user.id);
 
       await otherClient.signOut();
       expect(stateSchema.parse(await ctx.readUserState({ userId: alice.data.user.id }))).toEqual(
@@ -212,6 +268,7 @@ for (const profile of [
         missingHeaders,
         empty,
         list,
+        selectionErrors,
         select,
         active,
         outsider,

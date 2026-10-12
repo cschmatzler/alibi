@@ -236,6 +236,46 @@ async fn multi_session_limits_and_revocation<B: Backend>(db: Db) -> TestResult {
         }
     }
 
+    let select_endpoint = |body: &Value| {
+        ServerEndpoint::<Value>::new("multi-session", "setActiveSession").with_body(body)
+    };
+    let before_selection = db.tables(&["users", "accounts", "sessions"]).await?;
+    for (input, headers, code, status) in [
+        (
+            json!({"sessionToken":tokens[0]}),
+            None,
+            "VALIDATION_ERROR",
+            400,
+        ),
+        (
+            json!({"sessionToken":42}),
+            Some(jar.clone()),
+            "VALIDATION_ERROR",
+            400,
+        ),
+        (
+            json!({"sessionToken":tokens[0]}),
+            Some(String::new()),
+            "INVALID_SESSION_TOKEN",
+            401,
+        ),
+    ] {
+        let error = Box::pin(auth.dispatch_endpoint(
+            select_endpoint(&input)?,
+            EndpointOptions {
+                headers: headers.map(|cookie| [("cookie".into(), cookie)].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(error.error.status_code(), status);
+        assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
+    }
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions"]).await?,
+        before_selection
+    );
     _ = signup(&auth, "device-fourth@example.com").await;
     let remembered = call(
         &auth,
@@ -253,17 +293,34 @@ async fn multi_session_limits_and_revocation<B: Backend>(db: Db) -> TestResult {
         .unwrap()
         .to_owned();
     let remembering = merge(&jar, &dont_remember);
-    let selected = call(
-        &auth,
-        request(
-            "/multi-session/set-active",
-            Some(json!({"sessionToken": tokens[0]})),
-            &remembering,
+    let before_selection = db.tables(&["users", "accounts", "sessions"]).await?;
+    let selected = Box::pin(
+        auth.dispatch_endpoint(
+            MultiSessionPlugin::set_active_session_endpoint(tokens[0].clone()),
+            EndpointOptions {
+                headers: Some(
+                    [("cookie".into(), remembering.clone())]
+                        .into_iter()
+                        .collect(),
+                ),
+                ..Default::default()
+            },
         ),
-        200,
     )
-    .await;
+    .await?;
+    assert_eq!(selected.decode()?.session.token, tokens[0]);
+    let selected = selected.into_response()?;
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions"]).await?,
+        before_selection
+    );
     assert!(cookies(&selected).contains("dont_remember"));
+    Box::pin(authenticated(
+        &auth,
+        &cookies(&selected),
+        "device-first@example.com",
+    ))
+    .await;
     trace.response("select with remember-me proof", &selected);
 
     let active = merge(&jar, &cookies(&selected));
