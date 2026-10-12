@@ -1,7 +1,8 @@
 //! Installed admin server operations share authorization and stored output with HTTP.
 use super::{
-    AdminPlugin, MESSAGE_CHANGE_ROLE, MESSAGE_GET_USER, get_user_core, set_role_core,
-    types::{GetUserQuery, SetRoleRequest},
+    AdminPlugin, MESSAGE_CHANGE_ROLE, MESSAGE_GET_USER, create_user_core, get_user_core,
+    set_role_core,
+    types::{CreateUserRequest, GetUserQuery, SetRoleRequest},
 };
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
@@ -18,6 +19,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             HttpMethod::Get,
         ),
         crate::endpoint::definition(
+            "createUser",
+            "createUser",
+            Some("/admin/create-user"),
+            HttpMethod::Post,
+        ),
+        crate::endpoint::definition(
             "setRole",
             "setUserRole",
             Some("/admin/set-role"),
@@ -27,6 +34,15 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "createUser" {
+        let body: CreateUserRequest =
+            super::validation::body_value("create-user", call.body().cloned())
+                .map_err(crate::endpoint::error_response)?;
+        return Ok(EndpointInput {
+            body: Some(JsValue::from(serde_json::to_value(body)?)),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "setUserRole" {
         let body: SetRoleRequest = super::validation::body_value("set-role", call.body().cloned())
             .map_err(crate::endpoint::error_response)?;
@@ -67,6 +83,14 @@ impl AdminPlugin {
         ServerEndpoint::new("admin", "setRole").with_body(body)
     }
 
+    /// Provision a user through installed server policy and hooks.
+    /// Without a Request or headers, the call is trusted; supplying either requires a session.
+    pub fn create_user_endpoint(
+        body: &super::AdminCreateUserRequest,
+    ) -> AuthResult<ServerEndpoint<super::AdminUserResponse>> {
+        ServerEndpoint::new("admin", "createUser").with_body(body)
+    }
+
     pub(super) async fn call_admin_endpoint(
         &self,
         call: &EndpointCall,
@@ -74,7 +98,24 @@ impl AdminPlugin {
     ) -> AuthResult<EndpointResponse> {
         // The reference middleware resolves a fresh authoritative session and
         // converts a failed nested session read to an absent session.
-        let Ok((user, session)) = ctx.require_authoritative_session_record(call).await else {
+        let read = ctx.require_authoritative_session_record(call).await.ok();
+        if call.operation_id() == "createUser" {
+            let body: CreateUserRequest = call.body_as()?;
+            if let Some((user, session)) = read {
+                let principal = ctx.user_view(&user);
+                call.record_authenticated_session(principal.clone(), session);
+                self.authorize_create_user(&principal, &body)?;
+            } else if call.request().is_some() || call.headers().is_some() {
+                return Ok(EndpointResponse::error(AuthError::Api {
+                    status: 401,
+                    code: None,
+                    message: String::new(),
+                })
+                .without_error_body());
+            }
+            return EndpointResponse::json(&create_user_core(&body, &self.config, ctx).await?);
+        }
+        let Some((user, session)) = read else {
             return Ok(EndpointResponse::error(AuthError::Api {
                 status: 401,
                 code: None,
