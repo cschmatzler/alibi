@@ -323,6 +323,7 @@ mod server_organization_check_slug;
 
 mod server_organization_create_team;
 mod server_organization_list_teams;
+mod server_organization_remove_team;
 
 mod server_organization_create_role;
 

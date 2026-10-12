@@ -2147,6 +2147,14 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
     }
     try {
+      if (body?.operation === "server-remove-team") {
+        const response = await selected.api.removeTeam({
+          body: body.body as Parameters<typeof selected.api.removeTeam>[0]["body"],
+          ...(body.headers ? { headers: new Headers(body.headers as Record<string, string>) } : {}),
+          asResponse: true,
+        });
+        return jsonResponse(await response.json(), { status: response.status });
+      }
       if (body?.operation === "server-create-team") {
         const response = await selected.api.createTeam({
           body: body.body as Parameters<typeof selected.api.createTeam>[0]["body"],
