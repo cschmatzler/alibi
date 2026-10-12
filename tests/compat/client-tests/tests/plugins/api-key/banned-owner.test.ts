@@ -58,6 +58,17 @@ compatScenario(
     expect(denial.status).toBe(401);
     expect(denial.body).toMatchObject({ code: "USER_BANNED" });
     expect(denial.cookies).toEqual([]);
+    const serverDenied = await ctx.rawRequest({
+      path: "/__test/server-api/api-key-delete",
+      method: "POST",
+      json: {
+        body: { configId: "session", keyId: created.data!.id },
+        headers: { "x-api-key": created.data!.key },
+      },
+    });
+    expect(serverDenied.status).toBe(401);
+    expect(serverDenied.body).toMatchObject({ code: "USER_BANNED" });
+
     expect((await verify()).valid).toBe(true);
     const unbanned = await admin.adminClient.admin.unbanUser({ userId: signup.data!.user.id });
     expect(unbanned.error).toBeNull();
@@ -83,6 +94,7 @@ compatScenario(
       banned,
       whileBanned,
       denial,
+      serverDenied,
       unbanned,
       recovered,
       removed,

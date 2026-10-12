@@ -2139,6 +2139,14 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       invitations,
     });
   }
+  if (url.pathname === "/__test/server-api/api-key-delete" && request.method === "POST") {
+    const input = await readJson(request);
+    return auth.api.deleteApiKey({
+      body: input?.body as Parameters<typeof auth.api.deleteApiKey>[0]["body"],
+      ...(input?.headers ? { headers: new Headers(input.headers as Record<string, string>) } : {}),
+      asResponse: true,
+    });
+  }
   if (url.pathname === "/__test/server-api/api-key-get" && request.method === "POST") {
     const input = await readJson(request);
     return auth.api.getApiKey({

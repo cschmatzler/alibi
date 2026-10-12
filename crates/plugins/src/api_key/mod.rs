@@ -10,7 +10,9 @@ mod secondary_usage;
 mod storage;
 pub use storage::{ApiKeyStorage, ApiKeyStorageMode};
 mod endpoint;
-pub use endpoint::{ApiKeyVerificationInput, ApiKeyVerificationOutput, GetKeyQuery};
+pub use endpoint::{
+    ApiKeyVerificationInput, ApiKeyVerificationOutput, DeleteKeyResponse, GetKeyQuery,
+};
 
 pub(super) mod handlers;
 
@@ -32,9 +34,10 @@ use rand::seq::IndexedRandom;
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
 pub use types::{
-    CreateKeyRequest, CreateKeyResponse, DeleteExpiredApiKeysResponse, UpdateKeyRequest,
+    CreateKeyRequest, CreateKeyResponse, DeleteExpiredApiKeysResponse, DeleteKeyRequest,
+    UpdateKeyRequest,
 };
-use types::{DeleteKeyRequest, ListKeysQuery, parse_api_key_body};
+use types::{ListKeysQuery, parse_api_key_body};
 pub use verification::{
     ApiKeyErrorDetails, ApiKeyErrorMessage, ApiKeyValidationError, ApiKeyVerificationError,
     VerifyApiKey,
