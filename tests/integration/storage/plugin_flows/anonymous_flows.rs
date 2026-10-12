@@ -279,6 +279,7 @@ impl<S: AuthSchema, B: alibi::store::HookBackend> DatabaseHooks<S, B> for Shared
 }
 
 async fn anonymous_deletion_and_linking<B: Backend>(db: Db) -> TestResult {
+    use alibi::endpoint::{EndpointOptions, ServerEndpoint};
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let linker = Arc::new(Linker::default());
     let enabled = builder::<B>(&connection)
@@ -311,20 +312,31 @@ async fn anonymous_deletion_and_linking<B: Backend>(db: Db) -> TestResult {
         0
     );
     let regular = cookies(&linked);
-    trace.response(
-        "delete as a regular user",
-        &Box::pin(enabled.handle_request(request(
-            "/delete-anonymous-user",
-            Some(json!({})),
-            &regular,
-        )))
-        .await?,
-    );
-    trace.response(
-        "delete without a session",
-        &Box::pin(enabled.handle_request(request("/delete-anonymous-user", Some(json!({})), "")))
-            .await?,
-    );
+    for (label, credentials, status, code) in [
+        (
+            "delete as a regular user",
+            Some(regular.clone()),
+            403,
+            "USER_IS_NOT_ANONYMOUS",
+        ),
+        ("delete without a session", None, 401, "UNAUTHORIZED"),
+    ] {
+        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let error = Box::pin(enabled.dispatch_endpoint(
+            ServerEndpoint::<Value>::new("anonymous", "deleteAnonymousUser"),
+            EndpointOptions {
+                headers:
+                    credentials.map(|cookie| [("cookie".into(), cookie)].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(error.error.status_code(), status);
+        assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        trace.response(label, &error.error.to_auth_response());
+    }
 
     let second = call(
         &enabled,
@@ -373,15 +385,37 @@ async fn anonymous_deletion_and_linking<B: Backend>(db: Db) -> TestResult {
         200,
     )
     .await;
-    trace.response(
-        "delete anonymous",
-        &Box::pin(enabled.handle_request(request(
-            "/delete-anonymous-user",
-            Some(json!({})),
-            &cookies(&fourth),
-        )))
-        .await?,
-    );
+    let account_rows = db.table("accounts").await?;
+    let id = body(&fourth)["user"]["id"].as_str().unwrap().to_owned();
+    let token = body(&fourth)["token"].as_str().unwrap().to_owned();
+    let deleted = Box::pin(
+        enabled.dispatch_endpoint(
+            AnonymousPlugin::delete_anonymous_user_endpoint()
+                .with_body(&json!({"userId":body(&linked)["user"]["id"]}))?,
+            EndpointOptions {
+                headers: Some([("cookie".into(), cookies(&fourth))].into_iter().collect()),
+                ..Default::default()
+            },
+        ),
+    )
+    .await?;
+    assert!(deleted.decode()?.success);
+    let deleted = deleted.into_response()?;
+    trace.response("delete anonymous", &deleted);
+    assert!(enabled.store().get_user_by_id(&id).await?.is_none());
+    assert!(enabled.store().get_session(&token).await?.is_none());
+    assert_eq!(db.table("accounts").await?, account_rows);
+    Box::pin(authenticated(&enabled, &regular, "linked@example.test")).await;
+    let replay = Box::pin(enabled.dispatch_endpoint(
+        ServerEndpoint::<Value>::new("anonymous", "deleteAnonymousUser"),
+        EndpointOptions {
+            headers: Some([("cookie".into(), cookies(&fourth))].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(replay.error.status_code(), 401);
 
     let fresh = db.fresh().await?;
     let (disabled_connection, _) = fresh.migrated::<B>(SECRET).await?;

@@ -421,7 +421,20 @@ pub(crate) async fn router(
         runtimes.insert(format!("anonymous-{mode}"),auth.clone());
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
-    let runtimes=Arc::new(runtimes);
+    let runtimes=Arc::new(runtimes);    let deletion_runtimes=runtimes.clone();
+    router=router.route("/__test/server-api/anonymous-delete",post(move |Json(input):Json<Value>|{
+        let runtimes=deletion_runtimes.clone();
+        async move {
+            let selected=runtimes.get(input["profile"].as_str().unwrap_or("anonymous-standard")).unwrap();
+            let mut endpoint=alibi::endpoint::ServerEndpoint::<Value>::new("anonymous","deleteAnonymousUser");
+            if let Some(body)=input.get("body"){endpoint=endpoint.with_body(body).unwrap();}
+            match selected.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions {headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),..Default::default()}).await {
+                Ok(output)=>output.into_response().unwrap().into_response(),
+                Err(error)=>{let mut response=error.error.to_auth_response();if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}if let Some(headers)=error.headers{for(name,value) in headers.iter(){if name.eq_ignore_ascii_case("set-cookie"){response.headers.append(name,value);}else{response.headers.insert(name.clone(),value.clone());}}}response.into_response()}
+            }
+        }
+    }));
+
     router=router.route("/__test/server-api/anonymous-sign-in",post(move |Json(input):Json<Value>|{
         let runtimes=runtimes.clone();
         async move {
