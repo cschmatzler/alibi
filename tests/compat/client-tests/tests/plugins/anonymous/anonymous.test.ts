@@ -123,17 +123,42 @@ for (const mode of ["standard", "attributes"] as const) {
     async (ctx) => {
       const primary = actor(ctx, "primary", mode);
       const foreign = actor(ctx, "foreign", mode);
-      const guest = actor(ctx, "guest", mode);
+      let foreignCookie = "";
       const foreignSignup = await foreign.client.signUp.email({
         email: ctx.uniqueEmail("anonymous-foreign"),
         name: "Foreign Owner",
         password: "password123",
+        fetchOptions: {
+          onSuccess({ response }) {
+            foreignCookie = response.headers
+              .getSetCookie()
+              .map((raw) => raw.split(";")[0])
+              .join("; ");
+          },
+        },
       });
       expect(foreignSignup.error).toBeNull();
 
       const foreignBefore = await ctx.readUserState({ userId: foreignSignup.data!.user.id });
-      const guestDenied = await guest.anonymous.deleteAnonymousUser();
-      expect(guestDenied.error).toMatchObject({ status: 401, code: "UNAUTHORIZED" });
+      async function remove(headers?: Record<string, string>, body?: unknown) {
+        const response = await primary.fetch(`${ctx.baseURL}/__test/server-api/anonymous-delete`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            profile: primary.profile,
+            ...(headers ? { headers } : {}),
+            ...(body ? { body } : {}),
+          }),
+        });
+        return {
+          status: response.status,
+          body: (await response.json()) as any,
+          cookieCount: response.headers.getSetCookie().length,
+        };
+      }
+      const guestDenied = await remove();
+      expect(guestDenied.status).toBe(401);
+      expect(guestDenied.body.code).toBe("UNAUTHORIZED");
 
       const before = await state(ctx);
       async function signIn(headers?: Record<string, string>) {
@@ -189,20 +214,26 @@ for (const mode of ["standard", "attributes"] as const) {
       const repeated = await signIn({ cookie: issued.cookie });
       expect(repeated.status).toBe(400);
       expect(repeated.body.code).toBe("ANONYMOUS_USERS_CANNOT_SIGN_IN_AGAIN_ANONYMOUSLY");
-      const regularDenied = await foreign.anonymous.deleteAnonymousUser();
-      expect(regularDenied.error).toMatchObject({ status: 403, code: "USER_IS_NOT_ANONYMOUS" });
+      const regularDenied = await remove({ cookie: foreignCookie });
+      expect(regularDenied.status).toBe(403);
+      expect(regularDenied.body.code).toBe("USER_IS_NOT_ANONYMOUS");
       expect(await state(ctx)).toEqual(afterIssued);
-
-      const deleted = await primary.anonymous.deleteAnonymousUser();
-      expect(deleted.data).toEqual({ success: true });
+      const deleted = await remove(
+        { cookie: issued.cookie },
+        { userId: foreignSignup.data!.user.id },
+      );
+      expect(deleted.status).toBe(200);
+      expect(deleted.body).toEqual({ success: true });
+      expect(deleted.cookieCount).toBeGreaterThan(0);
 
       const afterDelete = await state(ctx);
       expect(stored(afterDelete)).toEqual(stored(before));
 
       const stale = await primary.client.getSession();
-      const replay = await primary.anonymous.deleteAnonymousUser();
+      const replay = await remove({ cookie: issued.cookie });
       expect(stale.data).toBeNull();
-      expect(replay.error).toMatchObject({ status: 401, code: "UNAUTHORIZED" });
+      expect(replay.status).toBe(401);
+      expect(replay.body.code).toBe("UNAUTHORIZED");
       expect(await state(ctx)).toEqual(afterDelete);
       expect(await ctx.readUserState({ userId: foreignSignup.data!.user.id })).toEqual(
         foreignBefore,

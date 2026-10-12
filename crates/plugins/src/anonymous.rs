@@ -59,7 +59,20 @@ pub struct AnonymousSignIn {
     pub user: Box<UserView>,
 }
 
+/// The authenticated anonymous identity and its sessions were deleted.
+#[derive(Debug, serde::Deserialize)]
+pub struct AnonymousDeleted {
+    pub success: bool,
+}
+
 impl AnonymousPlugin {
+    /// Delete only the authoritative caller's anonymous account.
+    #[must_use]
+    pub const fn delete_anonymous_user_endpoint()
+    -> alibi_core::endpoint::ServerEndpoint<AnonymousDeleted> {
+        alibi_core::endpoint::ServerEndpoint::new("anonymous", "deleteAnonymousUser")
+    }
+
     /// Create anonymous authority through installed server endpoint hooks.
     #[must_use]
     pub const fn sign_in_anonymous_endpoint()
@@ -288,6 +301,14 @@ impl AnonymousPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<AuthResponse> {
+        self.delete_core(req, ctx).await
+    }
+
+    async fn delete_core(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
         let (user, _) =
             ctx.require_authoritative_session(req)
                 .await
@@ -367,19 +388,31 @@ impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
     route_openapi_metadata!(S);
 
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
-        vec![crate::endpoint::definition(
-            "signInAnonymous",
-            "signInAnonymous",
-            Some("/sign-in/anonymous"),
-            HttpMethod::Post,
-        )]
+        vec![
+            crate::endpoint::definition(
+                "signInAnonymous",
+                "signInAnonymous",
+                Some("/sign-in/anonymous"),
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
+                "deleteAnonymousUser",
+                "deleteAnonymousUser",
+                Some("/delete-anonymous-user"),
+                HttpMethod::Post,
+            ),
+        ]
     }
     async fn on_endpoint(
         &self,
         call: &alibi_core::endpoint::EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
-        let output = self.sign_in_core(call, ctx).await?;
+        let output = if call.operation_id() == "deleteAnonymousUser" {
+            self.delete_core(call, ctx).await?
+        } else {
+            self.sign_in_core(call, ctx).await?
+        };
         let mut response = if output.status >= 400 {
             alibi_core::endpoint::EndpointResponse::error(crate::endpoint::error_response(
                 output.clone(),
