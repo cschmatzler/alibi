@@ -90,11 +90,14 @@ fn body(request: &AuthRequest, optional: bool) -> Result<Map<String, Value>, Aut
 }
 
 fn unknown_keys(body: &Map<String, Value>, known: &[&str]) -> Option<String> {
-    let mut keys: Vec<&str> = body
-        .keys()
-        .map(String::as_str)
-        .filter(|key| !known.contains(key))
-        .collect();
+    unknown_field_keys(body.keys().map(String::as_str), known)
+}
+
+pub(super) fn unknown_field_keys<'a>(
+    keys: impl Iterator<Item = &'a str>,
+    known: &[&str],
+) -> Option<String> {
+    let mut keys: Vec<&str> = keys.filter(|key| !known.contains(key)).collect();
     // JavaScript enumerates canonical numeric indexes first. The stable sort
     // retains insertion order for ordinary property names.
     keys.sort_by_key(|key| {

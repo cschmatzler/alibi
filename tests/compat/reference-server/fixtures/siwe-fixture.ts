@@ -250,6 +250,21 @@ export async function createSiweFixture(
   async function handle(request: Request): Promise<Response | null> {
     const path = new URL(request.url).pathname;
 
+    if (path === "/__test/server-api/siwe-nonce" && request.method === "POST") {
+      const input = await request.json();
+      const selected = profiles.get("/__test/profiles/siwe/api/auth")!;
+      const api = selected.api as unknown as Record<
+        string,
+        (options: { body?: unknown; asResponse: true }) => Promise<Response>
+      >;
+      if (input.operation !== "getSiweNonce" && input.operation !== "getNonce") {
+        return Response.json({ message: "Unknown nonce operation" }, { status: 400 });
+      }
+      return api[input.operation]!({
+        ...(Object.hasOwn(input, "body") ? { body: input.body } : {}),
+        asResponse: true,
+      });
+    }
     if (path === "/__test/siwe-state" && request.method === "GET") {
       return Response.json(state());
     }
