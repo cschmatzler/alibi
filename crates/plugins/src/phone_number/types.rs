@@ -52,9 +52,9 @@ pub(super) struct VerifyRequest {
     pub disable_session: Option<bool>,
     #[serde(rename = "updatePhoneNumber")]
     pub update_phone_number: Option<bool>,
-    pub username: Option<String>,
+    pub username: Option<alibi_core::utils::json::JsValue>,
     #[serde(rename = "displayUsername")]
-    pub display_username: Option<String>,
+    pub display_username: Option<alibi_core::utils::json::JsValue>,
     pub image: Option<String>,
     #[serde(rename = "phoneNumberVerified")]
     pub phone_number_verified: Option<alibi_core::utils::json::JsValue>,
