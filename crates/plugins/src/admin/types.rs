@@ -120,20 +120,35 @@ pub(crate) struct SetUserPasswordRequest {
     pub new_password: String,
 }
 
-#[derive(Debug, Deserialize)]
-#[expect(
-    dead_code,
-    reason = "server-side HTTP route currently checks session user only"
-)]
-pub(crate) struct HasPermissionRequest {
-    #[serde(rename = "userId")]
+/// Input for trusted or session-based admin permission evaluation.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HasPermissionRequest {
+    /// User selector for a trusted call; an authenticated session takes precedence.
+    #[serde(rename = "userId", skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
+    /// Literal role selector for a trusted call.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
+    /// Singular schema alternative; the reference operation requires the plural field.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub permission: Option<HashMap<String, Vec<String>>>,
+    /// Requested actions grouped by resource.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub permissions: Option<HashMap<String, Vec<String>>>,
 }
 
 impl HasPermissionRequest {
+    /// Check the supplied resource actions, optionally selecting a trusted user or role.
+    #[must_use]
+    pub fn new(permissions: HashMap<String, Vec<String>>) -> Self {
+        Self {
+            permissions: Some(permissions),
+            user_id: None,
+            role: None,
+            permission: None,
+        }
+    }
+
     pub(crate) fn requested_permissions(&self) -> Option<&HashMap<String, Vec<String>>> {
         self.permissions.as_ref().or(self.permission.as_ref())
     }
@@ -266,9 +281,12 @@ pub(crate) struct SuccessResponse {
     pub success: bool,
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct PermissionResponse {
+/// Result of a successfully evaluated permission request.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PermissionResponse {
+    /// The reference successful result carries a null error.
     pub error: Option<String>,
+    /// Whether one configured role authorizes all requested resource actions.
     pub success: bool,
 }
 

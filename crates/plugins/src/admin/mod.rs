@@ -35,6 +35,7 @@ use handlers::{
 use std::collections::HashMap;
 pub use types::{
     AdminUserView as AdminUserOutput, CreateUserRequest as AdminCreateUserRequest,
+    HasPermissionRequest as AdminPermissionRequest, PermissionResponse as AdminPermissionResponse,
     RoleInput as AdminRoleInput, SetRoleRequest as AdminSetRoleRequest,
 };
 /// Safe user result returned by admin mutation operations.

@@ -47,7 +47,12 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
         hooks: {
           after: createAuthMiddleware(async (ctx) => {
             if (
-              ["/admin/get-user", "/admin/set-role", "/admin/create-user"].includes(ctx.path) &&
+              [
+                "/admin/get-user",
+                "/admin/set-role",
+                "/admin/create-user",
+                "/admin/has-permission",
+              ].includes(ctx.path) &&
               !ctx.request
             ) {
               ctx.context.responseHeaders ??= new Headers();
@@ -196,7 +201,7 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
       if (url.pathname === "/__test/admin/server-api" && request.method === "POST") {
         return (async () => {
           const input = (await request.json()) as {
-            operation?: "getUser" | "setRole" | "createUser";
+            operation?: "getUser" | "setRole" | "createUser" | "userHasPermission";
             profile?: string;
             query?: unknown;
             body?: unknown;
@@ -205,6 +210,14 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
           const auth = profiles.get(
             `/__test/profiles/${input.profile ?? "admin-standard"}/api/auth`,
           )!;
+          if (input.operation === "userHasPermission") {
+            return auth.api.userHasPermission({
+              body: input.body as { role?: string; permissions: Record<string, string[]> },
+              ...(Object.hasOwn(input, "query") ? { query: input.query } : {}),
+              ...(input.headers ? { headers: new Headers(input.headers) } : {}),
+              asResponse: true,
+            });
+          }
           if (input.operation === "createUser") {
             return auth.api.createUser({
               body: input.body as { email: string; name: string },
