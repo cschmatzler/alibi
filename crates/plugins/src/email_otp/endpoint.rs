@@ -13,6 +13,12 @@ pub struct EmailOtpRead {
     pub otp: Option<String>,
 }
 
+/// The sending operation acknowledges both delivery and concealed unknown mailboxes.
+#[derive(Debug, Deserialize)]
+pub struct EmailOtpSent {
+    pub success: bool,
+}
+
 const FIELDS: &[JsonField] = &[
     JsonField::string("email", true),
     JsonField {
@@ -30,6 +36,12 @@ const FIELDS: &[JsonField] = &[
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
         definition(
+            "sendVerificationOTP",
+            "sendEmailVerificationOTP",
+            Some("/email-otp/send-verification-otp"),
+            HttpMethod::Post,
+        ),
+        definition(
             "createVerificationOTP",
             "createEmailVerificationOTP",
             None,
@@ -45,20 +57,30 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
-    if call.operation_id() == "createEmailVerificationOTP" {
-        Ok(EndpointInput {
-            body: Some(validate_fields(call.body(), "body", FIELDS)?),
-            query: call.query().cloned(),
-        })
-    } else {
+    if call.operation_id() == "getEmailVerificationOTP" {
         Ok(EndpointInput {
             body: call.body().cloned(),
             query: Some(validate_fields(call.query(), "query", FIELDS)?),
+        })
+    } else {
+        Ok(EndpointInput {
+            body: Some(validate_fields(call.body(), "body", FIELDS)?),
+            query: call.query().cloned(),
         })
     }
 }
 
 impl EmailOtpPlugin {
+    /// Send a scoped OTP through the installed delivery and storage policies.
+    #[must_use]
+    pub fn send_verification_otp_endpoint(
+        email: impl Into<String>,
+        otp_type: EmailOtpType,
+    ) -> ServerEndpoint<EmailOtpSent> {
+        ServerEndpoint::new("email-otp", "sendVerificationOTP")
+            .with_body_value(input(email.into(), otp_type))
+    }
+
     /// Create a code through the installed endpoint hooks and post-hook validation.
     #[must_use]
     pub fn create_verification_otp_endpoint(
@@ -84,6 +106,27 @@ impl EmailOtpPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "sendEmailVerificationOTP" {
+            if let Some(request) = call.request() {
+                alibi_core::middleware::CsrfMiddleware::new(
+                    alibi_core::middleware::CsrfConfig::new(),
+                    ctx.config.clone(),
+                )
+                .check_login_origin(request)?;
+            }
+            let output = self
+                .send_verification_core(call.request(), ctx, call.body_as()?)
+                .await?;
+            let mut response = if output.status >= 400 {
+                EndpointResponse::error(crate::endpoint::error_response(output.clone()))
+                    .without_error_body()
+            } else {
+                EndpointResponse::value(alibi_core::utils::json::from_slice(&output.body)?)
+            };
+            response.set_status(Some(output.status));
+            response.merge_headers(output.headers);
+            return Ok(response);
+        }
         let (email, otp_type) = if call.operation_id() == "createEmailVerificationOTP" {
             let body: super::types::SendRequest = call.body_as()?;
             (body.email, body.otp_type)
