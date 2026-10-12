@@ -252,7 +252,8 @@ pub use account_management::AccountManagementPlugin;
 pub use admin::{
     AdminBannedUserMessage, AdminBannedUserMessageHandler, AdminConfig, AdminCreateUserRequest,
     AdminPermissionRequest, AdminPermissionResponse, AdminPlugin, AdminRoleInput,
-    AdminSetRoleRequest, AdminUserOutput, AdminUserResponse, RolePermissions,
+    AdminSetRoleRequest, AdminUpdateUserRequest, AdminUserOutput, AdminUserResponse,
+    RolePermissions,
 };
 pub use alibi_core::PasswordHasher;
 pub use anonymous::{

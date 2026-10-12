@@ -1,10 +1,12 @@
 //! Installed admin server operations share authorization and stored output with HTTP.
 use super::{
-    AdminPlugin, MESSAGE_CHANGE_ROLE, MESSAGE_GET_USER, create_user_core, get_user_core,
-    set_role_core,
+    AdminPlugin, MESSAGE_CHANGE_ROLE, MESSAGE_GET_USER, MESSAGE_UPDATE_USERS, create_user_core,
+    get_user_core, set_role_core,
     types::{
-        CreateUserRequest, GetUserQuery, HasPermissionRequest, PermissionResponse, SetRoleRequest,
+        AdminUpdateUserRequest, CreateUserRequest, GetUserQuery, HasPermissionRequest,
+        PermissionResponse, SetRoleRequest,
     },
+    update_user_core,
 };
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
@@ -19,6 +21,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             "getUser",
             Some("/admin/get-user"),
             HttpMethod::Get,
+        ),
+        crate::endpoint::definition(
+            "adminUpdateUser",
+            "adminUpdateUser",
+            Some("/admin/update-user"),
+            HttpMethod::Post,
         ),
         crate::endpoint::definition(
             "userHasPermission",
@@ -42,6 +50,15 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "adminUpdateUser" {
+        let body: AdminUpdateUserRequest =
+            super::validation::body_value("update-user", call.body().cloned())
+                .map_err(crate::endpoint::error_response)?;
+        return Ok(EndpointInput {
+            body: Some(JsValue::from(serde_json::to_value(body)?)),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "userHasPermission" {
         let body: HasPermissionRequest =
             super::validation::body_value("has-permission", call.body().cloned())
@@ -114,6 +131,13 @@ impl AdminPlugin {
         body: &super::AdminPermissionRequest,
     ) -> AuthResult<ServerEndpoint<super::AdminPermissionResponse>> {
         ServerEndpoint::new("admin", "userHasPermission").with_body(body)
+    }
+
+    /// Update a user through authoritative admin policy and installed server hooks.
+    pub fn admin_update_user_endpoint(
+        body: &super::AdminUpdateUserRequest,
+    ) -> AuthResult<ServerEndpoint<super::AdminUserOutput>> {
+        ServerEndpoint::new("admin", "adminUpdateUser").with_body(body)
     }
 
     async fn call_permission_endpoint(
@@ -202,6 +226,13 @@ impl AdminPlugin {
         };
         let principal = ctx.user_view(&user);
         call.record_authenticated_session(principal.clone(), session);
+        if call.operation_id() == "adminUpdateUser" {
+            self.authorize(&principal, "user", "update", MESSAGE_UPDATE_USERS)?;
+            let body: AdminUpdateUserRequest = call.body_as()?;
+            return EndpointResponse::json(
+                &update_user_core(&body, &principal, &self.config, ctx).await?,
+            );
+        }
         if call.operation_id() == "setUserRole" {
             self.authorize(&principal, "user", "set-role", MESSAGE_CHANGE_ROLE)?;
             let body: SetRoleRequest = call.body_as()?;

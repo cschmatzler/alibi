@@ -52,6 +52,7 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
                 "/admin/set-role",
                 "/admin/create-user",
                 "/admin/has-permission",
+                "/admin/update-user",
               ].includes(ctx.path) &&
               !ctx.request
             ) {
@@ -201,7 +202,12 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
       if (url.pathname === "/__test/admin/server-api" && request.method === "POST") {
         return (async () => {
           const input = (await request.json()) as {
-            operation?: "getUser" | "setRole" | "createUser" | "userHasPermission";
+            operation?:
+              | "getUser"
+              | "setRole"
+              | "createUser"
+              | "userHasPermission"
+              | "adminUpdateUser";
             profile?: string;
             query?: unknown;
             body?: unknown;
@@ -210,6 +216,14 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
           const auth = profiles.get(
             `/__test/profiles/${input.profile ?? "admin-standard"}/api/auth`,
           )!;
+          if (input.operation === "adminUpdateUser") {
+            return auth.api.adminUpdateUser({
+              body: input.body as { userId: string; data: Record<string, unknown> },
+              ...(Object.hasOwn(input, "query") ? { query: input.query } : {}),
+              ...(input.headers ? { headers: new Headers(input.headers) } : {}),
+              asResponse: true,
+            });
+          }
           if (input.operation === "userHasPermission") {
             return auth.api.userHasPermission({
               body: input.body as { role?: string; permissions: Record<string, string[]> },
