@@ -2157,6 +2157,16 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       asResponse: true,
     });
   }
+  if (url.pathname === "/__test/server-api/phone-verification" && request.method === "POST") {
+    const input = await readJson(request);
+    const selected = phoneFixture.profiles.get(input?.profile ?? "phone-default");
+    if (!selected) return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
+    return selected.api.verifyPhoneNumber({
+      body: input?.body as Parameters<typeof selected.api.verifyPhoneNumber>[0]["body"],
+      ...(input?.headers ? { headers: new Headers(input.headers as Record<string, string>) } : {}),
+      asResponse: true,
+    });
+  }
   if (url.pathname === "/__test/server-api/phone-sign-in" && request.method === "POST") {
     const input = await readJson(request);
     const selected = phoneFixture.profiles.get(input?.profile ?? "phone-default");

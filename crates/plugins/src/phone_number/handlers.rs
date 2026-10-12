@@ -89,7 +89,7 @@ impl PhoneNumberPlugin {
     async fn callback(
         &self,
         ctx: &AuthContext<impl AuthSchema>,
-        req: &AuthRequest,
+        req: Option<&AuthRequest>,
         phone_number: &str,
         user: &impl AuthUser,
     ) -> AuthResult<()> {
@@ -100,7 +100,7 @@ impl PhoneNumberPlugin {
                         phone_number: phone_number.into(),
                         user: ctx.user_view(user),
                     },
-                    &alibi_core::CallbackContext::new(ctx, Some(req)),
+                    &alibi_core::CallbackContext::new(ctx, req),
                 )
                 .await?;
         }
@@ -354,10 +354,6 @@ impl PhoneNumberPlugin {
         }
         Ok(response)
     }
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Keep proof validation, identity updates, and session callbacks in their protocol order"
-    )]
     pub(super) async fn verify(
         &self,
         req: &AuthRequest,
@@ -367,7 +363,20 @@ impl PhoneNumberPlugin {
             Ok(body) => body,
             Err(response) => return Ok(response),
         };
-        self.verify_and_consume(ctx, Some(req), &body.phone_number, &body.code)
+        self.verify_core(req, ctx, body).await
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep proof consumption, identity mutation, and publication in protocol order"
+    )]
+    pub(super) async fn verify_core(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+        body: VerifyRequest,
+    ) -> AuthResult<AuthResponse> {
+        self.verify_and_consume(ctx, req.physical_request(), &body.phone_number, &body.code)
             .await?;
         if body.update_phone_number == Some(true) {
             let (user, session) =
@@ -430,7 +439,7 @@ impl PhoneNumberPlugin {
                     },
                 )
                 .await?;
-            self.callback(ctx, req, &body.phone_number, &updated)
+            self.callback(ctx, req.physical_request(), &body.phone_number, &updated)
                 .await?;
             return AuthResponse::json(
                 200,
@@ -482,7 +491,8 @@ impl PhoneNumberPlugin {
                 )
                 .await?
         };
-        self.callback(ctx, req, &body.phone_number, &user).await?;
+        self.callback(ctx, req.physical_request(), &body.phone_number, &user)
+            .await?;
         if body.disable_session == Some(true) {
             return AuthResponse::json(
                 200,

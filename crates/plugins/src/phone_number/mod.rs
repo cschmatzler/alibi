@@ -12,7 +12,7 @@ use alibi_core::{AuthContext, AuthRequest, AuthResult, AuthSchema};
 use async_trait::async_trait;
 pub use endpoint::{
     PhoneOtpConsumption, PhoneOtpSent, PhonePasswordResetRequested, PhonePasswordResetResult,
-    PhoneSignInResponse,
+    PhoneSignInResponse, PhoneVerificationInput, PhoneVerificationResult,
 };
 use std::sync::Arc;
 pub use types::{
