@@ -7,8 +7,8 @@ use alibi::plugins::organization::{
     types::RoleQuery,
 };
 use alibi::utils::json::JsValue;
-backend_tests!(server_get_org_role_reads_persisted_permissions_with_member_authority);
-async fn server_get_org_role_reads_persisted_permissions_with_member_authority<B: Backend>(
+backend_tests!(server_org_role_reads_and_lists_preserve_member_authority);
+async fn server_org_role_reads_and_lists_preserve_member_authority<B: Backend>(
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
@@ -73,7 +73,7 @@ async fn server_get_org_role_reads_persisted_permissions_with_member_authority<B
         200,
     )
     .await;
-    let _denied_role = call(
+    let denied_role = call(
         &auth,
         request(
             "/organization/create-role",
@@ -115,6 +115,26 @@ async fn server_get_org_role_reads_persisted_permissions_with_member_authority<B
     )
     .await;
     let second_role = body(&second_role)["roleData"].clone();
+    let empty_organization = call(
+        &auth,
+        request(
+            "/organization/create",
+            Some(json!({"name":"Empty role organization","slug":"empty-role-org"})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
+    let _active = call(
+        &auth,
+        request(
+            "/organization/set-active",
+            Some(json!({"organizationId":second_id})),
+            &cookies(&owner),
+        ),
+        200,
+    )
+    .await;
     let before = db
         .tables(&[
             "users",
@@ -213,6 +233,90 @@ async fn server_get_org_role_reads_persisted_permissions_with_member_authority<B
         assert_eq!(error.error.status_code(), status);
         assert_eq!(body(&error.error.to_auth_response())["code"], code);
     }
+    let listing = || ServerEndpoint::<JsValue>::new("organization", "listOrgRoles");
+    for (query, expected) in [
+        (
+            Some(json!({"organizationId":first_id,"roleName":7,"roleId":["ignored"]})),
+            json!([first_role, body(&denied_role)["roleData"]]),
+        ),
+        (None, json!([second_role])),
+        (Some(json!({})), json!([second_role])),
+        (
+            Some(json!({"organizationId":body(&empty_organization)["id"]})),
+            json!([]),
+        ),
+    ] {
+        let mut endpoint = listing();
+        if let Some(query) = query {
+            endpoint = endpoint.with_query(&query)?;
+        }
+        let output = auth.dispatch_endpoint(endpoint, options(&owner)).await?;
+        assert_eq!(serde_json::to_value(output.value())?, expected);
+    }
+    for (query, credentials, status, code) in [
+        (
+            Some(json!({"organizationId":first_id})),
+            EndpointOptions::default(),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (
+            None,
+            EndpointOptions {
+                headers: Some(Default::default()),
+                ..Default::default()
+            },
+            401,
+            "UNAUTHORIZED",
+        ),
+        (None, options(&outsider), 400, "NO_ACTIVE_ORGANIZATION"),
+        (
+            Some(json!({"organizationId":first_id})),
+            options(&outsider),
+            403,
+            "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
+        ),
+        (
+            Some(json!({"organizationId":first_id})),
+            options(&member),
+            403,
+            "YOU_ARE_NOT_ALLOWED_TO_LIST_A_ROLE",
+        ),
+        (
+            Some(json!({"organizationId":""})),
+            options(&owner),
+            400,
+            "NO_ACTIVE_ORGANIZATION",
+        ),
+    ] {
+        let mut endpoint = listing();
+        if let Some(query) = query {
+            endpoint = endpoint.with_query(&query)?;
+        }
+        let error = auth
+            .dispatch_endpoint(endpoint, credentials)
+            .await
+            .unwrap_err();
+        assert_eq!(error.error.status_code(), status);
+        assert_eq!(body(&error.error.to_auth_response())["code"], code);
+    }
+    let typed_list = auth
+        .dispatch_endpoint(
+            OrganizationPlugin::list_org_roles_endpoint(&RoleQuery {
+                organization_id: Some(first_id.clone()),
+                ..Default::default()
+            })?,
+            options(&owner),
+        )
+        .await?;
+    assert_eq!(
+        typed_list
+            .decode()?
+            .iter()
+            .map(|role| role.role.as_str())
+            .collect::<Vec<_>>(),
+        vec!["firstreader", "teamonly"]
+    );
     let typed = auth
         .dispatch_endpoint(
             OrganizationPlugin::get_org_role_endpoint(&RoleQuery {

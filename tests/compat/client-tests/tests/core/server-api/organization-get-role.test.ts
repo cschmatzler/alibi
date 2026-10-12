@@ -4,7 +4,7 @@ import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
 
 compatScenario(
-  "canonical getOrgRole reads stored permissions within organization and member authority",
+  "canonical getOrgRole and listOrgRoles read stored permissions within organization and member authority",
   async (ctx) => {
     const profile = "org-teams-dynamic";
     async function signup(name: string) {
@@ -53,7 +53,7 @@ compatScenario(
     const accepted = await http(member, "/organization/accept-invitation", {
       invitationId: invitation.id,
     });
-    await http(owner, "/organization/create-role", {
+    const teamOnly = await http(owner, "/organization/create-role", {
       role: "TeamOnly",
       permission: { team: ["create"] },
     });
@@ -69,6 +69,11 @@ compatScenario(
       role: "SecondReader",
       permission: { team: ["create"] },
     });
+    const emptyOrganization = await http(owner, "/organization/create", {
+      name: "Empty role organization",
+      slug: ctx.uniqueToken("empty-role-org"),
+    });
+    await http(owner, "/organization/set-active", { organizationId: second.id });
     async function state(id: string) {
       const response = await ctx.rawRequest({
         path: `/__test/organization-state?${new URLSearchParams({ profile, organizationId: id })}`,
@@ -76,7 +81,11 @@ compatScenario(
       expect(response.status).toBe(200);
       return response.body;
     }
-    const before = [await state(first.id), await state(second.id)];
+    const before = [
+      await state(first.id),
+      await state(second.id),
+      await state(emptyOrganization.id),
+    ];
     async function invoke(input: Record<string, unknown>) {
       return ctx.rawRequest({
         path: "/__test/organization-api",
@@ -151,7 +160,52 @@ compatScenario(
       expect((response.body as { code: string }).code).toBe(code);
       denials.push(response);
     }
-    const after = [await state(first.id), await state(second.id)];
+    const lists = [];
+    for (const [input, expected] of [
+      [
+        { query: { organizationId: first.id, roleName: 7, roleId: ["ignored"] } },
+        [firstRole.roleData, teamOnly.roleData],
+      ],
+      [{}, [secondRole.roleData]],
+      [{ query: {} }, [secondRole.roleData]],
+      [{ query: { organizationId: emptyOrganization.id } }, []],
+    ] as const) {
+      const response = await invoke({
+        operation: "server-list-roles",
+        ...input,
+        headers: owner.headers,
+      });
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(expected);
+      lists.push(response);
+    }
+    const listDenials = [];
+    for (const [input, status, code] of [
+      [{ query: { organizationId: first.id } }, 400, "VALIDATION_ERROR"],
+      [{ headers: {} }, 401, "UNAUTHORIZED"],
+      [{ headers: outsider.headers }, 400, "NO_ACTIVE_ORGANIZATION"],
+      [
+        { query: { organizationId: first.id }, headers: outsider.headers },
+        403,
+        "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
+      ],
+      [
+        { query: { organizationId: first.id }, headers: member.headers },
+        403,
+        "YOU_ARE_NOT_ALLOWED_TO_LIST_A_ROLE",
+      ],
+      [{ query: { organizationId: "" }, headers: owner.headers }, 400, "NO_ACTIVE_ORGANIZATION"],
+    ] as const) {
+      const response = await invoke({ operation: "server-list-roles", ...input });
+      expect(response.status).toBe(status);
+      expect((response.body as { code: string }).code).toBe(code);
+      listDenials.push(response);
+    }
+    const after = [
+      await state(first.id),
+      await state(second.id),
+      await state(emptyOrganization.id),
+    ];
     expect(after).toEqual(before);
     return ctx.snapshot({
       owner: owner.user,
@@ -164,6 +218,10 @@ compatScenario(
       before,
       reads,
       denials,
+      teamOnly,
+      emptyOrganization,
+      lists,
+      listDenials,
       after,
     });
   },
