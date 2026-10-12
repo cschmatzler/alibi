@@ -507,7 +507,14 @@ struct OrganizationQuery {
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case")]
 enum TeamOperation {
-    ServerUpdateRole { body: Option<Value>, headers: Option<HashMap<String, String>> },
+    ServerCreateTeam {
+        body: Option<Value>,
+        headers: Option<HashMap<String, String>>,
+    },
+    ServerUpdateRole {
+        body: Option<Value>,
+        headers: Option<HashMap<String, String>>,
+    },
     ServerDeleteRole {
         body: Option<Value>,
         headers: Option<HashMap<String, String>>,
@@ -677,7 +684,11 @@ fn failure(error: AuthError) -> (StatusCode, Json<Value>) {
         StatusCode::from_u16(error.status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let body = match error {
         AuthError::Upstream { message, code, .. } => json!({"message":message,"code":code}),
-        AuthError::Api { message, code: Some(code), .. } => json!({"message":message,"code":code}),
+        AuthError::Api {
+            message,
+            code: Some(code),
+            ..
+        } => json!({"message":message,"code":code}),
         error if error.status_code() >= 500 => json!({"message":"Internal server error"}),
         error => json!({"message":error.to_string()}),
     };
@@ -716,6 +727,14 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                 let headers = headers.iter().filter_map(|(name,value)|value.to_str().ok().map(|value|(name.as_str().to_owned(),value.to_owned()))).collect::<HashMap<_,_>>();
                 let signed = body.authority.as_deref() == Some("headers");
                 let result = match body.operation {
+                    TeamOperation::ServerCreateTeam { body, headers } => {
+                        async {
+                            let mut endpoint = alibi::endpoint::ServerEndpoint::<alibi::utils::json::JsValue>::new("organization", "createTeam");
+                            if let Some(body) = body { endpoint = endpoint.with_body(&body)?; }
+                            let output = profile.auth.dispatch_endpoint(endpoint, alibi::endpoint::EndpointOptions { headers, ..Default::default() }).await.map_err(|error| error.error)?;
+                            serde_json::to_value(output.value()).map_err(|error| AuthError::internal(error.to_string()))
+                        }.await
+                    },
                     TeamOperation::ServerUpdateRole { body, headers } => {
                         async {
                             let mut endpoint = alibi::endpoint::ServerEndpoint::<alibi::utils::json::JsValue>::new("organization", "updateOrgRole");
