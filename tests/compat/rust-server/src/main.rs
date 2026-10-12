@@ -1229,6 +1229,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let auth_for_password = auth.clone();
 
     let auth_for_api_key_delete = auth.clone();
+    let auth_for_api_key_list = auth.clone();
     let auth_for_api_key_get = auth.clone();
     let auth_for_api_key_create = auth.clone();
     let auth_for_api_key_update = auth.clone();
@@ -1283,6 +1284,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             async move {
                 let mut endpoint = alibi::endpoint::ServerEndpoint::<alibi::utils::json::JsValue>::new("api-key", "deleteApiKey");
                 if let Some(body) = input.get("body") { endpoint = endpoint.with_body(body).unwrap(); }
+                let options = alibi::endpoint::EndpointOptions {
+                    headers: input.get("headers").map(|headers| serde_json::from_value(headers.clone()).unwrap()),
+                    ..Default::default()
+                };
+                match auth.dispatch_endpoint(endpoint, options).await {
+                    Ok(output) => output.into_response().unwrap().into_response(),
+                    Err(error) => {
+                        let mut response = error.error.to_auth_response();
+                        if let Some(body) = error.body { response.body = serde_json::to_vec(&*body).unwrap(); }
+                        response.into_response()
+                    }
+                }
+            }
+        }))
+        .route("/__test/server-api/api-key-list", post(move |Json(input): Json<serde_json::Value>| {
+            let auth = auth_for_api_key_list.clone();
+            async move {
+                let mut endpoint = alibi::endpoint::ServerEndpoint::<alibi::utils::json::JsValue>::new("api-key", "listApiKeys");
+                if let Some(query) = input.get("query") { endpoint = endpoint.with_query(query).unwrap(); }
                 let options = alibi::endpoint::EndpointOptions {
                     headers: input.get("headers").map(|headers| serde_json::from_value(headers.clone()).unwrap()),
                     ..Default::default()
