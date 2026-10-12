@@ -11,25 +11,27 @@ backend_tests!(server_org_role_lifecycle_preserves_member_authority);
 async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let config = AuthConfig::new(SECRET).base_url(ORIGIN);
-    let auth = AuthBuilder::new(config.clone())
-        .store(B::store(Arc::new(config), &connection))
-        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
-        .plugin(super::auth_probe::fast_password())
-        .plugin(SessionManagementPlugin::new())
-        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
-            dynamic_access_control: DynamicAccessControlConfig {
-                enabled: true,
+    let auth = Box::pin(
+        AuthBuilder::new(config.clone())
+            .store(B::store(Arc::new(config), &connection))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+            .plugin(super::auth_probe::fast_password())
+            .plugin(SessionManagementPlugin::new())
+            .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+                dynamic_access_control: DynamicAccessControlConfig {
+                    enabled: true,
+                    ..Default::default()
+                },
+                access_control: Some(default_organization_statements()),
                 ..Default::default()
-            },
-            access_control: Some(default_organization_statements()),
-            ..Default::default()
-        }))
-        .build()
-        .await?;
-    let owner = signup(&auth, "role-read-owner@example.test").await;
-    let member = signup(&auth, "role-read-member@example.test").await;
-    let outsider = signup(&auth, "role-read-outsider@example.test").await;
-    let first = call(
+            }))
+            .build(),
+    )
+    .await?;
+    let owner = Box::pin(signup(&auth, "role-read-owner@example.test")).await;
+    let member = Box::pin(signup(&auth, "role-read-member@example.test")).await;
+    let outsider = Box::pin(signup(&auth, "role-read-outsider@example.test")).await;
+    let first = Box::pin(call(
         &auth,
         request(
             "/organization/create",
@@ -37,10 +39,10 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
             &cookies(&owner),
         ),
         200,
-    )
+    ))
     .await;
     let first_id = body(&first)["id"].as_str().unwrap().to_owned();
-    let first_role = call(
+    let first_role = Box::pin(call(
         &auth,
         request(
             "/organization/create-role",
@@ -48,10 +50,10 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
             &cookies(&owner),
         ),
         200,
-    )
+    ))
     .await;
     let first_role = body(&first_role)["roleData"].clone();
-    let invitation = call(
+    let invitation = Box::pin(call(
         &auth,
         request(
             "/organization/invite-member",
@@ -59,9 +61,9 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
             &cookies(&owner),
         ),
         200,
-    )
+    ))
     .await;
-    let accepted = call(
+    let accepted = Box::pin(call(
         &auth,
         request(
             "/organization/accept-invitation",
@@ -69,9 +71,9 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
             &cookies(&member),
         ),
         200,
-    )
+    ))
     .await;
-    let denied_role = call(
+    let denied_role = Box::pin(call(
         &auth,
         request(
             "/organization/create-role",
@@ -79,9 +81,9 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
             &cookies(&owner),
         ),
         200,
-    )
+    ))
     .await;
-    let _assigned = call(
+    let _assigned = Box::pin(call(
         &auth,
         request(
             "/organization/update-member-role",
@@ -89,9 +91,9 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
             &cookies(&owner),
         ),
         200,
-    )
+    ))
     .await;
-    let second = call(
+    let second = Box::pin(call(
         &auth,
         request(
             "/organization/create",
@@ -99,10 +101,10 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
             &cookies(&owner),
         ),
         200,
-    )
+    ))
     .await;
     let second_id = body(&second)["id"].as_str().unwrap().to_owned();
-    let second_role = call(
+    let second_role = Box::pin(call(
         &auth,
         request(
             "/organization/create-role",
@@ -110,10 +112,10 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
             &cookies(&owner),
         ),
         200,
-    )
+    ))
     .await;
     let second_role = body(&second_role)["roleData"].clone();
-    let empty_organization = call(
+    let empty_organization = Box::pin(call(
         &auth,
         request(
             "/organization/create",
@@ -121,9 +123,9 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
             &cookies(&owner),
         ),
         200,
-    )
+    ))
     .await;
-    let _active = call(
+    let _active = Box::pin(call(
         &auth,
         request(
             "/organization/set-active",
@@ -131,7 +133,7 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
             &cookies(&owner),
         ),
         200,
-    )
+    ))
     .await;
     let before = db
         .tables(&[
@@ -333,6 +335,127 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
         .await?,
         before
     );
+    let updating = || ServerEndpoint::<JsValue>::new("organization", "updateOrgRole");
+    for (input, credentials, status, code) in [
+        (
+            json!({"roleId":first_role["id"],"data":{}}),
+            EndpointOptions::default(),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (
+            json!({"roleId":first_role["id"],"data":{}}),
+            EndpointOptions {
+                headers: Some(Default::default()),
+                ..Default::default()
+            },
+            401,
+            "UNAUTHORIZED",
+        ),
+        (
+            json!({"organizationId":first_id,"roleId":first_role["id"],"data":{}}),
+            options(&outsider),
+            403,
+            "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
+        ),
+        (
+            json!({"organizationId":first_id,"roleId":first_role["id"],"data":{}}),
+            options(&member),
+            403,
+            "YOU_ARE_NOT_ALLOWED_TO_UPDATE_A_ROLE",
+        ),
+        (
+            json!({"organizationId":second_id,"roleId":first_role["id"],"data":{}}),
+            options(&owner),
+            400,
+            "ROLE_NOT_FOUND",
+        ),
+        (
+            json!({"organizationId":first_id,"roleId":first_role["id"],"data":{"roleName":"owner"}}),
+            options(&owner),
+            400,
+            "ROLE_NAME_IS_ALREADY_TAKEN",
+        ),
+        (
+            json!({"organizationId":first_id,"roleId":first_role["id"],"data":{"roleName":"teamonly"}}),
+            options(&owner),
+            400,
+            "ROLE_NAME_IS_ALREADY_TAKEN",
+        ),
+        (
+            json!({"organizationId":first_id,"roleId":first_role["id"],"data":{"permission":{"invented":["read"]}}}),
+            options(&owner),
+            400,
+            "INVALID_RESOURCE",
+        ),
+    ] {
+        let error = Box::pin(auth.dispatch_endpoint(updating().with_body(&input)?, credentials))
+            .await
+            .unwrap_err();
+        assert_eq!(error.error.status_code(), status);
+        assert_eq!(body(&error.error.to_auth_response())["code"], code);
+    }
+    assert_eq!(
+        db.tables(&[
+            "users",
+            "sessions",
+            "organization",
+            "member",
+            "organization_role"
+        ])
+        .await?,
+        before
+    );
+    let updated=Box::pin(auth.dispatch_endpoint(updating().with_body(&json!({"organizationId":first_id,"roleId":first_role["id"],"data":{"roleName":"FirstRenamed","permission":{"team":["create"]},"id":"forged"}}))?,options(&owner))).await?;
+    let updated = serde_json::to_value(updated.value())?;
+    assert_eq!(updated["success"], true);
+    assert_eq!(updated["roleData"]["role"], "firstrenamed");
+    assert_eq!(updated["roleData"]["id"], first_role["id"]);
+    assert_eq!(
+        updated["roleData"]["permission"],
+        json!({"team":["create"]})
+    );
+    let stored = auth
+        .store()
+        .get_organization_role(
+            &first_id,
+            &alibi::types::OrganizationRoleSelector::Id(
+                first_role["id"].as_str().unwrap().to_owned(),
+            ),
+        )
+        .await?
+        .unwrap();
+    assert_eq!(stored.role, "firstrenamed");
+    assert_eq!(
+        serde_json::from_str::<Value>(stored.permission.as_str())?,
+        json!({"team":["create"]})
+    );
+    let rename = serde_json::from_value(
+        json!({"roleName":"secondreader","data":{"roleName":"SecondRenamed"}}),
+    )?;
+    let renamed = Box::pin(auth.dispatch_endpoint(
+        OrganizationPlugin::update_org_role_endpoint(&rename)?,
+        options(&owner),
+    ))
+    .await?;
+    let renamed = renamed.decode()?;
+    assert!(renamed.success);
+    assert_eq!(
+        serde_json::to_value(&renamed.role_data.permission)?,
+        json!({"team":["create"]})
+    );
+    assert_eq!(renamed.role_data.role, "secondrenamed");
+    assert_eq!(renamed.role_data.organization_id, second_id);
+    let before_deletion = db
+        .tables(&[
+            "users",
+            "sessions",
+            "organization",
+            "member",
+            "organization_role",
+        ])
+        .await?;
+    assert_eq!(before_deletion[..4], before[..4]);
     let deletion = || ServerEndpoint::<JsValue>::new("organization", "deleteOrgRole");
     for (input, credentials, status, code) in [
         (
@@ -402,7 +525,7 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
             "organization_role"
         ])
         .await?,
-        before
+        before_deletion
     );
     let deleted = Box::pin(auth.dispatch_endpoint(
         deletion().with_body(
@@ -428,7 +551,7 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
     );
     let deleted = Box::pin(auth.dispatch_endpoint(
         OrganizationPlugin::delete_org_role_endpoint(&RoleQuery {
-            role_name: Some("secondreader".into()),
+            role_name: Some("secondrenamed".into()),
             ..Default::default()
         })?,
         options(&owner),
@@ -436,7 +559,7 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
     .await?;
     assert!(deleted.decode()?.success);
     let repeated = Box::pin(auth.dispatch_endpoint(
-        deletion().with_body(&json!({"roleName":"secondreader"}))?,
+        deletion().with_body(&json!({"roleName":"secondrenamed"}))?,
         options(&owner),
     ))
     .await
@@ -456,7 +579,7 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
         ])
         .await?;
     assert_eq!(final_state[..4], before[..4]);
-    let mut expected_roles = serde_json::from_str::<Vec<Value>>(&before[4])?;
+    let mut expected_roles = serde_json::from_str::<Vec<Value>>(&before_deletion[4])?;
     expected_roles.retain(|row| row["id"] != first_role["id"] && row["id"] != second_role["id"]);
     assert_eq!(
         serde_json::from_str::<Vec<Value>>(&final_state[4])?,
