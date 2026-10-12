@@ -274,6 +274,7 @@ pub(super) async fn router(
         },
     );
     for name in [
+        "passwordless-no-sender",
         "otp-change-hooks",
         "otp-change-disabled-omitted",
         "otp-change-disabled-false",
@@ -327,7 +328,8 @@ pub(super) async fn router(
                 EmailOtpConfig::default().rate_limit
             },
             generate_otp: Some(Arc::new(Sender(outbox.clone()))),
-            send_verification_otp: Some(Arc::new(Sender(outbox.clone()))),
+            send_verification_otp: (name != "passwordless-no-sender")
+                .then(|| Arc::new(Sender(outbox.clone())) as Arc<dyn SendEmailOtp>),
             change_email_enabled: !name.starts_with("otp-change-disabled-"),
             storage: match name {
                 "passwordless-hashed" => EmailOtpStorage::Hashed,
@@ -411,6 +413,78 @@ pub(super) async fn router(
     let outbox_for_get = outbox.clone();
     let read_database = database.clone();
     let write_database = database.clone();
+    let sending_runtimes = runtimes.clone();
+    router = router.route(
+        "/__test/server-api/email-otp-send",
+        post(move |request: axum::extract::Request| {
+            let runtimes = sending_runtimes.clone();
+            async move {
+                let (parts, body) = request.into_parts();
+                let bytes = axum::body::to_bytes(body, 1024 * 1024).await.unwrap();
+                let input: Value = serde_json::from_slice(&bytes).unwrap();
+                let selected = runtimes
+                    .get(input["profile"].as_str().unwrap_or("default"))
+                    .unwrap();
+                let mut endpoint = alibi::endpoint::ServerEndpoint::<Value>::new(
+                    "email-otp",
+                    "sendVerificationOTP",
+                );
+                if let Some(body) = input.get("body") {
+                    endpoint = endpoint.with_body(body).unwrap();
+                }
+                let original = if input["physicalRequest"].as_bool() == Some(true) {
+                    let host = parts.headers.get("host").unwrap().to_str().unwrap();
+                    let url = url::Url::parse(&format!("http://{host}{}", parts.uri)).unwrap();
+                    Some(
+                        AuthRequest::from_parts(
+                            HttpMethod::Post,
+                            parts.uri.path().into(),
+                            parts
+                                .headers
+                                .iter()
+                                .filter_map(|(name, value)| {
+                                    value
+                                        .to_str()
+                                        .ok()
+                                        .map(|value| (name.to_string(), value.to_owned()))
+                                })
+                                .collect(),
+                            Some(bytes.to_vec()),
+                            url.query_pairs()
+                                .map(|(name, value)| (name.into_owned(), value.into_owned()))
+                                .collect(),
+                        )
+                        .with_url(url),
+                    )
+                } else {
+                    None
+                };
+                match selected
+                    .auth
+                    .dispatch_endpoint(
+                        endpoint,
+                        alibi::endpoint::EndpointOptions {
+                            request: original,
+                            headers: input
+                                .get("headers")
+                                .map(|headers| serde_json::from_value(headers.clone()).unwrap()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                {
+                    Ok(output) => output.into_response().unwrap().into_response(),
+                    Err(error) => {
+                        let mut response = error.error.to_auth_response();
+                        if let Some(body) = error.body {
+                            response.body = serde_json::to_vec(&*body).unwrap();
+                        }
+                        response.into_response()
+                    }
+                }
+            }
+        }),
+    );
     let retrieval_runtimes = runtimes.clone();
     router = router.route(
         "/__test/server-api/email-otp-get",

@@ -16,7 +16,7 @@ mod types;
 use alibi_core::AuthError;
 use alibi_core::{AuthContext, AuthRequest, AuthResponse, AuthResult};
 use async_trait::async_trait;
-pub use endpoint::EmailOtpRead;
+pub use endpoint::{EmailOtpRead, EmailOtpSent};
 use std::sync::Arc;
 pub use storage::{EmailOtpCodec, EmailOtpStorage};
 pub use types::{EmailOtpDelivery, EmailOtpType, OtpResendStrategy};
@@ -321,14 +321,15 @@ impl<S: alibi_core::AuthSchema> alibi_core::VerificationEmailOverride<S> for Ema
         let Some(email) = user.email.as_deref() else {
             return Ok(());
         };
-        let body = serde_json::json!({"email":email,"type":"email-verification"});
-        let mut req = AuthRequest::new(
-            alibi_core::HttpMethod::Post,
-            "/email-otp/send-verification-otp",
-        );
-        req.body = Some(serde_json::to_vec(&body)?);
-        _ = self
-            .send_verification_with_request(&req, request, ctx)
+        let _ = self
+            .send_verification_core(
+                request,
+                ctx,
+                types::SendRequest {
+                    email: email.to_owned(),
+                    otp_type: EmailOtpType::EmailVerification,
+                },
+            )
             .await?;
         Ok(())
     }

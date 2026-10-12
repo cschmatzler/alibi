@@ -225,20 +225,19 @@ impl EmailOtpPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        self.send_verification_with_request(req, Some(req), ctx)
-            .await
-    }
-
-    pub(super) async fn send_verification_with_request(
-        &self,
-        req: &AuthRequest,
-        request: Option<&AuthRequest>,
-        ctx: &AuthContext<impl AuthSchema>,
-    ) -> AuthResult<AuthResponse> {
         let body: SendRequest = match parse_body(req) {
             Ok(value) => value,
             Err(response) => return Ok(response),
         };
+        self.send_verification_core(Some(req), ctx, body).await
+    }
+
+    pub(super) async fn send_verification_core(
+        &self,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<impl AuthSchema>,
+        body: SendRequest,
+    ) -> AuthResult<AuthResponse> {
         if self.config.send_verification_otp.is_none() {
             return Err(AuthError::bad_request(
                 "send email verification is not implemented",
