@@ -38,6 +38,7 @@ pub(crate) async fn router(
     counter: Arc<AtomicUsize>,
 ) -> AuthResult<Router> {
     let mut router = Router::new();
+    let mut runtimes = std::collections::HashMap::new();
     for (name, maximum_sessions) in [
         ("multi-session", 5.0),
         ("multi-session-limited", 2.0),
@@ -91,8 +92,70 @@ pub(crate) async fn router(
                 .build()
                 .await?,
         );
+        runtimes.insert(name.to_owned(), auth.clone());
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
+    let runtimes = Arc::new(runtimes);
+    router = router.route(
+        "/__test/server-api/multi-session-list",
+        axum::routing::post(move |request: axum::extract::Request| {
+            let runtimes = runtimes.clone();
+            async move {
+                use axum::response::IntoResponse as _;
+                let (parts, body) = request.into_parts();
+                let bytes = axum::body::to_bytes(body, 1024 * 1024).await.unwrap();
+                let input: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                let selected = runtimes
+                    .get(input["profile"].as_str().unwrap_or("multi-session"))
+                    .unwrap();
+                let original = if input["originalRequest"].as_bool() == Some(true) {
+                    let mut request =
+                        alibi::AuthRequest::new(alibi::HttpMethod::Post, parts.uri.path())
+                            .with_url(
+                                url::Url::parse(&format!(
+                                    "http://{}{}",
+                                    parts.headers.get("host").unwrap().to_str().unwrap(),
+                                    parts.uri
+                                ))
+                                .unwrap(),
+                            );
+                    request.headers = parts
+                        .headers
+                        .iter()
+                        .filter_map(|(name, value)| {
+                            value
+                                .to_str()
+                                .ok()
+                                .map(|value| (name.to_string(), value.to_owned()))
+                        })
+                        .collect();
+                    request.body = Some(bytes.to_vec());
+                    Some(request)
+                } else {
+                    None
+                };
+                match selected
+                    .dispatch_endpoint(
+                        alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(
+                            "multi-session",
+                            "listDeviceSessions",
+                        ),
+                        alibi::endpoint::EndpointOptions {
+                            headers: input
+                                .get("headers")
+                                .map(|headers| serde_json::from_value(headers.clone()).unwrap()),
+                            request: original,
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                {
+                    Ok(output) => output.into_response().unwrap().into_response(),
+                    Err(error) => error.error.to_auth_response().into_response(),
+                }
+            }
+        }),
+    );
     let path = "/__test/profiles/multi-session-stateless/api/auth";
     let config = config
         .clone()

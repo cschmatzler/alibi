@@ -1,5 +1,6 @@
 //! Browser-local selection and revocation of several authenticated accounts.
 
+mod endpoint;
 use super::authentication_helpers::{JsonField, RequestBody, parse_body};
 use super::helpers::delete_session_cookie_headers;
 use alibi_core::utils::cookie_utils::{
@@ -12,6 +13,7 @@ use alibi_core::{
 };
 use async_trait::async_trait;
 use chrono::Utc;
+pub use endpoint::DeviceSession;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -107,10 +109,10 @@ impl MultiSessionPlugin {
         Ok(())
     }
 
-    fn multi_cookies(req: &AuthRequest) -> Vec<(String, String)> {
+    fn multi_cookies(req: &impl alibi_core::session::SessionRequest) -> Vec<(String, String)> {
         let mut cookies: Vec<(String, String)> = Vec::new();
-        for cookie in req
-            .headers
+        let headers = req.session_headers();
+        for cookie in headers
             .get("cookie")
             .into_iter()
             .flat_map(|header| cookie::Cookie::split_parse(header).flatten())
@@ -128,7 +130,7 @@ impl MultiSessionPlugin {
     }
 
     fn signed_tokens(
-        req: &AuthRequest,
+        req: &impl alibi_core::session::SessionRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> Vec<(String, String)> {
         Self::multi_cookies(req)
@@ -141,7 +143,7 @@ impl MultiSessionPlugin {
 
     async fn list(
         &self,
-        req: &AuthRequest,
+        req: &impl alibi_core::session::SessionRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let tokens = Self::session_tokens(req, ctx);
@@ -163,7 +165,10 @@ impl MultiSessionPlugin {
         Ok(AuthResponse::json(200, &listed)?)
     }
 
-    fn session_tokens(req: &AuthRequest, ctx: &AuthContext<impl AuthSchema>) -> Vec<String> {
+    fn session_tokens(
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> Vec<String> {
         Self::signed_tokens(req, ctx)
             .into_iter()
             .map(|(_, token)| token)
@@ -295,6 +300,29 @@ impl RequestBody for SessionTokenRequest {
 impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
     route_openapi_metadata!(S);
 
+    fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
+        endpoint::definitions()
+    }
+    fn validate_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
+        endpoint::validate(call)
+    }
+    async fn on_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        let output = self.list(call, ctx).await?;
+        let mut response = alibi_core::endpoint::EndpointResponse::value(
+            alibi_core::utils::json::from_slice(&output.body)?,
+        );
+        response.set_status(Some(output.status));
+        response.merge_headers(output.headers);
+        Ok(response)
+    }
     fn name(&self) -> &'static str {
         "multi-session"
     }

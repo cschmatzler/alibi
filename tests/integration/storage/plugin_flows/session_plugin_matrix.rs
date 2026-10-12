@@ -121,6 +121,7 @@ async fn bearer_authorization_matrix<B: Backend>(db: Db) -> TestResult {
 }
 
 async fn multi_session_limits_and_revocation<B: Backend>(db: Db) -> TestResult {
+    use alibi::endpoint::{EndpointOptions, ServerEndpoint};
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let auth = builder_with::<B>(&connection, AuthConfig::new(SECRET).base_url(ORIGIN))
         .plugin(SessionManagementPlugin::new())
@@ -154,13 +155,72 @@ async fn multi_session_limits_and_revocation<B: Backend>(db: Db) -> TestResult {
             json!(jar.matches("_multi-").count()),
         );
     }
-    let listed = call(
-        &auth,
-        request("/multi-session/list-device-sessions", None, &jar),
-        200,
-    )
-    .await;
-    assert_eq!(body(&listed).as_array().unwrap().len(), 2);
+    let before_list = db.tables(&["users", "accounts", "sessions"]).await?;
+    let endpoint = || ServerEndpoint::<Value>::new("multi-session", "listDeviceSessions");
+    let missing = Box::pin(auth.dispatch_endpoint(endpoint(), EndpointOptions::default()))
+        .await
+        .unwrap_err();
+    assert_eq!(missing.error.status_code(), 400);
+    assert_eq!(
+        missing.error.error_payload().1.as_deref(),
+        Some("VALIDATION_ERROR")
+    );
+    assert_eq!(missing.error.error_payload().2, "Headers is required");
+    for cookie in ["", "invalid_multi-proof=bad"] {
+        let empty = Box::pin(auth.dispatch_endpoint(
+            endpoint(),
+            EndpointOptions {
+                headers: Some([("cookie".into(), cookie.into())].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
+        .await?;
+        assert_eq!(empty.decode()?, json!([]));
+        assert!(empty.headers().get_all("set-cookie").next().is_none());
+    }
+    let listed = Box::pin(auth.dispatch_endpoint(
+        MultiSessionPlugin::list_device_sessions_endpoint(),
+        EndpointOptions {
+            headers: Some([("cookie".into(), jar.clone())].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await?;
+    let sessions = listed.decode()?;
+    let mut actual = sessions
+        .iter()
+        .map(|item| item.session.token.clone())
+        .collect::<Vec<_>>();
+    actual.sort();
+    let mut expected = tokens[..2].to_vec();
+    expected.sort();
+    assert_eq!(actual, expected);
+    assert!(listed.headers().get_all("set-cookie").next().is_none());
+    let original = Box::pin(auth.dispatch_endpoint(
+        MultiSessionPlugin::list_device_sessions_endpoint(),
+        EndpointOptions {
+            request: Some(request("/multi-session/list-device-sessions", None, &jar)),
+            ..Default::default()
+        },
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(original.error.status_code(), 400);
+    assert_eq!(original.error.error_payload().2, "Headers is required");
+    let overridden = Box::pin(auth.dispatch_endpoint(
+        MultiSessionPlugin::list_device_sessions_endpoint(),
+        EndpointOptions {
+            request: Some(request("/multi-session/list-device-sessions", None, &jar)),
+            headers: Some(Default::default()),
+            ..Default::default()
+        },
+    ))
+    .await?;
+    assert!(overridden.decode()?.is_empty());
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions"]).await?,
+        before_list
+    );
 
     for (label, input) in [
         ("array body", json!([])),
