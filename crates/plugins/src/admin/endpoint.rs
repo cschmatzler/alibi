@@ -1,7 +1,7 @@
 //! Installed admin server operations share authorization and stored output with HTTP.
 use super::{
-    AdminPlugin, MESSAGE_CHANGE_ROLE, MESSAGE_GET_USER, MESSAGE_UPDATE_USERS, create_user_core,
-    get_user_core, set_role_core,
+    AdminPlugin, MESSAGE_CHANGE_ROLE, MESSAGE_GET_USER, MESSAGE_LIST_USERS, MESSAGE_UPDATE_USERS,
+    create_user_core, get_user_core, list_users_core, set_role_core,
     types::{
         AdminUpdateUserRequest, CreateUserRequest, GetUserQuery, HasPermissionRequest,
         PermissionResponse, SetRoleRequest,
@@ -20,6 +20,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             "getUser",
             "getUser",
             Some("/admin/get-user"),
+            HttpMethod::Get,
+        ),
+        crate::endpoint::definition(
+            "listUsers",
+            "listUsers",
+            Some("/admin/list-users"),
             HttpMethod::Get,
         ),
         crate::endpoint::definition(
@@ -50,6 +56,9 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "listUsers" {
+        return super::listing::validate(call);
+    }
     if call.operation_id() == "adminUpdateUser" {
         let body: AdminUpdateUserRequest =
             super::validation::body_value("update-user", call.body().cloned())
@@ -140,6 +149,13 @@ impl AdminPlugin {
         ServerEndpoint::new("admin", "adminUpdateUser").with_body(body)
     }
 
+    /// List users through authoritative admin policy and installed server hooks.
+    pub fn list_users_endpoint(
+        query: &super::AdminListUsersQuery,
+    ) -> AuthResult<ServerEndpoint<super::AdminListUsersResponse>> {
+        ServerEndpoint::new("admin", "listUsers").with_query(query)
+    }
+
     async fn call_permission_endpoint(
         &self,
         call: &EndpointCall,
@@ -226,6 +242,11 @@ impl AdminPlugin {
         };
         let principal = ctx.user_view(&user);
         call.record_authenticated_session(principal.clone(), session);
+        if call.operation_id() == "listUsers" {
+            self.authorize(&principal, "user", "list", MESSAGE_LIST_USERS)?;
+            let query = super::listing::params(call)?;
+            return EndpointResponse::json(&list_users_core(&query, ctx).await?);
+        }
         if call.operation_id() == "adminUpdateUser" {
             self.authorize(&principal, "user", "update", MESSAGE_UPDATE_USERS)?;
             let body: AdminUpdateUserRequest = call.body_as()?;

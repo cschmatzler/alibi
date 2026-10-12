@@ -506,6 +506,8 @@ pub(crate) async fn list_users_core(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<ListUsersResponse<AdminUserView>> {
     let params = alibi_core::ListUsersParams {
+        source_limit: query.source_limit,
+        source_offset: query.source_offset,
         limit: query.limit,
         offset: query.offset,
         search_field: query.search_field.clone(),
@@ -535,8 +537,18 @@ pub(crate) async fn list_users_core(
             .map(|user| AdminUserView::from_output(ctx, user))
             .collect::<AuthResult<_>>()?,
         total,
-        limit: query.limit.filter(|limit| *limit > 0),
-        offset: query.offset.filter(|offset| *offset > 0),
+        limit: query.source_limit.or_else(|| {
+            query
+                .limit
+                .filter(|limit| *limit > 0)
+                .and_then(|limit| limit.to_string().parse().ok())
+        }),
+        offset: query.source_offset.or_else(|| {
+            query
+                .offset
+                .filter(|offset| *offset > 0)
+                .and_then(|offset| offset.to_string().parse().ok())
+        }),
     })
 }
 

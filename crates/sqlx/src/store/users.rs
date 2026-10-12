@@ -256,7 +256,7 @@ where
         self.exec().fetch_all(sql).await
     }
 
-    /// Bind an admin user-list filter the shared projection cannot evaluate.
+    /// Bind an admin user-list predicate with the configured SQL semantics.
     fn push_user_filter(
         &self,
         sql: &mut Sql,
@@ -309,7 +309,6 @@ where
                 .map(|value| S::User::column_value(column, value.into()))
                 .collect()
         };
-        sql.push(" WHERE ");
         match operator {
             "in" | "not_in" if bindings.is_empty() && numeric_cast.is_none() => {
                 sql.push(if operator == "in" { "1 = 2" } else { "1 = 1" });
@@ -365,6 +364,35 @@ where
                 bind_filter_values(sql, bindings, numeric_cast);
             }
             _ => return Err(AuthError::bad_request("Unsupported user filter operator")),
+        }
+        Ok(())
+    }
+
+    fn user_list_predicates(&self, sql: &mut Sql, params: &ListUsersParams) -> AuthResult<()> {
+        let filtered = if let Some(search) = params
+            .search_value
+            .as_ref()
+            .filter(|search| !search.is_empty())
+        {
+            sql.push(" WHERE ");
+            self.push_user_filter(
+                sql,
+                params.search_field.as_deref(),
+                params.search_operator.as_deref().unwrap_or("contains"),
+                &UserFilterValue::Scalar(search.clone()),
+            )?;
+            true
+        } else {
+            false
+        };
+        if let Some(value) = &params.filter_value {
+            sql.push(if filtered { " AND " } else { " WHERE " });
+            self.push_user_filter(
+                sql,
+                params.filter_field.as_deref(),
+                params.filter_operator.as_deref().unwrap_or("eq"),
+                value,
+            )?;
         }
         Ok(())
     }
@@ -561,65 +589,49 @@ where
         Ok(())
     }
 
-    async fn list_users(&self, mut params: ListUsersParams) -> AuthResult<(Vec<S::User>, usize)> {
+    async fn list_users(&self, params: ListUsersParams) -> AuthResult<(Vec<S::User>, usize)> {
         let table = <S::User as SqlxModel>::TABLE;
         let mut sql = model::select_model::<S::User>(self.exec());
-        if let Some(value) = &params.filter_value {
-            let operator = params.filter_operator.as_deref().unwrap_or("eq");
-            if matches!(value, UserFilterValue::Multiple(_))
-                || matches!(operator, "in" | "not_in")
-                || !is_projected_field(params.filter_field.as_deref().unwrap_or("email"))
-            {
-                self.push_user_filter(&mut sql, params.filter_field.as_deref(), operator, value)?;
-                // Only this already executed filter is removed from the common
-                // paging/search helper; other fields and total remain intact.
-                params.filter_value = None;
-            }
-        }
-        // Numeric IDs and application fields retain physical column ordering.
-        // The shared projection cannot know the application's column types.
-        let physical_sort = params
+        self.user_list_predicates(&mut sql, &params)?;
+        let field = params
             .sort_by
             .as_deref()
-            .filter(|field| !is_projected_field(field));
-        let presorted = if let Some(field) = physical_sort {
-            let column = S::User::list_users_column(field).ok_or_else(|| {
-                AuthError::bad_request("User sort field has no configured column")
-            })?;
-            sql.push(" ORDER BY ");
-            sql.column(table, column);
-            sql.push(if params.sort_direction.as_deref() == Some("desc") {
-                " DESC"
+            .filter(|field| !field.is_empty())
+            .unwrap_or("createdAt");
+        let column = S::User::list_users_column(field)
+            .ok_or_else(|| AuthError::bad_request("User sort field has no configured column"))?;
+        sql.push(" ORDER BY ");
+        sql.column(table, column);
+        let direction = params.sort_direction.as_deref().unwrap_or_else(|| {
+            if params.sort_by.is_some() {
+                "asc"
             } else {
-                " ASC"
-            });
-            true
-        } else {
-            false
-        };
-        let models = self.exec().fetch_all(sql).await?;
-
-        Ok(if presorted {
-            alibi_core::user_query::apply_list_users_presorted(models, &params)
-        } else {
-            alibi_core::user_query::apply_list_users(models, &params)
-        })
+                "desc"
+            }
+        });
+        sql.push(if direction == "desc" { " DESC" } else { " ASC" });
+        let number = |value: usize| value.to_string().parse::<f64>().ok();
+        let limit = params
+            .source_limit
+            .or_else(|| params.limit.and_then(number))
+            .or_else(|| self.find_many_limit().to_string().parse().ok());
+        let offset = params
+            .source_offset
+            .or_else(|| params.offset.and_then(number));
+        super::bind_page(&mut sql, limit, offset);
+        let users = self.exec().fetch_all(sql).await?;
+        let mut count = Sql::with(self.exec().engine(), "SELECT COUNT(*) FROM ");
+        count.ident(table);
+        self.user_list_predicates(&mut count, &params)?;
+        let total = usize::try_from(
+            self.exec()
+                .fetch_scalar::<i64>(count)
+                .await?
+                .unwrap_or_default(),
+        )
+        .map_err(|_| AuthError::internal("User count exceeds usize"))?;
+        Ok((users, total))
     }
-}
-
-/// Fields the shared list-users projection filters and sorts itself.
-fn is_projected_field(field: &str) -> bool {
-    matches!(
-        field,
-        "email"
-            | "name"
-            | "username"
-            | "role"
-            | "banned"
-            | "createdAt"
-            | "updatedAt"
-            | "banExpires"
-    )
 }
 
 fn normalize_user_email(email: &str) -> String {

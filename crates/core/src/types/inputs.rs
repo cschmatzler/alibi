@@ -246,6 +246,10 @@ impl From<Vec<String>> for UserFilterValue {
 /// Parameters for listing users through the configured adapter.
 #[derive(Debug, Clone, Default)]
 pub struct ListUsersParams {
+    /// Original JavaScript limit, retained for backend pagination semantics.
+    pub source_limit: Option<f64>,
+    /// Original JavaScript offset, retained for backend pagination semantics.
+    pub source_offset: Option<f64>,
     pub limit: Option<usize>,
     pub offset: Option<usize>,
     pub search_field: Option<String>,

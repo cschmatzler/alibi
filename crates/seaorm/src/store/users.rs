@@ -11,8 +11,8 @@ use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::sea_query::{Expr, ExprTrait};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
-    QueryOrder, QuerySelect, QueryTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, QueryTrait,
 };
 
 pub(super) fn user_query<M: SeaOrmUserModel>(
@@ -645,67 +645,70 @@ where
         Ok(())
     }
 
-    async fn list_users(&self, mut params: ListUsersParams) -> AuthResult<(Vec<S::User>, usize)> {
-        let mut query = user_query::<S::User>(self.scoped_connection().get_database_backend());
-        if let Some(value) = &params.filter_value {
-            let operator = params.filter_operator.as_deref().unwrap_or("eq");
-            if matches!(value, UserFilterValue::Multiple(_))
-                || matches!(operator, "in" | "not_in")
-                || !is_projected_field(params.filter_field.as_deref().unwrap_or("email"))
-            {
-                let condition =
-                    self.user_filter(params.filter_field.as_deref(), operator, value)?;
-                query = query.filter(condition);
-                // Only this already executed filter is removed from the common
-                // paging/search helper; other fields and total remain intact.
-                params.filter_value = None;
-            }
+    async fn list_users(&self, params: ListUsersParams) -> AuthResult<(Vec<S::User>, usize)> {
+        let backend = self.scoped_connection().get_database_backend();
+        let mut query = user_query::<S::User>(backend);
+        if let Some(search) = params
+            .search_value
+            .as_ref()
+            .filter(|search| !search.is_empty())
+        {
+            query = query.filter(self.user_filter(
+                params.search_field.as_deref(),
+                params.search_operator.as_deref().unwrap_or("contains"),
+                &UserFilterValue::Scalar(search.clone()),
+            )?);
         }
-        // Numeric IDs and application fields retain physical column ordering.
-        // The shared projection cannot know the application's column types.
-        let physical_sort = params
+        if let Some(value) = &params.filter_value {
+            query = query.filter(self.user_filter(
+                params.filter_field.as_deref(),
+                params.filter_operator.as_deref().unwrap_or("eq"),
+                value,
+            )?);
+        }
+        let count = query.clone();
+        let field = params
             .sort_by
             .as_deref()
-            .filter(|field| !is_projected_field(field));
-        let presorted = if let Some(field) = physical_sort {
-            let column = S::User::list_users_column(field).ok_or_else(|| {
-                AuthError::bad_request("User sort field has no configured column")
-            })?;
-            query = if params.sort_direction.as_deref() == Some("desc") {
-                query.order_by_desc(column)
+            .filter(|field| !field.is_empty())
+            .unwrap_or("createdAt");
+        let column = S::User::list_users_column(field)
+            .ok_or_else(|| AuthError::bad_request("User sort field has no configured column"))?;
+        let direction = params.sort_direction.as_deref().unwrap_or_else(|| {
+            if params.sort_by.is_some() {
+                "asc"
             } else {
-                query.order_by_asc(column)
-            };
-            true
+                "desc"
+            }
+        });
+        query = if direction == "desc" {
+            query.order_by_desc(column)
         } else {
-            false
+            query.order_by_asc(column)
         };
-        let models = query
+        let number = |value: usize| value.to_string().parse::<f64>().ok();
+        let limit = params
+            .source_limit
+            .or_else(|| params.limit.and_then(number))
+            .or_else(|| number(self.config().advanced.database.default_find_many_limit));
+        let offset = params
+            .source_offset
+            .or_else(|| params.offset.and_then(number));
+        let statement = super::bind_page(query.build(backend), limit, offset)?;
+        let users = <S::User as SeaOrmUserModel>::Entity::find()
+            .from_raw_sql(statement)
             .all(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
-
-        Ok(if presorted {
-            alibi_core::user_query::apply_list_users_presorted(models, &params)
-        } else {
-            alibi_core::user_query::apply_list_users(models, &params)
-        })
+        let total = usize::try_from(
+            count
+                .count(self.scoped_connection())
+                .await
+                .map_err(map_db_err)?,
+        )
+        .map_err(|_| AuthError::internal("User count exceeds usize"))?;
+        Ok((users, total))
     }
-}
-
-/// Fields the shared list-users projection filters and sorts itself.
-fn is_projected_field(field: &str) -> bool {
-    matches!(
-        field,
-        "email"
-            | "name"
-            | "username"
-            | "role"
-            | "banned"
-            | "createdAt"
-            | "updatedAt"
-            | "banExpires"
-    )
 }
 
 fn normalize_user_email(email: &str) -> String {

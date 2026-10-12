@@ -277,14 +277,19 @@ pub(crate) struct SessionUserResponse<S, U> {
     pub user: U,
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct ListUsersResponse<U> {
+/// Public admin listing with safe user projections and parsed pagination.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListUsersResponse<U> {
+    /// The selected page of users.
     pub users: Vec<U>,
+    /// Total matching users before pagination.
     pub total: usize,
+    /// The effective nonzero limit supplied by the caller.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit: Option<usize>,
+    pub limit: Option<f64>,
+    /// The effective nonzero offset supplied by the caller.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub offset: Option<usize>,
+    pub offset: Option<f64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -309,6 +314,8 @@ pub struct PermissionResponse {
 /// Query parameters for `list_users`.
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct ListUsersQueryParams {
+    pub source_limit: Option<f64>,
+    pub source_offset: Option<f64>,
     pub limit: Option<usize>,
     pub offset: Option<usize>,
     #[serde(rename = "searchField")]
@@ -338,4 +345,40 @@ where
         return Err(serde::de::Error::custom("banExpiresIn must be finite"));
     }
     Ok(duration)
+}
+
+/// Logical query for admin listing; scalar and array filters retain their JSON types.
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminListUsersQuery {
+    /// A numeric or string limit, interpreted with JavaScript Number semantics.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<serde_json::Value>,
+    /// A numeric or string offset, interpreted with JavaScript Number semantics.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<serde_json::Value>,
+    /// Text to search for.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_value: Option<String>,
+    /// Search field: email or name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_field: Option<String>,
+    /// Search operator: contains, `starts_with` or `ends_with`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_operator: Option<String>,
+    /// Field to sort by.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_by: Option<String>,
+    /// Ascending or descending order.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_direction: Option<String>,
+    /// Field to filter, defaulting to email.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter_field: Option<String>,
+    /// A string, number, boolean, or homogeneous string/number array.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter_value: Option<serde_json::Value>,
+    /// The comparison operator for the filter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter_operator: Option<String>,
 }
