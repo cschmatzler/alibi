@@ -327,6 +327,7 @@ mod server_organization_list_team_members;
 mod server_organization_list_teams;
 mod server_organization_list_user_teams;
 mod server_organization_remove_team;
+mod server_organization_set_active_team;
 mod server_organization_update_team;
 
 mod server_organization_create_role;
