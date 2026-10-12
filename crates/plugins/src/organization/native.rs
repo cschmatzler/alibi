@@ -195,6 +195,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             HttpMethod::Get,
         ),
         definition(
+            "createOrgRole",
+            "createOrgRole",
+            Some("/organization/create-role"),
+            HttpMethod::Post,
+        ),
+        definition(
             "createOrganizationRole",
             "createOrganizationRole",
             Some("/organization/create-role"),
@@ -367,10 +373,13 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                 .query_as()
                 .map_err(|error| validation(error.to_string()))?;
         }
-        "createOrganizationRole" => {
+        "createOrganizationRole" | "createOrgRole" => {
             let _: types::CreateRoleRequest = call
                 .body_as()
                 .map_err(|error| validation(error.to_string()))?;
+            if call.operation_id() == "createOrgRole" && call.headers().is_none() {
+                return Err(validation("Headers is required"));
+            }
         }
         "updateOrganizationRole" => {
             let _: types::UpdateRoleRequest = call
@@ -650,10 +659,18 @@ impl OrganizationPlugin {
     /// Construct a typed native call through installed dispatch hooks.
     /// # Errors
     /// Returns a serialization error for input that cannot be represented.
+    pub fn create_org_role_endpoint(
+        input: &types::CreateRoleRequest,
+    ) -> AuthResult<ServerEndpoint<types::CreateRoleResponse>> {
+        ServerEndpoint::new("organization", "createOrgRole").with_body(input)
+    }
+    /// Construct role creation through the canonical server API.
+    /// # Errors
+    /// Returns a serialization error for input that cannot be represented.
     pub fn create_role_endpoint(
         input: &types::CreateRoleRequest,
     ) -> AuthResult<ServerEndpoint<types::CreateRoleResponse>> {
-        ServerEndpoint::new("organization", "createOrganizationRole").with_body(input)
+        Self::create_org_role_endpoint(input)
     }
     /// Construct a typed native call through installed dispatch hooks.
     /// # Errors
@@ -983,12 +1000,13 @@ pub(super) async fn execute<S: AuthSchema>(
             response(result.ok_or_else(|| AuthError::not_found("Unknown operation"))?)
         }
         "createOrganizationRole"
+        | "createOrgRole"
         | "updateOrganizationRole"
         | "deleteOrganizationRole"
         | "getOrganizationRole"
         | "listOrganizationRoles" => {
             let path = match call.operation_id() {
-                "createOrganizationRole" => "/organization/create-role",
+                "createOrganizationRole" | "createOrgRole" => "/organization/create-role",
                 "updateOrganizationRole" => "/organization/update-role",
                 "deleteOrganizationRole" => "/organization/delete-role",
                 "getOrganizationRole" => "/organization/get-role",

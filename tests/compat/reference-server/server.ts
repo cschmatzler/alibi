@@ -2147,6 +2147,14 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
     }
     try {
+      if (body?.operation === "server-create-role") {
+        const response = await selected.api.createOrgRole({
+          body: body.body as Parameters<typeof selected.api.createOrgRole>[0]["body"],
+          ...(body.headers ? { headers: new Headers(body.headers as Record<string, string>) } : {}),
+          asResponse: true,
+        });
+        return jsonResponse(await response.json(), { status: response.status });
+      }
       if (body?.operation === "set-team-storage" && typeof body.teamId === "string") {
         if (body.restore) {
           const original = teamStorageBackups.get(body.teamId)!;
