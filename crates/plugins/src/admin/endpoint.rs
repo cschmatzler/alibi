@@ -1,9 +1,10 @@
 //! Installed admin server operations share authorization and stored output with HTTP.
 use super::{
-    AdminPlugin, MESSAGE_BAN_USERS, MESSAGE_CHANGE_ROLE, MESSAGE_GET_USER,
+    AdminPlugin, MESSAGE_BAN_USERS, MESSAGE_CHANGE_ROLE, MESSAGE_DELETE_USERS, MESSAGE_GET_USER,
     MESSAGE_LIST_USER_SESSIONS, MESSAGE_LIST_USERS, MESSAGE_REVOKE_USER_SESSIONS,
     MESSAGE_UPDATE_USERS, ban_user_core, create_user_core, get_user_core, list_user_sessions_core,
-    list_users_core, revoke_user_session_core, revoke_user_sessions_core, set_role_core,
+    list_users_core, remove_user_core, revoke_user_session_core, revoke_user_sessions_core,
+    set_role_core,
     types::{
         AdminUpdateUserRequest, BanUserRequest, CreateUserRequest, GetUserQuery,
         HasPermissionRequest, PermissionResponse, RevokeSessionRequest, SetRoleRequest,
@@ -24,6 +25,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             "getUser",
             Some("/admin/get-user"),
             HttpMethod::Get,
+        ),
+        crate::endpoint::definition(
+            "removeUser",
+            "removeUser",
+            Some("/admin/remove-user"),
+            HttpMethod::Post,
         ),
         crate::endpoint::definition(
             "revokeUserSessions",
@@ -89,6 +96,19 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "removeUser" {
+        let body: UserIdRequest =
+            super::validation::body_value("remove-user", call.body().cloned())
+                .map_err(crate::endpoint::error_response)?;
+        return Ok(EndpointInput {
+            body: Some(JsValue::Object(
+                [("userId".into(), JsValue::String(body.user_id))]
+                    .into_iter()
+                    .collect(),
+            )),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "revokeUserSessions" {
         let body: UserIdRequest =
             super::validation::body_value("revoke-user-sessions", call.body().cloned())
@@ -260,6 +280,18 @@ impl AdminPlugin {
         ))
     }
 
+    /// Remove a stored user, their accounts and sessions through authoritative admin policy.
+    #[must_use]
+    pub fn remove_user_endpoint(
+        user_id: impl Into<String>,
+    ) -> ServerEndpoint<super::AdminSuccessResponse> {
+        ServerEndpoint::new("admin", "removeUser").with_body_value(JsValue::Object(
+            [("userId".into(), JsValue::String(user_id.into()))]
+                .into_iter()
+                .collect(),
+        ))
+    }
+
     /// Revoke all stored sessions for a user through authoritative administrative policy.
     #[must_use]
     pub fn revoke_user_sessions_endpoint(
@@ -392,6 +424,13 @@ impl AdminPlugin {
         };
         let principal = ctx.user_view(&user);
         call.record_authenticated_session(principal.clone(), session);
+        if call.operation_id() == "removeUser" {
+            self.authorize(&principal, "user", "delete", MESSAGE_DELETE_USERS)?;
+            let body: UserIdRequest = call.body_as()?;
+            return EndpointResponse::json(
+                &remove_user_core(&body, principal.id.as_str(), ctx).await?,
+            );
+        }
         if call.operation_id() == "revokeUserSessions" {
             self.authorize(
                 &principal,
