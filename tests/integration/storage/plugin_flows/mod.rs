@@ -58,6 +58,7 @@ mod server_admin_get_user;
 mod server_admin_list_user_sessions;
 mod server_admin_list_users;
 mod server_admin_permission;
+mod server_admin_revoke_user_session;
 mod server_admin_set_role;
 mod server_admin_support;
 mod server_admin_unban_user;

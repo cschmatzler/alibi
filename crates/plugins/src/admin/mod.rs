@@ -36,6 +36,7 @@ pub use types::{
     BanUserRequest as AdminBanUserRequest, CreateUserRequest as AdminCreateUserRequest,
     HasPermissionRequest as AdminPermissionRequest, PermissionResponse as AdminPermissionResponse,
     RoleInput as AdminRoleInput, SetRoleRequest as AdminSetRoleRequest,
+    SuccessResponse as AdminSuccessResponse,
 };
 /// Safe user result returned by admin mutation operations.
 pub type AdminUserResponse = types::UserResponse<AdminUserOutput>;

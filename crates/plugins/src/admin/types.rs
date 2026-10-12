@@ -315,8 +315,10 @@ pub struct ListSessionsResponse<S> {
     pub sessions: Vec<S>,
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct SuccessResponse {
+/// Result of a successful administrative mutation.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SuccessResponse {
+    /// Whether the requested operation completed.
     pub success: bool,
 }
 
