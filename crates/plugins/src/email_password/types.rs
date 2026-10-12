@@ -53,16 +53,17 @@ impl RequestBody for SignUpRequest {
     ];
 }
 
-#[derive(Debug, Deserialize, Validate)]
-pub(crate) struct SignInRequest {
+/// Input for the public `signInEmail` server operation.
+#[derive(Clone, Debug, Serialize, Deserialize, Validate)]
+pub struct SignInRequest {
     #[validate(email(message = "Invalid email address"))]
-    pub(in crate::email_password) email: String,
+    pub email: String,
     #[validate(length(min = 1, message = "Password is required"))]
-    pub(in crate::email_password) password: String,
-    #[serde(rename = "callbackURL")]
-    pub(in crate::email_password) callback_url: Option<String>,
-    #[serde(rename = "rememberMe")]
-    pub(in crate::email_password) remember_me: Option<bool>,
+    pub password: String,
+    #[serde(rename = "callbackURL", skip_serializing_if = "Option::is_none")]
+    pub callback_url: Option<String>,
+    #[serde(rename = "rememberMe", skip_serializing_if = "Option::is_none")]
+    pub remember_me: Option<bool>,
 }
 
 impl RequestBody for SignInRequest {
@@ -104,13 +105,14 @@ pub(crate) struct SignUpResponse<U> {
     pub(in crate::email_password) user: U,
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct SignInResponse<U> {
-    pub(in crate::email_password) redirect: bool,
-    pub(in crate::email_password) token: String,
+/// A completed credential session returned by `signInEmail`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignInResponse<U> {
+    pub redirect: bool,
+    pub token: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(in crate::email_password) url: Option<String>,
-    pub(in crate::email_password) user: U,
+    pub url: Option<String>,
+    pub user: U,
 }
 
 #[derive(Debug, Serialize)]
@@ -140,4 +142,17 @@ pub(crate) enum SignInUsernameFailure {
     InvalidUsernameOrPassword,
     EmailNotVerified,
     Auth(AuthError),
+}
+
+/// Credential sign-in may complete or require a second factor.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum SignInEmailResponse {
+    Session(Box<SignInResponse<alibi_core::UserView>>),
+    TwoFactor {
+        #[serde(rename = "twoFactorRedirect")]
+        two_factor_redirect: bool,
+        #[serde(rename = "twoFactorMethods")]
+        two_factor_methods: Vec<String>,
+    },
 }

@@ -107,11 +107,17 @@ pub(in crate::two_factor) fn create_signed_cookie_header(
 // Match Better Call's separately trimmed key, retaining the first duplicate
 // even when its value is empty or invalid. Value decoding belongs to the
 // signed proof reader so failed URI decoding retains the original value.
-pub(in crate::two_factor) fn get_factor_cookie(req: &AuthRequest, name: &str) -> Option<String> {
-    req.headers.get("cookie")?.split(';').find_map(|cookie| {
-        let (key, value) = cookie.split_once('=')?;
-        (key.trim() == name).then(|| value.to_owned())
-    })
+pub(in crate::two_factor) fn get_factor_cookie(
+    req: &impl alibi_core::session::SessionRequest,
+    name: &str,
+) -> Option<String> {
+    req.session_headers()
+        .get("cookie")?
+        .split(';')
+        .find_map(|cookie| {
+            let (key, value) = cookie.split_once('=')?;
+            (key.trim() == name).then(|| value.to_owned())
+        })
 }
 
 pub(in crate::two_factor) fn read_signed_cookie<S: alibi_core::AuthSchema>(

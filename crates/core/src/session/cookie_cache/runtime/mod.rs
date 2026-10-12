@@ -6,7 +6,7 @@ mod issuance;
 mod read;
 
 use crate::session::SessionRequest;
-use crate::{AuthContext, AuthRequest, AuthSchema};
+use crate::{AuthContext, AuthSchema};
 pub(super) use cookies::{browser_preference, chunk_index};
 use cookies::{cache_value, cookie_values, cookies, existing_names};
 pub use cookies::{chunked_cookie_headers, chunked_cookie_value, session_cleanup_headers};
@@ -174,7 +174,7 @@ impl<S: AuthSchema> std::fmt::Debug for AuthenticatedRead<S> {
 /// Preserve a validated endpoint preference without trusting embedding state.
 /// Public dispatch resets request extensions before any endpoint executes.
 #[doc(hidden)]
-pub fn set_issuance_preference(request: &AuthRequest, dont_remember: bool) {
+pub fn set_issuance_preference(request: &impl SessionRequest, dont_remember: bool) {
     request
         .extensions()
         .insert(IssuancePreference(dont_remember));

@@ -1,6 +1,6 @@
 use super::*;
 pub(crate) async fn inspect_trusted_device(
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     user: &impl AuthUser,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<TrustedDeviceCheck> {

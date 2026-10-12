@@ -289,6 +289,17 @@ impl CsrfMiddleware {
         }
         Ok(())
     }
+    /// Check an explicitly selected login operation using its genuine incoming request.
+    /// The request URL need not be an auth route for a public server API call.
+    ///
+    /// # Errors
+    /// Rejects cross-site navigation or untrusted login origins.
+    pub fn check_login_origin(&self, req: &AuthRequest) -> AuthResult<()> {
+        if self.config.enabled {
+            self.validate_form_csrf(req)?;
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]

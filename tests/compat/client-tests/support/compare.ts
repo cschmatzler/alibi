@@ -866,8 +866,9 @@ export function compareValues(
   }
 
   // Direct server calls publish headers inside their logical response. Bind a
-  // real rotation to its original transport receipt and a later authenticated
-  // browser read; a caller's copied token/header cannot authorize itself.
+  // real rotation or credential sign-in to its original transport receipt and
+  // a later authenticated browser read. Sign-in also requires its previously
+  // observed mailbox owner; a copied token/header cannot authorize itself.
   const primaryCookie = (raw: unknown) => {
     if (typeof raw !== "string") return;
     const matches = [...raw.matchAll(/(?:^|;\s*|,\s*)(better-auth\.session_token)=([^;,\s]*)/g)];
@@ -895,27 +896,62 @@ export function compareValues(
       !authentic(right) ||
       !record(left.input) ||
       !record(right.input) ||
-      left.input.operation !== "changePassword" ||
-      right.input.operation !== "changePassword" ||
+      left.input.operation !== right.input.operation ||
+      !["changePassword", "signInEmail"].includes(left.input.operation as string) ||
       !record(left.input.body) ||
-      !record(right.input.body) ||
-      left.input.body.revokeOtherSessions !== true ||
-      right.input.body.revokeOtherSessions !== true ||
-      !record(left.input.headers) ||
-      !record(right.input.headers)
+      !record(right.input.body)
     ) {
       continue;
     }
-    const incomingLeft = primaryCookie(left.input.headers.cookie);
-    const incomingRight = primaryCookie(right.input.headers.cookie);
-    if (!incomingLeft || !incomingRight) continue;
-    const previousLeft = signedCookie(incomingLeft.slice(incomingLeft.indexOf("=") + 1));
-    const previousRight = signedCookie(incomingRight.slice(incomingRight.indexOf("=") + 1));
-    if (previousLeft.error || previousRight.error) continue;
-    const previousPair = JSON.stringify([previousLeft.token, previousRight.token]);
-    const owner = issuances.get(previousPair);
     const authPath = `/__test/profiles/${profile[1]}/api/auth`;
-    if (!owner || owner.authPath !== authPath || !signedCookieIssuances.has(previousPair)) continue;
+    const credentialSignIn = left.input.operation === "signInEmail";
+    let previousLeft: ReturnType<typeof signedCookie> | undefined;
+    let previousRight: ReturnType<typeof signedCookie> | undefined;
+    let owner: { leftUser: string; rightUser: string } | undefined;
+    if (credentialSignIn) {
+      if (
+        typeof left.input.body.email !== "string" ||
+        typeof right.input.body.email !== "string" ||
+        typeof left.input.body.password !== "string" ||
+        typeof right.input.body.password !== "string" ||
+        left.input.body.rememberMe !== right.input.body.rememberMe
+      ) {
+        continue;
+      }
+      owner = emailOwners.get(
+        JSON.stringify([
+          authPath,
+          left.input.body.email.toLowerCase(),
+          right.input.body.email.toLowerCase(),
+        ]),
+      );
+    } else {
+      if (
+        left.input.body.revokeOtherSessions !== true ||
+        right.input.body.revokeOtherSessions !== true ||
+        !record(left.input.headers) ||
+        !record(right.input.headers)
+      ) {
+        continue;
+      }
+      const incomingLeft = primaryCookie(left.input.headers.cookie);
+      const incomingRight = primaryCookie(right.input.headers.cookie);
+      if (!incomingLeft || !incomingRight) continue;
+      previousLeft = signedCookie(incomingLeft.slice(incomingLeft.indexOf("=") + 1));
+      previousRight = signedCookie(incomingRight.slice(incomingRight.indexOf("=") + 1));
+      if (previousLeft.error || previousRight.error) continue;
+      const previousPair = JSON.stringify([previousLeft.token, previousRight.token]);
+      const rotationOwner = issuances.get(previousPair);
+      if (
+        !rotationOwner ||
+        rotationOwner.authPath !== authPath ||
+        !signedCookieIssuances.has(previousPair)
+      ) {
+        continue;
+      }
+      owner = rotationOwner;
+    }
+    if (!owner) continue;
     const returned = (response: unknown) => {
       if (
         !record(response) ||
@@ -942,8 +978,8 @@ export function compareValues(
     if (
       typeof at !== "string" ||
       typeof bt !== "string" ||
-      at === previousLeft.token ||
-      bt === previousRight.token ||
+      at === previousLeft?.token ||
+      bt === previousRight?.token ||
       (outputLeft.user as Record<string, unknown>).id !== owner.leftUser ||
       (outputRight.user as Record<string, unknown>).id !== owner.rightUser ||
       !issuedCookie(issuedLeft, at, authPath) ||
@@ -993,7 +1029,7 @@ export function compareValues(
     issuances.set(pair, receipt);
     signedCookieIssuances.add(pair);
     cookieOwners.set(JSON.stringify([issuedLeft, issuedRight]), receipt);
-    identity(at, bt, `${producer.path}.rotation`, "token");
+    identity(at, bt, `${producer.path}.${credentialSignIn ? "signInEmail" : "rotation"}`, "token");
     collectResponseDates(
       observer.a.responseBody,
       observer.b.responseBody,

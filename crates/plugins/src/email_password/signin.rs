@@ -10,7 +10,7 @@ use alibi_core::utils::password as password_utils;
 use alibi_core::wire::UserView;
 use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResult, RequestMeta};
 pub(crate) async fn sign_in_core(
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     body: &SignInRequest,
     config: &EmailPasswordConfig,
     email_verification: Option<&EmailVerificationPlugin>,
