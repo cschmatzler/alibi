@@ -11,6 +11,7 @@ use alibi::{AuthError, AuthResult, CallbackContext};
 use async_trait::async_trait;
 
 backend_tests!(
+    server_phone_otp_delivery_persists_consumable_proof_without_browser_authority,
     server_phone_consumption_admits_logical_input_and_preserves_identity,
     phone_number_request_and_proof_matrix,
     phone_number_provider_and_sender_failures,
@@ -2187,4 +2188,94 @@ async fn server_phone_consumption_admits_logical_input_and_preserves_identity<B:
     )
     .await;
     B::close(connection).await
+}
+
+async fn server_phone_otp_delivery_persists_consumable_proof_without_browser_authority<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    use alibi::endpoint::{EndpointOptions, ServerEndpoint};
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let outbox = Arc::new(Outbox::default());
+    let auth = Box::pin(
+        fast_builder::<B>(&connection)
+            .plugin(PhoneNumberPlugin::new(PhoneNumberConfig {
+                send_otp: Some(outbox.clone()),
+                phone_number_validator: Some(Arc::new(Validator)),
+                ..Default::default()
+            }))
+            .build(),
+    )
+    .await?;
+    let phone = "+15550000277";
+    let send = || {
+        ServerEndpoint::<Value>::new("phone-number", "sendPhoneNumberOTP")
+            .with_body(&json!({"phoneNumber":phone,"ignored":true}))
+            .unwrap()
+    };
+    let output = Box::pin(auth.dispatch_endpoint(send(), EndpointOptions::default())).await?;
+    assert_eq!(output.decode()?, json!({"message":"code sent"}));
+    assert_eq!(output.headers().get_all("set-cookie").count(), 0);
+    let delivered = outbox.last();
+    assert_eq!(delivered.phone_number, phone);
+    assert_eq!(delivered.code.len(), 6);
+    assert!(delivered.code.bytes().all(|byte| byte.is_ascii_digit()));
+    let proof = auth
+        .store()
+        .get_verification_by_identifier(phone)
+        .await?
+        .unwrap();
+    use alibi::AuthVerification;
+    assert_eq!(proof.value(), format!("{}:0", delivered.code));
+    let stored = db.table("verifications").await?;
+    for (input, code) in [
+        (json!({"phoneNumber":42}), "VALIDATION_ERROR"),
+        (json!({"phoneNumber":"+000"}), "INVALID_PHONE_NUMBER"),
+    ] {
+        let error = Box::pin(auth.dispatch_endpoint(
+            ServerEndpoint::<Value>::new("phone-number", "sendPhoneNumberOTP").with_body(&input)?,
+            EndpointOptions::default(),
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(error.error.status_code(), 400);
+        assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
+        assert_eq!(db.table("verifications").await?, stored);
+        assert_eq!(outbox.sent.lock().unwrap().len(), 1);
+    }
+    let _ = Box::pin(auth.dispatch_endpoint(
+        PhoneNumberPlugin::consume_otp_endpoint(phone, &delivered.code),
+        EndpointOptions::default(),
+    ))
+    .await?;
+    assert_eq!(db.count("verifications").await?, 0);
+    for table in ["users", "accounts", "sessions"] {
+        assert_eq!(db.count(table).await?, 0);
+    }
+    let missing = Box::pin(
+        fast_builder::<B>(&connection)
+            .plugin(PhoneNumberPlugin::new(PhoneNumberConfig {
+                phone_number_validator: Some(Arc::new(Validator)),
+                ..Default::default()
+            }))
+            .build(),
+    )
+    .await?;
+    let error = Box::pin(
+        missing.dispatch_endpoint(
+            ServerEndpoint::<Value>::new("phone-number", "sendPhoneNumberOTP")
+                .with_body(&json!({"phoneNumber":"+err"}))?,
+            EndpointOptions::default(),
+        ),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.error.status_code(), 501);
+    assert_eq!(
+        error.error.error_payload().1.as_deref(),
+        Some("SEND_OTP_NOT_IMPLEMENTED")
+    );
+    assert_eq!(db.count("verifications").await?, 0);
+    Ok(())
 }
