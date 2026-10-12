@@ -10,7 +10,7 @@ mod secondary_usage;
 mod storage;
 pub use storage::{ApiKeyStorage, ApiKeyStorageMode};
 mod endpoint;
-pub use endpoint::{ApiKeyVerificationInput, ApiKeyVerificationOutput};
+pub use endpoint::{ApiKeyVerificationInput, ApiKeyVerificationOutput, GetKeyQuery};
 
 pub(super) mod handlers;
 

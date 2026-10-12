@@ -2139,6 +2139,14 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       invitations,
     });
   }
+  if (url.pathname === "/__test/server-api/api-key-get" && request.method === "POST") {
+    const input = await readJson(request);
+    return auth.api.getApiKey({
+      query: input?.query as Parameters<typeof auth.api.getApiKey>[0]["query"],
+      ...(input?.headers ? { headers: new Headers(input.headers as Record<string, string>) } : {}),
+      asResponse: true,
+    });
+  }
   if (
     url.pathname === "/__test/server-api/organization-set-active-team" &&
     request.method === "POST"

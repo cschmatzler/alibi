@@ -3,7 +3,8 @@ use super::{
     ApiKeyValidationError, ApiKeyVerificationError, CreateKeyRequest, CreateKeyResponse,
     DeleteExpiredApiKeysResponse, UpdateKeyRequest, VerifyApiKey,
 };
-use crate::endpoint::definition;
+use crate::authentication_helpers::JsonField;
+use crate::endpoint::{definition, validate_fields};
 use alibi_core::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointDefinition, EndpointHook,
     EndpointInput, EndpointResponse, ServerEndpoint,
@@ -31,6 +32,15 @@ pub struct ApiKeyVerificationOutput {
     pub key: Option<ApiKeyView>,
 }
 
+/// Query for reading one API key through the authenticated server API.
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetKeyQuery {
+    pub config_id: Option<String>,
+    pub id: String,
+}
+
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
         definition("verifyApiKey", "verifyApiKey", None, HttpMethod::Post),
@@ -47,6 +57,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             HttpMethod::Post,
         ),
         definition(
+            "getApiKey",
+            "getApiKey",
+            Some("/api-key/get"),
+            HttpMethod::Get,
+        ),
+        definition(
             "updateApiKey",
             "updateApiKey",
             Some("/api-key/update"),
@@ -56,6 +72,19 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "getApiKey" {
+        return Ok(EndpointInput {
+            body: call.body().cloned(),
+            query: Some(validate_fields(
+                call.query(),
+                "query",
+                &[
+                    JsonField::string("configId", false),
+                    JsonField::string("id", true),
+                ],
+            )?),
+        });
+    }
     let body = match call.operation_id() {
         "verifyApiKey" | "createApiKey" | "updateApiKey" => {
             Some(validate_key_body(call.body(), call.operation_id())?)
@@ -262,12 +291,46 @@ impl ApiKeyPlugin {
         ServerEndpoint::new("api-key", "updateApiKey").with_body(body)
     }
 
+    /// Read an owned key through installed hooks without exposing its secret.
+    /// # Errors
+    /// Returns an error if query serialization fails.
+    pub fn get_endpoint(query: &GetKeyQuery) -> AuthResult<ServerEndpoint<ApiKeyView>> {
+        ServerEndpoint::new("api-key", "getApiKey").with_query(query)
+    }
+
     pub(super) async fn call_endpoint<S: AuthSchema>(
         &self,
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         match call.operation_id() {
+            "getApiKey" => {
+                let query: GetKeyQuery = call.query_as()?;
+                let (user, _) = ctx.require_cached_session(call).await.map_err(|error| {
+                    if matches!(
+                        error,
+                        AuthError::Unauthenticated | AuthError::SessionNotFound
+                    ) {
+                        AuthError::Api {
+                            status: 401,
+                            code: Some("UNAUTHORIZED".into()),
+                            message: "Unauthorized".into(),
+                        }
+                    } else {
+                        error
+                    }
+                })?;
+                EndpointResponse::json(
+                    &super::handlers::get_key_core(
+                        &query.id,
+                        query.config_id.as_deref(),
+                        user.id(),
+                        self,
+                        ctx,
+                    )
+                    .await?,
+                )
+            }
             "verifyApiKey" => {
                 let body: ApiKeyVerificationInput = call.body_as()?;
                 let permissions = body

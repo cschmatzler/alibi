@@ -1228,6 +1228,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let auth_for_view_backup_codes = auth.clone();
     let auth_for_password = auth.clone();
 
+    let auth_for_api_key_get = auth.clone();
     let auth_for_api_key_create = auth.clone();
     let auth_for_api_key_update = auth.clone();
     let auth_for_api_key_verify = auth.clone();
@@ -1276,6 +1277,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }),
         )
+        .route("/__test/server-api/api-key-get", post(move |Json(input): Json<serde_json::Value>| {
+            let auth = auth_for_api_key_get.clone();
+            async move {
+                let mut endpoint = alibi::endpoint::ServerEndpoint::<alibi::utils::json::JsValue>::new("api-key", "getApiKey");
+                if let Some(query) = input.get("query") { endpoint = endpoint.with_query(query).unwrap(); }
+                let options = alibi::endpoint::EndpointOptions {
+                    headers: input.get("headers").map(|headers| serde_json::from_value(headers.clone()).unwrap()),
+                    ..Default::default()
+                };
+                match auth.dispatch_endpoint(endpoint, options).await {
+                    Ok(output) => output.into_response().unwrap().into_response(),
+                    Err(error) => {
+                        let mut response = error.error.to_auth_response();
+                        if let Some(body) = error.body { response.body = serde_json::to_vec(&*body).unwrap(); }
+                        response.into_response()
+                    }
+                }
+            }
+        }))
         .route(
             "/__test/api-key/create",
             post(move |Json(body): Json<CreateKeyRequest>| {

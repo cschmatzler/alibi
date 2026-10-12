@@ -69,6 +69,7 @@ mod server_admin_stop_impersonating;
 mod server_admin_support;
 mod server_admin_unban_user;
 mod server_admin_update_user;
+mod server_api_key_get;
 mod server_change_password;
 mod server_endpoints;
 mod server_link_social_account;
