@@ -62,6 +62,7 @@ mod server_admin_permission;
 mod server_admin_remove_user;
 mod server_admin_revoke_user_session;
 mod server_admin_revoke_user_sessions;
+mod server_admin_session_cache;
 mod server_admin_set_role;
 mod server_admin_set_user_password;
 mod server_admin_stop_impersonating;

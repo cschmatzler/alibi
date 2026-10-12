@@ -357,9 +357,8 @@ impl AdminPlugin {
             alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
         };
         call.record_authenticated_session(user, session.clone());
-        let headers = call.headers().cloned().unwrap_or_default();
         let (value, token, dont_remember) =
-            super::stop_impersonating_core(&session, &headers, ctx).await?;
+            super::stop_impersonating_core(&session, call, ctx).await?;
         let mut response = EndpointResponse::json(&value)?;
         response.merge_headers(super::cookies::restoration_cookie_headers(
             &ctx.config,
@@ -542,19 +541,11 @@ impl AdminPlugin {
             self.authorize(&principal, "user", "impersonate", MESSAGE_IMPERSONATE_USERS)?;
             let body: UserIdRequest = call.body_as()?;
             let headers = call.headers().cloned().unwrap_or_default();
-            let ip = ctx
-                .config
-                .advanced
-                .ip_address
-                .resolve_ip(&headers)
-                .unwrap_or_default();
-            let agent = headers.get("user-agent").cloned().unwrap_or_default();
             return match impersonate_user_core(
                 &body,
                 principal.id.as_str(),
                 principal.role.as_deref(),
-                Some(&ip),
-                Some(&agent),
+                call,
                 &self.config,
                 ctx,
             )
