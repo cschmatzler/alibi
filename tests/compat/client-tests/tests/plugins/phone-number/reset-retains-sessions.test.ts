@@ -39,8 +39,13 @@ compatScenario(
     expect(before.user!.phoneNumberVerified).toBe(true);
     expect(before.sessions).toHaveLength(2);
     const foreignBefore = await readPhoneState(ctx, profile, other.data!.user.id);
-    const issued = await owner.phoneNumber.requestPasswordReset({ phoneNumber });
-    expect(issued.error).toBeNull();
+    const issued = await ctx.rawRequest({
+      path: "/__test/server-api/phone-request-password-reset",
+      method: "POST",
+      json: { profile, body: { phoneNumber, ignored: true } },
+    });
+    expect(issued.status).toBe(200);
+    expect(issued.body).toEqual({ status: true });
     const otp = await readPhoneOtp(ctx, phoneNumber, "password-reset");
     const identifier = `${phoneNumber}-request-password-reset`;
     expect(await ctx.readVerificationState({ identifier })).toHaveLength(1);

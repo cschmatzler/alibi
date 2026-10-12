@@ -584,16 +584,17 @@ async fn phone_password_reset_retains_established_sessions_by_default<B: Backend
         .await?,
         2
     );
-    _ = call(
-        &auth,
-        request(
-            "/phone-number/request-password-reset",
-            Some(json!({"phoneNumber":phone})),
-            &owner_cookie,
+    use alibi::endpoint::{EndpointOptions, ServerEndpoint};
+    let issued = Box::pin(
+        auth.dispatch_endpoint(
+            ServerEndpoint::<Value>::new("phone-number", "requestPasswordResetPhoneNumber")
+                .with_body(&json!({"phoneNumber":phone,"ignored":true}))?,
+            EndpointOptions::default(),
         ),
-        200,
     )
-    .await;
+    .await?;
+    assert_eq!(issued.decode()?, json!({"status":true}));
+    assert!(issued.headers().get_all("set-cookie").next().is_none());
     let delivery = outbox.last();
     assert_eq!(delivery.phone_number, phone);
     let identifier = format!("{phone}-request-password-reset");
