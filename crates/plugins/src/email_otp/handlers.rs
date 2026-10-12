@@ -612,6 +612,15 @@ impl EmailOtpPlugin {
             Ok(value) => value,
             Err(response) => return Ok(response),
         };
+        self.request_email_change_core(req, ctx, body).await
+    }
+
+    pub(super) async fn request_email_change_core(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+        body: ChangeEmailRequest,
+    ) -> AuthResult<AuthResponse> {
         let (user, _) = require_authoritative_session(ctx, req).await?;
         if !self.config.change_email_enabled {
             return Err(AuthError::bad_request("Change email with OTP is disabled"));
@@ -637,7 +646,7 @@ impl EmailOtpPlugin {
         let otp = match self
             .issue_code(
                 ctx,
-                Some(req),
+                req.physical_request(),
                 &new_email,
                 EmailOtpType::ChangeEmail,
                 Some(key.clone()),
@@ -656,8 +665,14 @@ impl EmailOtpPlugin {
         {
             ctx.verifications().delete(&key).await?;
         } else {
-            self.deliver(ctx, Some(req), &new_email, otp, EmailOtpType::ChangeEmail)
-                .await?;
+            self.deliver(
+                ctx,
+                req.physical_request(),
+                &new_email,
+                otp,
+                EmailOtpType::ChangeEmail,
+            )
+            .await?;
         }
         AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
     }
@@ -736,7 +751,7 @@ impl EmailOtpPlugin {
 
 async fn require_authoritative_session<S: AuthSchema>(
     ctx: &AuthContext<S>,
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
 ) -> AuthResult<(S::User, alibi_core::wire::SessionView)> {
     ctx.require_session(req).await.map_err(|error| match error {
         AuthError::Unauthenticated | AuthError::SessionNotFound => AuthError::Upstream {

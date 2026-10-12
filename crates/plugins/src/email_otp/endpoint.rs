@@ -73,6 +73,21 @@ pub struct EmailOtpPasswordReset {
     pub success: bool,
 }
 
+/// New mailbox and optional proof of the current mailbox.
+#[derive(Debug, Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailOtpChangeRequestInput {
+    pub new_email: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub otp: Option<String>,
+}
+
+/// The change challenge was delivered or an existing target mailbox was concealed.
+#[derive(Debug, Deserialize)]
+pub struct EmailOtpChangeRequested {
+    pub success: bool,
+}
+
 const FIELDS: &[JsonField] = &[
     JsonField::string("email", true),
     JsonField {
@@ -89,6 +104,12 @@ const FIELDS: &[JsonField] = &[
 
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
+        definition(
+            "requestEmailChangeEmailOTP",
+            "requestEmailChangeWithEmailOTP",
+            Some("/email-otp/request-email-change"),
+            HttpMethod::Post,
+        ),
         definition(
             "resetPasswordEmailOTP",
             "resetPasswordWithEmailOTP",
@@ -147,6 +168,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "requestEmailChangeWithEmailOTP" {
+        return Ok(EndpointInput {
+            body:Some(validate_fields(call.body(),"body",<super::types::ChangeEmailRequest as crate::authentication_helpers::RequestBody>::FIELDS)?),
+            query:call.query().cloned(),
+        });
+    }
     if call.operation_id() == "resetPasswordWithEmailOTP" {
         return Ok(EndpointInput {
             body:Some(validate_fields(call.body(),"body",<super::types::PasswordRequest as crate::authentication_helpers::RequestBody>::FIELDS)?),
@@ -211,6 +238,16 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
 }
 
 impl EmailOtpPlugin {
+    /// Request a new-mailbox challenge using an authoritative caller session.
+    ///
+    /// # Errors
+    /// Returns an error if the supplied input cannot be serialized.
+    pub fn request_email_change_email_otp_endpoint(
+        input: &EmailOtpChangeRequestInput,
+    ) -> AuthResult<ServerEndpoint<EmailOtpChangeRequested>> {
+        ServerEndpoint::new("email-otp", "requestEmailChangeEmailOTP").with_body(input)
+    }
+
     /// Consume a reset proof and replace or create the owner's credential.
     ///
     /// # Errors
@@ -325,6 +362,7 @@ impl EmailOtpPlugin {
                 | "requestPasswordResetWithEmailOTP"
                 | "forgetPasswordWithEmailOTP"
                 | "resetPasswordWithEmailOTP"
+                | "requestEmailChangeWithEmailOTP"
         ) {
             if call.operation_id() == "sendEmailVerificationOTP"
                 && let Some(request) = call.request()
@@ -356,6 +394,10 @@ impl EmailOtpPlugin {
                 }
                 "resetPasswordWithEmailOTP" => {
                     self.reset_password_core(ctx, call.body_as()?).await?
+                }
+                "requestEmailChangeWithEmailOTP" => {
+                    self.request_email_change_core(call, ctx, call.body_as()?)
+                        .await?
                 }
                 _ => self.verify_email_core(call, ctx, call.body_as()?).await?,
             };
