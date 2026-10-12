@@ -702,6 +702,16 @@ pub(super) async fn execute<S: AuthSchema>(
     ctx: &AuthContext<S>,
 ) -> AuthResult<EndpointResponse> {
     let config = &plugin.config;
+    // The reference request-only guard permits trusted calls that carry
+    // neither HTTP request metadata nor logical headers.
+    if call.operation_id() == "checkOrganizationSlug"
+        && call.request().is_none()
+        && call.headers().is_none()
+    {
+        return EndpointResponse::json(
+            &handlers::org::check_slug_core(&call.body_as()?, ctx).await?,
+        );
+    }
     if call.operation_id() == "listUserInvitations" {
         let query: types::ListUserInvitationsQuery = call.query_as()?;
         if let Some(email) = query.email.as_deref().filter(|email| !email.is_empty()) {

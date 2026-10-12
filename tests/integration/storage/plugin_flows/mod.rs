@@ -318,3 +318,5 @@ mod server_callback_oauth;
 mod server_oauth_support;
 
 mod server_organization_create_invitation;
+
+mod server_organization_check_slug;
