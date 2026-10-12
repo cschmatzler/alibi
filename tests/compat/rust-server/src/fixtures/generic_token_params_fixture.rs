@@ -23,11 +23,13 @@ use tokio::sync::Mutex;
 pub(crate) struct Fixture {
     control: Arc<Mutex<Value>>,
     receipts: Arc<Mutex<Vec<Value>>>,
+    user_receipts: Arc<Mutex<Vec<Value>>>,
 }
 impl Fixture {
     pub(crate) async fn reset(&self) {
         *self.control.lock().await = json!({});
         self.receipts.lock().await.clear();
+        self.user_receipts.lock().await.clear();
     }
 }
 fn params(mode: &str, refresh: bool) -> BTreeMap<String, String> {
@@ -590,71 +592,82 @@ pub(crate) async fn router(
         post(move |Json(body): Json<Value>| {
             let auth = profiles["none"].clone();
             async move {
-                use alibi::plugins::oauth::{OAuthAccountApi, OAuthAccountSelection};
                 use axum::response::IntoResponse;
-                if body["operation"] == "get-access-token" || body["operation"] == "refresh-token" {
-                    let input = body.get("selection").cloned().unwrap_or_else(|| {
-                        let mut input = json!({"accountId":body["accountId"]});
-                        if let Some(user) = body.get("userId") { input["userId"] = user.clone(); }
-                        input
-                    });
-                    let endpoint = alibi::endpoint::ServerEndpoint::<Value>::new("oauth", if body["operation"] == "refresh-token" { "refreshToken" } else { "getAccessToken" }).with_body(&input).unwrap();
-                    let options = alibi::endpoint::EndpointOptions {
-                        headers: body.get("logicalHeaders").map(|headers|serde_json::from_value(headers.clone()).unwrap()),
-                        request: body.get("physicalRequest").and_then(Value::as_bool).filter(|value|*value).map(|_|alibi::AuthRequest::new(alibi::HttpMethod::Get,"/incoming-request")),
-                        ..Default::default()
-                    };
-                    return match auth.dispatch_endpoint(endpoint, options).await {
-                        Ok(output) => {
-                            let mut response = Json(output.decode().unwrap()).into_response();
-                            for (name,value) in output.headers() { response.headers_mut().append(axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),axum::http::HeaderValue::from_str(value).unwrap()); }
-                            response
-                        },
-                        Err(error) => {
-                            let native=error.error.to_auth_response();
-                            let bytes=if error.body_absent {Vec::new()} else {error.body.map_or(native.body,|value|serde_json::to_vec(&*value).unwrap())};
-                            let mut response=(axum::http::StatusCode::from_u16(native.status).unwrap(),bytes).into_response();
-                            response.headers_mut().insert(axum::http::header::CONTENT_TYPE,axum::http::HeaderValue::from_static("application/json"));
-                            if let Some(headers)=error.headers {for(name,value)in headers {response.headers_mut().append(axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),axum::http::HeaderValue::from_str(&value).unwrap());}}
-                            response
-                        }
-                    };
-                }
-                let user = body["userId"].as_str().unwrap_or_default();
-                let selection = OAuthAccountSelection::Id(
-                    body["accountId"].as_str().unwrap_or_default().to_owned(),
-                );
-                let result = match body["operation"].as_str().unwrap_or_default() {
-                    "get-access-token" => {
-                        OAuthAccountApi::get_access_token(user, selection, auth.context()).await
+
+                let input = body.get("selection").cloned().unwrap_or_else(|| {
+                    let mut input = json!({"accountId":body["accountId"]});
+                    if let Some(user) = body.get("userId") {
+                        input["userId"] = user.clone();
                     }
-                    "refresh-token" => {
-                        OAuthAccountApi::refresh_token(user, selection, auth.context()).await
-                    }
-                    _ => OAuthAccountApi::account_info(user, selection, auth.context()).await,
+                    input
+                });
+                let operation = match body["operation"].as_str() {
+                    Some("get-access-token") => "getAccessToken",
+                    Some("refresh-token") => "refreshToken",
+                    _ => "accountInfo",
                 };
-                let mut result = match result {
-                    Ok(response) => {
-                        let mut output = (
-                            axum::http::StatusCode::from_u16(response.status).unwrap(),
-                            response.body,
-                        )
-                            .into_response();
-                        for (name, value) in response.headers.iter() {
-                            output.headers_mut().insert(
+                let endpoint = alibi::endpoint::ServerEndpoint::<Value>::new("oauth", operation);
+                let endpoint = if operation == "accountInfo" {
+                    endpoint.with_query(&input).unwrap()
+                } else {
+                    endpoint.with_body(&input).unwrap()
+                };
+                let endpoint = if let Some(body) = body.get("logicalBody") {
+                    endpoint.with_body(body).unwrap()
+                } else {
+                    endpoint
+                };
+                let options = alibi::endpoint::EndpointOptions {
+                    headers: body
+                        .get("logicalHeaders")
+                        .map(|headers| serde_json::from_value(headers.clone()).unwrap()),
+                    request: body
+                        .get("physicalRequest")
+                        .and_then(Value::as_bool)
+                        .filter(|value| *value)
+                        .map(|_| alibi::AuthRequest::new(alibi::HttpMethod::Get, "/incoming-request")),
+                    ..Default::default()
+                };
+                match auth.dispatch_endpoint(endpoint, options).await {
+                    Ok(output) => {
+                        let mut response = Json(output.decode().unwrap()).into_response();
+                        for (name, value) in output.headers() {
+                            response.headers_mut().append(
                                 axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
                                 axum::http::HeaderValue::from_str(value).unwrap(),
                             );
                         }
-                        output
+                        response
                     }
-                    Err(error) => error.into_response(),
-                };
-                result.headers_mut().insert(
-                    axum::http::header::CONTENT_TYPE,
-                    axum::http::HeaderValue::from_static("application/json"),
-                );
-                result
+                    Err(error) => {
+                        let native = error.error.to_auth_response();
+                        let bytes = if error.body_absent {
+                            Vec::new()
+                        } else {
+                            error
+                                .body
+                                .map_or(native.body, |value| serde_json::to_vec(&*value).unwrap())
+                        };
+                        let mut response = (
+                            axum::http::StatusCode::from_u16(native.status).unwrap(),
+                            bytes,
+                        )
+                            .into_response();
+                        response.headers_mut().insert(
+                            axum::http::header::CONTENT_TYPE,
+                            axum::http::HeaderValue::from_static("application/json"),
+                        );
+                        if let Some(headers) = error.headers {
+                            for (name, value) in headers {
+                                response.headers_mut().append(
+                                    axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+                                    axum::http::HeaderValue::from_str(&value).unwrap(),
+                                );
+                            }
+                        }
+                        response
+                    }
+                }
             }
         }),
     );
@@ -698,6 +711,7 @@ pub(crate) async fn router(
             "/__test/generic-token/receipts",
             get(|State(f): State<Fixture>| async move { Json(f.receipts.lock().await.clone()) }),
         )
+        .route("/__test/generic-token/user-receipts", get(|State(f): State<Fixture>| async move { Json(f.user_receipts.lock().await.clone()) }))
         .route("/__test/generic-token/token", post(token))
         .route("/__test/generic-token/user", get(user))
         .with_state(fixture.clone());
@@ -710,13 +724,14 @@ async fn token(State(f): State<Fixture>, headers: HeaderMap, body: String) -> Js
     f.receipts.lock().await.push(json!({"path":"/token","authorization":headers.get("authorization").and_then(|v|v.to_str().ok()),"contentType":headers.get("content-type").and_then(|v|v.to_str().ok()),"body":entries,"raw":body}));
     Json(f.control.lock().await.get("tokenResponse").cloned().unwrap_or_else(||json!({"access_token":"generic-access","refresh_token":"generic-refresh","token_type":"Bearer","expires_in":3600,"scope":"profile"})))
 }
-async fn user(State(f): State<Fixture>) -> Json<Value> {
+async fn user(State(f): State<Fixture>, request: axum::extract::Request) -> Json<Value> {
+    f.user_receipts.lock().await.push(json!({"path":request.uri().path(),"method":request.method().as_str(),"authorization":request.headers().get("authorization").and_then(|value|value.to_str().ok())}));
     Json(f.control.lock().await.get("profile").cloned().unwrap_or_else(||json!({"id":"generic-subject","email":"generic@example.invalid","name":"Generic Name","email_verified":true})))
 }
 
 struct AccessServerHook;
 #[async_trait::async_trait]
 impl<S:alibi::AuthSchema> alibi::endpoint::EndpointHook<S> for AccessServerHook {
- fn matches_after(&self,call:&alibi::endpoint::EndpointCall,_:&alibi::AuthContext<S>,_:&alibi::endpoint::EndpointResponse)->AuthResult<bool>{Ok(matches!(call.operation_id(), "getAccessToken" | "refreshToken")&&call.request().is_none())}
+ fn matches_after(&self,call:&alibi::endpoint::EndpointCall,_:&alibi::AuthContext<S>,_:&alibi::endpoint::EndpointResponse)->AuthResult<bool>{Ok(matches!(call.operation_id(), "getAccessToken" | "refreshToken" | "accountInfo")&&call.request().is_none())}
  async fn after(&self,_:&alibi::endpoint::EndpointCall,_:&alibi::AuthContext<S>,response:alibi::endpoint::EndpointResponse)->AuthResult<alibi::endpoint::EndpointResponse>{Ok(response.with_header("set-cookie","application_a=first; Path=/; HttpOnly").with_header("set-cookie","application_b=second; Path=/; HttpOnly"))}
 }

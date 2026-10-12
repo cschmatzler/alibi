@@ -1,5 +1,5 @@
 //! Logical provider-token access uses the genuine session and shared account algorithm.
-use super::{OAuthAccessToken, OAuthAccountSelection, OAuthPlugin};
+use super::{OAuthAccessToken, OAuthAccountProfile, OAuthAccountSelection, OAuthPlugin};
 use alibi_core::endpoint::{
     EndpointCall, EndpointContextPatch, EndpointDefinition, EndpointInput, EndpointResponse,
     ServerEndpoint,
@@ -21,6 +21,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             Some("/refresh-token"),
             HttpMethod::Post,
         ),
+        crate::endpoint::definition(
+            "accountInfo",
+            "accountInfo",
+            Some("/account-info"),
+            HttpMethod::Get,
+        ),
     ]
 }
 /// Public result of the `refreshToken` server operation.
@@ -40,12 +46,26 @@ pub struct OAuthRefreshResult {
 
 fn selection_input(call: &EndpointCall) -> AuthResult<serde_json::Value> {
     Ok(alibi_core::utils::json::from_value(
-        call.body().cloned().unwrap_or(JsValue::Null),
+        if call.operation_id() == "accountInfo" {
+            call.query()
+        } else {
+            call.body()
+        }
+        .cloned()
+        .unwrap_or(JsValue::Null),
     )?)
 }
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
-    _ = OAuthAccountSelection::from_value(&selection_input(call)?)
-        .map_err(|message| crate::endpoint::validation(format!("[body] {message}")))?;
+    _ = OAuthAccountSelection::from_value(&selection_input(call)?).map_err(|message| {
+        crate::endpoint::validation(format!(
+            "[{}] {message}",
+            if call.operation_id() == "accountInfo" {
+                "query"
+            } else {
+                "body"
+            }
+        ))
+    })?;
     Ok(EndpointInput {
         body: call.body().cloned(),
         query: call.query().cloned(),
@@ -68,6 +88,14 @@ impl OAuthPlugin {
     ) -> ServerEndpoint<OAuthRefreshResult> {
         Self::account_endpoint("refreshToken", selection, user_id)
     }
+    /// Fetch the selected provider profile through installed server hooks.
+    #[must_use]
+    pub fn account_info_endpoint(
+        selection: OAuthAccountSelection,
+        user_id: Option<&str>,
+    ) -> ServerEndpoint<OAuthAccountProfile> {
+        Self::account_endpoint("accountInfo", selection, user_id)
+    }
     fn account_endpoint<T>(
         operation: &'static str,
         selection: OAuthAccountSelection,
@@ -84,7 +112,12 @@ impl OAuthPlugin {
         if let (Some(user), JsValue::Object(input)) = (user_id, &mut input) {
             let _ = input.insert("userId".into(), JsValue::String(user.into()));
         }
-        ServerEndpoint::new("oauth", operation).with_body_value(input)
+        let endpoint = ServerEndpoint::new("oauth", operation);
+        if operation == "accountInfo" {
+            endpoint.with_query_value(input)
+        } else {
+            endpoint.with_body_value(input)
+        }
     }
     pub(super) async fn call_account_endpoint(
         &self,
@@ -133,7 +166,35 @@ impl OAuthPlugin {
                 })?
                 .to_owned()
         };
-        let (value, cookies) = if call.operation_id() == "refreshToken" {
+        let (value, cookies) = if call.operation_id() == "accountInfo" {
+            let (value, cookies) = match Box::pin(super::account::account_info_for_selection(
+                &self.config,
+                call,
+                ctx,
+                &user_id,
+                selection,
+            ))
+            .await
+            {
+                Ok(response) => response,
+                Err(AuthError::Api {
+                    code: Some(code), ..
+                }) if code == "OAUTH_PROFILE_EXCEPTION" => {
+                    return Ok(EndpointResponse::error(AuthError::Api {
+                        status: 500,
+                        code: None,
+                        message: String::new(),
+                    })
+                    .without_error_body());
+                }
+                Err(error) => return Err(error),
+            };
+            (
+                serde_json::to_value(value)
+                    .map_err(|error| AuthError::internal(error.to_string()))?,
+                cookies,
+            )
+        } else if call.operation_id() == "refreshToken" {
             Box::pin(super::account::refresh_token_for_selection(
                 &self.config,
                 call,

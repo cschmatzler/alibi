@@ -122,17 +122,19 @@ pub(super) struct RefreshTokenResponse {
     pub account_id: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+/// Owned account identity returned by the `accountInfo` server operation.
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct AccountInfoAccount {
+pub struct AccountInfoAccount {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     pub provider_id: String,
     pub account_id: String,
 }
 
-#[derive(Debug, Serialize)]
-pub(super) struct AccountInfoResponse {
+/// Provider profile and owned account returned by the `accountInfo` server operation.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AccountInfoResponse {
     pub user: alibi_core::field_policy::FieldOutput,
     pub data: serde_json::Value,
     pub account: AccountInfoAccount,
