@@ -97,3 +97,64 @@ pub fn error_page_redirect_location(error_code: &str, error_description: Option<
     }
     format!("/?{}", query.finish())
 }
+
+/// Produce the configured error response from independently selected error parameters.
+///
+/// # Errors
+/// Returns an ordinary failure for an invalid configured redirect destination.
+pub fn error_page_response(
+    config: &crate::AuthConfig,
+    error_code: &str,
+    error_description: Option<&str>,
+) -> crate::AuthResult<crate::AuthResponse> {
+    use crate::{AuthError, AuthResponse};
+    if let Some(target) = config
+        .api_error_url
+        .as_deref()
+        .filter(|target| !target.is_empty())
+    {
+        let relative = target.starts_with('/');
+        let origin = url::Url::parse("https://better-auth.invalid")
+            .map_err(|error| AuthError::internal(error.to_string()))?;
+        let mut location = if relative {
+            origin.join(target)
+        } else {
+            url::Url::parse(target)
+        }
+        .map_err(|error| {
+            AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
+        })?;
+        if target.starts_with("//")
+            || target.starts_with("/\\")
+            || (relative && location.origin() != origin.origin())
+        {
+            return Err(AuthError::CallbackFailure(Box::new(AuthError::internal(
+                "Invalid error URL",
+            ))));
+        }
+        let generated = error_page_redirect_location(error_code, error_description);
+        let query = generated.strip_prefix("/?").unwrap_or_default();
+        let existing = location.query().unwrap_or_default();
+        let separator = if existing.is_empty() || existing.ends_with('&') {
+            ""
+        } else {
+            "&"
+        };
+        let combined = format!("{existing}{separator}{query}");
+        location.set_query(Some(&combined));
+        let location = if relative {
+            location[url::Position::BeforePath..].to_owned()
+        } else {
+            location.to_string()
+        };
+        return Ok(AuthResponse::new(302).with_header("location", location));
+    }
+    if !config.render_error_page {
+        return Ok(AuthResponse::new(302).with_header(
+            "location",
+            error_page_redirect_location(error_code, error_description),
+        ));
+    }
+    let html = error_page_html_with_description(error_code, error_description);
+    Ok(AuthResponse::html(200, html).with_header("content-type", "text/html"))
+}
