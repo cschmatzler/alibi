@@ -209,6 +209,7 @@ impl GenericOAuthConfig {
             return Err(GenericOAuthError::InvalidTokenAuthentication);
         }
         // Generic OAuth merges request scopes before its configured scopes.
+        policy.scope_order = OAuthScopeOrder::RequestedThenConfigured;
         _ = policy
             .configured_scopes
             .splice(0..0, std::mem::take(&mut self.provider.scopes));

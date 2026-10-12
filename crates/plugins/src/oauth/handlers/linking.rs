@@ -164,7 +164,7 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
     Ok(LinkSocialOutcome::Linked)
 }
 
-pub(in crate::oauth::handlers) async fn sign_in_with_id_token_core(
+pub(in crate::oauth) async fn sign_in_with_id_token_core(
     body: &SocialSignInRequest,
     id_token: &OAuthIdTokenRequest,
     provider: &OAuthProvider,

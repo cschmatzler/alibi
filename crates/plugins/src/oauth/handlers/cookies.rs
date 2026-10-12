@@ -66,16 +66,21 @@ pub(in crate::oauth::handlers) fn attach_state_cookie(
     secret: &str,
     state: &str,
 ) -> AuthResult<AuthResponse> {
+    Ok(response.with_appended_header("Set-Cookie", state_cookie_header(config, secret, state)?))
+}
+
+pub(in crate::oauth) fn state_cookie_header(
+    config: &alibi_core::AuthConfig,
+    secret: &str,
+    state: &str,
+) -> AuthResult<String> {
     let value = sign_cookie_value(state, secret);
-    Ok(response.with_appended_header(
-        "Set-Cookie",
-        alibi_core::utils::cookie_utils::create_cookie(
-            &state_cookie_name(config),
-            &value,
-            Duration::minutes(5).num_seconds(),
-            config,
-        )?,
-    ))
+    alibi_core::utils::cookie_utils::create_cookie(
+        &state_cookie_name(config),
+        &value,
+        Duration::minutes(5).num_seconds(),
+        config,
+    )
 }
 
 pub(in crate::oauth::handlers) fn attach_cookie_state_payload(
@@ -83,14 +88,18 @@ pub(in crate::oauth::handlers) fn attach_cookie_state_payload(
     config: &alibi_core::AuthConfig,
     payload: &OAuthStatePayload,
 ) -> AuthResult<AuthResponse> {
+    Ok(response.with_appended_header("Set-Cookie", cookie_state_header(config, payload)?))
+}
+
+pub(in crate::oauth) fn cookie_state_header(
+    config: &alibi_core::AuthConfig,
+    payload: &OAuthStatePayload,
+) -> AuthResult<String> {
     let value = create_cookie_state_value(config, payload)?;
-    Ok(response.with_appended_header(
-        "Set-Cookie",
-        alibi_core::utils::cookie_utils::create_cookie(
-            &state_cookie_name(config),
-            &value,
-            Duration::minutes(10).num_seconds(),
-            config,
-        )?,
-    ))
+    alibi_core::utils::cookie_utils::create_cookie(
+        &state_cookie_name(config),
+        &value,
+        Duration::minutes(10).num_seconds(),
+        config,
+    )
 }

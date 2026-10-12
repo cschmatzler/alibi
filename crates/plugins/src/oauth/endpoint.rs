@@ -27,6 +27,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             Some("/account-info"),
             HttpMethod::Get,
         ),
+        crate::endpoint::definition(
+            "signInSocial",
+            "socialSignIn",
+            Some("/sign-in/social"),
+            HttpMethod::Post,
+        ),
     ]
 }
 /// Public result of the `refreshToken` server operation.
@@ -56,6 +62,9 @@ fn selection_input(call: &EndpointCall) -> AuthResult<serde_json::Value> {
     )?)
 }
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "socialSignIn" {
+        return validate_social(call);
+    }
     _ = OAuthAccountSelection::from_value(&selection_input(call)?).map_err(|message| {
         crate::endpoint::validation(format!(
             "[{}] {message}",
@@ -223,5 +232,183 @@ impl OAuthPlugin {
             response = response.with_header("set-cookie", cookie);
         }
         Ok(response)
+    }
+}
+
+fn validate_social(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    use crate::authentication_helpers::{JsonField, JsonFieldKind};
+    if call.body().is_some_and(|body| body.as_object().is_some())
+        && !call
+            .body()
+            .and_then(|body| body.get("provider"))
+            .is_some_and(JsValue::is_string)
+    {
+        return Err(crate::endpoint::validation("[body.provider] Invalid input"));
+    }
+    let fields = &[
+        JsonField::string("provider", true),
+        JsonField::string("callbackURL", false),
+        JsonField::string("newUserCallbackURL", false),
+        JsonField::string("errorCallbackURL", false),
+        JsonField::string("loginHint", false),
+        JsonField {
+            name: "disableRedirect",
+            kind: JsonFieldKind::Boolean,
+            required: false,
+        },
+        JsonField {
+            name: "requestSignUp",
+            kind: JsonFieldKind::Boolean,
+            required: false,
+        },
+        JsonField {
+            name: "idToken",
+            kind: JsonFieldKind::Record,
+            required: false,
+        },
+        JsonField {
+            name: "additionalData",
+            kind: JsonFieldKind::Record,
+            required: false,
+        },
+        JsonField {
+            name: "additionalParams",
+            kind: JsonFieldKind::Record,
+            required: false,
+        },
+    ];
+    let mut body = crate::endpoint::validate_fields(call.body(), "body", fields)?;
+    if let Some(scopes) = call.body().and_then(|body| body.get("scopes")) {
+        let values = scopes.as_array().ok_or_else(|| {
+            crate::endpoint::validation(format!(
+                "[body.scopes] Invalid input: expected array, received {}",
+                crate::authentication_helpers::json_type(Some(scopes))
+            ))
+        })?;
+        for (index, value) in values.iter().enumerate() {
+            if !value.is_string() {
+                return Err(crate::endpoint::validation(format!(
+                    "[body.scopes.{index}] Invalid input: expected string, received {}",
+                    crate::authentication_helpers::json_type(Some(value))
+                )));
+            }
+        }
+        if let JsValue::Object(body) = &mut body {
+            _ = body.insert("scopes".into(), scopes.clone());
+        }
+    }
+    if let Some(params) = body.get("additionalParams").and_then(JsValue::as_object) {
+        for (key, value) in params {
+            if !value.is_string() {
+                return Err(crate::endpoint::validation(format!(
+                    "[body.additionalParams.{key}] Invalid input: expected string, received {}",
+                    crate::authentication_helpers::json_type(Some(value))
+                )));
+            }
+        }
+    }
+    if let Some(token) = body.get("idToken") {
+        let token_fields = &[
+            JsonField::string("token", true),
+            JsonField::string("nonce", false),
+            JsonField::string("accessToken", false),
+            JsonField::string("refreshToken", false),
+            JsonField {
+                name: "user",
+                kind: JsonFieldKind::Record,
+                required: false,
+            },
+        ];
+        _ = crate::endpoint::validate_fields(Some(token), "body.idToken", token_fields)?;
+    }
+    let parsed: super::OAuthSocialSignInRequest =
+        alibi_core::utils::json::from_value(body.clone())?;
+    super::handlers::validate_authorization_params(parsed.additional_params.as_ref())?;
+    Ok(EndpointInput {
+        body: Some(body),
+        query: call.query().cloned(),
+    })
+}
+
+impl OAuthPlugin {
+    /// Initiate social sign-in or admit an ID token through installed server hooks.
+    pub fn sign_in_social_endpoint(
+        body: &super::OAuthSocialSignInRequest,
+    ) -> AuthResult<ServerEndpoint<super::OAuthSocialSignInResponse>> {
+        ServerEndpoint::new("oauth", "signInSocial").with_body(body)
+    }
+    pub(super) async fn call_social_endpoint(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<EndpointResponse> {
+        let body: super::OAuthSocialSignInRequest = call.body_as()?;
+        let headers = call.headers().cloned().unwrap_or_default();
+        let meta = alibi_core::RequestMeta {
+            ip_address: Some(
+                ctx.config
+                    .advanced
+                    .ip_address
+                    .resolve_ip(&headers)
+                    .unwrap_or_default(),
+            ),
+            user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
+        };
+        if let Some(token) = &body.id_token {
+            let provider = self
+                .config
+                .providers
+                .get(&body.provider)
+                .ok_or_else(|| AuthError::not_found("Provider not found"))?;
+            let value =
+                super::handlers::sign_in_with_id_token_core(&body, token, provider, &meta, ctx)
+                    .await?;
+            let mut response = EndpointResponse::json(&value)?;
+            if let Some(token) = &value.token {
+                response.merge_headers(crate::authentication_helpers::session_cookie_headers(
+                    &ctx.config,
+                    token,
+                    false,
+                )?);
+            }
+            return Ok(response);
+        }
+        let flow = match Box::pin(super::handlers::social_sign_in_core(
+            &body,
+            &self.config,
+            call.request(),
+            ctx,
+        ))
+        .await
+        {
+            Ok(flow) => flow,
+            Err(AuthError::Config(_)) => {
+                return Ok(EndpointResponse::error(AuthError::Api {
+                    status: 500,
+                    code: None,
+                    message: String::new(),
+                })
+                .without_error_body());
+            }
+            Err(error) => return Err(error),
+        };
+        let mut response = EndpointResponse::json(&flow.response)?;
+        if flow.response.redirect
+            && let Some(url) = &flow.response.url
+        {
+            response = response.with_header("location", url);
+        }
+        let cookie = match ctx.config.account.store_state_strategy {
+            alibi_core::OAuthStateStrategy::Automatic
+            | alibi_core::OAuthStateStrategy::Database => super::handlers::state_cookie_header(
+                &ctx.config,
+                ctx.config.current_secret(),
+                &flow.state,
+            )?,
+            alibi_core::OAuthStateStrategy::Cookie => {
+                super::handlers::cookie_state_header(&ctx.config, &flow.payload)?
+            }
+        };
+        Ok(response.with_header("set-cookie", cookie))
     }
 }

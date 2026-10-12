@@ -132,13 +132,13 @@ impl OAuthUserInfo {
     }
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, Deserialize)]
 pub struct OAuthCallbackUserPayload {
     pub name: Option<OAuthCallbackUserName>,
     pub email: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OAuthCallbackUserName {
     pub first_name: Option<String>,

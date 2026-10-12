@@ -15,14 +15,17 @@ use super::types::SocialSignInResponse;
 use crate::helpers::SessionIssueError;
 use alibi_core::wire::{SessionView, UserView};
 use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResult};
+pub(super) use authorization::{social_sign_in_core, validate_authorization_params};
 pub(crate) use cookies::create_account_cookie_headers;
 pub(super) use cookies::decode_account_cookie;
+pub(super) use cookies::{cookie_state_header, state_cookie_header};
 pub(super) use http::handle_callback;
 pub(super) use http::handle_link_social;
 pub(crate) use http::handle_social_sign_in;
 pub(crate) use identity::process_oauth_sign_in;
 pub(crate) use identity::process_oauth_sign_in_with_output;
 pub(crate) use linking::complete_link_social;
+pub(super) use linking::sign_in_with_id_token_core;
 pub(crate) use redirects::ambiguous_account_sign_in_response;
 pub(crate) use token_exchange::fetch_user_info_from_provider;
 pub(super) use token_exchange::refresh_tokens_via_provider;
@@ -104,10 +107,10 @@ impl From<SessionIssueError> for OAuthSignInError {
     }
 }
 
-struct InitiatedOAuthFlow {
-    response: SocialSignInResponse,
-    state: String,
-    payload: OAuthStatePayload,
+pub(super) struct InitiatedOAuthFlow {
+    pub(super) response: SocialSignInResponse,
+    pub(super) state: String,
+    pub(super) payload: OAuthStatePayload,
 }
 
 struct FlowStartRequest<'a> {
