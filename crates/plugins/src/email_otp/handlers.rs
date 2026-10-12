@@ -340,6 +340,15 @@ impl EmailOtpPlugin {
             Ok(value) => value,
             Err(response) => return Ok(response),
         };
+        self.verify_email_core(req, ctx, body).await
+    }
+
+    pub(super) async fn verify_email_core(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+        body: VerifyRequest,
+    ) -> AuthResult<AuthResponse> {
         let email = parse_email(&body.email)?;
         self.consume_code(
             ctx,

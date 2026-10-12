@@ -25,6 +25,14 @@ pub struct EmailOtpCheck {
     pub success: bool,
 }
 
+/// A verified mailbox with optional newly issued browser authority.
+#[derive(Debug, Deserialize)]
+pub struct EmailOtpVerification {
+    pub status: bool,
+    pub token: Option<String>,
+    pub user: Box<alibi_core::UserView>,
+}
+
 const FIELDS: &[JsonField] = &[
     JsonField::string("email", true),
     JsonField {
@@ -41,6 +49,12 @@ const FIELDS: &[JsonField] = &[
 
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
+        definition(
+            "verifyEmailOTP",
+            "verifyEmailOTP",
+            Some("/email-otp/verify-email"),
+            HttpMethod::Post,
+        ),
         definition(
             "checkVerificationOTP",
             "verifyEmailWithOTP",
@@ -69,6 +83,16 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "verifyEmailOTP" {
+        return Ok(EndpointInput {
+            body: Some(validate_fields(
+                call.body(),
+                "body",
+                <super::types::VerifyRequest as crate::authentication_helpers::RequestBody>::FIELDS,
+            )?),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "verifyEmailWithOTP" {
         return Ok(EndpointInput {
             body: Some(validate_fields(
@@ -93,6 +117,22 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
 }
 
 impl EmailOtpPlugin {
+    /// Consume a mailbox proof and apply verification/session policy.
+    #[must_use]
+    pub fn verify_email_otp_endpoint(
+        email: impl Into<String>,
+        otp: impl Into<String>,
+    ) -> ServerEndpoint<EmailOtpVerification> {
+        ServerEndpoint::new("email-otp", "verifyEmailOTP").with_body_value(JsValue::Object(
+            [
+                ("email".into(), JsValue::String(email.into())),
+                ("otp".into(), JsValue::String(otp.into())),
+            ]
+            .into_iter()
+            .collect(),
+        ))
+    }
+
     /// Check a scoped proof without consuming a successful validation.
     #[must_use]
     pub fn check_verification_otp_endpoint(
@@ -148,17 +188,25 @@ impl EmailOtpPlugin {
                 &output.body,
             )?);
         }
-        if call.operation_id() == "sendEmailVerificationOTP" {
-            if let Some(request) = call.request() {
+        if matches!(
+            call.operation_id(),
+            "sendEmailVerificationOTP" | "verifyEmailOTP"
+        ) {
+            if call.operation_id() == "sendEmailVerificationOTP"
+                && let Some(request) = call.request()
+            {
                 alibi_core::middleware::CsrfMiddleware::new(
                     alibi_core::middleware::CsrfConfig::new(),
                     ctx.config.clone(),
                 )
                 .check_login_origin(request)?;
             }
-            let output = self
-                .send_verification_core(call.request(), ctx, call.body_as()?)
-                .await?;
+            let output = if call.operation_id() == "sendEmailVerificationOTP" {
+                self.send_verification_core(call.request(), ctx, call.body_as()?)
+                    .await?
+            } else {
+                self.verify_email_core(call, ctx, call.body_as()?).await?
+            };
             let mut response = if output.status >= 400 {
                 EndpointResponse::error(crate::endpoint::error_response(output.clone()))
                     .without_error_body()
