@@ -1,41 +1,12 @@
 //! The logical admin lookup uses stored authority, strict query input and safe output.
+use super::server_admin_support::AdminObserver;
 use super::*;
-use alibi::endpoint::{
-    EndpointCall, EndpointHook, EndpointOptions, EndpointResponse, ServerEndpoint,
-};
+use alibi::UpdateUser;
+use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::AdminPlugin;
 use alibi::utils::json::JsValue;
-use alibi::{AuthContext, AuthResult, UpdateUser};
 
 backend_tests!(server_admin_get_user_validates_query_and_rejects_stale_admin_authority);
-
-struct AdminObserver;
-#[async_trait::async_trait]
-impl<S: AuthSchema> EndpointHook<S> for AdminObserver {
-    fn matches_after(
-        &self,
-        call: &EndpointCall,
-        _: &AuthContext<S>,
-        _: &EndpointResponse,
-    ) -> AuthResult<bool> {
-        Ok(call.operation_id() == "getUser")
-    }
-    async fn after(
-        &self,
-        call: &EndpointCall,
-        _: &AuthContext<S>,
-        mut response: EndpointResponse,
-    ) -> AuthResult<EndpointResponse> {
-        assert!(call.request().is_none());
-        assert_eq!(call.path(), Some("/admin/get-user"));
-        if let Some((user, _)) = call.session() {
-            response = response.with_header("x-admin-principal", user.id);
-        }
-        Ok(response
-            .with_header("set-cookie", "application_a=first; Path=/; HttpOnly")
-            .with_header("set-cookie", "application_b=second; Path=/; HttpOnly"))
-    }
-}
 
 async fn server_admin_get_user_validates_query_and_rejects_stale_admin_authority<B: Backend>(
     db: Db,
