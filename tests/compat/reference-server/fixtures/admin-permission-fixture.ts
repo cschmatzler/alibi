@@ -60,6 +60,7 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
                 "/admin/revoke-user-session",
                 "/admin/revoke-user-sessions",
                 "/admin/remove-user",
+                "/admin/set-user-password",
               ].includes(ctx.path) &&
               !ctx.request
             ) {
@@ -221,7 +222,8 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
               | "banUser"
               | "revokeUserSession"
               | "revokeUserSessions"
-              | "removeUser";
+              | "removeUser"
+              | "setUserPassword";
             profile?: string;
             query?: unknown;
             body?: unknown;
@@ -230,6 +232,14 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
           const auth = profiles.get(
             `/__test/profiles/${input.profile ?? "admin-standard"}/api/auth`,
           )!;
+          if (input.operation === "setUserPassword") {
+            return auth.api.setUserPassword({
+              body: input.body as { userId: string; newPassword: string },
+              ...(Object.hasOwn(input, "query") ? { query: input.query } : {}),
+              ...(input.headers ? { headers: new Headers(input.headers) } : {}),
+              asResponse: true,
+            });
+          }
           if (input.operation === "removeUser") {
             return auth.api.removeUser({
               body: input.body as { userId: string },

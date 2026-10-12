@@ -2,13 +2,13 @@
 use super::{
     AdminPlugin, MESSAGE_BAN_USERS, MESSAGE_CHANGE_ROLE, MESSAGE_DELETE_USERS, MESSAGE_GET_USER,
     MESSAGE_LIST_USER_SESSIONS, MESSAGE_LIST_USERS, MESSAGE_REVOKE_USER_SESSIONS,
-    MESSAGE_UPDATE_USERS, ban_user_core, create_user_core, get_user_core, list_user_sessions_core,
-    list_users_core, remove_user_core, revoke_user_session_core, revoke_user_sessions_core,
-    set_role_core,
+    MESSAGE_SET_USER_PASSWORD, MESSAGE_UPDATE_USERS, ban_user_core, create_user_core,
+    get_user_core, list_user_sessions_core, list_users_core, remove_user_core,
+    revoke_user_session_core, revoke_user_sessions_core, set_role_core, set_user_password_core,
     types::{
         AdminUpdateUserRequest, BanUserRequest, CreateUserRequest, GetUserQuery,
         HasPermissionRequest, PermissionResponse, RevokeSessionRequest, SetRoleRequest,
-        UserIdRequest,
+        SetUserPasswordRequest, UserIdRequest,
     },
     unban_user_core, update_user_core,
 };
@@ -25,6 +25,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             "getUser",
             Some("/admin/get-user"),
             HttpMethod::Get,
+        ),
+        crate::endpoint::definition(
+            "setUserPassword",
+            "setUserPassword",
+            Some("/admin/set-user-password"),
+            HttpMethod::Post,
         ),
         crate::endpoint::definition(
             "removeUser",
@@ -96,6 +102,15 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "setUserPassword" {
+        let body: SetUserPasswordRequest =
+            super::validation::body_value("set-user-password", call.body().cloned())
+                .map_err(crate::endpoint::error_response)?;
+        return Ok(EndpointInput {
+            body: Some(alibi_core::utils::json::to_value(&body)?.into()),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "removeUser" {
         let body: UserIdRequest =
             super::validation::body_value("remove-user", call.body().cloned())
@@ -280,6 +295,16 @@ impl AdminPlugin {
         ))
     }
 
+    /// Replace or create a credential through authoritative admin policy and server hooks.
+    ///
+    /// # Errors
+    /// Returns an error if the logical input cannot be serialized.
+    pub fn set_user_password_endpoint(
+        input: &super::AdminSetUserPasswordRequest,
+    ) -> AuthResult<ServerEndpoint<alibi_core::StatusResponse>> {
+        ServerEndpoint::new("admin", "setUserPassword").with_body(input)
+    }
+
     /// Remove a stored user, their accounts and sessions through authoritative admin policy.
     #[must_use]
     pub fn remove_user_endpoint(
@@ -424,6 +449,16 @@ impl AdminPlugin {
         };
         let principal = ctx.user_view(&user);
         call.record_authenticated_session(principal.clone(), session);
+        if call.operation_id() == "setUserPassword" {
+            self.authorize(
+                &principal,
+                "user",
+                "set-password",
+                MESSAGE_SET_USER_PASSWORD,
+            )?;
+            let body: SetUserPasswordRequest = call.body_as()?;
+            return EndpointResponse::json(&set_user_password_core(&body, ctx).await?);
+        }
         if call.operation_id() == "removeUser" {
             self.authorize(&principal, "user", "delete", MESSAGE_DELETE_USERS)?;
             let body: UserIdRequest = call.body_as()?;
