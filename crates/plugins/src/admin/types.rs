@@ -108,18 +108,34 @@ pub(crate) struct UserIdRequest {
     pub user_id: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub(crate) struct BanUserRequest {
+/// Input for authoritative admin user banning.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BanUserRequest {
     #[serde(rename = "userId")]
+    /// The stored user to ban.
     pub user_id: String,
-    #[serde(rename = "banReason")]
+    #[serde(rename = "banReason", skip_serializing_if = "Option::is_none")]
+    /// Optional reason, falling back to the configured reason.
     pub ban_reason: Option<String>,
     #[serde(
         rename = "banExpiresIn",
+        skip_serializing_if = "Option::is_none",
         default,
         deserialize_with = "finite_optional_duration"
     )]
+    /// Optional duration in seconds; zero falls back to the configured duration.
     pub ban_expires_in: Option<f64>,
+}
+impl BanUserRequest {
+    /// Ban the specified user with the installed default reason and duration.
+    #[must_use]
+    pub fn new(user_id: impl Into<String>) -> Self {
+        Self {
+            user_id: user_id.into(),
+            ban_reason: None,
+            ban_expires_in: None,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

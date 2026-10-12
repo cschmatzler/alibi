@@ -1,11 +1,11 @@
 //! Installed admin server operations share authorization and stored output with HTTP.
 use super::{
     AdminPlugin, MESSAGE_BAN_USERS, MESSAGE_CHANGE_ROLE, MESSAGE_GET_USER,
-    MESSAGE_LIST_USER_SESSIONS, MESSAGE_LIST_USERS, MESSAGE_UPDATE_USERS, create_user_core,
-    get_user_core, list_user_sessions_core, list_users_core, set_role_core,
+    MESSAGE_LIST_USER_SESSIONS, MESSAGE_LIST_USERS, MESSAGE_UPDATE_USERS, ban_user_core,
+    create_user_core, get_user_core, list_user_sessions_core, list_users_core, set_role_core,
     types::{
-        AdminUpdateUserRequest, CreateUserRequest, GetUserQuery, HasPermissionRequest,
-        PermissionResponse, SetRoleRequest, UserIdRequest,
+        AdminUpdateUserRequest, BanUserRequest, CreateUserRequest, GetUserQuery,
+        HasPermissionRequest, PermissionResponse, SetRoleRequest, UserIdRequest,
     },
     unban_user_core, update_user_core,
 };
@@ -22,6 +22,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             "getUser",
             Some("/admin/get-user"),
             HttpMethod::Get,
+        ),
+        crate::endpoint::definition(
+            "banUser",
+            "banUser",
+            Some("/admin/ban-user"),
+            HttpMethod::Post,
         ),
         crate::endpoint::definition(
             "unbanUser",
@@ -69,6 +75,14 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "banUser" {
+        let body: BanUserRequest = super::validation::body_value("ban-user", call.body().cloned())
+            .map_err(crate::endpoint::error_response)?;
+        return Ok(EndpointInput {
+            body: Some(alibi_core::utils::json::to_value(&body)?.into()),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "unbanUser" {
         let body: UserIdRequest = super::validation::body_value("unban-user", call.body().cloned())
             .map_err(crate::endpoint::error_response)?;
@@ -206,6 +220,16 @@ impl AdminPlugin {
         ))
     }
 
+    /// Ban a stored user and revoke their sessions through authoritative admin policy.
+    ///
+    /// # Errors
+    /// Returns an error if the logical input cannot be serialized.
+    pub fn ban_user_endpoint(
+        input: &super::AdminBanUserRequest,
+    ) -> AuthResult<ServerEndpoint<super::AdminUserResponse>> {
+        ServerEndpoint::new("admin", "banUser").with_body(input)
+    }
+
     /// Clear a stored user's ban through authoritative admin policy and server hooks.
     #[must_use]
     pub fn unban_user_endpoint(
@@ -304,6 +328,22 @@ impl AdminPlugin {
         };
         let principal = ctx.user_view(&user);
         call.record_authenticated_session(principal.clone(), session);
+        if call.operation_id() == "banUser" {
+            self.authorize(&principal, "user", "ban", MESSAGE_BAN_USERS)?;
+            let body: BanUserRequest = call.body_as()?;
+            return match ban_user_core(&body, principal.id.as_str(), &self.config, ctx).await {
+                Ok(user) => EndpointResponse::json(&user),
+                Err(super::AdminDateOperationError::Auth(error)) => Err(error),
+                Err(super::AdminDateOperationError::InvalidDate) => {
+                    Ok(EndpointResponse::error(AuthError::Api {
+                        status: 500,
+                        code: None,
+                        message: String::new(),
+                    })
+                    .without_error_body())
+                }
+            };
+        }
         if call.operation_id() == "unbanUser" {
             self.authorize(&principal, "user", "ban", MESSAGE_BAN_USERS)?;
             let body: UserIdRequest = call.body_as()?;
