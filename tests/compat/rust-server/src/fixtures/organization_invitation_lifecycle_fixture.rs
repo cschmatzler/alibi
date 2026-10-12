@@ -99,7 +99,15 @@ impl OrganizationInvitationHooks for Application {
         &self,
         ctx: &OrganizationInvitationCreationContext,
     ) -> AuthResult<Option<OrganizationInvitationCreatePatch>> {
-        self.note("before-create", json!({"invitation":{"email":ctx.invitation.email,"role":ctx.invitation.role,"organizationId":ctx.invitation.organization_id,"inviterId":ctx.invitation.inviter_id,"teamIds":ctx.invitation.team_ids,"teamId":ctx.invitation.team_ids.first()},"inviter":ctx.inviter,"organization":ctx.organization})).await?;
+        let mut invitation = json!({"email":ctx.invitation.email,"role":ctx.invitation.role,"organizationId":ctx.invitation.organization_id,"inviterId":ctx.invitation.inviter_id,"teamIds":ctx.invitation.team_ids});
+        if let Some(team_id) = ctx.invitation.team_ids.first() {
+            invitation["teamId"] = json!(team_id);
+        }
+        self.note(
+            "before-create",
+            json!({"invitation":invitation,"inviter":ctx.inviter,"organization":ctx.organization}),
+        )
+        .await?;
         Ok(if *self.mode.lock().await == "patch-role" {
             Some(OrganizationInvitationCreatePatch {
                 role: Some("admin".into()),
@@ -222,6 +230,7 @@ pub(crate) async fn router(
         reject_observation: AtomicBool::new(false),
     });
     let mut router = Router::new();
+    let mut server_auth = None;
     for name in [
         "org-invite-life",
         "org-invite-reinvite",
@@ -303,8 +312,71 @@ pub(crate) async fn router(
                 .build()
                 .await?,
         );
+        if name == "org-invite-limit-none" {
+            server_auth = Some(auth.clone());
+        }
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
+    let server_auth = server_auth.unwrap();
+    router = router.route(
+        "/__test/organization-invitation-life/server",
+        post(move |Json(input): Json<Value>| {
+            let auth = server_auth.clone();
+            async move {
+                use axum::response::IntoResponse;
+                let mut endpoint =
+                    alibi::endpoint::ServerEndpoint::<alibi::utils::json::JsValue>::new(
+                        "organization",
+                        "createInvitation",
+                    );
+                if let Some(body) = input.get("body") {
+                    endpoint = endpoint.with_body(body).unwrap();
+                }
+                if let Some(query) = input.get("query") {
+                    endpoint = endpoint.with_query(query).unwrap();
+                }
+                let options = alibi::endpoint::EndpointOptions {
+                    headers: input
+                        .get("headers")
+                        .map(|headers| serde_json::from_value(headers.clone()).unwrap()),
+                    ..Default::default()
+                };
+                let response = match auth.dispatch_endpoint(endpoint, options).await {
+                    Ok(output) => output.into_response().unwrap(),
+                    Err(error) => {
+                        let mut response = error.error.to_auth_response();
+                        if error.body_absent {
+                            response.body.clear();
+                        }
+                        if let Some(body) = error.body {
+                            response.body = serde_json::to_vec(&*body).unwrap();
+                        }
+                        if let Some(headers) = error.headers {
+                            for (name, value) in headers {
+                                response.headers.append(name, value);
+                            }
+                        }
+                        response
+                    }
+                };
+                let mut wire = (
+                    axum::http::StatusCode::from_u16(response.status).unwrap(),
+                    response.body,
+                )
+                    .into_response();
+                for (name, value) in response.headers {
+                    let name = axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap();
+                    let value = axum::http::HeaderValue::from_str(&value).unwrap();
+                    if name == axum::http::header::SET_COOKIE {
+                        wire.headers_mut().append(name, value);
+                    } else {
+                        wire.headers_mut().insert(name, value);
+                    }
+                }
+                wire
+            }
+        }),
+    );
     let control = app.clone();
     let observer = app.clone();
     let release = app.clone();

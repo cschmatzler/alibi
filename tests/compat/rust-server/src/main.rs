@@ -58,7 +58,8 @@ async fn private_json_content_type(
         && path != "/__test/api-key-hook/verify"
         && path != "/__test/phone-consume-otp"
         && path != "/__test/generic-token/server-api"
-        && path != "/__test/admin/server-api";
+        && path != "/__test/admin/server-api"
+        && path != "/__test/organization-invitation-life/server";
     let mut response = next.run(request).await;
     if private_control
         && axum::body::HttpBody::size_hint(response.body())
