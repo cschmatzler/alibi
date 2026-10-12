@@ -292,8 +292,10 @@ pub struct ListUsersResponse<U> {
     pub offset: Option<f64>,
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct ListSessionsResponse<S> {
+/// Sessions selected for an administrative target lookup.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListSessionsResponse<S> {
+    /// Persisted session projections for the requested user.
     pub sessions: Vec<S>,
 }
 

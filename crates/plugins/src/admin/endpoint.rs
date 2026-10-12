@@ -1,10 +1,11 @@
 //! Installed admin server operations share authorization and stored output with HTTP.
 use super::{
-    AdminPlugin, MESSAGE_CHANGE_ROLE, MESSAGE_GET_USER, MESSAGE_LIST_USERS, MESSAGE_UPDATE_USERS,
-    create_user_core, get_user_core, list_users_core, set_role_core,
+    AdminPlugin, MESSAGE_CHANGE_ROLE, MESSAGE_GET_USER, MESSAGE_LIST_USER_SESSIONS,
+    MESSAGE_LIST_USERS, MESSAGE_UPDATE_USERS, create_user_core, get_user_core,
+    list_user_sessions_core, list_users_core, set_role_core,
     types::{
         AdminUpdateUserRequest, CreateUserRequest, GetUserQuery, HasPermissionRequest,
-        PermissionResponse, SetRoleRequest,
+        PermissionResponse, SetRoleRequest, UserIdRequest,
     },
     update_user_core,
 };
@@ -21,6 +22,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             "getUser",
             Some("/admin/get-user"),
             HttpMethod::Get,
+        ),
+        crate::endpoint::definition(
+            "listUserSessions",
+            "adminListUserSessions",
+            Some("/admin/list-user-sessions"),
+            HttpMethod::Post,
         ),
         crate::endpoint::definition(
             "listUsers",
@@ -56,6 +63,19 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "adminListUserSessions" {
+        let body: UserIdRequest =
+            super::validation::body_value("list-user-sessions", call.body().cloned())
+                .map_err(crate::endpoint::error_response)?;
+        return Ok(EndpointInput {
+            body: Some(JsValue::Object(
+                [("userId".into(), JsValue::String(body.user_id))]
+                    .into_iter()
+                    .collect(),
+            )),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "listUsers" {
         return super::listing::validate(call);
     }
@@ -156,6 +176,18 @@ impl AdminPlugin {
         ServerEndpoint::new("admin", "listUsers").with_query(query)
     }
 
+    /// List a user's stored sessions through authoritative admin policy and server hooks.
+    #[must_use]
+    pub fn list_user_sessions_endpoint(
+        user_id: impl Into<String>,
+    ) -> ServerEndpoint<super::AdminUserSessionsResponse> {
+        ServerEndpoint::new("admin", "listUserSessions").with_body_value(JsValue::Object(
+            [("userId".into(), JsValue::String(user_id.into()))]
+                .into_iter()
+                .collect(),
+        ))
+    }
+
     async fn call_permission_endpoint(
         &self,
         call: &EndpointCall,
@@ -242,6 +274,11 @@ impl AdminPlugin {
         };
         let principal = ctx.user_view(&user);
         call.record_authenticated_session(principal.clone(), session);
+        if call.operation_id() == "adminListUserSessions" {
+            self.authorize(&principal, "session", "list", MESSAGE_LIST_USER_SESSIONS)?;
+            let body: UserIdRequest = call.body_as()?;
+            return EndpointResponse::json(&list_user_sessions_core(&body, ctx).await?);
+        }
         if call.operation_id() == "listUsers" {
             self.authorize(&principal, "user", "list", MESSAGE_LIST_USERS)?;
             let query = super::listing::params(call)?;

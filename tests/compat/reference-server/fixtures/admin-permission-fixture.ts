@@ -54,6 +54,7 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
                 "/admin/has-permission",
                 "/admin/update-user",
                 "/admin/list-users",
+                "/admin/list-user-sessions",
               ].includes(ctx.path) &&
               !ctx.request
             ) {
@@ -209,7 +210,8 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
               | "createUser"
               | "userHasPermission"
               | "adminUpdateUser"
-              | "listUsers";
+              | "listUsers"
+              | "listUserSessions";
             profile?: string;
             query?: unknown;
             body?: unknown;
@@ -218,6 +220,14 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
           const auth = profiles.get(
             `/__test/profiles/${input.profile ?? "admin-standard"}/api/auth`,
           )!;
+          if (input.operation === "listUserSessions") {
+            return auth.api.listUserSessions({
+              body: input.body as { userId: string },
+              ...(Object.hasOwn(input, "query") ? { query: input.query } : {}),
+              ...(input.headers ? { headers: new Headers(input.headers) } : {}),
+              asResponse: true,
+            });
+          }
           if (input.operation === "listUsers") {
             return auth.api.listUsers({
               query: input.query as { sortBy?: string },

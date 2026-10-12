@@ -41,6 +41,8 @@ pub use types::{
 pub type AdminUserResponse = types::UserResponse<AdminUserOutput>;
 /// Safe user page returned by the listUsers server operation.
 pub type AdminListUsersResponse = types::ListUsersResponse<AdminUserOutput>;
+/// Session page returned by the admin listUserSessions server operation.
+pub type AdminUserSessionsResponse = types::ListSessionsResponse<alibi_core::wire::SessionView>;
 use types::{
     BanUserRequest, CreateUserRequest, HasPermissionRequest, ListUsersQueryParams,
     RevokeSessionRequest, SetRoleRequest, SetUserPasswordRequest, UserIdRequest,
