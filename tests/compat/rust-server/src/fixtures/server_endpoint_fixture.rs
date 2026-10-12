@@ -591,7 +591,7 @@ pub(crate) async fn router(
                     "createVerificationOTP" | "getVerificationOTP" => "email-otp",
                     "getSession" | "revokeSession" | "revokeOtherSessions" | "revokeSessions" | "listSessions" | "signOut" | "updateSession" => "session-management",
                     "signJWT" | "verifyJWT" | "getToken" | "getJwks" => "jwt",
-                    "createOrganization" | "deleteOrganization" | "addMember" | "removeMember" => {
+                    "createOrganization" | "deleteOrganization" | "addMember" | "removeMember" | "checkOrganizationSlug" => {
                         "organization"
                     }
                     "generateOneTimeToken" | "verifyOneTimeToken" => "one-time-token",
@@ -631,6 +631,7 @@ pub(crate) async fn router(
                     "verifyJWT" => "verifyJWT",
                     "getToken" => "getToken",
                     "getJwks" => "getJwks",
+                    "checkOrganizationSlug" => "checkOrganizationSlug",
                     "createOrganization" => "createOrganization",
                     "deleteOrganization" => "deleteOrganization",
                     "addMember" => "addMember",
