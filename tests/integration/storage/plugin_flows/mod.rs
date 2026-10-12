@@ -60,6 +60,7 @@ mod server_revoke_other_sessions;
 mod server_revoke_sessions;
 mod server_set_password;
 mod server_sign_in_email;
+mod server_sign_in_social;
 mod server_sign_out;
 mod server_sign_up_email;
 mod server_update_session;

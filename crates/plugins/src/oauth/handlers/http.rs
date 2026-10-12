@@ -80,7 +80,7 @@ pub(crate) async fn handle_social_sign_in(
         return Ok(auth_response);
     }
 
-    let flow = match social_sign_in_core(&body, config, ctx).await {
+    let flow = match social_sign_in_core(&body, config, Some(req), ctx).await {
         Err(error @ AuthError::Config(_)) => {
             tracing::error!(%error, "OAuth authorization configuration failed");
             return Ok(AuthResponse::new(500));

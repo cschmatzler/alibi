@@ -304,7 +304,7 @@ pub(in crate::oauth::handlers) fn set_authorization_param(
     _ = url.query_pairs_mut().clear().extend_pairs(pairs);
 }
 
-pub(in crate::oauth::handlers) fn validate_authorization_params(
+pub(in crate::oauth) fn validate_authorization_params(
     params: Option<&std::collections::BTreeMap<String, String>>,
 ) -> AuthResult<()> {
     if params.is_some_and(|params| {
@@ -324,9 +324,10 @@ pub(in crate::oauth::handlers) fn validate_authorization_params(
     Ok(())
 }
 
-pub(in crate::oauth::handlers) async fn social_sign_in_core(
+pub(in crate::oauth) async fn social_sign_in_core(
     body: &SocialSignInRequest,
     config: &OAuthConfig,
+    request: Option<&alibi_core::AuthRequest>,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<InitiatedOAuthFlow> {
     let provider = config
@@ -337,13 +338,16 @@ pub(in crate::oauth::handlers) async fn social_sign_in_core(
     let callback_url = body
         .callback_url
         .clone()
+        .filter(|url| !url.is_empty())
         .unwrap_or_else(|| ctx.config.base_url.clone());
-    validate_redirect_target(&callback_url, ctx, "Invalid callbackURL")?;
-    if let Some(error_callback_url) = body.error_callback_url.as_deref() {
-        validate_redirect_target(error_callback_url, ctx, "Invalid errorCallbackURL")?;
-    }
-    if let Some(new_user_callback_url) = body.new_user_callback_url.as_deref() {
-        validate_redirect_target(new_user_callback_url, ctx, "Invalid newUserCallbackURL")?;
+    if request.is_some() {
+        validate_redirect_target(&callback_url, ctx, "Invalid callbackURL")?;
+        if let Some(error_callback_url) = body.error_callback_url.as_deref() {
+            validate_redirect_target(error_callback_url, ctx, "Invalid errorCallbackURL")?;
+        }
+        if let Some(new_user_callback_url) = body.new_user_callback_url.as_deref() {
+            validate_redirect_target(new_user_callback_url, ctx, "Invalid newUserCallbackURL")?;
+        }
     }
 
     initiate_oauth_flow_core(

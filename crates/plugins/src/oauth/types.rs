@@ -2,34 +2,39 @@ use alibi_core::wire::UserView;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-#[derive(Debug, Deserialize, Validate)]
-pub(super) struct SocialSignInRequest {
+/// Public input to the `signInSocial` server operation.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+pub struct SocialSignInRequest {
     #[validate(length(min = 1, message = "Provider is required"))]
     pub provider: String,
-    #[serde(rename = "callbackURL")]
+    #[serde(rename = "callbackURL", skip_serializing_if = "Option::is_none")]
     pub callback_url: Option<String>,
-    #[serde(rename = "newUserCallbackURL")]
+    #[serde(rename = "newUserCallbackURL", skip_serializing_if = "Option::is_none")]
     pub new_user_callback_url: Option<String>,
-    #[serde(rename = "errorCallbackURL")]
+    #[serde(rename = "errorCallbackURL", skip_serializing_if = "Option::is_none")]
     pub error_callback_url: Option<String>,
-    #[serde(rename = "disableRedirect")]
+    #[serde(rename = "disableRedirect", skip_serializing_if = "Option::is_none")]
     pub disable_redirect: Option<bool>,
-    #[serde(rename = "idToken")]
+    #[serde(rename = "idToken", skip_serializing_if = "Option::is_none")]
     pub id_token: Option<OAuthIdTokenRequest>,
-    #[serde(rename = "requestSignUp")]
+    #[serde(rename = "requestSignUp", skip_serializing_if = "Option::is_none")]
     pub request_sign_up: Option<bool>,
-    #[serde(rename = "loginHint")]
+    #[serde(rename = "loginHint", skip_serializing_if = "Option::is_none")]
     pub login_hint: Option<String>,
-    #[serde(rename = "authorizationParams")]
+    #[serde(
+        rename = "authorizationParams",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub authorization_params: Option<std::collections::BTreeMap<String, String>>,
-    #[serde(rename = "additionalParams")]
+    #[serde(rename = "additionalParams", skip_serializing_if = "Option::is_none")]
     pub additional_params: Option<std::collections::BTreeMap<String, String>>,
-    #[serde(rename = "additionalData")]
+    #[serde(rename = "additionalData", skip_serializing_if = "Option::is_none")]
     #[serde(
         default,
         deserialize_with = "alibi_core::utils::json::deserialize_optional_map"
     )]
     pub additional_data: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scopes: Option<Vec<String>>,
 }
 
@@ -60,23 +65,28 @@ pub(super) struct LinkSocialRequest {
     pub scopes: Option<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
-pub(super) struct OAuthIdTokenRequest {
+/// ID-token credentials accepted by logical social sign-in.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+pub struct OAuthIdTokenRequest {
     #[validate(length(min = 1, message = "Token is required"))]
     pub token: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub nonce: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<super::providers::OAuthCallbackUserPayload>,
-    #[serde(rename = "accessToken")]
+    #[serde(rename = "accessToken", skip_serializing_if = "Option::is_none")]
     pub access_token: Option<String>,
-    #[serde(rename = "refreshToken")]
+    #[serde(rename = "refreshToken", skip_serializing_if = "Option::is_none")]
     pub refresh_token: Option<String>,
-    #[serde(rename = "expiresAt")]
+    #[serde(rename = "expiresAt", skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scopes: Option<Vec<String>>,
 }
 
-#[derive(Debug, Serialize)]
-pub(super) struct SocialSignInResponse {
+/// Provider authorization URL or authenticated user returned by social sign-in.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SocialSignInResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     pub redirect: bool,
@@ -138,4 +148,25 @@ pub struct AccountInfoResponse {
     pub user: alibi_core::field_policy::FieldOutput,
     pub data: serde_json::Value,
     pub account: AccountInfoAccount,
+}
+
+impl SocialSignInRequest {
+    /// Construct provider selection; optional OAuth inputs remain configurable.
+    #[must_use]
+    pub fn new(provider: impl Into<String>) -> Self {
+        Self {
+            provider: provider.into(),
+            callback_url: None,
+            new_user_callback_url: None,
+            error_callback_url: None,
+            disable_redirect: None,
+            id_token: None,
+            request_sign_up: None,
+            login_hint: None,
+            authorization_params: None,
+            additional_params: None,
+            additional_data: None,
+            scopes: None,
+        }
+    }
 }

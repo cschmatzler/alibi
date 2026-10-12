@@ -57,6 +57,10 @@ pub use providers::{
 pub(crate) use state::{
     CapturedOAuthServerContext, OAuthServerContext, RecoveredOAuthServerContext,
 };
+pub use types::{
+    OAuthIdTokenRequest, SocialSignInRequest as OAuthSocialSignInRequest,
+    SocialSignInResponse as OAuthSocialSignInResponse,
+};
 
 pub struct OAuthPlugin {
     config: OAuthConfig,
@@ -111,6 +115,9 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
         call: &alibi_core::endpoint::EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        if call.operation_id() == "socialSignIn" {
+            return self.call_social_endpoint(call, ctx).await;
+        }
         self.call_account_endpoint(call, ctx).await
     }
 

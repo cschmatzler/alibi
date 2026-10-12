@@ -604,6 +604,7 @@ pub(crate) async fn router(
                 let operation = match body["operation"].as_str() {
                     Some("get-access-token") => "getAccessToken",
                     Some("refresh-token") => "refreshToken",
+                    Some("sign-in-social") => "signInSocial",
                     _ => "accountInfo",
                 };
                 let endpoint = alibi::endpoint::ServerEndpoint::<Value>::new("oauth", operation);
@@ -732,6 +733,6 @@ async fn user(State(f): State<Fixture>, request: axum::extract::Request) -> Json
 struct AccessServerHook;
 #[async_trait::async_trait]
 impl<S:alibi::AuthSchema> alibi::endpoint::EndpointHook<S> for AccessServerHook {
- fn matches_after(&self,call:&alibi::endpoint::EndpointCall,_:&alibi::AuthContext<S>,_:&alibi::endpoint::EndpointResponse)->AuthResult<bool>{Ok(matches!(call.operation_id(), "getAccessToken" | "refreshToken" | "accountInfo")&&call.request().is_none())}
+ fn matches_after(&self,call:&alibi::endpoint::EndpointCall,_:&alibi::AuthContext<S>,_:&alibi::endpoint::EndpointResponse)->AuthResult<bool>{Ok(matches!(call.operation_id(), "getAccessToken" | "refreshToken" | "accountInfo" | "socialSignIn")&&call.request().is_none())}
  async fn after(&self,_:&alibi::endpoint::EndpointCall,_:&alibi::AuthContext<S>,response:alibi::endpoint::EndpointResponse)->AuthResult<alibi::endpoint::EndpointResponse>{Ok(response.with_header("set-cookie","application_a=first; Path=/; HttpOnly").with_header("set-cookie","application_b=second; Path=/; HttpOnly"))}
 }

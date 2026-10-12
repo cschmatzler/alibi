@@ -161,7 +161,9 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
           after: createAuthMiddleware(async (ctx) => {
             if (
               !ctx.request &&
-              ["/get-access-token", "/refresh-token", "/account-info"].includes(ctx.path)
+              ["/get-access-token", "/refresh-token", "/account-info", "/sign-in/social"].includes(
+                ctx.path,
+              )
             ) {
               ctx.context.responseHeaders ??= new Headers();
               ctx.context.responseHeaders.append(
@@ -502,6 +504,16 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
           accountId: body.accountId,
           ...(body.userId ? { userId: body.userId } : {}),
         };
+        if (body.operation === "sign-in-social") {
+          return instance.api.signInSocial({
+            body: body.logicalBody as Parameters<typeof instance.api.signInSocial>[0]["body"],
+            ...(body.logicalHeaders ? { headers: new Headers(body.logicalHeaders) } : {}),
+            ...(body.physicalRequest
+              ? { request: new Request(new URL("/incoming-request", request.url)) }
+              : {}),
+            asResponse: true,
+          });
+        }
         if (body.operation === "get-access-token") {
           return instance.api.getAccessToken({
             body: (Object.hasOwn(body, "selection") ? body.selection : selection) as Parameters<
