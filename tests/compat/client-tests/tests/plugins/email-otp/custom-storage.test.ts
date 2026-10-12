@@ -36,20 +36,22 @@ for (const mode of ["hash", "cipher", "cipher-failure"] as const) {
           : `application:${Buffer.from([...Buffer.from(otp)].map((byte) => byte ^ 0x5a)).toString("hex")}`;
       expect(initial[0]!.value).toBe(`${encoded}:0`);
       const retrieve = await ctx.rawRequest({
-        path: "/__test/server-api",
+        path: "/__test/server-api/email-otp-get",
         method: "POST",
-        json: { operation: "get-email-otp", profile, email, type: "sign-in" },
+        json: { profile, query: { email: email.toUpperCase(), type: "sign-in", ignored: true } },
       });
-      if (mode === "hash") expect(retrieve.status).toBe(400);
-      else if (mode === "cipher-failure") expect(retrieve.status).toBe(500);
+      if (mode === "hash") {
+        expect(retrieve.status).toBe(400);
+        expect(retrieve.body).toEqual({
+          message: "OTP is hashed, cannot return the plain text OTP",
+        });
+      } else if (mode === "cipher-failure") expect(retrieve.status).toBe(500);
       else {
         expect(retrieve.status).toBe(200);
         expect(retrieve.body).toEqual({ otp });
       }
+      expect(await storedVerification(ctx, `sign-in-otp-${email}`)).toEqual(initial);
       if (mode === "cipher-failure") {
-        expect((await storedVerification(ctx, `sign-in-otp-${email}`))[0]!.value).toBe(
-          initial[0]!.value,
-        );
         const resend = await send();
         expect(resend.error?.status).toBe(500);
         expect((await storedVerification(ctx, `sign-in-otp-${email}`))[0]!.value).toBe(

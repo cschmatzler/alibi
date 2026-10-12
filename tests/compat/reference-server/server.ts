@@ -2157,6 +2157,15 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       asResponse: true,
     });
   }
+  if (url.pathname === "/__test/server-api/email-otp-get" && request.method === "POST") {
+    const input = await readJson(request);
+    const selected = typeof input?.profile === "string" ? otpProfiles.get(input.profile) : auth;
+    if (!selected) return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
+    return selected.api.getVerificationOTP({
+      query: input?.query as Parameters<typeof selected.api.getVerificationOTP>[0]["query"],
+      asResponse: true,
+    });
+  }
   if (url.pathname === "/__test/server-api/api-key-get" && request.method === "POST") {
     const input = await readJson(request);
     return auth.api.getApiKey({
