@@ -84,14 +84,15 @@ impl RequestBody for SignInRequest {
     ];
 }
 
-#[derive(Debug, Deserialize, Validate)]
-pub(crate) struct SignInUsernameRequest {
-    pub(in crate::email_password) username: String,
-    pub(in crate::email_password) password: String,
-    #[serde(rename = "rememberMe")]
-    pub(in crate::email_password) remember_me: Option<bool>,
-    #[serde(rename = "callbackURL")]
-    pub(in crate::email_password) callback_url: Option<String>,
+/// Username credentials and optional browser persistence/redirect preferences.
+#[derive(Debug, Deserialize, Serialize, Validate)]
+pub struct SignInUsernameRequest {
+    pub username: String,
+    pub password: String,
+    #[serde(rename = "rememberMe", skip_serializing_if = "Option::is_none")]
+    pub remember_me: Option<bool>,
+    #[serde(rename = "callbackURL", skip_serializing_if = "Option::is_none")]
+    pub callback_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate)]

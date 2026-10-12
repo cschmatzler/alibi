@@ -217,6 +217,17 @@ impl EmailPasswordPlugin {
             Err(resp) => return Ok(resp),
         };
 
+        self.username_sign_in_core(req, ctx, signin_req, &RequestMeta::from_request(req))
+            .await
+    }
+
+    pub(super) async fn username_sign_in_core(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
+        signin_req: SignInUsernameRequest,
+        meta: &RequestMeta,
+    ) -> AuthResult<AuthResponse> {
         if signin_req.username.is_empty() || signin_req.password.is_empty() {
             return username_error_response(
                 401,
@@ -237,14 +248,13 @@ impl EmailPasswordPlugin {
         }
         let username = policy.normalize(&validation_input)?;
 
-        let meta = RequestMeta::from_request(req);
         match sign_in_username_core(
             req,
             &signin_req,
             &username,
             &self.config,
             self.email_verification.as_deref(),
-            &meta,
+            meta,
             ctx,
         )
         .await

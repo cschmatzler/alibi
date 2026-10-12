@@ -8,7 +8,7 @@ use crate::authentication_helpers::is_valid_email;
 use alibi_core::entity::{AuthAccount, AuthUser};
 use alibi_core::utils::password as password_utils;
 use alibi_core::wire::UserView;
-use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResult, RequestMeta};
+use alibi_core::{AuthContext, AuthError, AuthResult, RequestMeta};
 pub(crate) async fn sign_in_core(
     req: &impl alibi_core::session::SessionRequest,
     body: &SignInRequest,
@@ -98,7 +98,7 @@ pub(crate) async fn sign_in_core(
 
 /// Core sign-in by username.
 pub(crate) async fn sign_in_username_core(
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     body: &SignInUsernameRequest,
     normalized_username: &str,
     config: &EmailPasswordConfig,
