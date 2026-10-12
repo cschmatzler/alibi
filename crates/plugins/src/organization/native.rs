@@ -844,6 +844,27 @@ pub(super) async fn execute<S: AuthSchema>(
             &handlers::org::check_slug_core(&call.body_as()?, ctx).await?,
         );
     }
+    if call.operation_id() == "createTeam" && call.request().is_none() && call.headers().is_none() {
+        let body: types::CreateTeamRequest = call.body_as()?;
+        let organization_id = body
+            .organization_id
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| handlers::extension_common::org_error(400, "NO_ACTIVE_ORGANIZATION"))?;
+        return EndpointResponse::json(
+            &handlers::team::create_team_core(
+                alibi_core::types::CreateTeam {
+                    name: body.name,
+                    organization_id,
+                    updated_at: Some(chrono::Utc::now()),
+                },
+                None,
+                None,
+                ctx,
+                config,
+            )
+            .await?,
+        );
+    }
     if call.operation_id() == "listUserInvitations" {
         let query: types::ListUserInvitationsQuery = call.query_as()?;
         if let Some(email) = query.email.as_deref().filter(|email| !email.is_empty()) {
