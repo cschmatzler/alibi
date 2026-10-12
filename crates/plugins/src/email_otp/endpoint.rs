@@ -53,6 +53,12 @@ pub struct EmailOtpSignInResult {
     pub user: Box<alibi_core::UserView>,
 }
 
+/// Reset request aliases acknowledge delivered or concealed mailbox requests.
+#[derive(Debug, Deserialize)]
+pub struct EmailOtpResetRequested {
+    pub success: bool,
+}
+
 const FIELDS: &[JsonField] = &[
     JsonField::string("email", true),
     JsonField {
@@ -69,6 +75,18 @@ const FIELDS: &[JsonField] = &[
 
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
+        definition(
+            "requestPasswordResetEmailOTP",
+            "requestPasswordResetWithEmailOTP",
+            Some("/email-otp/request-password-reset"),
+            HttpMethod::Post,
+        ),
+        definition(
+            "forgetPasswordEmailOTP",
+            "forgetPasswordWithEmailOTP",
+            Some("/forget-password/email-otp"),
+            HttpMethod::Post,
+        ),
         definition(
             "signInEmailOTP",
             "signInWithEmailOTP",
@@ -109,6 +127,19 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if matches!(
+        call.operation_id(),
+        "requestPasswordResetWithEmailOTP" | "forgetPasswordWithEmailOTP"
+    ) {
+        return Ok(EndpointInput {
+            body: Some(validate_fields(
+                call.body(),
+                "body",
+                <super::types::EmailRequest as crate::authentication_helpers::RequestBody>::FIELDS,
+            )?),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "signInWithEmailOTP" {
         let _ = validate_fields(
             call.body(),
@@ -154,6 +185,21 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
 }
 
 impl EmailOtpPlugin {
+    /// Request a scoped reset proof without exposing whether the mailbox exists.
+    #[must_use]
+    pub fn request_password_reset_email_otp_endpoint(
+        email: impl Into<String>,
+    ) -> ServerEndpoint<EmailOtpResetRequested> {
+        reset_request("requestPasswordResetEmailOTP", email.into())
+    }
+    /// Call the published deprecated reset-request alias.
+    #[must_use]
+    pub fn forget_password_email_otp_endpoint(
+        email: impl Into<String>,
+    ) -> ServerEndpoint<EmailOtpResetRequested> {
+        reset_request("forgetPasswordEmailOTP", email.into())
+    }
+
     /// Consume a sign-in proof and apply returning-user or signup policy.
     ///
     /// # Errors
@@ -237,7 +283,11 @@ impl EmailOtpPlugin {
         }
         if matches!(
             call.operation_id(),
-            "sendEmailVerificationOTP" | "verifyEmailOTP" | "signInWithEmailOTP"
+            "sendEmailVerificationOTP"
+                | "verifyEmailOTP"
+                | "signInWithEmailOTP"
+                | "requestPasswordResetWithEmailOTP"
+                | "forgetPasswordWithEmailOTP"
         ) {
             if call.operation_id() == "sendEmailVerificationOTP"
                 && let Some(request) = call.request()
@@ -262,6 +312,10 @@ impl EmailOtpPlugin {
                     }
                     let body = alibi_core::utils::json::from_value(parsed)?;
                     self.sign_in_core(call, ctx, body, raw).await?
+                }
+                "requestPasswordResetWithEmailOTP" | "forgetPasswordWithEmailOTP" => {
+                    self.request_password_reset_core(call.request(), ctx, call.body_as()?)
+                        .await?
                 }
                 _ => self.verify_email_core(call, ctx, call.body_as()?).await?,
             };
@@ -301,4 +355,12 @@ fn input(email: String, otp_type: EmailOtpType) -> JsValue {
         .into_iter()
         .collect(),
     )
+}
+
+fn reset_request(name: &'static str, email: String) -> ServerEndpoint<EmailOtpResetRequested> {
+    ServerEndpoint::new("email-otp", name).with_body_value(JsValue::Object(
+        [("email".into(), JsValue::String(email))]
+            .into_iter()
+            .collect(),
+    ))
 }

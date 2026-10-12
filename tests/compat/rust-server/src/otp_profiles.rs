@@ -596,6 +596,55 @@ pub(super) async fn router(
             }
         }),
     );
+    let reset_request_runtimes = runtimes.clone();
+    router = router.route(
+        "/__test/server-api/email-otp-reset-request",
+        post(move |Json(input): Json<Value>| {
+            let runtimes = reset_request_runtimes.clone();
+            async move {
+                let selected = runtimes
+                    .get(input["profile"].as_str().unwrap_or("default"))
+                    .unwrap();
+                let operation = if input["operation"].as_str() == Some("forgetPasswordEmailOTP") {
+                    "forgetPasswordEmailOTP"
+                } else {
+                    "requestPasswordResetEmailOTP"
+                };
+                let mut endpoint =
+                    alibi::endpoint::ServerEndpoint::<Value>::new("email-otp", operation);
+                if let Some(body) = input.get("body") {
+                    endpoint = endpoint.with_body(body).unwrap();
+                }
+                match selected
+                    .auth
+                    .dispatch_endpoint(endpoint, Default::default())
+                    .await
+                {
+                    Ok(output) => output.into_response().unwrap().into_response(),
+                    Err(error) if matches!(error.error, AuthError::CallbackFailure(_)) => {
+                        // Match the reference host's treatment of thrown application errors.
+                        let mut response = (
+                            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(json!({"message":"Internal server error"})),
+                        )
+                            .into_response();
+                        response.headers_mut().insert(
+                            axum::http::header::CONTENT_TYPE,
+                            axum::http::HeaderValue::from_static("application/json;charset=utf-8"),
+                        );
+                        response
+                    }
+                    Err(error) => {
+                        let mut response = error.error.to_auth_response();
+                        if let Some(body) = error.body {
+                            response.body = serde_json::to_vec(&*body).unwrap();
+                        }
+                        response.into_response()
+                    }
+                }
+            }
+        }),
+    );
     let retrieval_runtimes = runtimes.clone();
     router = router.route(
         "/__test/server-api/email-otp-get",

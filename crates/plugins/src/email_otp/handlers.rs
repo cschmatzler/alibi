@@ -155,10 +155,11 @@ impl EmailOtpPlugin {
         otp: String,
         otp_type: EmailOtpType,
     ) -> AuthResult<()> {
-        let sender =
-            self.config.send_verification_otp.as_ref().ok_or_else(|| {
-                AuthError::bad_request("send email verification is not implemented")
-            })?;
+        let sender = self.config.send_verification_otp.as_ref().ok_or_else(|| {
+            AuthError::CallbackFailure(Box::new(AuthError::internal(
+                "sendVerificationOTP is not a function",
+            )))
+        })?;
         let sender = sender.clone();
         let context = alibi_core::CallbackContext::new(ctx, request);
         let delivery = EmailOtpDelivery {
@@ -477,9 +478,18 @@ impl EmailOtpPlugin {
             Ok(value) => value,
             Err(response) => return Ok(response),
         };
+        self.request_password_reset_core(Some(req), ctx, body).await
+    }
+
+    pub(super) async fn request_password_reset_core(
+        &self,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<impl AuthSchema>,
+        body: EmailRequest,
+    ) -> AuthResult<AuthResponse> {
         let email = body.email.to_lowercase();
         let otp = match self
-            .resolve_code(ctx, Some(req), &email, EmailOtpType::ForgetPassword)
+            .resolve_code(ctx, request, &email, EmailOtpType::ForgetPassword)
             .await
         {
             Ok(otp) => otp,
@@ -496,7 +506,7 @@ impl EmailOtpPlugin {
                 .delete(&identifier(EmailOtpType::ForgetPassword, &email))
                 .await?;
         } else {
-            self.deliver(ctx, Some(req), &email, otp, EmailOtpType::ForgetPassword)
+            self.deliver(ctx, request, &email, otp, EmailOtpType::ForgetPassword)
                 .await?;
         }
         AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
