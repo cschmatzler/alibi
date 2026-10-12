@@ -7,6 +7,7 @@ import assertionKeys from "../../fixtures/client-assertion-keys.json";
 export function genericTokenParamsFixture(base: BetterAuthOptions) {
   let control: Record<string, unknown> = {};
   const receipts: unknown[] = [];
+  const userReceipts: unknown[] = [];
   const transport = Bun.serve({
     port: 0,
     async fetch(request) {
@@ -29,6 +30,11 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
           },
         );
       }
+      userReceipts.push({
+        path: new URL(request.url).pathname,
+        method: request.method,
+        authorization: request.headers.get("authorization"),
+      });
       return Response.json(
         control.profile ?? {
           id: "generic-subject",
@@ -153,7 +159,10 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
         basePath: path,
         hooks: {
           after: createAuthMiddleware(async (ctx) => {
-            if (!ctx.request && ["/get-access-token", "/refresh-token"].includes(ctx.path)) {
+            if (
+              !ctx.request &&
+              ["/get-access-token", "/refresh-token", "/account-info"].includes(ctx.path)
+            ) {
               ctx.context.responseHeaders ??= new Headers();
               ctx.context.responseHeaders.append(
                 "set-cookie",
@@ -445,6 +454,7 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
     reset() {
       control = {};
       receipts.length = 0;
+      userReceipts.length = 0;
     },
     async handle(request: Request) {
       const p = new URL(request.url).pathname;
@@ -485,6 +495,7 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
           selection?: unknown;
           logicalHeaders?: Record<string, string>;
           physicalRequest?: boolean;
+          logicalBody?: unknown;
         };
         const instance = profiles.get("/__test/profiles/generic-token-none/api/auth")!;
         const selection = {
@@ -515,7 +526,17 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
             asResponse: true,
           });
         }
-        return instance.api.accountInfo({ query: selection, asResponse: true });
+        return instance.api.accountInfo({
+          query: (Object.hasOwn(body, "selection") ? body.selection : selection) as Parameters<
+            typeof instance.api.accountInfo
+          >[0]["query"],
+          ...(Object.hasOwn(body, "logicalBody") ? { body: body.logicalBody } : {}),
+          ...(body.logicalHeaders ? { headers: new Headers(body.logicalHeaders) } : {}),
+          ...(body.physicalRequest
+            ? { request: new Request(new URL("/incoming-request", request.url)) }
+            : {}),
+          asResponse: true,
+        });
       }
       if (p === "/__test/generic-token/orphan" && request.method === "POST") {
         const body = (await request.json()) as { accountId: string };
@@ -532,6 +553,7 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
         return Response.json({ status: true });
       }
       if (p === "/__test/generic-token/receipts") return Response.json(receipts);
+      if (p === "/__test/generic-token/user-receipts") return Response.json(userReceipts);
       return null;
     },
   };

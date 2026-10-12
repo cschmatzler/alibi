@@ -1,7 +1,10 @@
 mod account;
 mod endpoint;
 pub use account::{OAuthAccountApi, OAuthAccountSelection};
-pub use types::AccessTokenResponse as OAuthAccessToken;
+pub use types::{
+    AccessTokenResponse as OAuthAccessToken, AccountInfoAccount as OAuthAccountIdentity,
+    AccountInfoResponse as OAuthAccountProfile,
+};
 mod client_assertion;
 pub use client_assertion::OAuthPrivateKeyJwtOptions;
 

@@ -8,6 +8,7 @@ use alibi::plugins::oauth::{OAuthAccountApi, OAuthAccountSelection};
 
 backend_tests!(
     account_endpoints_validate_selection_authentication_and_refresh,
+    server_account_info_authenticates_query_and_fetches_provider_profile,
     automatic_refresh_uses_access_expiry_without_refresh_lifetime_veto,
     automatic_refresh_distinguishes_null_empty_response_and_persisted_tokens,
     corrupt_imported_oauth_ciphertexts_reject_before_transport_or_writes
@@ -505,4 +506,195 @@ async fn corrupt_imported_oauth_ciphertexts_reject_before_transport_or_writes<B:
     }
     authenticated(&auth, &cookies(&foreign), "cipher-foreign@example.test").await;
     B::close(connection).await
+}
+
+async fn server_account_info_authenticates_query_and_fetches_provider_profile<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::plugins::{OAuthPlugin, oauth::GenericOAuthConfig};
+    use alibi::{AuthAccount as _, CreateAccount};
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let remote = Provider::start("application/json", "{}").await;
+    let profile = json!({"id":"remote-subject","email":"remote-profile@example.test","name":"Remote Profile","email_verified":true,"picture":"https://profile.example.test/avatar.png","department":"ops"});
+    remote.respond_at("/profile", 200, profile.clone());
+    let mut config = GenericOAuthConfig::new("native-client", "native-secret");
+    config.authorization_url = Some(remote.url.join("authorize")?.into());
+    config.token_url = Some(remote.url.join("token")?.into());
+    config.user_info_url = Some(remote.url.join("profile")?.into());
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .endpoint_hook(AccountInfoHook)
+        .plugin(
+            OAuthPlugin::new().add_provider("generic", config.resolve().await?.unwrap().provider),
+        )
+        .build()
+        .await?;
+    let owner = signup(&auth, "logical-info-owner@example.test").await;
+    let foreign = signup(&auth, "logical-info-foreign@example.test").await;
+    let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
+    let account = auth
+        .context()
+        .database
+        .create_account(CreateAccount {
+            additional_fields: Default::default(),
+            user_id: owner_id.clone(),
+            account_id: "local-account-subject".into(),
+            provider_id: "generic".into(),
+            access_token: Some("current-access".into()),
+            refresh_token: Some("retained-refresh".into()),
+            id_token: None,
+            access_token_expires_at: Some(
+                chrono::DateTime::parse_from_rfc3339("2039-01-01T00:00:00.000Z")?
+                    .with_timezone(&chrono::Utc),
+            ),
+            refresh_token_expires_at: None,
+            scope: Some("read, write".into()),
+            password: None,
+        })
+        .await?;
+    let account_id = account.id().to_string();
+    let endpoint = |input: &Value| {
+        alibi::endpoint::ServerEndpoint::<Value>::new("oauth", "accountInfo").with_query(input)
+    };
+    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    for (input, options, status, absent) in [
+        (
+            json!({"accountId":account_id}),
+            alibi::endpoint::EndpointOptions::default(),
+            400,
+            false,
+        ),
+        (
+            json!({"accountId":account_id,"userId":owner_id}),
+            alibi::endpoint::EndpointOptions {
+                headers: Some(Default::default()),
+                ..Default::default()
+            },
+            401,
+            true,
+        ),
+        (
+            json!({"accountId":account_id,"userId":owner_id}),
+            alibi::endpoint::EndpointOptions {
+                request: Some(request("/incoming-request", None, "")),
+                ..Default::default()
+            },
+            401,
+            true,
+        ),
+        (
+            json!({"accountId":account_id,"userId":owner_id}),
+            alibi::endpoint::EndpointOptions {
+                headers: Some([("cookie".into(), cookies(&foreign))].into_iter().collect()),
+                ..Default::default()
+            },
+            400,
+            false,
+        ),
+        (
+            Value::Null,
+            alibi::endpoint::EndpointOptions::default(),
+            400,
+            false,
+        ),
+        (
+            json!({"accountId":7,"userId":owner_id}),
+            alibi::endpoint::EndpointOptions::default(),
+            400,
+            false,
+        ),
+        (
+            json!({"accountId":account_id,"userId":owner_id,"extra":true}),
+            alibi::endpoint::EndpointOptions::default(),
+            400,
+            false,
+        ),
+    ] {
+        let error = Box::pin(auth.dispatch_endpoint(endpoint(&input)?, options))
+            .await
+            .unwrap_err();
+        assert_eq!(error.error.status_code(), status);
+        assert_eq!(error.body_absent, absent);
+        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert!(remote.take().is_empty());
+    }
+    let trusted = Box::pin(
+        auth.dispatch_endpoint(
+            OAuthPlugin::account_info_endpoint(
+                OAuthAccountSelection::Id(account_id.clone()),
+                Some(&owner_id),
+            )
+            .with_body(&json!({"accountId":"foreign-body-selector","userId":foreign_id}))?,
+            alibi::endpoint::EndpointOptions::default(),
+        ),
+    )
+    .await?;
+    let trusted_value = serde_json::to_value(trusted.decode()?)?;
+    let mut expected_data = profile.clone();
+    expected_data["emailVerified"] = json!(true);
+    expected_data["image"] = json!("https://profile.example.test/avatar.png");
+    assert_eq!(
+        trusted_value,
+        json!({"user":{"email":profile["email"],"name":profile["name"],"emailVerified":true,"image":profile["picture"]},"data":expected_data,"account":{"id":account_id,"providerId":"generic","accountId":"local-account-subject"}})
+    );
+    assert_eq!(
+        trusted
+            .headers()
+            .get_all("set-cookie")
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        [
+            "application_a=first; Path=/; HttpOnly",
+            "application_b=second; Path=/; HttpOnly"
+        ]
+    );
+    for physical in [false, true] {
+        let result = Box::pin(auth.dispatch_endpoint(
+            endpoint(&json!({"accountId":account_id,"userId":foreign_id}))?,
+            alibi::endpoint::EndpointOptions {
+                headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+                request: physical.then(|| request("/incoming-request", None, "")),
+                ..Default::default()
+            },
+        ))
+        .await?;
+        assert_eq!(result.decode()?, trusted_value);
+        assert_eq!(
+            result.headers().get_all("set-cookie").count(),
+            if physical { 0 } else { 2 }
+        );
+    }
+    let receipts = remote.take();
+    assert_eq!(receipts.len(), 3);
+    for receipt in receipts {
+        assert_eq!(receipt.method, axum::http::Method::GET);
+        assert_eq!(receipt.path, "/profile");
+        assert_eq!(receipt.headers["authorization"], "Bearer current-access");
+    }
+    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    B::close(connection).await
+}
+
+struct AccountInfoHook;
+#[async_trait::async_trait]
+impl<S: AuthSchema> alibi::endpoint::EndpointHook<S> for AccountInfoHook {
+    fn matches_after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+        _: &alibi::endpoint::EndpointResponse,
+    ) -> alibi::AuthResult<bool> {
+        Ok(call.operation_id() == "accountInfo" && call.request().is_none())
+    }
+    async fn after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+        response: alibi::endpoint::EndpointResponse,
+    ) -> alibi::AuthResult<alibi::endpoint::EndpointResponse> {
+        assert_eq!(call.path(), Some("/account-info"));
+        Ok(response
+            .with_header("set-cookie", "application_a=first; Path=/; HttpOnly")
+            .with_header("set-cookie", "application_b=second; Path=/; HttpOnly"))
+    }
 }

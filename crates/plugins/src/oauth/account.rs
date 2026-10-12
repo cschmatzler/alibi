@@ -300,22 +300,6 @@ async fn valid_access_token(
     ))
 }
 
-fn token_response(
-    value: &impl serde::Serialize,
-    account: &AccountCookiePayload,
-    set_cookie: bool,
-    req: &AuthRequest,
-    ctx: &AuthContext<impl alibi_core::AuthSchema>,
-) -> AuthResult<AuthResponse> {
-    let mut response = AuthResponse::json(200, value)?;
-    if set_cookie && ctx.config.account.store_account_cookie {
-        for header in create_account_cookie_headers(&ctx.config, account, req)? {
-            response.headers.append("Set-Cookie", header);
-        }
-    }
-    Ok(response)
-}
-
 async fn handle_get_access_token_for_user(
     config: &OAuthConfig,
     req: &AuthRequest,
@@ -538,7 +522,29 @@ async fn handle_account_info_for_user(
         };
         session.user_id
     };
-    let mut account = selection.resolve(req, &user_id, ctx).await?;
+    let (value, headers) =
+        match account_info_for_selection(config, req, ctx, &user_id, selection).await {
+            Ok(response) => response,
+            Err(AuthError::Api {
+                code: Some(code), ..
+            }) if code == "OAUTH_PROFILE_EXCEPTION" => return Ok(AuthResponse::new(500)),
+            Err(error) => return Err(error),
+        };
+    let mut response = AuthResponse::json(200, &value)?;
+    for header in headers {
+        response.headers.append("set-cookie", header);
+    }
+    Ok(response)
+}
+
+pub(super) async fn account_info_for_selection(
+    config: &OAuthConfig,
+    req: &impl AccountRequest,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
+    user_id: &str,
+    selection: OAuthAccountSelection,
+) -> AuthResult<(AccountInfoResponse, Vec<String>)> {
+    let mut account = selection.resolve(req, user_id, ctx).await?;
     let provider = config
         .providers
         .get(&account.provider_id)
@@ -552,7 +558,7 @@ async fn handle_account_info_for_user(
         .access_token
         .filter(|token| !token.is_empty())
         .ok_or_else(|| AuthError::bad_request("Access token not found"))?;
-    let info = match fetch_user_info_from_provider(
+    let info = fetch_user_info_from_provider(
         provider,
         OAuthUserInfoRequest {
             access_token: Some(access_token),
@@ -562,14 +568,7 @@ async fn handle_account_info_for_user(
             ..Default::default()
         },
     )
-    .await
-    {
-        Ok(info) => info,
-        Err(AuthError::Api {
-            code: Some(code), ..
-        }) if code == "OAUTH_PROFILE_EXCEPTION" => return Ok(AuthResponse::new(500)),
-        Err(error) => return Err(error),
-    };
+    .await?;
     let response = AccountInfoResponse {
         user: info
             .user_output
@@ -581,7 +580,12 @@ async fn handle_account_info_for_user(
             account_id: account.account_id.clone(),
         },
     };
-    token_response(&response, &account, refreshed, req, ctx)
+    let headers = if refreshed && ctx.config.account.store_account_cookie {
+        create_account_cookie_headers(&ctx.config, &account, req)?
+    } else {
+        Vec::new()
+    };
+    Ok((response, headers))
 }
 
 pub(super) async fn handle_get_access_token(
