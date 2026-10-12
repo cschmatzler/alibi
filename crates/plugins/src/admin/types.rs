@@ -78,12 +78,28 @@ impl CreateUserRequest {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub(crate) struct AdminUpdateUserRequest {
+/// Target and application fields for an authenticated admin update.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminUpdateUserRequest {
+    /// The user to update.
     #[serde(rename = "userId")]
     pub user_id: String,
+    /// Fields admitted by the installed admin and user policies.
     #[serde(deserialize_with = "alibi_core::utils::json::deserialize_map")]
     pub data: serde_json::Map<String, serde_json::Value>,
+}
+impl AdminUpdateUserRequest {
+    /// Update the specified user with the supplied application fields.
+    #[must_use]
+    pub fn new(
+        user_id: impl Into<String>,
+        data: serde_json::Map<String, serde_json::Value>,
+    ) -> Self {
+        Self {
+            user_id: user_id.into(),
+            data,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

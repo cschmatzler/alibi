@@ -57,6 +57,7 @@ mod server_admin_get_user;
 mod server_admin_permission;
 mod server_admin_set_role;
 mod server_admin_support;
+mod server_admin_update_user;
 mod server_change_password;
 mod server_endpoints;
 mod server_link_social_account;

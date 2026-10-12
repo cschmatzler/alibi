@@ -311,12 +311,6 @@ pub(crate) async fn update_user_core(
         return Err(AuthError::bad_request(MESSAGE_NO_DATA_TO_UPDATE));
     }
 
-    if body.data.get("banned") == Some(&serde_json::Value::Bool(true))
-        && body.user_id == acting_user.id
-    {
-        return Err(AuthError::bad_request("You cannot ban yourself"));
-    }
-
     if body.data.contains_key("password") {
         return Err(AuthError::Api {
             status: 400,
@@ -358,6 +352,11 @@ pub(crate) async fn update_user_core(
             &permissions,
         ) {
             return Err(AuthError::forbidden("You are not allowed to ban users"));
+        }
+        if body.data.get("banned") == Some(&serde_json::Value::Bool(true))
+            && body.user_id == acting_user.id
+        {
+            return Err(AuthError::bad_request("You cannot ban yourself"));
         }
     }
 
@@ -410,6 +409,9 @@ pub(crate) async fn update_user_core(
     if let Some(value) = body.data.get("image").and_then(|value| value.as_str()) {
         update.image = Some(value.to_owned());
     }
+    if body.data.get("image") == Some(&serde_json::Value::Null) {
+        update.provider_image = Some(serde_json::Value::Null);
+    }
     if let Some(value) = body
         .data
         .get("emailVerified")
@@ -454,6 +456,41 @@ pub(crate) async fn update_user_core(
         update.metadata = Some(serde_json::Value::Object(value.clone()));
     }
 
+    // The source resolves the target before running installed user database hooks.
+    _ = ctx
+        .database
+        .get_user_by_id_record(&body.user_id)
+        .await?
+        .ok_or_else(|| AuthError::not_found(MESSAGE_USER_NOT_FOUND))?;
+    if let Some(policy) = ctx
+        .extensions
+        .get::<alibi_core::utils::username::UsernameConfig>()
+        && let Some(username) = update
+            .username
+            .as_ref()
+            .filter(|username| !username.is_empty())
+    {
+        policy.validate_hook_value(username).await?;
+        let normalized = policy.normalize(username)?;
+        // The database hook receives the authenticated principal as its current
+        // user, even when an administrator is editing another user's record.
+        if let Some(existing) = ctx.database.get_user_by_username(&normalized).await?
+            && existing.id().as_ref() != acting_user.id
+        {
+            return Err(AuthError::Upstream {
+                status: 400,
+                code: "USERNAME_IS_ALREADY_TAKEN",
+                message: "Username is already taken. Please try another.",
+            });
+        }
+        if let Some(display) = update
+            .display_username
+            .as_ref()
+            .filter(|display| !display.is_empty())
+        {
+            policy.validate_display(display).await?;
+        }
+    }
     let updated_user = ctx
         .database
         .update_user_record(&body.user_id, update)
