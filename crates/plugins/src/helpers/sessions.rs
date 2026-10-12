@@ -432,8 +432,8 @@ pub(in crate::helpers) async fn issue_user_session_inner<S: alibi_core::AuthSche
 
 /// Parse a cookie value from the request's `Cookie` header.
 #[must_use]
-pub fn get_cookie(req: &AuthRequest, name: &str) -> Option<String> {
-    let header = req.headers.get("cookie")?;
+pub fn get_cookie(req: &impl alibi_core::session::SessionRequest, name: &str) -> Option<String> {
+    let header = req.session_headers().get("cookie")?;
     header.split(';').find_map(|cookie| {
         let trimmed = cookie.trim();
         let (cookie_name, cookie_value) = trimmed.split_once('=')?;

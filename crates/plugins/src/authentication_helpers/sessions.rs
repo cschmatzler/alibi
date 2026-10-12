@@ -10,7 +10,10 @@ use chrono::{Duration, Utc};
 use serde_json::Value;
 
 /// Whether the request carries the signed `dont_remember` preference cookie.
-pub(crate) fn dont_remember_preference(req: &AuthRequest, config: &AuthConfig) -> bool {
+pub(crate) fn dont_remember_preference(
+    req: &impl alibi_core::session::SessionRequest,
+    config: &AuthConfig,
+) -> bool {
     crate::helpers::get_cookie(req, &related_cookie_name(config, "dont_remember"))
         .and_then(|value| verify_cookie_value(&value, config.current_secret()))
         .is_some_and(|value| !value.is_empty())
@@ -67,7 +70,7 @@ pub(crate) async fn session_response<S: AuthSchema>(
 
 pub(crate) async fn session_response_with_remember<S: AuthSchema>(
     ctx: &AuthContext<S>,
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     user: alibi_core::AdapterRecord<S::User>,
     remember_me: Option<bool>,
 ) -> AuthResult<(Value, AuthResponse)> {
@@ -86,7 +89,30 @@ pub(crate) async fn session_response_with_remember<S: AuthSchema>(
         metadata: ctx.metadata.clone(),
         extensions: ctx.extensions.clone(),
     };
-    let meta = alibi_core::RequestMeta::from_request(req);
+    let meta = if req.endpoint_call().is_none() {
+        req.physical_request()
+            .map(alibi_core::RequestMeta::from_request)
+    } else {
+        None
+    }
+    .unwrap_or_else(|| alibi_core::RequestMeta {
+        ip_address: Some(
+            ctx.config
+                .advanced
+                .ip_address
+                .resolve_ip(req.session_headers())
+                .unwrap_or_default(),
+        ),
+        user_agent: Some(
+            req.session_headers()
+                .get("user-agent")
+                .cloned()
+                .unwrap_or_default(),
+        ),
+    });
+    if req.endpoint_call().is_some() {
+        alibi_core::session::cookie_cache::runtime::set_issuance_preference(req, dont_remember);
+    }
     let issued = crate::helpers::issue_selected_user_session_record(
         &issuing_context,
         user,

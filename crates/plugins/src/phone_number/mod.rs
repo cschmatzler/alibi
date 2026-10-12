@@ -12,10 +12,12 @@ use alibi_core::{AuthContext, AuthRequest, AuthResult, AuthSchema};
 use async_trait::async_trait;
 pub use endpoint::{
     PhoneOtpConsumption, PhoneOtpSent, PhonePasswordResetRequested, PhonePasswordResetResult,
+    PhoneSignInResponse,
 };
 use std::sync::Arc;
 pub use types::{
     PhoneNumberVerification, PhoneOtpDelivery, ResetRequest as ResetPhonePasswordRequest,
+    SignInRequest as SignInPhoneNumberRequest,
 };
 pub(crate) use types::{parse_signup_phone, reject_verified_input};
 

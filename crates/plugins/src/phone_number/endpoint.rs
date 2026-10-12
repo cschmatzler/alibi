@@ -1,7 +1,7 @@
 //! Phone challenge delivery and consumption through installed logical endpoint dispatch.
 use super::{
     PhoneNumberPlugin,
-    types::{ResetRequest, SendRequest},
+    types::{ResetRequest, SendRequest, SignInRequest},
 };
 use crate::authentication_helpers::JsonField;
 use crate::endpoint::{definition, validate_fields};
@@ -42,8 +42,30 @@ pub struct PhonePasswordResetResult {
     pub status: bool,
 }
 
+/// A credential session or the installed second-factor challenge.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum PhoneSignInResponse {
+    Session {
+        token: String,
+        user: Box<alibi_core::UserView>,
+    },
+    TwoFactor {
+        #[serde(rename = "twoFactorRedirect")]
+        two_factor_redirect: bool,
+        #[serde(rename = "twoFactorMethods")]
+        two_factor_methods: Vec<String>,
+    },
+}
+
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
+        definition(
+            "signInPhoneNumber",
+            "signInPhoneNumber",
+            Some("/sign-in/phone-number"),
+            HttpMethod::Post,
+        ),
         definition(
             "resetPasswordPhoneNumber",
             "resetPasswordPhoneNumber",
@@ -84,6 +106,9 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
             "body",
             match call.operation_id() {
                 "consumePhoneNumberOTP" => CONSUME_FIELDS,
+                "signInPhoneNumber" => {
+                    <SignInRequest as crate::authentication_helpers::RequestBody>::FIELDS
+                }
                 "resetPasswordPhoneNumber" => {
                     <ResetRequest as crate::authentication_helpers::RequestBody>::FIELDS
                 }
@@ -95,6 +120,16 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
 }
 
 impl PhoneNumberPlugin {
+    /// Admit phone credentials and publish an owned session or second-factor challenge.
+    ///
+    /// # Errors
+    /// Returns an error if the credential input cannot be serialized.
+    pub fn sign_in_endpoint(
+        input: &SignInRequest,
+    ) -> AuthResult<ServerEndpoint<PhoneSignInResponse>> {
+        ServerEndpoint::new("phone-number", "signInPhoneNumber").with_body(input)
+    }
+
     /// Consume a reset challenge and commit a replacement password.
     ///
     /// # Errors
@@ -154,6 +189,7 @@ impl PhoneNumberPlugin {
     ) -> AuthResult<EndpointResponse> {
         if call.operation_id() != "consumePhoneNumberOTP" {
             let output = match call.operation_id() {
+                "signInPhoneNumber" => self.sign_in_core(call, ctx, call.body_as()?).await?,
                 "sendPhoneNumberOTP" => {
                     self.send_otp_core(ctx, call.request(), call.body_as::<SendRequest>()?)
                         .await?

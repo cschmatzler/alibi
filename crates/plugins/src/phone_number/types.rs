@@ -33,12 +33,13 @@ pub(super) struct SendRequest {
     pub phone_number: String,
 }
 
-#[derive(Deserialize)]
-pub(super) struct SignInRequest {
+/// Credential input for the public phone sign-in operation.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SignInRequest {
     #[serde(rename = "phoneNumber")]
     pub phone_number: String,
     pub password: String,
-    #[serde(rename = "rememberMe")]
+    #[serde(rename = "rememberMe", skip_serializing_if = "Option::is_none")]
     pub remember_me: Option<bool>,
 }
 
