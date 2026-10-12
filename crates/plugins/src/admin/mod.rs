@@ -439,13 +439,11 @@ impl AdminPlugin {
             return Ok(Self::missing_session_response());
         };
         self.authorize(&user, "user", "impersonate", MESSAGE_IMPERSONATE_USERS)?;
-        let metadata = alibi_core::RequestMeta::from_request(req);
         let (response, token) = match impersonate_user_core(
             &body,
             user.id.as_str(),
             user.role.as_deref(),
-            metadata.ip_address.as_deref(),
-            metadata.user_agent.as_deref(),
+            req,
             &self.config,
             ctx,
         )
@@ -484,8 +482,7 @@ impl AdminPlugin {
             return Err(AuthError::bad_request("You are not impersonating anyone"));
         }
 
-        let (response, token, dont_remember) =
-            stop_impersonating_core(&session, &req.headers, ctx).await?;
+        let (response, token, dont_remember) = stop_impersonating_core(&session, req, ctx).await?;
         let mut auth_response = AuthResponse::json(200, &response)?;
         for (name, value) in
             cookies::restoration_cookie_headers(&ctx.config, &token, dont_remember)?

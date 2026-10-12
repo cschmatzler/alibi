@@ -630,12 +630,20 @@ pub(crate) async fn unban_user_core(
     })
 }
 
+// The cache issuer uses the active logical frame. Legacy HTTP handlers also
+// retain request extensions, which can be distinct from an Axum endpoint frame.
+fn set_cache_preference(request: &impl alibi_core::session::SessionRequest, dont_remember: bool) {
+    alibi_core::session::cookie_cache::runtime::set_issuance_preference(request, dont_remember);
+    if let Some(call) = alibi_core::endpoint::current_endpoint_call_context() {
+        alibi_core::session::cookie_cache::runtime::set_issuance_preference(&call, dont_remember);
+    }
+}
+
 pub(crate) async fn impersonate_user_core(
     body: &UserIdRequest,
     admin_user_id: impl AsRef<str>,
     admin_role: Option<&str>,
-    ip_address: Option<&str>,
-    user_agent: Option<&str>,
+    request: &impl alibi_core::session::SessionRequest,
     config: &AdminConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<(SessionUserResponse<SessionView, UserView>, String), AdminDateOperationError> {
@@ -689,14 +697,26 @@ pub(crate) async fn impersonate_user_core(
     let expires_at = date_after_seconds(
         truthy_duration(config.impersonation_session_duration).unwrap_or(3600.0),
     )?;
+    let headers = request.session_headers();
+    let ip_address = ctx
+        .config
+        .advanced
+        .ip_address
+        .resolve_ip(headers)
+        .unwrap_or_default();
+    let user_agent = headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
+        .map(|(_, value)| value.clone())
+        .unwrap_or_default();
     let create_session = CreateSession {
         additional_fields: alibi_core::field_policy::FieldValues::default(),
         token: None,
         active_team_id: None,
         user_id: target.id().to_string(),
         expires_at,
-        ip_address: ip_address.map(str::to_owned),
-        user_agent: user_agent.map(str::to_owned),
+        ip_address: Some(ip_address),
+        user_agent: Some(user_agent),
         impersonated_by: Some(admin_user_id.as_ref().to_owned()),
         active_organization_id: None,
     };
@@ -713,6 +733,8 @@ pub(crate) async fn impersonate_user_core(
             },
             other => other,
         })?;
+    set_cache_preference(request, true);
+    alibi_core::session::cookie_cache::runtime::emit_issuance(ctx, &target, &session).await?;
     let token = session.token().to_owned();
     let response = SessionUserResponse {
         session: ctx.session_view(&session),
@@ -724,7 +746,7 @@ pub(crate) async fn impersonate_user_core(
 
 pub(crate) async fn stop_impersonating_core(
     session: &impl AuthSession,
-    headers: &std::collections::HashMap<String, String>,
+    request: &impl alibi_core::session::SessionRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(SessionUserResponse<SessionView, UserView>, String, bool)> {
     let admin_id = session
@@ -738,6 +760,7 @@ pub(crate) async fn stop_impersonating_core(
         .await?
         .ok_or_else(|| AuthError::internal(MESSAGE_FAILED_TO_FIND_USER))?;
 
+    let headers = request.session_headers();
     let cookie_name =
         alibi_core::utils::cookie_utils::related_cookie_name(&ctx.config, "admin_session");
     let failure = || AuthError::Api {
@@ -779,6 +802,9 @@ pub(crate) async fn stop_impersonating_core(
         .delete_session(session.token())
         .await?;
 
+    set_cache_preference(request, admin_cookie.dont_remember);
+    alibi_core::session::cookie_cache::runtime::emit_issuance(ctx, &admin_user, &admin_session)
+        .await?;
     let token = admin_session.token().to_owned();
     let response = SessionUserResponse {
         session: ctx.session_view(&admin_session),
