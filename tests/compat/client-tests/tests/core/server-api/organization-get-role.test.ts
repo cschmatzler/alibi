@@ -4,7 +4,7 @@ import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
 
 compatScenario(
-  "canonical getOrgRole and listOrgRoles read stored permissions within organization and member authority",
+  "canonical organization role reads, listing and deletion preserve member authority and stored lifecycle",
   async (ctx) => {
     const profile = "org-teams-dynamic";
     async function signup(name: string) {
@@ -207,6 +207,110 @@ compatScenario(
       await state(emptyOrganization.id),
     ];
     expect(after).toEqual(before);
+    const deleteDenials = [];
+    for (const [input, status, code] of [
+      [{ body: { roleId: firstRole.roleData.id } }, 400, "VALIDATION_ERROR"],
+      [{ body: { roleId: firstRole.roleData.id }, headers: {} }, 401, "UNAUTHORIZED"],
+      [
+        {
+          body: { organizationId: first.id, roleId: firstRole.roleData.id },
+          headers: outsider.headers,
+        },
+        403,
+        "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
+      ],
+      [
+        {
+          body: { organizationId: first.id, roleId: firstRole.roleData.id },
+          headers: member.headers,
+        },
+        403,
+        "YOU_ARE_NOT_ALLOWED_TO_DELETE_A_ROLE",
+      ],
+      [
+        {
+          body: { organizationId: first.id, roleId: teamOnly.roleData.id },
+          headers: owner.headers,
+        },
+        400,
+        "ROLE_IS_ASSIGNED_TO_MEMBERS",
+      ],
+      [
+        { body: { roleName: "owner" }, headers: owner.headers },
+        400,
+        "CANNOT_DELETE_A_PRE_DEFINED_ROLE",
+      ],
+      [
+        {
+          body: { organizationId: second.id, roleId: firstRole.roleData.id },
+          headers: owner.headers,
+        },
+        400,
+        "ROLE_NOT_FOUND",
+      ],
+      [
+        {
+          body: {
+            organizationId: first.id,
+            roleName: "missing-role",
+            roleId: firstRole.roleData.id,
+          },
+          headers: owner.headers,
+        },
+        400,
+        "ROLE_NOT_FOUND",
+      ],
+    ] as const) {
+      const response = await invoke({ operation: "server-delete-role", ...input });
+      expect(response.status).toBe(status);
+      expect((response.body as { code: string }).code).toBe(code);
+      deleteDenials.push(response);
+    }
+    expect([
+      await state(first.id),
+      await state(second.id),
+      await state(emptyOrganization.id),
+    ]).toEqual(before);
+    const deletedById = await invoke({
+      operation: "server-delete-role",
+      body: { organizationId: first.id, roleId: firstRole.roleData.id, id: "forged" },
+      headers: owner.headers,
+    });
+    expect(deletedById.status).toBe(200);
+    expect(deletedById.body).toEqual({ success: true });
+    const missing = await invoke({
+      query: { organizationId: first.id, roleId: firstRole.roleData.id },
+      headers: owner.headers,
+    });
+    expect(missing.status).toBe(400);
+    expect((missing.body as { code: string }).code).toBe("ROLE_NOT_FOUND");
+    const deletedByName = await invoke({
+      operation: "server-delete-role",
+      body: { roleName: "secondreader" },
+      headers: owner.headers,
+    });
+    expect(deletedByName.status).toBe(200);
+    expect(deletedByName.body).toEqual({ success: true });
+    const repeated = await invoke({
+      operation: "server-delete-role",
+      body: { roleName: "secondreader" },
+      headers: owner.headers,
+    });
+    expect(repeated.status).toBe(400);
+    expect((repeated.body as { code: string }).code).toBe("ROLE_NOT_FOUND");
+    const final = [
+      await state(first.id),
+      await state(second.id),
+      await state(emptyOrganization.id),
+    ] as { roles: { id: string }[] }[];
+    expect(final[0]!.roles.map((role) => role.id)).toEqual([teamOnly.roleData.id]);
+    expect(final[1]!.roles).toEqual([]);
+    expect(final[2] as unknown).toEqual(before[2]);
+    for (const index of [0, 1]) {
+      const { roles: _roles, ...remaining } = final[index]!;
+      const { roles: _beforeRoles, ...prior } = before[index] as Record<string, unknown>;
+      expect(remaining).toEqual(prior);
+    }
     return ctx.snapshot({
       owner: owner.user,
       member: member.user,
@@ -223,6 +327,12 @@ compatScenario(
       lists,
       listDenials,
       after,
+      deleteDenials,
+      deletedById,
+      missing,
+      deletedByName,
+      repeated,
+      final,
     });
   },
 );

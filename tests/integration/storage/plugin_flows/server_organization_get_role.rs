@@ -7,10 +7,8 @@ use alibi::plugins::organization::{
     types::RoleQuery,
 };
 use alibi::utils::json::JsValue;
-backend_tests!(server_org_role_reads_and_lists_preserve_member_authority);
-async fn server_org_role_reads_and_lists_preserve_member_authority<B: Backend>(
-    db: Db,
-) -> TestResult {
+backend_tests!(server_org_role_lifecycle_preserves_member_authority);
+async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let config = AuthConfig::new(SECRET).base_url(ORIGIN);
     let auth = AuthBuilder::new(config.clone())
@@ -168,9 +166,9 @@ async fn server_org_role_reads_and_lists_preserve_member_authority<B: Backend>(
             &first_role,
         ),
     ] {
-        let output = auth
-            .dispatch_endpoint(endpoint().with_query(&query)?, options(&owner))
-            .await?;
+        let output =
+            Box::pin(auth.dispatch_endpoint(endpoint().with_query(&query)?, options(&owner)))
+                .await?;
         assert_eq!(&serde_json::to_value(output.value())?, expected);
     }
     for (query, credentials, status, code) in [
@@ -226,8 +224,7 @@ async fn server_org_role_reads_and_lists_preserve_member_authority<B: Backend>(
             "ROLE_NOT_FOUND",
         ),
     ] {
-        let error = auth
-            .dispatch_endpoint(endpoint().with_query(&query)?, credentials)
+        let error = Box::pin(auth.dispatch_endpoint(endpoint().with_query(&query)?, credentials))
             .await
             .unwrap_err();
         assert_eq!(error.error.status_code(), status);
@@ -250,7 +247,7 @@ async fn server_org_role_reads_and_lists_preserve_member_authority<B: Backend>(
         if let Some(query) = query {
             endpoint = endpoint.with_query(&query)?;
         }
-        let output = auth.dispatch_endpoint(endpoint, options(&owner)).await?;
+        let output = Box::pin(auth.dispatch_endpoint(endpoint, options(&owner))).await?;
         assert_eq!(serde_json::to_value(output.value())?, expected);
     }
     for (query, credentials, status, code) in [
@@ -293,22 +290,20 @@ async fn server_org_role_reads_and_lists_preserve_member_authority<B: Backend>(
         if let Some(query) = query {
             endpoint = endpoint.with_query(&query)?;
         }
-        let error = auth
-            .dispatch_endpoint(endpoint, credentials)
+        let error = Box::pin(auth.dispatch_endpoint(endpoint, credentials))
             .await
             .unwrap_err();
         assert_eq!(error.error.status_code(), status);
         assert_eq!(body(&error.error.to_auth_response())["code"], code);
     }
-    let typed_list = auth
-        .dispatch_endpoint(
-            OrganizationPlugin::list_org_roles_endpoint(&RoleQuery {
-                organization_id: Some(first_id.clone()),
-                ..Default::default()
-            })?,
-            options(&owner),
-        )
-        .await?;
+    let typed_list = Box::pin(auth.dispatch_endpoint(
+        OrganizationPlugin::list_org_roles_endpoint(&RoleQuery {
+            organization_id: Some(first_id.clone()),
+            ..Default::default()
+        })?,
+        options(&owner),
+    ))
+    .await?;
     assert_eq!(
         typed_list
             .decode()?
@@ -317,16 +312,15 @@ async fn server_org_role_reads_and_lists_preserve_member_authority<B: Backend>(
             .collect::<Vec<_>>(),
         vec!["firstreader", "teamonly"]
     );
-    let typed = auth
-        .dispatch_endpoint(
-            OrganizationPlugin::get_org_role_endpoint(&RoleQuery {
-                organization_id: Some(first_id),
-                role_id: Some(first_role["id"].as_str().unwrap().to_owned()),
-                ..Default::default()
-            })?,
-            options(&owner),
-        )
-        .await?;
+    let typed = Box::pin(auth.dispatch_endpoint(
+        OrganizationPlugin::get_org_role_endpoint(&RoleQuery {
+            organization_id: Some(first_id.clone()),
+            role_id: Some(first_role["id"].as_str().unwrap().to_owned()),
+            ..Default::default()
+        })?,
+        options(&owner),
+    ))
+    .await?;
     assert_eq!(typed.decode()?.role, "firstreader");
     assert_eq!(
         db.tables(&[
@@ -338,6 +332,135 @@ async fn server_org_role_reads_and_lists_preserve_member_authority<B: Backend>(
         ])
         .await?,
         before
+    );
+    let deletion = || ServerEndpoint::<JsValue>::new("organization", "deleteOrgRole");
+    for (input, credentials, status, code) in [
+        (
+            json!({"roleId":first_role["id"]}),
+            EndpointOptions::default(),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (
+            json!({"roleId":first_role["id"]}),
+            EndpointOptions {
+                headers: Some(Default::default()),
+                ..Default::default()
+            },
+            401,
+            "UNAUTHORIZED",
+        ),
+        (
+            json!({"organizationId":first_id,"roleId":first_role["id"]}),
+            options(&outsider),
+            403,
+            "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
+        ),
+        (
+            json!({"organizationId":first_id,"roleId":first_role["id"]}),
+            options(&member),
+            403,
+            "YOU_ARE_NOT_ALLOWED_TO_DELETE_A_ROLE",
+        ),
+        (
+            json!({"organizationId":first_id,"roleId":body(&denied_role)["roleData"]["id"]}),
+            options(&owner),
+            400,
+            "ROLE_IS_ASSIGNED_TO_MEMBERS",
+        ),
+        (
+            json!({"roleName":"owner"}),
+            options(&owner),
+            400,
+            "CANNOT_DELETE_A_PRE_DEFINED_ROLE",
+        ),
+        (
+            json!({"organizationId":second_id,"roleId":first_role["id"]}),
+            options(&owner),
+            400,
+            "ROLE_NOT_FOUND",
+        ),
+        (
+            json!({"organizationId":first_id,"roleName":"missing-role","roleId":first_role["id"]}),
+            options(&owner),
+            400,
+            "ROLE_NOT_FOUND",
+        ),
+    ] {
+        let error = Box::pin(auth.dispatch_endpoint(deletion().with_body(&input)?, credentials))
+            .await
+            .unwrap_err();
+        assert_eq!(error.error.status_code(), status);
+        assert_eq!(body(&error.error.to_auth_response())["code"], code);
+    }
+    assert_eq!(
+        db.tables(&[
+            "users",
+            "sessions",
+            "organization",
+            "member",
+            "organization_role"
+        ])
+        .await?,
+        before
+    );
+    let deleted = Box::pin(auth.dispatch_endpoint(
+        deletion().with_body(
+            &json!({"organizationId":first_id,"roleId":first_role["id"],"id":"forged"}),
+        )?,
+        options(&owner),
+    ))
+    .await?;
+    assert_eq!(
+        serde_json::to_value(deleted.value())?,
+        json!({"success":true})
+    );
+    let missing = Box::pin(auth.dispatch_endpoint(
+        endpoint().with_query(&json!({"organizationId":first_id,"roleId":first_role["id"]}))?,
+        options(&owner),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(missing.error.status_code(), 400);
+    assert_eq!(
+        body(&missing.error.to_auth_response())["code"],
+        "ROLE_NOT_FOUND"
+    );
+    let deleted = Box::pin(auth.dispatch_endpoint(
+        OrganizationPlugin::delete_org_role_endpoint(&RoleQuery {
+            role_name: Some("secondreader".into()),
+            ..Default::default()
+        })?,
+        options(&owner),
+    ))
+    .await?;
+    assert!(deleted.decode()?.success);
+    let repeated = Box::pin(auth.dispatch_endpoint(
+        deletion().with_body(&json!({"roleName":"secondreader"}))?,
+        options(&owner),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(repeated.error.status_code(), 400);
+    assert_eq!(
+        body(&repeated.error.to_auth_response())["code"],
+        "ROLE_NOT_FOUND"
+    );
+    let final_state = db
+        .tables(&[
+            "users",
+            "sessions",
+            "organization",
+            "member",
+            "organization_role",
+        ])
+        .await?;
+    assert_eq!(final_state[..4], before[..4]);
+    let mut expected_roles = serde_json::from_str::<Vec<Value>>(&before[4])?;
+    expected_roles.retain(|row| row["id"] != first_role["id"] && row["id"] != second_role["id"]);
+    assert_eq!(
+        serde_json::from_str::<Vec<Value>>(&final_state[4])?,
+        expected_roles
     );
     B::close(connection).await
 }
