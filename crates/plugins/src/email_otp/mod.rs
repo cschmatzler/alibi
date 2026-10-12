@@ -17,9 +17,10 @@ use alibi_core::AuthError;
 use alibi_core::{AuthContext, AuthRequest, AuthResponse, AuthResult};
 use async_trait::async_trait;
 pub use endpoint::{
-    EmailOtpChangeRequestInput, EmailOtpChangeRequested, EmailOtpCheck, EmailOtpPasswordReset,
-    EmailOtpPasswordResetInput, EmailOtpRead, EmailOtpResetRequested, EmailOtpSent,
-    EmailOtpSignInInput, EmailOtpSignInResult, EmailOtpVerification,
+    EmailOtpChangeInput, EmailOtpChangeRequestInput, EmailOtpChangeRequested, EmailOtpChanged,
+    EmailOtpCheck, EmailOtpPasswordReset, EmailOtpPasswordResetInput, EmailOtpRead,
+    EmailOtpResetRequested, EmailOtpSent, EmailOtpSignInInput, EmailOtpSignInResult,
+    EmailOtpVerification,
 };
 use std::sync::Arc;
 pub use storage::{EmailOtpCodec, EmailOtpStorage};

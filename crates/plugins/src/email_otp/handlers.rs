@@ -686,6 +686,15 @@ impl EmailOtpPlugin {
             Ok(value) => value,
             Err(response) => return Ok(response),
         };
+        self.change_email_core(req, ctx, body).await
+    }
+
+    pub(super) async fn change_email_core(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+        body: ConfirmChangeRequest,
+    ) -> AuthResult<AuthResponse> {
         let otp = body.otp;
         let (user, session) = require_authoritative_session(ctx, req).await?;
         if !self.config.change_email_enabled {

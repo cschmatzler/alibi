@@ -9,7 +9,7 @@ use alibi::plugins::{EmailVerificationConfig, EmailVerificationPlugin};
 use alibi::{AuthError, AuthResult, CallbackContext};
 
 backend_tests!(
-    server_email_otp_change_request_preserves_current_proof_and_delivery_scope,
+    server_email_otp_change_lifecycle_preserves_proof_and_caller_authority,
     server_email_otp_reset_request_aliases_preserve_delivery_and_hidden_mailboxes,
     server_email_otp_sending_preserves_scope_and_delivery_admission,
     email_otp_issuance_and_request_validation,
@@ -1854,7 +1854,7 @@ async fn server_email_otp_reset_request_aliases_preserve_delivery_and_hidden_mai
     Ok(())
 }
 
-async fn server_email_otp_change_request_preserves_current_proof_and_delivery_scope<B: Backend>(
+async fn server_email_otp_change_lifecycle_preserves_proof_and_caller_authority<B: Backend>(
     parent: Db,
 ) -> TestResult {
     use alibi::endpoint::{EndpointOptions, ServerEndpoint};
@@ -2040,17 +2040,93 @@ async fn server_email_otp_change_request_preserves_current_proof_and_delivery_sc
             "Change email with OTP is disabled"
         );
         assert_eq!(db.table("verifications").await?, proofs);
-        let changed = Box::pin(call(
-            &auth,
-            request(
-                "/email-otp/change-email",
-                Some(json!({"newEmail":new_email,"otp":delivery.otp})),
-                &cookie,
-            ),
-            200,
+        let completion = |input: &Value| {
+            ServerEndpoint::<Value>::new("email-otp", "changeEmailEmailOTP").with_body(input)
+        };
+        let retained = db.table("verifications").await?;
+        let invalid = Box::pin(auth.dispatch_endpoint(
+            completion(&json!({"newEmail":new_email,"otp":42}))?,
+            credentials(),
         ))
-        .await;
-        assert_eq!(body(&changed), json!({"success":true}));
+        .await
+        .unwrap_err();
+        assert_eq!(invalid.error.status_code(), 400);
+        assert_eq!(
+            invalid.error.error_payload().1.as_deref(),
+            Some("VALIDATION_ERROR")
+        );
+        assert_eq!(db.table("verifications").await?, retained);
+        let unauthenticated = Box::pin(auth.dispatch_endpoint(
+            completion(&json!({"newEmail":new_email,"otp":delivery.otp}))?,
+            EndpointOptions::default(),
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(unauthenticated.error.status_code(), 401);
+        assert_eq!(db.table("verifications").await?, retained);
+        let foreign_attempt = Box::pin(auth.dispatch_endpoint(
+            completion(&json!({"newEmail":new_email,"otp":delivery.otp}))?,
+            EndpointOptions {
+                headers: Some([("cookie".into(), cookies(&foreign))].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(
+            foreign_attempt.error.error_payload().1.as_deref(),
+            Some("INVALID_OTP")
+        );
+        assert_eq!(db.table("verifications").await?, retained);
+        let wrong = Box::pin(auth.dispatch_endpoint(
+            completion(&json!({"newEmail":new_email,"otp":"wrong"}))?,
+            credentials(),
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(
+            wrong.error.error_payload().1.as_deref(),
+            Some("INVALID_OTP")
+        );
+        let response = if current {
+            let changed = Box::pin(auth.dispatch_endpoint(
+                completion(&json!({"newEmail":new_email.to_uppercase(),"otp":delivery.otp,"userId":body(&foreign)["user"]["id"]}))?,
+                credentials(),
+            )).await?;
+            assert_eq!(changed.decode()?, json!({"success":true}));
+            changed.into_response()?
+        } else {
+            let changed = Box::pin(auth.dispatch_endpoint(
+                EmailOtpPlugin::change_email_email_otp_endpoint(
+                    &alibi::plugins::email_otp::EmailOtpChangeInput {
+                        new_email: new_email.to_uppercase(),
+                        otp: delivery.otp.clone(),
+                    },
+                )?,
+                credentials(),
+            ))
+            .await?;
+            assert!(changed.decode()?.success);
+            changed.into_response()?
+        };
+        assert!(response.headers.get_all("set-cookie").next().is_some());
+        Box::pin(authenticated(&auth, &cookies(&response), new_email)).await;
+        let completed = db
+            .tables(&["users", "accounts", "sessions", "verifications"])
+            .await?;
+        let replay = Box::pin(auth.dispatch_endpoint(
+            completion(&json!({"newEmail":new_email,"otp":delivery.otp}))?,
+            credentials(),
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(replay.error.status_code(), 400);
+        assert_eq!(replay.error.error_payload().2, "Email is the same");
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "verifications"])
+                .await?,
+            completed
+        );
         assert!(
             auth.store()
                 .get_verification_by_identifier(&target_key)
