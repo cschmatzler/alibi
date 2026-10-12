@@ -2277,6 +2277,14 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       asResponse: true,
     });
   }
+  if (url.pathname === "/__test/server-api/magic-link-sign-in" && request.method === "POST") {
+    const input = await readJson(request);
+    return auth.api.signInMagicLink({
+      body: input?.body as Parameters<typeof auth.api.signInMagicLink>[0]["body"],
+      ...(input?.headers ? { headers: new Headers(input.headers as Record<string, string>) } : {}),
+      asResponse: true,
+    });
+  }
   if (url.pathname === "/__test/server-api/email-otp-change" && request.method === "POST") {
     const input = await readJson(request);
     const selected = otpProfiles.get(input?.profile ?? "passwordless-disabled");

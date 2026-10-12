@@ -1,5 +1,6 @@
 //! Single-use mailbox authentication links, with native delivery callbacks.
 
+mod endpoint;
 use super::authentication_helpers::{
     JsonField, JsonFieldKind, RequestBody, parse_body, redirect, revoke_unproven_access,
     session_response,
@@ -10,6 +11,7 @@ use alibi_core::{
     CreateUser, CreateVerification,
 };
 use async_trait::async_trait;
+pub use endpoint::MagicLinkSent;
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -139,6 +141,15 @@ impl MagicLinkPlugin {
             Ok(value) => value,
             Err(response) => return Ok(response),
         };
+        self.sign_in_core(Some(req), ctx, body).await
+    }
+
+    async fn sign_in_core(
+        &self,
+        req: Option<&AuthRequest>,
+        ctx: &AuthContext<impl AuthSchema>,
+        body: SignInRequest,
+    ) -> AuthResult<AuthResponse> {
         let token = if let Some(generator) = &self.config.generate_token {
             generator.generate(&body.email).await?
         } else {
@@ -211,7 +222,7 @@ impl MagicLinkPlugin {
                     token,
                     metadata: body.metadata,
                 },
-                &alibi_core::CallbackContext::new(ctx, Some(req)),
+                &alibi_core::CallbackContext::new(ctx, req),
             )
             .await
             .map_err(crate::helpers::callback_failure)?;
@@ -341,6 +352,10 @@ alibi_core::impl_auth_plugin! {
     }
     extra {
     route_openapi_metadata!(S);
+        fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> { endpoint::definitions() }
+        fn validate_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointInput> { endpoint::validate(call) }
+        async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> { self.call_endpoint(call, ctx).await }
+
 
         fn rate_limits(&self) -> Vec<alibi_core::PluginRateLimit> {
             vec![alibi_core::PluginRateLimit { matches: |path| path.starts_with("/sign-in/magic-link") || path.starts_with("/magic-link/verify"), limit: alibi_core::EndpointRateLimit {
@@ -355,18 +370,26 @@ alibi_core::impl_auth_plugin! {
     }
 }
 
-#[derive(Deserialize)]
-struct SignInRequest {
-    email: String,
-    name: Option<String>,
+/// Mailbox, redirects and delivery metadata for server-side magic-link issuance.
+#[derive(Deserialize, Serialize)]
+pub struct MagicLinkSignInInput {
+    pub email: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     #[serde(rename = "callbackURL")]
-    callback_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub callback_url: Option<String>,
     #[serde(rename = "newUserCallbackURL")]
-    new_user_callback_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_user_callback_url: Option<String>,
     #[serde(rename = "errorCallbackURL")]
-    error_callback_url: Option<String>,
-    metadata: Option<alibi_core::utils::json::JsValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_callback_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<alibi_core::utils::json::JsValue>,
 }
+
+type SignInRequest = MagicLinkSignInInput;
 
 #[derive(Deserialize, Serialize)]
 struct LinkData {
