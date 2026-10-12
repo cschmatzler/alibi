@@ -2277,6 +2277,14 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       asResponse: true,
     });
   }
+  if (url.pathname === "/__test/server-api/magic-link-verify" && request.method === "POST") {
+    const input = await readJson(request);
+    return auth.api.magicLinkVerify({
+      query: input?.query as Parameters<typeof auth.api.magicLinkVerify>[0]["query"],
+      ...(input?.headers ? { headers: new Headers(input.headers as Record<string, string>) } : {}),
+      asResponse: true,
+    });
+  }
   if (url.pathname === "/__test/server-api/magic-link-sign-in" && request.method === "POST") {
     const input = await readJson(request);
     return auth.api.signInMagicLink({

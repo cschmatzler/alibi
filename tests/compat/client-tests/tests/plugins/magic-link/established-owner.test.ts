@@ -29,6 +29,23 @@ compatScenario(
     expect(login.error).toBeNull();
     expect(login.data!.user.emailVerified).toBe(true);
     await ctx.seedOAuthAccount({ email, providerId: "google", accountId: "established-google" });
+    let foreignCookie = "";
+    const foreignActor = ctx.actor("foreign");
+    const foreign = await foreignActor.client.signUp.email({
+      email: ctx.uniqueEmail("magic-foreign"),
+      password,
+      name: "Foreign",
+      fetchOptions: {
+        onSuccess({ response }) {
+          foreignCookie = response.headers
+            .getSetCookie()
+            .map((raw) => raw.split(";")[0])
+            .join("; ");
+        },
+      },
+    });
+    expect(foreign.error).toBeNull();
+    const foreignBefore = await ctx.readUserState({ userId: foreign.data!.user.id });
     const userId = signup.data!.user.id;
     const before = (await ctx.readUserState({ userId })) as any;
     expect(before.accounts).toHaveLength(2);
@@ -83,7 +100,7 @@ compatScenario(
     expect(issued.status).toBe(200);
     expect(issued.body).toEqual({ status: true });
     expect(await ctx.readUserState({ userId })).toEqual(before);
-    const delivered = await readMagicLink(ctx, issuedEmail);
+    let delivered = await readMagicLink(ctx, issuedEmail);
     expect(delivered.metadata).toEqual(metadata);
     const url = new URL(delivered.url);
     for (const [key, value] of [
@@ -95,18 +112,74 @@ compatScenario(
     }
     const stored = await ctx.readVerificationState({ identifier: `magic-link:${delivered.token}` });
     expect(stored).toHaveLength(1);
-    const verified = await browser.magicLink.verify({ query: { token: delivered.token } });
-    expect(verified.error).toBeNull();
-    expect(verified.data!.user).toMatchObject({
+    async function verify(query: unknown, headers?: Record<string, string>) {
+      const response = await ctx
+        .actor("new-browser")
+        .fetch(`${ctx.baseURL}/__test/server-api/magic-link-verify`, {
+          method: "POST",
+          redirect: "manual",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ query, ...(headers ? { headers } : {}) }),
+        });
+      return {
+        status: response.status,
+        body: response.status === 302 ? null : ((await response.json()) as any),
+        location: response.headers.get("location"),
+        cookieCount: response.headers.getSetCookie().length,
+      };
+    }
+    const noHeaders = await verify({ token: delivered.token });
+    expect(noHeaders.status).toBe(400);
+    expect(noHeaders.body).toEqual({ code: "VALIDATION_ERROR", message: "Headers is required" });
+    const invalidQuery = await verify({ token: 42 }, {});
+    expect(invalidQuery.status).toBe(400);
+    expect(invalidQuery.body.code).toBe("VALIDATION_ERROR");
+    expect(
+      await ctx.readVerificationState({ identifier: `magic-link:${delivered.token}` }),
+    ).toEqual(stored);
+    expect(await ctx.readUserState({ userId })).toEqual(before);
+    const trustedRedirect = await verify(
+      { token: delivered.token, callbackURL: "https://foreign.example/steal" },
+      {},
+    );
+    expect(trustedRedirect.status).toBe(302);
+    expect(trustedRedirect.location).toBe("https://foreign.example/steal");
+    expect(trustedRedirect.cookieCount).toBeGreaterThan(0);
+    expect((await browser.getSession()).data!.user.id).toBe(userId);
+    expect(
+      await ctx.readVerificationState({ identifier: `magic-link:${delivered.token}` }),
+    ).toEqual([]);
+    const reissued = await issue({ email: issuedEmail }, {});
+    expect(reissued.status).toBe(200);
+    delivered = await readMagicLink(ctx, issuedEmail);
+    const verified = await verify(
+      { token: delivered.token, userId: foreign.data!.user.id },
+      { cookie: foreignCookie, "user-agent": "Magic-SDK", "x-forwarded-for": "203.0.113.65" },
+    );
+    expect(verified.status).toBe(200);
+    expect(verified.cookieCount).toBeGreaterThan(0);
+    expect(verified.body.user).toMatchObject({
       id: userId,
       name: "Established owner",
       emailVerified: true,
     });
+    expect(verified.body.session).toMatchObject({
+      userId,
+      userAgent: "Magic-SDK",
+      ipAddress: "203.0.113.65",
+    });
     const after = (await ctx.readUserState({ userId })) as any;
     expect(after.user).toEqual(before.user);
     expect(after.accounts).toEqual(before.accounts);
-    expect(after.sessions).toHaveLength(3);
+    expect(after.sessions).toHaveLength(4);
     for (const session of before.sessions) expect(after.sessions).toContainEqual(session);
+    const replay = await verify({ token: delivered.token }, {});
+    expect(replay.status).toBe(302);
+    expect(new URL(replay.location!).searchParams.get("error")).toBe("INVALID_TOKEN");
+    expect(replay.body).toBeNull();
+    expect(await ctx.readUserState({ userId })).toEqual(after);
+    expect(await ctx.readUserState({ userId: foreign.data!.user.id })).toEqual(foreignBefore);
+    expect((await foreignActor.client.getSession()).data!.user.id).toBe(foreign.data!.user.id);
     const previousSession = await previous.client.getSession();
     const secondSession = await second.client.getSession();
     const newSession = await browser.getSession();
@@ -131,7 +204,12 @@ compatScenario(
       invalid,
       issued,
       delivered,
+      noHeaders,
+      invalidQuery,
+      trustedRedirect,
+      reissued,
       verified,
+      replay,
       after,
       previousSession,
       secondSession,

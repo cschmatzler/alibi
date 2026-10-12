@@ -11,7 +11,7 @@ use alibi_core::{
     CreateUser, CreateVerification,
 };
 use async_trait::async_trait;
-pub use endpoint::MagicLinkSent;
+pub use endpoint::{MagicLinkSent, MagicLinkVerified, MagicLinkVerifyInput};
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -234,18 +234,35 @@ impl MagicLinkPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let token = req.query.get("token").ok_or(AuthError::Upstream {
+        let token = req.query.get("token").cloned().ok_or(AuthError::Upstream {
             status: 400,
             code: "VALIDATION_ERROR",
             message: "[query.token] Invalid input: expected string, received undefined",
         })?;
-        let callback = decode_callback(req, "callbackURL")?;
-        let error_callback = decode_callback(req, "errorCallbackURL")?;
-        let new_user_callback = decode_callback(req, "newUserCallbackURL")?;
+        let query = MagicLinkVerifyInput {
+            token,
+            callback_url: req.query.get("callbackURL").cloned(),
+            new_user_callback_url: req.query.get("newUserCallbackURL").cloned(),
+            error_callback_url: req.query.get("errorCallbackURL").cloned(),
+        };
+        self.verify_core(req, ctx, query).await
+    }
+
+    async fn verify_core(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+        query: MagicLinkVerifyInput,
+    ) -> AuthResult<AuthResponse> {
+        let token = &query.token;
+        let callback = decode_callback(query.callback_url.as_deref())?;
+        let error_callback = decode_callback(query.error_callback_url.as_deref())?;
+        let new_user_callback = decode_callback(query.new_user_callback_url.as_deref())?;
         // Each pinned originCheck closure labels its input callbackURL,
         // including the new-user and error callbacks.
         for value in [&callback, &new_user_callback, &error_callback] {
-            if !ctx.config.current_origin_check_disabled()
+            if req.physical_request().is_some()
+                && !ctx.config.current_origin_check_disabled()
                 && value
                     .as_deref()
                     .is_some_and(|value| !ctx.config.is_redirect_target_trusted(value))
@@ -434,9 +451,8 @@ impl RequestBody for SignInRequest {
     ];
 }
 
-fn decode_callback(req: &AuthRequest, name: &str) -> AuthResult<Option<String>> {
-    req.query
-        .get(name)
+fn decode_callback(value: Option<&str>) -> AuthResult<Option<String>> {
+    value
         .filter(|value| !value.is_empty())
         .map(|value| {
             let bytes = value.as_bytes();

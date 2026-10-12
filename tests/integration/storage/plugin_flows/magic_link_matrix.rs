@@ -538,7 +538,141 @@ async fn magic_link_returning_verified_owner_retains_credentials_oauth_and_brows
         );
     }
     assert_eq!(db.count("verifications").await?, 1);
-    let response = call(&auth, redeem(&delivery, &[]), 302).await;
+    let proofs = db.table("verifications").await?;
+    let verify = |query: &Value| {
+        ServerEndpoint::<Value>::new("magic-link", "magicLinkVerify").with_query(query)
+    };
+    let no_headers = Box::pin(auth.dispatch_endpoint(
+        verify(&json!({"token":delivery.token}))?,
+        EndpointOptions::default(),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(no_headers.error.status_code(), 400);
+    assert_eq!(no_headers.error.error_payload().2, "Headers is required");
+    let invalid_query = Box::pin(auth.dispatch_endpoint(
+        verify(&json!({"token":42}))?,
+        EndpointOptions {
+            headers: Some(Default::default()),
+            ..Default::default()
+        },
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(invalid_query.error.status_code(), 400);
+    assert_eq!(
+        invalid_query.error.error_payload().1.as_deref(),
+        Some("VALIDATION_ERROR")
+    );
+    assert_eq!(db.table("verifications").await?, proofs);
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions"]).await?,
+        identities
+    );
+    let trusted_redirect = Box::pin(auth.dispatch_endpoint(
+        verify(&json!({"token":delivery.token,"callbackURL":"https://foreign.example/steal"}))?,
+        EndpointOptions {
+            headers: Some(Default::default()),
+            ..Default::default()
+        },
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(trusted_redirect.error.status_code(), 302);
+    assert!(trusted_redirect.body_absent);
+    let mut trusted_response = AuthResponse::new(302);
+    trusted_response.headers = trusted_redirect.headers.unwrap();
+    assert_eq!(
+        trusted_response.headers.get("location").map(String::as_str),
+        Some("https://foreign.example/steal")
+    );
+    assert!(
+        trusted_response
+            .headers
+            .get_all("set-cookie")
+            .next()
+            .is_some()
+    );
+    Box::pin(authenticated(
+        &auth,
+        &cookies(&trusted_response),
+        "verified@example.test",
+    ))
+    .await;
+    assert_eq!(db.count("verifications").await?, 0);
+    let _ = Box::pin(auth.dispatch_endpoint(
+        MagicLinkPlugin::sign_in_endpoint(&alibi::plugins::magic_link::MagicLinkSignInInput {
+            email: "VERIFIED@EXAMPLE.TEST".into(),
+            name: None,
+            metadata: None,
+            callback_url: None,
+            new_user_callback_url: None,
+            error_callback_url: None,
+        })?,
+        EndpointOptions {
+            headers: Some(Default::default()),
+            ..Default::default()
+        },
+    ))
+    .await?;
+    let delivery = outbox.sent.lock().unwrap().last().unwrap().clone();
+    let verified = Box::pin(
+        auth.dispatch_endpoint(
+            MagicLinkPlugin::verify_endpoint(&alibi::plugins::magic_link::MagicLinkVerifyInput {
+                token: delivery.token.clone(),
+                callback_url: None,
+                new_user_callback_url: None,
+                error_callback_url: None,
+            })?,
+            EndpointOptions {
+                headers: Some(
+                    [
+                        ("cookie".into(), cookies(&foreign)),
+                        ("user-agent".into(), "Magic-SDK".into()),
+                        ("x-forwarded-for".into(), "203.0.113.65".into()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+                ..Default::default()
+            },
+        ),
+    )
+    .await?;
+    let value = verified.decode()?;
+    assert_eq!(value.user.id, id);
+    assert_eq!(value.session.user_id, id);
+    assert_eq!(value.session.user_agent.as_deref(), Some("Magic-SDK"));
+    assert_eq!(value.session.ip_address.as_deref(), Some("203.0.113.65"));
+    let response = verified.into_response()?;
+    let completed = db
+        .tables(&["users", "accounts", "sessions", "verifications"])
+        .await?;
+    let replay = Box::pin(auth.dispatch_endpoint(
+        verify(&json!({"token":delivery.token}))?,
+        EndpointOptions {
+            headers: Some(Default::default()),
+            ..Default::default()
+        },
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(replay.error.status_code(), 302);
+    assert!(replay.body_absent);
+    assert!(
+        replay
+            .headers
+            .unwrap()
+            .get("location")
+            .unwrap()
+            .contains("error=INVALID_TOKEN")
+    );
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        completed
+    );
+
     assert_eq!(db.table("accounts").await?, accounts);
     assert_eq!(
         db.text("SELECT name FROM users WHERE id=$1", &[&id])
