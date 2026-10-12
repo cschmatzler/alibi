@@ -1,6 +1,7 @@
 //! Typed logical organization operations, independent of HTTP request construction.
 use super::{OrganizationPlugin, handlers, types};
-use crate::endpoint::{definition, error_response, validation};
+use crate::authentication_helpers::JsonField;
+use crate::endpoint::{definition, error_response, validate_fields, validation};
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
@@ -231,6 +232,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             HttpMethod::Get,
         ),
         definition(
+            "listOrgRoles",
+            "listOrgRoles",
+            Some("/organization/list-roles"),
+            HttpMethod::Get,
+        ),
+        definition(
             "listOrganizationRoles",
             "listOrganizationRoles",
             Some("/organization/list-roles"),
@@ -411,6 +418,24 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
             let _: types::RoleQuery = call
                 .query_as()
                 .map_err(|error| validation(error.to_string()))?;
+        }
+        "listOrgRoles" => {
+            let query = if call.has_query() {
+                Some(validate_fields(
+                    call.query(),
+                    "query",
+                    &[JsonField::string("organizationId", false)],
+                )?)
+            } else {
+                None
+            };
+            if call.headers().is_none() {
+                return Err(validation("Headers is required"));
+            }
+            return Ok(EndpointInput {
+                body: call.body().cloned(),
+                query,
+            });
         }
         "listOrganizationRoles" => {
             let _: types::RoleQuery = call
@@ -723,10 +748,18 @@ impl OrganizationPlugin {
     /// Construct a typed native call through installed dispatch hooks.
     /// # Errors
     /// Returns a serialization error for input that cannot be represented.
+    pub fn list_org_roles_endpoint(
+        input: &types::RoleQuery,
+    ) -> AuthResult<ServerEndpoint<Vec<types::RoleResponse>>> {
+        ServerEndpoint::new("organization", "listOrgRoles").with_query(input)
+    }
+    /// Construct a role listing through the canonical server API.
+    /// # Errors
+    /// Returns a serialization error for input that cannot be represented.
     pub fn list_roles_endpoint(
         input: &types::RoleQuery,
     ) -> AuthResult<ServerEndpoint<Vec<types::RoleResponse>>> {
-        ServerEndpoint::new("organization", "listOrganizationRoles").with_query(input)
+        Self::list_org_roles_endpoint(input)
     }
 }
 
@@ -1029,13 +1062,14 @@ pub(super) async fn execute<S: AuthSchema>(
         | "deleteOrganizationRole"
         | "getOrganizationRole"
         | "getOrgRole"
+        | "listOrgRoles"
         | "listOrganizationRoles" => {
             let path = match call.operation_id() {
                 "createOrganizationRole" | "createOrgRole" => "/organization/create-role",
                 "updateOrganizationRole" => "/organization/update-role",
                 "deleteOrganizationRole" => "/organization/delete-role",
                 "getOrganizationRole" | "getOrgRole" => "/organization/get-role",
-                "listOrganizationRoles" => "/organization/list-roles",
+                "listOrganizationRoles" | "listOrgRoles" => "/organization/list-roles",
                 _ => return Err(AuthError::not_found("Unknown operation")),
             };
             let method = call.default_method();
