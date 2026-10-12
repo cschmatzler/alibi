@@ -100,6 +100,7 @@ import { providerBatchFixture } from "./fixtures/provider-batch-fixture";
 import { railwayProviderFixture } from "./fixtures/railway-provider-fixture";
 import { createRateLimitFixture } from "./fixtures/rate-limit-fixture";
 import { redditProviderFixture } from "./fixtures/reddit-provider-fixture";
+import { createServerErrorFixture } from "./fixtures/server-error-fixture";
 import { createServerEndpointFixture } from "./fixtures/server-endpoint-fixture";
 import { createSessionAdapterFailureFixture } from "./fixtures/session-adapter-failure-fixture";
 import { sessionCookieCacheFixture } from "./fixtures/session-cookie-cache-fixture";
@@ -1386,6 +1387,7 @@ const setPasswordFixture = createSetPasswordFixture(database, authOptions);
 const verificationStorageFixture = await createVerificationStorageFixture(database, authOptions);
 const signupPolicyFixture = createSignupPolicyFixture(database, authOptions);
 const compromisedPasswordFixture = await createCompromisedPasswordFixture(database, authOptions);
+const serverErrorFixture = createServerErrorFixture(authOptions);
 const serverEndpointFixture = createServerEndpointFixture(database, authOptions);
 verificationProfiles.set(serverEndpointFixture.path, serverEndpointFixture.auth);
 const serverEndpointCacheFixture = createServerEndpointFixture(
@@ -3350,6 +3352,8 @@ const server = Bun.serve({
       if (physicalCookieControl) {
         return physicalCookieControl;
       }
+      const serverErrorControl = await serverErrorFixture.control(request);
+      if (serverErrorControl) return serverErrorControl;
       const serverEndpointControl = await serverEndpointFixture.control(request);
       if (serverEndpointControl) {
         return serverEndpointControl;

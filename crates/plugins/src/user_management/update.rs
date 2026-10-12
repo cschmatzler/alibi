@@ -23,6 +23,12 @@ pub fn ok_endpoint() -> alibi_core::endpoint::ServerEndpoint<alibi_core::OkRespo
     alibi_core::endpoint::ServerEndpoint::new("core", "ok")
 }
 
+/// Build the public error-page operation. Supply a genuine request with its original URL.
+#[must_use]
+pub fn error_endpoint() -> alibi_core::endpoint::ServerEndpoint<alibi_core::AuthResponse> {
+    alibi_core::endpoint::ServerEndpoint::new("core", "error")
+}
+
 /// Builtin owner used by the host runtime independently of optional user plugins.
 #[doc(hidden)]
 pub struct BuiltinUserEndpoints;
@@ -38,6 +44,12 @@ impl<S: alibi_core::AuthSchema> alibi_core::AuthPlugin<S> for BuiltinUserEndpoin
         vec![
             crate::endpoint::definition("ok", "ok", Some("/ok"), alibi_core::HttpMethod::Get),
             crate::endpoint::definition(
+                "error",
+                "error",
+                Some("/error"),
+                alibi_core::HttpMethod::Get,
+            ),
+            crate::endpoint::definition(
                 "updateUser",
                 "updateUser",
                 Some("/update-user"),
@@ -50,7 +62,7 @@ impl<S: alibi_core::AuthSchema> alibi_core::AuthPlugin<S> for BuiltinUserEndpoin
         call: &alibi_core::endpoint::EndpointCall,
         _: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
-        if call.operation_id() == "ok" {
+        if matches!(call.operation_id(), "ok" | "error") {
             return Ok(alibi_core::endpoint::EndpointInput {
                 body: call.body().cloned(),
                 query: call.query().cloned(),
@@ -75,6 +87,26 @@ impl<S: alibi_core::AuthSchema> alibi_core::AuthPlugin<S> for BuiltinUserEndpoin
         call: &alibi_core::endpoint::EndpointCall,
         context: &AuthContext<S>,
     ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        if call.operation_id() == "error" {
+            let url = call
+                .request()
+                .and_then(|request| request.url())
+                .ok_or_else(|| AuthError::internal("Invalid URL"))?;
+            let parameter = |name: &str| {
+                url.query_pairs()
+                    .find_map(|(key, value)| (key == name).then(|| value.into_owned()))
+            };
+            let code = parameter("error").unwrap_or_else(|| "UNKNOWN".into());
+            let description = parameter("error_description");
+            let response = alibi_core::error::page::error_page_response(
+                &context.config,
+                &code,
+                description.as_deref().filter(|value| !value.is_empty()),
+            )?;
+            return Ok(alibi_core::endpoint::EndpointResponse::from_http_response(
+                response,
+            ));
+        }
         if call.operation_id() == "ok" {
             return alibi_core::endpoint::EndpointResponse::json(&alibi_core::OkResponse {
                 ok: true,

@@ -18,6 +18,7 @@ pub(super) struct HttpEndpointFrame {
     pub header_patch: Option<std::collections::HashMap<String, String>>,
     pub legacy_headers: Option<std::collections::HashMap<String, String>>,
     pub error: Arc<std::sync::Mutex<Option<HttpEndpointError>>>,
+    pub returned_response: Arc<std::sync::Mutex<Option<alibi_core::AuthResponse>>>,
 }
 
 impl<S: AuthSchema> Alibi<S> {
@@ -88,6 +89,7 @@ impl<S: AuthSchema> Alibi<S> {
             header_patch,
             legacy_headers: None,
             error: Arc::default(),
+            returned_response: Arc::default(),
         });
         Ok(None)
     }
@@ -110,7 +112,14 @@ impl<S: AuthSchema> Alibi<S> {
         let original =
             alibi_core::utils::json::from_slice::<alibi_core::utils::json::JsValue>(&response.body)
                 .unwrap_or(alibi_core::utils::json::JsValue::Null);
-        let mut logical = if let Some((status, code, message)) = frame
+        let returned_response = frame
+            .returned_response
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let mut logical = if let Some(raw) = returned_response.as_ref() {
+            EndpointResponse::from_http_response(raw.clone())
+        } else if let Some((status, code, message)) = frame
             .error
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -125,7 +134,20 @@ impl<S: AuthSchema> Alibi<S> {
         } else {
             EndpointResponse::value(original.clone()).with_status(response.status)
         };
-        logical.merge_headers(std::mem::take(&mut response.headers));
+        let headers = std::mem::take(&mut response.headers);
+        if let Some(raw) = returned_response.as_ref() {
+            let mut metadata = Headers::new();
+            for (name, value) in headers {
+                if !raw.headers.iter().any(|(raw_name, raw_value)| {
+                    raw_name.eq_ignore_ascii_case(&name) && raw_value == &value
+                }) {
+                    metadata.append(name, value);
+                }
+            }
+            logical.merge_headers(metadata);
+        } else {
+            logical.merge_headers(headers);
+        }
         for hook in &self.endpoint_hooks {
             if !with_endpoint_call_context(frame.outer.clone(), async {
                 hook.matches_after(&frame.call, context, &logical)
@@ -234,6 +256,9 @@ fn ordinary_http_hook_error(error: AuthError) -> AuthError {
 fn render_http_endpoint_response(
     response: &EndpointResponse,
 ) -> alibi_core::AuthResult<alibi_core::AuthResponse> {
+    if response.result().is_ok() {
+        return response.to_response();
+    }
     let mut rendered = match response.result() {
         Ok(value) => alibi_core::AuthResponse::json(response.status().unwrap_or(200), value)?,
         Err(error) => {

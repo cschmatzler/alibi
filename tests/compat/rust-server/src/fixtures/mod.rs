@@ -107,3 +107,5 @@ pub(crate) mod postgres_schema_fixture;
 pub(crate) mod two_factor_table_fixture;
 
 pub(crate) mod application_device_grant_fixture;
+
+pub(crate) mod server_error_fixture;

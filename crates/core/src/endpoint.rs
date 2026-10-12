@@ -574,6 +574,7 @@ pub struct EndpointInput {
 #[derive(Debug)]
 pub struct EndpointResponse {
     result: Result<JsValue, AuthError>,
+    http_response: Option<crate::AuthResponse>,
     error_body: Option<JsValue>,
     error_body_absent: bool,
     headers: Headers,
@@ -585,6 +586,7 @@ impl EndpointResponse {
     pub fn value(value: JsValue) -> Self {
         Self {
             result: Ok(value),
+            http_response: None,
             error_body: None,
             error_body_absent: false,
             headers: Headers::new(),
@@ -600,11 +602,59 @@ impl EndpointResponse {
         )?))
     }
 
+    /// Return an actual HTTP response value, retaining its bytes, status and headers.
+    ///
+    /// Endpoint hooks still run. Accumulated hook headers and status remain
+    /// separate from this response until it is forwarded to HTTP.
+    #[must_use]
+    pub fn from_http_response(response: crate::AuthResponse) -> Self {
+        let mut result = Self::value(JsValue::Object(indexmap::IndexMap::new()));
+        result.http_response = Some(response);
+        result
+    }
+
+    #[must_use]
+    pub const fn http_response(&self) -> Option<&crate::AuthResponse> {
+        self.http_response.as_ref()
+    }
+
+    pub fn http_response_mut(&mut self) -> Option<&mut crate::AuthResponse> {
+        self.http_response.as_mut()
+    }
+
+    /// Forward the returned value as HTTP, preserving a response value's own status and body.
+    ///
+    /// # Errors
+    /// Returns a serialization error for a JSON value or an intentional API error.
+    pub fn to_response(&self) -> AuthResult<crate::AuthResponse> {
+        let response = match &self.result {
+            Ok(value) => match &self.http_response {
+                Some(response) => response.clone(),
+                None => crate::AuthResponse::json(self.status.unwrap_or(200), value)?,
+            },
+            Err(error) => {
+                let (status, code, message) = error.error_payload();
+                let mut response = crate::AuthResponse::json(
+                    self.status.unwrap_or(status),
+                    &crate::ErrorCodeMessageResponse { code, message },
+                )?;
+                if self.error_body_absent {
+                    response.body.clear();
+                } else if let Some(body) = &self.error_body {
+                    response.body = crate::utils::json::to_vec(body)?;
+                }
+                response
+            }
+        };
+        Ok(forward_response_headers(response, &self.headers))
+    }
+
     #[must_use]
     pub fn error(error: AuthError) -> Self {
         let status = Some(error.status_code());
         Self {
             result: Err(error),
+            http_response: None,
             error_body: None,
             error_body_absent: false,
             headers: Headers::new(),
@@ -688,12 +738,14 @@ impl EndpointResponse {
     /// Replace a returned value while retaining the actual handler status and headers.
     pub fn replace(&mut self, value: JsValue) {
         self.result = Ok(value);
+        self.http_response = None;
         self.error_body = None;
         self.error_body_absent = false;
     }
 
     pub fn replace_error(&mut self, error: AuthError) {
         self.result = Err(error);
+        self.http_response = None;
         self.error_body = None;
         self.error_body_absent = false;
     }
@@ -702,6 +754,7 @@ impl EndpointResponse {
         match self.result {
             Ok(value) => Ok(EndpointOutput {
                 value,
+                http_response: self.http_response,
                 headers: self.headers,
                 status: self.status,
                 output: PhantomData,
@@ -771,12 +824,33 @@ pub trait EndpointHook<S: AuthSchema>: Send + Sync {
 #[derive(Debug)]
 pub struct EndpointOutput<T> {
     value: JsValue,
+    http_response: Option<crate::AuthResponse>,
     headers: Headers,
     status: Option<u16>,
     output: PhantomData<fn() -> T>,
 }
 
 impl<T> EndpointOutput<T> {
+    /// The unforwarded response value, separate from accumulated endpoint headers.
+    #[must_use]
+    pub const fn http_response(&self) -> Option<&crate::AuthResponse> {
+        self.http_response.as_ref()
+    }
+
+    /// Forward the result to HTTP, merging safe hook headers and repeated cookies.
+    ///
+    /// A response value retains its own body and status. A JSON replacement
+    /// from an after hook is serialized using the endpoint status instead.
+    ///
+    /// # Errors
+    /// Returns a serialization error for a JSON result.
+    pub fn into_response(self) -> AuthResult<crate::AuthResponse> {
+        let response = match self.http_response {
+            Some(response) => response,
+            None => crate::AuthResponse::json(self.status.unwrap_or(200), &self.value)?,
+        };
+        Ok(forward_response_headers(response, &self.headers))
+    }
     #[must_use]
     pub const fn value(&self) -> &JsValue {
         &self.value
@@ -797,8 +871,57 @@ impl<T: DeserializeOwned + 'static> EndpointOutput<T> {
     /// # Errors
     /// Returns an error if an application hook replaced the expected output type.
     pub fn decode(&self) -> AuthResult<T> {
+        if self.http_response.is_some() {
+            return Err(AuthError::internal(
+                "Endpoint returned an HTTP response; use http_response or into_response",
+            ));
+        }
         Ok(crate::utils::json::from_value(self.value.clone())?)
     }
+}
+
+fn forward_response_headers(
+    mut response: crate::AuthResponse,
+    headers: &Headers,
+) -> crate::AuthResponse {
+    for (name, value) in headers {
+        // Match the pinned HTTP conversion boundary: these are request-only,
+        // transport-managed or hop-by-hop headers, even when emitted by a hook.
+        if matches!(
+            name.to_ascii_lowercase().as_str(),
+            "host"
+                | "user-agent"
+                | "referer"
+                | "from"
+                | "expect"
+                | "authorization"
+                | "proxy-authorization"
+                | "cookie"
+                | "origin"
+                | "accept-charset"
+                | "accept-encoding"
+                | "accept-language"
+                | "if-match"
+                | "if-none-match"
+                | "if-modified-since"
+                | "if-unmodified-since"
+                | "if-range"
+                | "range"
+                | "max-forwards"
+                | "connection"
+                | "keep-alive"
+                | "transfer-encoding"
+                | "te"
+                | "upgrade"
+                | "trailer"
+                | "proxy-connection"
+                | "content-length"
+        ) {
+            continue;
+        }
+        merge_header(&mut response.headers, name.clone(), value.clone());
+    }
+    response
 }
 
 /// Actual application/API failure, with headers accumulated before an API error.

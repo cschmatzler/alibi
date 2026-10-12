@@ -880,6 +880,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dispatch_verification_sender: Arc<dyn SendVerificationEmail> = Arc::new(CompatVerificationSender {
         outbox: verification_outbox.clone(),
     });
+    let server_error_router = fixtures::server_error_fixture::router(&config).await?;
     let server_endpoint_router =
         server_endpoint_fixture::router(&config, database.clone(), "server-dispatch", false, dispatch_reset_sender.clone(), dispatch_verification_sender.clone())
             .await?;
@@ -2241,6 +2242,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(api_error_router)
         .merge(dispatch_router)
         .merge(physical_cookie_router)
+        .merge(server_error_router)
         .merge(server_endpoint_router)
         .merge(server_endpoint_cache_router)
         .merge(server_endpoint_version_router)

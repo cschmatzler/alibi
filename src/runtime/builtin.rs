@@ -1,6 +1,6 @@
 use super::{
-    Alibi, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, HttpMethod,
-    OkResponse, core_paths,
+    Alibi, AuthContext, AuthRequest, AuthResponse, AuthResult, AuthSchema, HttpMethod, OkResponse,
+    core_paths,
 };
 impl<S: AuthSchema> Alibi<S> {
     /// Handle core authentication requests.
@@ -22,74 +22,44 @@ impl<S: AuthSchema> Alibi<S> {
     }
 
     fn error_response(&self, req: &AuthRequest) -> AuthResult<AuthResponse> {
-        let error_code = req
-            .query
-            .get("error")
-            .cloned()
-            .unwrap_or_else(|| "UNKNOWN".to_owned());
-        let error_description = req
-            .query
-            .get("error_description")
-            .map(String::as_str)
-            .filter(|description| !description.is_empty());
-        if let Some(target) = self
-            .config
-            .api_error_url
-            .as_deref()
-            .filter(|target| !target.is_empty())
-        {
-            let relative = target.starts_with('/');
-            let origin = url::Url::parse("https://better-auth.invalid")
-                .map_err(|error| AuthError::internal(error.to_string()))?;
-            let mut location = if relative {
-                origin.join(target)
-            } else {
-                url::Url::parse(target)
-            }
-            .map_err(|error| {
-                AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
-            })?;
-            if target.starts_with("//")
-                || target.starts_with("/\\")
-                || (relative && location.origin() != origin.origin())
-            {
-                return Err(AuthError::CallbackFailure(Box::new(AuthError::internal(
-                    "Invalid error URL",
-                ))));
-            }
-            let generated = alibi_core::error::page::error_page_redirect_location(
-                &error_code,
-                error_description,
-            );
-            let query = generated.strip_prefix("/?").unwrap_or_default();
-            let existing = location.query().unwrap_or_default();
-            let separator = if existing.is_empty() || existing.ends_with('&') {
-                ""
-            } else {
-                "&"
+        let (error_code, error_description) = if let Some(url) = req.url() {
+            let parameter = |name: &str| {
+                url.query_pairs()
+                    .find_map(|(key, value)| (key == name).then(|| value.into_owned()))
             };
-            let combined = format!("{existing}{separator}{query}");
-            location.set_query(Some(&combined));
-            let location = if relative {
-                location[url::Position::BeforePath..].to_owned()
-            } else {
-                location.to_string()
-            };
-            return Ok(AuthResponse::new(302).with_header("location", location));
-        }
-        if !self.config.render_error_page {
-            return Ok(AuthResponse::new(302).with_header(
-                "location",
-                alibi_core::error::page::error_page_redirect_location(
-                    &error_code,
-                    error_description,
-                ),
-            ));
-        }
-        let html = alibi_core::error::page::error_page_html_with_description(
+            (
+                parameter("error").unwrap_or_else(|| "UNKNOWN".into()),
+                parameter("error_description"),
+            )
+        } else {
+            // Native HTTP embedding also accepts a parsed request without a URL.
+            (
+                req.query
+                    .get("error")
+                    .cloned()
+                    .unwrap_or_else(|| "UNKNOWN".into()),
+                req.query.get("error_description").cloned(),
+            )
+        };
+        let response = alibi_core::error::page::error_page_response(
+            &self.config,
             &error_code,
-            error_description,
-        );
-        Ok(AuthResponse::html(200, html).with_header("content-type", "text/html"))
+            error_description
+                .as_deref()
+                .filter(|value| !value.is_empty()),
+        )?;
+        if let Some(frame) = req
+            .extensions()
+            .get::<super::http_hooks::HttpEndpointFrame>()
+        {
+            // The handler constructs a fresh Response; Source's new endpoint
+            // header accumulator replaces headers emitted by before hooks.
+            _ = req.take_response_headers();
+            *frame
+                .returned_response
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(response.clone());
+        }
+        Ok(response)
     }
 }
