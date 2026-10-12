@@ -136,15 +136,28 @@ for (const mode of ["standard", "attributes"] as const) {
       expect(guestDenied.error).toMatchObject({ status: 401, code: "UNAUTHORIZED" });
 
       const before = await state(ctx);
-      const issued = await primary.anonymous.signIn.anonymous(undefined, {
-        headers: {
-          "x-anonymous-ip": "198.51.100.71",
-          "x-forwarded-for": "192.0.2.70",
-          "user-agent": "anonymous-owner-browser",
-        },
+      async function signIn(headers?: Record<string, string>) {
+        const response = await primary.fetch(`${ctx.baseURL}/__test/server-api/anonymous-sign-in`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ profile: primary.profile, ...(headers ? { headers } : {}) }),
+        });
+        return {
+          status: response.status,
+          body: (await response.json()) as any,
+          cookie: response.headers
+            .getSetCookie()
+            .map((raw) => raw.split(";")[0])
+            .join("; "),
+        };
+      }
+      const issued = await signIn({
+        "x-anonymous-ip": "198.51.100.71",
+        "x-forwarded-for": "192.0.2.70",
+        "user-agent": "anonymous-owner-browser",
       });
-      expect(issued.error).toBeNull();
-      expect(issued.data!.user).toMatchObject({
+      expect(issued.status).toBe(200);
+      expect(issued.body.user).toMatchObject({
         email: "anonymous-1@fixture.test",
         name: "Configured Anonymous",
         emailVerified: false,
@@ -152,17 +165,17 @@ for (const mode of ["standard", "attributes"] as const) {
       });
 
       const current = await primary.client.getSession();
-      expect(current.data!.session.userId).toBe(issued.data!.user.id);
-      expect(current.data!.session.token).toBe(issued.data!.token);
+      expect(current.data!.session.userId).toBe(issued.body.user.id);
+      expect(current.data!.session.token).toBe(issued.body.token);
 
       const afterIssued = await state(ctx);
       expect(afterIssued.users).toHaveLength(before.users.length + 1);
       expect(afterIssued.accounts).toEqual(before.accounts);
       expect(afterIssued.sessions).toHaveLength(before.sessions.length + 1);
       expect(afterIssued.events).toHaveLength(0);
-      const physicalSession = afterIssued.sessions.find((row) => row.token === issued.data!.token)!;
+      const physicalSession = afterIssued.sessions.find((row) => row.token === issued.body.token)!;
       expect(physicalSession).toMatchObject({
-        userId: issued.data!.user.id,
+        userId: issued.body.user.id,
         ipAddress: mode === "attributes" ? "198.51.100.71" : "192.0.2.70",
         userAgent: "anonymous-owner-browser",
       });
@@ -173,12 +186,9 @@ for (const mode of ["standard", "attributes"] as const) {
         userAgent: physicalSession.userAgent,
       });
 
-      const repeated = await primary.anonymous.signIn.anonymous();
-      expect(repeated.error).toMatchObject({
-        status: 400,
-        code: "ANONYMOUS_USERS_CANNOT_SIGN_IN_AGAIN_ANONYMOUSLY",
-      });
-
+      const repeated = await signIn({ cookie: issued.cookie });
+      expect(repeated.status).toBe(400);
+      expect(repeated.body.code).toBe("ANONYMOUS_USERS_CANNOT_SIGN_IN_AGAIN_ANONYMOUSLY");
       const regularDenied = await foreign.anonymous.deleteAnonymousUser();
       expect(regularDenied.error).toMatchObject({ status: 403, code: "USER_IS_NOT_ANONYMOUS" });
       expect(await state(ctx)).toEqual(afterIssued);
@@ -203,10 +213,10 @@ for (const mode of ["standard", "attributes"] as const) {
         foreignBefore,
         guestDenied,
         before,
-        issued,
+        issued: { status: issued.status, body: issued.body },
         current,
         afterIssued,
-        repeated,
+        repeated: { status: repeated.status, body: repeated.body },
         regularDenied,
         deleted,
         afterDelete,

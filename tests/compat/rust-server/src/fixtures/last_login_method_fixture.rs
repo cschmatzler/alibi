@@ -225,7 +225,7 @@ impl AnonymousIdentity for Application {
             self.state.sequence.fetch_add(1, Ordering::SeqCst) + 1
         )))
     }
-    async fn name(&self, _request: &AuthRequest) -> AuthResult<Option<String>> {
+    async fn name(&self, _request: Option<&AuthRequest>) -> AuthResult<Option<String>> {
         Ok(Some("Anonymous Owner".into()))
     }
 }

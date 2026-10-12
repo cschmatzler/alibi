@@ -20,7 +20,7 @@ pub trait AnonymousIdentity: Send + Sync {
     async fn email(&self) -> AuthResult<Option<String>> {
         Ok(None)
     }
-    async fn name(&self, _request: &AuthRequest) -> AuthResult<Option<String>> {
+    async fn name(&self, _request: Option<&AuthRequest>) -> AuthResult<Option<String>> {
         Ok(None)
     }
 }
@@ -52,7 +52,21 @@ pub struct AnonymousPlugin {
     config: AnonymousConfig,
 }
 
+/// Authority created for an anonymous identity by the public server operation.
+#[derive(Debug, serde::Deserialize)]
+pub struct AnonymousSignIn {
+    pub token: String,
+    pub user: Box<UserView>,
+}
+
 impl AnonymousPlugin {
+    /// Create anonymous authority through installed server endpoint hooks.
+    #[must_use]
+    pub const fn sign_in_anonymous_endpoint()
+    -> alibi_core::endpoint::ServerEndpoint<AnonymousSignIn> {
+        alibi_core::endpoint::ServerEndpoint::new("anonymous", "signInAnonymous")
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -62,13 +76,21 @@ impl AnonymousPlugin {
         Self { config }
     }
 
+    async fn sign_in<S: AuthSchema>(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<AuthResponse> {
+        self.sign_in_core(req, ctx).await
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "Keep anonymous session reuse, user creation, and session issuance in request order"
     )]
-    async fn sign_in<S: AuthSchema>(
+    async fn sign_in_core<S: AuthSchema>(
         &self,
-        req: &AuthRequest,
+        req: &impl alibi_core::session::SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<AuthResponse> {
         use alibi_core::utils::cookie_utils::{
@@ -110,7 +132,10 @@ impl AnonymousPlugin {
                 )
         };
         let name = match &self.config.identity {
-            Some(identity) => identity.name(req).await.map_err(callback_error)?,
+            Some(identity) => identity
+                .name(req.physical_request())
+                .await
+                .map_err(callback_error)?,
             None => None,
         }
         .filter(|name| !name.is_empty())
@@ -163,7 +188,21 @@ impl AnonymousPlugin {
                 | alibi_core::AuthError::PasswordHash(_)
                 | alibi_core::AuthError::Jwt(_)) => error,
             })?;
-        let meta = RequestMeta::from_request(req);
+        let headers = req.session_headers();
+        let meta = if let Some(request) = req.physical_request() {
+            RequestMeta::from_request(request)
+        } else {
+            RequestMeta {
+                ip_address: Some(
+                    ctx.config
+                        .advanced
+                        .ip_address
+                        .resolve_ip(headers)
+                        .unwrap_or_default(),
+                ),
+                user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
+            }
+        };
         let issued =
             issue_user_session_record(ctx, user.id().as_ref(), meta.ip_address, meta.user_agent)
                 .await
@@ -327,6 +366,33 @@ impl AnonymousPlugin {
 impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
     route_openapi_metadata!(S);
 
+    fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
+        vec![crate::endpoint::definition(
+            "signInAnonymous",
+            "signInAnonymous",
+            Some("/sign-in/anonymous"),
+            HttpMethod::Post,
+        )]
+    }
+    async fn on_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        let output = self.sign_in_core(call, ctx).await?;
+        let mut response = if output.status >= 400 {
+            alibi_core::endpoint::EndpointResponse::error(crate::endpoint::error_response(
+                output.clone(),
+            ))
+        } else {
+            alibi_core::endpoint::EndpointResponse::value(alibi_core::utils::json::from_slice(
+                &output.body,
+            )?)
+        };
+        response.set_status(Some(output.status));
+        response.merge_headers(output.headers);
+        Ok(response)
+    }
     fn name(&self) -> &'static str {
         "anonymous"
     }
@@ -466,10 +532,28 @@ impl std::fmt::Debug for AnonymousPlugin {
 // Source's nested get-session disables refresh, catches failed resolution, and
 // retains its real expiry cleanup/response-cookie effects on the request.
 async fn anonymous_session<S: AuthSchema>(
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     ctx: &AuthContext<S>,
 ) -> Option<(alibi_core::AuthenticatedUser<S>, SessionView)> {
-    let mut read = req.clone();
+    if let Some(call) = req.endpoint_call() {
+        let mut read = call.clone();
+        let mut query = call
+            .query()
+            .and_then(alibi_core::utils::json::JsValue::as_object)
+            .cloned()
+            .unwrap_or_default();
+        _ = query.insert(
+            "disableRefresh".into(),
+            alibi_core::utils::json::JsValue::Bool(true),
+        );
+        alibi_core::endpoint::EndpointContextPatch {
+            query: Some(alibi_core::utils::json::JsValue::Object(query)),
+            ..Default::default()
+        }
+        .apply(&mut read);
+        return ctx.require_cached_session(&read).await.ok();
+    }
+    let mut read = req.physical_request()?.clone();
     _ = read.query.insert("disableRefresh".into(), "true".into());
     ctx.require_cached_session(&read).await.ok()
 }

@@ -23,12 +23,16 @@ backend_tests!(
 );
 
 #[derive(Default)]
-struct Identity(Mutex<Option<String>>);
+struct Identity(Mutex<Option<String>>, Mutex<Vec<bool>>);
 
 #[async_trait::async_trait]
 impl AnonymousIdentity for Identity {
     async fn email(&self) -> AuthResult<Option<String>> {
         Ok(self.0.lock().unwrap().clone())
+    }
+    async fn name(&self, request: Option<&AuthRequest>) -> AuthResult<Option<String>> {
+        self.1.lock().unwrap().push(request.is_some());
+        Ok(None)
     }
 }
 
@@ -105,6 +109,7 @@ async fn trigger(db: &Db, name: &str, event: &str, table: &str) -> TestResult {
 }
 
 async fn anonymous_identity_and_lifecycle<B: Backend>(db: Db) -> TestResult {
+    use alibi::endpoint::EndpointOptions;
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let identity = Arc::new(Identity::default());
     let auth = builder::<B>(&connection)
@@ -121,9 +126,23 @@ async fn anonymous_identity_and_lifecycle<B: Backend>(db: Db) -> TestResult {
         ("default email", None),
     ] {
         *identity.0.lock().unwrap() = email.map(str::to_owned);
-        let response =
-            Box::pin(auth.handle_request(request("/sign-in/anonymous", Some(json!({})), "")))
-                .await?;
+        let response = match Box::pin(auth.dispatch_endpoint(
+            AnonymousPlugin::sign_in_anonymous_endpoint(),
+            EndpointOptions::default(),
+        ))
+        .await
+        {
+            Ok(output) => output.into_response()?,
+            Err(error) => error.error.to_auth_response(),
+        };
+        assert_eq!(
+            response.status,
+            if label == "malformed generated email" {
+                400
+            } else {
+                200
+            }
+        );
         trace.response(label, &response);
         trace.value(
             &format!("{label} user"),
@@ -137,17 +156,27 @@ async fn anonymous_identity_and_lifecycle<B: Backend>(db: Db) -> TestResult {
         );
         if response.status == 200 {
             let current = cookies(&response);
+            let repeated = Box::pin(auth.dispatch_endpoint(
+                AnonymousPlugin::sign_in_anonymous_endpoint(),
+                EndpointOptions {
+                    headers: Some([("cookie".into(), current)].into_iter().collect()),
+                    ..Default::default()
+                },
+            ))
+            .await
+            .unwrap_err();
+            assert_eq!(
+                repeated.error.error_payload().1.as_deref(),
+                Some("ANONYMOUS_USERS_CANNOT_SIGN_IN_AGAIN_ANONYMOUSLY")
+            );
             trace.response(
                 &format!("{label}: second anonymous sign-in"),
-                &Box::pin(auth.handle_request(request(
-                    "/sign-in/anonymous",
-                    Some(json!({})),
-                    &current,
-                )))
-                .await?,
+                &repeated.error.to_auth_response(),
             );
         }
     }
+
+    assert_eq!(*identity.1.lock().unwrap(), vec![false, false]);
 
     let remembered = call(
         &auth,

@@ -1,4 +1,5 @@
 //! Application-owned anonymous identity/link handlers and actual stored-state observer.
+use axum::response::IntoResponse;
 use crate::anonymous_user_model::{ApplicationSchema as TestSchema, Model as ApplicationUser};
 use alibi::seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
@@ -141,7 +142,7 @@ impl AnonymousIdentity for Application {
             )
         }))
     }
-    async fn name(&self, _request: &AuthRequest) -> AuthResult<Option<String>> {
+    async fn name(&self, _request: Option<&AuthRequest>) -> AuthResult<Option<String>> {
         tokio::task::yield_now().await;
         Ok(Some(
             if self.mode == "empty-name" {
@@ -307,6 +308,7 @@ pub(crate) async fn router(
     }
     let fixture = Fixture::default();
     let mut router = Router::new();
+    let mut runtimes=std::collections::HashMap::new();
     for mode in [
         "standard",
         "defaults",
@@ -416,8 +418,20 @@ pub(crate) async fn router(
                 }));
         }
         let auth = Arc::new(builder.build().await?);
+        runtimes.insert(format!("anonymous-{mode}"),auth.clone());
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
+    let runtimes=Arc::new(runtimes);
+    router=router.route("/__test/server-api/anonymous-sign-in",post(move |Json(input):Json<Value>|{
+        let runtimes=runtimes.clone();
+        async move {
+            let selected=runtimes.get(input["profile"].as_str().unwrap_or("anonymous-standard")).unwrap();
+            match selected.dispatch_endpoint(alibi::endpoint::ServerEndpoint::<Value>::new("anonymous","signInAnonymous"),alibi::endpoint::EndpointOptions {headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),..Default::default()}).await {
+                Ok(output)=>output.into_response().unwrap().into_response(),
+                Err(error)=>{let mut response=error.error.to_auth_response();if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}if let Some(headers)=error.headers{for(name,value) in headers.iter(){if name.eq_ignore_ascii_case("set-cookie"){response.headers.append(name,value);}else{response.headers.insert(name.clone(),value.clone());}}}response.into_response()}
+            }
+        }
+    }));
     let controls = Arc::new(crate::backend::store::<TestSchema>(
         config.clone(),
         database.clone(),

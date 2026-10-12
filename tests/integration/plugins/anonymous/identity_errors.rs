@@ -38,7 +38,7 @@ impl AnonymousIdentity for Identity {
             Err(self.failure())
         }
     }
-    async fn name(&self, _: &AuthRequest) -> AuthResult<Option<String>> {
+    async fn name(&self, _: Option<&AuthRequest>) -> AuthResult<Option<String>> {
         Err(self.failure())
     }
 }

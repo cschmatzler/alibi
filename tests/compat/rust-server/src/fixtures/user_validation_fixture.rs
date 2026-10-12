@@ -252,7 +252,7 @@ impl AnonymousIdentity for Application {
             self.sequence.fetch_add(1, Ordering::SeqCst) + 1
         )))
     }
-    async fn name(&self, _: &AuthRequest) -> AuthResult<Option<String>> {
+    async fn name(&self, _: Option<&AuthRequest>) -> AuthResult<Option<String>> {
         Ok(Some("Configured Anonymous".into()))
     }
 }

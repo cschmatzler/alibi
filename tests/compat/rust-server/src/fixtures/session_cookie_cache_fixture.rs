@@ -101,7 +101,7 @@ impl AnonymousIdentity for Application {
             self.mode, state.sequence
         )))
     }
-    async fn name(&self, _request: &AuthRequest) -> AuthResult<Option<String>> {
+    async fn name(&self, _request: Option<&AuthRequest>) -> AuthResult<Option<String>> {
         Ok(Some("Cache Anonymous".into()))
     }
 }

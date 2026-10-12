@@ -2277,6 +2277,16 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       asResponse: true,
     });
   }
+  if (url.pathname === "/__test/server-api/anonymous-sign-in" && request.method === "POST") {
+    const input = await readJson(request);
+    const selected = anonymousProfiles.profiles.get(
+      `/__test/profiles/${input?.profile ?? "anonymous-standard"}/api/auth`,
+    )!;
+    return (selected.api as any).signInAnonymous({
+      ...(input?.headers ? { headers: new Headers(input.headers as Record<string, string>) } : {}),
+      asResponse: true,
+    });
+  }
   if (url.pathname === "/__test/server-api/username-sign-in" && request.method === "POST") {
     const input = await readJson(request);
     const selected = signupPolicyFixture.profiles.get(input?.profile ?? "signup-username")!;
