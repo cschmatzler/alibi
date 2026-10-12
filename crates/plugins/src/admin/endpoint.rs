@@ -1,11 +1,13 @@
 //! Installed admin server operations share authorization and stored output with HTTP.
 use super::{
     AdminPlugin, MESSAGE_BAN_USERS, MESSAGE_CHANGE_ROLE, MESSAGE_GET_USER,
-    MESSAGE_LIST_USER_SESSIONS, MESSAGE_LIST_USERS, MESSAGE_UPDATE_USERS, ban_user_core,
-    create_user_core, get_user_core, list_user_sessions_core, list_users_core, set_role_core,
+    MESSAGE_LIST_USER_SESSIONS, MESSAGE_LIST_USERS, MESSAGE_REVOKE_USER_SESSIONS,
+    MESSAGE_UPDATE_USERS, ban_user_core, create_user_core, get_user_core, list_user_sessions_core,
+    list_users_core, revoke_user_session_core, set_role_core,
     types::{
         AdminUpdateUserRequest, BanUserRequest, CreateUserRequest, GetUserQuery,
-        HasPermissionRequest, PermissionResponse, SetRoleRequest, UserIdRequest,
+        HasPermissionRequest, PermissionResponse, RevokeSessionRequest, SetRoleRequest,
+        UserIdRequest,
     },
     unban_user_core, update_user_core,
 };
@@ -22,6 +24,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             "getUser",
             Some("/admin/get-user"),
             HttpMethod::Get,
+        ),
+        crate::endpoint::definition(
+            "revokeUserSession",
+            "revokeUserSession",
+            Some("/admin/revoke-user-session"),
+            HttpMethod::Post,
         ),
         crate::endpoint::definition(
             "banUser",
@@ -75,6 +83,19 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "revokeUserSession" {
+        let body: RevokeSessionRequest =
+            super::validation::body_value("revoke-user-session", call.body().cloned())
+                .map_err(crate::endpoint::error_response)?;
+        return Ok(EndpointInput {
+            body: Some(JsValue::Object(
+                [("sessionToken".into(), JsValue::String(body.session_token))]
+                    .into_iter()
+                    .collect(),
+            )),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "banUser" {
         let body: BanUserRequest = super::validation::body_value("ban-user", call.body().cloned())
             .map_err(crate::endpoint::error_response)?;
@@ -220,6 +241,18 @@ impl AdminPlugin {
         ))
     }
 
+    /// Revoke one stored session token through authoritative administrative policy.
+    #[must_use]
+    pub fn revoke_user_session_endpoint(
+        session_token: impl Into<String>,
+    ) -> ServerEndpoint<super::AdminSuccessResponse> {
+        ServerEndpoint::new("admin", "revokeUserSession").with_body_value(JsValue::Object(
+            [("sessionToken".into(), JsValue::String(session_token.into()))]
+                .into_iter()
+                .collect(),
+        ))
+    }
+
     /// Ban a stored user and revoke their sessions through authoritative admin policy.
     ///
     /// # Errors
@@ -328,6 +361,16 @@ impl AdminPlugin {
         };
         let principal = ctx.user_view(&user);
         call.record_authenticated_session(principal.clone(), session);
+        if call.operation_id() == "revokeUserSession" {
+            self.authorize(
+                &principal,
+                "session",
+                "revoke",
+                MESSAGE_REVOKE_USER_SESSIONS,
+            )?;
+            let body: RevokeSessionRequest = call.body_as()?;
+            return EndpointResponse::json(&revoke_user_session_core(&body, ctx).await?);
+        }
         if call.operation_id() == "banUser" {
             self.authorize(&principal, "user", "ban", MESSAGE_BAN_USERS)?;
             let body: BanUserRequest = call.body_as()?;
