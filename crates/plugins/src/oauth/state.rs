@@ -1,6 +1,6 @@
 use alibi_core::entity::AuthAccount;
 use alibi_core::utils::cookie_utils::verify_cookie_value;
-use alibi_core::{AuthConfig, AuthError, AuthRequest, AuthResult, OAuthStateStrategy};
+use alibi_core::{AuthConfig, AuthError, AuthResult, OAuthStateStrategy};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
 use hmac::{Hmac, KeyInit, Mac};
@@ -320,8 +320,11 @@ pub(super) fn decode_account_cookie_value(
         .ok_or_else(|| AuthError::bad_request("Account not found"))
 }
 
-pub(crate) fn get_cookie(req: &AuthRequest, name: &str) -> Option<String> {
-    let header = req.headers.get("cookie")?;
+pub(crate) fn get_cookie(
+    req: &impl alibi_core::session::SessionRequest,
+    name: &str,
+) -> Option<String> {
+    let header = req.session_headers().get("cookie")?;
     header.split(';').find_map(|cookie| {
         let trimmed = cookie.trim();
         let (cookie_name, cookie_value) = trimmed.split_once('=')?;

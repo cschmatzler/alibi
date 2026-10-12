@@ -10,6 +10,12 @@ use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod};
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
         crate::endpoint::definition(
+            "callbackOAuth",
+            "handleOAuthCallback",
+            Some("/callback/:id"),
+            HttpMethod::Get,
+        ),
+        crate::endpoint::definition(
             "getAccessToken",
             "getAccessToken",
             Some("/get-access-token"),
@@ -68,6 +74,9 @@ fn selection_input(call: &EndpointCall) -> AuthResult<serde_json::Value> {
     )?)
 }
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "handleOAuthCallback" {
+        return validate_callback(call);
+    }
     if matches!(call.operation_id(), "socialSignIn" | "linkSocialAccount") {
         return validate_social(call);
     }
@@ -503,4 +512,112 @@ fn flow_response(
         }
     };
     Ok(response.with_header("set-cookie", cookie))
+}
+
+fn validate_callback(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    let fields = [
+        "code",
+        "error",
+        "device_id",
+        "error_description",
+        "state",
+        "user",
+        "iss",
+    ]
+    .map(|name| crate::authentication_helpers::JsonField::string(name, false));
+    let parse = |value: Option<&JsValue>, location: &str| {
+        value
+            .map(|value| crate::endpoint::validate_fields(Some(value), location, &fields))
+            .transpose()
+    };
+    Ok(EndpointInput {
+        body: parse(call.body(), "body")?,
+        query: parse(call.query(), "query")?,
+    })
+}
+impl OAuthPlugin {
+    /// Redeem a provider callback through installed server hooks and genuine logical input.
+    /// Redirects remain API errors with their Location and complete cookie headers.
+    pub fn callback_oauth_endpoint(
+        provider: &str,
+        query: Option<&super::OAuthCallbackInput>,
+    ) -> AuthResult<ServerEndpoint<JsValue>> {
+        let endpoint = ServerEndpoint::new("oauth", "callbackOAuth")
+            .with_params(&serde_json::json!({"id":provider}))?;
+        match query {
+            Some(query) => endpoint.with_query(query),
+            None => Ok(endpoint),
+        }
+    }
+    pub(super) async fn call_callback_endpoint(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<EndpointResponse> {
+        let invalid =
+            || super::handlers::callback_failure_redirect(ctx, "invalid_callback_request");
+        let method = call.method().unwrap_or(&HttpMethod::Get);
+        let response = if !matches!(method, HttpMethod::Get | HttpMethod::Post)
+            || (method == &HttpMethod::Get && call.query().is_none())
+        {
+            invalid()
+        } else {
+            let provider = call
+                .params()
+                .and_then(|params| params.get("id"))
+                .map(JsValue::coerce_string)
+                .transpose()
+                .map_err(AuthError::internal)?
+                .ok_or_else(|| AuthError::internal("Missing OAuth provider parameters"))?;
+            let map =
+                |value: Option<&JsValue>| -> AuthResult<std::collections::HashMap<String, String>> {
+                    value
+                        .cloned()
+                        .map_or_else(
+                            || Ok(std::collections::HashMap::new()),
+                            alibi_core::utils::json::from_value,
+                        )
+                        .map_err(AuthError::from)
+                };
+            let query = map(call.query())?;
+            if method == &HttpMethod::Post {
+                let mut data = map(call.body())?;
+                data.extend(query);
+                super::handlers::callback_post_response(ctx, &provider, &data)
+            } else {
+                Box::pin(super::handlers::callback_core(
+                    &self.config,
+                    &provider,
+                    &query,
+                    call,
+                    ctx,
+                ))
+                .await?
+            }
+        };
+        let mut output = if response.status == 302 {
+            EndpointResponse::redirect(
+                response
+                    .headers
+                    .get("location")
+                    .cloned()
+                    .unwrap_or_default(),
+            )
+        } else {
+            EndpointResponse::error(AuthError::Api {
+                status: response.status,
+                code: None,
+                message: String::new(),
+            })
+            .without_error_body()
+        };
+        for (name, value) in response.headers {
+            // A redirect API error carries endpoint headers; HTTP conversion
+            // adds the content type of its absent body at the outer boundary.
+            if !name.eq_ignore_ascii_case("content-type") {
+                output = output.with_header(name, value);
+            }
+        }
+        Ok(output)
+    }
 }

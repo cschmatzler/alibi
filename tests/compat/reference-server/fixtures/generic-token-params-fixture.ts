@@ -167,6 +167,7 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
                 "/account-info",
                 "/sign-in/social",
                 "/link-social",
+                "/callback/:id",
               ].includes(ctx.path)
             ) {
               ctx.context.responseHeaders ??= new Headers();
@@ -505,12 +506,39 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
           logicalHeaders?: Record<string, string>;
           physicalRequest?: boolean;
           logicalBody?: unknown;
+          logicalQuery?: unknown;
+          logicalParams?: unknown;
+          logicalMethod?: string;
         };
         const instance = profiles.get("/__test/profiles/generic-token-none/api/auth")!;
         const selection = {
           accountId: body.accountId,
           ...(body.userId ? { userId: body.userId } : {}),
         };
+        if (body.operation === "callback-oauth") {
+          return instance.api.callbackOAuth({
+            params: (Object.hasOwn(body, "logicalParams")
+              ? body.logicalParams
+              : { id: "generic" }) as { id: string },
+            ...(Object.hasOwn(body, "logicalBody")
+              ? {
+                  body: body.logicalBody as Parameters<
+                    typeof instance.api.callbackOAuth
+                  >[0]["body"],
+                }
+              : {}),
+            ...(Object.hasOwn(body, "logicalQuery")
+              ? {
+                  query: body.logicalQuery as Parameters<
+                    typeof instance.api.callbackOAuth
+                  >[0]["query"],
+                }
+              : {}),
+            ...(body.logicalMethod ? { method: body.logicalMethod as "GET" | "POST" } : {}),
+            ...(body.logicalHeaders ? { headers: new Headers(body.logicalHeaders) } : {}),
+            asResponse: true,
+          });
+        }
         if (body.operation === "link-social") {
           return instance.api.linkSocialAccount({
             body: body.logicalBody as Parameters<typeof instance.api.linkSocialAccount>[0]["body"],

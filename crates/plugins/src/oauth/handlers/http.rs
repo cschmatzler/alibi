@@ -123,19 +123,12 @@ pub(crate) async fn handle_social_sign_in(
     }
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep OAuth state consumption, provider errors, and cookie cleanup in their required order"
-)]
 pub(in crate::oauth) async fn handle_callback(
     config: &OAuthConfig,
     provider_name: &str,
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
-    let default_error_url = build_default_error_url(ctx);
-    let meta = alibi_core::RequestMeta::from_request(req);
-
     let mut merged = HashMap::new();
     if req.method() == &alibi_core::HttpMethod::Post {
         if let Some(body) = &req.body
@@ -175,38 +168,79 @@ pub(in crate::oauth) async fn handle_callback(
         // explicit query parameters win over conflicting body fields.
         merged.extend(req.query.clone());
 
-        let mut params = url::form_urlencoded::Serializer::new(String::new());
-        let mut pairs: Vec<_> = merged.iter().collect();
-        pairs.sort_by_key(|(left, _)| *left);
-        for (key, value) in pairs {
-            _ = params.append_pair(key, value);
-        }
-        return Ok(redirect_response(&format!(
-            "{}/callback/{}?{}",
-            auth_base_url(ctx),
-            provider_name,
-            params.finish()
-        )));
+        return Ok(callback_post_response(ctx, provider_name, &merged));
     }
 
-    let merged_2 = req.query.clone();
+    callback_core(config, provider_name, &req.query, req, ctx).await
+}
 
-    let error = merged_2.get("error").cloned();
-    let Some(state_param) = merged_2.get("state").cloned() else {
-        if merged_2.get("code").is_some_and(|code| !code.is_empty())
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep state consumption, provider errors and publication in callback order"
+)]
+pub(in crate::oauth) async fn callback_core(
+    config: &OAuthConfig,
+    provider_name: &str,
+    input: &HashMap<String, String>,
+    req: &impl alibi_core::session::SessionRequest,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
+) -> AuthResult<AuthResponse> {
+    let default_error_url = build_default_error_url(ctx);
+    let meta = alibi_core::RequestMeta {
+        ip_address: Some(
+            ctx.config
+                .advanced
+                .ip_address
+                .resolve_ip(req.session_headers())
+                .unwrap_or_default(),
+        ),
+        user_agent: Some(
+            req.session_headers()
+                .get("user-agent")
+                .cloned()
+                .unwrap_or_default(),
+        ),
+    };
+    let merged_2 = input.clone();
+
+    let error = merged_2
+        .get("error")
+        .filter(|value| !value.is_empty())
+        .cloned();
+    let Some(state_param) = merged_2
+        .get("state")
+        .filter(|value| !value.is_empty())
+        .cloned()
+    else {
+        if !merged_2.contains_key("state")
+            && merged_2.get("code").is_some_and(|code| !code.is_empty())
             && config
                 .providers
                 .get(provider_name)
                 .is_some_and(|provider| provider.allow_idp_initiated)
         {
-            let mut authorization = req.clone();
-            authorization.body = Some(serde_json::to_vec(&serde_json::json!({
-                "provider": provider_name, "callbackURL": ctx.config.base_url
-            }))?);
-            let mut response = handle_social_sign_in(config, &authorization, ctx).await?;
-            response.status = 302;
-            response.body.clear();
-            return Ok(response);
+            let mut body = SocialSignInRequest::new(provider_name);
+            body.callback_url = Some(ctx.config.base_url.clone());
+            let flow = Box::pin(social_sign_in_core(
+                &body,
+                config,
+                req.physical_request(),
+                ctx,
+            ))
+            .await?;
+            let response = redirect_response(flow.response.url.as_deref().unwrap_or_default());
+            return match ctx.config.account.store_state_strategy {
+                alibi_core::OAuthStateStrategy::Automatic
+                | alibi_core::OAuthStateStrategy::Database => attach_state_cookie(
+                    response,
+                    &ctx.config,
+                    ctx.config.current_secret(),
+                    &flow.state,
+                ),
+                alibi_core::OAuthStateStrategy::Cookie => {
+                    attach_cookie_state_payload(response, &ctx.config, &flow.payload)
+                }
+            };
         }
         return Ok(callback_failure_redirect(ctx, "state_not_found"));
     };
@@ -360,7 +394,10 @@ pub(in crate::oauth) async fn handle_callback(
     if let Some(error) = error.as_deref() {
         return Ok(redirect_on_error(
             error,
-            merged_2.get("error_description").map(String::as_str),
+            merged_2
+                .get("error_description")
+                .filter(|value| !value.is_empty())
+                .map(String::as_str),
         ));
     }
 
@@ -381,7 +418,11 @@ pub(in crate::oauth) async fn handle_callback(
             .insert(RecoveredOAuthServerContext(context));
     }
 
-    let Some(code) = merged_2.get("code").cloned() else {
+    let Some(code) = merged_2
+        .get("code")
+        .filter(|value| !value.is_empty())
+        .cloned()
+    else {
         return Ok(redirect_on_error("no_code", None));
     };
     let Some(provider) = config.providers.get(provider_name) else {
@@ -666,4 +707,31 @@ pub(in crate::oauth) async fn handle_link_social(
             attach_cookie_state_payload(auth_response, &ctx.config, &flow.payload)
         }
     }
+}
+
+pub(in crate::oauth) fn callback_post_response(
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
+    provider: &str,
+    input: &HashMap<String, String>,
+) -> AuthResponse {
+    let mut params = url::form_urlencoded::Serializer::new(String::new());
+    for name in [
+        "code",
+        "error",
+        "device_id",
+        "error_description",
+        "state",
+        "user",
+        "iss",
+    ] {
+        if let Some(value) = input.get(name) {
+            _ = params.append_pair(name, value);
+        }
+    }
+    redirect_response(&format!(
+        "{}/callback/{}?{}",
+        auth_base_url(ctx),
+        provider,
+        params.finish()
+    ))
 }

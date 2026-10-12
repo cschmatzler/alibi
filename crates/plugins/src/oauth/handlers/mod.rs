@@ -21,14 +21,15 @@ pub(super) use authorization::{
 pub(crate) use cookies::create_account_cookie_headers;
 pub(super) use cookies::decode_account_cookie;
 pub(super) use cookies::{cookie_state_header, state_cookie_header};
-pub(super) use http::handle_callback;
 pub(super) use http::handle_link_social;
 pub(crate) use http::handle_social_sign_in;
+pub(super) use http::{callback_core, callback_post_response, handle_callback};
 pub(crate) use identity::process_oauth_sign_in;
 pub(crate) use identity::process_oauth_sign_in_with_output;
 pub(crate) use linking::complete_link_social;
 pub(super) use linking::{link_with_id_token_core, sign_in_with_id_token_core};
 pub(crate) use redirects::ambiguous_account_sign_in_response;
+pub(super) use redirects::callback_failure_redirect;
 pub(crate) use token_exchange::fetch_user_info_from_provider;
 pub(super) use token_exchange::refresh_tokens_via_provider;
 pub(crate) use token_exchange::validate_authorization_code_via_provider;

@@ -606,10 +606,13 @@ pub(crate) async fn router(
                     Some("refresh-token") => "refreshToken",
                     Some("sign-in-social") => "signInSocial",
                     Some("link-social") => "linkSocialAccount",
+                    Some("callback-oauth") => "callbackOAuth",
                     _ => "accountInfo",
                 };
                 let endpoint = alibi::endpoint::ServerEndpoint::<Value>::new("oauth", operation);
-                let endpoint = if operation == "accountInfo" {
+                let endpoint = if operation == "callbackOAuth" {
+                    endpoint.with_params(body.get("logicalParams").unwrap_or(&json!({"id":"generic"}))).unwrap()
+                } else if operation == "accountInfo" {
                     endpoint.with_query(&input).unwrap()
                 } else {
                     endpoint.with_body(&input).unwrap()
@@ -619,7 +622,9 @@ pub(crate) async fn router(
                 } else {
                     endpoint
                 };
+                let endpoint = if let Some(query)=body.get("logicalQuery") {endpoint.with_query(query).unwrap()} else {endpoint};
                 let options = alibi::endpoint::EndpointOptions {
+                    method:body.get("logicalMethod").and_then(Value::as_str).map(|method| match method {"POST"=>alibi::HttpMethod::Post,"PUT"=>alibi::HttpMethod::Put,_=>alibi::HttpMethod::Get}),
                     headers: body
                         .get("logicalHeaders")
                         .map(|headers| serde_json::from_value(headers.clone()).unwrap()),
@@ -661,10 +666,9 @@ pub(crate) async fn router(
                         );
                         if let Some(headers) = error.headers {
                             for (name, value) in headers {
-                                response.headers_mut().append(
-                                    axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
-                                    axum::http::HeaderValue::from_str(&value).unwrap(),
-                                );
+                                let name=axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap();
+                                let value=axum::http::HeaderValue::from_str(&value).unwrap();
+                                if name==axum::http::header::SET_COOKIE {response.headers_mut().append(name,value);} else {response.headers_mut().insert(name,value);}
                             }
                         }
                         response
@@ -742,7 +746,7 @@ impl<S: alibi::AuthSchema> alibi::endpoint::EndpointHook<S> for AccessServerHook
     ) -> AuthResult<bool> {
         Ok(matches!(
             call.operation_id(),
-            "getAccessToken" | "refreshToken" | "accountInfo" | "socialSignIn" | "linkSocialAccount"
+            "getAccessToken" | "refreshToken" | "accountInfo" | "socialSignIn" | "linkSocialAccount" | "handleOAuthCallback"
         ) && call.request().is_none())
     }
     async fn after(

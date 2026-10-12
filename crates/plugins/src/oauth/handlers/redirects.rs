@@ -96,7 +96,7 @@ pub(in crate::oauth::handlers) fn callback_failure_location(
     })
 }
 
-pub(in crate::oauth::handlers) fn callback_failure_redirect(
+pub(in crate::oauth) fn callback_failure_redirect(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     error: &str,
 ) -> AuthResponse {

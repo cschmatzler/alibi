@@ -2,7 +2,7 @@
 use super::server_revocation_support::{Observer, options};
 use super::*;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
-use alibi::plugins::{OAuthPlugin, oauth::GenericOAuthConfig};
+use alibi::plugins::OAuthPlugin;
 use base64::Engine;
 use sha2::{Digest, Sha256};
 
@@ -14,11 +14,7 @@ async fn server_link_social_account_preserves_owner_and_redeems_bound_pkce<B: Ba
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let remote = Provider::start("application/json", "{}").await;
     remote.respond_at("/token",200,json!({"access_token":"generic-access","refresh_token":"generic-refresh","expires_in":3600}));
-    let mut provider = GenericOAuthConfig::new("native-client", "native-secret");
-    provider.provider.scopes = vec!["profile".into()];
-    provider.authorization_url = Some(remote.url.join("authorize")?.into());
-    provider.token_url = Some(remote.url.join("token")?.into());
-    provider.user_info_url = Some(remote.url.join("profile")?.into());
+    let provider = super::server_oauth_support::generic_provider(&remote)?;
     let observer = Observer::new("linkSocialAccount", "/link-social");
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(
