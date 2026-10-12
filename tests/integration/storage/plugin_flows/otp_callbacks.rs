@@ -1,6 +1,8 @@
 //! Configured codecs must process actual issued, delivered and consumed proofs.
 use super::*;
+use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::email_otp::*;
+use alibi::utils::json::JsValue;
 use alibi::{AuthError, AuthResult, CallbackContext};
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -135,17 +137,36 @@ async fn email_otp_custom_codec_controls_reuse_and_failure_consumption<B: Backen
         let _ = call(&auth, send(), 500).await;
         assert_eq!(db.table("verifications").await?, stored);
         assert_eq!(codec.delivered.lock().unwrap().len(), 1);
+        let retrieval = || {
+            ServerEndpoint::<JsValue>::new("email-otp", "getVerificationOTP")
+                .with_query(&json!({"email":"CODEC@EXAMPLE.TEST","type":"sign-in","ignored":true}))
+                .unwrap()
+        };
+        let failed = auth
+            .dispatch_endpoint(retrieval(), EndpointOptions::default())
+            .await
+            .unwrap_err();
+        assert_eq!(failed.error.status_code(), 500);
+        assert!(matches!(failed.error, AuthError::CallbackFailure(_)));
+        assert_eq!(db.table("verifications").await?, stored);
         *codec.failure.lock().unwrap() = "";
-        let recovered = plugin
-            .get_verification_otp(auth.context(), "codec@example.test", EmailOtpType::SignIn)
+        let recovered = auth
+            .dispatch_endpoint(retrieval(), EndpointOptions::default())
             .await;
         if reversible {
-            assert_eq!(recovered?, Some(first.clone()));
+            assert_eq!(
+                recovered?.value().get("otp").unwrap().as_str(),
+                Some(first.as_str())
+            );
         } else {
-            assert!(
-                matches!(recovered, Err(AuthError::BadRequest(message)) if message == "OTP is hashed, cannot return the plain text OTP")
+            let failed = recovered.unwrap_err();
+            assert_eq!(failed.error.status_code(), 400);
+            assert_eq!(
+                body(&failed.error.to_auth_response()),
+                json!({"message":"OTP is hashed, cannot return the plain text OTP"})
             );
         }
+        assert_eq!(db.table("verifications").await?, stored);
         let _ = call(&auth, send(), 200).await;
         assert_eq!(codec.last() == first, reversible);
         *codec.failure.lock().unwrap() = "verify";
