@@ -404,6 +404,10 @@ pub(super) async fn build(
     let reset_controls = controls.clone();
     let consume_runtimes = Arc::new(runtimes);
     for (path, operation) in [
+        (
+            "/__test/server-api/phone-reset-password",
+            "resetPasswordPhoneNumber",
+        ),
         ("/__test/server-api/phone-send-otp", "sendPhoneNumberOTP"),
         (
             "/__test/server-api/phone-request-password-reset",

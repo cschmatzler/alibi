@@ -549,6 +549,14 @@ impl PhoneNumberPlugin {
             Ok(body) => body,
             Err(response) => return Ok(response),
         };
+        self.reset_password_core(ctx, body).await
+    }
+
+    pub(super) async fn reset_password_core(
+        &self,
+        ctx: &AuthContext<impl AuthSchema>,
+        body: ResetRequest,
+    ) -> AuthResult<AuthResponse> {
         // The phone reset consumes proof before looking up the account or
         // checking password policy. A policy rejection therefore burns the OTP.
         self.consume_local(
