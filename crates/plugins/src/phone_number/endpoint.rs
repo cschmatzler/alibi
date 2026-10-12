@@ -1,5 +1,8 @@
 //! Phone challenge delivery and consumption through installed logical endpoint dispatch.
-use super::{PhoneNumberPlugin, types::SendRequest};
+use super::{
+    PhoneNumberPlugin,
+    types::{ResetRequest, SendRequest},
+};
 use crate::authentication_helpers::JsonField;
 use crate::endpoint::{definition, validate_fields};
 use alibi_core::endpoint::{
@@ -33,8 +36,20 @@ pub struct PhonePasswordResetRequested {
     pub status: bool,
 }
 
+/// The reset proof was consumed and the replacement credential was committed.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PhonePasswordResetResult {
+    pub status: bool,
+}
+
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
+        definition(
+            "resetPasswordPhoneNumber",
+            "resetPasswordPhoneNumber",
+            Some("/phone-number/reset-password"),
+            HttpMethod::Post,
+        ),
         definition(
             "requestPasswordResetPhoneNumber",
             "requestPasswordResetPhoneNumber",
@@ -67,10 +82,12 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
         body: Some(validate_fields(
             call.body(),
             "body",
-            if call.operation_id() == "consumePhoneNumberOTP" {
-                CONSUME_FIELDS
-            } else {
-                SEND_FIELDS
+            match call.operation_id() {
+                "consumePhoneNumberOTP" => CONSUME_FIELDS,
+                "resetPasswordPhoneNumber" => {
+                    <ResetRequest as crate::authentication_helpers::RequestBody>::FIELDS
+                }
+                _ => SEND_FIELDS,
             },
         )?),
         query: call.query().cloned(),
@@ -78,6 +95,16 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
 }
 
 impl PhoneNumberPlugin {
+    /// Consume a reset challenge and commit a replacement password.
+    ///
+    /// # Errors
+    /// Returns an error if the supplied request cannot be serialized.
+    pub fn reset_password_endpoint(
+        input: &ResetRequest,
+    ) -> AuthResult<ServerEndpoint<PhonePasswordResetResult>> {
+        ServerEndpoint::new("phone-number", "resetPasswordPhoneNumber").with_body(input)
+    }
+
     /// Issue a password reset challenge without requiring a browser session.
     #[must_use]
     pub fn request_password_reset_endpoint(
@@ -126,12 +153,22 @@ impl PhoneNumberPlugin {
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
         if call.operation_id() != "consumePhoneNumberOTP" {
-            let body: SendRequest = call.body_as()?;
-            let output = if call.operation_id() == "sendPhoneNumberOTP" {
-                self.send_otp_core(ctx, call.request(), body).await?
-            } else {
-                self.request_password_reset_core(ctx, call.request(), body)
+            let output = match call.operation_id() {
+                "sendPhoneNumberOTP" => {
+                    self.send_otp_core(ctx, call.request(), call.body_as::<SendRequest>()?)
+                        .await?
+                }
+                "resetPasswordPhoneNumber" => {
+                    self.reset_password_core(ctx, call.body_as()?).await?
+                }
+                _ => {
+                    self.request_password_reset_core(
+                        ctx,
+                        call.request(),
+                        call.body_as::<SendRequest>()?,
+                    )
                     .await?
+                }
             };
             let mut response = if output.status >= 400 {
                 EndpointResponse::error(crate::endpoint::error_response(output.clone()))

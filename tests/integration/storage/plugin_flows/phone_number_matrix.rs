@@ -606,18 +606,13 @@ async fn phone_password_reset_retains_established_sessions_by_default<B: Backend
         .await?,
         1
     );
-    let reset = call(
-        &auth,
-        request(
-            "/phone-number/reset-password",
-            Some(json!({"phoneNumber":phone,"otp":delivery.code,"newPassword":new_password})),
-            &owner_cookie,
-        ),
-        200,
-    )
-    .await;
-    assert_eq!(body(&reset), json!({"status":true}));
-    assert!(reset.headers.get_all("set-cookie").next().is_none());
+    let reset = Box::pin(auth.dispatch_endpoint(
+        ServerEndpoint::<Value>::new("phone-number","resetPasswordPhoneNumber")
+            .with_body(&json!({"phoneNumber":phone,"otp":delivery.code,"newPassword":new_password,"ignored":true}))?,
+        EndpointOptions::default(),
+    )).await?;
+    assert_eq!(reset.decode()?, json!({"status":true}));
+    assert!(reset.headers().get_all("set-cookie").next().is_none());
     assert_eq!(
         db.count_where(
             "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
@@ -689,19 +684,19 @@ async fn phone_password_reset_retains_established_sessions_by_default<B: Backend
     let after_login = db
         .tables(&["users", "accounts", "sessions", "verifications"])
         .await?;
-    let replay = call(
-        &auth,
-        request(
-            "/phone-number/reset-password",
-            Some(
-                json!({"phoneNumber":phone,"otp":delivery.code,"newPassword":"must-not-commit123"}),
-            ),
-            &owner_cookie,
-        ),
-        400,
-    )
-    .await;
-    assert_eq!(body(&replay)["code"], "OTP_NOT_FOUND");
+    let replay = Box::pin(auth.dispatch_endpoint(
+        ServerEndpoint::<Value>::new("phone-number", "resetPasswordPhoneNumber").with_body(
+            &json!({"phoneNumber":phone,"otp":delivery.code,"newPassword":"must-not-commit123"}),
+        )?,
+        EndpointOptions::default(),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(replay.error.status_code(), 400);
+    assert_eq!(
+        replay.error.error_payload().1.as_deref(),
+        Some("OTP_NOT_FOUND")
+    );
     assert_eq!(
         db.tables(&["users", "accounts", "sessions", "verifications"])
             .await?,

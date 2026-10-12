@@ -49,12 +49,16 @@ compatScenario(
     const otp = await readPhoneOtp(ctx, phoneNumber, "password-reset");
     const identifier = `${phoneNumber}-request-password-reset`;
     expect(await ctx.readVerificationState({ identifier })).toHaveLength(1);
-    const reset = await owner.phoneNumber.resetPassword({
-      phoneNumber,
-      otp,
-      newPassword: "changed-password123",
+    const reset = await ctx.rawRequest({
+      path: "/__test/server-api/phone-reset-password",
+      method: "POST",
+      json: {
+        profile,
+        body: { phoneNumber, otp, newPassword: "changed-password123", ignored: true },
+      },
     });
-    expect(reset.error).toBeNull();
+    expect(reset.status).toBe(200);
+    expect(reset.body).toEqual({ status: true });
     expect(await ctx.readVerificationState({ identifier })).toEqual([]);
     const after = await readPhoneState(ctx, profile, userId);
     expect(after.user).toEqual(before.user);
@@ -71,12 +75,13 @@ compatScenario(
     const accepted = await fresh.signIn.email({ email, password: "changed-password123" });
     expect(accepted.error).toBeNull();
     expect(accepted.data!.user.id).toBe(userId);
-    const replay = await owner.phoneNumber.resetPassword({
-      phoneNumber,
-      otp,
-      newPassword: "must-not-commit123",
+    const replay = await ctx.rawRequest({
+      path: "/__test/server-api/phone-reset-password",
+      method: "POST",
+      json: { profile, body: { phoneNumber, otp, newPassword: "must-not-commit123" } },
     });
-    expect(replay.error!.code).toBe("OTP_NOT_FOUND");
+    expect(replay.status).toBe(400);
+    expect((replay.body as { code: string }).code).toBe("OTP_NOT_FOUND");
     return ctx.snapshot({
       signup,
       verified,
@@ -93,5 +98,4 @@ compatScenario(
       replay,
     });
   },
-  ["POST /phone-number/reset-password"],
 );

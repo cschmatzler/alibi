@@ -1,6 +1,6 @@
 use crate::authentication_helpers::{JsonField, JsonFieldKind, RequestBody};
 use alibi_core::{AuthError, wire::UserView};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct PhoneOtpDelivery {
@@ -59,8 +59,9 @@ pub(super) struct VerifyRequest {
     pub phone_number_verified: Option<alibi_core::utils::json::JsValue>,
 }
 
-#[derive(Deserialize)]
-pub(super) struct ResetRequest {
+/// Proof and replacement credential for the public phone password-reset operation.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ResetRequest {
     pub otp: String,
     #[serde(rename = "phoneNumber")]
     pub phone_number: String,
