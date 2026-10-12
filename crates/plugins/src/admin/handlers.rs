@@ -724,9 +724,9 @@ pub(crate) async fn impersonate_user_core(
 
 pub(crate) async fn stop_impersonating_core(
     session: &impl AuthSession,
-    admin_cookie: &AdminSessionCookiePayload,
+    headers: &std::collections::HashMap<String, String>,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
-) -> AuthResult<(SessionUserResponse<SessionView, UserView>, String)> {
+) -> AuthResult<(SessionUserResponse<SessionView, UserView>, String, bool)> {
     let admin_id = session
         .impersonated_by()
         .ok_or_else(|| AuthError::bad_request(MESSAGE_NOT_IMPERSONATING))?
@@ -738,6 +738,25 @@ pub(crate) async fn stop_impersonating_core(
         .await?
         .ok_or_else(|| AuthError::internal(MESSAGE_FAILED_TO_FIND_USER))?;
 
+    let cookie_name =
+        alibi_core::utils::cookie_utils::related_cookie_name(&ctx.config, "admin_session");
+    let failure = || AuthError::Api {
+        status: 500,
+        code: None,
+        message: MESSAGE_FAILED_TO_FIND_ADMIN_SESSION.into(),
+    };
+    let cookie = headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("cookie"))
+        .and_then(|(_, cookies)| {
+            cookies.split(';').find_map(|pair| {
+                let (name, value) = pair.trim().split_once('=')?;
+                (name == cookie_name).then_some(value)
+            })
+        })
+        .ok_or_else(failure)?;
+    let admin_cookie = decode_admin_session_cookie_value(ctx.config.current_secret(), cookie)
+        .map_err(|_| failure())?;
     let admin_session = ctx
         .database
         .get_session_record(&admin_cookie.session_token)
@@ -766,7 +785,7 @@ pub(crate) async fn stop_impersonating_core(
         user: ctx.user_view(&admin_user),
     };
 
-    Ok((response, token))
+    Ok((response, token, admin_cookie.dont_remember))
 }
 
 pub(crate) async fn revoke_user_session_core(

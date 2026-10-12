@@ -1,7 +1,7 @@
 //! Cookies published by HTTP and logical impersonation calls.
 use alibi_core::utils::cookie_utils::{
-    create_derived_session_cookie, create_session_cookie_with_max_age, create_session_like_cookie,
-    related_cookie_name, sign_cookie_value, verify_cookie_value,
+    create_clear_cookie, create_derived_session_cookie, create_session_cookie_with_max_age,
+    create_session_like_cookie, related_cookie_name, sign_cookie_value, verify_cookie_value,
 };
 use alibi_core::{AuthConfig, AuthResult, Headers};
 use std::collections::HashMap;
@@ -57,4 +57,40 @@ pub(super) fn impersonation_cookie_headers(
         )?,
     );
     Ok(result)
+}
+
+pub(super) fn restoration_cookie_headers(
+    config: &AuthConfig,
+    token: &str,
+    dont_remember: bool,
+) -> AuthResult<Headers> {
+    let mut headers = Headers::new();
+    headers.append(
+        "set-cookie",
+        create_session_cookie_with_max_age(
+            Some(token),
+            if dont_remember {
+                None
+            } else {
+                Some(config.session.expires_in.num_seconds())
+            },
+            config,
+        )?,
+    );
+    if dont_remember {
+        headers.append(
+            "set-cookie",
+            create_session_like_cookie(
+                &related_cookie_name(config, "dont_remember"),
+                &sign_cookie_value("true", config.current_secret()),
+                None,
+                config,
+            )?,
+        );
+    }
+    headers.append(
+        "set-cookie",
+        create_clear_cookie(&related_cookie_name(config, "admin_session"), config)?,
+    );
+    Ok(headers)
 }

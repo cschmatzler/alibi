@@ -11,24 +11,19 @@ pub(super) mod types;
 
 mod validation;
 
-use crate::helpers::get_cookie;
 pub use access::RolePermissions;
 use access::{has_permission, is_admin_role, is_admin_user_id};
 use alibi_core::entity::AuthUser;
-use alibi_core::utils::cookie_utils::{
-    create_clear_cookie, create_session_cookie_with_max_age, create_session_like_cookie,
-    related_cookie_name,
-};
 use alibi_core::wire::{SessionView, UserView};
 use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult};
 pub(crate) use callbacks::BannedUserMessagePolicy;
 pub use callbacks::{AdminBannedUserMessage, AdminBannedUserMessageHandler};
 use handlers::AdminDateOperationError;
 use handlers::{
-    ban_user_core, create_user_core, decode_admin_session_cookie_value, get_user_core,
-    has_permission_core, impersonate_user_core, list_user_sessions_core, list_users_core,
-    remove_user_core, revoke_user_session_core, revoke_user_sessions_core, set_role_core,
-    set_user_password_core, stop_impersonating_core, unban_user_core, update_user_core,
+    ban_user_core, create_user_core, get_user_core, has_permission_core, impersonate_user_core,
+    list_user_sessions_core, list_users_core, remove_user_core, revoke_user_session_core,
+    revoke_user_sessions_core, set_role_core, set_user_password_core, stop_impersonating_core,
+    unban_user_core, update_user_core,
 };
 use std::collections::HashMap;
 pub use types::{
@@ -38,7 +33,7 @@ pub use types::{
     RoleInput as AdminRoleInput, SetRoleRequest as AdminSetRoleRequest,
     SetUserPasswordRequest as AdminSetUserPasswordRequest, SuccessResponse as AdminSuccessResponse,
 };
-/// Stored impersonation session and safe user returned by the server operation.
+/// Stored session and safe user returned by an administrative session operation.
 pub type AdminImpersonationResponse =
     types::SessionUserResponse<alibi_core::wire::SessionView, alibi_core::wire::UserView>;
 /// Safe user result returned by admin mutation operations.
@@ -489,54 +484,14 @@ impl AdminPlugin {
             return Err(AuthError::bad_request("You are not impersonating anyone"));
         }
 
-        let admin_cookie_name = related_cookie_name(&ctx.config, "admin_session");
-        let admin_cookie_value =
-            get_cookie(req, &admin_cookie_name).ok_or_else(|| AuthError::Api {
-                status: 500,
-                code: None,
-                message: "Failed to find admin session".into(),
-            })?;
-        let admin_cookie =
-            decode_admin_session_cookie_value(ctx.config.current_secret(), &admin_cookie_value)
-                .map_err(|_error| AuthError::Api {
-                    status: 500,
-                    code: None,
-                    message: "Failed to find admin session".into(),
-                })?;
-
-        let (response, new_token) = stop_impersonating_core(&session, &admin_cookie, ctx).await?;
-
+        let (response, token, dont_remember) =
+            stop_impersonating_core(&session, &req.headers, ctx).await?;
         let mut auth_response = AuthResponse::json(200, &response)?;
-        auth_response = auth_response.with_appended_header(
-            "Set-Cookie",
-            create_session_cookie_with_max_age(
-                Some(&new_token),
-                if admin_cookie.dont_remember {
-                    None
-                } else {
-                    Some(ctx.config.session.expires_in.num_seconds())
-                },
-                &ctx.config,
-            )?,
-        );
-        if admin_cookie.dont_remember {
-            auth_response = auth_response.with_appended_header(
-                "Set-Cookie",
-                create_session_like_cookie(
-                    &related_cookie_name(&ctx.config, "dont_remember"),
-                    &alibi_core::utils::cookie_utils::sign_cookie_value(
-                        "true",
-                        ctx.config.current_secret(),
-                    ),
-                    None,
-                    &ctx.config,
-                )?,
-            );
+        for (name, value) in
+            cookies::restoration_cookie_headers(&ctx.config, &token, dont_remember)?
+        {
+            auth_response.headers.append(name, value);
         }
-        auth_response = auth_response.with_appended_header(
-            "Set-Cookie",
-            create_clear_cookie(&admin_cookie_name, &ctx.config)?,
-        );
         Ok(auth_response)
     }
 
