@@ -24,6 +24,7 @@ impl<S: AuthSchema> EndpointHook<S> for AdminObserver {
                 | "unbanUser"
                 | "banUser"
                 | "revokeUserSession"
+                | "revokeUserSessions"
         ))
     }
     async fn after(
@@ -37,6 +38,8 @@ impl<S: AuthSchema> EndpointHook<S> for AdminObserver {
             call.path(),
             Some(if call.operation_id() == "getUser" {
                 "/admin/get-user"
+            } else if call.operation_id() == "revokeUserSessions" {
+                "/admin/revoke-user-sessions"
             } else if call.operation_id() == "revokeUserSession" {
                 "/admin/revoke-user-session"
             } else if call.operation_id() == "banUser" {
