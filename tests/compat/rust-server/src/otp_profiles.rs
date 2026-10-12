@@ -485,6 +485,39 @@ pub(super) async fn router(
             }
         }),
     );
+    let checking_runtimes = runtimes.clone();
+    router = router.route(
+        "/__test/server-api/email-otp-check",
+        post(move |Json(input): Json<Value>| {
+            let runtimes = checking_runtimes.clone();
+            async move {
+                let selected = runtimes
+                    .get(input["profile"].as_str().unwrap_or("default"))
+                    .unwrap();
+                let mut endpoint = alibi::endpoint::ServerEndpoint::<Value>::new(
+                    "email-otp",
+                    "checkVerificationOTP",
+                );
+                if let Some(body) = input.get("body") {
+                    endpoint = endpoint.with_body(body).unwrap();
+                }
+                match selected
+                    .auth
+                    .dispatch_endpoint(endpoint, Default::default())
+                    .await
+                {
+                    Ok(output) => output.into_response().unwrap().into_response(),
+                    Err(error) => {
+                        let mut response = error.error.to_auth_response();
+                        if let Some(body) = error.body {
+                            response.body = serde_json::to_vec(&*body).unwrap();
+                        }
+                        response.into_response()
+                    }
+                }
+            }
+        }),
+    );
     let retrieval_runtimes = runtimes.clone();
     router = router.route(
         "/__test/server-api/email-otp-get",
