@@ -28,6 +28,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             HttpMethod::Get,
         ),
         crate::endpoint::definition(
+            "stopImpersonating",
+            "stopImpersonating",
+            Some("/admin/stop-impersonating"),
+            HttpMethod::Post,
+        ),
+        crate::endpoint::definition(
             "impersonateUser",
             "impersonateUser",
             Some("/admin/impersonate-user"),
@@ -109,6 +115,15 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "stopImpersonating" {
+        if call.headers().is_none() {
+            return Err(crate::endpoint::validation("Headers is required"));
+        }
+        return Ok(EndpointInput {
+            body: call.body().cloned(),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "impersonateUser" {
         let body: UserIdRequest =
             super::validation::body_value("impersonate-user", call.body().cloned())
@@ -315,6 +330,45 @@ impl AdminPlugin {
         ))
     }
 
+    /// Restore the original session from a signed impersonation cookie.
+    #[must_use]
+    pub fn stop_impersonating_endpoint() -> ServerEndpoint<super::AdminImpersonationResponse> {
+        ServerEndpoint::new("admin", "stopImpersonating")
+    }
+
+    async fn call_stop_impersonating(
+        call: &EndpointCall,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<EndpointResponse> {
+        let (user, session) = match ctx.require_cached_session(call).await {
+            Ok(read) => read,
+            Err(AuthError::Unauthenticated) => {
+                return Ok(EndpointResponse::error(AuthError::Api {
+                    status: 401,
+                    code: None,
+                    message: String::new(),
+                })
+                .without_error_body());
+            }
+            Err(error) => return Err(error),
+        };
+        let user = match &user {
+            alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+            alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
+        };
+        call.record_authenticated_session(user, session.clone());
+        let headers = call.headers().cloned().unwrap_or_default();
+        let (value, token, dont_remember) =
+            super::stop_impersonating_core(&session, &headers, ctx).await?;
+        let mut response = EndpointResponse::json(&value)?;
+        response.merge_headers(super::cookies::restoration_cookie_headers(
+            &ctx.config,
+            &token,
+            dont_remember,
+        )?);
+        Ok(response)
+    }
+
     /// Create an impersonation session and publish cookies through authoritative admin policy.
     #[must_use]
     pub fn impersonate_user_endpoint(
@@ -449,6 +503,9 @@ impl AdminPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "stopImpersonating" {
+            return Self::call_stop_impersonating(call, ctx).await;
+        }
         if call.operation_id() == "userHasPermission" {
             return self.call_permission_endpoint(call, ctx).await;
         }
