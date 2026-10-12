@@ -96,6 +96,52 @@ pub(crate) async fn router(
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
     let runtimes = Arc::new(runtimes);
+    let revocation_runtimes = runtimes.clone();
+    router = router.route(
+        "/__test/server-api/multi-session-revoke",
+        axum::routing::post(move |axum::Json(input): axum::Json<serde_json::Value>| {
+            let runtimes = revocation_runtimes.clone();
+            async move {
+                use axum::response::IntoResponse as _;
+                let selected = runtimes
+                    .get(input["profile"].as_str().unwrap_or("multi-session"))
+                    .unwrap();
+                let mut endpoint = alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(
+                    "multi-session",
+                    "revokeDeviceSession",
+                );
+                if let Some(body) = input.get("body") {
+                    endpoint = endpoint.with_body(body).unwrap();
+                }
+                match selected
+                    .dispatch_endpoint(
+                        endpoint,
+                        alibi::endpoint::EndpointOptions {
+                            headers: input
+                                .get("headers")
+                                .map(|headers| serde_json::from_value(headers.clone()).unwrap()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                {
+                    Ok(output) => output.into_response().unwrap().into_response(),
+                    Err(error) => {
+                        let mut response = error.error.to_auth_response();
+                        if let Some(body) = error.body {
+                            response.body = serde_json::to_vec(&*body).unwrap();
+                        }
+                        if let Some(headers) = error.headers {
+                            for (name, value) in headers.iter() {
+                                response.headers.append(name, value);
+                            }
+                        }
+                        response.into_response()
+                    }
+                }
+            }
+        }),
+    );
     let selection_runtimes = runtimes.clone();
     router = router.route(
         "/__test/server-api/multi-session-select",

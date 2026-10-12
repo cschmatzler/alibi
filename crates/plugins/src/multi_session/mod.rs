@@ -13,7 +13,7 @@ use alibi_core::{
 };
 use async_trait::async_trait;
 use chrono::Utc;
-pub use endpoint::DeviceSession;
+pub use endpoint::{DeviceSession, DeviceSessionRevoked};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -260,6 +260,15 @@ impl MultiSessionPlugin {
             Ok(body) => body,
             Err(response) => return Ok(response),
         };
+        self.revoke_core(req, ctx, body).await
+    }
+
+    async fn revoke_core<S: AuthSchema>(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<S>,
+        body: SessionTokenRequest,
+    ) -> AuthResult<AuthResponse> {
         let (_, current_session) = super::helpers::ordinary_session(req, ctx).await?;
         let (name, token) = Self::selected_token(req, ctx, &body)?;
         ctx.database.delete_session(&token).await?;
@@ -326,6 +335,8 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
     ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
         let output = if call.operation_id() == "setActiveSession" {
             self.set_active_core(call, ctx, call.body_as()?).await?
+        } else if call.operation_id() == "revokeDeviceSession" {
+            self.revoke_core(call, ctx, call.body_as()?).await?
         } else {
             self.list(call, ctx).await?
         };

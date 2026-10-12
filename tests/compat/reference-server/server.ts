@@ -2277,6 +2277,17 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       asResponse: true,
     });
   }
+  if (url.pathname === "/__test/server-api/multi-session-revoke" && request.method === "POST") {
+    const input = await readJson(request);
+    const selected = multipleSessionFixture.profiles.get(
+      `/__test/profiles/${input?.profile ?? "multi-session"}/api/auth`,
+    )!;
+    return (selected.api as any).revokeDeviceSession({
+      body: input?.body,
+      ...(input?.headers ? { headers: new Headers(input.headers as Record<string, string>) } : {}),
+      asResponse: true,
+    });
+  }
   if (url.pathname === "/__test/server-api/multi-session-select" && request.method === "POST") {
     const input = await readJson(request);
     const selected = multipleSessionFixture.profiles.get(

@@ -235,8 +235,62 @@ for (const profile of [
         unchanged,
       );
 
-      const revoke = await client.multiSession.revoke({ sessionToken: alice.data.token });
-      expect(revoke.data?.status).toBe(true);
+      async function serverRevoke(body: unknown, headers?: Record<string, string>) {
+        const response = await ctx
+          .actor("browser", profile)
+          .fetch(`${ctx.baseURL}/__test/server-api/multi-session-revoke`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ profile, body, ...(headers ? { headers } : {}) }),
+          });
+        for (const raw of response.headers.getSetCookie()) {
+          jar.setCookieSync(raw, path);
+        }
+        return {
+          status: response.status,
+          body: (await response.json()) as any,
+          cookieCount: response.headers.getSetCookie().length,
+        };
+      }
+      const beforeRevoke = await Promise.all([
+        ctx.readUserState({ userId: alice.data.user.id }),
+        ctx.readUserState({ userId: bob.data.user.id }),
+      ]);
+      const ordinaryCookie = jar
+        .getCookiesSync(path)
+        .filter((cookie) => !cookie.key.includes("_multi-"))
+        .map((cookie) => cookie.cookieString())
+        .join("; ");
+      const revokeErrors = [];
+      for (const [body, headers, status, code] of [
+        [{ sessionToken: alice.data.token }, undefined, 400, "VALIDATION_ERROR"],
+        [{ sessionToken: 42 }, { cookie: jar.getCookieStringSync(path) }, 400, "VALIDATION_ERROR"],
+        [{ sessionToken: alice.data.token }, {}, 401, "UNAUTHORIZED"],
+        [
+          { sessionToken: alice.data.token },
+          { cookie: ordinaryCookie },
+          401,
+          "INVALID_SESSION_TOKEN",
+        ],
+      ] as const) {
+        const denied = await serverRevoke(body, headers);
+        expect(denied.status).toBe(status);
+        expect(denied.body.code).toBe(code);
+        revokeErrors.push(denied);
+      }
+      expect(
+        await Promise.all([
+          ctx.readUserState({ userId: alice.data.user.id }),
+          ctx.readUserState({ userId: bob.data.user.id }),
+        ]),
+      ).toEqual(beforeRevoke);
+      const revoke = await serverRevoke(
+        { sessionToken: alice.data.token, userId: other.user.id },
+        { cookie: jar.getCookieStringSync(path) },
+      );
+      expect(revoke.status).toBe(200);
+      expect(revoke.body).toEqual({ status: true });
+      expect(revoke.cookieCount).toBeGreaterThan(0);
 
       const fallback = await client.getSession();
       expect(fallback.data?.user.id).toBe(bob.data.user.id);
@@ -275,6 +329,7 @@ for (const profile of [
         other,
         foreignRevoke,
         unchanged,
+        revokeErrors,
         revoke,
         fallback,
         old,
