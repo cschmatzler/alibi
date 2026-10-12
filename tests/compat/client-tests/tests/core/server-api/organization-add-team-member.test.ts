@@ -4,7 +4,7 @@ import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
 
 compatScenario(
-  "server addTeamMember requires headers and persists idempotent admission",
+  "server team membership lifecycle requires headers and persists admission and removal",
   async (ctx) => {
     const profile = "org-teams-no-default";
     async function signup(name: string) {
@@ -46,13 +46,17 @@ compatScenario(
       organizationId: organization.id,
     });
     const userId = owner.result.data!.user.id;
-    async function invoke(body: Record<string, unknown>, headers?: Record<string, string>) {
+    async function invoke(
+      body: Record<string, unknown>,
+      headers?: Record<string, string>,
+      operation = "server-add-team-member",
+    ) {
       return ctx.rawRequest({
         path: "/__test/organization-api",
         method: "POST",
         json: {
           profile,
-          operation: "server-add-team-member",
+          operation,
           body,
           ...(headers ? { headers } : {}),
         },
@@ -68,22 +72,24 @@ compatScenario(
     const before = await state();
     const input = { teamId: team.id, userId, organizationId: organization.id };
     const denied = [];
-    for (const [body, headers, status, code] of [
-      [input, undefined, 400, "VALIDATION_ERROR"],
-      [input, {}, 401, "UNAUTHORIZED"],
-      [input, outsider.headers, 400, "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION"],
-      [
-        { ...input, userId: outsider.result.data!.user.id },
-        owner.headers,
-        400,
-        "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
-      ],
-      [{ ...input, teamId: "missing-team" }, owner.headers, 400, "TEAM_NOT_FOUND"],
-    ] as const) {
-      const result = await invoke(body, headers);
-      expect(result.status).toBe(status);
-      expect((result.body as { code: string }).code).toBe(code);
-      denied.push(result);
+    for (const operation of ["server-add-team-member", "server-remove-team-member"]) {
+      for (const [body, headers, status, code] of [
+        [input, undefined, 400, "VALIDATION_ERROR"],
+        [input, {}, 401, "UNAUTHORIZED"],
+        [input, outsider.headers, 400, "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION"],
+        [
+          { ...input, userId: outsider.result.data!.user.id },
+          owner.headers,
+          400,
+          "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
+        ],
+        [{ ...input, teamId: "missing-team" }, owner.headers, 400, "TEAM_NOT_FOUND"],
+      ] as const) {
+        const result = await invoke(body, headers, operation);
+        expect(result.status).toBe(status);
+        expect((result.body as { code: string }).code).toBe(code);
+        denied.push(result);
+      }
     }
     expect(await state()).toEqual(before);
     const admitted = await invoke({ teamId: team.id, userId }, owner.headers);
@@ -96,6 +102,23 @@ compatScenario(
     expect(repeated.status).toBe(200);
     expect(repeated.body).toEqual(admitted.body);
     expect(await state()).toEqual(after);
+    const removed = await invoke(
+      { teamId: team.id, userId },
+      owner.headers,
+      "server-remove-team-member",
+    );
+    expect(removed.status).toBe(200);
+    expect(removed.body).toEqual({ message: "Team member removed successfully." });
+    const cleared = await state();
+    expect(cleared).toEqual(before);
+    const replay = await invoke(
+      { teamId: team.id, userId },
+      owner.headers,
+      "server-remove-team-member",
+    );
+    expect(replay.status).toBe(400);
+    expect((replay.body as { code: string }).code).toBe("USER_IS_NOT_A_MEMBER_OF_THE_TEAM");
+    expect(await state()).toEqual(cleared);
     return ctx.snapshot({
       owner: owner.result,
       outsider: outsider.result,
@@ -106,6 +129,9 @@ compatScenario(
       admitted,
       after,
       repeated,
+      removed,
+      cleared,
+      replay,
     });
   },
 );

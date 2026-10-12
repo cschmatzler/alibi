@@ -1,11 +1,12 @@
-//! Server team membership admission requires headers and remains idempotent.
+//! Server team membership admission and removal preserve authority and stored counts.
 use super::*;
-use alibi::endpoint::EndpointOptions;
+use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::OrganizationPlugin;
 use alibi::plugins::organization::{OrganizationConfig, TeamsConfig, types::TeamMemberRequest};
+use alibi::utils::json::JsValue;
 
-backend_tests!(server_add_team_member_enforces_headers_and_idempotent_admission);
-async fn server_add_team_member_enforces_headers_and_idempotent_admission<B: Backend>(
+backend_tests!(server_team_membership_lifecycle_enforces_headers_and_admission);
+async fn server_team_membership_lifecycle_enforces_headers_and_admission<B: Backend>(
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
@@ -66,49 +67,51 @@ async fn server_add_team_member_enforces_headers_and_idempotent_admission<B: Bac
     let before = db
         .tables(&["users", "sessions", "member", "team", "team_member"])
         .await?;
-    for (input, options, status, code) in [
-        (
-            input(team_id.clone(), user_id.clone(), Some(id.clone())),
-            EndpointOptions::default(),
-            400,
-            "VALIDATION_ERROR",
-        ),
-        (
-            input(team_id.clone(), user_id.clone(), Some(id.clone())),
-            EndpointOptions {
-                headers: Some(Default::default()),
-                ..Default::default()
-            },
-            401,
-            "UNAUTHORIZED",
-        ),
-        (
-            input(team_id.clone(), user_id.clone(), Some(id.clone())),
-            credentials(&outsider),
-            400,
-            "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
-        ),
-        (
-            input(team_id.clone(), outsider_id, Some(id.clone())),
-            credentials(&owner),
-            400,
-            "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
-        ),
-        (
-            input("missing-team".into(), user_id.clone(), Some(id)),
-            credentials(&owner),
-            400,
-            "TEAM_NOT_FOUND",
-        ),
-    ] {
-        let error = Box::pin(auth.dispatch_endpoint(
-            OrganizationPlugin::add_team_member_endpoint(&input)?,
-            options,
-        ))
-        .await
-        .unwrap_err();
-        assert_eq!(error.error.status_code(), status);
-        assert_eq!(body(&error.error.to_auth_response())["code"], code);
+    for operation in ["addTeamMember", "removeTeamMember"] {
+        for (input, options, status, code) in [
+            (
+                input(team_id.clone(), user_id.clone(), Some(id.clone())),
+                EndpointOptions::default(),
+                400,
+                "VALIDATION_ERROR",
+            ),
+            (
+                input(team_id.clone(), user_id.clone(), Some(id.clone())),
+                EndpointOptions {
+                    headers: Some(Default::default()),
+                    ..Default::default()
+                },
+                401,
+                "UNAUTHORIZED",
+            ),
+            (
+                input(team_id.clone(), user_id.clone(), Some(id.clone())),
+                credentials(&outsider),
+                400,
+                "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
+            ),
+            (
+                input(team_id.clone(), outsider_id.clone(), Some(id.clone())),
+                credentials(&owner),
+                400,
+                "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
+            ),
+            (
+                input("missing-team".into(), user_id.clone(), Some(id.clone())),
+                credentials(&owner),
+                400,
+                "TEAM_NOT_FOUND",
+            ),
+        ] {
+            let error = Box::pin(auth.dispatch_endpoint(
+                ServerEndpoint::<JsValue>::new("organization", operation).with_body(&input)?,
+                options,
+            ))
+            .await
+            .unwrap_err();
+            assert_eq!(error.error.status_code(), status);
+            assert_eq!(body(&error.error.to_auth_response())["code"], code);
+        }
     }
     assert_eq!(
         db.tables(&["users", "sessions", "member", "team", "team_member"])
@@ -143,7 +146,11 @@ async fn server_add_team_member_enforces_headers_and_idempotent_admission<B: Bac
     assert_eq!(rows[0]["team_id"], team_id);
     assert_eq!(rows[0]["user_id"], user_id);
     let repeated = Box::pin(auth.dispatch_endpoint(
-        OrganizationPlugin::add_team_member_endpoint(&input(team_id, user_id, None))?,
+        OrganizationPlugin::add_team_member_endpoint(&input(
+            team_id.clone(),
+            user_id.clone(),
+            None,
+        ))?,
         credentials(&owner),
     ))
     .await?;
@@ -155,6 +162,36 @@ async fn server_add_team_member_enforces_headers_and_idempotent_admission<B: Bac
         db.tables(&["users", "sessions", "member", "team", "team_member"])
             .await?,
         added
+    );
+    let endpoint = || {
+        OrganizationPlugin::remove_team_member_endpoint(&input(
+            team_id.clone(),
+            user_id.clone(),
+            None,
+        ))
+    };
+    let removed = Box::pin(auth.dispatch_endpoint(endpoint()?, credentials(&owner))).await?;
+    assert_eq!(
+        serde_json::to_value(removed.value())?,
+        json!({"message":"Team member removed successfully."})
+    );
+    assert_eq!(
+        db.tables(&["users", "sessions", "member", "team", "team_member"])
+            .await?,
+        before
+    );
+    let replay = Box::pin(auth.dispatch_endpoint(endpoint()?, credentials(&owner)))
+        .await
+        .unwrap_err();
+    assert_eq!(replay.error.status_code(), 400);
+    assert_eq!(
+        body(&replay.error.to_auth_response())["code"],
+        "USER_IS_NOT_A_MEMBER_OF_THE_TEAM"
+    );
+    assert_eq!(
+        db.tables(&["users", "sessions", "member", "team", "team_member"])
+            .await?,
+        before
     );
     B::close(connection).await
 }

@@ -507,6 +507,10 @@ struct OrganizationQuery {
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case")]
 enum TeamOperation {
+    ServerRemoveTeamMember {
+        body: Option<Value>,
+        headers: Option<HashMap<String, String>>,
+    },
     ServerAddTeamMember {
         body: Option<Value>,
         headers: Option<HashMap<String, String>>,
@@ -739,6 +743,14 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                 let headers = headers.iter().filter_map(|(name,value)|value.to_str().ok().map(|value|(name.as_str().to_owned(),value.to_owned()))).collect::<HashMap<_,_>>();
                 let signed = body.authority.as_deref() == Some("headers");
                 let result = match body.operation {
+                    TeamOperation::ServerRemoveTeamMember { body, headers } => {
+                        async {
+                            let mut endpoint = alibi::endpoint::ServerEndpoint::<alibi::utils::json::JsValue>::new("organization", "removeTeamMember");
+                            if let Some(body) = body { endpoint = endpoint.with_body(&body)?; }
+                            let output = profile.auth.dispatch_endpoint(endpoint, alibi::endpoint::EndpointOptions { headers, ..Default::default() }).await.map_err(|error| error.error)?;
+                            serde_json::to_value(output.value()).map_err(|error| AuthError::internal(error.to_string()))
+                        }.await
+                    },
                     TeamOperation::ServerAddTeamMember { body, headers } => {
                         async {
                             let mut endpoint = alibi::endpoint::ServerEndpoint::<alibi::utils::json::JsValue>::new("organization", "addTeamMember");
