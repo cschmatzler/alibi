@@ -4,9 +4,9 @@ use alibi_core::{AuthContext, AuthRequest, AuthResult, AuthSchema, wire::UserVie
 use serde_json::{Map, Value, json};
 use std::{future::Future, pin::Pin};
 
-/// Observes the existing physical user and the real signup request.
+/// Observes the existing physical user and the optional genuine signup request.
 /// Errors are logged while the generic duplicate response remains successful.
-pub type ExistingUserSignupCallback = dyn Fn(UserView, AuthRequest) -> Pin<Box<dyn Future<Output = AuthResult<()>> + Send>>
+pub type ExistingUserSignupCallback = dyn Fn(UserView, Option<AuthRequest>) -> Pin<Box<dyn Future<Output = AuthResult<()>> + Send>>
     + Send
     + Sync;
 
@@ -25,14 +25,14 @@ pub type CustomSyntheticUserCallback =
 
 pub(super) async fn notify_existing(
     user: UserView,
-    request: &AuthRequest,
+    request: Option<&AuthRequest>,
     config: &EmailPasswordConfig,
     context: &AuthContext<impl AuthSchema>,
 ) -> AuthResult<()> {
     let Some(callback) = config.on_existing_user_signup.clone() else {
         return Ok(());
     };
-    let request = request.clone();
+    let request = request.cloned();
     super::super::authentication_helpers::run_owned_notification(
         context,
         async move {

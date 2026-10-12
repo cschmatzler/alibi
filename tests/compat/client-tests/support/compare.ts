@@ -897,7 +897,7 @@ export function compareValues(
       !record(left.input) ||
       !record(right.input) ||
       left.input.operation !== right.input.operation ||
-      !["changePassword", "signInEmail"].includes(left.input.operation as string) ||
+      !["changePassword", "signInEmail", "signUpEmail"].includes(left.input.operation as string) ||
       !record(left.input.body) ||
       !record(right.input.body)
     ) {
@@ -905,6 +905,7 @@ export function compareValues(
     }
     const authPath = `/__test/profiles/${profile[1]}/api/auth`;
     const credentialSignIn = left.input.operation === "signInEmail";
+    const credentialSignup = left.input.operation === "signUpEmail";
     let previousLeft: ReturnType<typeof signedCookie> | undefined;
     let previousRight: ReturnType<typeof signedCookie> | undefined;
     let owner: { leftUser: string; rightUser: string } | undefined;
@@ -925,7 +926,7 @@ export function compareValues(
           right.input.body.email.toLowerCase(),
         ]),
       );
-    } else {
+    } else if (!credentialSignup) {
       if (
         left.input.body.revokeOtherSessions !== true ||
         right.input.body.revokeOtherSessions !== true ||
@@ -951,7 +952,7 @@ export function compareValues(
       }
       owner = rotationOwner;
     }
-    if (!owner) continue;
+    if (!owner && !credentialSignup) continue;
     const returned = (response: unknown) => {
       if (
         !record(response) ||
@@ -971,6 +972,33 @@ export function compareValues(
     if (!a || !b) continue;
     const outputLeft = a.response as Record<string, unknown>;
     const outputRight = b.response as Record<string, unknown>;
+    if (credentialSignup) {
+      const valid = (input: Record<string, unknown>, output: Record<string, unknown>) => {
+        if (!record(input.body) || !record(output.user)) return false;
+        return (
+          typeof input.body.email === "string" &&
+          typeof input.body.name === "string" &&
+          typeof input.body.password === "string" &&
+          typeof output.user.id === "string" &&
+          output.user.email === input.body.email.toLowerCase() &&
+          output.user.name === input.body.name &&
+          output.user.emailVerified === false
+        );
+      };
+      if (
+        !valid(left.input, outputLeft) ||
+        !valid(right.input, outputRight) ||
+        (left.input.body as Record<string, unknown>).rememberMe !==
+          (right.input.body as Record<string, unknown>).rememberMe
+      ) {
+        continue;
+      }
+      owner = {
+        leftUser: (outputLeft.user as { id: string }).id,
+        rightUser: (outputRight.user as { id: string }).id,
+      };
+    }
+    if (!owner) continue;
     const at = outputLeft.token;
     const bt = outputRight.token;
     const issuedLeft = primaryCookie((a.headers as Record<string, unknown>)["set-cookie"]);
@@ -1018,6 +1046,75 @@ export function compareValues(
       );
     });
     if (!observer) continue;
+    if (credentialSignup) {
+      const stored = (
+        observations: readonly PhysicalObservation[] | undefined,
+        userId: string,
+        email: unknown,
+        token: string,
+        browser: unknown,
+        window: RequestWindow,
+      ) =>
+        observations?.some((observation) => {
+          const body = observation.body;
+          if (
+            observation.kind !== "session" ||
+            observation.owner !== userId ||
+            observation.digest !==
+              createHash("sha256").update(JSON.stringify(body)).digest("hex") ||
+            !record(body) ||
+            !record(body.user) ||
+            body.user.id !== userId ||
+            body.user.email !== email ||
+            !isDate(body.user.createdAt) ||
+            Date.parse(body.user.createdAt) < window.startedAt - 5 ||
+            Date.parse(body.user.createdAt) > window.finishedAt ||
+            !Array.isArray(body.accounts) ||
+            !Array.isArray(body.sessions) ||
+            !record(browser) ||
+            !record(browser.session)
+          ) {
+            return false;
+          }
+          return (
+            body.accounts.some(
+              (account) =>
+                record(account) &&
+                account.providerId === "credential" &&
+                account.accountId === userId &&
+                account.userId === userId,
+            ) &&
+            body.sessions.some(
+              (session) =>
+                record(session) &&
+                session.id === (browser.session as Record<string, unknown>).id &&
+                session.token === token &&
+                session.userId === userId &&
+                session.expiresAt === (browser.session as Record<string, unknown>).expiresAt,
+            )
+          );
+        });
+      if (
+        !stored(
+          context.leftPhysicalObservations,
+          owner.leftUser,
+          (outputLeft.user as Record<string, unknown>).email,
+          at,
+          observer.a.responseBody,
+          producer.left,
+        ) ||
+        !stored(
+          context.rightPhysicalObservations,
+          owner.rightUser,
+          (outputRight.user as Record<string, unknown>).email,
+          bt,
+          observer.b.responseBody,
+          producer.right,
+        )
+      ) {
+        continue;
+      }
+    }
     const receipt = {
       left: producer.left,
       right: producer.right,
@@ -1029,7 +1126,12 @@ export function compareValues(
     issuances.set(pair, receipt);
     signedCookieIssuances.add(pair);
     cookieOwners.set(JSON.stringify([issuedLeft, issuedRight]), receipt);
-    identity(at, bt, `${producer.path}.${credentialSignIn ? "signInEmail" : "rotation"}`, "token");
+    identity(
+      at,
+      bt,
+      `${producer.path}.${credentialSignup ? "signUpEmail" : credentialSignIn ? "signInEmail" : "rotation"}`,
+      "token",
+    );
     collectResponseDates(
       observer.a.responseBody,
       observer.b.responseBody,

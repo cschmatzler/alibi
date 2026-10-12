@@ -315,7 +315,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 on_existing_user_signup: Some({let app=app.clone(); Arc::new(move |user, request| {
                     let app=app.clone(); Box::pin(async move {
                         if name.starts_with("signup-synthetic-fields") { return Ok(()); }
-                        app.event(json!({"stage":"existing-user","user":user,"request":signup_request_observation(&request)}));
+                        app.event(json!({"stage":"existing-user","user":user,"request":request.as_ref().map(signup_request_observation)}));
                         if app.mode() == "existing-block" { app.release_existing.notified().await; }
                         app.fail("existing")?;
                         app.event(json!({"stage":"existing-complete"}));

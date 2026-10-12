@@ -61,6 +61,7 @@ mod server_revoke_sessions;
 mod server_set_password;
 mod server_sign_in_email;
 mod server_sign_out;
+mod server_sign_up_email;
 mod server_update_session;
 mod server_update_user;
 mod server_verify_password;

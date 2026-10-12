@@ -40,6 +40,7 @@ pub(crate) use types::SignUpResponse;
 pub use types::{
     SignInEmailResponse, SignInRequest as SignInEmailRequest, SignInResponse as SignInEmailSession,
 };
+pub use types::{SignUpRequest as SignUpEmailRequest, SignUpResponse as SignUpEmailResponse};
 
 const MESSAGE_INVALID_USERNAME_OR_PASSWORD: &str = "Invalid username or password";
 
@@ -336,7 +337,7 @@ fn append_dont_remember_cookie(
     reason = "Keep signup validation, persistence, and provider callbacks in compatibility order"
 )]
 pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
-    request: &AuthRequest,
+    request: Option<&AuthRequest>,
     body: &SignUpRequest,
     config: &EmailPasswordConfig,
     meta: &RequestMeta,
