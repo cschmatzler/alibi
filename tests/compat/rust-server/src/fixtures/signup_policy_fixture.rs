@@ -375,6 +375,19 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         let _ = profiles.insert(name.to_owned(), auth);
     }
     let profiles = Arc::new(profiles);
+    let availability_profiles=profiles.clone();
+    router=router.route("/__test/server-api/username-available",post(move |Json(input):Json<Value>|{
+        let profiles=availability_profiles.clone();
+        async move {
+            let selected=profiles.get(input["profile"].as_str().unwrap_or("signup-username")).unwrap();
+            let mut endpoint=alibi::endpoint::ServerEndpoint::<Value>::new("email-password","isUsernameAvailable");
+            if let Some(body)=input.get("body"){endpoint=endpoint.with_body(body).unwrap();}
+            match selected.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions::default()).await {
+                Ok(output)=>output.into_response().unwrap().into_response(),
+                Err(error)=>error.error.to_auth_response().into_response(),
+            }
+        }
+    }));
     let state_profiles = profiles.clone();
     let state_app = app.clone();
     let state_db = database.clone();

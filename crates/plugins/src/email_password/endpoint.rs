@@ -8,8 +8,8 @@ use alibi_core::endpoint::{
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod, RequestMeta};
 
-pub(super) fn definitions() -> Vec<EndpointDefinition> {
-    vec![
+pub(super) fn definitions(username_enabled: bool) -> Vec<EndpointDefinition> {
+    let mut definitions = vec![
         crate::endpoint::definition(
             "signInEmail",
             "signInEmail",
@@ -22,9 +22,30 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             Some("/sign-up/email"),
             HttpMethod::Post,
         ),
-    ]
+    ];
+    if username_enabled {
+        definitions.push(crate::endpoint::definition(
+            "isUsernameAvailable",
+            "isUsernameAvailable",
+            Some("/is-username-available"),
+            HttpMethod::Post,
+        ));
+    }
+    definitions
 }
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "isUsernameAvailable" {
+        return Ok(EndpointInput {
+            body: Some(crate::endpoint::validate_fields(
+                call.body(),
+                "body",
+                &[crate::authentication_helpers::JsonField::string(
+                    "username", true,
+                )],
+            )?),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "signUpWithEmailAndPassword" {
         _ = crate::endpoint::validate_fields(
             call.body(),
@@ -49,6 +70,20 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
     })
 }
 impl EmailPasswordPlugin {
+    /// Check a guest-supplied username through the installed username policy.
+    #[must_use]
+    pub fn is_username_available_endpoint(
+        username: impl Into<String>,
+    ) -> ServerEndpoint<super::IsUsernameAvailableResponse> {
+        ServerEndpoint::new("email-password", "isUsernameAvailable").with_body_value(
+            JsValue::Object(
+                [("username".into(), JsValue::String(username.into()))]
+                    .into_iter()
+                    .collect(),
+            ),
+        )
+    }
+
     /// Sign in through the installed credential service and server hooks.
     pub fn sign_in_email_endpoint(
         body: &SignInEmailRequest,
@@ -67,6 +102,19 @@ impl EmailPasswordPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "isUsernameAvailable" {
+            let output = self
+                .username_availability_core(ctx, call.body_as()?)
+                .await?;
+            let mut response = if output.status >= 400 {
+                EndpointResponse::error(crate::endpoint::error_response(output.clone()))
+            } else {
+                EndpointResponse::value(alibi_core::utils::json::from_slice(&output.body)?)
+            };
+            response.set_status(Some(output.status));
+            response.merge_headers(output.headers);
+            return Ok(response);
+        }
         if call.operation_id() == "signUpWithEmailAndPassword" {
             return self.call_signup_endpoint(call, ctx).await;
         }

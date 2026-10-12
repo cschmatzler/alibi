@@ -41,33 +41,42 @@ compatScenario(
       };
     };
     const before = await physical();
+    async function invoke(body: unknown) {
+      const response = await guest.fetch(`${ctx.baseURL}/__test/server-api/username-available`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ profile, body }),
+      });
+      const result = {
+        status: response.status,
+        body: (await response.json()) as any,
+        cookieCount: response.headers.getSetCookie().length,
+      };
+      expect(result.cookieCount).toBe(0);
+      return result;
+    }
+    const malformed = await invoke({ username: 42 });
+    expect(malformed.status).toBe(400);
+    expect((malformed.body as any).code).toBe("VALIDATION_ERROR");
+    expect(await physical()).toEqual(before);
     const denied = [];
     for (const [username, code] of [
       ["😀", "USERNAME_TOO_SHORT"],
       ["😀😀", "INVALID_USERNAME"],
       ["a".repeat(29) + "😀", "USERNAME_TOO_LONG"],
     ] as const) {
-      let cookies: string[] = [];
-      const result = await guest.client.isUsernameAvailable(
-        { username },
-        {
-          onResponse({ response }) {
-            cookies = response.headers.getSetCookie();
-          },
-        },
-      );
-      expect(result.error).toMatchObject({ status: 422, code });
-      expect(result.data).toBeNull();
-      expect(cookies).toEqual([]);
+      const result = await invoke({ username });
+      expect(result.status).toBe(422);
+      expect((result.body as any).code).toBe(code);
       expect(await physical()).toEqual(before);
-      denied.push({ username, result: ctx.snapshot(result), cookies });
+      denied.push({ username, result: ctx.snapshot(result) });
     }
-    const available = await guest.client.isUsernameAvailable({ username: "fresh_ascii" });
-    expect(available.error).toBeNull();
-    expect(available.data).toEqual({ available: true });
-    const taken = await guest.client.isUsernameAvailable({ username: "TAKEN_NAME" });
-    expect(taken.error).toBeNull();
-    expect(taken.data).toEqual({ available: false });
+    const available = await invoke({ username: "fresh_ascii", userId: "foreign-selector" });
+    expect(available.status).toBe(200);
+    expect(available.body).toEqual({ available: true });
+    const taken = await invoke({ username: "TAKEN_NAME" });
+    expect(taken.status).toBe(200);
+    expect(taken.body).toEqual({ available: false });
     expect(await physical()).toEqual(before);
     const session = await owner.client.getSession();
     expect(session.data?.user.id).toBe(signup.data!.user.id);

@@ -28,6 +28,7 @@ struct Deny;
 async fn username_availability_utf16_bounds_precede_default_character_validation<B: Backend>(
     db: Db,
 ) -> TestResult {
+    use alibi::endpoint::{EndpointOptions, ServerEndpoint};
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .build()
@@ -45,23 +46,48 @@ async fn username_availability_utf16_bounds_precede_default_character_validation
     let before = db
         .tables(&["users", "accounts", "sessions", "verifications"])
         .await?;
+    let endpoint = |body: &Value| {
+        ServerEndpoint::<Value>::new("email-password", "isUsernameAvailable").with_body(body)
+    };
+    let malformed = Box::pin(auth.dispatch_endpoint(
+        endpoint(&json!({"username":42}))?,
+        EndpointOptions::default(),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(malformed.error.status_code(), 400);
+    assert_eq!(
+        malformed.error.error_payload().1.as_deref(),
+        Some("VALIDATION_ERROR")
+    );
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "verifications"])
+            .await?,
+        before
+    );
     for (username, code) in [
         ("😀".to_owned(), "USERNAME_TOO_SHORT"),
         ("😀😀".to_owned(), "INVALID_USERNAME"),
         (format!("{}😀", "a".repeat(29)), "USERNAME_TOO_LONG"),
     ] {
-        let denied = call(
-            &auth,
-            request(
-                "/is-username-available",
-                Some(json!({"username":username})),
-                "",
-            ),
-            422,
-        )
-        .await;
-        assert_eq!(body(&denied)["code"], code, "{username}");
-        assert!(denied.headers.get_all("set-cookie").next().is_none());
+        let denied = Box::pin(auth.dispatch_endpoint(
+            endpoint(&json!({"username":username}))?,
+            EndpointOptions::default(),
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(denied.error.status_code(), 422);
+        assert_eq!(
+            denied.error.error_payload().1.as_deref(),
+            Some(code),
+            "{username}"
+        );
+        assert!(
+            denied
+                .headers
+                .as_ref()
+                .is_none_or(|headers| headers.get_all("set-cookie").next().is_none())
+        );
         assert_eq!(
             db.tables(&["users", "accounts", "sessions", "verifications"])
                 .await?,
@@ -69,18 +95,13 @@ async fn username_availability_utf16_bounds_precede_default_character_validation
         );
     }
     for (username, available) in [("fresh_ascii", true), ("TAKEN_NAME", false)] {
-        let result = call(
-            &auth,
-            request(
-                "/is-username-available",
-                Some(json!({"username":username})),
-                "",
-            ),
-            200,
-        )
-        .await;
-        assert_eq!(body(&result), json!({"available":available}));
-        assert!(result.headers.get_all("set-cookie").next().is_none());
+        let result = Box::pin(auth.dispatch_endpoint(
+            EmailPasswordPlugin::is_username_available_endpoint(username),
+            EndpointOptions::default(),
+        ))
+        .await?;
+        assert_eq!(result.decode()?.available, available);
+        assert!(result.headers().get_all("set-cookie").next().is_none());
         assert_eq!(
             db.tables(&["users", "accounts", "sessions", "verifications"])
                 .await?,

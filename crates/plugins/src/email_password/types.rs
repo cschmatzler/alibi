@@ -99,9 +99,10 @@ pub(in crate::email_password) struct IsUsernameAvailableRequest {
     pub(in crate::email_password) username: String,
 }
 
-#[derive(Debug, Serialize)]
-pub(in crate::email_password) struct IsUsernameAvailableResponse {
-    pub(in crate::email_password) available: bool,
+/// Guest-readable username availability without issuing authentication authority.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IsUsernameAvailableResponse {
+    pub available: bool,
 }
 
 /// Created or synthetic public user returned by `signUpEmail`.
