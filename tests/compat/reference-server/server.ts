@@ -2221,6 +2221,15 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       asResponse: true,
     });
   }
+  if (url.pathname === "/__test/server-api/email-otp-check" && request.method === "POST") {
+    const input = await readJson(request);
+    const selected = typeof input?.profile === "string" ? otpProfiles.get(input.profile) : auth;
+    if (!selected) return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
+    return selected.api.checkVerificationOTP({
+      body: input?.body as Parameters<typeof selected.api.checkVerificationOTP>[0]["body"],
+      asResponse: true,
+    });
+  }
   if (url.pathname === "/__test/server-api/email-otp-get" && request.method === "POST") {
     const input = await readJson(request);
     const selected = typeof input?.profile === "string" ? otpProfiles.get(input.profile) : auth;

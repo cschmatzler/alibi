@@ -279,6 +279,14 @@ impl EmailOtpPlugin {
             Ok(value) => value,
             Err(response) => return Ok(response),
         };
+        self.check_verification_core(ctx, body).await
+    }
+
+    pub(super) async fn check_verification_core(
+        &self,
+        ctx: &AuthContext<impl AuthSchema>,
+        body: CheckRequest,
+    ) -> AuthResult<AuthResponse> {
         let email = parse_email(&body.email)?;
         let key = identifier(body.otp_type, &email);
         let value = find_verification(ctx, &key)

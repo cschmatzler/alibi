@@ -16,7 +16,7 @@ mod types;
 use alibi_core::AuthError;
 use alibi_core::{AuthContext, AuthRequest, AuthResponse, AuthResult};
 use async_trait::async_trait;
-pub use endpoint::{EmailOtpRead, EmailOtpSent};
+pub use endpoint::{EmailOtpCheck, EmailOtpRead, EmailOtpSent};
 use std::sync::Arc;
 pub use storage::{EmailOtpCodec, EmailOtpStorage};
 pub use types::{EmailOtpDelivery, EmailOtpType, OtpResendStrategy};
