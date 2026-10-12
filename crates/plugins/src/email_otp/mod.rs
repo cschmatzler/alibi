@@ -17,8 +17,8 @@ use alibi_core::AuthError;
 use alibi_core::{AuthContext, AuthRequest, AuthResponse, AuthResult};
 use async_trait::async_trait;
 pub use endpoint::{
-    EmailOtpCheck, EmailOtpRead, EmailOtpSent, EmailOtpSignInInput, EmailOtpSignInResult,
-    EmailOtpVerification,
+    EmailOtpCheck, EmailOtpRead, EmailOtpResetRequested, EmailOtpSent, EmailOtpSignInInput,
+    EmailOtpSignInResult, EmailOtpVerification,
 };
 use std::sync::Arc;
 pub use storage::{EmailOtpCodec, EmailOtpStorage};

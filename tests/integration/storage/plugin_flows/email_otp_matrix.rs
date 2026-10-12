@@ -9,6 +9,7 @@ use alibi::plugins::{EmailVerificationConfig, EmailVerificationPlugin};
 use alibi::{AuthError, AuthResult, CallbackContext};
 
 backend_tests!(
+    server_email_otp_reset_request_aliases_preserve_delivery_and_hidden_mailboxes,
     server_email_otp_sending_preserves_scope_and_delivery_admission,
     email_otp_issuance_and_request_validation,
     email_otp_change_email_policy,
@@ -1719,5 +1720,135 @@ async fn server_email_otp_sending_preserves_scope_and_delivery_admission<B: Back
         json!({"message":"send email verification is not implemented"})
     );
     assert_eq!(db.table("verifications").await?, proofs);
+    Ok(())
+}
+
+async fn server_email_otp_reset_request_aliases_preserve_delivery_and_hidden_mailboxes<
+    B: Backend,
+>(
+    parent: Db,
+) -> TestResult {
+    use alibi::endpoint::{EndpointOptions, ServerEndpoint};
+    use alibi::plugins::email_otp::EmailOtpType;
+    for operation in ["requestPasswordResetEmailOTP", "forgetPasswordEmailOTP"] {
+        let db = parent.fresh().await?;
+        let (connection, _) = db.migrated::<B>(SECRET).await?;
+        let mailbox = Arc::new(Mailbox::default());
+        let auth = Box::pin(
+            fast_builder::<B>(&connection)
+                .plugin(plugin(&mailbox, EmailOtpConfig::default()))
+                .build(),
+        )
+        .await?;
+        let email = "server-otp-reset-owner@example.test";
+        let owner = Box::pin(signup(&auth, email)).await;
+        let identities = db.tables(&["users", "accounts", "sessions"]).await?;
+        let endpoint =
+            |body: &Value| ServerEndpoint::<Value>::new("email-otp", operation).with_body(body);
+        let invalid = Box::pin(
+            auth.dispatch_endpoint(endpoint(&json!({"email":42}))?, EndpointOptions::default()),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(invalid.error.status_code(), 400);
+        assert_eq!(
+            invalid.error.error_payload().1.as_deref(),
+            Some("VALIDATION_ERROR")
+        );
+        assert_eq!(db.count("verifications").await?, 0);
+        assert!(mailbox.0.lock().unwrap().is_empty());
+        for email in ["not-an-email", "server-otp-reset-absent@example.test"] {
+            let hidden = Box::pin(auth.dispatch_endpoint(
+                endpoint(&json!({"email":email}))?,
+                EndpointOptions::default(),
+            ))
+            .await?;
+            assert_eq!(hidden.decode()?, json!({"success":true}));
+            assert_eq!(db.count("verifications").await?, 0);
+            assert!(mailbox.0.lock().unwrap().is_empty());
+        }
+        let sent = Box::pin(
+            auth.dispatch_endpoint(
+                (if operation == "forgetPasswordEmailOTP" {
+                    EmailOtpPlugin::forget_password_email_otp_endpoint(email.to_uppercase())
+                } else {
+                    EmailOtpPlugin::request_password_reset_email_otp_endpoint(email.to_uppercase())
+                })
+                .with_body(&json!({"email":email.to_uppercase(),"ignored":true}))?,
+                EndpointOptions::default(),
+            ),
+        )
+        .await?;
+        assert!(sent.decode()?.success);
+        assert!(sent.headers().get_all("set-cookie").next().is_none());
+        let delivery = mailbox.take();
+        assert_eq!(delivery.email, email);
+        assert_eq!(delivery.otp_type, EmailOtpType::ForgetPassword);
+        assert!(delivery.otp.bytes().all(|byte| byte.is_ascii_digit()));
+        let key = format!("forget-password-otp-{email}");
+        use alibi::AuthVerification;
+        assert_eq!(
+            auth.store()
+                .get_verification_by_identifier(&key)
+                .await?
+                .unwrap()
+                .value(),
+            format!("{}:0", delivery.otp)
+        );
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions"]).await?,
+            identities
+        );
+        let _=Box::pin(call(&auth,request("/email-otp/reset-password",Some(json!({"email":email,"otp":delivery.otp,"password":"changed-reset-password123"})),""),200)).await;
+        assert_eq!(db.count("verifications").await?, 0);
+        let rejected = Box::pin(call(
+            &auth,
+            request(
+                "/sign-in/email",
+                Some(json!({"email":email,"password":PASSWORD})),
+                "",
+            ),
+            401,
+        ))
+        .await;
+        assert_eq!(body(&rejected)["code"], "INVALID_EMAIL_OR_PASSWORD");
+        let accepted = Box::pin(call(
+            &auth,
+            request(
+                "/sign-in/email",
+                Some(json!({"email":email,"password":"changed-reset-password123"})),
+                "",
+            ),
+            200,
+        ))
+        .await;
+        assert_eq!(body(&accepted)["user"]["id"], body(&owner)["user"]["id"]);
+        let missing = Box::pin(
+            fast_builder::<B>(&connection)
+                .plugin(EmailOtpPlugin::new(EmailOtpConfig::default()))
+                .build(),
+        )
+        .await?;
+        let identities = db.tables(&["users", "accounts", "sessions"]).await?;
+        let failed = Box::pin(missing.dispatch_endpoint(
+            endpoint(&json!({"email":email}))?,
+            EndpointOptions::default(),
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(failed.error.status_code(), 500);
+        assert!(matches!(failed.error, AuthError::CallbackFailure(_)));
+        let proof = missing
+            .store()
+            .get_verification_by_identifier(&key)
+            .await?
+            .unwrap();
+        assert!(proof.value().ends_with(":0"));
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions"]).await?,
+            identities
+        );
+        B::close(connection).await?;
+    }
     Ok(())
 }
