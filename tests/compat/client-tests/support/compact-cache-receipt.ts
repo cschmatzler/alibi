@@ -2,7 +2,7 @@ import { expect } from "bun:test";
 
 const dispatchSecret = "compat-test-only-key-not-real-minimum-32chars";
 
-export async function cacheReceipt(headers: Headers) {
+export async function cacheReceipt(headers: Headers, effectiveMaxAgeSeconds = 300) {
   const { createHmac } = await import("node:crypto");
   const { getCookieCache } = await import("better-auth/cookies");
   const rawCookies = headers
@@ -34,7 +34,7 @@ export async function cacheReceipt(headers: Headers) {
       envelope,
       decoded,
       observedAt,
-      effectiveMaxAgeSeconds: 300,
+      effectiveMaxAgeSeconds,
       rawCookies,
     },
   };

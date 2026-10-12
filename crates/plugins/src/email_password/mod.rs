@@ -1,4 +1,5 @@
 mod config;
+mod endpoint;
 mod http;
 mod signin;
 mod signup;
@@ -36,6 +37,9 @@ pub(crate) use types::SignInCoreResult;
 pub(crate) use types::SignInResponse;
 pub(crate) use types::SignUpRequest;
 pub(crate) use types::SignUpResponse;
+pub use types::{
+    SignInEmailResponse, SignInRequest as SignInEmailRequest, SignInResponse as SignInEmailSession,
+};
 
 const MESSAGE_INVALID_USERNAME_OR_PASSWORD: &str = "Invalid username or password";
 
@@ -198,6 +202,24 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
         } else {
             indexmap::IndexMap::default()
         }
+    }
+
+    fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
+        endpoint::definitions()
+    }
+    fn validate_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
+        endpoint::validate(call)
+    }
+    async fn on_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        self.call_sign_in_endpoint(call, ctx).await
     }
 
     fn routes(&self) -> Vec<AuthRoute> {
@@ -586,7 +608,7 @@ async fn verify_user_password(
 
 /// Shared sign-in finalization logic after user lookup and credential verification.
 async fn finalize_sign_in_with_user_core<S: alibi_core::AuthSchema>(
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     user: alibi_core::AdapterRecord<S::User>,
     remember_me: Option<bool>,
     _email_verification: Option<&EmailVerificationPlugin>,

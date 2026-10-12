@@ -584,6 +584,7 @@ pub(crate) async fn router(
                 let plugin = match input.operation.as_str() {
                     "updateUser" | "ok" => "core",
                     "verifyEmail" | "sendVerificationEmail" => "email-verification",
+                    "signInEmail" => "email-password",
                     "deleteUser" | "deleteUserCallback" | "changeEmail" => "user-management",
                     "changePassword" | "verifyPassword" | "setPassword" | "resetPassword" | "requestPasswordReset" | "requestPasswordResetCallback" => "password-management",
                     "listUserAccounts" | "unlinkAccount" => "account-management",
@@ -609,6 +610,7 @@ pub(crate) async fn router(
                     "updateUser" => "updateUser",
                     "ok" => "ok",
                     "verifyEmail" => "verifyEmail",
+                    "signInEmail" => "signInEmail",
                     "sendVerificationEmail" => "sendVerificationEmail",
                     "deleteUser" => "deleteUser",
                     "deleteUserCallback" => "deleteUserCallback",
