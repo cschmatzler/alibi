@@ -496,6 +496,15 @@ impl PhoneNumberPlugin {
             Ok(body) => body,
             Err(response) => return Ok(response),
         };
+        self.request_password_reset_core(ctx, Some(req), body).await
+    }
+
+    pub(super) async fn request_password_reset_core(
+        &self,
+        ctx: &AuthContext<impl AuthSchema>,
+        request: Option<&AuthRequest>,
+        body: SendRequest,
+    ) -> AuthResult<AuthResponse> {
         let user = ctx
             .database
             .get_user_by_phone_number_record(&body.phone_number)
@@ -519,7 +528,7 @@ impl PhoneNumberPlugin {
         {
             self.deliver(
                 ctx,
-                Some(req),
+                request,
                 sender.clone(),
                 PhoneOtpDelivery {
                     phone_number: body.phone_number,

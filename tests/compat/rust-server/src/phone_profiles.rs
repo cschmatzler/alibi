@@ -403,39 +403,45 @@ pub(super) async fn build(
     let verifier_controls = controls.clone();
     let reset_controls = controls.clone();
     let consume_runtimes = Arc::new(runtimes);
-    let send_runtimes = consume_runtimes.clone();
-    router = router.route(
-        "/__test/server-api/phone-send-otp",
-        post(move |Json(input): Json<Value>| {
-            let runtimes = send_runtimes.clone();
-            async move {
-                let selected = runtimes
-                    .get(input["profile"].as_str().unwrap_or("phone-default"))
-                    .unwrap();
-                let mut endpoint = alibi::endpoint::ServerEndpoint::<Value>::new(
-                    "phone-number",
-                    "sendPhoneNumberOTP",
-                );
-                if let Some(body) = input.get("body") {
-                    endpoint = endpoint.with_body(body).unwrap();
-                }
-                match selected
-                    .auth
-                    .dispatch_endpoint(endpoint, alibi::endpoint::EndpointOptions::default())
-                    .await
-                {
-                    Ok(output) => output.into_response().unwrap().into_response(),
-                    Err(error) => {
-                        let mut response = error.error.to_auth_response();
-                        if let Some(body) = error.body {
-                            response.body = serde_json::to_vec(&*body).unwrap();
+    for (path, operation) in [
+        ("/__test/server-api/phone-send-otp", "sendPhoneNumberOTP"),
+        (
+            "/__test/server-api/phone-request-password-reset",
+            "requestPasswordResetPhoneNumber",
+        ),
+    ] {
+        let send_runtimes = consume_runtimes.clone();
+        router = router.route(
+            path,
+            post(move |Json(input): Json<Value>| {
+                let runtimes = send_runtimes.clone();
+                async move {
+                    let selected = runtimes
+                        .get(input["profile"].as_str().unwrap_or("phone-default"))
+                        .unwrap();
+                    let mut endpoint =
+                        alibi::endpoint::ServerEndpoint::<Value>::new("phone-number", operation);
+                    if let Some(body) = input.get("body") {
+                        endpoint = endpoint.with_body(body).unwrap();
+                    }
+                    match selected
+                        .auth
+                        .dispatch_endpoint(endpoint, alibi::endpoint::EndpointOptions::default())
+                        .await
+                    {
+                        Ok(output) => output.into_response().unwrap().into_response(),
+                        Err(error) => {
+                            let mut response = error.error.to_auth_response();
+                            if let Some(body) = error.body {
+                                response.body = serde_json::to_vec(&*body).unwrap();
+                            }
+                            response.into_response()
                         }
-                        response.into_response()
                     }
                 }
-            }
-        }),
-    );
+            }),
+        );
+    }
     let selected_runtimes = consume_runtimes.clone();
     let validator_controls = controls.clone();
     let notification_read = controls.notification.clone();
