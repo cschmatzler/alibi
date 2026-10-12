@@ -300,7 +300,7 @@ pub(in crate::oauth) async fn sign_in_with_id_token_core(
     clippy::too_many_lines,
     reason = "Keep provider proof validation and account ownership checks adjacent to the linking write"
 )]
-pub(in crate::oauth::handlers) async fn link_with_id_token_core(
+pub(in crate::oauth) async fn link_with_id_token_core(
     body: &LinkSocialRequest,
     id_token: &OAuthIdTokenRequest,
     provider: &OAuthProvider,
