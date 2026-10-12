@@ -43,17 +43,39 @@ pub(crate) struct GetUserQuery {
     pub id: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub(crate) struct CreateUserRequest {
+/// Input for trusted or authenticated admin user provisioning.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateUserRequest {
+    /// The new user's email, normalized before storage.
     pub email: String,
+    /// Optional credential password; empty strings create no credential.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
+    /// The new user's display name.
     pub name: String,
+    /// Optional literal role selector, taking precedence over data.role.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<RoleInput>,
+    /// Optional application fields, subject to the installed permission policy.
     #[serde(
         default,
+        skip_serializing_if = "Option::is_none",
         deserialize_with = "alibi_core::utils::json::deserialize_optional_map"
     )]
     pub data: Option<serde_json::Map<String, serde_json::Value>>,
+}
+impl CreateUserRequest {
+    /// Provision a user without a credential or an explicit role selector.
+    #[must_use]
+    pub fn new(email: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            email: email.into(),
+            name: name.into(),
+            password: None,
+            role: None,
+            data: None,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

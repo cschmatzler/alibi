@@ -34,8 +34,8 @@ use handlers::{
 };
 use std::collections::HashMap;
 pub use types::{
-    AdminUserView as AdminUserOutput, RoleInput as AdminRoleInput,
-    SetRoleRequest as AdminSetRoleRequest,
+    AdminUserView as AdminUserOutput, CreateUserRequest as AdminCreateUserRequest,
+    RoleInput as AdminRoleInput, SetRoleRequest as AdminSetRoleRequest,
 };
 /// Safe user result returned by admin mutation operations.
 pub type AdminUserResponse = types::UserResponse<AdminUserOutput>;
@@ -276,6 +276,28 @@ impl AdminPlugin {
         AuthResponse::json(200, &response).map_err(AuthError::from)
     }
 
+    fn authorize_create_user(&self, user: &UserView, body: &CreateUserRequest) -> AuthResult<()> {
+        self.authorize(user, "user", "create", MESSAGE_CREATE_USERS)?;
+        // The source checks presence after nullish body/data precedence; empty
+        // strings/arrays still request role authority. Validate nested types later.
+        if body.role.is_some()
+            || body
+                .data
+                .as_ref()
+                .is_some_and(|data| data.contains_key("role"))
+        {
+            self.authorize(user, "user", "set-role", MESSAGE_CHANGE_ROLE)?;
+        }
+        if body.data.as_ref().is_some_and(|data| {
+            ["banned", "banReason", "banExpires"]
+                .iter()
+                .any(|key| data.contains_key(*key))
+        }) {
+            self.authorize(user, "user", "ban", MESSAGE_BAN_USERS)?;
+        }
+        Ok(())
+    }
+
     async fn handle_create_user(
         &self,
         req: &AuthRequest,
@@ -288,24 +310,7 @@ impl AdminPlugin {
         let Some((user, _session)) = self.require_session(req, ctx).await? else {
             return Ok(Self::missing_session_response());
         };
-        self.authorize(&user, "user", "create", MESSAGE_CREATE_USERS)?;
-        // The source checks presence after nullish body/data precedence; empty
-        // strings/arrays still request role authority. Validate nested types later.
-        if body.role.is_some()
-            || body
-                .data
-                .as_ref()
-                .is_some_and(|data| data.contains_key("role"))
-        {
-            self.authorize(&user, "user", "set-role", MESSAGE_CHANGE_ROLE)?;
-        }
-        if body.data.as_ref().is_some_and(|data| {
-            ["banned", "banReason", "banExpires"]
-                .iter()
-                .any(|key| data.contains_key(*key))
-        }) {
-            self.authorize(&user, "user", "ban", MESSAGE_BAN_USERS)?;
-        }
+        self.authorize_create_user(&user, &body)?;
         let response = create_user_core(&body, &self.config, ctx).await?;
         AuthResponse::json(200, &response).map_err(AuthError::from)
     }
