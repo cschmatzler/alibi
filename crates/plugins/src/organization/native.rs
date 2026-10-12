@@ -352,6 +352,9 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
             let _: types::UpdateTeamRequest = call
                 .body_as()
                 .map_err(|error| validation(error.to_string()))?;
+            if call.headers().is_none() {
+                return Err(validation("Headers is required"));
+            }
         }
         "removeTeam" => {
             let _: types::RemoveTeamRequest = call
