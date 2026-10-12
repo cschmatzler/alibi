@@ -406,6 +406,7 @@ async fn magic_link_returning_verified_owner_retains_credentials_oauth_and_brows
 >(
     db: Db,
 ) -> TestResult {
+    use alibi::endpoint::{EndpointOptions, ServerEndpoint};
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let outbox = Arc::new(Outbox::default());
     let auth = fast_builder::<B>(&connection)
@@ -455,17 +456,88 @@ async fn magic_link_returning_verified_owner_retains_credentials_oauth_and_brows
     .await;
     let foreign = signup(&auth, "foreign@example.test").await;
     let accounts = db.table("accounts").await?;
-    _ = call(
-        &auth,
-        request(
-            "/sign-in/magic-link",
-            Some(json!({"email":"VERIFIED@EXAMPLE.TEST","name":"must-not-replace"})),
-            "",
+    let identities = db.tables(&["users", "accounts", "sessions"]).await?;
+    let endpoint = |body: &Value| {
+        ServerEndpoint::<Value>::new("magic-link", "signInMagicLink").with_body(body)
+    };
+    let missing = Box::pin(auth.dispatch_endpoint(
+        endpoint(&json!({"email":"VERIFIED@EXAMPLE.TEST"}))?,
+        EndpointOptions::default(),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(missing.error.status_code(), 400);
+    assert_eq!(
+        missing.error.error_payload().1.as_deref(),
+        Some("VALIDATION_ERROR")
+    );
+    assert_eq!(missing.error.error_payload().2, "Headers is required");
+    let invalid = Box::pin(auth.dispatch_endpoint(
+        endpoint(&json!({"email":"VERIFIED@EXAMPLE.TEST","metadata":[]}))?,
+        EndpointOptions {
+            headers: Some(Default::default()),
+            ..Default::default()
+        },
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(invalid.error.status_code(), 400);
+    assert_eq!(
+        invalid.error.error_payload().1.as_deref(),
+        Some("VALIDATION_ERROR")
+    );
+    assert_eq!(db.count("verifications").await?, 0);
+    assert!(outbox.sent.lock().unwrap().is_empty());
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions"]).await?,
+        identities
+    );
+    let issued = Box::pin(
+        auth.dispatch_endpoint(
+            MagicLinkPlugin::sign_in_endpoint(&alibi::plugins::magic_link::MagicLinkSignInInput {
+                email: "VERIFIED@EXAMPLE.TEST".into(),
+                name: Some("must-not-replace".into()),
+                metadata: Some(json!({"scope":"server","nested":{"one":true}}).into()),
+                callback_url: Some("/returning".into()),
+                new_user_callback_url: Some("/welcome".into()),
+                error_callback_url: Some("/oops".into()),
+            })?,
+            EndpointOptions {
+                headers: Some(
+                    [("origin".into(), "https://foreign.example".into())]
+                        .into_iter()
+                        .collect(),
+                ),
+                ..Default::default()
+            },
         ),
-        200,
     )
-    .await;
+    .await?;
+    assert!(issued.decode()?.status);
+    assert!(issued.headers().get_all("set-cookie").next().is_none());
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions"]).await?,
+        identities
+    );
     let delivery = outbox.sent.lock().unwrap().last().unwrap().clone();
+    assert_eq!(delivery.email, "VERIFIED@EXAMPLE.TEST");
+    assert_eq!(
+        delivery.metadata.as_ref().unwrap().to_json_value()?,
+        json!({"scope":"server","nested":{"one":true}})
+    );
+    let url = url::Url::parse(&delivery.url)?;
+    assert_eq!(url.path(), "/api/auth/magic-link/verify");
+    for (key, expected) in [
+        ("callbackURL", "/returning"),
+        ("newUserCallbackURL", "/welcome"),
+        ("errorCallbackURL", "/oops"),
+    ] {
+        assert_eq!(
+            url.query_pairs().find(|(name, _)| name == key).unwrap().1,
+            expected
+        );
+    }
+    assert_eq!(db.count("verifications").await?, 1);
     let response = call(&auth, redeem(&delivery, &[]), 302).await;
     assert_eq!(db.table("accounts").await?, accounts);
     assert_eq!(
