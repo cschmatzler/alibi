@@ -181,16 +181,31 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     );
 
     let remaining = Box::pin(async {
-    let regenerated = call(
-        &auth,
-        request(
-            "/two-factor/generate-backup-codes",
-            Some(json!({"password":PASSWORD})),
-            &active_cookie,
-        ),
-        200,
-    )
-    .await;
+    Box::pin(async {
+    let stable = db.tables(&["users", "accounts", "sessions", "two_factor", "verifications"]).await?;
+    for (input, cookie, status, code) in [
+        (json!({}), Some(active_cookie.clone()), 400, "VALIDATION_ERROR"),
+        (json!({"password":42}), Some(active_cookie.clone()), 400, "VALIDATION_ERROR"),
+        (json!({"password":"incorrect"}), Some(active_cookie.clone()), 400, "INVALID_PASSWORD"),
+        (json!({"password":PASSWORD}), None, 401, "UNAUTHORIZED"),
+    ] {
+        let error = Box::pin(auth.dispatch_endpoint(
+            alibi::endpoint::ServerEndpoint::<Value>::new("two-factor", "generateBackupCodes").with_body(&input)?,
+            EndpointOptions {headers:cookie.map(|cookie| [("cookie".into(),cookie)].into_iter().collect()), ..Default::default()},
+        )).await.unwrap_err();
+        assert_eq!(error.error.status_code(), status);
+        assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
+        assert_eq!(db.tables(&["users", "accounts", "sessions", "two_factor", "verifications"]).await?,stable);
+    }
+    Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+    }).await?;
+    let regenerated = Box::pin(auth.dispatch_endpoint(
+        TwoFactorPlugin::generate_backup_codes_endpoint(alibi::plugins::two_factor::GenerateBackupCodesInput { password:Some(PASSWORD.into()) })
+            .with_body(&json!({"password":PASSWORD,"userId":"untrusted-selector"}))?,
+        EndpointOptions {headers:Some([("cookie".into(),active_cookie.clone())].into_iter().collect()),..Default::default()},
+    )).await?.into_response()?;
+    assert_eq!(body(&regenerated)["status"], true);
+    assert_eq!(body(&regenerated)["backupCodes"].as_array().unwrap().len(),10);
     let backup_view = Box::pin(auth
         .dispatch_endpoint(
             TwoFactorPlugin::view_backup_codes_endpoint(&user),

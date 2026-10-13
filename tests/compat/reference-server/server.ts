@@ -2277,6 +2277,17 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       asResponse: true,
     });
   }
+  if (
+    url.pathname === "/__test/server-api/two-factor-generate-backup" &&
+    request.method === "POST"
+  ) {
+    const input = await readJson(request);
+    return auth.api.generateBackupCodes({
+      body: input?.body as Parameters<typeof auth.api.generateBackupCodes>[0]["body"],
+      ...(input?.headers ? { headers: new Headers(input.headers as Record<string, string>) } : {}),
+      asResponse: true,
+    });
+  }
   if (url.pathname === "/__test/server-api/two-factor-verify-backup" && request.method === "POST") {
     const input = await readJson(request);
     return auth.api.verifyBackupCode({

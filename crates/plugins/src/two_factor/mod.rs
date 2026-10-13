@@ -203,10 +203,14 @@ pub struct VerifyOtpRequest {
 /// Public input for direct delivered-code verification.
 pub type VerifyOtpInput = VerifyOtpRequest;
 
-#[derive(Debug, Deserialize, Validate)]
-pub(crate) struct GenerateBackupCodesRequest {
-    password: Option<String>,
+/// Password admission for regenerating the current owner's recovery codes.
+#[derive(Debug, Deserialize, Serialize, Validate)]
+pub struct GenerateBackupCodesRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
 }
+/// Public input for direct backup-code regeneration.
+pub type GenerateBackupCodesInput = GenerateBackupCodesRequest;
 
 /// Recovery code and optional session/device publication preferences.
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -618,11 +622,12 @@ impl TwoFactorPlugin {
                 Err(resp) => return Ok(resp),
             };
 
-        let response = match generate_backup_codes_core(&body, &user, &self.config, ctx).await {
-            Ok(response) => response,
-            Err(BackupOperationError::InvalidGeneration) => return Ok(AuthResponse::new(500)),
-            Err(BackupOperationError::Auth(error)) => return Err(error),
-        };
+        let response =
+            match Box::pin(generate_backup_codes_core(&body, &user, &self.config, ctx)).await {
+                Ok(response) => response,
+                Err(BackupOperationError::InvalidGeneration) => return Ok(AuthResponse::new(500)),
+                Err(BackupOperationError::Auth(error)) => return Err(error),
+            };
         AuthResponse::json(200, &response).map_err(AuthError::from)
     }
 
