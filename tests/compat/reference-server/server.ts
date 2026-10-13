@@ -71,6 +71,7 @@ import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixtur
 import { naverProviderFixture } from "./fixtures/naver-provider-fixture";
 import { notionProviderFixture } from "./fixtures/notion-provider-fixture";
 import { oauthPopupFixture } from "./fixtures/oauth-popup-fixture";
+import { oauthProviderDiscovery } from "./fixtures/oauth-provider-fixture";
 import { oauthProxyFixture } from "./fixtures/oauth-proxy-fixture";
 import { createOneTapProfiles, googleOneTapJwks, oneTapState } from "./fixtures/one-tap-fixture";
 import { openApiProfiles } from "./fixtures/open-api-fixture";
@@ -3036,6 +3037,7 @@ async function oneTimeTokenControl(request: Request, url: URL): Promise<Response
 }
 
 const openApiInstances = openApiProfiles(PORT, database);
+const oauthProviderMetadata = oauthProviderDiscovery(`http://localhost:${PORT}`);
 
 const passkeyControls = passkeyFixture(database);
 const server = Bun.serve({
@@ -3571,6 +3573,9 @@ const server = Bun.serve({
           cache.delete(body.token);
         }
         return Response.json({ present: cache.has(body.token) });
+      }
+      if (url.pathname === "/__test/server-api/oauth-provider-metadata") {
+        return oauthProviderMetadata(url.searchParams.get("mode") ?? "default");
       }
       for (const [name, instance] of openApiInstances) {
         if (url.pathname === `/__test/profiles/${name}/api/auth/__test/server-api/schema`) {

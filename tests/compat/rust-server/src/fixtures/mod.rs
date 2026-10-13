@@ -109,3 +109,5 @@ pub(crate) mod two_factor_table_fixture;
 pub(crate) mod application_device_grant_fixture;
 
 pub(crate) mod server_error_fixture;
+
+pub(crate) mod oauth_provider_fixture;

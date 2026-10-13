@@ -107,6 +107,14 @@ const urlKeys = new Set([
   "path",
   "verification_uri",
   "verification_uri_complete",
+  "authorization_endpoint",
+  "token_endpoint",
+  "jwks_uri",
+  "registration_endpoint",
+  "introspection_endpoint",
+  "revocation_endpoint",
+  "userinfo_endpoint",
+  "end_session_endpoint",
 ]);
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -4978,6 +4986,7 @@ export function compareValues(
 
       if (
         urlKeys.has(key) ||
+        (key === "issuer" && /^https?:\/\//.test(a) && /^https?:\/\//.test(b)) ||
         key.endsWith("URL") ||
         key.endsWith("Url") ||
         key === "redirect_uri" ||
