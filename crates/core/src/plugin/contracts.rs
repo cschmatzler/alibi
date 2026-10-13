@@ -123,6 +123,11 @@ pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
         vec!["application/json"]
     }
 
+    /// Protocol callback prefixes whose verified state replaces browser origin admission.
+    fn origin_check_skip_paths(&self) -> Vec<&'static str> {
+        Vec::new()
+    }
+
     /// Session field policies contributed by this registered plugin.
     fn session_fields(&self) -> indexmap::IndexMap<String, crate::field_policy::FieldConfig> {
         indexmap::IndexMap::new()

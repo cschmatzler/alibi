@@ -89,6 +89,7 @@ x509-parser = { version = "0.16", optional = true }
 der-parser = { version = "9", optional = true }
 serde_cbor_2 = { version = "0.13.0", optional = true }
 serde_path_to_error = "0.1.20"
+bergshamra = { version = "=0.9.2", default-features = false, features = ["rustcrypto"] }
 quick-xml = "=0.41.0"
 flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
 hickory-resolver = { version = "0.26.3", default-features = false, features = ["tokio", "system-config"] }

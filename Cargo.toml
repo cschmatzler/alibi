@@ -140,6 +140,7 @@ tower = { workspace = true, optional = true }
 url = { workspace = true }
 tracing = { workspace = true }
 [dev-dependencies]
+bergshamra = { version = "=0.9.2", default-features = false, features = ["rustcrypto"] }
 quick-xml = "=0.41.0"
 flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
 rsa = { workspace = true }

@@ -5,6 +5,7 @@ import { username } from "better-auth/plugins";
 
 import { ssoDnsFixture } from "./sso-dns-fixture";
 import { ssoOidcFixture } from "./sso-oidc-fixture";
+import { samlGrant } from "./sso-saml-grant";
 export async function ssoFixture(base: BetterAuthOptions) {
   const idp = ssoOidcFixture();
   const options = {
@@ -47,6 +48,43 @@ export async function ssoFixture(base: BetterAuthOptions) {
     if (input.action === "dns-queries") {
       return new Response(JSON.stringify(dns.queries()), {
         headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "saml-grant") {
+      return new Response(
+        JSON.stringify(await samlGrant(input.authorization, input.email, Boolean(input.wrongKey))),
+        { headers: { "content-type": "application/json" } },
+      );
+    }
+    if (input.action === "sign-out-http") {
+      return auth.handler(
+        new Request(`${options.baseURL}${options.basePath ?? "/api/auth"}/sign-out`, {
+          method: "POST",
+          headers: { ...input.headers, "content-type": "application/json" },
+          body: "{}",
+        }),
+      );
+    }
+    if (input.action === "acs-http") {
+      return auth.handler(
+        new Request(
+          `${options.baseURL}${options.basePath ?? "/api/auth"}/sso/saml2/sp/acs/${input.params.providerId}`,
+          {
+            method: "POST",
+            headers: { ...input.headers, "content-type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams(input.body),
+          },
+        ),
+      );
+    }
+    if (input.action === "acs") {
+      return auth.api.acsEndpoint({
+        params: input.params,
+        body: input.body,
+        query: input.query,
+        method: input.method ?? "POST",
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
       });
     }
     if (input.action === "sp-metadata") {
@@ -161,7 +199,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
         { headers: { "content-type": "application/json" } },
       );
     }
-    if (input.action === "account-row") {
+    if (input.action === "account-row" || input.action === "saml-account-row") {
       const context = await auth.$context;
       const row = await context.adapter.findOne({
         model: "account",
@@ -178,6 +216,9 @@ export async function ssoFixture(base: BetterAuthOptions) {
                 userId: row.userId,
                 providerId: row.providerId,
                 accountId: row.accountId,
+                ...(input.action === "saml-account-row"
+                  ? { accessToken: row.accessToken, refreshToken: row.refreshToken }
+                  : {}),
               }
             : null,
         ),
