@@ -243,6 +243,68 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
     .await?
     .into_response()?;
     assert_eq!(body(&recovered)["access_token"], issued["access_token"]);
+    for field in ["access_token", "token_type", "refresh_token"] {
+        let mut malformed = replay.clone();
+        if field == "access_token" {
+            _ = malformed["response"].as_object_mut().unwrap().remove(field);
+        } else {
+            malformed["response"][field] = json!(17);
+        }
+        let mut nonce = [0u8; 24];
+        rand::fill(&mut nonce);
+        let encrypted_part = XChaCha20Poly1305::new(&sha2::Sha256::digest(SECRET.as_bytes()))
+            .encrypt(
+                &XNonce::from(nonce),
+                serde_json::to_string(&malformed)?.as_bytes(),
+            )
+            .map_err(|_| "invalid replay encryption")?;
+        let changed = nonce
+            .iter()
+            .chain(encrypted_part.iter())
+            .map(|value| format!("{value:02x}"))
+            .collect::<String>();
+        auth.store()
+            .store_oauth_refresh_replay(&stored.id, &changed)
+            .await?;
+        let input = json!({"grant_type":"refresh_token","client_id":id,"refresh_token":refresh});
+        let denied = Box::pin(auth.dispatch_endpoint(
+            OAuthProviderPlugin::oauth2_token_endpoint(&input)?,
+            EndpointOptions {
+                request: Some(request("/oauth2/token", Some(input), "")),
+                ..Default::default()
+            },
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(denied.error.status_code(), 400);
+        assert_eq!(
+            denied.body.unwrap().to_json_value()?,
+            json!({"error":"invalid_grant","error_description":"invalid refresh token"})
+        );
+        assert!(
+            auth.store()
+                .get_oauth_token(
+                    OAuthTokenKind::Refresh,
+                    &hash(issued["refresh_token"].as_str().unwrap())
+                )
+                .await?
+                .is_some()
+        );
+    }
+    auth.store()
+        .store_oauth_refresh_replay(&stored.id, encrypted)
+        .await?;
+    let input = json!({"grant_type":"refresh_token","client_id":id,"refresh_token":refresh});
+    let valid = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_token_endpoint(&input)?,
+        EndpointOptions {
+            request: Some(request("/oauth2/token", Some(input), "")),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(body(&valid)["access_token"], issued["access_token"]);
     let expired_at = (chrono::Utc::now() - chrono::Duration::seconds(1))
         .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     assert_eq!(db.text("UPDATE \"oauthRefreshToken\" SET \"rotationReplayExpiresAt\"=$1 WHERE \"id\"=$2 RETURNING \"id\"",&[&expired_at,&stored.id]).await?,Some(stored.id.clone()));

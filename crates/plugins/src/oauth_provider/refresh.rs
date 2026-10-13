@@ -121,14 +121,20 @@ impl OAuthProviderPlugin {
                                 original.metadata.get("resources"),
                                 original.metadata.get("confirmation"),
                             ))
-                        && let Some(mut response) =
-                            replay.get("response").and_then(Value::as_object).cloned()
-                        && let Some(expires) = response.get("expires_at").and_then(Value::as_i64)
+                        && let Some(mut response) = replay
+                            .get("response")
+                            .filter(|value| valid_replay_response(value))
+                            .and_then(Value::as_object)
+                            .cloned()
+                        && let Some(expires) = response.get("expires_at").and_then(Value::as_f64)
                     {
-                        _ = response.insert(
-                            "expires_in".into(),
-                            json!((expires - chrono::Utc::now().timestamp()).max(0)),
-                        );
+                        let now =
+                            json!(chrono::Utc::now().timestamp())
+                                .as_f64()
+                                .ok_or_else(|| {
+                                    alibi_core::AuthError::internal("Invalid refresh replay time")
+                                })?;
+                        _ = response.insert("expires_in".into(), json!((expires - now).max(0.0)));
                         return Ok(no_store(EndpointResponse::json(&response)?));
                     }
                 }
@@ -335,4 +341,21 @@ fn replay_deadline(
     chrono::DateTime::from_timestamp_millis(milliseconds)
         .map(Some)
         .ok_or_else(|| alibi_core::AuthError::internal("Invalid refresh reuse deadline"))
+}
+
+fn valid_replay_response(value: &Value) -> bool {
+    value.is_object()
+        && ["access_token", "scope"]
+            .iter()
+            .all(|field| value.get(*field).is_some_and(Value::is_string))
+        && ["expires_in", "expires_at"]
+            .iter()
+            .all(|field| value.get(*field).is_some_and(Value::is_number))
+        && value
+            .get("token_type")
+            .and_then(Value::as_str)
+            .is_some_and(|kind| matches!(kind, "Bearer" | "DPoP"))
+        && ["refresh_token", "id_token"]
+            .iter()
+            .all(|field| value.get(*field).is_none_or(Value::is_string))
 }
