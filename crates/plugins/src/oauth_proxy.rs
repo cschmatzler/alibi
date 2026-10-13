@@ -167,6 +167,16 @@ impl OAuthProxyPlugin {
         alibi_core::endpoint::ServerEndpoint::new("oauth-proxy", "oAuthProxy").with_query(input)
     }
 
+    /// Complete a provider-bound proxy callback through the runtime server API.
+    pub fn oauth_proxy_completion_endpoint(
+        provider: &str,
+        input: &OAuthProxyInput,
+    ) -> AuthResult<alibi_core::endpoint::ServerEndpoint<Value>> {
+        alibi_core::endpoint::ServerEndpoint::new("oauth-proxy", "oAuthProxyCompletion")
+            .with_query(input)?
+            .with_params(&json!({"id":provider}))
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -767,12 +777,20 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
         "oauth-proxy"
     }
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
-        vec![crate::endpoint::definition(
-            "oAuthProxy",
-            "oauthProxyCallback",
-            Some("/oauth-proxy-callback"),
-            HttpMethod::Get,
-        )]
+        vec![
+            crate::endpoint::definition(
+                "oAuthProxy",
+                "oauthProxyCallback",
+                Some("/oauth-proxy-callback"),
+                HttpMethod::Get,
+            ),
+            crate::endpoint::definition(
+                "oAuthProxyCompletion",
+                "oauthProxyCompletion",
+                Some("/callback/:id/oauth-proxy"),
+                HttpMethod::Get,
+            ),
+        ]
     }
     fn validate_endpoint(
         &self,
@@ -801,7 +819,21 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
                 .cloned()
                 .unwrap_or(alibi_core::utils::json::JsValue::Null),
         )?;
-        let response = Box::pin(self.complete(None, &query, call, ctx)).await?;
+        let provider = if call.operation_id() == "oauthProxyCompletion" {
+            Some(
+                call.params()
+                    .and_then(|params| params.get("id"))
+                    .map(alibi_core::utils::json::JsValue::coerce_string)
+                    .transpose()
+                    .map_err(AuthError::internal)?
+                    .ok_or_else(|| {
+                        AuthError::internal("Missing OAuth proxy provider parameters")
+                    })?,
+            )
+        } else {
+            None
+        };
+        let response = Box::pin(self.complete(provider.as_deref(), &query, call, ctx)).await?;
         let mut output = if response.status == 302 {
             alibi_core::endpoint::EndpointResponse::redirect(
                 response

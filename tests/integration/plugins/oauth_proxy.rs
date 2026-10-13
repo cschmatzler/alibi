@@ -1117,7 +1117,7 @@ mod tests {
             }
             assert_eq!(rows(&fixture.production_db).await, prod_before);
             assert_eq!(rows(&fixture.preview_db).await, issued);
-            if legacy {
+            {
                 for query in [
                     json!({}),
                     json!({"callbackURL":42}),
@@ -1128,9 +1128,14 @@ mod tests {
                         .dispatch_endpoint(
                             alibi::endpoint::ServerEndpoint::<Value>::new(
                                 "oauth-proxy",
-                                "oAuthProxy",
+                                if legacy {
+                                    "oAuthProxy"
+                                } else {
+                                    "oAuthProxyCompletion"
+                                },
                             )
-                            .with_query(&query)?,
+                            .with_query(&query)?
+                            .with_params(&json!({"id":"gitlab"}))?,
                             alibi::endpoint::EndpointOptions::default(),
                         )
                         .await
@@ -1143,24 +1148,56 @@ mod tests {
                     assert_eq!(rows(&fixture.preview_db).await, issued);
                 }
             }
-            let completed = if legacy {
-                let result = fixture
+            if !legacy {
+                let error = fixture
                     .preview
                     .dispatch_endpoint(
-                        OAuthProxyPlugin::oauth_proxy_endpoint(
+                        OAuthProxyPlugin::oauth_proxy_completion_endpoint(
+                            "google",
                             &alibi::plugins::oauth_proxy::OAuthProxyInput {
                                 callback_url: bridge
                                     .query_pairs()
-                                    .find(|(name, _)| name == "callbackURL")
+                                    .find(|(key, _)| key == "callbackURL")
                                     .unwrap()
                                     .1
                                     .into_owned(),
                                 profile: bridge
                                     .query_pairs()
-                                    .find(|(name, _)| name == "profile")
+                                    .find(|(key, _)| key == "profile")
                                     .map(|(_, value)| value.into_owned()),
                             },
                         )?,
+                        alibi::endpoint::EndpointOptions::default(),
+                    )
+                    .await
+                    .unwrap_err();
+                assert_eq!(error.error.status_code(), 302);
+                assert!(
+                    error
+                        .headers
+                        .as_ref()
+                        .unwrap()
+                        .get("location")
+                        .unwrap()
+                        .contains("error=provider_mismatch")
+                );
+                assert_eq!(rows(&fixture.preview_db).await, issued);
+            }
+            let completed = {
+                let result = fixture
+                    .preview
+                    .dispatch_endpoint(
+                        {
+                            let input: alibi::plugins::oauth_proxy::OAuthProxyInput =
+                                serde_json::from_value(json!(
+                                    bridge.query_pairs().into_owned().collect::<HashMap<_, _>>()
+                                ))?;
+                            if legacy {
+                                OAuthProxyPlugin::oauth_proxy_endpoint(&input)?
+                            } else {
+                                OAuthProxyPlugin::oauth_proxy_completion_endpoint("gitlab", &input)?
+                            }
+                        },
                         alibi::endpoint::EndpointOptions::default(),
                     )
                     .await
@@ -1179,8 +1216,6 @@ mod tests {
                 let mut response = AuthResponse::new(302);
                 response.headers = result.headers.unwrap();
                 response
-            } else {
-                request(&fixture.preview, &target(&bridge), None, None).await
             };
             assert_eq!(completed.status, 302);
             assert_eq!(
@@ -1252,24 +1287,21 @@ mod tests {
                 .unwrap();
             assert_eq!(accounts.len(), 1);
             let after = rows(&fixture.preview_db).await;
-            let replay = if legacy {
+            let replay = {
                 let result = fixture
                     .preview
                     .dispatch_endpoint(
-                        OAuthProxyPlugin::oauth_proxy_endpoint(
-                            &alibi::plugins::oauth_proxy::OAuthProxyInput {
-                                callback_url: bridge
-                                    .query_pairs()
-                                    .find(|(name, _)| name == "callbackURL")
-                                    .unwrap()
-                                    .1
-                                    .into_owned(),
-                                profile: bridge
-                                    .query_pairs()
-                                    .find(|(name, _)| name == "profile")
-                                    .map(|(_, value)| value.into_owned()),
-                            },
-                        )?,
+                        {
+                            let input: alibi::plugins::oauth_proxy::OAuthProxyInput =
+                                serde_json::from_value(json!(
+                                    bridge.query_pairs().into_owned().collect::<HashMap<_, _>>()
+                                ))?;
+                            if legacy {
+                                OAuthProxyPlugin::oauth_proxy_endpoint(&input)?
+                            } else {
+                                OAuthProxyPlugin::oauth_proxy_completion_endpoint("gitlab", &input)?
+                            }
+                        },
                         alibi::endpoint::EndpointOptions::default(),
                     )
                     .await
@@ -1288,8 +1320,6 @@ mod tests {
                 let mut response = AuthResponse::new(302);
                 response.headers = result.headers.unwrap();
                 response
-            } else {
-                request(&fixture.preview, &target(&bridge), None, None).await
             };
             assert!(location(&replay).as_str().contains("error=state_mismatch"));
             assert_eq!(rows(&fixture.preview_db).await, after);

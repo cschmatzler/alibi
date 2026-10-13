@@ -351,8 +351,14 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
             asResponse: true;
           }): Promise<Response>;
         };
-        return api.oAuthProxy({
+        const endpoint =
+          input.operation === "oAuthProxyCompletion"
+            ? (api as unknown as { oAuthProxyCompletion: typeof api.oAuthProxy })
+                .oAuthProxyCompletion
+            : api.oAuthProxy;
+        return endpoint({
           query: input.query,
+          ...(input.params ? { params: input.params } : {}),
           ...(input.headers ? { headers: new Headers(input.headers) } : {}),
           asResponse: true,
         });
