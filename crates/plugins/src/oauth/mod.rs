@@ -1,6 +1,7 @@
 mod account;
 mod endpoint;
 pub use account::{OAuthAccountApi, OAuthAccountSelection};
+pub(crate) use endpoint::start_social_flow_response;
 pub use types::{
     AccessTokenResponse as OAuthAccessToken, AccountInfoAccount as OAuthAccountIdentity,
     AccountInfoResponse as OAuthAccountProfile,

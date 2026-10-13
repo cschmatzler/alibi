@@ -470,27 +470,33 @@ impl OAuthPlugin {
             }
             return Ok(response);
         }
-        let flow = match Box::pin(super::handlers::social_sign_in_core(
-            &body,
-            &self.config,
-            call.request(),
-            ctx,
-        ))
-        .await
-        {
-            Ok(flow) => flow,
-            Err(AuthError::Config(_)) => {
-                return Ok(EndpointResponse::error(AuthError::Api {
-                    status: 500,
-                    code: None,
-                    message: String::new(),
-                })
-                .without_error_body());
-            }
-            Err(error) => return Err(error),
-        };
-        flow_response(&flow, &ctx.config)
+        start_social_flow_response(&body, &self.config, call.request(), ctx).await
     }
+}
+
+pub(crate) async fn start_social_flow_response(
+    body: &super::OAuthSocialSignInRequest,
+    config: &super::OAuthConfig,
+    request: Option<&alibi_core::AuthRequest>,
+    ctx: &AuthContext<impl AuthSchema>,
+) -> AuthResult<EndpointResponse> {
+    let flow = match Box::pin(super::handlers::social_sign_in_core(
+        body, config, request, ctx,
+    ))
+    .await
+    {
+        Ok(flow) => flow,
+        Err(AuthError::Config(_)) => {
+            return Ok(EndpointResponse::error(AuthError::Api {
+                status: 500,
+                code: None,
+                message: String::new(),
+            })
+            .without_error_body());
+        }
+        Err(error) => return Err(error),
+    };
+    flow_response(&flow, &ctx.config)
 }
 
 fn flow_response(

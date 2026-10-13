@@ -1,5 +1,5 @@
 //! Popup OAuth entry and callback delivery, paired with the official popup client.
-use super::oauth::{OAuthConfig, handlers::handle_social_sign_in};
+use super::oauth::OAuthConfig;
 use alibi_core::utils::cookie_utils::{
     create_clear_cookie, create_cookie, related_cookie_name, sign_cookie_value, verify_cookie_value,
 };
@@ -8,7 +8,7 @@ use alibi_core::{
     AuthSchema, HttpMethod,
 };
 use async_trait::async_trait;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 const SCRIPT: &str = include_str!("oauth_popup_script.js");
@@ -19,6 +19,28 @@ const CSP: &str = "default-src 'none'; script-src 'sha256-tIo2K8VBC9SnhvdZ+9GsGk
 /// [`super::BearerPlugin`] for embedded clients.
 #[derive(Clone, Debug, Default)]
 pub struct OAuthPopupPlugin;
+
+/// Provider and opener/redirect options for the public popup startup operation.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthPopupStartInput {
+    pub provider: String,
+    pub popup_origin: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub popup_nonce: Option<String>,
+    #[serde(rename = "callbackURL", skip_serializing_if = "Option::is_none")]
+    pub callback_url: Option<String>,
+    #[serde(rename = "errorCallbackURL", skip_serializing_if = "Option::is_none")]
+    pub error_callback_url: Option<String>,
+    #[serde(rename = "newUserCallbackURL", skip_serializing_if = "Option::is_none")]
+    pub new_user_callback_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scopes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_sign_up: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub additional_data: Option<String>,
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,17 +70,34 @@ impl OAuthPopupPlugin {
         Self
     }
 
+    /// Start popup authorization, returning a redirect error or an HTML response value.
+    /// # Errors
+    /// Returns an input serialization error.
+    pub fn oauth_popup_start_endpoint(
+        input: &OAuthPopupStartInput,
+    ) -> AuthResult<alibi_core::endpoint::ServerEndpoint<Value>> {
+        alibi_core::endpoint::ServerEndpoint::new("oauth-popup", "oauthPopupStart")
+            .with_query(input)
+    }
+
     async fn start<S: AuthSchema>(
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<AuthResponse> {
-        let origin = req
-            .query
+        self.start_core(req, ctx, &req.query).await
+    }
+
+    async fn start_core<S: AuthSchema>(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<S>,
+        query: &std::collections::HashMap<String, String>,
+    ) -> AuthResult<AuthResponse> {
+        let origin = query
             .get("popupOrigin")
             .ok_or_else(|| AuthError::bad_request("popupOrigin is required"))?;
-        let provider = req
-            .query
+        let provider = query
             .get("provider")
             .ok_or_else(|| AuthError::bad_request("provider is required"))?;
         if !ctx.config.is_origin_trusted(origin) {
@@ -68,7 +107,7 @@ impl OAuthPopupPlugin {
                 message: "Invalid origin".into(),
             });
         }
-        let nonce = req.query.get("popupNonce").map_or("", String::as_str);
+        let nonce = query.get("popupNonce").map_or("", String::as_str);
         let fail = |code: &str, description: String| {
             completion(
                 origin,
@@ -80,7 +119,7 @@ impl OAuthPopupPlugin {
             ("errorCallbackURL", "invalid_error_callback_url"),
             ("newUserCallbackURL", "invalid_new_user_callback_url"),
         ] {
-            if let Some(url) = req.query.get(key).filter(|url| !url.is_empty())
+            if let Some(url) = query.get(key).filter(|url| !url.is_empty())
                 && !ctx.config.is_redirect_target_trusted(url)
             {
                 return fail(code, format!("Untrusted URL: {url}"));
@@ -101,7 +140,7 @@ impl OAuthPopupPlugin {
         _ = body.insert(
             "callbackURL".into(),
             json!(
-                req.query
+                query
                     .get("callbackURL")
                     .filter(|v| !v.is_empty())
                     .cloned()
@@ -113,25 +152,23 @@ impl OAuthPopupPlugin {
             ),
         );
         for key in ["errorCallbackURL", "newUserCallbackURL"] {
-            if let Some(value) = req.query.get(key) {
+            if let Some(value) = query.get(key) {
                 _ = body.insert(key.into(), json!(value));
             }
         }
-        if req
-            .query
+        if query
             .get("requestSignUp")
             .is_some_and(|value| value == "true")
         {
             _ = body.insert("requestSignUp".into(), json!(true));
         }
-        if let Some(scopes) = req.query.get("scopes").filter(|value| !value.is_empty()) {
+        if let Some(scopes) = query.get("scopes").filter(|value| !value.is_empty()) {
             _ = body.insert(
                 "scopes".into(),
                 json!(scopes.split(',').collect::<Vec<_>>()),
             );
         }
-        if let Some(data) = req
-            .query
+        if let Some(data) = query
             .get("additionalData")
             .and_then(|value| serde_json::from_str::<Value>(value).ok())
             .filter(Value::is_object)
@@ -162,9 +199,13 @@ impl OAuthPopupPlugin {
                 ),
             );
         }
-        let mut start_req = req.clone();
-        start_req.body = Some(serde_json::to_vec(&body)?);
-        let Ok(mut response) = handle_social_sign_in(&config, &start_req, ctx).await else {
+        let body: super::oauth::OAuthSocialSignInRequest =
+            serde_json::from_value(Value::Object(body))?;
+        let Ok(mut response) =
+            super::oauth::start_social_flow_response(&body, &config, req.physical_request(), ctx)
+                .await
+                .and_then(|response| response.to_response())
+        else {
             return fail(
                 "popup_sign_in_failed",
                 "Failed to start the OAuth flow.".into(),
@@ -196,6 +237,56 @@ impl OAuthPopupPlugin {
 impl<S: AuthSchema> AuthPlugin<S> for OAuthPopupPlugin {
     route_openapi_metadata!(S);
 
+    fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
+        vec![crate::endpoint::definition(
+            "oauthPopupStart",
+            "oauthPopupStart",
+            Some("/oauth-popup/start"),
+            HttpMethod::Get,
+        )]
+    }
+    fn validate_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
+        use crate::authentication_helpers::JsonField;
+        Ok(alibi_core::endpoint::EndpointInput {
+            body: call.body().cloned(),
+            query: Some(crate::endpoint::validate_fields(
+                call.query(),
+                "query",
+                &[
+                    JsonField::string("provider", true),
+                    JsonField::string("popupOrigin", true),
+                    JsonField::string("popupNonce", false),
+                    JsonField::string("callbackURL", false),
+                    JsonField::string("errorCallbackURL", false),
+                    JsonField::string("newUserCallbackURL", false),
+                    JsonField::string("scopes", false),
+                    JsonField::string("requestSignUp", false),
+                    JsonField::string("additionalData", false),
+                ],
+            )?),
+        })
+    }
+    async fn on_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        let output = self.start_core(call, ctx, &call.query_as()?).await?;
+        if output.status == 302 {
+            let mut response = alibi_core::endpoint::EndpointResponse::redirect(
+                output.headers.get("location").cloned().unwrap_or_default(),
+            );
+            response.merge_headers(output.headers);
+            return Ok(response);
+        }
+        Ok(alibi_core::endpoint::EndpointResponse::from_http_response(
+            output,
+        ))
+    }
     fn name(&self) -> &'static str {
         "oauth-popup"
     }
