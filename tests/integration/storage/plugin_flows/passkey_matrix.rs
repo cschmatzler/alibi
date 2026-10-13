@@ -1127,8 +1127,8 @@ async fn passkey_concurrent_real_ceremonies_single_owner<B: Backend>(db: Db) -> 
         &format!("{jar}; {}", cookies(&options)),
     );
     let (left, right) = tokio::join!(
-        auth.handle_request(submit.clone()),
-        auth.handle_request(submit.clone())
+        Box::pin(auth.handle_request(submit.clone())),
+        Box::pin(auth.handle_request(submit.clone()))
     );
     let mut results = [left?, right?];
     results.sort_by_key(|r| r.status);
@@ -1160,8 +1160,8 @@ async fn passkey_concurrent_real_ceremonies_single_owner<B: Backend>(db: Db) -> 
         &cookies(&options),
     );
     let (left, right) = tokio::join!(
-        auth.handle_request(submit.clone()),
-        auth.handle_request(submit.clone())
+        Box::pin(auth.handle_request(submit.clone())),
+        Box::pin(auth.handle_request(submit.clone()))
     );
     let mut results = [left?, right?];
     results.sort_by_key(|r| r.status);
