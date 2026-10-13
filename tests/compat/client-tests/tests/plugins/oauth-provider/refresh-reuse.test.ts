@@ -133,11 +133,33 @@ compatScenario(
     const recovered = await control({ action: "token", body: refreshInput });
     expect(recovered.status).toBe(200);
     expect(((await recovered.json()) as any).access_token).toBe(issued.access_token);
+    const expired = await control({ action: "expire-refresh-replay", token: token.refresh_token });
+    expect(expired.status).toBe(200);
+    const stored = (await expired.json()) as any;
+    expect(stored.id).toBe(row.id);
+    expect(Date.parse(stored.rotationReplayExpiresAt)).toBeLessThan(Date.now());
+    const refused = await control({ action: "token", body: refreshInput });
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toEqual({
+      error: "invalid_grant",
+      error_description: "invalid refresh token",
+    });
+    for (const [kind, value] of [
+      ["access", token.access_token],
+      ["access", issued.access_token],
+      ["refresh", token.refresh_token],
+      ["refresh", issued.refresh_token],
+    ]) {
+      const removed = await control({ action: "token-row", kind, token: value });
+      expect(removed.status).toBe(200);
+      expect(await removed.json()).toBeNull();
+    }
     return ctx.snapshot({
       scope: issued.scope,
       denied: denied.status,
       repeated: repeatedResponse.status,
       recovered: recovered.status,
+      expired: refused.status,
     });
   },
 );

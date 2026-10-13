@@ -250,6 +250,23 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         { headers: { "content-type": "application/json" } },
       );
     }
+    if (input.action === "expire-refresh-replay") {
+      const { createHash } = await import("node:crypto");
+      const context = await auth.$context;
+      const row = await context.adapter.update<any>({
+        model: "oauthRefreshToken",
+        where: [
+          { field: "token", value: createHash("sha256").update(input.token).digest("base64url") },
+        ],
+        update: { rotationReplayExpiresAt: new Date(Date.now() - 1000) },
+      });
+      return new Response(
+        JSON.stringify(
+          row ? { id: row.id, rotationReplayExpiresAt: row.rotationReplayExpiresAt } : null,
+        ),
+        { headers: { "content-type": "application/json" } },
+      );
+    }
     if (input.action === "expire-session") {
       const context = await auth.$context;
       const updated = await context.internalAdapter.updateSession(input.token, {

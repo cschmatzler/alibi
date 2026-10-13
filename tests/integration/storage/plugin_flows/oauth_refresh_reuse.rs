@@ -206,5 +206,54 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
     .await?
     .into_response()?;
     assert_eq!(body(&recovered)["access_token"], issued["access_token"]);
+    let expired_at = (chrono::Utc::now() - chrono::Duration::seconds(1))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    assert_eq!(db.text("UPDATE \"oauthRefreshToken\" SET \"rotationReplayExpiresAt\"=$1 WHERE \"id\"=$2 RETURNING \"id\"",&[&expired_at,&stored.id]).await?,Some(stored.id.clone()));
+    let expired = auth
+        .store()
+        .get_oauth_token(OAuthTokenKind::Refresh, &hash(refresh))
+        .await?
+        .unwrap();
+    assert!(
+        chrono::DateTime::parse_from_rfc3339(
+            expired.metadata["rotationReplayExpiresAt"]
+                .as_str()
+                .unwrap()
+        )? < chrono::Utc::now()
+    );
+    let input = json!({"grant_type":"refresh_token","client_id":id,"refresh_token":refresh});
+    let denied = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_token_endpoint(&input)?,
+        EndpointOptions {
+            request: Some(request("/oauth2/token", Some(input), "")),
+            ..Default::default()
+        },
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(denied.error.status_code(), 400);
+    assert_eq!(
+        denied.body.unwrap().to_json_value()?,
+        json!({"error":"invalid_grant","error_description":"invalid refresh token"})
+    );
+    for (kind, value) in [
+        (OAuthTokenKind::Access, plaintext),
+        (
+            OAuthTokenKind::Access,
+            issued["access_token"].as_str().unwrap(),
+        ),
+        (OAuthTokenKind::Refresh, refresh),
+        (
+            OAuthTokenKind::Refresh,
+            issued["refresh_token"].as_str().unwrap(),
+        ),
+    ] {
+        assert!(
+            auth.store()
+                .get_oauth_token(kind, &hash(value))
+                .await?
+                .is_none()
+        );
+    }
     Ok(())
 }
