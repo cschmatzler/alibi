@@ -3,8 +3,14 @@ use super::*;
 use crate::storage::postgres_tests;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::store::SsoProviderStore;
-backend_tests!(sso_registration_persists_owner_and_rejects_duplicate_and_reserved_ids);
-postgres_tests!(sso_registration_persists_owner_and_rejects_duplicate_and_reserved_ids);
+backend_tests!(
+    sso_registration_persists_owner_and_rejects_duplicate_and_reserved_ids,
+    sso_registration_persists_manual_saml_and_requires_certificate_source
+);
+postgres_tests!(
+    sso_registration_persists_owner_and_rejects_duplicate_and_reserved_ids,
+    sso_registration_persists_manual_saml_and_requires_certificate_source
+);
 async fn sso_registration_persists_owner_and_rejects_duplicate_and_reserved_ids<B: Backend>(
     db: Db,
 ) -> TestResult {
@@ -86,5 +92,64 @@ async fn sso_registration_persists_owner_and_rejects_duplicate_and_reserved_ids<
             .len(),
         1
     );
+    B::close(connection).await
+}
+
+async fn sso_registration_persists_manual_saml_and_requires_certificate_source<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(alibi::plugins::SsoPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "saml-provider-owner@example.test").await;
+    let options = EndpointOptions {
+        headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+        ..Default::default()
+    };
+    let cert = include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem");
+    let input = json!({"providerId":"enterprise-saml","issuer":"https://sp.example.test","domain":"company.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":cert,"idpMetadata":{"entityID":"https://idp.example.test/entity"},"wantAssertionsSigned":true,"signatureAlgorithm":"rsa-sha256","digestAlgorithm":"sha256","mapping":{"email":"mail","name":"displayName"},"ignoredField":"discard"}});
+    let created = Box::pin(auth.dispatch_endpoint(
+        ServerEndpoint::<Value>::new("sso", "registerSSOProvider").with_body(&input)?,
+        options.clone(),
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(created.status, 200);
+    let provider = body(&created);
+    assert_eq!(provider["userId"], body(&owner)["user"]["id"]);
+    assert_eq!(
+        provider["samlConfig"],
+        json!({"issuer":"https://sp.example.test","entryPoint":"https://idp.example.test/sso","cert":cert,"idpMetadata":{"entityID":"https://idp.example.test/entity"},"wantAssertionsSigned":true,"signatureAlgorithm":"rsa-sha256","digestAlgorithm":"sha256","mapping":{"email":"mail","name":"displayName"}})
+    );
+    assert!(provider["oidcConfig"].is_null());
+    let persisted = store
+        .get_sso_provider("enterprise-saml")
+        .await?
+        .ok_or("SAML provider missing")?;
+    assert_eq!(persisted.id, provider["id"].as_str().unwrap());
+    assert_eq!(
+        serde_json::from_str::<Value>(persisted.saml_config.as_deref().unwrap())?,
+        provider["samlConfig"]
+    );
+    let mut invalid = input.clone();
+    invalid["providerId"] = json!("saml-without-cert");
+    _ = invalid["samlConfig"]
+        .as_object_mut()
+        .unwrap()
+        .remove("cert");
+    let rejected = Box::pin(auth.dispatch_endpoint(
+        ServerEndpoint::<Value>::new("sso", "registerSSOProvider").with_body(&invalid)?,
+        options,
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(rejected.error.status_code(), 400);
+    assert_eq!(
+        rejected.error.error_payload().1.as_deref(),
+        Some("CERT_SOURCE_MISSING")
+    );
+    assert!(store.get_sso_provider("saml-without-cert").await?.is_none());
     B::close(connection).await
 }

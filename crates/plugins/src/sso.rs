@@ -6,6 +6,7 @@ mod provider_delete;
 mod provider_list;
 mod provider_read;
 mod provider_update;
+mod registration_saml;
 mod sign_in;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
@@ -166,11 +167,10 @@ impl SsoPlugin {
             _=output.insert("overrideUserInfo".into(),json!(body.get("overrideUserInfo").and_then(Value::as_bool).unwrap_or(false)||self.config.default_override_user_info));
             serde_json::to_string(&output).map_err(Into::into)
         }).transpose()?;
-        if body.get("samlConfig").is_some() {
-            return Err(AuthError::not_implemented(
-                "SAML registration is not implemented",
-            ));
-        }
+        let saml = body
+            .get("samlConfig")
+            .map(|config| registration_saml::prepare(config, issuer))
+            .transpose()?;
         let provider = ctx
             .database
             .create_sso_provider(SsoProvider {
@@ -184,7 +184,7 @@ impl SsoPlugin {
                     .and_then(Value::as_str)
                     .map(str::to_owned),
                 oidc_config: oidc,
-                saml_config: None,
+                saml_config: saml,
                 domain_verified: self.config.domain_verification.then_some(false),
             })
             .await?;
@@ -249,7 +249,7 @@ fn api(status: u16, message: &str) -> AuthError {
 }
 fn validate(input: Option<&JsValue>) -> AuthResult<JsValue> {
     use super::authentication_helpers::{JsonField, JsonFieldKind};
-    let output = super::endpoint::validate_fields(
+    let mut output = super::endpoint::validate_fields(
         input,
         "body",
         &[
@@ -305,6 +305,12 @@ fn validate(input: Option<&JsValue>) -> AuthResult<JsValue> {
                 },
             ],
         )?;
+    }
+    if let Some(config) = output.get("samlConfig") {
+        let parsed = registration_saml::validate(config)?;
+        if let JsValue::Object(fields) = &mut output {
+            _ = fields.insert("samlConfig".into(), parsed);
+        }
     }
     Ok(output)
 }
