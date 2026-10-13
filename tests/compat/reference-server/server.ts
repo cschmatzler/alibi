@@ -2277,6 +2277,13 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       asResponse: true,
     });
   }
+  if (url.pathname === "/__test/server-api/device-code" && request.method === "POST") {
+    const input = await readJson(request);
+    return auth.api.deviceCode({
+      body: input?.body as Parameters<typeof auth.api.deviceCode>[0]["body"],
+      asResponse: true,
+    });
+  }
   if (url.pathname === "/__test/server-api/anonymous-delete" && request.method === "POST") {
     const input = await readJson(request);
     const selected = anonymousProfiles.profiles.get(

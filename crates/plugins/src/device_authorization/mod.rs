@@ -5,6 +5,8 @@ pub use grant::{
     redeem_device_code,
 };
 
+mod endpoint;
+pub use endpoint::{DeviceCodeRequest, DeviceCodeResponse};
 mod http;
 mod issuance;
 mod redemption;
@@ -302,6 +304,12 @@ alibi_core::impl_auth_plugin! {
         post "/device/deny" => handle_device_deny, "device_deny";
     }
     extra {
+    fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
+        endpoint::definitions()
+    }
+    async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        self.issue_endpoint(call, ctx).await
+    }
     fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         self.grant_openapi(crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self)))
     }
@@ -433,49 +441,8 @@ fn parse_device_body(
             .unwrap_or_else(|_| AuthResponse::text(400, "Invalid JSON"))
         })?
     };
-    let fields = match kind {
-        DeviceRequestKind::Issuance => &["client_id", "user_id", "scope"][..],
-        DeviceRequestKind::Token => &["grant_type", "device_code", "client_id"][..],
-        DeviceRequestKind::Decision => &["userCode"][..],
-    };
-    let mut issues = Vec::new();
-    if body.is_object() {
-        for field in fields {
-            let value = body.get(*field);
-            if !issuance && *field == "grant_type" {
-                if value.and_then(serde_json::Value::as_str) != Some(DEVICE_GRANT_TYPE) {
-                    issues.push(format!(
-                        "[body.grant_type] Invalid input: expected \"{DEVICE_GRANT_TYPE}\""
-                    ));
-                }
-            } else if !(value.is_some_and(serde_json::Value::is_string)
-                || value.is_none() && issuance && matches!(*field, "user_id" | "scope"))
-            {
-                issues.push(format!(
-                    "[body.{field}] Invalid input: expected string, received {}",
-                    json_type(value)
-                ));
-            }
-        }
-    } else {
-        issues.push(format!(
-            "[body] Invalid input: expected object, received {}",
-            json_type(Some(&body))
-        ));
-    }
-    if !issues.is_empty() {
-        let message = issues.join("; ");
-        return Err(if issuance {
-            device_error_response(400, "invalid_request", &message)
-                .unwrap_or_else(|_| AuthResponse::text(400, message))
-        } else {
-            AuthResponse::json(
-                400,
-                &serde_json::json!({ "message": message, "code": "VALIDATION_ERROR" }),
-            )
-            .unwrap_or_else(|_| AuthResponse::text(400, "Validation failed"))
-        });
-    }
+    validate_device_json_body(&body, kind)?;
+    let fields = device_request_fields(kind);
     if let Some(pairs) = &pairs {
         for field in fields {
             let values = pairs
@@ -504,6 +471,61 @@ fn parse_device_body(
         }
     }
     Ok(body)
+}
+
+fn device_request_fields(kind: DeviceRequestKind) -> &'static [&'static str] {
+    match kind {
+        DeviceRequestKind::Issuance => &["client_id", "user_id", "scope"],
+        DeviceRequestKind::Token => &["grant_type", "device_code", "client_id"],
+        DeviceRequestKind::Decision => &["userCode"],
+    }
+}
+
+fn validate_device_json_body(
+    body: &serde_json::Value,
+    kind: DeviceRequestKind,
+) -> Result<(), AuthResponse> {
+    let issuance = matches!(kind, DeviceRequestKind::Issuance);
+    let fields = device_request_fields(kind);
+    let mut issues = Vec::new();
+    if body.is_object() {
+        for field in fields {
+            let value = body.get(*field);
+            if !issuance && *field == "grant_type" {
+                if value.and_then(serde_json::Value::as_str) != Some(DEVICE_GRANT_TYPE) {
+                    issues.push(format!(
+                        "[body.grant_type] Invalid input: expected \"{DEVICE_GRANT_TYPE}\""
+                    ));
+                }
+            } else if !(value.is_some_and(serde_json::Value::is_string)
+                || value.is_none() && issuance && matches!(*field, "user_id" | "scope"))
+            {
+                issues.push(format!(
+                    "[body.{field}] Invalid input: expected string, received {}",
+                    json_type(value)
+                ));
+            }
+        }
+    } else {
+        issues.push(format!(
+            "[body] Invalid input: expected object, received {}",
+            json_type(Some(body))
+        ));
+    }
+    if !issues.is_empty() {
+        let message = issues.join("; ");
+        return Err(if issuance {
+            device_error_response(400, "invalid_request", &message)
+                .unwrap_or_else(|_| AuthResponse::text(400, message))
+        } else {
+            AuthResponse::json(
+                400,
+                &serde_json::json!({ "message": message, "code": "VALIDATION_ERROR" }),
+            )
+            .unwrap_or_else(|_| AuthResponse::text(400, "Validation failed"))
+        });
+    }
+    Ok(())
 }
 
 const fn json_type(value: Option<&serde_json::Value>) -> &'static str {

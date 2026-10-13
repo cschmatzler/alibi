@@ -57,7 +57,7 @@ impl DeviceAuthorizationGrant for Grant {
     async fn authorize_request(
         &self,
         request: &Map<String, Value>,
-        _: &AuthRequest,
+        _: Option<&AuthRequest>,
     ) -> Result<DeviceGrantAuthorization, DeviceGrantFailure> {
         self.0.lock().unwrap().push(json!({"phase": "authorize"}));
         if request["audience"] != "application-api" {

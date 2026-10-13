@@ -1,10 +1,13 @@
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-#[derive(Debug, Deserialize, Validate)]
-pub(super) struct DeviceCodeRequest {
+/// Request a device proof for an application and optional owner/scope.
+#[derive(Debug, Serialize, Deserialize, Validate)]
+pub struct DeviceCodeRequest {
     pub client_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
 }
 
@@ -20,8 +23,9 @@ pub(super) struct DeviceActionRequest {
     pub user_code: String,
 }
 
-#[derive(Debug, Serialize)]
-pub(super) struct DeviceCodeResponse {
+/// Issued device and user codes, verification URIs, expiry and polling interval.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeviceCodeResponse {
     pub device_code: String,
     pub user_code: String,
     pub verification_uri: String,

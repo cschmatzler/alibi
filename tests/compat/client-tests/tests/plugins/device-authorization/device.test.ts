@@ -33,17 +33,30 @@ function deviceActor(ctx: Context, name = "primary", profile?: FixtureProfile) {
 }
 
 async function requestCode(ctx: Context, scope?: string) {
-  const result = await deviceActor(ctx, "device").device.code({
-    client_id: "compat-device-client",
-    ...(scope === undefined ? {} : { scope }),
+  const response = await ctx.actor("device").fetch(`${ctx.baseURL}/__test/server-api/device-code`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      body: {
+        client_id: "compat-device-client",
+        ...(scope === undefined ? {} : { scope }),
+      },
+    }),
   });
-  expect(result.error).toBeNull();
-
-  if (!result.data) {
-    throw new Error("device issuance must return codes");
-  }
-
-  return result.data;
+  expect(response.status).toBe(200);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(response.headers.get("pragma")).toBe("no-cache");
+  expect(response.headers.get("set-cookie")).toBeNull();
+  return z
+    .object({
+      device_code: z.string(),
+      user_code: z.string(),
+      verification_uri: z.string(),
+      verification_uri_complete: z.string(),
+      expires_in: z.number(),
+      interval: z.number(),
+    })
+    .parse(await response.json());
 }
 
 async function signUpOwner(ctx: Context, prefix: string) {
