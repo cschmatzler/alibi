@@ -263,6 +263,12 @@ impl Db {
             .max_connections(1)
             .connect(&base)
             .await?;
+        let encoding: String = sqlx::query_scalar(sqlx::AssertSqlSafe("SHOW server_encoding"))
+            .fetch_one(&admin)
+            .await?;
+        if encoding != "UTF8" {
+            return Err("BETTER_AUTH_TEST_POSTGRES_URL must use a UTF8 database".into());
+        }
         _ = sqlx::query(sqlx::AssertSqlSafe(format!("CREATE SCHEMA {schema}")))
             .execute(&admin)
             .await?;

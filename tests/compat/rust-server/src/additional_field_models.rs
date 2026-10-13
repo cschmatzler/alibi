@@ -94,7 +94,6 @@ pub(super) mod application_session {
         #[cfg_attr(feature = "seaorm", sea_orm(column_name = "userId"))]
         #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "userId"))]
         pub user_id: String,
-        #[serde(skip)]
         pub label: Option<String>,
         pub hidden: Option<String>,
         pub omitted: Option<String>,

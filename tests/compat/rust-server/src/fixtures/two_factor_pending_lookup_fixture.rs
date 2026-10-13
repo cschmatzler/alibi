@@ -47,21 +47,21 @@ impl SendTwoFactorOtp for Delivery {
 }
 fn phase(sql: &str) -> Option<&'static str> {
     let query = sql.to_lowercase();
-    if query.starts_with("select") && query.contains("from \"verifications\"") {
+    if query.starts_with("select") && query.contains("from \"verification\"") {
         if query.contains("\"identifier\" =") {
             return Some("lookup");
         }
-        if query.contains("\"expires_at\" <") {
+        if query.contains("\"expiresat\" <") {
             return Some("cleanup-read");
         }
     }
     if query.starts_with("delete")
-        && query.contains("from \"verifications\"")
-        && query.contains("\"expires_at\" <")
+        && query.contains("from \"verification\"")
+        && query.contains("\"expiresat\" <")
     {
         return Some("cleanup-delete");
     }
-    if query.starts_with("select") && query.contains("from \"users\"") {
+    if query.starts_with("select") && query.contains("from \"user\"") {
         return Some("user");
     }
     None
