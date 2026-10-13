@@ -127,6 +127,14 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             .map(TryInto::try_into)
             .collect()
     }
+    async fn delete_oauth_consent(&self, id: &str) -> AuthResult<()> {
+        super::entities::oauth_consent::Entity::delete_many()
+            .filter(super::entities::oauth_consent::Column::Id.eq(id))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)
+            .map(|_| ())
+    }
     async fn delete_oauth_client(&self, client_id: &str) -> AuthResult<()> {
         Entity::delete_many()
             .filter(Column::ClientId.eq(client_id))

@@ -127,6 +127,18 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
             .map(TryInto::try_into)
             .collect()
     }
+    async fn delete_oauth_consent(&self, id: &str) -> AuthResult<()> {
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident(super::entities::oauth_consent::Model::TABLE);
+        sql.push(" WHERE ");
+        sql.compare(
+            super::entities::oauth_consent::Model::TABLE,
+            "id",
+            " = ",
+            id,
+        );
+        self.exec().execute(sql).await.map(|_| ())
+    }
     async fn delete_oauth_client(&self, client_id: &str) -> AuthResult<()> {
         let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
         sql.ident(Model::TABLE);

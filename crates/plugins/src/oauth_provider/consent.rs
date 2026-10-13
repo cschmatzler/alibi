@@ -444,3 +444,23 @@ impl OAuthProviderPlugin {
         EndpointResponse::json(&updated.map(consent_value).transpose()?)
     }
 }
+
+impl OAuthProviderPlugin {
+    /// Delete the current user's stored OAuth grant.
+    pub fn delete_oauth_consent_endpoint(id: &str) -> AuthResult<ServerEndpoint<()>> {
+        ServerEndpoint::new("oauth-provider", "deleteOAuthConsent").with_body(&json!({"id":id}))
+    }
+    pub(super) async fn delete_consent<S: AuthSchema>(
+        &self,
+        input: ConsentId,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let row = match Box::pin(self.owned_consent(&input.id, req, ctx)).await? {
+            Ok(row) => row,
+            Err(response) => return Ok(response),
+        };
+        ctx.database.delete_oauth_consent(&row.id).await?;
+        Ok(EndpointResponse::empty().with_header("Content-Type", "application/json"))
+    }
+}

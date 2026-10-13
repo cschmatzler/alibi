@@ -580,6 +580,9 @@ impl<S: AuthSchema> WalletAddressStore for PluginStore<S> {
 
 #[async_trait::async_trait]
 impl<S: AuthSchema> crate::store::OAuthClientStore for PluginStore<S> {
+    async fn delete_oauth_consent(&self, id: &str) -> AuthResult<()> {
+        self.inner.delete_oauth_consent(id).await
+    }
     async fn get_oauth_consent(&self, id: &str) -> AuthResult<Option<crate::store::OAuthConsent>> {
         self.inner.get_oauth_consent(id).await
     }
