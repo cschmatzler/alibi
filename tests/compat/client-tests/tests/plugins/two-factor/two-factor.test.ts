@@ -31,14 +31,60 @@ compatScenario(
     const email = ctx.uniqueEmail("two-factor-enable");
     const password = "password123";
 
-    await client.signUp.email({
+    let ownerCookie = "";
+    const signup = await client.signUp.email({
       email,
       password,
       name: "Two Factor Enrollment",
+      fetchOptions: {
+        onSuccess({ response }) {
+          ownerCookie = response.headers
+            .getSetCookie()
+            .map((cookie) => cookie.split(";")[0])
+            .join("; ");
+        },
+      },
     });
 
+    async function serverURI(body: unknown, cookie?: string) {
+      const response = await ctx
+        .actor("primary")
+        .fetch(`${ctx.baseURL}/__test/server-api/two-factor-uri`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ body, ...(cookie ? { headers: { cookie } } : {}) }),
+        });
+      expect(response.headers.get("set-cookie")).toBeNull();
+      return { status: response.status, body: (await response.json()) as any };
+    }
+    const missing = await serverURI({ password }, ownerCookie);
+    expect(missing.status).toBe(400);
+    expect(missing.body.code).toBe("TOTP_NOT_ENABLED");
     const enable = await client.twoFactor.enable({ password });
-    const totp = await client.twoFactor.getTotpUri({ password });
+    const before = await ctx.readUserState({ userId: signup.data!.user.id });
+    for (const [body, cookie, status, code] of [
+      [{}, ownerCookie, 400, "VALIDATION_ERROR"],
+      [{ password: 42 }, ownerCookie, 400, "VALIDATION_ERROR"],
+      [{ password: null }, ownerCookie, 400, "VALIDATION_ERROR"],
+      [{ password }, undefined, 401, "UNAUTHORIZED"],
+      [{ password: "wrong-password" }, ownerCookie, 400, "INVALID_PASSWORD"],
+    ] as const) {
+      const rejected = await serverURI(body, cookie);
+      expect(rejected.status).toBe(status);
+      expect(rejected.body.code).toBe(code);
+      expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(before);
+    }
+    const result = await serverURI({ password, userId: "untrusted-selector" }, ownerCookie);
+    expect(result.status).toBe(200);
+    const totp = { data: result.body, error: null };
+    expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(before);
+    expect(new URL(totp.data.totpURI).searchParams.get("secret")).toBe(
+      new URL(enrollmentUri(enable.data)).searchParams.get("secret"),
+    );
+    expect((await ctx.readUserState({ userId: signup.data!.user.id })) as any).toHaveProperty(
+      "twoFactorExists",
+      true,
+    );
     const session = await client.getSession();
 
     return {

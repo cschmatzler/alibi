@@ -1,10 +1,10 @@
 use super::*;
 pub(in crate::two_factor) async fn get_totp_uri_core(
-    body: &GetTotpUriRequest,
+    body: &GetTotpUriInput,
     user: &impl AuthUser,
     config: &TwoFactorConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
-) -> AuthResult<TotpUriResponse> {
+) -> AuthResult<TotpUriOutput> {
     require_totp_enabled(config)?;
     let two_factor = load_two_factor_record(user, ctx).await?;
     let secret = decrypt_value(&ctx.config, two_factor.secret())?;
@@ -22,7 +22,7 @@ pub(in crate::two_factor) async fn get_totp_uri_core(
         .as_deref()
         .filter(|value| !value.is_empty())
         .unwrap_or(&ctx.config.app_name);
-    Ok(TotpUriResponse {
+    Ok(TotpUriOutput {
         totp_uri: totp_uri(
             config,
             &secret,
