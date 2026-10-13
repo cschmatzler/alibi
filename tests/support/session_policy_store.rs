@@ -211,4 +211,4 @@ impl SessionStore<Schema> for PolicyStore {
     }
 }
 
-impl alibi_core::store::OAuthClientStore for PolicyStore {}
+impl alibi::store::OAuthClientStore for PolicyStore {}
