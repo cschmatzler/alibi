@@ -299,9 +299,6 @@ pub fn metadata_to_columns(metadata: Value) -> AuthResult<Value> {
     if !fields.contains_key("redirectUris") {
         _ = fields.insert("redirectUris".into(), serde_json::json!([]));
     }
-    if !fields.contains_key("clientCredentialsScopes") {
-        _ = fields.insert("clientCredentialsScopes".into(), serde_json::json!([]));
-    }
     _ = fields.insert(
         "metadata".into(),
         if metadata.is_empty() {

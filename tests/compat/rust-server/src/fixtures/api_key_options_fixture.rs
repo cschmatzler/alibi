@@ -161,7 +161,10 @@ fn date(row: &QueryResult, field: &str) -> Option<String> {
         })
 }
 fn persisted(row: &QueryResult) -> Value {
-    let start = row.try_get::<Option<String>>("", "start").unwrap();
+    let start = row
+        .try_get::<Option<Vec<u8>>>("", "start")
+        .unwrap()
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
     json!({
         "id":row.try_get::<String>("","id").unwrap(),"name":row.try_get::<Option<String>>("","name").unwrap(),"start":start,"prefix":row.try_get::<Option<String>>("","prefix").unwrap(),
         "key":row.try_get::<String>("","key").unwrap(),"referenceId":row.try_get::<String>("","referenceId").unwrap(),"configId":row.try_get::<String>("","configId").unwrap(),

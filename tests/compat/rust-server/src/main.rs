@@ -322,7 +322,17 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
     // keyring profiles.
     {
         use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
-        for table in ["fixtureJwtKeyring", "application_delete_receipts"] {
+        for table in [
+            "fixtureJwtKeyring",
+            "application_delete_receipts",
+            "oauthAccessToken",
+            "oauthRefreshToken",
+            "oauthClientAssertion",
+            "oauthConsent",
+            "oauthClientResource",
+            "oauthResource",
+            "oauthClient",
+        ] {
             let _ = database
                 .execute_raw(Statement::from_string(
                     DbBackend::Sqlite,

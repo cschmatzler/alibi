@@ -1,10 +1,6 @@
 //! Real application user columns for anonymous callback contracts.
 #[cfg(feature = "seaorm")]
-use alibi::seaorm::JsonMetadata;
-#[cfg(feature = "seaorm")]
 use alibi::seaorm::sea_orm::{self, entity::prelude::*};
-#[cfg(not(feature = "seaorm"))]
-use alibi::sqlx::JsonMetadata;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
@@ -45,8 +41,6 @@ pub struct Model {
     #[cfg_attr(feature = "seaorm", sea_orm(column_name = "banExpires"))]
     #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "banExpires"))]
     pub ban_expires: Option<DateTime<Utc>>,
-    #[cfg_attr(feature = "seaorm", sea_orm(column_type = "JsonBinary"))]
-    pub metadata: JsonMetadata,
     #[cfg_attr(feature = "seaorm", sea_orm(column_name = "isAnonymous"))]
     #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "isAnonymous"))]
     pub is_anonymous: Option<bool>,
