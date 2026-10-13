@@ -33,6 +33,7 @@ use alibi_core::AuthResult;
 use alibi_core::AuthUser;
 use alibi_core::CreatePasskey;
 use alibi_core::CreateVerification;
+use alibi_core::error::codes;
 use base64::Engine;
 use chrono::Duration;
 use chrono::Utc;
@@ -261,7 +262,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
     if authenticated_owner.is_some_and(|owner| stored_state.user_id != owner) {
         return response_code(
             401,
-            "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY",
+            codes::YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY,
             "You are not allowed to register this passkey",
         );
     }
@@ -298,7 +299,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                 Err(WebauthnError::AttestationStatementSigInvalid) => {
                     return response_code(
                         400,
-                        "FAILED_TO_VERIFY_REGISTRATION",
+                        codes::FAILED_TO_VERIFY_REGISTRATION,
                         "Failed to verify registration",
                     );
                 }
@@ -341,7 +342,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                         Err(WebauthnError::AttestationStatementSigInvalid) => {
                             return response_code(
                                 400,
-                                "FAILED_TO_VERIFY_REGISTRATION",
+                                codes::FAILED_TO_VERIFY_REGISTRATION,
                                 "Failed to verify registration",
                             );
                         }
@@ -461,7 +462,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                     {
                         return Err(AuthError::Upstream {
                             status: 401,
-                            code: "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY",
+                            code: codes::YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY,
                             message: "You are not allowed to register this passkey",
                         });
                     }
@@ -487,7 +488,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
         if input_2.user_id.is_empty() {
             return Err(AuthError::Upstream {
                 status: 400,
-                code: "RESOLVED_USER_INVALID",
+                code: codes::RESOLVED_USER_INVALID,
                 message: "Resolved user is invalid",
             });
         }
@@ -527,7 +528,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                         .await?
                         .ok_or(AuthError::Upstream {
                             status: 500,
-                            code: "USER_NOT_FOUND",
+                            code: codes::USER_NOT_FOUND,
                             message: "User not found",
                         })?;
                     let user_id = input.user_id.clone();
@@ -548,7 +549,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                         .map_err(|error| match error {
                             AuthError::SessionCreationCancelled => AuthError::Upstream {
                                 status: 500,
-                                code: "UNABLE_TO_CREATE_SESSION",
+                                code: codes::UNABLE_TO_CREATE_SESSION,
                                 message: "Unable to create session",
                             },
                             other @ (AuthError::Api { .. }

@@ -10,6 +10,7 @@ use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
 use alibi_core::entity::{AuthSession, AuthUser};
+use alibi_core::error::codes;
 use alibi_core::field_policy::{FieldInputError, FieldValues, SessionFields};
 use alibi_core::session::SessionRequest;
 use alibi_core::utils::cookie_utils::{related_cookie_name, verify_cookie_value};
@@ -288,7 +289,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
             if !ctx.session_manager().is_session_fresh(&session) {
                 return Err(AuthError::Upstream {
                     status: 403,
-                    code: "SESSION_NOT_FRESH",
+                    code: codes::SESSION_NOT_FRESH,
                     message: "Session is not fresh",
                 });
             }
@@ -316,7 +317,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
                 .await
                 .map_err(|_| AuthError::Upstream {
                     status: 401,
-                    code: "UNAUTHORIZED",
+                    code: codes::UNAUTHORIZED,
                     message: "Unauthorized",
                 })?;
             call.record_authenticated_session(ctx.user_view(&user), session.clone());
@@ -534,7 +535,7 @@ impl SessionManagementPlugin {
                 };
                 return Ok(AuthResponse::json(
                     415,
-                    &serde_json::json!({"code":"UNSUPPORTED_MEDIA_TYPE","message":message}),
+                    &serde_json::json!({"code":codes::UNSUPPORTED_MEDIA_TYPE,"message":message}),
                 )?);
             }
         }
@@ -544,7 +545,7 @@ impl SessionManagementPlugin {
                 Err(_) => {
                     return Ok(AuthResponse::json(
                         400,
-                        &serde_json::json!({"code":"BAD_REQUEST","message":"Invalid JSON in request body"}),
+                        &serde_json::json!({"code":codes::BAD_REQUEST,"message":"Invalid JSON in request body"}),
                     )?);
                 }
             },
@@ -561,7 +562,7 @@ impl SessionManagementPlugin {
             Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
                 return Ok(AuthResponse::json(
                     401,
-                    &serde_json::json!({"code":"UNAUTHORIZED","message":"Unauthorized"}),
+                    &serde_json::json!({"code":codes::UNAUTHORIZED,"message":"Unauthorized"}),
                 )?);
             }
             Err(error) => return Err(error),
@@ -611,7 +612,7 @@ impl SessionManagementPlugin {
         let Some(updated) = updated else {
             let mut response = AuthResponse::json(
                 401,
-                &serde_json::json!({"code":"FAILED_TO_GET_SESSION","message":"Failed to get session"}),
+                &serde_json::json!({"code":codes::FAILED_TO_GET_SESSION,"message":"Failed to get session"}),
             )?;
             for cookie in delete_session_cookie_headers(&ctx.config)? {
                 response.headers.append("Set-Cookie", cookie);
@@ -662,7 +663,7 @@ impl SessionManagementPlugin {
         if req.session_method() == &HttpMethod::Post && !ctx.config.session.defer_session_refresh {
             return Err(AuthError::Upstream {
                 status: 405,
-                code: "METHOD_NOT_ALLOWED_DEFER_SESSION_REQUIRED",
+                code: codes::METHOD_NOT_ALLOWED_DEFER_SESSION_REQUIRED,
                 message: "POST method requires deferSessionRefresh to be enabled in session config",
             });
         }
@@ -678,7 +679,7 @@ impl SessionManagementPlugin {
             error @ (AuthError::Upstream { .. } | AuthError::Api { .. }) => error,
             _ => AuthError::Upstream {
                 status: 500,
-                code: "FAILED_TO_GET_SESSION",
+                code: codes::FAILED_TO_GET_SESSION,
                 message: "Failed to get session",
             },
         })?
@@ -780,7 +781,7 @@ impl SessionManagementPlugin {
         if !ctx.session_manager().is_session_fresh(&session) {
             return Err(AuthError::Upstream {
                 status: 403,
-                code: "SESSION_NOT_FRESH",
+                code: codes::SESSION_NOT_FRESH,
                 message: "Session is not fresh",
             });
         }
@@ -942,7 +943,7 @@ fn revocation_storage_error(error: AuthError) -> AuthError {
     tracing::error!(error = %error, "Session revocation failed");
     AuthError::Upstream {
         status: 500,
-        code: "INTERNAL_SERVER_ERROR",
+        code: codes::INTERNAL_SERVER_ERROR,
         message: "Internal Server Error",
     }
 }

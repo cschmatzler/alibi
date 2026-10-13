@@ -20,6 +20,7 @@ pub mod rbac;
 pub mod types;
 
 use alibi_core::error::AuthResult;
+use alibi_core::error::codes;
 use alibi_core::plugin::{AuthContext, AuthPlugin, AuthRoute};
 use alibi_core::types::{AuthRequest, AuthResponse, HttpMethod};
 use async_trait::async_trait;
@@ -227,7 +228,7 @@ impl OrganizationPlugin {
         if self.config.disable_organization_deletion {
             return Err(handlers::extension_common::org_error(
                 404,
-                "ORGANIZATION_DELETION_DISABLED",
+                codes::ORGANIZATION_DELETION_DISABLED,
             ));
         }
         let mut resolution = AuthRequest::new(HttpMethod::Post, "/organization/delete");

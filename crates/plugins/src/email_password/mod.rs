@@ -8,6 +8,7 @@ mod types;
 use super::{email_verification::EmailVerificationPlugin, two_factor};
 use crate::helpers::{SessionIssueError, apply_default_role};
 use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
+use alibi_core::error::codes;
 use alibi_core::field_policy::FieldValues;
 use alibi_core::utils::cookie_utils::{
     create_session_cookie, create_session_cookie_with_max_age, create_session_like_cookie,
@@ -347,7 +348,7 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
     if !config.enabled || !config.enable_signup {
         return Err(AuthError::Upstream {
             status: 400,
-            code: "EMAIL_PASSWORD_SIGN_UP_DISABLED",
+            code: codes::EMAIL_PASSWORD_SIGN_UP_DISABLED,
             message: "Email and password sign up is not enabled",
         });
     }

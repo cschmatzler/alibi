@@ -4,6 +4,7 @@
     reason = "the actual failing public helper operations must return errors"
 )]
 
+use alibi::error::codes::USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION;
 use alibi::plugins::organization::{
     OrganizationConfig, OrganizationMemberAddedContext, OrganizationMemberAdditionHooks,
     OrganizationPlugin,
@@ -152,7 +153,7 @@ mod tests {
             duplicate,
             AuthError::Upstream {
                 status: 400,
-                code: "USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION",
+                code: USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION,
                 ..
             }
         ));

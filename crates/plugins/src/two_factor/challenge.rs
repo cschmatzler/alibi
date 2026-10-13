@@ -1,4 +1,5 @@
 use super::*;
+use alibi_core::error::codes;
 pub(crate) async fn inspect_trusted_device(
     req: &impl alibi_core::session::SessionRequest,
     user: &impl AuthUser,
@@ -221,13 +222,13 @@ pub(in crate::two_factor) async fn begin_factor_attempt<S: alibi_core::AuthSchem
         if ctx.verifications().consume(&pending.key).await.is_err() {
             return Err(AuthError::Upstream {
                 status: 500,
-                code: "FAILED_TO_INVALIDATE_TWO_FACTOR_CHALLENGE",
+                code: codes::FAILED_TO_INVALIDATE_TWO_FACTOR_CHALLENGE,
                 message: "Failed to invalidate two-factor challenge",
             });
         }
         return Err(AuthError::Upstream {
             status: 400,
-            code: "TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE",
+            code: codes::TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE,
             message: "Too many attempts. Please request a new code.",
         });
     }
@@ -299,9 +300,9 @@ pub(in crate::two_factor) fn verification_error_response(
     if matches!(
         &error,
         AuthError::Upstream {
-            code: "TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE"
-                | "FAILED_TO_INVALIDATE_TWO_FACTOR_CHALLENGE"
-                | "INVALID_TWO_FACTOR_COOKIE",
+            code: codes::TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE
+                | codes::FAILED_TO_INVALIDATE_TWO_FACTOR_CHALLENGE
+                | codes::INVALID_TWO_FACTOR_COOKIE,
             ..
         }
     ) {
@@ -419,7 +420,7 @@ pub(in crate::two_factor) async fn finalize_pending_two_factor<S: alibi_core::Au
     }) {
         return Err(AuthError::Upstream {
             status: 401,
-            code: "INVALID_TWO_FACTOR_COOKIE",
+            code: codes::INVALID_TWO_FACTOR_COOKIE,
             message: "Invalid two factor cookie",
         });
     }
@@ -466,7 +467,7 @@ pub(in crate::two_factor) async fn finalize_pending_two_factor<S: alibi_core::Au
     .map_err(|error| match error {
         SessionIssueError::Auth(AuthError::SessionCreationCancelled) => AuthError::Upstream {
             status: 500,
-            code: "FAILED_TO_CREATE_SESSION",
+            code: codes::FAILED_TO_CREATE_SESSION,
             message: "failed to create session",
         },
         error @ (SessionIssueError::Auth(_) | SessionIssueError::Banned { .. }) => {

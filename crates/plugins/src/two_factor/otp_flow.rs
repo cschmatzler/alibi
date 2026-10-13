@@ -1,4 +1,5 @@
 use super::*;
+use alibi_core::error::codes;
 #[expect(
     clippy::as_conversions,
     clippy::cast_possible_truncation,
@@ -117,7 +118,7 @@ pub(in crate::two_factor) async fn verify_otp_core(
     if attempts >= allowed_attempts {
         return Err(AuthError::Upstream {
             status: 400,
-            code: "TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE",
+            code: codes::TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE,
             message: "Too many attempts. Please request a new code.",
         }
         .into());

@@ -1,4 +1,5 @@
 //! Route-local HTTP schemas from the pinned admin endpoints.
+use alibi_core::error::codes;
 use alibi_core::{AuthRequest, AuthResponse, utils::json::JsValue};
 use serde::de::DeserializeOwned;
 use serde_json::json;
@@ -42,7 +43,7 @@ fn expected(field: &str, expected: &str, value: Option<&JsValue>) -> String {
 }
 
 fn schema_error(issues: &[String]) -> AuthResponse {
-    response(400, "VALIDATION_ERROR", issues.join("; "))
+    response(400, codes::VALIDATION_ERROR, issues.join("; "))
 }
 
 fn json_media_type(value: &str) -> bool {
@@ -94,7 +95,7 @@ pub(super) fn parse(req: &AuthRequest) -> Result<Option<JsValue>, AuthResponse> 
                 "Content-Type \"{content_type}\" is not allowed. Allowed types: application/json"
             )
         };
-        return Err(response(415, "UNSUPPORTED_MEDIA_TYPE", message));
+        return Err(response(415, codes::UNSUPPORTED_MEDIA_TYPE, message));
     }
     if !json_media_type(&normalized) {
         // Better-call returns a ReadableStream for its accepted non-JSON media
@@ -103,7 +104,7 @@ pub(super) fn parse(req: &AuthRequest) -> Result<Option<JsValue>, AuthResponse> 
     }
     alibi_core::utils::json::from_slice(bytes)
         .map(Some)
-        .map_err(|_error| response(400, "BAD_REQUEST", "Invalid JSON in request body"))
+        .map_err(|_error| response(400, codes::BAD_REQUEST, "Invalid JSON in request body"))
 }
 
 fn fields(route: &str) -> &'static [(&'static str, Rule)] {
@@ -274,7 +275,7 @@ pub(super) fn body_value<T: DeserializeOwned + 'static>(
         return Err(schema_error(&(issues)));
     }
     alibi_core::utils::json::from_value(JsValue::Object(input))
-        .map_err(|_error| response(400, "VALIDATION_ERROR", "[body] Invalid input"))
+        .map_err(|_error| response(400, codes::VALIDATION_ERROR, "[body] Invalid input"))
 }
 
 pub(super) fn get_user(req: &AuthRequest) -> Result<super::types::GetUserQuery, AuthResponse> {

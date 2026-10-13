@@ -12,6 +12,7 @@ use super::types::{
     AccessTokenResponse, AccountInfoAccount, AccountInfoResponse, RefreshTokenResponse,
 };
 use alibi_core::entity::AuthAccount;
+use alibi_core::error::codes;
 use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, UpdateAccount};
 use chrono::Utc;
 
@@ -116,7 +117,7 @@ impl OAuthAccountSelection {
 const fn access_token_failure() -> AuthError {
     AuthError::Upstream {
         status: 400,
-        code: "FAILED_TO_GET_ACCESS_TOKEN",
+        code: codes::FAILED_TO_GET_ACCESS_TOKEN,
         message: "Failed to get a valid access token",
     }
 }
@@ -124,7 +125,7 @@ const fn access_token_failure() -> AuthError {
 const fn refresh_token_failure() -> AuthError {
     AuthError::Upstream {
         status: 400,
-        code: "FAILED_TO_REFRESH_ACCESS_TOKEN",
+        code: codes::FAILED_TO_REFRESH_ACCESS_TOKEN,
         message: "Failed to refresh access token",
     }
 }
@@ -133,7 +134,7 @@ fn invalid_selection(location: &str, message: &str) -> AuthResult<AuthResponse> 
     Ok(AuthResponse::json(
         400,
         &alibi_core::ErrorCodeMessageResponse {
-            code: Some("VALIDATION_ERROR".into()),
+            code: Some(codes::VALIDATION_ERROR.into()),
             message: format!("[{location}] {message}"),
         },
     )?)
@@ -398,7 +399,7 @@ pub(super) async fn refresh_token_for_selection(
     {
         return Err(AuthError::Api {
             status: 400,
-            code: Some("TOKEN_REFRESH_NOT_SUPPORTED".into()),
+            code: Some(codes::TOKEN_REFRESH_NOT_SUPPORTED.into()),
             message: format!(
                 "Provider {} does not support token refreshing.",
                 account.provider_id
@@ -547,7 +548,7 @@ pub(super) async fn account_info_for_selection(
         .get(&account.provider_id)
         .ok_or(AuthError::Upstream {
             status: 400,
-            code: "PROVIDER_NOT_CONFIGURED",
+            code: codes::PROVIDER_NOT_CONFIGURED,
             message: "Account is not associated with a configured social provider.",
         })?;
     let (tokens, refreshed) = valid_access_token(&mut account, config, req, ctx).await?;
@@ -639,7 +640,7 @@ fn server_request(
     if user_id.is_empty() {
         return Err(AuthError::Upstream {
             status: 400,
-            code: "USER_ID_OR_SESSION_REQUIRED",
+            code: codes::USER_ID_OR_SESSION_REQUIRED,
             message: "Either userId or session is required",
         });
     }

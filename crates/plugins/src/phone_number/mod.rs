@@ -8,6 +8,7 @@ mod handlers;
 
 mod types;
 
+use alibi_core::error::codes;
 use alibi_core::{AuthContext, AuthRequest, AuthResult, AuthSchema};
 use async_trait::async_trait;
 pub use endpoint::{
@@ -168,7 +169,7 @@ alibi_core::impl_auth_plugin! {
         }
         async fn before_request(&self,req:&AuthRequest,_ctx:&AuthContext<S>)->AuthResult<Option<alibi_core::BeforeRequestAction>> {
             if req.path()=="/update-user" && req.body_as_json::<alibi_core::utils::json::JsValue>().ok().and_then(|value|value.get("phoneNumber").cloned()).is_some_and(|value|!value.is_null()) {
-                return Err(types::phone_error(400,"PHONE_NUMBER_CANNOT_BE_UPDATED","Phone number cannot be updated"));
+                return Err(types::phone_error(400,codes::PHONE_NUMBER_CANNOT_BE_UPDATED,"Phone number cannot be updated"));
             }
             Ok(None)
         }

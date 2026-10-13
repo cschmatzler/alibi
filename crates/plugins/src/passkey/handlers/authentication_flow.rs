@@ -30,6 +30,7 @@ use alibi_core::AuthResult;
 use alibi_core::AuthSession;
 use alibi_core::CreateVerification;
 use alibi_core::entity::AuthUser;
+use alibi_core::error::codes;
 use alibi_core::types::UpdatePasskeyAuthentication;
 use base64::Engine;
 use chrono::Duration;
@@ -226,7 +227,7 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
     let authentication_result = match authentication_result {
         Ok(result) => result,
         Err(WebauthnError::AuthenticationFailure) => {
-            return response_code(401, "AUTHENTICATION_FAILED", "Authentication failed");
+            return response_code(401, codes::AUTHENTICATION_FAILED, "Authentication failed");
         }
         Err(_) => return passkey_authentication_failure(),
     };

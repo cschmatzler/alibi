@@ -10,8 +10,18 @@ use std::{collections::HashMap, sync::Arc};
 struct MachinePrivileges;
 #[async_trait::async_trait]
 impl alibi::plugins::OAuthClientPrivileges for MachinePrivileges {
-    async fn allowed(&self,ctx:&alibi::plugins::OAuthClientPrivilegeContext)->alibi::AuthResult<bool> {
-        Ok(ctx.action=="configure-client-credentials-scopes" && ctx.headers.get("x-machine-operator").map(String::as_str)==Some("grant") && ctx.user.get("email").and_then(serde_json::Value::as_str).is_some_and(|email|email.contains("machine-owner")) && ctx.session.get("userId")==ctx.user.get("id"))
+    async fn allowed(
+        &self,
+        ctx: &alibi::plugins::OAuthClientPrivilegeContext,
+    ) -> alibi::AuthResult<bool> {
+        Ok(ctx.action == "configure-client-credentials-scopes"
+            && ctx.headers.get("x-machine-operator").map(String::as_str) == Some("grant")
+            && ctx
+                .user
+                .get("email")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|email| email.contains("machine-owner"))
+            && ctx.session.get("userId") == ctx.user.get("id"))
     }
 }
 pub(crate) async fn router(
@@ -63,9 +73,17 @@ pub(crate) async fn router(
         "reuse",
     ] {
         let provider = OAuthProviderConfig {
-            refresh_token_reuse_interval:if mode=="reuse"{60.0}else{0.0},
-            client_credentials_scope_privileges:if mode=="machine"{Some(Arc::new(MachinePrivileges))}else{None},
-            scopes:if mode=="machine"{vec!["api:read".into(),"api:write".into()]}else{OAuthProviderConfig::default().scopes},
+            refresh_token_reuse_interval: if mode == "reuse" { 60.0 } else { 0.0 },
+            client_credentials_scope_privileges: if mode == "machine" {
+                Some(Arc::new(MachinePrivileges))
+            } else {
+                None
+            },
+            scopes: if mode == "machine" {
+                vec!["api:read".into(), "api:write".into()]
+            } else {
+                OAuthProviderConfig::default().scopes
+            },
             select_account_page: if mode == "selection" {
                 Some("/select".into())
             } else {
@@ -93,7 +111,7 @@ pub(crate) async fn router(
         );
         client_instances.insert(mode.to_owned(), auth);
     }
-    let logout_database=database.clone();
+    let logout_database = database.clone();
     let logout_origin = config.base_url.clone();
     let authorization_path = format!("{}/oauth2/authorize", config.base_path);
     let admin_path = format!("{}/admin/oauth2/create-client", config.base_path);

@@ -5,6 +5,7 @@ use crate::helpers::{
     SessionIssueError, create_user_session_record, record_completed_session_record,
     record_completed_session_user_view,
 };
+use alibi_core::error::codes;
 use alibi_core::wire::{SessionView, UserView};
 use alibi_core::{AuthContext, AuthError, AuthResult, UpdateUser};
 use alibi_core::{AuthSession, AuthUser};
@@ -196,9 +197,9 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
         Ok(claims) => claims,
         Err(AuthError::Jwt(error)) => {
             return if matches!(error.kind(), ErrorKind::ExpiredSignature) {
-                verification_error(query, "TOKEN_EXPIRED", "Token expired")
+                verification_error(query, codes::TOKEN_EXPIRED, "Token expired")
             } else {
-                verification_error(query, "INVALID_TOKEN", "Invalid token")
+                verification_error(query, codes::INVALID_TOKEN, "Invalid token")
             };
         }
         Err(error) => return Err(error),
@@ -209,7 +210,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
         .get_user_by_email_record(&claims.email.to_lowercase())
         .await?
     else {
-        return verification_error(query, "USER_NOT_FOUND", "User not found");
+        return verification_error(query, codes::USER_NOT_FOUND, "User not found");
     };
 
     if let Some(update_to) = claims
@@ -221,7 +222,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
         if let Some((ref session_user, _)) = current_session
             && session_user.email().unwrap_or_default() != claims.email
         {
-            return verification_error(query, "INVALID_USER", "Invalid user");
+            return verification_error(query, codes::INVALID_USER, "Invalid user");
         }
 
         match claims.request_type.as_deref() {

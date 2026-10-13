@@ -10,6 +10,7 @@ use crate::authentication_helpers::{
     find_verification, parse_body, parse_email, prepare_additional_user_fields,
     revoke_unproven_access, session_response,
 };
+use alibi_core::error::codes;
 use alibi_core::field_policy::FieldValues;
 use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthUser,
@@ -765,7 +766,7 @@ async fn require_authoritative_session<S: AuthSchema>(
     ctx.require_session(req).await.map_err(|error| match error {
         AuthError::Unauthenticated | AuthError::SessionNotFound => AuthError::Upstream {
             status: 401,
-            code: "UNAUTHORIZED",
+            code: codes::UNAUTHORIZED,
             message: "Unauthorized",
         },
         error @ (AuthError::Api { .. }

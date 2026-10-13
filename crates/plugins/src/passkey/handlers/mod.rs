@@ -3,6 +3,7 @@ mod management;
 mod registration_flow;
 
 use super::PasskeyConfig;
+use alibi_core::error::codes;
 use alibi_core::wire::PasskeyView;
 use alibi_core::{AuthContext, AuthError, AuthResult};
 pub(super) use authentication_flow::generate_authenticate_options_core;
@@ -38,7 +39,7 @@ fn challenge_not_found<T>() -> PasskeyHandlerResult<T> {
     Ok(PasskeyHandlerOutcome::Response(
         alibi_core::AuthResponse::json(
             400,
-            &json!({ "code": "CHALLENGE_NOT_FOUND", "message": "Challenge not found" }),
+            &json!({ "code": codes::CHALLENGE_NOT_FOUND, "message": "Challenge not found" }),
         )?,
     ))
 }
@@ -63,17 +64,17 @@ fn generation_origin(
 fn passkey_registration_failure<T>() -> PasskeyHandlerResult<T> {
     response_code(
         500,
-        "FAILED_TO_VERIFY_REGISTRATION",
+        codes::FAILED_TO_VERIFY_REGISTRATION,
         "Failed to verify registration",
     )
 }
 
 fn passkey_authentication_failure<T>() -> PasskeyHandlerResult<T> {
-    response_code(400, "AUTHENTICATION_FAILED", "Authentication failed")
+    response_code(400, codes::AUTHENTICATION_FAILED, "Authentication failed")
 }
 
 fn passkey_not_found<T>() -> PasskeyHandlerResult<T> {
-    response_code(401, "PASSKEY_NOT_FOUND", "Passkey not found")
+    response_code(401, codes::PASSKEY_NOT_FOUND, "Passkey not found")
 }
 
 // The pinned adapter returns the database's nullable name in passkey rows.

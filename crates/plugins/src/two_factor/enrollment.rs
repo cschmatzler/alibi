@@ -1,4 +1,5 @@
 use super::*;
+use alibi_core::error::codes;
 #[expect(
     clippy::too_many_lines,
     reason = "Keep factor enrollment, backup generation, and session replacement in their callback order"
@@ -21,7 +22,7 @@ pub(in crate::two_factor) async fn enable_core(
         if config.send_otp.is_none() {
             return Err(AuthError::Upstream {
                 status: 400,
-                code: "OTP_NOT_CONFIGURED",
+                code: codes::OTP_NOT_CONFIGURED,
                 message: "OTP is not available",
             }
             .into());
@@ -54,7 +55,7 @@ pub(in crate::two_factor) async fn enable_core(
     if config.totp_disabled {
         return Err(AuthError::Upstream {
             status: 400,
-            code: "TOTP_NOT_CONFIGURED",
+            code: codes::TOTP_NOT_CONFIGURED,
             message: "TOTP is not available",
         }
         .into());
@@ -70,7 +71,7 @@ pub(in crate::two_factor) async fn enable_core(
     {
         return Err(AuthError::Upstream {
             status: 400,
-            code: "TOTP_ALREADY_ENABLED",
+            code: codes::TOTP_ALREADY_ENABLED,
             message: "TOTP is already enabled",
         }
         .into());

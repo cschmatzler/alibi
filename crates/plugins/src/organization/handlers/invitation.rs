@@ -11,6 +11,7 @@ use crate::organization::{
     OrganizationInvitationDraft, OrganizationInvitationLimitContext,
 };
 use alibi_core::entity::{AuthInvitation, AuthMember, AuthOrganization, AuthSession, AuthUser};
+use alibi_core::error::codes;
 use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::plugin::AuthContext;
 use alibi_core::types::{AuthRequest, AuthResponse, CreateInvitation, InvitationStatus};
@@ -73,7 +74,7 @@ pub(crate) async fn invite_member_core(
     if validator::Validate::validate(body).is_err() {
         return Err(AuthError::Upstream {
             status: 400,
-            code: "INVALID_EMAIL",
+            code: codes::INVALID_EMAIL,
             message: "Invalid email",
         });
     }
@@ -81,7 +82,7 @@ pub(crate) async fn invite_member_core(
         .database
         .get_member(&org_id, &user.id())
         .await?
-        .ok_or_else(|| super::extension_common::org_error(400, "MEMBER_NOT_FOUND"))?;
+        .ok_or_else(|| super::extension_common::org_error(400, codes::MEMBER_NOT_FOUND))?;
 
     if !super::extension_common::has_action(
         member.role(),
@@ -95,7 +96,7 @@ pub(crate) async fn invite_member_core(
     {
         return Err(super::extension_common::org_error(
             403,
-            "YOU_ARE_NOT_ALLOWED_TO_INVITE_USERS_TO_THIS_ORGANIZATION",
+            codes::YOU_ARE_NOT_ALLOWED_TO_INVITE_USERS_TO_THIS_ORGANIZATION,
         ));
     }
 
@@ -146,7 +147,7 @@ pub(crate) async fn invite_member_core(
     if invites_creator_role && !member_is_creator {
         return Err(AuthError::Upstream {
             status: 403,
-            code: "YOU_ARE_NOT_ALLOWED_TO_INVITE_USER_WITH_THIS_ROLE",
+            code: codes::YOU_ARE_NOT_ALLOWED_TO_INVITE_USER_WITH_THIS_ROLE,
             message: "You are not allowed to invite a user with this role",
         });
     }
@@ -176,14 +177,14 @@ pub(crate) async fn invite_member_core(
     {
         return Err(super::extension_common::org_error(
             400,
-            "USER_IS_ALREADY_INVITED_TO_THIS_ORGANIZATION",
+            codes::USER_IS_ALREADY_INVITED_TO_THIS_ORGANIZATION,
         ));
     }
     let organization = ctx
         .database
         .get_organization_by_id(&org_id)
         .await?
-        .ok_or_else(|| super::extension_common::org_error(400, "ORGANIZATION_NOT_FOUND"))?;
+        .ok_or_else(|| super::extension_common::org_error(400, codes::ORGANIZATION_NOT_FOUND))?;
     let organization = OrganizationResponse::from_stored_organization(&organization)?;
     let user_view = ctx.user_view(user);
     let member_view = alibi_core::Member {
@@ -229,7 +230,7 @@ pub(crate) async fn invite_member_core(
             &ctx.database
                 .get_user_by_id(&member.user_id())
                 .await?
-                .ok_or_else(|| super::extension_common::org_error(400, "MEMBER_NOT_FOUND"))?,
+                .ok_or_else(|| super::extension_common::org_error(400, codes::MEMBER_NOT_FOUND))?,
         ),
     };
     let limit = match &config.invitation_limit {
@@ -250,7 +251,7 @@ pub(crate) async fn invite_member_core(
     {
         return Err(super::extension_common::org_error(
             403,
-            "INVITATION_LIMIT_REACHED",
+            codes::INVITATION_LIMIT_REACHED,
         ));
     }
     let requested_teams = {
@@ -262,14 +263,17 @@ pub(crate) async fn invite_member_core(
     let validate_teams = config.teams.enabled
         && !matches!(&body.team_id, Some(crate::organization::types::TeamInput::One(id)) if id.is_empty());
     if validate_teams && requested_teams.iter().any(|id| id.contains(',')) {
-        return Err(super::extension_common::org_error(400, "INVALID_TEAM_ID"));
+        return Err(super::extension_common::org_error(
+            400,
+            codes::INVALID_TEAM_ID,
+        ));
     }
     for team_id in requested_teams.iter().filter(|_| validate_teams) {
         _ = ctx
             .database
             .get_team(Some(&org_id), team_id)
             .await?
-            .ok_or_else(|| super::extension_common::org_error(400, "TEAM_NOT_FOUND"))?;
+            .ok_or_else(|| super::extension_common::org_error(400, codes::TEAM_NOT_FOUND))?;
     }
     for team_id in requested_teams.iter().filter(|_| {
         validate_teams
@@ -280,7 +284,7 @@ pub(crate) async fn invite_member_core(
             .database
             .get_team(Some(&org_id), team_id)
             .await?
-            .ok_or_else(|| super::extension_common::org_error(400, "TEAM_NOT_FOUND"))?;
+            .ok_or_else(|| super::extension_common::org_error(400, codes::TEAM_NOT_FOUND))?;
         let limit_context = crate::organization::extensions::TeamLimitContext {
             organization_id: org_id.clone(),
             team_id: Some(team.id.clone()),
@@ -298,7 +302,7 @@ pub(crate) async fn invite_member_core(
         {
             return Err(super::extension_common::org_error(
                 403,
-                "TEAM_MEMBER_LIMIT_REACHED",
+                codes::TEAM_MEMBER_LIMIT_REACHED,
             ));
         }
     }
@@ -508,7 +512,7 @@ pub(crate) async fn reject_invitation_core(
         .filter(alibi_core::Invitation::is_pending)
         .ok_or(AuthError::Upstream {
             status: 400,
-            code: "INVITATION_NOT_FOUND",
+            code: codes::INVITATION_NOT_FOUND,
             message: "Invitation not found!",
         })?;
 
@@ -532,7 +536,7 @@ pub(crate) async fn reject_invitation_core(
         .database
         .get_organization_by_id(&invitation.organization_id())
         .await?
-        .ok_or_else(|| super::extension_common::org_error(400, "ORGANIZATION_NOT_FOUND"))?;
+        .ok_or_else(|| super::extension_common::org_error(400, codes::ORGANIZATION_NOT_FOUND))?;
     let mut hook_context = OrganizationInvitationContext {
         invitation: ctx.invitation_view(&invitation),
         user: ctx.user_view(user),
@@ -566,13 +570,13 @@ pub(crate) async fn cancel_invitation_core(
         .database
         .get_invitation_by_id(&body.invitation_id)
         .await?
-        .ok_or_else(|| super::extension_common::org_error(400, "INVITATION_NOT_FOUND"))?;
+        .ok_or_else(|| super::extension_common::org_error(400, codes::INVITATION_NOT_FOUND))?;
 
     let member = ctx
         .database
         .get_member(invitation.organization_id().as_ref(), &user.id())
         .await?
-        .ok_or_else(|| super::extension_common::org_error(400, "MEMBER_NOT_FOUND"))?;
+        .ok_or_else(|| super::extension_common::org_error(400, codes::MEMBER_NOT_FOUND))?;
 
     if !super::extension_common::has_action(
         member.role(),
@@ -586,7 +590,7 @@ pub(crate) async fn cancel_invitation_core(
     {
         return Err(AuthError::Upstream {
             status: 403,
-            code: "YOU_ARE_NOT_ALLOWED_TO_CANCEL_THIS_INVITATION",
+            code: codes::YOU_ARE_NOT_ALLOWED_TO_CANCEL_THIS_INVITATION,
             message: "You are not allowed to cancel this invitation",
         });
     }
@@ -595,7 +599,7 @@ pub(crate) async fn cancel_invitation_core(
         .database
         .get_organization_by_id(&invitation.organization_id())
         .await?
-        .ok_or_else(|| super::extension_common::org_error(400, "ORGANIZATION_NOT_FOUND"))?;
+        .ok_or_else(|| super::extension_common::org_error(400, codes::ORGANIZATION_NOT_FOUND))?;
     let mut hook_context = OrganizationInvitationContext {
         invitation: ctx.invitation_view(&invitation),
         user: ctx.user_view(user),

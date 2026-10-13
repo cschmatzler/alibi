@@ -1,5 +1,6 @@
 use super::authentication_helpers::{JsonField, RequestBody, parse_body};
 use alibi_core::entity::{AuthAccount, AuthUser};
+use alibi_core::error::codes;
 use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -74,7 +75,7 @@ alibi_core::impl_auth_plugin! {
         }
         let (user, session) = ctx.require_cached_session(call).await.map_err(|error| {
             if matches!(error, AuthError::Unauthenticated | AuthError::SessionNotFound) {
-                super::organization::handlers::extension_common::org_error(401, "UNAUTHORIZED")
+                super::organization::handlers::extension_common::org_error(401, codes::UNAUTHORIZED)
             } else {
                 error
             }
@@ -183,7 +184,7 @@ async fn unlink_session<S: alibi_core::AuthSchema>(
             error,
             AuthError::Unauthenticated | AuthError::SessionNotFound
         ) {
-            super::organization::handlers::extension_common::org_error(401, "UNAUTHORIZED")
+            super::organization::handlers::extension_common::org_error(401, codes::UNAUTHORIZED)
         } else {
             error
         }
@@ -200,7 +201,7 @@ async fn unlink_session<S: alibi_core::AuthSchema>(
     if !ctx.session_manager().is_session_fresh(&session) {
         return Err(AuthError::Upstream {
             status: 403,
-            code: "SESSION_NOT_FRESH",
+            code: codes::SESSION_NOT_FRESH,
             message: "Session is not fresh",
         });
     }

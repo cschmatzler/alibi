@@ -1,4 +1,4 @@
-mod codes;
+pub mod codes;
 
 pub mod page;
 
@@ -205,7 +205,7 @@ impl AuthError {
             Self::Upstream { code, message, .. } => {
                 (Some((*code).to_owned()), (*message).to_owned())
             }
-            Self::BannedUser(message) => (Some("BANNED_USER".to_owned()), message.clone()),
+            Self::BannedUser(message) => (Some(codes::BANNED_USER.to_owned()), message.clone()),
             _ => {
                 let message = match status {
                     500 => {
@@ -397,7 +397,7 @@ pub fn validation_error_response(errors: &validator::ValidationErrors) -> AuthRe
         .collect();
     let message = messages.join("; ");
     let body = ErrorCodeMessageResponse {
-        code: Some("VALIDATION_ERROR".to_owned()),
+        code: Some(codes::VALIDATION_ERROR.to_owned()),
         message,
     };
 

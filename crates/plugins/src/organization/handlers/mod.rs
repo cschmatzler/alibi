@@ -23,6 +23,7 @@ pub(crate) mod invitation_acceptance;
 use super::OrganizationConfig;
 use super::types::{HasPermissionRequest, HasPermissionResponse};
 use alibi_core::entity::{AuthMember, AuthSession, AuthUser};
+use alibi_core::error::codes;
 use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::plugin::AuthContext;
 use alibi_core::types::{AuthRequest, AuthResponse};
@@ -65,14 +66,14 @@ pub(crate) async fn has_permission_core(
         .filter(|id| !id.is_empty())
         .or_else(|| session.active_organization_id())
         .filter(|id| !id.is_empty())
-        .ok_or_else(|| extension_common::org_error(400, "NO_ACTIVE_ORGANIZATION"))?;
+        .ok_or_else(|| extension_common::org_error(400, codes::NO_ACTIVE_ORGANIZATION))?;
 
     let member = ctx
         .database
         .get_member(org_id, &user.id())
         .await?
         .ok_or_else(|| {
-            extension_common::org_error(401, "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION")
+            extension_common::org_error(401, codes::USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION)
         })?;
 
     let required = body

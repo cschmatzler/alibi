@@ -6,6 +6,7 @@ use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
 use alibi_core::entity::{AuthOrganization, AuthUser};
+use alibi_core::error::codes;
 use alibi_core::session::SessionRequest;
 use alibi_core::types::{Team, TeamMember};
 use alibi_core::utils::json::JsValue;
@@ -890,7 +891,9 @@ pub(super) async fn execute<S: AuthSchema>(
         let organization_id = body
             .organization_id
             .filter(|id| !id.is_empty())
-            .ok_or_else(|| handlers::extension_common::org_error(400, "NO_ACTIVE_ORGANIZATION"))?;
+            .ok_or_else(|| {
+                handlers::extension_common::org_error(400, codes::NO_ACTIVE_ORGANIZATION)
+            })?;
         return EndpointResponse::json(
             &handlers::team::create_team_core(
                 alibi_core::types::CreateTeam {
@@ -911,7 +914,9 @@ pub(super) async fn execute<S: AuthSchema>(
         let organization_id = body
             .organization_id
             .filter(|id| !id.is_empty())
-            .ok_or_else(|| handlers::extension_common::org_error(400, "NO_ACTIVE_ORGANIZATION"))?;
+            .ok_or_else(|| {
+                handlers::extension_common::org_error(400, codes::NO_ACTIVE_ORGANIZATION)
+            })?;
         handlers::team::remove_team_core(&organization_id, &body.team_id, None, ctx, config)
             .await?;
         return EndpointResponse::json(&types::MessageResponse {
@@ -936,7 +941,7 @@ pub(super) async fn execute<S: AuthSchema>(
             error,
             AuthError::Unauthenticated | AuthError::SessionNotFound
         ) {
-            handlers::extension_common::org_error(401, "UNAUTHORIZED")
+            handlers::extension_common::org_error(401, codes::UNAUTHORIZED)
         } else {
             error
         }

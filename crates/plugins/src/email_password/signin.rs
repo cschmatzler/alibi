@@ -6,6 +6,7 @@ use super::{
 };
 use crate::authentication_helpers::is_valid_email;
 use alibi_core::entity::{AuthAccount, AuthUser};
+use alibi_core::error::codes;
 use alibi_core::utils::password as password_utils;
 use alibi_core::wire::UserView;
 use alibi_core::{AuthContext, AuthError, AuthResult, RequestMeta};
@@ -20,14 +21,14 @@ pub(crate) async fn sign_in_core(
     if !config.enabled {
         return Err(AuthError::Upstream {
             status: 400,
-            code: "EMAIL_PASSWORD_DISABLED",
+            code: codes::EMAIL_PASSWORD_DISABLED,
             message: "Email and password is not enabled",
         });
     }
     if !is_valid_email(&body.email) {
         return Err(AuthError::Upstream {
             status: 400,
-            code: "INVALID_EMAIL",
+            code: codes::INVALID_EMAIL,
             message: "Invalid email",
         });
     }
@@ -79,7 +80,7 @@ pub(crate) async fn sign_in_core(
         .await?;
         return Err(AuthError::Upstream {
             status: 403,
-            code: "EMAIL_NOT_VERIFIED",
+            code: codes::EMAIL_NOT_VERIFIED,
             message: "Email not verified",
         });
     }

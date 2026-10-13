@@ -13,6 +13,7 @@ use super::providers::{
 use super::state::{AccountCookiePayload, OAuthStateLink, OAuthStatePayload};
 use super::types::SocialSignInResponse;
 use crate::helpers::SessionIssueError;
+use alibi_core::error::codes;
 use alibi_core::wire::{SessionView, UserView};
 use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResult};
 pub(super) use authorization::{
@@ -88,7 +89,7 @@ impl OAuthSignInError {
             }
             // An APIError instead redirects with its `code` and message, so the
             // param is the constant, not a lowercased word.
-            Self::Banned(message) => ("BANNED_USER".to_owned(), Some(message.as_str())),
+            Self::Banned(message) => (codes::BANNED_USER.to_owned(), Some(message.as_str())),
             Self::IdentityDenied { code, message } => (code.clone(), Some(message.as_str())),
             Self::EmailNotVerified => ("email_not_verified".to_owned(), None),
         }

@@ -48,6 +48,15 @@ The upstream compatibility target is separate release information. Do not encode
 5. Verify the packaged workspace with `devenv shell -- ./scripts/publish.sh`. Cargo stages the unpublished workspace dependencies together and verifies the archives with the default TLS backend and all framework, store and cache integrations enabled.
 6. Publish from the reviewed release commit with `devenv shell -- ./scripts/publish.sh --publish`, then create its immutable `v{rust-version}` tag and release notes. Cargo uploads the crates in dependency order. If publication is interrupted, resume with the same commit and version for unpublished crates; never overwrite an already published crate.
 
+## Unreleased
+
+The compatibility target remains Better Auth `1.7.7`.
+
+- Public constants in `alibi::error::codes` let server callers match core and plugin errors without repeating code strings. Plugin construction uses the same constants; `AuthError`, response statuses, error codes, and messages are unchanged.
+- SQLx database hooks can import `SqlxHookContextExt` and call `ctx.connection().await?` to query on the active auth transaction or acquire a pool connection outside one. Application queries see earlier uncommitted auth writes and participate in the transaction's commit or rollback. Existing hook context fields remain available.
+
+These additions require no migration or schema changes.
+
 ## Release 0.6.0
 
 All eleven first-party crates advance together to `0.6.0`, targeting Better Auth `1.7.7`.

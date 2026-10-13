@@ -5,6 +5,7 @@ use super::types::{
 };
 use super::{PasswordManagementConfig, StatusResponse};
 use crate::helpers::{get_credential_account, get_credential_password_hash};
+use alibi_core::error::codes;
 use alibi_core::utils::password as password_utils;
 use alibi_core::wire::UserView;
 use alibi_core::{
@@ -108,7 +109,7 @@ pub(crate) async fn reset_password_core(
         .await?
         .ok_or(AuthError::Upstream {
             status: 400,
-            code: "USER_NOT_FOUND",
+            code: codes::USER_NOT_FOUND,
             message: "User not found",
         })?;
 
@@ -182,7 +183,7 @@ pub(crate) async fn reset_password_token_core(
     };
 
     let Some(token) = token.filter(|_| callback_url.is_some()) else {
-        return redirect(("error", "INVALID_TOKEN"));
+        return redirect(("error", codes::INVALID_TOKEN));
     };
 
     let verification = ctx
@@ -193,7 +194,7 @@ pub(crate) async fn reset_password_token_core(
         .as_ref()
         .is_none_or(alibi_core::verification::VerificationSnapshot::is_expired)
     {
-        return redirect(("error", "INVALID_TOKEN"));
+        return redirect(("error", codes::INVALID_TOKEN));
     }
 
     redirect(("token", token))

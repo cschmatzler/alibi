@@ -1,5 +1,6 @@
 //! Popup OAuth entry and callback delivery, paired with the official popup client.
 use super::oauth::OAuthConfig;
+use alibi_core::error::codes;
 use alibi_core::utils::cookie_utils::{
     create_clear_cookie, create_cookie, related_cookie_name, sign_cookie_value, verify_cookie_value,
 };
@@ -103,7 +104,7 @@ impl OAuthPopupPlugin {
         if !ctx.config.is_origin_trusted(origin) {
             return Err(AuthError::Api {
                 status: 403,
-                code: Some("INVALID_ORIGIN".into()),
+                code: Some(codes::INVALID_ORIGIN.into()),
                 message: "Invalid origin".into(),
             });
         }

@@ -1,4 +1,5 @@
 use crate::authentication_helpers::{is_valid_email, json_type};
+use alibi_core::error::codes;
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthRequest, AuthResponse, types::ParsedRequestBody};
 use serde::{Deserialize, Serialize};
@@ -16,8 +17,11 @@ pub struct SiweVerificationInput {
 pub(super) type VerifyBody = SiweVerificationInput;
 
 fn error(message: &str) -> AuthResponse {
-    AuthResponse::json(400, &json!({"message":message,"code":"VALIDATION_ERROR"}))
-        .unwrap_or_else(|_| AuthResponse::text(400, "Invalid request body"))
+    AuthResponse::json(
+        400,
+        &json!({"message":message,"code":codes::VALIDATION_ERROR}),
+    )
+    .unwrap_or_else(|_| AuthResponse::text(400, "Invalid request body"))
 }
 
 const fn received(value: Option<&Value>) -> &'static str {
@@ -52,7 +56,7 @@ fn body(request: &AuthRequest, optional: bool) -> Result<Map<String, Value>, Aut
             };
             return Err(AuthResponse::json(
                 415,
-                &json!({"message":message,"code":"UNSUPPORTED_MEDIA_TYPE"}),
+                &json!({"message":message,"code":codes::UNSUPPORTED_MEDIA_TYPE}),
             )
             .unwrap_or_else(|_| AuthResponse::text(415, "Unsupported media type")));
         }
@@ -79,7 +83,7 @@ fn body(request: &AuthRequest, optional: bool) -> Result<Map<String, Value>, Aut
         .map_err(|_error| {
             AuthResponse::json(
                 400,
-                &json!({"message":"Invalid JSON in request body","code":"BAD_REQUEST"}),
+                &json!({"message":"Invalid JSON in request body","code":codes::BAD_REQUEST}),
             )
             .unwrap_or_else(|_| AuthResponse::text(400, "Invalid JSON in request body"))
         })?;

@@ -1,3 +1,4 @@
+use alibi_core::error::codes;
 use alibi_core::field_policy::FieldInputError;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, CreateUser};
 use serde_json::Value;
@@ -102,7 +103,7 @@ pub(crate) async fn prepare_additional_user_fields(
     {
         return Err(AuthError::Upstream {
             status: 400,
-            code: "USERNAME_IS_ALREADY_TAKEN",
+            code: codes::USERNAME_IS_ALREADY_TAKEN,
             message: "Username is already taken. Please try another.",
         });
     }

@@ -6,6 +6,7 @@ pub(super) mod types;
 
 use super::StatusResponse;
 use alibi_core::AuthUser;
+use alibi_core::error::codes;
 use alibi_core::wire::UserView;
 use alibi_core::{AuthContext, AuthError, AuthResult};
 use alibi_core::{AuthRequest, AuthResponse};
@@ -257,7 +258,7 @@ impl EmailVerificationPlugin {
     ) -> AuthResult<AuthResponse> {
         let token = req.query.get("token").ok_or(AuthError::Upstream {
             status: 400,
-            code: "VALIDATION_ERROR",
+            code: codes::VALIDATION_ERROR,
             message: "[query.token] Invalid input: expected string, received undefined",
         })?;
         let callback_url = req

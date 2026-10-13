@@ -1,4 +1,5 @@
 use super::super::OrganizationConfig;
+use alibi_core::error::codes;
 use alibi_core::types::OrganizationPermissions;
 use alibi_core::wire::SessionView;
 use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema};
@@ -18,85 +19,93 @@ fn role_cache() -> &'static Mutex<HashMap<String, OrganizationRoles>> {
 #[must_use]
 pub(crate) fn org_error(status: u16, code: &'static str) -> AuthError {
     let message = match code {
-        "UNAUTHORIZED" => "Unauthorized",
-        "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_ORGANIZATION" => {
+        codes::UNAUTHORIZED => "Unauthorized",
+        codes::YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_ORGANIZATION => {
             "You are not allowed to update this organization"
         }
-        "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION" => {
+        codes::YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION => {
             "You are not allowed to create a new organization"
         }
-        "YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS" => {
+        codes::YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS => {
             "You have reached the maximum number of organizations"
         }
-        "NO_ACTIVE_ORGANIZATION" => "No active organization",
-        "ORGANIZATION_NOT_FOUND" => "Organization not found",
-        "ORGANIZATION_ALREADY_EXISTS" => "Organization already exists",
-        "ORGANIZATION_SLUG_ALREADY_TAKEN" => "Organization slug already taken",
-        "ORGANIZATION_DELETION_DISABLED" => "Organization deletion is disabled",
-        "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_ORGANIZATION" => {
+        codes::NO_ACTIVE_ORGANIZATION => "No active organization",
+        codes::ORGANIZATION_NOT_FOUND => "Organization not found",
+        codes::ORGANIZATION_ALREADY_EXISTS => "Organization already exists",
+        codes::ORGANIZATION_SLUG_ALREADY_TAKEN => "Organization slug already taken",
+        codes::ORGANIZATION_DELETION_DISABLED => "Organization deletion is disabled",
+        codes::YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_ORGANIZATION => {
             "You are not allowed to delete this organization"
         }
-        "TEAM_NOT_FOUND" => "Team not found",
-        "MEMBER_NOT_FOUND" => "Member not found",
-        "INVITATION_LIMIT_REACHED" => "Invitation limit reached",
-        "INVITATION_NOT_FOUND" => "Invitation not found",
-        "USER_IS_ALREADY_INVITED_TO_THIS_ORGANIZATION" => {
+        codes::TEAM_NOT_FOUND => "Team not found",
+        codes::MEMBER_NOT_FOUND => "Member not found",
+        codes::INVITATION_LIMIT_REACHED => "Invitation limit reached",
+        codes::INVITATION_NOT_FOUND => "Invitation not found",
+        codes::USER_IS_ALREADY_INVITED_TO_THIS_ORGANIZATION => {
             "User is already invited to this organization"
         }
-        "YOU_ARE_NOT_ALLOWED_TO_INVITE_USERS_TO_THIS_ORGANIZATION" => {
+        codes::YOU_ARE_NOT_ALLOWED_TO_INVITE_USERS_TO_THIS_ORGANIZATION => {
             "You are not allowed to invite users to this organization"
         }
-        "YOU_ARE_NOT_ALLOWED_TO_CREATE_TEAMS_IN_THIS_ORGANIZATION" => {
+        codes::YOU_ARE_NOT_ALLOWED_TO_CREATE_TEAMS_IN_THIS_ORGANIZATION => {
             "You are not allowed to create teams in this organization"
         }
-        "YOU_ARE_NOT_ALLOWED_TO_DELETE_TEAMS_IN_THIS_ORGANIZATION" => {
+        codes::YOU_ARE_NOT_ALLOWED_TO_DELETE_TEAMS_IN_THIS_ORGANIZATION => {
             "You are not allowed to delete teams in this organization"
         }
-        "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_TEAM" => "You are not allowed to update this team",
-        "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_TEAM" => "You are not allowed to delete this team",
-        "YOU_ARE_NOT_ALLOWED_TO_ACCESS_THIS_ORGANIZATION" => {
+        codes::YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_TEAM => "You are not allowed to update this team",
+        codes::YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_TEAM => "You are not allowed to delete this team",
+        codes::YOU_ARE_NOT_ALLOWED_TO_ACCESS_THIS_ORGANIZATION => {
             "You are not allowed to access this organization as an owner"
         }
-        "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION" => "You are not a member of this organization",
-        "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION" => "User is not a member of the organization",
-        "USER_IS_NOT_A_MEMBER_OF_THE_TEAM" => "User is not a member of the team",
-        "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_MEMBER" => "You are not allowed to update this member",
-        "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_MEMBER" => "You are not allowed to delete this member",
-        "YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER" => {
+        codes::YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION => {
+            "You are not a member of this organization"
+        }
+        codes::USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION => {
+            "User is not a member of the organization"
+        }
+        codes::USER_IS_NOT_A_MEMBER_OF_THE_TEAM => "User is not a member of the team",
+        codes::YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_MEMBER => {
+            "You are not allowed to update this member"
+        }
+        codes::YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_MEMBER => {
+            "You are not allowed to delete this member"
+        }
+        codes::YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER => {
             "You cannot leave the organization as the only owner"
         }
-        "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_TEAM_MEMBER" => {
+        codes::YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_TEAM_MEMBER => {
             "You are not allowed to create a new member"
         }
-        "YOU_ARE_NOT_ALLOWED_TO_REMOVE_A_TEAM_MEMBER" => {
+        codes::YOU_ARE_NOT_ALLOWED_TO_REMOVE_A_TEAM_MEMBER => {
             "You are not allowed to remove a team member"
         }
-        "YOU_DO_NOT_HAVE_AN_ACTIVE_TEAM" => "You do not have an active team",
-        "TEAM_MEMBER_LIMIT_REACHED" => "Team member limit reached",
-        "YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_TEAMS" => {
+        codes::YOU_DO_NOT_HAVE_AN_ACTIVE_TEAM => "You do not have an active team",
+        codes::TEAM_MEMBER_LIMIT_REACHED => "Team member limit reached",
+        codes::YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_TEAMS => {
             "You have reached the maximum number of teams"
         }
-        "UNABLE_TO_REMOVE_LAST_TEAM" => "Unable to remove last team",
-        "INVALID_TEAM_ID" => "Team id contains a reserved character",
-        "MISSING_AC_INSTANCE" => {
+        codes::UNABLE_TO_REMOVE_LAST_TEAM => "Unable to remove last team",
+        codes::INVALID_TEAM_ID => "Team id contains a reserved character",
+        codes::MISSING_AC_INSTANCE => {
             "Dynamic Access Control requires a pre-defined ac instance on the server auth plugin. Read server logs for more information"
         }
-        "YOU_MUST_BE_IN_AN_ORGANIZATION_TO_CREATE_A_ROLE" => {
+        codes::YOU_MUST_BE_IN_AN_ORGANIZATION_TO_CREATE_A_ROLE => {
             "You must be in an organization to create a role"
         }
-        "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_ROLE" => "You are not allowed to create a role",
-        "YOU_ARE_NOT_ALLOWED_TO_UPDATE_A_ROLE" => "You are not allowed to update a role",
-        "YOU_ARE_NOT_ALLOWED_TO_DELETE_A_ROLE" => "You are not allowed to delete a role",
-        "YOU_ARE_NOT_ALLOWED_TO_READ_A_ROLE" => "You are not allowed to read a role",
-        "YOU_ARE_NOT_ALLOWED_TO_LIST_A_ROLE" => "You are not allowed to list a role",
-        "TOO_MANY_ROLES" => "This organization has too many roles",
-        "INVALID_RESOURCE" => "The provided permission includes an invalid resource",
-        "ROLE_NAME_IS_ALREADY_TAKEN" => "That role name is already taken",
-        "CANNOT_DELETE_A_PRE_DEFINED_ROLE" => "Cannot delete a pre-defined role",
-        "ROLE_IS_ASSIGNED_TO_MEMBERS" => {
+        codes::YOU_ARE_NOT_ALLOWED_TO_CREATE_A_ROLE => "You are not allowed to create a role",
+        codes::YOU_ARE_NOT_ALLOWED_TO_UPDATE_A_ROLE => "You are not allowed to update a role",
+        codes::YOU_ARE_NOT_ALLOWED_TO_DELETE_A_ROLE => "You are not allowed to delete a role",
+        codes::YOU_ARE_NOT_ALLOWED_TO_READ_A_ROLE => "You are not allowed to read a role",
+        codes::YOU_ARE_NOT_ALLOWED_TO_LIST_A_ROLE => "You are not allowed to list a role",
+        codes::TOO_MANY_ROLES => "This organization has too many roles",
+        codes::INVALID_RESOURCE => "The provided permission includes an invalid resource",
+        codes::ROLE_NAME_IS_ALREADY_TAKEN => "That role name is already taken",
+        codes::CANNOT_DELETE_A_PRE_DEFINED_ROLE => "Cannot delete a pre-defined role",
+        codes::ROLE_IS_ASSIGNED_TO_MEMBERS => {
             "Cannot delete a role that is assigned to members. Please reassign the members to a different role first"
         }
-        "ROLE_NOT_FOUND" => "Role not found",
+        codes::ROLE_NOT_FOUND => "Role not found",
         _ => "Organization operation failed",
     };
     AuthError::Upstream {
@@ -114,7 +123,7 @@ pub(crate) async fn session<S: AuthSchema>(
         .await
         .map_err(|error| match error {
             AuthError::Unauthenticated | AuthError::SessionNotFound => {
-                org_error(401, "UNAUTHORIZED")
+                org_error(401, codes::UNAUTHORIZED)
             }
             error @ (AuthError::Api { .. }
             | AuthError::Upstream { .. }

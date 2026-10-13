@@ -1,4 +1,5 @@
 //! CAPTCHA admission before endpoint parsing and authentication side effects.
+use alibi_core::error::codes;
 use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
     utils::{
@@ -351,7 +352,7 @@ fn truthy(value: &JsValue) -> bool {
 }
 
 fn unknown_error() -> AuthResponse {
-    error_response(500, "Something went wrong", "UNKNOWN_ERROR")
+    error_response(500, "Something went wrong", codes::UNKNOWN_ERROR)
 }
 
 fn error_response(status: u16, message: &str, code: &str) -> AuthResponse {
@@ -440,7 +441,7 @@ impl<S: AuthSchema> AuthPlugin<S> for CaptchaPlugin {
             return Ok(Some(error_response(
                 400,
                 "Missing CAPTCHA response",
-                "MISSING_RESPONSE",
+                codes::MISSING_RESPONSE,
             )));
         }
         Ok(match self.verify(request).await {
@@ -448,7 +449,7 @@ impl<S: AuthSchema> AuthPlugin<S> for CaptchaPlugin {
             Some(false) => Some(error_response(
                 403,
                 "Captcha verification failed",
-                "VERIFICATION_FAILED",
+                codes::VERIFICATION_FAILED,
             )),
             None => Some(unknown_error()),
         })

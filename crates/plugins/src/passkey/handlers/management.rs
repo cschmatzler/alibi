@@ -10,6 +10,7 @@ use alibi_core::AuthError;
 use alibi_core::AuthPasskey;
 use alibi_core::AuthResult;
 use alibi_core::entity::AuthUser;
+use alibi_core::error::codes;
 use alibi_core::wire::PasskeyView;
 use serde_json::Value;
 use serde_json::json;
@@ -51,7 +52,7 @@ pub(in crate::passkey) async fn delete_passkey_core(
         .await?
         .ok_or(AuthError::Upstream {
             status: 404,
-            code: "PASSKEY_NOT_FOUND",
+            code: codes::PASSKEY_NOT_FOUND,
             message: "Passkey not found",
         })?;
 
@@ -85,7 +86,7 @@ pub(in crate::passkey) async fn update_passkey_core(
         .await?
         .ok_or(AuthError::Upstream {
             status: 404,
-            code: "PASSKEY_NOT_FOUND",
+            code: codes::PASSKEY_NOT_FOUND,
             message: "Passkey not found",
         })?;
 
@@ -93,7 +94,7 @@ pub(in crate::passkey) async fn update_passkey_core(
         return Ok(PasskeyHandlerOutcome::Response(
             alibi_core::AuthResponse::json(
                 401,
-                &json!({ "code": "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY", "message": "You are not allowed to register this passkey" }),
+                &json!({ "code": codes::YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY, "message": "You are not allowed to register this passkey" }),
             )?,
         ));
     }

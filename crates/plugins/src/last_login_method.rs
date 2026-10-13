@@ -1,4 +1,5 @@
 //! Remember successful session issuance without changing authentication authority.
+use alibi_core::error::codes;
 use alibi_core::hooks::current_request_hook_context;
 use alibi_core::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
@@ -398,7 +399,7 @@ pub fn reject_last_login_method_input<S: AuthSchema>(
     {
         return Err(alibi_core::AuthError::Upstream {
             status: 400,
-            code: "FIELD_NOT_ALLOWED",
+            code: codes::FIELD_NOT_ALLOWED,
             message: "lastLoginMethod is not allowed to be set",
         });
     }

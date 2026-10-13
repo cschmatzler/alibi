@@ -9,6 +9,7 @@ use super::{
     username_error_response,
 };
 use crate::authentication_helpers::parse_body;
+use alibi_core::error::codes;
 use alibi_core::{AuthContext, AuthRequest, AuthResponse, AuthResult, RequestMeta};
 use std::sync::Arc;
 impl EmailPasswordPlugin {
@@ -86,7 +87,7 @@ impl EmailPasswordPlugin {
                 {
                     return Ok(Some(username_error_response(
                         400,
-                        "USERNAME_IS_ALREADY_TAKEN",
+                        codes::USERNAME_IS_ALREADY_TAKEN,
                         MESSAGE_USERNAME_IS_ALREADY_TAKEN,
                     )?));
                 }
@@ -231,7 +232,7 @@ impl EmailPasswordPlugin {
         if signin_req.username.is_empty() || signin_req.password.is_empty() {
             return username_error_response(
                 401,
-                "INVALID_USERNAME_OR_PASSWORD",
+                codes::INVALID_USERNAME_OR_PASSWORD,
                 MESSAGE_INVALID_USERNAME_OR_PASSWORD,
             );
         }
@@ -307,11 +308,11 @@ impl EmailPasswordPlugin {
             }
             Err(SignInUsernameFailure::InvalidUsernameOrPassword) => username_error_response(
                 401,
-                "INVALID_USERNAME_OR_PASSWORD",
+                codes::INVALID_USERNAME_OR_PASSWORD,
                 MESSAGE_INVALID_USERNAME_OR_PASSWORD,
             ),
             Err(SignInUsernameFailure::EmailNotVerified) => {
-                username_error_response(403, "EMAIL_NOT_VERIFIED", MESSAGE_EMAIL_NOT_VERIFIED)
+                username_error_response(403, codes::EMAIL_NOT_VERIFIED, MESSAGE_EMAIL_NOT_VERIFIED)
             }
             Err(SignInUsernameFailure::Auth(error)) => Err(error),
         }
@@ -336,7 +337,7 @@ impl EmailPasswordPlugin {
         body: IsUsernameAvailableRequest,
     ) -> AuthResult<AuthResponse> {
         if body.username.is_empty() {
-            return username_error_response(422, "INVALID_USERNAME", "Username is invalid");
+            return username_error_response(422, codes::INVALID_USERNAME, "Username is invalid");
         }
 
         if let Err(error) = self

@@ -21,6 +21,7 @@ pub(super) mod types;
 mod verification;
 
 use alibi_core::entity::AuthUser;
+use alibi_core::error::codes;
 use alibi_core::{AuthContext, AuthError, AuthResult, BeforeRequestAction};
 use alibi_core::{AuthRequest, AuthResponse};
 use base64::Engine;
@@ -80,34 +81,34 @@ impl ApiKeyErrorCode {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::InvalidApiKey => "INVALID_API_KEY",
-            Self::KeyDisabled => "KEY_DISABLED",
-            Self::KeyExpired => "KEY_EXPIRED",
-            Self::UsageExceeded => "USAGE_EXCEEDED",
-            Self::KeyNotFound => "KEY_NOT_FOUND",
-            Self::RateLimited => "RATE_LIMITED",
-            Self::UnauthorizedSession => "UNAUTHORIZED_SESSION",
-            Self::InvalidPrefixLength => "INVALID_PREFIX_LENGTH",
-            Self::InvalidNameLength => "INVALID_NAME_LENGTH",
-            Self::MetadataDisabled => "METADATA_DISABLED",
-            Self::NoValuesToUpdate => "NO_VALUES_TO_UPDATE",
-            Self::KeyDisabledExpiration => "KEY_DISABLED_EXPIRATION",
-            Self::ExpiresInTooSmall => "EXPIRES_IN_IS_TOO_SMALL",
-            Self::ExpiresInTooLarge => "EXPIRES_IN_IS_TOO_LARGE",
-            Self::InvalidRemaining => "INVALID_REMAINING",
-            Self::RefillAmountAndIntervalRequired => "REFILL_AMOUNT_AND_INTERVAL_REQUIRED",
-            Self::RefillIntervalAndAmountRequired => "REFILL_INTERVAL_AND_AMOUNT_REQUIRED",
-            Self::NameRequired => "NAME_REQUIRED",
-            Self::InvalidUserIdFromApiKey => "INVALID_USER_ID_FROM_API_KEY",
-            Self::InvalidReferenceIdFromApiKey => "INVALID_REFERENCE_ID_FROM_API_KEY",
-            Self::NoDefaultConfiguration => "NO_DEFAULT_API_KEY_CONFIGURATION_FOUND",
-            Self::OrganizationIdRequired => "ORGANIZATION_ID_REQUIRED",
-            Self::OrganizationPluginRequired => "ORGANIZATION_PLUGIN_REQUIRED",
-            Self::UserNotMemberOfOrganization => "USER_NOT_MEMBER_OF_ORGANIZATION",
-            Self::InsufficientApiKeyPermissions => "INSUFFICIENT_API_KEY_PERMISSIONS",
-            Self::ServerOnlyProperty => "SERVER_ONLY_PROPERTY",
-            Self::FailedToUpdateApiKey => "FAILED_TO_UPDATE_API_KEY",
-            Self::InvalidMetadataType => "INVALID_METADATA_TYPE",
+            Self::InvalidApiKey => codes::INVALID_API_KEY,
+            Self::KeyDisabled => codes::KEY_DISABLED,
+            Self::KeyExpired => codes::KEY_EXPIRED,
+            Self::UsageExceeded => codes::USAGE_EXCEEDED,
+            Self::KeyNotFound => codes::KEY_NOT_FOUND,
+            Self::RateLimited => codes::RATE_LIMITED,
+            Self::UnauthorizedSession => codes::UNAUTHORIZED_SESSION,
+            Self::InvalidPrefixLength => codes::INVALID_PREFIX_LENGTH,
+            Self::InvalidNameLength => codes::INVALID_NAME_LENGTH,
+            Self::MetadataDisabled => codes::METADATA_DISABLED,
+            Self::NoValuesToUpdate => codes::NO_VALUES_TO_UPDATE,
+            Self::KeyDisabledExpiration => codes::KEY_DISABLED_EXPIRATION,
+            Self::ExpiresInTooSmall => codes::EXPIRES_IN_IS_TOO_SMALL,
+            Self::ExpiresInTooLarge => codes::EXPIRES_IN_IS_TOO_LARGE,
+            Self::InvalidRemaining => codes::INVALID_REMAINING,
+            Self::RefillAmountAndIntervalRequired => codes::REFILL_AMOUNT_AND_INTERVAL_REQUIRED,
+            Self::RefillIntervalAndAmountRequired => codes::REFILL_INTERVAL_AND_AMOUNT_REQUIRED,
+            Self::NameRequired => codes::NAME_REQUIRED,
+            Self::InvalidUserIdFromApiKey => codes::INVALID_USER_ID_FROM_API_KEY,
+            Self::InvalidReferenceIdFromApiKey => codes::INVALID_REFERENCE_ID_FROM_API_KEY,
+            Self::NoDefaultConfiguration => codes::NO_DEFAULT_API_KEY_CONFIGURATION_FOUND,
+            Self::OrganizationIdRequired => codes::ORGANIZATION_ID_REQUIRED,
+            Self::OrganizationPluginRequired => codes::ORGANIZATION_PLUGIN_REQUIRED,
+            Self::UserNotMemberOfOrganization => codes::USER_NOT_MEMBER_OF_ORGANIZATION,
+            Self::InsufficientApiKeyPermissions => codes::INSUFFICIENT_API_KEY_PERMISSIONS,
+            Self::ServerOnlyProperty => codes::SERVER_ONLY_PROPERTY,
+            Self::FailedToUpdateApiKey => codes::FAILED_TO_UPDATE_API_KEY,
+            Self::InvalidMetadataType => codes::INVALID_METADATA_TYPE,
         }
     }
 
