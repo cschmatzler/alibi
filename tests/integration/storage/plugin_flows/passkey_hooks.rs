@@ -594,7 +594,7 @@ async fn passkey_auth_callback_reassignment_keeps_verified_owner<B: Backend>(db:
         ) -> AuthResult<()> {
             let credential = URL_SAFE_NO_PAD.encode(verification.result.cred_id().as_slice());
             let foreign = self.foreign.lock().unwrap().clone();
-            self.seen.lock().unwrap().push(json!({"credential":credential,"counter":verification.result.counter(),"origin":verification.origin,"rpId":verification.rp_id,"path":context.request.path}));
+            self.seen.lock().unwrap().push(json!({"credential":credential,"counter":verification.result.counter(),"origin":verification.origin,"rpId":verification.rp_id,"path":context.request.unwrap().path}));
             let changed=self.raw.execute("UPDATE passkeys SET user_id=$1, name='Application updated', backed_up=1, device_type='application-updated' WHERE credential_id=$2",&[&foreign,&credential]).await.map_err(|error|AuthError::internal(error.to_string()))?;
             assert_eq!(changed, 1);
             Ok(())

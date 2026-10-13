@@ -133,7 +133,7 @@ pub(in crate::passkey) async fn generate_authenticate_options_core<U: AuthUser>(
 )]
 pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSchema>(
     body: &VerifyAuthenticationRequest,
-    req: &alibi_core::AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     config: &PasskeyConfig,
     ip_address: Option<String>,
     user_agent: Option<String>,
@@ -291,7 +291,8 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
     let mut public_device_type = passkey.device_type().to_owned();
     if let Some(callback) = &config.authentication.after_verification {
         let context = crate::passkey::PasskeyAuthenticationContext {
-            request: req,
+            request: req.physical_request(),
+            endpoint: req.endpoint_call(),
             auth_config: &ctx.config,
             extensions: &ctx.extensions,
         };

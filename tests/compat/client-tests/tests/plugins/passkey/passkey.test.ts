@@ -367,14 +367,32 @@ compatScenario(
     expect(authOptions.status).toBe(200);
 
     const assertion = authenticator.authenticate(authOptions.body, ctx.baseURL);
-    const authenticationResponse = await owner.fetch(
-      `${ctx.baseURL}/api/auth/passkey/verify-authentication`,
-      {
+    const authenticationCookie = authOptionResponse.headers
+      .getSetCookie()
+      .map((cookie) => cookie.split(";")[0])
+      .join("; ");
+    async function serverAuthenticate(body: unknown, cookie = authenticationCookie) {
+      return owner.fetch(`${ctx.baseURL}/__test/server-api/passkey-authenticate`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ response: assertion }),
-      },
-    );
+        body: JSON.stringify({ body, headers: { cookie, origin: ctx.baseURL } }),
+      });
+    }
+    for (const [body, cookie, status, code] of [
+      [{ response: null }, authenticationCookie, 400, "VALIDATION_ERROR"],
+      [{ response: 42 }, authenticationCookie, 400, "VALIDATION_ERROR"],
+      [{}, authenticationCookie, 400, "VALIDATION_ERROR"],
+      [{ response: assertion }, "", 400, "CHALLENGE_NOT_FOUND"],
+    ] as const) {
+      const response = await serverAuthenticate(body, cookie);
+      expect(response.status).toBe(status);
+      expect(((await response.json()) as any).code).toBe(code);
+      expect(response.headers.get("set-cookie")).toBeNull();
+    }
+    const authenticationResponse = await serverAuthenticate({
+      response: assertion,
+      userId: attackerSignup.data!.user.id,
+    });
     ownerCookie = authenticationResponse.headers
       .getSetCookie()
       .map((raw) => raw.split(";")[0])
@@ -400,13 +418,10 @@ compatScenario(
         .map((key) => key.counter),
     ).toEqual([1]);
 
-    const replay = await ctx.rawRequest({
-      actor: "owner",
-      path: "/api/auth/passkey/verify-authentication",
-      method: "POST",
-      json: { response: assertion },
-    });
-    expect(replay.status).toBeGreaterThanOrEqual(400);
+    const replayResponse = await serverAuthenticate({ response: assertion });
+    const replay = { status: replayResponse.status, body: (await replayResponse.json()) as any };
+    expect(replay.status).toBe(400);
+    expect(replay.body.code).toBe("CHALLENGE_NOT_FOUND");
 
     const deleted = await serverDelete(
       { id: passkey.id, userId: attackerSignup.data!.user.id },

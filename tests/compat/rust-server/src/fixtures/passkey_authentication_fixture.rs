@@ -63,7 +63,7 @@ impl PasskeyAuthenticationAfterVerification for Application {
             .map_err(database_error)?
             .ok_or_else(|| AuthError::internal("Challenge count required"))?;
         self.events.lock().unwrap().push(json!({
-            "profile":format!("passkey-auth-{}",self.mode), "path":context.request.path,
+            "profile":format!("passkey-auth-{}",self.mode), "path":context.request.unwrap().path,
             "facts":{"newCounter":verification.result.counter(),"credentialID":credential_id,
                 "userVerified":verification.result.user_verified(),
                 "credentialDeviceType":if verification.result.backup_eligible(){"multiDevice"}else{"singleDevice"},
