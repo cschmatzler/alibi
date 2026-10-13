@@ -59,4 +59,22 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         sql.compare(Model::TABLE, "client_id", " = ", client_id);
         self.exec().execute(sql).await.map(|_| ())
     }
+    async fn update_oauth_client_secret(
+        &self,
+        client_id: &str,
+        secret: String,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<OAuthClient>> {
+        let Some(client) = self.get_oauth_client(client_id).await? else {
+            return Ok(None);
+        };
+        let mut active = ActiveRow::new();
+        active.set("id", client.id);
+        active.set("client_secret", Some(secret));
+        active.set("updated_at", updated_at);
+        model::update::<Model>(self.exec(), &active)
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+    }
 }

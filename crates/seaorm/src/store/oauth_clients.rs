@@ -9,7 +9,9 @@ use alibi_core::{
     store::{CreateOAuthClient, OAuthClient, OAuthClientStore},
 };
 use async_trait::async_trait;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QuerySelect, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QuerySelect, Set,
+};
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
     async fn create_oauth_client(&self, data: CreateOAuthClient) -> AuthResult<OAuthClient> {
@@ -60,5 +62,29 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             .await
             .map_err(map_db_err)
             .map(|_| ())
+    }
+    async fn update_oauth_client_secret(
+        &self,
+        client_id: &str,
+        secret: String,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<OAuthClient>> {
+        let Some(model) = Entity::find()
+            .filter(Column::ClientId.eq(client_id))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+        else {
+            return Ok(None);
+        };
+        let mut active = model.into_active_model();
+        active.client_secret = Set(Some(secret));
+        active.updated_at = Set(updated_at);
+        active
+            .update(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .try_into()
+            .map(Some)
     }
 }

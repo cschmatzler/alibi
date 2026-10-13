@@ -855,3 +855,81 @@ pub(super) fn validate_delete(body: Option<&JsValue>) -> AuthResult<JsValue> {
         )],
     )
 }
+
+impl OAuthProviderPlugin {
+    /// Rotate an owned confidential client secret and reveal its replacement once.
+    pub fn rotate_client_secret_endpoint(client_id: &str) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("oauth-provider", "rotateClientSecret")
+            .with_body(&json!({"client_id":client_id}))
+    }
+    pub(super) async fn rotate_client_secret<S: AuthSchema>(
+        &self,
+        input: ReadClientInput,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
+        req.queue_response_header("Cache-Control", "no-store");
+        req.queue_response_header("Pragma", "no-cache");
+        let Some(client) = ctx.database.get_oauth_client(&input.client_id).await? else {
+            return status_protocol_error(404, "not_found", "client not found");
+        };
+        if client.user_id.as_deref() != Some(user.id().as_ref()) {
+            return Ok(EndpointResponse::error(AuthError::Api {
+                status: 401,
+                code: None,
+                message: String::new(),
+            })
+            .without_error_body()
+            .with_header("Content-Type", "application/json"));
+        }
+        if client
+            .metadata
+            .get("token_endpoint_auth_method")
+            .and_then(Value::as_str)
+            == Some("none")
+            || client.client_secret.is_none()
+        {
+            return status_protocol_error(
+                400,
+                "invalid_client",
+                "secret rotation is only available for clients using client_secret authentication",
+            );
+        }
+        let plaintext = random_credential();
+        let protected = if self.config.disable_jwt_plugin {
+            crate::token_crypto::encrypt_with_config(&plaintext, &ctx.config)?
+        } else {
+            URL_SAFE_NO_PAD.encode(Sha256::digest(plaintext.as_bytes()))
+        };
+        let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
+            .ok_or_else(|| AuthError::internal("Invalid client update timestamp"))?;
+        let Some(client) = ctx
+            .database
+            .update_oauth_client_secret(&input.client_id, protected, now)
+            .await?
+        else {
+            return status_protocol_error(500, "invalid_client", "unable to update client");
+        };
+        let mut output = client_read_metadata(client)?;
+        _ = output
+            .as_object_mut()
+            .ok_or_else(|| AuthError::internal("OAuth client metadata must be an object"))?
+            .insert("client_secret".into(), json!(plaintext));
+        EndpointResponse::json(&output)
+    }
+}
+fn status_protocol_error(
+    status: u16,
+    error: &str,
+    description: &str,
+) -> AuthResult<EndpointResponse> {
+    Ok(EndpointResponse::error(AuthError::Api {
+        status,
+        code: None,
+        message: String::new(),
+    })
+    .with_error_body(alibi_core::utils::json::parse_value(
+        &serde_json::to_string(&json!({"error":error,"error_description":description}))?,
+    )?))
+}
