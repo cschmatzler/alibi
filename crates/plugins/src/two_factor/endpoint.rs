@@ -29,8 +29,21 @@ pub struct TwoFactorDisabled {
     pub status: bool,
 }
 
+/// Session token and public identity returned after authenticator verification.
+#[derive(Debug, Deserialize)]
+pub struct TotpVerified {
+    pub token: String,
+    pub user: serde_json::Value,
+}
+
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
+        definition(
+            "verifyTOTP",
+            "verifyTOTP",
+            Some("/two-factor/verify-totp"),
+            HttpMethod::Post,
+        ),
         definition(
             "getTOTPURI",
             "getTOTPURI",
@@ -59,6 +72,23 @@ pub(super) fn validate(
     config: &super::TwoFactorConfig,
 ) -> AuthResult<EndpointInput> {
     let allow_passwordless = config.allow_passwordless;
+    if call.operation_id() == "verifyTOTP" {
+        return Ok(EndpointInput {
+            body: Some(validate_fields(
+                call.body(),
+                "body",
+                &[
+                    JsonField::string("code", true),
+                    JsonField {
+                        name: "trustDevice",
+                        kind: crate::authentication_helpers::JsonFieldKind::Boolean,
+                        required: false,
+                    },
+                ],
+            )?),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "getTOTPURI" {
         return Ok(EndpointInput {
             body: Some(validate_fields(
@@ -132,6 +162,39 @@ pub(super) fn validate(
 }
 
 impl TwoFactorPlugin {
+    /// Verify an authenticator code for enrollment or a pending sign-in challenge.
+    #[must_use]
+    pub fn verify_totp_endpoint(input: super::VerifyTotpInput) -> ServerEndpoint<TotpVerified> {
+        let mut body = [("code".into(), JsValue::String(input.code))]
+            .into_iter()
+            .collect::<indexmap::IndexMap<_, _>>();
+        if let Some(trust_device) = input.trust_device {
+            _ = body.insert("trustDevice".into(), JsValue::Bool(trust_device));
+        }
+        ServerEndpoint::new("two-factor", "verifyTOTP").with_body_value(JsValue::Object(body))
+    }
+
+    async fn verify_totp_endpoint_call(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<EndpointResponse> {
+        let output = self.verify_totp(&call.body_as()?, call, ctx).await?;
+        let body = alibi_core::utils::json::from_slice::<JsValue>(&output.body).ok();
+        let mut response = if output.status >= 400 {
+            let response = EndpointResponse::error(crate::endpoint::error_response(output.clone()));
+            if let Some(body) = body {
+                response.with_error_body(body)
+            } else {
+                response.without_error_body()
+            }
+        } else {
+            EndpointResponse::json(&body)?
+        };
+        response.merge_headers(output.headers);
+        Ok(response)
+    }
+
     /// Recover the signed-in owner's authenticator URI using configured password policy.
     #[must_use]
     pub fn get_totp_uri_endpoint(
@@ -256,12 +319,14 @@ impl TwoFactorPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
-        if call.operation_id() == "getTOTPURI" {
-            self.uri_endpoint(call, ctx).await
+        if call.operation_id() == "verifyTOTP" {
+            Box::pin(self.verify_totp_endpoint_call(call, ctx)).await
+        } else if call.operation_id() == "getTOTPURI" {
+            Box::pin(self.uri_endpoint(call, ctx)).await
         } else if call.operation_id() == "disableTwoFactor" {
-            self.disable_endpoint(call, ctx).await
+            Box::pin(self.disable_endpoint(call, ctx)).await
         } else if call.operation_id() == "enableTwoFactor" {
-            self.enable_endpoint(call, ctx).await
+            Box::pin(self.enable_endpoint(call, ctx)).await
         } else if call.operation_id() == "viewBackupCodes" {
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase")]
@@ -270,7 +335,7 @@ impl TwoFactorPlugin {
             }
             let body: Body = call.body_as()?;
             EndpointResponse::json(
-                &serde_json::json!({"status":true,"backupCodes":self.view_backup_codes(&body.user_id,ctx).await?}),
+                &serde_json::json!({"status":true,"backupCodes":Box::pin(self.view_backup_codes(&body.user_id,ctx)).await?}),
             )
         } else {
             #[derive(Deserialize)]

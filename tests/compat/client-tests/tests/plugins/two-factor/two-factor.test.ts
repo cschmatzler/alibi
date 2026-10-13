@@ -159,15 +159,60 @@ compatScenario(
     }
 
     const code = await generateCurrentTotp(enable.data.totpURI);
-    const verifyTotp = await client.twoFactor.verifyTotp({ code });
+    async function serverVerify(body: unknown, cookie: string) {
+      const observed = await ctx
+        .actor("primary")
+        .fetch(`${ctx.baseURL}/__test/server-api/two-factor-verify-totp`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ body, headers: { cookie } }),
+        });
+      return observed;
+    }
+    const verifyResponse = await serverVerify({ code }, ownerCookie);
+    expect(verifyResponse.status).toBe(200);
+    const verifyTotp = { data: (await verifyResponse.json()) as any, error: null };
     const session = await client.getSession();
 
     await client.signOut();
+    let pendingCookie = "";
     const signIn = await client.signIn.email({
       email,
       password,
       rememberMe: false,
+      fetchOptions: {
+        onSuccess({ response }) {
+          pendingCookie = response.headers
+            .getSetCookie()
+            .filter((raw) => Boolean(Cookie.parse(raw)?.value))
+            .map((cookie) => cookie.split(";")[0])
+            .join("; ");
+        },
+      },
     });
+    const beforePending = await ctx.readUserState({ userId: signup.data!.user.id });
+    for (const body of [{}, { code: 42 }, { code: "012345", trustDevice: null }]) {
+      const rejected = await serverVerify(body, pendingCookie);
+      expect(rejected.status).toBe(400);
+      expect(((await rejected.json()) as any).code).toBe("VALIDATION_ERROR");
+      expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(beforePending);
+    }
+    const pendingCode = await generateCurrentTotp(enable.data.totpURI);
+    const invalid = await serverVerify({ code: "" }, pendingCookie);
+    expect(invalid.status).toBe(401);
+    expect(((await invalid.json()) as any).code).toBe("INVALID_CODE");
+    const completedResponse = await serverVerify(
+      { code: pendingCode, trustDevice: true, userId: "untrusted-selector" },
+      pendingCookie,
+    );
+    expect(completedResponse.status).toBe(200);
+    expect(((await completedResponse.json()) as any).user.id).toBe(signup.data!.user.id);
+    expect((await client.getSession()).data?.user.id).toBe(signup.data!.user.id);
+    const afterPending = await ctx.readUserState({ userId: signup.data!.user.id });
+    const replay = await serverVerify({ code: pendingCode }, pendingCookie);
+    expect(replay.status).toBe(401);
+    expect(((await replay.json()) as any).code).toBe("INVALID_TWO_FACTOR_COOKIE");
+    expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(afterPending);
 
     return {
       verifyTotp: ctx.snapshot(verifyTotp),

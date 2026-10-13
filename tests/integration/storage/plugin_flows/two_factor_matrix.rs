@@ -142,6 +142,40 @@ async fn two_factor_input_and_enrollment_matrix<B: Backend>(db: Db) -> TestResul
         .await?,
         before_uri
     );
+    for input in [
+        json!({}),
+        json!({"code":42}),
+        json!({"code":"012345","trustDevice":null}),
+    ] {
+        let error = Box::pin(
+            auth.dispatch_endpoint(
+                alibi::endpoint::ServerEndpoint::<Value>::new("two-factor", "verifyTOTP")
+                    .with_body(&input)?,
+                alibi::endpoint::EndpointOptions {
+                    headers: Some([("cookie".into(), owner.clone())].into_iter().collect()),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.error.status_code(), 400);
+        assert_eq!(
+            error.error.error_payload().1.as_deref(),
+            Some("VALIDATION_ERROR")
+        );
+        assert_eq!(
+            db.tables(&[
+                "users",
+                "accounts",
+                "sessions",
+                "two_factor",
+                "verifications"
+            ])
+            .await?,
+            before_uri
+        );
+    }
     for path in [
         "/two-factor/enable",
         "/two-factor/disable",

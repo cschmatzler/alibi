@@ -81,7 +81,7 @@ use async_trait::async_trait;
 pub use backup_storage::{TwoFactorBackupCipher, TwoFactorBackupStorage};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
-pub use endpoint::{BackupCodesOutput, TotpOutput, TwoFactorDisabled};
+pub use endpoint::{BackupCodesOutput, TotpOutput, TotpVerified, TwoFactorDisabled};
 use hkdf::Hkdf;
 use hmac::{Hmac, KeyInit, Mac};
 pub use otp_storage::{TwoFactorOtpCipher, TwoFactorOtpHasher, TwoFactorOtpStorage};
@@ -164,12 +164,16 @@ pub struct GetTotpUriInput {
     pub password: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
-pub(crate) struct VerifyTotpRequest {
-    code: String,
-    #[serde(rename = "trustDevice")]
-    trust_device: Option<bool>,
+/// Authenticator code and optional trusted-device preference.
+#[derive(Debug, Deserialize, Serialize, Validate)]
+pub struct VerifyTotpRequest {
+    pub code: String,
+    #[serde(rename = "trustDevice", skip_serializing_if = "Option::is_none")]
+    pub trust_device: Option<bool>,
 }
+
+/// Public input for direct authenticator verification.
+pub type VerifyTotpInput = VerifyTotpRequest;
 
 #[derive(Deserialize)]
 struct SendOtpRequest {
@@ -490,13 +494,22 @@ impl TwoFactorPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let body: VerifyTotpRequest = match alibi_core::validate_request_body(req) {
+        let body: VerifyTotpInput = match alibi_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
 
+        self.verify_totp(&body, req, ctx).await
+    }
+
+    async fn verify_totp<S: alibi_core::AuthSchema>(
+        &self,
+        body: &VerifyTotpInput,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<AuthResponse> {
         let (response, set_cookie_headers) =
-            match verify_totp_core(req, &body, &self.config, ctx).await {
+            match Box::pin(verify_totp_core(req, body, &self.config, ctx)).await {
                 Ok(result) => result,
                 Err(
                     TotpVerificationError::InvalidGeneration
@@ -598,7 +611,7 @@ impl TwoFactorPlugin {
         };
 
         let (response, set_cookie_headers) =
-            match verify_backup_code_core(req, &body, &self.config, ctx).await {
+            match Box::pin(verify_backup_code_core(req, &body, &self.config, ctx)).await {
                 Ok(result) => result,
                 Err(error) => return verification_error_response(error, ctx),
             };
