@@ -150,6 +150,48 @@ compatScenario(
     const recovered = await control({ action: "token", body: refreshInput });
     expect(recovered.status).toBe(200);
     expect(((await recovered.json()) as any).access_token).toBe(issued.access_token);
+    for (const field of ["access_token", "token_type", "refresh_token"]) {
+      const malformed = structuredClone(replay);
+      if (field === "access_token") {
+        delete malformed.response[field];
+      } else {
+        malformed.response[field] = 17;
+      }
+      const nonce = crypto.getRandomValues(new Uint8Array(24));
+      const changed = Buffer.concat([
+        nonce,
+        xchacha20poly1305(key, nonce).encrypt(Buffer.from(JSON.stringify(malformed))),
+      ]).toString("hex");
+      const written = await control({
+        action: "replace-refresh-replay",
+        token: token.refresh_token,
+        ciphertext: changed,
+      });
+      expect(written.status).toBe(200);
+      expect(((await written.json()) as any).id).toBe(row.id);
+      const denied = await control({ action: "token", body: refreshInput });
+      expect(denied.status).toBe(400);
+      expect(await denied.json()).toEqual({
+        error: "invalid_grant",
+        error_description: "invalid refresh token",
+      });
+      const retained = await control({
+        action: "token-row",
+        kind: "refresh",
+        token: issued.refresh_token,
+      });
+      expect(retained.status).toBe(200);
+      expect(await retained.json()).not.toBeNull();
+    }
+    const restored = await control({
+      action: "replace-refresh-replay",
+      token: token.refresh_token,
+      ciphertext: row.rotationReplayResponse,
+    });
+    expect(restored.status).toBe(200);
+    const valid = await control({ action: "token", body: refreshInput });
+    expect(valid.status).toBe(200);
+    expect(((await valid.json()) as any).access_token).toBe(issued.access_token);
     const expired = await control({ action: "expire-refresh-replay", token: token.refresh_token });
     expect(expired.status).toBe(200);
     const stored = (await expired.json()) as any;
