@@ -65,6 +65,9 @@ export type ComparisonContext = {
 };
 
 const entityKeys = new Set([
+  "client_id",
+  "clientId",
+  "user_id",
   "id",
   "accountId",
   "userId",
@@ -82,6 +85,7 @@ const entityKeys = new Set([
 ]);
 
 const opaqueKeys = new Set([
+  "client_secret",
   "nonce",
   "token",
   "sessionToken",
@@ -4743,6 +4747,38 @@ export function compareValues(
           }
         }
       }
+    }
+
+    if (
+      !applicationData &&
+      !jwtPayload &&
+      key === "client_id_issued_at" &&
+      typeof a === "number" &&
+      typeof b === "number"
+    ) {
+      const trace = /^traces\.(\d+)\.responseBody(?:\.|$)/.exec(path);
+      const index = trace ? Number(trace[1]) : undefined;
+      const leftWindow = index === undefined ? undefined : context.leftRequestWindows?.[index];
+      const rightWindow = index === undefined ? undefined : context.rightRequestWindows?.[index];
+      const valid = (value: number, start: number, end: number) =>
+        Number.isInteger(value) &&
+        value >= Math.floor(start / 1000) &&
+        value <= Math.floor(end / 1000);
+      if (
+        !valid(
+          a,
+          leftWindow?.startedAt ?? context.leftStartedAt,
+          leftWindow?.finishedAt ?? context.leftFinishedAt ?? context.leftStartedAt,
+        ) ||
+        !valid(
+          b,
+          rightWindow?.startedAt ?? context.rightStartedAt,
+          rightWindow?.finishedAt ?? context.rightFinishedAt ?? context.rightStartedAt,
+        )
+      ) {
+        fail(path, "client issuance timestamp is outside its observed creation window");
+      }
+      return;
     }
 
     if (proxyPayload && key === "timestamp" && typeof a === "number" && typeof b === "number") {

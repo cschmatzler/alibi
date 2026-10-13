@@ -343,3 +343,5 @@ mod server_organization_create_role;
 mod server_organization_get_role;
 
 mod oauth_server_metadata;
+
+mod oauth_client_creation;

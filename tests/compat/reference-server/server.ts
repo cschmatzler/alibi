@@ -70,6 +70,7 @@ import { microsoftProviderFixture } from "./fixtures/microsoft-provider-fixture"
 import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixture";
 import { naverProviderFixture } from "./fixtures/naver-provider-fixture";
 import { notionProviderFixture } from "./fixtures/notion-provider-fixture";
+import { oauthClientFixture } from "./fixtures/oauth-client-fixture";
 import { oauthPopupFixture } from "./fixtures/oauth-popup-fixture";
 import { oauthProviderDiscovery } from "./fixtures/oauth-provider-fixture";
 import { oauthProxyFixture } from "./fixtures/oauth-proxy-fixture";
@@ -3038,6 +3039,7 @@ async function oneTimeTokenControl(request: Request, url: URL): Promise<Response
 
 const openApiInstances = openApiProfiles(PORT, database);
 const oauthProviderMetadata = oauthProviderDiscovery(`http://localhost:${PORT}`);
+const oauthClients = await oauthClientFixture(authOptions);
 
 const passkeyControls = passkeyFixture(database);
 const server = Bun.serve({
@@ -3573,6 +3575,12 @@ const server = Bun.serve({
           cache.delete(body.token);
         }
         return Response.json({ present: cache.has(body.token) });
+      }
+      if (
+        url.pathname === "/__test/server-api/oauth-provider-clients" &&
+        request.method === "POST"
+      ) {
+        return oauthClients(request);
       }
       if (url.pathname === "/__test/server-api/oauth-provider-metadata") {
         return oauthProviderMetadata(

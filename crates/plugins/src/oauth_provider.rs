@@ -1,4 +1,5 @@
 //! OAuth authorization-server discovery from installed issuer and provider policy.
+mod clients;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
@@ -7,6 +8,7 @@ use alibi_core::{
     AuthSchema, HttpMethod,
 };
 use async_trait::async_trait;
+pub use clients::CreateOAuthClientInput;
 use serde_json::{Value, json};
 
 /// Immutable policy shared by authorization-server metadata and grant admission.
@@ -223,10 +225,19 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         "oauth-provider"
     }
     fn routes(&self) -> Vec<AuthRoute> {
-        vec![]
+        vec![AuthRoute::post(
+            "/oauth2/create-client",
+            "createOAuthClient",
+        )]
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "createOAuthClient",
+                "createOAuthClient",
+                Some("/oauth2/create-client"),
+                HttpMethod::Post,
+            ),
             crate::endpoint::definition(
                 "getOAuthServerConfig",
                 "getOAuthServerConfig",
@@ -247,7 +258,11 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
         Ok(EndpointInput {
-            body: call.body().cloned(),
+            body: if call.operation_id() == "createOAuthClient" {
+                Some(clients::validate(call.body())?)
+            } else {
+                call.body().cloned()
+            },
             query: call.query().cloned(),
         })
     }
@@ -256,6 +271,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "createOAuthClient" {
+            return Box::pin(self.create_client(call.body_as()?, call, ctx)).await;
+        }
         if call.operation_id() == "getOpenIdConfig"
             && !self.config.scopes.iter().any(|scope| scope == "openid")
         {
@@ -271,9 +289,18 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     async fn on_request(
         &self,
-        _req: &AuthRequest,
-        _ctx: &AuthContext<S>,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/oauth2/create-client" && *req.method() == HttpMethod::Post {
+            let body: alibi_core::utils::json::JsValue = req.body_as_json()?;
+            let input = alibi_core::utils::json::from_value(clients::validate(Some(&body))?)?;
+            return Ok(Some(
+                Box::pin(self.create_client(input, req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
         Ok(None)
     }
     async fn on_init(&self, _ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
