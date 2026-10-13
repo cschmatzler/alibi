@@ -144,12 +144,21 @@ async fn two_factor_input_and_enrollment_matrix<B: Backend>(db: Db) -> TestResul
     );
     trace.response(
         "otp enrollment",
-        &Box::pin(auth.handle_request(raw(
-            "/two-factor/enable",
-            &json!({"password":PASSWORD,"method":"otp"}).to_string(),
-            &owner,
-        )))
-        .await?,
+        &Box::pin(auth.dispatch_endpoint(
+            TwoFactorPlugin::enable_two_factor_endpoint(
+                alibi::plugins::two_factor::EnableTwoFactorInput {
+                    password: Some(PASSWORD.into()),
+                    method: alibi::plugins::two_factor::TwoFactorMethod::Otp,
+                    issuer: None,
+                },
+            ),
+            alibi::endpoint::EndpointOptions {
+                headers: Some([("cookie".into(), owner.clone())].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
+        .await?
+        .into_response()?,
     );
     assert_eq!(
         db.count_where(

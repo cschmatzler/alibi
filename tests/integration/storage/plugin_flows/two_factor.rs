@@ -40,6 +40,7 @@ async fn signin<S: AuthSchema>(auth: &Alibi<S>, cookie: &str) -> AuthResponse {
 async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     db: Db,
 ) -> TestResult {
+    Box::pin(async move {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let mailbox = Arc::new(FactorMailbox::default());
     let auth = builder::<B>(&connection)
@@ -57,28 +58,94 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     let server_authenticator = totp_rs::Totp::from_url(
         "otpauth://totp/Server?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&digits=6&period=30",
     )?;
-    let server_code = auth
+    let server_code = Box::pin(auth
         .dispatch_endpoint(
             TwoFactorPlugin::generate_totp_endpoint("12345678901234567890"),
             EndpointOptions::default(),
-        )
+        ))
         .await?
         .decode()?
         .code;
     assert!(server_authenticator.check_current(&server_code).is_some());
     let owner = signup(&auth, "factor@example.test").await;
     let user = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
-    let enrollment = call(
-        &auth,
-        request(
-            "/two-factor/enable",
-            Some(json!({"password":PASSWORD})),
-            &cookies(&owner),
+    let before = db
+        .tables(&["users", "accounts", "sessions", "two_factor"])
+        .await?;
+    for (input, cookie, status, code) in [
+        (json!({}), Some(cookies(&owner)), 400, "VALIDATION_ERROR"),
+        (
+            json!({"password":42}),
+            Some(cookies(&owner)),
+            400,
+            "VALIDATION_ERROR",
         ),
-        200,
-    )
-    .await;
+        (
+            json!({"password":PASSWORD,"method":"invalid"}),
+            Some(cookies(&owner)),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (
+            json!({"password":PASSWORD,"issuer":null}),
+            Some(cookies(&owner)),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (json!({"password":PASSWORD}), None, 401, "UNAUTHORIZED"),
+        (
+            json!({"password":"wrong-password"}),
+            Some(cookies(&owner)),
+            400,
+            "INVALID_PASSWORD",
+        ),
+    ] {
+        let error = Box::pin(
+            auth.dispatch_endpoint(
+                alibi::endpoint::ServerEndpoint::<Value>::new("two-factor", "enableTwoFactor")
+                    .with_body(&input)?,
+                EndpointOptions {
+                    headers: cookie.map(|cookie| [("cookie".into(), cookie)].into_iter().collect()),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.error.status_code(), status);
+        assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "two_factor"])
+                .await?,
+            before
+        );
+    }
+    let enrollment = Box::pin(auth.dispatch_endpoint(
+        TwoFactorPlugin::enable_two_factor_endpoint(alibi::plugins::two_factor::EnableTwoFactorInput {
+                password:Some(PASSWORD.into()), issuer:Some("Server enrollment".into()), ..Default::default()
+            }).with_body(&json!({"password":PASSWORD,"issuer":"Server enrollment","userId":"untrusted-selector"}))?,
+        EndpointOptions {headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()}
+    )).await?;
+    assert!(matches!(
+        enrollment.decode()?,
+        alibi::plugins::two_factor::TwoFactorEnabled::Totp { .. }
+    ));
+    let enrollment = enrollment.into_response()?;
     let enrollment_body = body(&enrollment);
+    assert_eq!(enrollment_body["method"], "totp");
+    assert_eq!(
+        url::Url::parse(enrollment_body["totpURI"].as_str().unwrap())?
+            .query_pairs()
+            .find(|(name, _)| name == "issuer")
+            .unwrap()
+            .1,
+        "Server enrollment"
+    );
+    assert_eq!(enrollment_body["backupCodes"].as_array().unwrap().len(), 10);
+    let after = db
+        .tables(&["users", "accounts", "sessions", "two_factor"])
+        .await?;
+    assert_eq!(&after[..3], &before[..3]);
     // A separate authenticator implementation consumes the actual otpauth URI.
     // Do not ask the production plugin to manufacture its own expected code.
     let authenticator = totp_rs::Totp::from_url(enrollment_body["totpURI"].as_str().unwrap())?;
@@ -547,6 +614,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     .await;
     authenticated(&auth, &cookies(&completed), "factor@example.test").await;
     B::close(connection).await
+    }).await
 }
 
 async fn renamed_factor_table_owns_the_complete_factor_lifecycle<B: Backend>(db: Db) -> TestResult {

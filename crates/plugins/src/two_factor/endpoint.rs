@@ -1,4 +1,7 @@
-use super::TwoFactorPlugin;
+use super::{
+    BackupOperationError, EnableTwoFactorInput, TwoFactorEnabled, TwoFactorMethod, TwoFactorPlugin,
+    enable_core,
+};
 use crate::authentication_helpers::JsonField;
 use crate::endpoint::{definition, validate_fields};
 use alibi_core::endpoint::{
@@ -22,12 +25,42 @@ pub struct TotpOutput {
 
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
+        definition(
+            "enableTwoFactor",
+            "enableTwoFactor",
+            Some("/two-factor/enable"),
+            HttpMethod::Post,
+        ),
         definition("viewBackupCodes", "viewBackupCodes", None, HttpMethod::Post),
         definition("generateTOTP", "generateTOTP", None, HttpMethod::Post),
     ]
 }
 
-pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+pub(super) fn validate(call: &EndpointCall, allow_passwordless: bool) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "enableTwoFactor" {
+        let mut body = validate_fields(
+            call.body(),
+            "body",
+            &[
+                JsonField::string("password", !allow_passwordless),
+                JsonField {
+                    name: "method",
+                    kind: crate::authentication_helpers::JsonFieldKind::OneOf(&["otp", "totp"]),
+                    required: false,
+                },
+                JsonField::string("issuer", false),
+            ],
+        )?;
+        if let JsValue::Object(object) = &mut body {
+            _ = object
+                .entry("method".into())
+                .or_insert_with(|| JsValue::String("totp".into()));
+        }
+        return Ok(EndpointInput {
+            body: Some(body),
+            query: call.query().cloned(),
+        });
+    }
     let field = if call.operation_id() == "viewBackupCodes" {
         "userId"
     } else {
@@ -54,6 +87,59 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
 }
 
 impl TwoFactorPlugin {
+    /// Enroll the signed-in owner using the configured factor and backup-code policies.
+    #[must_use]
+    pub fn enable_two_factor_endpoint(
+        input: EnableTwoFactorInput,
+    ) -> ServerEndpoint<TwoFactorEnabled> {
+        let mut body = [(
+            "method".into(),
+            JsValue::String(
+                match input.method {
+                    TwoFactorMethod::Otp => "otp",
+                    TwoFactorMethod::Totp => "totp",
+                }
+                .into(),
+            ),
+        )]
+        .into_iter()
+        .collect::<indexmap::IndexMap<_, _>>();
+        if let Some(password) = input.password {
+            _ = body.insert("password".into(), JsValue::String(password));
+        }
+        if let Some(issuer) = input.issuer {
+            _ = body.insert("issuer".into(), JsValue::String(issuer));
+        }
+        ServerEndpoint::new("two-factor", "enableTwoFactor").with_body_value(JsValue::Object(body))
+    }
+
+    async fn enable_endpoint(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<EndpointResponse> {
+        let (user, session) = crate::helpers::ordinary_session(call, ctx).await?;
+        match enable_core(&call.body_as()?, &user, &session, &self.config, ctx).await {
+            Ok((value, cookies)) => {
+                let mut response = EndpointResponse::json(&value)?;
+                for cookie in cookies {
+                    response = response.with_header("set-cookie", cookie);
+                }
+                Ok(response)
+            }
+            Err(
+                BackupOperationError::Auth(alibi_core::AuthError::SessionCreationCancelled)
+                | BackupOperationError::InvalidGeneration,
+            ) => Ok(EndpointResponse::error(alibi_core::AuthError::Api {
+                status: 500,
+                code: None,
+                message: String::new(),
+            })
+            .without_error_body()),
+            Err(BackupOperationError::Auth(error)) => Err(error),
+        }
+    }
+
     /// Read trusted server-only backup codes through installed endpoint hooks.
     #[must_use]
     pub fn view_backup_codes_endpoint(
@@ -75,7 +161,9 @@ impl TwoFactorPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
-        if call.operation_id() == "viewBackupCodes" {
+        if call.operation_id() == "enableTwoFactor" {
+            self.enable_endpoint(call, ctx).await
+        } else if call.operation_id() == "viewBackupCodes" {
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase")]
             struct Body {

@@ -130,17 +130,21 @@ pub struct TwoFactorPlugin {
     config: TwoFactorConfig,
 }
 
-#[derive(Debug, Deserialize, Validate)]
-pub(crate) struct EnableRequest {
-    password: Option<String>,
+/// Password authority and enrollment method for enabling the current user's factor.
+#[derive(Debug, Default, Deserialize, Serialize, Validate)]
+pub struct EnableTwoFactorInput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
     #[serde(default)]
-    method: EnableMethod,
-    issuer: Option<String>,
+    pub method: TwoFactorMethod,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issuer: Option<String>,
 }
 
-#[derive(Debug, Default, Deserialize, PartialEq)]
+/// The supported factor enrollment methods.
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
-enum EnableMethod {
+pub enum TwoFactorMethod {
     Otp,
     #[default]
     Totp,
@@ -199,9 +203,10 @@ pub(crate) struct VerifyBackupCodeRequest {
     trust_device: Option<bool>,
 }
 
-#[derive(Debug, Serialize)]
+/// A generated authenticator enrollment or an immediately enabled OTP factor.
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "method", rename_all = "lowercase")]
-pub(crate) enum EnableResponse {
+pub enum TwoFactorEnabled {
     Otp,
     Totp {
         #[serde(rename = "totpURI")]
@@ -344,7 +349,7 @@ alibi_core::impl_auth_plugin! {
         }
         fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> { endpoint::definitions() }
 
-        fn validate_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointInput> { endpoint::validate(call) }
+        fn validate_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointInput> { endpoint::validate(call, self.config.allow_passwordless) }
 
         async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> { self.call_endpoint(call, ctx).await }
 
@@ -389,7 +394,7 @@ impl TwoFactorPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let body: EnableRequest =
+        let body: EnableTwoFactorInput =
             match parse_password_body(req, self.config.allow_passwordless, true) {
                 Ok(body) => body,
                 Err(response) => return Ok(response),
