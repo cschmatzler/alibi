@@ -42,8 +42,21 @@ pub struct TwoFactorOtpSent {
     pub status: bool,
 }
 
+/// Public recovery result, with a token only when session publication was requested.
+#[derive(Debug, Deserialize)]
+pub struct BackupCodeVerified {
+    pub token: Option<String>,
+    pub user: serde_json::Value,
+}
+
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
+        definition(
+            "verifyBackupCode",
+            "verifyBackupCode",
+            Some("/two-factor/verify-backup-code"),
+            HttpMethod::Post,
+        ),
         definition(
             "verifyTwoFactorOTP",
             "verifyTwoFactorOTP",
@@ -90,6 +103,28 @@ pub(super) fn validate(
     config: &super::TwoFactorConfig,
 ) -> AuthResult<EndpointInput> {
     let allow_passwordless = config.allow_passwordless;
+    if call.operation_id() == "verifyBackupCode" {
+        return Ok(EndpointInput {
+            body: Some(validate_fields(
+                call.body(),
+                "body",
+                &[
+                    JsonField::string("code", true),
+                    JsonField {
+                        name: "disableSession",
+                        kind: crate::authentication_helpers::JsonFieldKind::Boolean,
+                        required: false,
+                    },
+                    JsonField {
+                        name: "trustDevice",
+                        kind: crate::authentication_helpers::JsonFieldKind::Boolean,
+                        required: false,
+                    },
+                ],
+            )?),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "sendTwoFactorOTP" {
         return Ok(EndpointInput {
             body: Some(validate_fields(
@@ -210,6 +245,31 @@ fn verification_response(output: alibi_core::AuthResponse) -> AuthResult<Endpoin
 }
 
 impl TwoFactorPlugin {
+    /// Consume a recovery code for the current owner or pending sign-in challenge.
+    #[must_use]
+    pub fn verify_backup_code_endpoint(
+        input: super::VerifyBackupCodeInput,
+    ) -> ServerEndpoint<BackupCodeVerified> {
+        let mut body = [("code".into(), JsValue::String(input.code))]
+            .into_iter()
+            .collect::<indexmap::IndexMap<_, _>>();
+        if let Some(disable_session) = input.disable_session {
+            _ = body.insert("disableSession".into(), JsValue::Bool(disable_session));
+        }
+        if let Some(trust_device) = input.trust_device {
+            _ = body.insert("trustDevice".into(), JsValue::Bool(trust_device));
+        }
+        ServerEndpoint::new("two-factor", "verifyBackupCode").with_body_value(JsValue::Object(body))
+    }
+
+    async fn verify_backup_endpoint_call(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<EndpointResponse> {
+        verification_response(self.verify_backup_code(&call.body_as()?, call, ctx).await?)
+    }
+
     /// Verify a delivered code for the current session or pending sign-in challenge.
     #[must_use]
     pub fn verify_two_factor_otp_endpoint(
@@ -403,7 +463,9 @@ impl TwoFactorPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
-        if call.operation_id() == "verifyTwoFactorOTP" {
+        if call.operation_id() == "verifyBackupCode" {
+            Box::pin(self.verify_backup_endpoint_call(call, ctx)).await
+        } else if call.operation_id() == "verifyTwoFactorOTP" {
             Box::pin(self.verify_otp_endpoint_call(call, ctx)).await
         } else if call.operation_id() == "sendTwoFactorOTP" {
             Box::pin(self.send_otp_endpoint_call(call, ctx)).await

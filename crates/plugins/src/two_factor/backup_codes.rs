@@ -43,7 +43,7 @@ pub(in crate::two_factor) async fn generate_backup_codes_core(
 }
 
 pub(in crate::two_factor) async fn verify_backup_code_core(
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     body: &VerifyBackupCodeRequest,
     config: &TwoFactorConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,

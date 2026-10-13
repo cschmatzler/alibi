@@ -1,5 +1,8 @@
+import { expect } from "bun:test";
+
 import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
+import { Cookie } from "tough-cookie";
 
 import { compatScenario } from "../../../support/scenario";
 import { generateCurrentTotp } from "../../../support/totp";
@@ -87,7 +90,7 @@ compatScenario(
     const email = ctx.uniqueEmail("two-factor-verify");
     const password = "password123";
 
-    await client.signUp.email({
+    const created = await client.signUp.email({
       email,
       password,
       name: "Two Factor Verify",
@@ -102,22 +105,100 @@ compatScenario(
 
     await client.signOut();
 
+    let pendingCookie = "";
     const signIn = await client.signIn.email({
       email,
       password,
+      fetchOptions: {
+        onSuccess({ response }) {
+          pendingCookie = response.headers
+            .getSetCookie()
+            .filter((raw) => Boolean(Cookie.parse(raw)?.value))
+            .map((cookie) => cookie.split(";")[0])
+            .join("; ");
+        },
+      },
     });
-    const verifyBackupCode = await client.twoFactor.verifyBackupCode({ code: backupCode });
+    async function serverVerify(body: unknown, cookie = pendingCookie) {
+      const response = await ctx
+        .actor("primary")
+        .fetch(`${ctx.baseURL}/__test/server-api/two-factor-verify-backup`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ body, headers: { cookie } }),
+        });
+      const value = (await response.json()) as any;
+      return response.ok
+        ? { data: value, error: null }
+        : { data: null, error: { ...value, status: response.status } };
+    }
+    const before = await ctx.readUserState({ userId: created.data!.user.id });
+    const invalidInputs = [];
+    for (const body of [
+      {},
+      { code: 42 },
+      { code: "unused", disableSession: null },
+      { code: "unused", trustDevice: 42 },
+    ]) {
+      const denied = await serverVerify(body);
+      expect(denied.error).toMatchObject({ status: 400, code: "VALIDATION_ERROR" });
+      invalidInputs.push(ctx.snapshot(denied));
+    }
+    const guest = await serverVerify({ code: backupCode }, "");
+    expect(guest.error).toMatchObject({ status: 401, code: "INVALID_TWO_FACTOR_COOKIE" });
+    expect(await ctx.readUserState({ userId: created.data!.user.id })).toEqual(before);
+    const unpublished = await serverVerify({
+      code: generated.data!.backupCodes[1]!,
+      disableSession: true,
+      trustDevice: true,
+    });
+    expect(unpublished.error).toBeNull();
+    expect(unpublished.data).not.toHaveProperty("token");
+    expect(unpublished.data.user.id).toBe(created.data!.user.id);
+    expect(await ctx.readUserState({ userId: created.data!.user.id })).toEqual(before);
+    expect((await client.getSession()).data).toBeNull();
+    const retired = await serverVerify({ code: backupCode });
+    expect(retired.error).toMatchObject({ status: 401, code: "INVALID_TWO_FACTOR_COOKIE" });
+    await client.signIn.email({
+      email,
+      password,
+      fetchOptions: {
+        onSuccess({ response }) {
+          pendingCookie = response.headers
+            .getSetCookie()
+            .filter((raw) => Boolean(Cookie.parse(raw)?.value))
+            .map((cookie) => cookie.split(";")[0])
+            .join("; ");
+        },
+      },
+    });
+    const verifyBackupCode = await serverVerify({ code: backupCode, userId: "untrusted-selector" });
+    expect(verifyBackupCode.error).toBeNull();
     const session = await client.getSession();
 
     await client.signOut();
     await client.signIn.email({
       email,
       password,
+      fetchOptions: {
+        onSuccess({ response }) {
+          pendingCookie = response.headers
+            .getSetCookie()
+            .filter((raw) => Boolean(Cookie.parse(raw)?.value))
+            .map((cookie) => cookie.split(";")[0])
+            .join("; ");
+        },
+      },
     });
-    const reusedBackupCode = await client.twoFactor.verifyBackupCode({ code: backupCode });
+    const reusedBackupCode = await serverVerify({ code: backupCode });
+    expect(reusedBackupCode.error).toMatchObject({ status: 401, code: "INVALID_BACKUP_CODE" });
 
     return {
       signIn: ctx.snapshot(signIn),
+      invalidInputs,
+      guest: ctx.snapshot(guest),
+      unpublished: ctx.snapshot(unpublished),
+      retired: ctx.snapshot(retired),
       verifyBackupCode: ctx.snapshot(verifyBackupCode),
       session: ctx.snapshot(session),
       reusedBackupCode: ctx.snapshot(reusedBackupCode),
