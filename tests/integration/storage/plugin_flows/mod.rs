@@ -401,3 +401,5 @@ mod oauth_offline_tokens;
 mod oauth_introspection;
 
 mod oauth_revocation;
+
+mod oauth_id_token;
