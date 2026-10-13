@@ -562,7 +562,7 @@ pub(crate) async fn router(
                             ("rateLimitMax", "rateLimitMax"),
                             ("rateLimitTimeWindow", "rateLimitTimeWindow"),
                         ] {
-                            value[wire] = json!(row.try_get::<Option<f64>>("", column).unwrap());
+                            value[wire] = json!(row.try_get::<Option<alibi::seaorm::Number>>("", column).unwrap().map(|value| value.0));
                         }
                         for (wire, column) in [
                             ("enabled", "enabled"),

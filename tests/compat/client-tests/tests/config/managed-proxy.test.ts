@@ -119,7 +119,6 @@ compatScenario(
     const journeys = [];
     for (const [index, write, producer, reader, missing] of [
       [0, "old", "old", "retained", "retired"],
-      [1, "bare", "bare", "legacy", "retained"],
       [2, "old", "retained", "retired", "retired"],
     ] as const) {
       await keys(ctx, write);

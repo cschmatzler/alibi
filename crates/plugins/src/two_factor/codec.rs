@@ -1,4 +1,4 @@
-use super::*;
+use alibi_core::AuthResult;
 
 pub(in crate::two_factor) fn encrypt_value(
     config: &alibi_core::AuthConfig,
