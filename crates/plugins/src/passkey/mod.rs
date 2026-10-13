@@ -1,6 +1,6 @@
 mod authentication;
 mod endpoint;
-pub use endpoint::PasskeyDeleted;
+pub use endpoint::{PasskeyDeleted, PasskeyUpdated};
 mod options;
 pub use options::{
     PasskeyAuthenticatorSelection, PasskeyExtensions, PasskeyExtensionsResolver,
@@ -379,7 +379,7 @@ alibi_core::impl_auth_plugin! {
         endpoint::validate(call)
     }
     async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
-        if call.operation_id() == "deletePasskey" { self.delete_endpoint(call, ctx).await } else { self.list_endpoint(call, ctx).await }
+        if call.operation_id() == "deletePasskey" { self.delete_endpoint(call, ctx).await } else if call.operation_id() == "updatePasskey" { self.update_endpoint(call, ctx).await } else { self.list_endpoint(call, ctx).await }
     }
     route_openapi_metadata!(S);
  }

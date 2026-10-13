@@ -72,11 +72,22 @@ pub(in crate::passkey) async fn update_passkey_core(
     user: &impl AuthUser,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> PasskeyHandlerResult<PasskeyResponse> {
+    if body.id.is_empty() {
+        return Err(AuthError::Api {
+            status: 400,
+            code: None,
+            message: "Missing required parameter: id".into(),
+        });
+    }
     let passkey = ctx
         .database
         .get_passkey_by_id(&body.id)
         .await?
-        .ok_or_else(|| AuthError::not_found("Passkey not found"))?;
+        .ok_or(AuthError::Upstream {
+            status: 404,
+            code: "PASSKEY_NOT_FOUND",
+            message: "Passkey not found",
+        })?;
 
     if passkey.user_id() != user.id() {
         return Ok(PasskeyHandlerOutcome::Response(
