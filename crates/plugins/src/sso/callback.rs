@@ -22,7 +22,7 @@ impl SsoPlugin {
     }
     pub(super) async fn callback<S: AuthSchema>(
         &self,
-        provider_id: &str,
+        provider_id: Option<&str>,
         query: &Value,
         request: &impl SessionRequest,
         meta: &RequestMeta,
@@ -99,6 +99,20 @@ impl SsoPlugin {
         if payload.expires_at < chrono::Utc::now().timestamp_millis() {
             return fail("state_expired", None);
         }
+        // Shared callbacks derive the provider only from protected state.
+        let provider_id = match provider_id {
+            Some(id) => id,
+            None => match payload
+                .server_context
+                .as_ref()
+                .and_then(|context| context.get("ssoProviderReference"))
+                .and_then(|reference| reference.get("providerId"))
+                .and_then(Value::as_str)
+            {
+                Some(id) => id,
+                None => return fail("invalid_state", Some("missing_sso_provider_reference")),
+            },
+        };
         let code = query
             .get("code")
             .and_then(Value::as_str)
@@ -152,7 +166,7 @@ impl SsoPlugin {
         let Some(token_endpoint) = config.get("tokenEndpoint").and_then(Value::as_str) else {
             return fail("invalid_provider", Some("token_endpoint_not_found"));
         };
-        let redirect_uri = format!("{base}/sso/callback/{provider_id}");
+        let redirect_uri = self.oidc_redirect_uri(&base, provider_id);
         let mut form = vec![
             ("grant_type", "authorization_code"),
             ("code", code.unwrap_or_default()),

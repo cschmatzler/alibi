@@ -1,17 +1,28 @@
 //! An actual PKCE code exchange produces a usable session and rejects replay.
 use super::*;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
-use alibi::plugins::SsoPlugin;
+use alibi::plugins::{SsoConfig, SsoPlugin};
 use alibi::{
     AuthAccount, AuthVerification,
     store::{AccountStore, VerificationStore},
 };
 #[path = "../../../support/sso_oidc_peer.rs"]
 mod peer;
-backend_tests!(sso_callback_redeems_bound_code_and_creates_usable_session);
+backend_tests!(
+    sso_callback_redeems_bound_code_and_creates_usable_session,
+    sso_shared_callback_selects_provider_from_protected_state
+);
 async fn sso_callback_redeems_bound_code_and_creates_usable_session<B: Backend>(
     db: Db,
 ) -> TestResult {
+    callback_flow::<B>(db, false).await
+}
+async fn sso_shared_callback_selects_provider_from_protected_state<B: Backend>(
+    db: Db,
+) -> TestResult {
+    callback_flow::<B>(db, true).await
+}
+async fn callback_flow<B: Backend>(db: Db, shared: bool) -> TestResult {
     let idp = peer::start().await;
     *idp.email.lock().unwrap() = "sso-employee@example.test".into();
     let (connection, store) = db.migrated::<B>(SECRET).await?;
@@ -23,7 +34,10 @@ async fn sso_callback_redeems_bound_code_and_creates_usable_session<B: Backend>(
         .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .plugin(super::auth_probe::fast_password())
         .plugin(SessionManagementPlugin::new())
-        .plugin(SsoPlugin::new())
+        .plugin(SsoPlugin::with_config(SsoConfig {
+            redirect_uri: shared.then(|| "/sso/callback".into()),
+            ..Default::default()
+        }))
         .build()
         .await?;
     let owner = signup(&auth, "sso-callback-owner@example.test").await;
@@ -47,9 +61,18 @@ async fn sso_callback_redeems_bound_code_and_creates_usable_session<B: Backend>(
         .await?
         .unwrap();
     let payload: Value = serde_json::from_str(proof.value())?;
-    let endpoint = ServerEndpoint::<Value>::new("sso", "callbackSSO")
-        .with_params(&json!({"providerId":"callback-provider"}))?
-        .with_query(&query)?;
+    let endpoint = ServerEndpoint::<Value>::new(
+        "sso",
+        if shared {
+            "callbackSSOShared"
+        } else {
+            "callbackSSO"
+        },
+    )
+    .with_params(
+        &json!({"providerId":if shared {"untrusted-route-provider"}else{"callback-provider"}}),
+    )?
+    .with_query(&query)?;
     let options = EndpointOptions {
         headers: Some([("cookie".into(), cookies(&started))].into_iter().collect()),
         ..Default::default()
@@ -98,7 +121,11 @@ async fn sso_callback_redeems_bound_code_and_creates_usable_session<B: Backend>(
     );
     assert_eq!(
         exchanges[0]["form"]["redirect_uri"],
-        format!("{ORIGIN}/api/auth/sso/callback/callback-provider")
+        if shared {
+            format!("{ORIGIN}/api/auth/sso/callback")
+        } else {
+            format!("{ORIGIN}/api/auth/sso/callback/callback-provider")
+        }
     );
     let replay = Box::pin(auth.dispatch_endpoint(endpoint, options))
         .await?
