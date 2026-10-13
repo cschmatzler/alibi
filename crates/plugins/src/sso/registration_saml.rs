@@ -10,17 +10,29 @@ const STRINGS: &[&str] = &[
     "digestAlgorithm",
     "identifierFormat",
     "privateKey",
+    "idpInitiatedCallbackUrl",
 ];
 pub(super) fn validate(input: &JsValue) -> AuthResult<JsValue> {
+    validate_config(input, false)
+}
+pub(super) fn validate_update(input: &JsValue) -> AuthResult<JsValue> {
+    validate_config(input, true)
+}
+fn validate_config(input: &JsValue, partial: bool) -> AuthResult<JsValue> {
     let mut fields = STRINGS
         .iter()
-        .map(|name| JsonField::string(name, *name == "entryPoint"))
+        .filter(|name| {
+            !(partial
+                && **name == "idpInitiatedCallbackUrl"
+                && input.get(name).is_some_and(JsValue::is_null))
+        })
+        .map(|name| JsonField::string(name, !partial && *name == "entryPoint"))
         .collect::<Vec<_>>();
     fields.extend([
         JsonField {
             name: "idpMetadata",
             kind: JsonFieldKind::Record,
-            required: true,
+            required: !partial,
         },
         JsonField {
             name: "spMetadata",
@@ -48,7 +60,7 @@ pub(super) fn validate(input: &JsValue) -> AuthResult<JsValue> {
     if value
         .get("entryPoint")
         .and_then(Value::as_str)
-        .is_none_or(|url| url::Url::parse(url).is_err())
+        .is_some_and(|url| url::Url::parse(url).is_err())
     {
         return Err(crate::endpoint::validation(
             "[body.samlConfig.entryPoint] Invalid URL",
@@ -71,40 +83,49 @@ pub(super) fn validate(input: &JsValue) -> AuthResult<JsValue> {
             .ok_or_else(|| crate::endpoint::validation("Invalid SAML configuration"))?
             .insert("cert".into(), cert);
     }
-    let idp = value
-        .get_mut("idpMetadata")
-        .and_then(Value::as_object_mut)
-        .ok_or_else(|| crate::endpoint::validation("Invalid idpMetadata"))?;
-    idp.retain(|name, _| {
-        matches!(
-            name.as_str(),
-            "cert"
-                | "privateKey"
-                | "privateKeyPass"
-                | "isAssertionEncrypted"
-                | "encPrivateKey"
-                | "encPrivateKeyPass"
-                | "singleSignOnService"
-                | "singleLogoutService"
-                | "metadata"
-                | "entityID"
-        )
-    });
-    if let Some(cert) = idp.get("cert") {
-        certificate_shape(cert)?;
-    }
-    if idp
-        .get("metadata")
-        .and_then(Value::as_str)
-        .is_none_or(str::is_empty)
-        && idp
-            .get("entityID")
-            .and_then(Value::as_str)
-            .is_none_or(str::is_empty)
+    if partial
+        && input
+            .get("idpInitiatedCallbackUrl")
+            .is_some_and(JsValue::is_null)
     {
-        return Err(crate::endpoint::validation(
-            "idpMetadata.entityID is required when IdP metadata XML is not provided",
-        ));
+        let object = value
+            .as_object_mut()
+            .ok_or_else(|| crate::endpoint::validation("Invalid SAML configuration"))?;
+        _ = object.insert("idpInitiatedCallbackUrl".into(), Value::Null);
+    }
+    if let Some(idp) = value.get_mut("idpMetadata").and_then(Value::as_object_mut) {
+        idp.retain(|name, _| {
+            matches!(
+                name.as_str(),
+                "cert"
+                    | "privateKey"
+                    | "privateKeyPass"
+                    | "isAssertionEncrypted"
+                    | "encPrivateKey"
+                    | "encPrivateKeyPass"
+                    | "singleSignOnService"
+                    | "singleLogoutService"
+                    | "metadata"
+                    | "entityID"
+            )
+        });
+        if let Some(cert) = idp.get("cert") {
+            certificate_shape(cert)?;
+        }
+        if !partial
+            && idp
+                .get("metadata")
+                .and_then(Value::as_str)
+                .is_none_or(str::is_empty)
+            && idp
+                .get("entityID")
+                .and_then(Value::as_str)
+                .is_none_or(str::is_empty)
+        {
+            return Err(crate::endpoint::validation(
+                "idpMetadata.entityID is required when IdP metadata XML is not provided",
+            ));
+        }
     }
     Ok(alibi_core::utils::json::parse_value(
         &serde_json::to_string(&value)?,

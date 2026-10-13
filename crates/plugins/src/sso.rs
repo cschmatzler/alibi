@@ -6,6 +6,7 @@ mod provider_delete;
 mod provider_list;
 mod provider_read;
 mod provider_update;
+mod provider_update_saml;
 mod registration_saml;
 mod saml_acs;
 mod saml_crypto;

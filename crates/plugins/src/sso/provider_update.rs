@@ -1,7 +1,7 @@
 //! Merge partial provider configuration against its transaction-locked snapshot.
 use super::{
-    AuthContext, AuthError, AuthResult, AuthSchema, AuthUser, EndpointResponse, JsValue,
-    ServerEndpoint, SessionRequest, SsoPlugin, SsoProvider, Value, api, json,
+    AuthContext, AuthResult, AuthSchema, AuthUser, EndpointResponse, JsValue, ServerEndpoint,
+    SessionRequest, SsoPlugin, SsoProvider, Value, api, json,
 };
 use alibi_core::store::SsoProviderUpdate;
 impl SsoPlugin {
@@ -51,10 +51,14 @@ fn prepare_update(existing: &SsoProvider, body: &Value) -> AuthResult<SsoProvide
         }
         provider.domain = domain.into();
     }
-    if body.get("samlConfig").is_some() {
-        return Err(AuthError::not_implemented(
-            "SAML provider updates are not implemented",
-        ));
+    if let Some(updates) = body.get("samlConfig") {
+        let issuer = body
+            .get("issuer")
+            .and_then(Value::as_str)
+            .filter(|issuer| !issuer.is_empty());
+        let (config, changed) = super::provider_update_saml::prepare(existing, updates, issuer)?;
+        provider.saml_config = Some(config);
+        identity_changed |= changed;
     }
     if let Some(updates) = body.get("oidcConfig") {
         let current: Value = existing
@@ -215,6 +219,12 @@ pub(super) fn validate_update(input: Option<&JsValue>) -> AuthResult<JsValue> {
         }
         if let JsValue::Object(object) = &mut output {
             _ = object.insert("oidcConfig".into(), JsValue::Object(normalized));
+        }
+    }
+    if let Some(config) = output.get("samlConfig") {
+        let config = super::registration_saml::validate_update(config)?;
+        if let JsValue::Object(object) = &mut output {
+            _ = object.insert("samlConfig".into(), config);
         }
     }
     Ok(output)
