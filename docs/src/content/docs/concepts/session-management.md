@@ -189,6 +189,8 @@ async fn whoami(session: CurrentSession<AppAuthSchema>) -> String {
 }
 ```
 
+These extractors only look the session up. In Axum, [`SessionLayer`](/integrations/axum/#resolve-sessions-with-sessionlayer) runs get-session instead, applying the cookie cache and renewing or clearing the session cookies on your own routes.
+
 Details: [Axum](/integrations/axum/), [Poem](/integrations/poem/). For a custom host, resolve the session by dispatching a `get-session` request through [`handle_request`](/integrations/other-frameworks/).
 
 ## Frontend

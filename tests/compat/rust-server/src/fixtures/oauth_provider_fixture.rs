@@ -42,26 +42,46 @@ pub(crate) async fn router(
         );
         instances.insert(mode.to_owned(), auth);
     }
-    let mut client_instances=HashMap::new();
-    for mode in ["default","dynamic","public","prelogin","expired","resources-open","selection"] {
-        let provider=OAuthProviderConfig {select_account_page:if mode=="selection"{Some("/select".into())}else{None},enforce_per_client_resources:mode!="resources-open",allow_public_client_prelogin:matches!(mode,"prelogin"|"expired"),code_expires_in:if mode=="expired" {-1.0}else{600.0},allow_dynamic_client_registration:matches!(mode,"dynamic"|"public"),allow_unauthenticated_client_registration:mode=="public",..Default::default()};
+    let mut client_instances = HashMap::new();
+    for mode in [
+        "default",
+        "dynamic",
+        "public",
+        "prelogin",
+        "expired",
+        "resources-open",
+        "selection",
+    ] {
+        let provider = OAuthProviderConfig {
+            select_account_page: if mode == "selection" {
+                Some("/select".into())
+            } else {
+                None
+            },
+            enforce_per_client_resources: mode != "resources-open",
+            allow_public_client_prelogin: matches!(mode, "prelogin" | "expired"),
+            code_expires_in: if mode == "expired" { -1.0 } else { 600.0 },
+            allow_dynamic_client_registration: matches!(mode, "dynamic" | "public"),
+            allow_unauthenticated_client_registration: mode == "public",
+            ..Default::default()
+        };
         let auth = Arc::new(
-        AuthBuilder::<TestSchema>::new(config.clone())
-            .store(crate::backend::store::<TestSchema>(
-                config.clone(),
-                database.clone(),
-            ))
-            .plugin(alibi::plugins::EmailPasswordPlugin::new())
-            .plugin(alibi::plugins::SessionManagementPlugin::new())
-            .plugin(JwtPlugin::new())
-            .plugin(OAuthProviderPlugin::with_config(provider))
-            .build()
-            .await?,
-    );
-        client_instances.insert(mode.to_owned(),auth);
+            AuthBuilder::<TestSchema>::new(config.clone())
+                .store(crate::backend::store::<TestSchema>(
+                    config.clone(),
+                    database.clone(),
+                ))
+                .plugin(alibi::plugins::EmailPasswordPlugin::new())
+                .plugin(alibi::plugins::SessionManagementPlugin::new())
+                .plugin(JwtPlugin::new())
+                .plugin(OAuthProviderPlugin::with_config(provider))
+                .build()
+                .await?,
+        );
+        client_instances.insert(mode.to_owned(), auth);
     }
-    let authorization_path=format!("{}/oauth2/authorize",config.base_path);
-    let admin_path=format!("{}/admin/oauth2/create-client",config.base_path);
+    let authorization_path = format!("{}/oauth2/authorize", config.base_path);
+    let admin_path = format!("{}/admin/oauth2/create-client", config.base_path);
     Ok(Router::new().route("/__test/server-api/oauth-provider-clients",axum::routing::post(move |axum::Json(input):axum::Json<serde_json::Value>| {
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
@@ -129,7 +149,8 @@ pub(crate) async fn router(
             let endpoint=if input["action"]=="resource-update" {alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(plugin,operation).with_params(&input["params"]).unwrap().with_body(&input["body"]).unwrap()}else if input["action"]=="resource-get" || input["action"]=="resource-delete" || input["action"]=="resource-link" || input["action"]=="resource-unlink" {alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(plugin,operation).with_params(&input["params"]).unwrap()}else if input["action"]=="consent-get" || input["action"]=="get" || input["action"]=="public" || input["action"]=="authorize" {alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(plugin,operation).with_query(&input["query"]).unwrap()} else {alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(plugin,operation).with_body(&input["body"]).unwrap()};
             match auth.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),request:if (input["action"]=="revoke" || input["action"]=="introspect" || input["action"]=="token" || input["action"]=="authorize" || input["action"]=="consent" || input["action"]=="continue") && input["attachRequest"]!=false {let mut request=alibi::AuthRequest::new(if input["action"]=="revoke" || input["action"]=="introspect" || input["action"]=="token" || input["action"]=="consent" || input["action"]=="continue" {alibi::HttpMethod::Post}else{alibi::HttpMethod::Get},if input["action"]=="revoke"{authorization_path.replace("authorize","revoke")}else if input["action"]=="introspect"{authorization_path.replace("authorize","introspect")}else if input["action"]=="token"{authorization_path.replace("authorize","token")}else if input["action"]=="continue"{authorization_path.replace("authorize","continue")}else if input["action"]=="consent"{authorization_path.replace("authorize","consent")}else{authorization_path});request.headers=input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()).unwrap_or_default();Some(request)}else{None},..Default::default()}).await {
                 Ok(output)=>output.into_response().unwrap().into_response(),
-                Err(error)=>{let mut response=if error.body_absent{alibi::AuthResponse::new(error.error.status_code())}else{error.error.to_auth_response()};if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}if let Some(headers)=error.headers {for(name,value)in headers.iter(){if name.eq_ignore_ascii_case("set-cookie"){response.headers.append(name,value);}else{response.headers.insert(name,value);}}}response.into_response()}
+                Err(error)=>{let mut response=if error.body_absent{alibi::AuthResponse::new(error.error.status_code())}else{error.error.to_auth_response()};if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}
+if let Some(headers)=error.headers {for(name,value)in headers.iter(){if name.eq_ignore_ascii_case("set-cookie"){response.headers.append(name,value);}else{response.headers.insert(name,value);}}}response.into_response()}
             }
         }
     })).route(

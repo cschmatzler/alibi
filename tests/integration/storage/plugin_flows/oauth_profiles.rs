@@ -777,7 +777,10 @@ async fn provider_profile_protocols_preserve_raw_identity<B: Backend>(db: Db) ->
             let query: HashMap<String, String> = url.query_pairs().into_owned().collect();
             assert_eq!(query["state"], authorization["state"]);
             assert_eq!(query["code"], "one-use-grant");
-            assert_eq!(query["bodyOnly"], "retained");
+            assert!(
+                !query.contains_key("bodyOnly"),
+                "upstream re-parses the callback schema, dropping unknown fields"
+            );
             let mut get = request(&format!("/callback/{}", case.name), None, &state_cookie);
             get.query = query;
             call(&auth, get, 302).await

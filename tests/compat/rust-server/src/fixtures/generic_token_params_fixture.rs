@@ -611,7 +611,12 @@ pub(crate) async fn router(
                 };
                 let endpoint = alibi::endpoint::ServerEndpoint::<Value>::new("oauth", operation);
                 let endpoint = if operation == "callbackOAuth" {
-                    endpoint.with_params(body.get("logicalParams").unwrap_or(&json!({"id":"generic"}))).unwrap()
+                    endpoint
+                        .with_params(
+                            body.get("logicalParams")
+                                .unwrap_or(&json!({"id":"generic"})),
+                        )
+                        .unwrap()
                 } else if operation == "accountInfo" {
                     endpoint.with_query(&input).unwrap()
                 } else {
@@ -622,9 +627,20 @@ pub(crate) async fn router(
                 } else {
                     endpoint
                 };
-                let endpoint = if let Some(query)=body.get("logicalQuery") {endpoint.with_query(query).unwrap()} else {endpoint};
+                let endpoint = if let Some(query) = body.get("logicalQuery") {
+                    endpoint.with_query(query).unwrap()
+                } else {
+                    endpoint
+                };
                 let options = alibi::endpoint::EndpointOptions {
-                    method:body.get("logicalMethod").and_then(Value::as_str).map(|method| match method {"POST"=>alibi::HttpMethod::Post,"PUT"=>alibi::HttpMethod::Put,_=>alibi::HttpMethod::Get}),
+                    method: body
+                        .get("logicalMethod")
+                        .and_then(Value::as_str)
+                        .map(|method| match method {
+                            "POST" => alibi::HttpMethod::Post,
+                            "PUT" => alibi::HttpMethod::Put,
+                            _ => alibi::HttpMethod::Get,
+                        }),
                     headers: body
                         .get("logicalHeaders")
                         .map(|headers| serde_json::from_value(headers.clone()).unwrap()),
@@ -632,8 +648,9 @@ pub(crate) async fn router(
                         .get("physicalRequest")
                         .and_then(Value::as_bool)
                         .filter(|value| *value)
-                        .map(|_| alibi::AuthRequest::new(alibi::HttpMethod::Get, "/incoming-request")),
-                    ..Default::default()
+                        .map(|_| {
+                            alibi::AuthRequest::new(alibi::HttpMethod::Get, "/incoming-request")
+                        }),
                 };
                 match auth.dispatch_endpoint(endpoint, options).await {
                     Ok(output) => {
@@ -666,9 +683,14 @@ pub(crate) async fn router(
                         );
                         if let Some(headers) = error.headers {
                             for (name, value) in headers {
-                                let name=axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap();
-                                let value=axum::http::HeaderValue::from_str(&value).unwrap();
-                                if name==axum::http::header::SET_COOKIE {response.headers_mut().append(name,value);} else {response.headers_mut().insert(name,value);}
+                                let name =
+                                    axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap();
+                                let value = axum::http::HeaderValue::from_str(&value).unwrap();
+                                if name == axum::http::header::SET_COOKIE {
+                                    response.headers_mut().append(name, value);
+                                } else {
+                                    response.headers_mut().insert(name, value);
+                                }
                             }
                         }
                         response
@@ -703,24 +725,32 @@ pub(crate) async fn router(
             Json(json!({"accepted":options.into_assertion().is_ok()}))
         }),
     );
-    let controls = Router::new()
-        .route(
-            "/__test/generic-token/control",
-            post(
-                |State(f): State<Fixture>, Json(v): Json<Value>| async move {
-                    *f.control.lock().await = v;
-                    Json(json!({"status":true}))
-                },
-            ),
-        )
-        .route(
-            "/__test/generic-token/receipts",
-            get(|State(f): State<Fixture>| async move { Json(f.receipts.lock().await.clone()) }),
-        )
-        .route("/__test/generic-token/user-receipts", get(|State(f): State<Fixture>| async move { Json(f.user_receipts.lock().await.clone()) }))
-        .route("/__test/generic-token/token", post(token))
-        .route("/__test/generic-token/user", get(user))
-        .with_state(fixture.clone());
+    let controls =
+        Router::new()
+            .route(
+                "/__test/generic-token/control",
+                post(
+                    |State(f): State<Fixture>, Json(v): Json<Value>| async move {
+                        *f.control.lock().await = v;
+                        Json(json!({"status":true}))
+                    },
+                ),
+            )
+            .route(
+                "/__test/generic-token/receipts",
+                get(
+                    |State(f): State<Fixture>| async move { Json(f.receipts.lock().await.clone()) },
+                ),
+            )
+            .route(
+                "/__test/generic-token/user-receipts",
+                get(|State(f): State<Fixture>| async move {
+                    Json(f.user_receipts.lock().await.clone())
+                }),
+            )
+            .route("/__test/generic-token/token", post(token))
+            .route("/__test/generic-token/user", get(user))
+            .with_state(fixture.clone());
     Ok((router.merge(controls), fixture))
 }
 async fn token(State(f): State<Fixture>, headers: HeaderMap, body: String) -> Json<Value> {
@@ -746,7 +776,12 @@ impl<S: alibi::AuthSchema> alibi::endpoint::EndpointHook<S> for AccessServerHook
     ) -> AuthResult<bool> {
         Ok(matches!(
             call.operation_id(),
-            "getAccessToken" | "refreshToken" | "accountInfo" | "socialSignIn" | "linkSocialAccount" | "handleOAuthCallback"
+            "getAccessToken"
+                | "refreshToken"
+                | "accountInfo"
+                | "socialSignIn"
+                | "linkSocialAccount"
+                | "handleOAuthCallback"
         ) && call.request().is_none())
     }
     async fn after(
