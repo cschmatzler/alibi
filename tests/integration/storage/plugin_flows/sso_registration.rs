@@ -124,6 +124,10 @@ async fn sso_registration_persists_manual_saml_and_requires_certificate_source<B
         json!({"issuer":"https://sp.example.test","entryPoint":"https://idp.example.test/sso","cert":cert,"idpMetadata":{"entityID":"https://idp.example.test/entity"},"wantAssertionsSigned":true,"signatureAlgorithm":"rsa-sha256","digestAlgorithm":"sha256","mapping":{"email":"mail","name":"displayName"}})
     );
     assert!(provider["oidcConfig"].is_null());
+    assert_eq!(
+        provider["redirectURI"],
+        format!("{ORIGIN}/api/auth/sso/callback/enterprise-saml")
+    );
     let persisted = store
         .get_sso_provider("enterprise-saml")
         .await?

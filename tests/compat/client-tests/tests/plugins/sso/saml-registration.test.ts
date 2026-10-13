@@ -51,6 +51,7 @@ compatScenario(
     const provider = (await created.json()) as any;
     expect(provider.userId).toBe(ownerBody.user.id);
     expect(provider.oidcConfig).toBe(null);
+    expect(provider.redirectURI).toBe(`${ctx.baseURL}/api/auth/sso/callback/enterprise-saml`);
     expect(provider.samlConfig).toEqual({
       issuer: "https://sp.example.test",
       entryPoint: "https://idp.example.test/sso",
@@ -80,6 +81,10 @@ compatScenario(
     expect(await (await control({ action: "row", providerId: "saml-without-cert" })).json()).toBe(
       null,
     );
-    return { provider, persisted, error };
+    return {
+      provider: { ...provider, redirectURI: new URL(provider.redirectURI).pathname },
+      persisted: { ...persisted, samlConfig: JSON.parse(persisted.samlConfig) },
+      error,
+    };
   },
 );

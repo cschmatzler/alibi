@@ -64,8 +64,12 @@ pub(super) fn validate(input: &JsValue) -> AuthResult<JsValue> {
         ));
     }
     if let Some(cert) = input.get("cert") {
-        value["cert"] = cert.to_json_value()?;
-        certificate_shape(&value["cert"])?;
+        let cert = cert.to_json_value()?;
+        certificate_shape(&cert)?;
+        _ = value
+            .as_object_mut()
+            .ok_or_else(|| crate::endpoint::validation("Invalid SAML configuration"))?
+            .insert("cert".into(), cert);
     }
     let idp = value
         .get_mut("idpMetadata")
@@ -92,13 +96,11 @@ pub(super) fn validate(input: &JsValue) -> AuthResult<JsValue> {
     if idp
         .get("metadata")
         .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .is_none()
+        .is_none_or(str::is_empty)
         && idp
             .get("entityID")
             .and_then(Value::as_str)
-            .filter(|value| !value.is_empty())
-            .is_none()
+            .is_none_or(str::is_empty)
     {
         return Err(crate::endpoint::validation(
             "idpMetadata.entityID is required when IdP metadata XML is not provided",
