@@ -218,15 +218,49 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         )
         .await,
     );
-    trace.response(
-        "listed keys",
-        &call(
-            &auth,
-            request("/passkey/list-user-passkeys", None, &owner),
-            200,
-        )
-        .await,
+    let foreign = cookies(&signup(&auth, "passkey-matrix-foreign@example.com").await);
+    let before_list = db
+        .tables(&["users", "accounts", "sessions", "passkeys"])
+        .await?;
+    let guest = Box::pin(auth.dispatch_endpoint(
+        PasskeyPlugin::list_passkeys_endpoint(),
+        alibi::endpoint::EndpointOptions::default(),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(guest.error.status_code(), 401);
+    assert_eq!(
+        guest.error.error_payload().1.as_deref(),
+        Some("UNAUTHORIZED")
     );
+    let other = Box::pin(auth.dispatch_endpoint(
+        PasskeyPlugin::list_passkeys_endpoint(),
+        alibi::endpoint::EndpointOptions {
+            headers: Some([("cookie".to_owned(), foreign)].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await?;
+    assert!(other.decode()?.is_empty());
+    let listed = Box::pin(
+        auth.dispatch_endpoint(
+            PasskeyPlugin::list_passkeys_endpoint()
+                .with_body(&json!({"userId":"foreign-owner-selector"}))?,
+            alibi::endpoint::EndpointOptions {
+                headers: Some([("cookie".to_owned(), owner.clone())].into_iter().collect()),
+                ..Default::default()
+            },
+        ),
+    )
+    .await?;
+    assert!(!listed.decode()?.is_empty());
+    assert!(listed.headers().get("set-cookie").is_none());
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "passkeys"])
+            .await?,
+        before_list
+    );
+    trace.response("listed keys", &listed.into_response()?);
 
     let authenticate = async |authenticator: &Authenticator,
                               origin: &str,

@@ -84,10 +84,19 @@ compatScenario(
     const owner = ctx.actor("owner");
     const attacker = ctx.actor("attacker");
     const email = ctx.uniqueEmail("passkey-owner");
+    let ownerCookie = "";
     const signup = await owner.client.signUp.email({
       email,
       password: "password123",
       name: "Passkey Owner",
+      fetchOptions: {
+        onSuccess({ response }) {
+          ownerCookie = response.headers
+            .getSetCookie()
+            .map((raw) => raw.split(";")[0])
+            .join("; ");
+        },
+      },
     });
     expect(signup.error).toBeNull();
 
@@ -115,10 +124,19 @@ compatScenario(
     expect(passkey.counter).toBe(0);
     expect(passkey.credentialID).toBe(response.id);
 
+    let attackerCookie = "";
     const attackerSignup = await attacker.client.signUp.email({
       email: ctx.uniqueEmail("passkey-attacker"),
       password: "password123",
       name: "Other User",
+      fetchOptions: {
+        onSuccess({ response }) {
+          attackerCookie = response.headers
+            .getSetCookie()
+            .map((raw) => raw.split(";")[0])
+            .join("; ");
+        },
+      },
     });
     expect(attackerSignup.error).toBeNull();
 
@@ -146,10 +164,29 @@ compatScenario(
     });
     expect(renamed.status).toBe(200);
 
-    const listed = await ctx.rawRequest({
-      actor: "owner",
-      path: "/api/auth/passkey/list-user-passkeys",
-    });
+    async function serverList(cookie?: string) {
+      const response = await owner.fetch(`${ctx.baseURL}/__test/server-api/passkey-list`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          body: { userId: attackerSignup.data!.user.id },
+          ...(cookie ? { headers: { cookie } } : {}),
+        }),
+      });
+      expect(response.headers.get("set-cookie")).toBeNull();
+      return { status: response.status, body: (await response.json()) as any };
+    }
+    const guestList = await serverList();
+    expect(guestList.status).toBe(401);
+    expect(guestList.body.code).toBe("UNAUTHORIZED");
+    const foreignList = await serverList(attackerCookie);
+    expect(foreignList.status).toBe(200);
+    expect(foreignList.body).toEqual([]);
+    const listed = await serverList(ownerCookie);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toMatchObject([
+      { id: passkey.id, userId: user.id, credentialID: passkey.credentialID },
+    ]);
     expect(
       z
         .array(z.object({ name: z.string() }))
