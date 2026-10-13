@@ -308,14 +308,14 @@ mod tests {
                 serde_json::from_slice::<Value>(&embedded.body).unwrap(),
                 auth.openapi_spec().to_value().unwrap()
             );
-            let response = handle(
-                &auth,
-                AuthRequest::new(HttpMethod::Get, "/identity/open-api/generate-schema"),
-            )
-            .await
-            .unwrap();
-            assert_eq!(response.status, 200);
-            let document: Value = serde_json::from_slice(&response.body).unwrap();
+            let output = auth
+                .dispatch_endpoint(
+                    OpenApiPlugin::generate_open_api_schema_endpoint(),
+                    alibi::endpoint::EndpointOptions::default(),
+                )
+                .await
+                .unwrap();
+            let document: Value = output.decode().unwrap();
             assert_eq!(
                 document,
                 if include_native {

@@ -41,10 +41,10 @@ for (const profile of [
     `OpenAPI ${profile} generates the complete configured document and reference frame`,
     async (ctx) => {
       const actor = ctx.actor("docs", profile);
-      const sdk = await actor.client.$fetch("/open-api/generate-schema", { method: "GET" });
-      expect(sdk.error).toBeNull();
-
-      const schema = documentSchema.parse(sdk.data);
+      const response = await actor.fetch(`${ctx.baseURL}/api/auth/__test/server-api/schema`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("set-cookie")).toBeNull();
+      const schema = documentSchema.parse(await response.json());
 
       if (!profile.startsWith("openapi-plugins") && profile !== "openapi-custom-schema") {
         expect(Object.keys(schema.paths).sort()).toEqual(

@@ -1,4 +1,5 @@
 //! `OpenAPI` schema generation and Scalar reference page.
+use alibi_core::endpoint::{EndpointCall, EndpointDefinition, EndpointResponse, ServerEndpoint};
 use alibi_core::{
     AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,
     AuthRoute, AuthSchema, HttpMethod, OpenApiBuilder, OpenApiEndpoint, OpenApiRegistry,
@@ -55,6 +56,28 @@ impl OpenApiPlugin {
     pub const fn with_config(config: OpenApiConfig) -> Self {
         Self { config }
     }
+    /// Generate the installed application's public `OpenAPI` document.
+    #[must_use]
+    pub fn generate_open_api_schema_endpoint() -> ServerEndpoint<serde_json::Value> {
+        ServerEndpoint::new("open-api", "generateOpenAPISchema")
+    }
+
+    fn generate_schema<S: AuthSchema>(
+        ctx: &AuthContext<S>,
+        include_native_extensions: bool,
+    ) -> AuthResult<alibi_core::openapi::OpenApiSpec> {
+        let registry = ctx
+            .extensions
+            .get::<OpenApiRegistry>()
+            .ok_or_else(|| AuthError::internal("OpenAPI registry is not initialized"))?;
+        Ok(OpenApiBuilder::registered_with_native_extensions(
+            &ctx.config,
+            &registry,
+            include_native_extensions,
+        )
+        .build())
+    }
+
     fn path(&self) -> &str {
         self.config.path.as_deref().unwrap_or("/reference")
     }
@@ -66,6 +89,26 @@ impl<S: AuthSchema> AuthPlugin<S> for OpenApiPlugin {
             <Self as alibi_core::AuthPlugin<S>>::name(self),
             &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
+    }
+
+    fn server_endpoints(&self) -> Vec<EndpointDefinition> {
+        vec![crate::endpoint::definition(
+            "generateOpenAPISchema",
+            "generateOpenAPISchema",
+            Some("/open-api/generate-schema"),
+            HttpMethod::Get,
+        )]
+    }
+
+    async fn on_endpoint(
+        &self,
+        _call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        EndpointResponse::json(&Self::generate_schema(
+            ctx,
+            self.config.include_native_extensions,
+        )?)
     }
 
     fn name(&self) -> &'static str {
@@ -103,16 +146,10 @@ impl<S: AuthSchema> AuthPlugin<S> for OpenApiPlugin {
                 AuthResponse::new(404).with_header("content-type", "application/json"),
             ));
         }
-        let registry = ctx
-            .extensions
-            .get::<OpenApiRegistry>()
-            .ok_or_else(|| AuthError::internal("OpenAPI registry is not initialized"))?;
-        let spec = OpenApiBuilder::registered_with_native_extensions(
-            &ctx.config,
-            &registry,
+        let spec = Self::generate_schema(
+            ctx,
             path != core_paths::OPENAPI_SPEC && self.config.include_native_extensions,
-        )
-        .build();
+        )?;
         if is_schema {
             return Ok(Some(AuthResponse::json(200, &spec)?));
         }
