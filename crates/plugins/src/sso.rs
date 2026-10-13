@@ -638,12 +638,13 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
             return self.callback(provider_id, &query, call, &meta, ctx).await;
         }
         if call.operation_id() == "getSSOServiceProviderMetadata" {
-            return Self::metadata(
-                call.query()
-                    .ok_or_else(|| crate::endpoint::validation("Missing query"))?,
-                ctx,
-            )
-            .await;
+            return self
+                .metadata(
+                    call.query()
+                        .ok_or_else(|| crate::endpoint::validation("Missing query"))?,
+                    ctx,
+                )
+                .await;
         }
         if call.operation_id() == "signInSSO" {
             return self
@@ -807,7 +808,7 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         if req.path() == "/sso/saml2/sp/metadata" && *req.method() == HttpMethod::Get {
             let query = alibi_core::utils::json::parse_value(&serde_json::to_string(&req.query)?)?;
             return Ok(Some(
-                Self::metadata(&provider_read::validate_query(Some(&query))?, ctx)
+                self.metadata(&provider_read::validate_query(Some(&query))?, ctx)
                     .await?
                     .to_response()?,
             ));

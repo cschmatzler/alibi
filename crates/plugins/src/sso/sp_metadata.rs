@@ -12,6 +12,7 @@ impl SsoPlugin {
         ServerEndpoint::new("sso", "spMetadata").with_query(&json!({"providerId":provider_id}))
     }
     pub(super) async fn metadata<S: AuthSchema>(
+        &self,
         query: &JsValue,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
@@ -99,11 +100,31 @@ impl SsoPlugin {
             Event::End(BytesEnd::new("NameIDFormat")),
             Event::Start(consumer),
             Event::End(BytesEnd::new("AssertionConsumerService")),
-            Event::End(BytesEnd::new("SPSSODescriptor")),
-            Event::End(BytesEnd::new("EntityDescriptor")),
         ] {
             writer
                 .write_event(event)
+                .map_err(|error| AuthError::internal(error.to_string()))?;
+        }
+        if self.config.saml_enable_single_logout {
+            let location = format!("{base}/sso/saml2/sp/slo/{id}");
+            for binding in ["HTTP-POST", "HTTP-Redirect"] {
+                let binding = format!("urn:oasis:names:tc:SAML:2.0:bindings:{binding}");
+                let mut service = BytesStart::new("SingleLogoutService");
+                _ = service.extend_attributes([
+                    ("Binding", binding.as_str()),
+                    ("Location", location.as_str()),
+                ]);
+                writer
+                    .write_event(Event::Start(service))
+                    .map_err(|error| AuthError::internal(error.to_string()))?;
+                writer
+                    .write_event(Event::End(BytesEnd::new("SingleLogoutService")))
+                    .map_err(|error| AuthError::internal(error.to_string()))?;
+            }
+        }
+        for name in ["SPSSODescriptor", "EntityDescriptor"] {
+            writer
+                .write_event(Event::End(BytesEnd::new(name)))
                 .map_err(|error| AuthError::internal(error.to_string()))?;
         }
         let xml = String::from_utf8(writer.into_inner())
