@@ -9,6 +9,7 @@ mod introspection;
 mod resources;
 mod revocation;
 mod token;
+mod userinfo;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
@@ -247,6 +248,8 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
+            AuthRoute::get("/oauth2/userinfo", "oauth2UserInfo"),
+            AuthRoute::post("/oauth2/userinfo", "oauth2UserInfo"),
             AuthRoute::post("/oauth2/revoke", "oauth2Revoke"),
             AuthRoute::post("/oauth2/introspect", "oauth2Introspect"),
             AuthRoute::post("/oauth2/token", "oauth2Token"),
@@ -274,6 +277,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "oauth2UserInfo",
+                "oauth2UserInfo",
+                Some("/oauth2/userinfo"),
+                HttpMethod::Get,
+            ),
             crate::endpoint::definition(
                 "oauth2Revoke",
                 "oauth2Revoke",
@@ -462,7 +471,20 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
         Ok(EndpointInput {
-            body: if call.operation_id() == "oauth2Continue" {
+            body: if call.operation_id() == "oauth2UserInfo" {
+                call.body()
+                    .map(|body| {
+                        crate::endpoint::validate_fields(
+                            Some(body),
+                            "body",
+                            &[crate::authentication_helpers::JsonField::string(
+                                "access_token",
+                                false,
+                            )],
+                        )
+                    })
+                    .transpose()?
+            } else if call.operation_id() == "oauth2Continue" {
                 Some(continuation::validate(call.body())?)
             } else if call.operation_id() == "adminUpdateOAuthResource" {
                 Some(resources::validate_update(call.body())?)
@@ -509,6 +531,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "oauth2UserInfo" {
+            return Box::pin(self.user_info(call.body(), call, ctx)).await;
+        }
         if call.operation_id() == "oauth2Revoke" {
             return Box::pin(self.revoke(call.body(), call, ctx)).await;
         }
@@ -616,6 +641,28 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/oauth2/userinfo"
+            && matches!(req.method(), HttpMethod::Get | HttpMethod::Post)
+        {
+            let body = if *req.method() == HttpMethod::Post {
+                let fields = url::form_urlencoded::parse(req.body.as_deref().unwrap_or_default())
+                    .map(|(key, value)| {
+                        (
+                            key.into_owned(),
+                            alibi_core::utils::json::JsValue::String(value.into_owned()),
+                        )
+                    })
+                    .collect();
+                Some(alibi_core::utils::json::JsValue::Object(fields))
+            } else {
+                None
+            };
+            return Ok(Some(
+                Box::pin(self.user_info(body.as_ref(), req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
         if matches!(
             req.path(),
             "/oauth2/token" | "/oauth2/introspect" | "/oauth2/revoke"
