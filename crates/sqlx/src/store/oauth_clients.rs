@@ -10,6 +10,117 @@ use alibi_core::{
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
+    async fn delete_oauth_token(
+        &self,
+        kind: alibi_core::store::OAuthTokenKind,
+        token: &str,
+    ) -> AuthResult<()> {
+        match kind {
+            alibi_core::store::OAuthTokenKind::Access => {
+                let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+                sql.ident(super::entities::oauth_access_token::Model::TABLE);
+                sql.push(" WHERE ");
+                sql.compare(
+                    super::entities::oauth_access_token::Model::TABLE,
+                    "token",
+                    " = ",
+                    token,
+                );
+                _ = self.exec().execute(sql).await?;
+            }
+            alibi_core::store::OAuthTokenKind::Refresh => {
+                let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+                sql.ident(super::entities::oauth_refresh_token::Model::TABLE);
+                sql.push(" WHERE ");
+                sql.compare(
+                    super::entities::oauth_refresh_token::Model::TABLE,
+                    "token",
+                    " = ",
+                    token,
+                );
+                _ = self.exec().execute(sql).await?;
+            }
+        }
+        Ok(())
+    }
+    async fn revoke_oauth_refresh_token(
+        &self,
+        token: &str,
+        revoked_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<bool> {
+        let mut lookup =
+            model::select_model::<super::entities::oauth_refresh_token::Model>(self.exec());
+        lookup.push(" WHERE ");
+        lookup.compare("oauth_refresh_token", "token", " = ", token);
+        let Some(row) = self
+            .exec()
+            .fetch_optional::<super::entities::oauth_refresh_token::Model>(lookup)
+            .await?
+        else {
+            return Ok(false);
+        };
+        let mut metadata: serde_json::Value = serde_json::from_str(&row.metadata)?;
+        if metadata
+            .get("revoked")
+            .is_some_and(|value| !value.is_null())
+        {
+            return Ok(false);
+        }
+        _ = metadata
+            .as_object_mut()
+            .ok_or_else(|| alibi_core::AuthError::internal("Invalid refresh metadata"))?
+            .insert("revoked".into(), serde_json::json!(revoked_at));
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "UPDATE ");
+        sql.ident("oauth_refresh_token");
+        sql.push(" SET ");
+        sql.assign("metadata", serde_json::to_string(&metadata)?);
+        sql.push(" WHERE ");
+        sql.compare("oauth_refresh_token", "token", " = ", token);
+        sql.push(" AND ");
+        sql.compare("oauth_refresh_token", "metadata", " = ", row.metadata);
+        Ok(self.exec().execute(sql).await? > 0)
+    }
+    async fn delete_oauth_access_tokens_for_refresh(&self, refresh_id: &str) -> AuthResult<()> {
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident("oauth_access_token");
+        sql.push(" WHERE ");
+        sql.push(match self.exec().engine() {
+            crate::pool::Engine::Sqlite => "json_extract(metadata, '$.refreshId') = ",
+            crate::pool::Engine::Postgres => "metadata::jsonb->>'refreshId' = ",
+        });
+        sql.bind(refresh_id);
+        _ = self.exec().execute(sql).await?;
+        Ok(())
+    }
+    async fn delete_oauth_refresh_family(&self, client_id: &str, user_id: &str) -> AuthResult<()> {
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident("oauth_access_token");
+        sql.push(" WHERE ");
+        sql.push(match self.exec().engine() {
+            crate::pool::Engine::Sqlite => "json_extract(metadata, '$.refreshId')",
+            crate::pool::Engine::Postgres => "metadata::jsonb->>'refreshId'",
+        });
+        sql.push(" IN (SELECT id FROM oauth_refresh_token WHERE ");
+        sql.compare("oauth_refresh_token", "client_id", " = ", client_id);
+        sql.push(" AND ");
+        sql.compare("oauth_refresh_token", "user_id", " = ", user_id);
+        sql.push(" LIMIT ");
+        sql.bind(
+            i64::try_from(self.config().advanced.database.default_find_many_limit)
+                .unwrap_or(i64::MAX),
+        );
+        sql.push(")");
+        _ = self.exec().execute(sql).await?;
+        let mut sql = crate::sql::Sql::with(
+            self.exec().engine(),
+            "DELETE FROM oauth_refresh_token WHERE ",
+        );
+        sql.compare("oauth_refresh_token", "client_id", " = ", client_id);
+        sql.push(" AND ");
+        sql.compare("oauth_refresh_token", "user_id", " = ", user_id);
+        _ = self.exec().execute(sql).await?;
+        Ok(())
+    }
     async fn create_oauth_token(
         &self,
         kind: alibi_core::store::OAuthTokenKind,
