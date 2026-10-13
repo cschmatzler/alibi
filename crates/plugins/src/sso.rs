@@ -57,6 +57,25 @@ impl SsoPlugin {
     pub fn register_sso_provider_endpoint(input: &Value) -> AuthResult<ServerEndpoint<Value>> {
         ServerEndpoint::new("sso", "registerSSOProvider").with_body(input)
     }
+    pub fn callback_sso_shared_endpoint(query: &Value) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("sso", "callbackSSOShared").with_query(query)
+    }
+    pub(super) fn oidc_redirect_uri(&self, base: &str, provider_id: &str) -> String {
+        self.config
+            .redirect_uri
+            .as_ref()
+            .filter(|uri| !uri.trim().is_empty())
+            .map_or_else(
+                || format!("{base}/sso/callback/{provider_id}"),
+                |uri| {
+                    if url::Url::parse(uri).is_ok() {
+                        uri.clone()
+                    } else {
+                        format!("{base}/{}", uri.trim_start_matches('/'))
+                    }
+                },
+            )
+    }
     async fn register<S: AuthSchema>(
         &self,
         input: &JsValue,
@@ -297,6 +316,7 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
     fn routes(&self) -> Vec<AuthRoute> {
         let mut routes = vec![
             AuthRoute::get("/sso/callback/:providerId", "handleSSOCallback"),
+            AuthRoute::get("/sso/callback", "handleSSOCallbackShared"),
             AuthRoute::post("/sign-in/sso", "signInSSO"),
             AuthRoute::post("/sso/register", "registerSSOProvider"),
             AuthRoute::get("/sso/get-provider", "getSSOProvider"),
@@ -315,6 +335,12 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         let mut endpoints = vec![
+            super::endpoint::definition(
+                "callbackSSOShared",
+                "handleSSOCallbackShared",
+                Some("/sso/callback"),
+                HttpMethod::Get,
+            ),
             super::endpoint::definition(
                 "callbackSSO",
                 "handleSSOCallback",
@@ -379,7 +405,10 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
-        if call.operation_id() == "handleSSOCallback" {
+        if matches!(
+            call.operation_id(),
+            "handleSSOCallback" | "handleSSOCallbackShared"
+        ) {
             return Ok(EndpointInput {
                 body: None,
                 query: Some(super::endpoint::validate_fields(
@@ -440,12 +469,20 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        if call.operation_id() == "handleSSOCallback" {
-            let provider_id = call
-                .params()
-                .and_then(|params| params.get("providerId"))
-                .and_then(JsValue::as_str)
-                .ok_or_else(|| super::endpoint::validation("Missing providerId"))?;
+        if matches!(
+            call.operation_id(),
+            "handleSSOCallback" | "handleSSOCallbackShared"
+        ) {
+            let provider_id = if call.operation_id() == "handleSSOCallbackShared" {
+                None
+            } else {
+                Some(
+                    call.params()
+                        .and_then(|params| params.get("providerId"))
+                        .and_then(JsValue::as_str)
+                        .ok_or_else(|| super::endpoint::validation("Missing providerId"))?,
+                )
+            };
             let query = call
                 .query()
                 .map(JsValue::to_json_value)
@@ -532,13 +569,26 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/sso/callback" && *req.method() == HttpMethod::Get {
+            return Ok(Some(
+                self.callback(
+                    None,
+                    &serde_json::to_value(&req.query)?,
+                    req,
+                    &alibi_core::RequestMeta::from_request(req),
+                    ctx,
+                )
+                .await?
+                .to_response()?,
+            ));
+        }
         if let Some(provider_id) = req.path().strip_prefix("/sso/callback/")
             && *req.method() == HttpMethod::Get
             && !provider_id.contains('/')
         {
             return Ok(Some(
                 self.callback(
-                    provider_id,
+                    Some(provider_id),
                     &serde_json::to_value(&req.query)?,
                     req,
                     &alibi_core::RequestMeta::from_request(req),

@@ -23,14 +23,20 @@ export async function ssoFixture(base: BetterAuthOptions) {
     plugins: [username(), sso({ domainVerification: { enabled: true } })],
   };
   await (await getMigrations(domainOptions)).runMigrations();
+  const sharedOptions = {
+    ...options,
+    plugins: [username(), sso({ redirectURI: "/sso/callback" })],
+  };
   const instances = new Map([
     ["default", betterAuth(options)],
     ["domain", betterAuth(domainOptions)],
+    ["shared", betterAuth(sharedOptions)],
   ]);
 
   const handle = async (request: Request) => {
     const input = await request.json();
-    const mode = input.mode === "domain" ? "domain" : "default";
+    const mode =
+      input.mode === "domain" ? "domain" : input.mode === "shared" ? "shared" : "default";
     const auth = instances.get(mode)!;
     if (input.action === "dns-records") {
       dns.setRecords(input.records);
@@ -101,6 +107,13 @@ export async function ssoFixture(base: BetterAuthOptions) {
     if (input.action === "idp-exchanges") {
       return new Response(JSON.stringify(idp.exchanges()), {
         headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "shared-callback") {
+      return auth.api.callbackSSOShared({
+        query: input.query,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
       });
     }
     if (input.action === "callback") {
@@ -192,7 +205,10 @@ export async function ssoFixture(base: BetterAuthOptions) {
       });
     }
     if (input.action === "restart") {
-      instances.set(mode, betterAuth(mode === "domain" ? domainOptions : options));
+      instances.set(
+        mode,
+        betterAuth(mode === "domain" ? domainOptions : mode === "shared" ? sharedOptions : options),
+      );
       return new Response(JSON.stringify({ restarted: true }), {
         headers: { "content-type": "application/json" },
       });

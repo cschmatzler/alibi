@@ -163,7 +163,7 @@ impl SsoPlugin {
             ctx.config.base_url.trim_end_matches('/'),
             ctx.config.base_path.trim_end_matches('/')
         );
-        let redirect = format!("{base}/sso/callback/{}", provider.provider_id);
+        let redirect = self.oidc_redirect_uri(&base, &provider.provider_id);
         let scopes = body
             .get("scopes")
             .or_else(|| config.get("scopes"))

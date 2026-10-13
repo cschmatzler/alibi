@@ -70,6 +70,7 @@ export function ssoOidcFixture() {
     base: `http://127.0.0.1:${server.port}`,
     setEmail(value: string) {
       email = value;
+      exchanges.length = 0;
     },
     exchanges() {
       return [...exchanges];
