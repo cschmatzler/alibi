@@ -359,7 +359,7 @@ pub(crate) async fn router(
     let read_db = database.clone();
     router=router.route("/__test/last-login-method",get(move || {let state=observed.clone();let database=read_db.clone();async move {
         let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT id,\"email\",\"name\",\"lastLoginMethod\" FROM \"user\" ORDER BY \"email\",id")).await.map_err(|error|AuthError::internal(error.to_string()))?;
-        let mut users=Vec::new();for row in rows {users.push(json!({"id":row.try_get::<String>("","id").map_err(|error|AuthError::internal(error.to_string()))?,"email":row.try_get::<String>("","email").map_err(|error|AuthError::internal(error.to_string()))?,"name":row.try_get::<Option<String>>("","name").map_err(|error|AuthError::internal(error.to_string()))?,"lastLoginMethod":row.try_get::<Option<String>>("","last_login_method").map_err(|error|AuthError::internal(error.to_string()))?}));}
+        let mut users=Vec::new();for row in rows {users.push(json!({"id":row.try_get::<String>("","id").map_err(|error|AuthError::internal(error.to_string()))?,"email":row.try_get::<String>("","email").map_err(|error|AuthError::internal(error.to_string()))?,"name":row.try_get::<Option<String>>("","name").map_err(|error|AuthError::internal(error.to_string()))?,"lastLoginMethod":row.try_get::<Option<String>>("","lastLoginMethod").map_err(|error|AuthError::internal(error.to_string()))?}));}
         let events=state.events.lock().map_err(|_|AuthError::internal("observer lock"))?.clone();Ok::<_,AuthError>(Json(json!({"events":events,"users":users})))
     }}).post(move |Json(body):Json<Value>| {let state=state.clone();let database=database.clone();async move {
         match body["action"].as_str().unwrap_or_default() {

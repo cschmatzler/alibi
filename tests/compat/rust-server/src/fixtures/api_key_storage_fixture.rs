@@ -681,10 +681,10 @@ pub(crate) async fn router(
                             for (field, value) in input["patch"].as_object().unwrap() {
                                 let column = match field.as_str() {
                                     "remaining" => "remaining",
-                                    "expiresAt" => "expires_at",
-                                    "lastRefillAt" => "last_refill_at",
-                                    "refillAmount" => "refill_amount",
-                                    "refillInterval" => "refill_interval",
+                                    "expiresAt" => "expiresAt",
+                                    "lastRefillAt" => "lastRefillAt",
+                                    "refillAmount" => "refillAmount",
+                                    "refillInterval" => "refillInterval",
                                     "name" => "name",
                                     _ => panic!("supported application column required"),
                                 };
