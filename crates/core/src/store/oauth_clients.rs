@@ -53,4 +53,14 @@ pub trait OAuthClientStore: Send + Sync {
             "OAuth client persistence is not supported by this store",
         ))
     }
+    async fn update_oauth_client_metadata(
+        &self,
+        _client_id: &str,
+        _metadata: Value,
+        _updated_at: DateTime<Utc>,
+    ) -> AuthResult<Option<OAuthClient>> {
+        Err(AuthError::config(
+            "OAuth client persistence is not supported by this store",
+        ))
+    }
 }

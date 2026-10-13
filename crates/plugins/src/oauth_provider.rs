@@ -231,11 +231,18 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             AuthRoute::get("/oauth2/public-client", "getOAuthClientPublic"),
             AuthRoute::get("/oauth2/get-clients", "getOAuthClients"),
             AuthRoute::post("/oauth2/delete-client", "deleteOAuthClient"),
+            AuthRoute::post("/oauth2/update-client", "updateOAuthClient"),
             AuthRoute::post("/oauth2/client/rotate-secret", "rotateClientSecret"),
         ]
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "updateOAuthClient",
+                "updateOAuthClient",
+                Some("/oauth2/update-client"),
+                HttpMethod::Post,
+            ),
             crate::endpoint::definition(
                 "rotateClientSecret",
                 "rotateClientSecret",
@@ -292,7 +299,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
         Ok(EndpointInput {
-            body: if matches!(
+            body: if call.operation_id() == "updateOAuthClient" {
+                Some(clients::validate_update(call.body())?)
+            } else if matches!(
                 call.operation_id(),
                 "deleteOAuthClient" | "rotateClientSecret"
             ) {
@@ -317,6 +326,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "updateOAuthClient" {
+            return Box::pin(self.update_client(call.body_as()?, call, ctx)).await;
+        }
         if call.operation_id() == "rotateClientSecret" {
             return Box::pin(self.rotate_client_secret(call.body_as()?, call, ctx)).await;
         }
@@ -353,6 +365,16 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/oauth2/update-client" && *req.method() == HttpMethod::Post {
+            let body: alibi_core::utils::json::JsValue = req.body_as_json()?;
+            let input =
+                alibi_core::utils::json::from_value(clients::validate_update(Some(&body))?)?;
+            return Ok(Some(
+                Box::pin(self.update_client(input, req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
         if matches!(
             req.path(),
             "/oauth2/delete-client" | "/oauth2/client/rotate-secret"

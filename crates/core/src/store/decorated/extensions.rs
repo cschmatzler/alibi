@@ -611,4 +611,14 @@ impl<S: AuthSchema> crate::store::OAuthClientStore for PluginStore<S> {
             .update_oauth_client_secret(client_id, secret, updated_at)
             .await
     }
+    async fn update_oauth_client_metadata(
+        &self,
+        client_id: &str,
+        metadata: serde_json::Value,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<crate::store::OAuthClient>> {
+        self.inner
+            .update_oauth_client_metadata(client_id, metadata, updated_at)
+            .await
+    }
 }

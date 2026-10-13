@@ -87,4 +87,28 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             .try_into()
             .map(Some)
     }
+    async fn update_oauth_client_metadata(
+        &self,
+        client_id: &str,
+        metadata: serde_json::Value,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<OAuthClient>> {
+        let Some(model) = Entity::find()
+            .filter(Column::ClientId.eq(client_id))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+        else {
+            return Ok(None);
+        };
+        let mut active = model.into_active_model();
+        active.metadata = Set(serde_json::to_string(&metadata)?);
+        active.updated_at = Set(updated_at);
+        active
+            .update(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .try_into()
+            .map(Some)
+    }
 }

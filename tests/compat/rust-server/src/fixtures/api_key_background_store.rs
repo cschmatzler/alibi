@@ -420,5 +420,6 @@ delegate_store!(OAuthClientStore, {
  async fn get_oauth_client(&self,client_id:&str)->AuthResult<Option<OAuthClient>>;
  async fn list_oauth_clients_by_user(&self,user_id:&str)->AuthResult<Vec<OAuthClient>>;
  async fn delete_oauth_client(&self,client_id:&str)->AuthResult<()>;
+ async fn update_oauth_client_metadata(&self,client_id:&str,metadata:serde_json::Value,updated_at:chrono::DateTime<chrono::Utc>)->AuthResult<Option<OAuthClient>>;
  async fn update_oauth_client_secret(&self,client_id:&str,secret:String,updated_at:chrono::DateTime<chrono::Utc>)->AuthResult<Option<OAuthClient>>;
 });

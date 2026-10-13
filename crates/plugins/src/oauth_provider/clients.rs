@@ -81,159 +81,18 @@ impl OAuthProviderPlugin {
         }
         req.queue_response_header("Cache-Control", "no-store");
         req.queue_response_header("Pragma", "no-cache");
-        let mut metadata: serde_json::Map<String, Value> =
+        let metadata: serde_json::Map<String, Value> =
             serde_json::from_value(serde_json::to_value(input)?)?;
+        let metadata = match self.admit_metadata(metadata, ctx)? {
+            Ok(metadata) => metadata,
+            Err(response) => return Ok(response),
+        };
         let auth = metadata
             .get("token_endpoint_auth_method")
             .and_then(Value::as_str)
-            .unwrap_or("client_secret_basic")
-            .to_owned();
-        if ![
-            "none",
-            "client_secret_basic",
-            "client_secret_post",
-            "private_key_jwt",
-        ]
-        .contains(&auth.as_str())
-        {
-            return protocol_error(
-                "invalid_client_metadata",
-                format!("unsupported token_endpoint_auth_method {auth}"),
-            );
-        }
-        let grants = metadata
-            .get("grant_types")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_else(|| vec![json!("authorization_code")]);
-        for grant in &grants {
-            if !grant.as_str().is_some_and(|grant| {
-                self.config
-                    .grant_types
-                    .iter()
-                    .any(|supported| supported == grant)
-            }) {
-                return protocol_error(
-                    "invalid_client_metadata",
-                    format!(
-                        "unsupported grant_type {}",
-                        grant.as_str().unwrap_or_default()
-                    ),
-                );
-            }
-        }
-        let code_grant = grants.contains(&json!("authorization_code"));
-        let redirects = metadata
-            .get("redirect_uris")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        if code_grant && redirects.is_empty() {
-            return protocol_error(
-                "invalid_redirect_uri",
-                "Redirect URIs are required for authorization_code and implicit grant types",
-            );
-        }
-        let application = metadata
-            .get("application_type")
-            .and_then(Value::as_str)
-            .unwrap_or("web");
-        for redirect in &redirects {
-            if let Some(error) = redirect_error(redirect.as_str().unwrap_or_default(), application)
-            {
-                return protocol_error("invalid_redirect_uri", error);
-            }
-        }
-        let responses = metadata
-            .get("response_types")
-            .and_then(Value::as_array)
-            .cloned()
-            .or_else(|| code_grant.then(|| vec![json!("code")]));
-        if code_grant
-            && !responses
-                .as_ref()
-                .is_some_and(|responses| responses.contains(&json!("code")))
-        {
-            return protocol_error(
-                "invalid_client_metadata",
-                "When 'authorization_code' grant type is used, 'code' response type must be included",
-            );
-        }
-        if !code_grant
-            && responses
-                .as_ref()
-                .is_some_and(|responses| responses.contains(&json!("code")))
-        {
-            return protocol_error(
-                "invalid_client_metadata",
-                "When 'code' response type is used, 'authorization_code' grant type must be included",
-            );
-        }
-        if let Some(scope) = metadata.get("scope").and_then(Value::as_str) {
-            for scope in scope.split(' ').filter(|scope| !scope.is_empty()) {
-                if !self.config.scopes.iter().any(|allowed| allowed == scope) {
-                    return protocol_error(
-                        "invalid_scope",
-                        format!("cannot request scope {scope}"),
-                    );
-                }
-            }
-        }
-        if metadata.contains_key("jwks") && metadata.contains_key("jwks_uri") {
-            return protocol_error(
-                "invalid_client_metadata",
-                "jwks and jwks_uri are mutually exclusive",
-            );
-        }
-        if let Some(uri) = metadata.get("jwks_uri").and_then(Value::as_str)
-            && let Some(error) = remote_key_uri_error(uri, ctx)
-        {
-            return protocol_error("invalid_client_metadata", error);
-        }
-        if let Some(jwks) = metadata.get("jwks")
-            && let Some(error) = public_jwks_error(jwks)
-        {
-            return protocol_error("invalid_client_metadata", error);
-        }
-        if auth == "private_key_jwt"
-            && !metadata.contains_key("jwks")
-            && !metadata.contains_key("jwks_uri")
-        {
-            return protocol_error(
-                "invalid_client_metadata",
-                "private_key_jwt requires either jwks or jwks_uri",
-            );
-        }
-        if let Some(uri) = metadata
-            .get("backchannel_logout_uri")
-            .and_then(Value::as_str)
-        {
-            if self.config.disable_jwt_plugin {
-                return protocol_error(
-                    "invalid_client_metadata",
-                    "backchannel_logout_uri requires the jwt plugin (disableJwtPlugin must be false)",
-                );
-            }
-            if let Some(error) = backchannel_uri_error(uri) {
-                return protocol_error("invalid_client_metadata", error);
-            }
-        }
-        _ = metadata.insert("token_endpoint_auth_method".into(), json!(auth));
-        _ = metadata
-            .entry("application_type")
-            .or_insert_with(|| json!("web"));
-        _ = metadata.insert("grant_types".into(), json!(grants));
-        if let Some(responses) = responses {
-            _ = metadata.insert("response_types".into(), json!(responses));
-        }
-        _ = metadata.insert("redirect_uris".into(), json!(redirects));
-        _ = metadata.insert("disabled".into(), json!(false));
-        _ = metadata
-            .entry("dpop_bound_access_tokens")
-            .or_insert_with(|| json!(false));
+            .unwrap_or("client_secret_basic");
         let client_id = random_credential();
-        let plaintext =
-            (!["none", "private_key_jwt"].contains(&auth.as_str())).then(random_credential);
+        let plaintext = (!["none", "private_key_jwt"].contains(&auth)).then(random_credential);
         let stored = plaintext
             .as_deref()
             .map(|secret| {
@@ -503,19 +362,26 @@ const FIELDS: &[(&str, FieldKind)] = &[
     ("dpop_bound_access_tokens", FieldKind::Boolean),
 ];
 pub(super) fn validate(body: Option<&JsValue>) -> AuthResult<JsValue> {
+    validate_metadata(body, "body", FIELDS)
+}
+fn validate_metadata(
+    body: Option<&JsValue>,
+    location: &str,
+    fields: &[(&str, FieldKind)],
+) -> AuthResult<JsValue> {
     let Some(object) = body.and_then(JsValue::as_object) else {
         return Err(crate::endpoint::validation(format!(
-            "[body] Invalid input: expected object, received {}",
+            "[{location}] Invalid input: expected object, received {}",
             crate::authentication_helpers::json_type(body)
         )));
     };
     let mut issues = Vec::new();
     let mut output = indexmap::IndexMap::new();
-    for (name, kind) in FIELDS {
+    for (name, kind) in fields {
         let Some(value) = object.get(*name) else {
             continue;
         };
-        let path = format!("body.{name}");
+        let path = format!("{location}.{name}");
         validate_field(*kind, value, &path, &mut issues);
         let normalized = match (kind, value) {
             (FieldKind::Method, JsValue::String(value)) => JsValue::String(value.trim().into()),
@@ -932,4 +798,256 @@ fn status_protocol_error(
     .with_error_body(alibi_core::utils::json::parse_value(
         &serde_json::to_string(&json!({"error":error,"error_description":description}))?,
     )?))
+}
+
+impl OAuthProviderPlugin {
+    fn admit_metadata<S: AuthSchema>(
+        &self,
+        mut metadata: serde_json::Map<String, Value>,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Result<serde_json::Map<String, Value>, EndpointResponse>> {
+        let auth = metadata
+            .get("token_endpoint_auth_method")
+            .and_then(Value::as_str)
+            .unwrap_or("client_secret_basic")
+            .to_owned();
+        if ![
+            "none",
+            "client_secret_basic",
+            "client_secret_post",
+            "private_key_jwt",
+        ]
+        .contains(&auth.as_str())
+        {
+            return protocol_error(
+                "invalid_client_metadata",
+                format!("unsupported token_endpoint_auth_method {auth}"),
+            )
+            .map(Err);
+        }
+        let grants = metadata
+            .get("grant_types")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_else(|| vec![json!("authorization_code")]);
+        for grant in &grants {
+            if !grant.as_str().is_some_and(|grant| {
+                self.config
+                    .grant_types
+                    .iter()
+                    .any(|supported| supported == grant)
+            }) {
+                return protocol_error(
+                    "invalid_client_metadata",
+                    format!(
+                        "unsupported grant_type {}",
+                        grant.as_str().unwrap_or_default()
+                    ),
+                )
+                .map(Err);
+            }
+        }
+        let code_grant = grants.contains(&json!("authorization_code"));
+        let redirects = metadata
+            .get("redirect_uris")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if code_grant && redirects.is_empty() {
+            return protocol_error(
+                "invalid_redirect_uri",
+                "Redirect URIs are required for authorization_code and implicit grant types",
+            )
+            .map(Err);
+        }
+        let application = metadata
+            .get("application_type")
+            .and_then(Value::as_str)
+            .unwrap_or("web");
+        for redirect in &redirects {
+            if let Some(error) = redirect_error(redirect.as_str().unwrap_or_default(), application)
+            {
+                return protocol_error("invalid_redirect_uri", error).map(Err);
+            }
+        }
+        let responses = metadata
+            .get("response_types")
+            .and_then(Value::as_array)
+            .cloned()
+            .or_else(|| code_grant.then(|| vec![json!("code")]));
+        if code_grant
+            && !responses
+                .as_ref()
+                .is_some_and(|responses| responses.contains(&json!("code")))
+        {
+            return protocol_error(
+                "invalid_client_metadata",
+                "When 'authorization_code' grant type is used, 'code' response type must be included",
+            ).map(Err);
+        }
+        if !code_grant
+            && responses
+                .as_ref()
+                .is_some_and(|responses| responses.contains(&json!("code")))
+        {
+            return protocol_error(
+                "invalid_client_metadata",
+                "When 'code' response type is used, 'authorization_code' grant type must be included",
+            ).map(Err);
+        }
+        if let Some(scope) = metadata.get("scope").and_then(Value::as_str) {
+            for scope in scope.split(' ').filter(|scope| !scope.is_empty()) {
+                if !self.config.scopes.iter().any(|allowed| allowed == scope) {
+                    return protocol_error(
+                        "invalid_scope",
+                        format!("cannot request scope {scope}"),
+                    )
+                    .map(Err);
+                }
+            }
+        }
+        if metadata.contains_key("jwks") && metadata.contains_key("jwks_uri") {
+            return protocol_error(
+                "invalid_client_metadata",
+                "jwks and jwks_uri are mutually exclusive",
+            )
+            .map(Err);
+        }
+        if let Some(uri) = metadata.get("jwks_uri").and_then(Value::as_str)
+            && let Some(error) = remote_key_uri_error(uri, ctx)
+        {
+            return protocol_error("invalid_client_metadata", error).map(Err);
+        }
+        if let Some(jwks) = metadata.get("jwks")
+            && let Some(error) = public_jwks_error(jwks)
+        {
+            return protocol_error("invalid_client_metadata", error).map(Err);
+        }
+        if auth == "private_key_jwt"
+            && !metadata.contains_key("jwks")
+            && !metadata.contains_key("jwks_uri")
+        {
+            return protocol_error(
+                "invalid_client_metadata",
+                "private_key_jwt requires either jwks or jwks_uri",
+            )
+            .map(Err);
+        }
+        if let Some(uri) = metadata
+            .get("backchannel_logout_uri")
+            .and_then(Value::as_str)
+        {
+            if self.config.disable_jwt_plugin {
+                return protocol_error(
+                    "invalid_client_metadata",
+                    "backchannel_logout_uri requires the jwt plugin (disableJwtPlugin must be false)",
+                ).map(Err);
+            }
+            if let Some(error) = backchannel_uri_error(uri) {
+                return protocol_error("invalid_client_metadata", error).map(Err);
+            }
+        }
+        _ = metadata.insert("token_endpoint_auth_method".into(), json!(auth));
+        _ = metadata
+            .entry("application_type")
+            .or_insert_with(|| json!("web"));
+        _ = metadata.insert("grant_types".into(), json!(grants));
+        if let Some(responses) = responses {
+            _ = metadata.insert("response_types".into(), json!(responses));
+        }
+        _ = metadata.insert("redirect_uris".into(), json!(redirects));
+        _ = metadata.entry("disabled").or_insert_with(|| json!(false));
+        _ = metadata
+            .entry("dpop_bound_access_tokens")
+            .or_insert_with(|| json!(false));
+        Ok(Ok(metadata))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct UpdateClientInput {
+    client_id: String,
+    update: Value,
+}
+pub(super) fn validate_update(body: Option<&JsValue>) -> AuthResult<JsValue> {
+    let mut output = crate::endpoint::validate_fields(
+        body,
+        "body",
+        &[crate::authentication_helpers::JsonField::string(
+            "client_id",
+            true,
+        )],
+    )?;
+    let fields = FIELDS
+        .iter()
+        .copied()
+        .filter(|(name, _)| {
+            ![
+                "token_endpoint_auth_method",
+                "jwks",
+                "jwks_uri",
+                "dpop_bound_access_tokens",
+            ]
+            .contains(name)
+        })
+        .collect::<Vec<_>>();
+    let update = validate_metadata(
+        body.and_then(|value| value.get("update")),
+        "body.update",
+        &fields,
+    )?;
+    if let JsValue::Object(object) = &mut output {
+        _ = object.insert("update".into(), update);
+    }
+    Ok(output)
+}
+impl OAuthProviderPlugin {
+    /// Patch metadata of a durable client owned by the authenticated user.
+    pub fn update_oauth_client_endpoint(
+        client_id: &str,
+        update: &impl Serialize,
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("oauth-provider", "updateOAuthClient")
+            .with_body(&json!({"client_id":client_id,"update":update}))
+    }
+    pub(super) async fn update_client<S: AuthSchema>(
+        &self,
+        input: UpdateClientInput,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
+        let Some(client) = ctx.database.get_oauth_client(&input.client_id).await? else {
+            return status_protocol_error(404, "not_found", "client not found");
+        };
+        if client.user_id.as_deref() != Some(user.id().as_ref()) {
+            return Ok(EndpointResponse::error(AuthError::Api {
+                status: 401,
+                code: None,
+                message: String::new(),
+            })
+            .without_error_body()
+            .with_header("Content-Type", "application/json"));
+        }
+        let updates: serde_json::Map<String, Value> = serde_json::from_value(input.update)?;
+        if updates.is_empty() {
+            return EndpointResponse::json(&client_read_metadata(client)?);
+        }
+        let mut merged: serde_json::Map<String, Value> = serde_json::from_value(client.metadata)?;
+        merged.extend(updates);
+        let metadata = match self.admit_metadata(merged, ctx)? {
+            Ok(metadata) => Value::Object(metadata),
+            Err(response) => return Ok(response),
+        };
+        let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
+            .ok_or_else(|| AuthError::internal("Invalid client update timestamp"))?;
+        let Some(client) = ctx
+            .database
+            .update_oauth_client_metadata(&input.client_id, metadata, now)
+            .await?
+        else {
+            return status_protocol_error(500, "invalid_client", "unable to update client");
+        };
+        EndpointResponse::json(&client_read_metadata(client)?)
+    }
 }

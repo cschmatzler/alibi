@@ -482,4 +482,6 @@ impl alibi::store::OAuthClientStore for ApplicationStore {
 
  async fn update_oauth_client_secret(&self,client_id:&str,secret:String,updated_at:chrono::DateTime<chrono::Utc>)->AuthResult<Option<alibi::store::OAuthClient>> {self.inner.update_oauth_client_secret(client_id,secret,updated_at).await}
 
+ async fn update_oauth_client_metadata(&self,client_id:&str,metadata:serde_json::Value,updated_at:chrono::DateTime<chrono::Utc>)->AuthResult<Option<alibi::store::OAuthClient>> {self.inner.update_oauth_client_metadata(client_id,metadata,updated_at).await}
+
 }
