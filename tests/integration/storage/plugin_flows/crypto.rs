@@ -340,6 +340,7 @@ impl alibi::plugins::passkey::PasskeyAuthenticationAfterVerification for Passkey
         assert!(
             context
                 .request
+                .unwrap()
                 .path
                 .ends_with("/passkey/verify-authentication")
         );

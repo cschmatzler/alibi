@@ -1,6 +1,8 @@
 mod authentication;
 mod endpoint;
-pub use endpoint::{PasskeyDeleted, PasskeyRegistrationInput, PasskeyUpdated};
+pub use endpoint::{
+    PasskeyAuthenticated, PasskeyDeleted, PasskeyRegistrationInput, PasskeyUpdated,
+};
 mod options;
 pub use options::{
     PasskeyAuthenticatorSelection, PasskeyExtensions, PasskeyExtensionsResolver,
@@ -319,9 +321,39 @@ impl PasskeyPlugin {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
-        let metadata = alibi_core::RequestMeta::from_request(req);
+        self.verify_authentication(&body, req, ctx).await
+    }
+
+    async fn verify_authentication<S: alibi_core::AuthSchema>(
+        &self,
+        body: &VerifyAuthenticationRequest,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<AuthResponse> {
+        let metadata = if req.endpoint_call().is_some() {
+            alibi_core::RequestMeta {
+                ip_address: Some(
+                    ctx.config
+                        .advanced
+                        .ip_address
+                        .resolve_ip(req.session_headers())
+                        .unwrap_or_default(),
+                ),
+                user_agent: Some(
+                    req.session_headers()
+                        .iter()
+                        .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
+                        .map(|(_, value)| value.clone())
+                        .unwrap_or_default(),
+                ),
+            }
+        } else {
+            req.physical_request()
+                .map(alibi_core::RequestMeta::from_request)
+                .unwrap_or_default()
+        };
         match verify_authentication_core(
-            &body,
+            body,
             req,
             &self.config,
             metadata.ip_address,
@@ -408,7 +440,7 @@ alibi_core::impl_auth_plugin! {
         endpoint::validate(call)
     }
     async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
-        if call.operation_id() == "passkeyVerifyRegistration" { self.verify_registration_endpoint(call, ctx).await } else if call.operation_id() == "passkeyGenerateAuthenticateOptions" { self.authentication_options_endpoint(call, ctx).await } else if call.operation_id() == "generatePasskeyRegistrationOptions" { self.registration_options_endpoint(call, ctx).await } else if call.operation_id() == "deletePasskey" { self.delete_endpoint(call, ctx).await } else if call.operation_id() == "updatePasskey" { self.update_endpoint(call, ctx).await } else { self.list_endpoint(call, ctx).await }
+        if call.operation_id() == "passkeyVerifyAuthentication" { self.verify_authentication_endpoint(call, ctx).await } else if call.operation_id() == "passkeyVerifyRegistration" { self.verify_registration_endpoint(call, ctx).await } else if call.operation_id() == "passkeyGenerateAuthenticateOptions" { self.authentication_options_endpoint(call, ctx).await } else if call.operation_id() == "generatePasskeyRegistrationOptions" { self.registration_options_endpoint(call, ctx).await } else if call.operation_id() == "deletePasskey" { self.delete_endpoint(call, ctx).await } else if call.operation_id() == "updatePasskey" { self.update_endpoint(call, ctx).await } else { self.list_endpoint(call, ctx).await }
     }
     route_openapi_metadata!(S);
  }

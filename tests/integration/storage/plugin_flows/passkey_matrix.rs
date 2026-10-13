@@ -107,6 +107,32 @@ impl Authenticator {
     }
 }
 
+fn endpoint_error_response(error: alibi::endpoint::EndpointError) -> alibi::AuthResponse {
+    assert_ne!(
+        error.error.status_code(),
+        404,
+        "server operation unavailable: {}",
+        error.error
+    );
+    let mut response = error.error.to_auth_response();
+    if let Some(body) = error.body {
+        response.body = serde_json::to_vec(&*body).unwrap();
+    }
+    if error.body_absent {
+        response.body.clear();
+    }
+    if let Some(headers) = error.headers {
+        for (name, value) in headers.iter() {
+            if name.eq_ignore_ascii_case("set-cookie") {
+                response.headers.append(name, value);
+            } else {
+                _ = response.headers.insert(name, value);
+            }
+        }
+    }
+    response
+}
+
 async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let mut trace = Trace::default();
@@ -323,27 +349,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
                 }
                 output.into_response().unwrap()
             }
-            Err(error) => {
-                assert_ne!(
-                    error.error.status_code(),
-                    404,
-                    "registration operation unavailable: {}",
-                    error.error
-                );
-                let mut response = error.error.to_auth_response();
-                if let Some(body) = error.body {
-                    response.body = serde_json::to_vec(&*body).unwrap();
-                }
-                if error.body_absent {
-                    response.body.clear();
-                }
-                if let Some(headers) = error.headers {
-                    for (name, value) in headers.iter() {
-                        _ = response.headers.insert(name, value);
-                    }
-                }
-                response
-            }
+            Err(error) => endpoint_error_response(error),
         }
     };
     let create = |origin: &'static str| move |challenge: &Value| json!({"type": "webauthn.create", "challenge": challenge, "origin": origin});
@@ -533,15 +539,139 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         if let Some(binding) = binding {
             client["tokenBinding"] = binding;
         }
-        Box::pin(auth.handle_request(request(
-            "/passkey/verify-authentication",
-            Some(
-                json!({"response": authenticator.assertion(&client, "localhost", flags, counter)}),
+        let proof = authenticator.assertion(&client, "localhost", flags, counter);
+        if authenticator.id == b"matrix-key-one" && flags == USER_PRESENT | USER_VERIFIED {
+            let before = db
+                .tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                .await
+                .unwrap();
+            for (input, cookie, status, code) in [
+                (
+                    json!({"response":null}),
+                    cookies(&options),
+                    400,
+                    "VALIDATION_ERROR",
+                ),
+                (
+                    json!({"response":42}),
+                    cookies(&options),
+                    400,
+                    "VALIDATION_ERROR",
+                ),
+                (json!({}), cookies(&options), 400, "VALIDATION_ERROR"),
+                (
+                    json!({"response":proof}),
+                    String::new(),
+                    400,
+                    "CHALLENGE_NOT_FOUND",
+                ),
+            ] {
+                let error = Box::pin(
+                    auth.dispatch_endpoint(
+                        alibi::endpoint::ServerEndpoint::<Value>::new(
+                            "passkey",
+                            "verifyPasskeyAuthentication",
+                        )
+                        .with_body(&input)
+                        .unwrap(),
+                        alibi::endpoint::EndpointOptions {
+                            headers: Some(
+                                [("cookie".into(), cookie), ("origin".into(), ORIGIN.into())]
+                                    .into_iter()
+                                    .collect(),
+                            ),
+                            ..Default::default()
+                        },
+                    ),
+                )
+                .await
+                .unwrap_err();
+                assert_eq!(error.error.status_code(), status);
+                assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
+                assert_eq!(
+                    db.tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                        .await
+                        .unwrap(),
+                    before
+                );
+            }
+        }
+        let output = Box::pin(
+            auth.dispatch_endpoint(
+                PasskeyPlugin::verify_passkey_authentication_endpoint(
+                    alibi::utils::json::parse_value(&proof.to_string()).unwrap(),
+                )
+                .with_body(&json!({"response":proof,"userId":"foreign-owner-selector"}))
+                .unwrap(),
+                alibi::endpoint::EndpointOptions {
+                    headers: Some(
+                        [
+                            ("cookie".into(), cookies(&options)),
+                            ("origin".into(), ORIGIN.into()),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
+                    ..Default::default()
+                },
             ),
-            &cookies(&options),
-        )))
-        .await
-        .unwrap()
+        )
+        .await;
+        match output {
+            Ok(output) => {
+                let user = output.decode().unwrap().user;
+                let response = output.into_response().unwrap();
+                if authenticator.id == b"matrix-key-one" {
+                    assert_eq!(user["email"], "passkey-matrix@example.com");
+                    let live = Box::pin(auth.handle_request(request(
+                        "/get-session",
+                        None,
+                        &cookies(&response),
+                    )))
+                    .await
+                    .unwrap();
+                    assert_eq!(live.status, 200);
+                    assert_eq!(body(&live)["user"]["id"], user["id"]);
+                    let before = db
+                        .tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                        .await
+                        .unwrap();
+                    let replay = Box::pin(
+                        auth.dispatch_endpoint(
+                            PasskeyPlugin::verify_passkey_authentication_endpoint(
+                                alibi::utils::json::parse_value(&proof.to_string()).unwrap(),
+                            ),
+                            alibi::endpoint::EndpointOptions {
+                                headers: Some(
+                                    [
+                                        ("cookie".into(), cookies(&options)),
+                                        ("origin".into(), ORIGIN.into()),
+                                    ]
+                                    .into_iter()
+                                    .collect(),
+                                ),
+                                ..Default::default()
+                            },
+                        ),
+                    )
+                    .await
+                    .unwrap_err();
+                    assert_eq!(replay.error.status_code(), 400);
+                    assert_eq!(
+                        replay.error.error_payload().1.as_deref(),
+                        Some("CHALLENGE_NOT_FOUND")
+                    );
+                    assert_eq!(
+                        db.tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                            .await
+                            .unwrap(),
+                        before
+                    );
+                }
+                response
+            }
+            Err(error) => endpoint_error_response(error),
+        }
     };
     trace.response(
         "assertion wrong origin",

@@ -12,6 +12,12 @@ use serde_json::Value;
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
         crate::endpoint::definition(
+            "verifyPasskeyAuthentication",
+            "passkeyVerifyAuthentication",
+            Some("/passkey/verify-authentication"),
+            HttpMethod::Post,
+        ),
+        crate::endpoint::definition(
             "verifyPasskeyRegistration",
             "passkeyVerifyRegistration",
             Some("/passkey/verify-registration"),
@@ -124,9 +130,43 @@ fn registration_input(call: &EndpointCall) -> AuthResult<alibi_core::utils::json
     ))
 }
 
+/// The issued session and credential owner's public user projection.
+#[derive(Debug, serde::Deserialize)]
+pub struct PasskeyAuthenticated {
+    pub session: Value,
+    pub user: Value,
+}
+
+fn verification_response(output: alibi_core::AuthResponse) -> AuthResult<EndpointResponse> {
+    let body =
+        alibi_core::utils::json::from_slice::<alibi_core::utils::json::JsValue>(&output.body).ok();
+    let mut response = if output.status >= 400 {
+        let response = EndpointResponse::error(crate::endpoint::error_response(output.clone()));
+        if let Some(body) = body {
+            response.with_error_body(body)
+        } else {
+            response.without_error_body()
+        }
+    } else {
+        EndpointResponse::json(&body)?
+    };
+    response.merge_headers(output.headers);
+    Ok(response)
+}
+
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
     Ok(EndpointInput {
-        body: if call.operation_id() == "passkeyVerifyRegistration" {
+        body: if call.operation_id() == "passkeyVerifyAuthentication" {
+            Some(crate::endpoint::validate_fields(
+                call.body(),
+                "body",
+                &[crate::authentication_helpers::JsonField {
+                    name: "response",
+                    kind: crate::authentication_helpers::JsonFieldKind::Record,
+                    required: true,
+                }],
+            )?)
+        } else if call.operation_id() == "passkeyVerifyRegistration" {
             Some(registration_input(call)?)
         } else if call.operation_id() == "deletePasskey" {
             Some(crate::endpoint::validate_fields(
@@ -192,6 +232,29 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
 }
 
 impl PasskeyPlugin {
+    /// Verify a signed authentication response and issue its credential owner's session.
+    #[must_use]
+    pub fn verify_passkey_authentication_endpoint(
+        response: alibi_core::utils::json::JsValue,
+    ) -> ServerEndpoint<PasskeyAuthenticated> {
+        ServerEndpoint::new("passkey", "verifyPasskeyAuthentication").with_body_value(
+            alibi_core::utils::json::JsValue::Object(
+                [("response".into(), response)].into_iter().collect(),
+            ),
+        )
+    }
+
+    pub(super) async fn verify_authentication_endpoint<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        verification_response(
+            self.verify_authentication(&call.body_as()?, call, ctx)
+                .await?,
+        )
+    }
+
     /// Verify a real registration response against the issued challenge and owner.
     #[must_use]
     pub fn verify_passkey_registration_endpoint(
@@ -220,21 +283,7 @@ impl PasskeyPlugin {
             .verify_registration(&call.body_as()?, call, ctx)
             .await
             .map_err(crate::helpers::unauthorized_if_unauthenticated)?;
-        let body =
-            alibi_core::utils::json::from_slice::<alibi_core::utils::json::JsValue>(&output.body)
-                .ok();
-        let mut response = if output.status >= 400 {
-            let response = EndpointResponse::error(crate::endpoint::error_response(output.clone()));
-            if let Some(body) = body {
-                response.with_error_body(body)
-            } else {
-                response.without_error_body()
-            }
-        } else {
-            EndpointResponse::json(&body)?
-        };
-        response.merge_headers(output.headers);
-        Ok(response)
+        verification_response(output)
     }
 
     /// Issue an authentication challenge, optionally limiting browser hints to the signed owner.
