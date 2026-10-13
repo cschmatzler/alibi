@@ -1,4 +1,5 @@
 //! OAuth authorization-server discovery from installed issuer and provider policy.
+mod authorization;
 mod clients;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
@@ -15,6 +16,9 @@ use serde_json::{Value, json};
 #[derive(Clone, Debug)]
 pub struct OAuthProviderConfig {
     pub scopes: Vec<String>,
+    pub login_page: String,
+    pub consent_page: String,
+    pub code_expires_in: f64,
     pub advertised_scopes: Option<Vec<String>>,
     pub advertised_claims: Option<Vec<String>>,
     pub grant_types: Vec<String>,
@@ -27,6 +31,9 @@ pub struct OAuthProviderConfig {
 impl Default for OAuthProviderConfig {
     fn default() -> Self {
         Self {
+            login_page: "/login".into(),
+            consent_page: "/consent".into(),
+            code_expires_in: 600.0,
             scopes: ["openid", "profile", "email", "offline_access"]
                 .map(str::to_owned)
                 .into(),
@@ -233,11 +240,19 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             AuthRoute::post("/oauth2/delete-client", "deleteOAuthClient"),
             AuthRoute::post("/oauth2/update-client", "updateOAuthClient"),
             AuthRoute::post("/oauth2/register", "registerOAuthClient"),
+            AuthRoute::get("/oauth2/authorize", "oauth2Authorize"),
+            AuthRoute::post("/oauth2/authorize", "oauth2Authorize"),
             AuthRoute::post("/oauth2/client/rotate-secret", "rotateClientSecret"),
         ]
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "oauth2Authorize",
+                "oauth2Authorize",
+                Some("/oauth2/authorize"),
+                HttpMethod::Get,
+            ),
             crate::endpoint::definition(
                 "adminUpdateOAuthClient",
                 "adminUpdateOAuthClient",
@@ -349,6 +364,14 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "oauth2Authorize" {
+            let value = if call.method() == Some(&HttpMethod::Post) {
+                call.body()
+            } else {
+                call.query()
+            };
+            return Box::pin(self.authorize(value.cloned(), call, ctx)).await;
+        }
         if call.operation_id() == "adminUpdateOAuthClient" {
             return Box::pin(self.update_client(call.body_as()?, call, ctx, true)).await;
         }
@@ -397,6 +420,29 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/oauth2/authorize"
+            && matches!(req.method(), HttpMethod::Get | HttpMethod::Post)
+        {
+            let value = if *req.method() == HttpMethod::Post {
+                let mut fields = indexmap::IndexMap::new();
+                for (name, value) in
+                    url::form_urlencoded::parse(req.body.as_deref().unwrap_or_default())
+                {
+                    _ = fields.insert(
+                        name.into_owned(),
+                        alibi_core::utils::json::JsValue::String(value.into_owned()),
+                    );
+                }
+                alibi_core::utils::json::JsValue::Object(fields)
+            } else {
+                alibi_core::utils::json::parse_value(&serde_json::to_string(&req.query)?)?
+            };
+            return Ok(Some(
+                Box::pin(self.authorize(Some(value), req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
         if req.path() == "/oauth2/register" && *req.method() == HttpMethod::Post {
             let body: alibi_core::utils::json::JsValue = req.body_as_json()?;
             return Ok(Some(
