@@ -495,3 +495,51 @@ fn browser_redirect(req: &impl SessionRequest, target: &str) -> AuthResult<Endpo
         Ok(EndpointResponse::redirect(target))
     }
 }
+
+pub(super) fn verify_authorization_query(query: &str, secret: &str) -> AuthResult<bool> {
+    let pairs = url::form_urlencoded::parse(query.as_bytes())
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect::<Vec<_>>();
+    let signatures = pairs.iter().filter(|(k, _)| k == "sig").collect::<Vec<_>>();
+    let [(_, signature_text)] = signatures.as_slice() else {
+        return Ok(false);
+    };
+    if signature_text.is_empty() {
+        return Ok(false);
+    }
+    let Some(exp) = pairs
+        .iter()
+        .find(|(k, _)| k == "exp")
+        .and_then(|(_, v)| v.parse::<f64>().ok())
+    else {
+        return Ok(false);
+    };
+    if !exp.is_finite()
+        || exp * 1000.0
+            < json!(chrono::Utc::now().timestamp_millis())
+                .as_f64()
+                .ok_or_else(|| AuthError::internal("Invalid authorization timestamp"))?
+    {
+        return Ok(false);
+    }
+    let mut canonical = pairs
+        .iter()
+        .filter(|(k, _)| k != "sig")
+        .cloned()
+        .collect::<Vec<_>>();
+    canonical.sort_by(|(a, av), (b, bv)| {
+        a.encode_utf16()
+            .cmp(b.encode_utf16())
+            .then_with(|| av.encode_utf16().cmp(bv.encode_utf16()))
+    });
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+        .map_err(|_| AuthError::internal("Invalid authorization signing key"))?;
+    mac.update(encode_pairs(&canonical).as_bytes());
+    let Ok(signature) = base64::engine::general_purpose::STANDARD.decode(signature_text) else {
+        return Ok(false);
+    };
+    if base64::engine::general_purpose::STANDARD.encode(&signature) != *signature_text {
+        return Ok(false);
+    }
+    Ok(mac.verify_slice(&signature).is_ok())
+}

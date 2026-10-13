@@ -19,6 +19,7 @@ pub struct OAuthProviderConfig {
     pub login_page: String,
     pub consent_page: String,
     pub code_expires_in: f64,
+    pub allow_public_client_prelogin: bool,
     pub advertised_scopes: Option<Vec<String>>,
     pub advertised_claims: Option<Vec<String>>,
     pub grant_types: Vec<String>,
@@ -34,6 +35,7 @@ impl Default for OAuthProviderConfig {
             login_page: "/login".into(),
             consent_page: "/consent".into(),
             code_expires_in: 600.0,
+            allow_public_client_prelogin: false,
             scopes: ["openid", "profile", "email", "offline_access"]
                 .map(str::to_owned)
                 .into(),
@@ -236,6 +238,10 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             AuthRoute::post("/oauth2/create-client", "createOAuthClient"),
             AuthRoute::get("/oauth2/get-client", "getOAuthClient"),
             AuthRoute::get("/oauth2/public-client", "getOAuthClientPublic"),
+            AuthRoute::post(
+                "/oauth2/public-client-prelogin",
+                "getOAuthClientPublicPrelogin",
+            ),
             AuthRoute::get("/oauth2/get-clients", "getOAuthClients"),
             AuthRoute::post("/oauth2/delete-client", "deleteOAuthClient"),
             AuthRoute::post("/oauth2/update-client", "updateOAuthClient"),
@@ -247,6 +253,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "getOAuthClientPublicPrelogin",
+                "getOAuthClientPublicPrelogin",
+                Some("/oauth2/public-client-prelogin"),
+                HttpMethod::Post,
+            ),
             crate::endpoint::definition(
                 "oauth2Authorize",
                 "oauth2Authorize",
@@ -333,7 +345,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
         Ok(EndpointInput {
-            body: if call.operation_id() == "adminUpdateOAuthClient" {
+            body: if call.operation_id() == "getOAuthClientPublicPrelogin" {
+                Some(clients::validate_prelogin(call.body())?)
+            } else if call.operation_id() == "adminUpdateOAuthClient" {
                 Some(clients::validate_admin_update(call.body())?)
             } else if call.operation_id() == "adminCreateOAuthClient" {
                 Some(clients::validate_admin_create(call.body())?)
@@ -364,6 +378,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "getOAuthClientPublicPrelogin" {
+            return Box::pin(self.read_prelogin_client(call.body_as()?, ctx)).await;
+        }
         if call.operation_id() == "oauth2Authorize" {
             let value = if call.method() == Some(&HttpMethod::Post) {
                 call.body()
@@ -478,6 +495,16 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             }
             return Ok(Some(
                 Box::pin(self.delete_client(input, req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
+        if req.path() == "/oauth2/public-client-prelogin" && *req.method() == HttpMethod::Post {
+            let body = req.body_as_json()?;
+            let input =
+                alibi_core::utils::json::from_value(clients::validate_prelogin(Some(&body))?)?;
+            return Ok(Some(
+                Box::pin(self.read_prelogin_client(input, ctx))
                     .await?
                     .to_response()?,
             ));

@@ -593,7 +593,15 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         _ = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
-        let client = ctx.database.get_oauth_client(&input.client_id).await?;
+        Box::pin(self.public_client_projection(&input.client_id, ctx)).await
+    }
+    async fn public_client_projection<S: AuthSchema>(
+        &self,
+        client_id: &str,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let client = ctx.database.get_oauth_client(client_id).await?;
+
         let Some(client) =
             client.filter(|client| client.metadata.get("disabled") != Some(&json!(true)))
         else {
@@ -1635,5 +1643,80 @@ impl OAuthProviderPlugin {
     ) -> AuthResult<ServerEndpoint<Value>> {
         ServerEndpoint::new("oauth-provider", "adminUpdateOAuthClient")
             .with_body(&json!({"client_id":client_id,"update":update}))
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub(super) struct PreloginClientInput {
+    client_id: String,
+    oauth_query: Option<String>,
+}
+pub(super) fn validate_prelogin(body: Option<&JsValue>) -> AuthResult<JsValue> {
+    crate::endpoint::validate_fields(
+        body,
+        "body",
+        &[
+            crate::authentication_helpers::JsonField::string("client_id", true),
+            crate::authentication_helpers::JsonField::string("oauth_query", false),
+        ],
+    )
+}
+impl OAuthProviderPlugin {
+    /// Read public client display metadata before login using a provider-issued authorization query.
+    pub fn get_oauth_client_public_prelogin_endpoint(
+        client_id: &str,
+        oauth_query: Option<&str>,
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        let mut input = serde_json::Map::from_iter([("client_id".into(), json!(client_id))]);
+        if let Some(query) = oauth_query {
+            _ = input.insert("oauth_query".into(), json!(query));
+        }
+        ServerEndpoint::new("oauth-provider", "getOAuthClientPublicPrelogin").with_body(&input)
+    }
+    pub(super) async fn read_prelogin_client<S: AuthSchema>(
+        &self,
+        input: PreloginClientInput,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let valid = super::authorization::verify_authorization_query(
+            input.oauth_query.as_deref().unwrap_or(""),
+            ctx.config.current_secret(),
+        )?;
+        // The provider's before hook rejects a supplied invalid query before endpoint middleware.
+        if input
+            .oauth_query
+            .as_deref()
+            .is_some_and(|query| !query.is_empty())
+            && !valid
+        {
+            return Ok(EndpointResponse::error(AuthError::Api {
+                status: 400,
+                code: None,
+                message: String::new(),
+            })
+            .with_error_body(alibi_core::utils::json::parse_value(
+                r#"{"error":"invalid_signature"}"#,
+            )?));
+        }
+        if !self.config.allow_public_client_prelogin {
+            return Ok(EndpointResponse::error(AuthError::Api {
+                status: 400,
+                code: None,
+                message: String::new(),
+            })
+            .without_error_body()
+            .with_header("Content-Type", "application/json"));
+        }
+        if !valid {
+            return Ok(EndpointResponse::error(AuthError::Api {
+                status: 401,
+                code: None,
+                message: String::new(),
+            })
+            .with_error_body(alibi_core::utils::json::parse_value(
+                r#"{"error":"invalid_signature"}"#,
+            )?));
+        }
+        Box::pin(self.public_client_projection(&input.client_id, ctx)).await
     }
 }

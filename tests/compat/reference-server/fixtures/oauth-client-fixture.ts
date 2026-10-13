@@ -14,6 +14,31 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   await (await getMigrations(options)).runMigrations();
   const auths = {
     default: betterAuth(options),
+    prelogin: betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          allowPublicClientPrelogin: true,
+        }),
+      ],
+    }),
+    expired: betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          allowPublicClientPrelogin: true,
+          codeExpiresIn: -1,
+        }),
+      ],
+    }),
     dynamic: betterAuth({
       ...options,
       plugins: [
@@ -121,6 +146,20 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
               ),
             }),
       });
+    }
+    if (input.action === "prelogin") {
+      try {
+        return await auth.api.getOAuthClientPublicPrelogin({ body: input.body, asResponse: true });
+      } catch (error) {
+        const failure = error as { statusCode?: number; body?: unknown };
+        if (!failure.statusCode) {
+          throw error;
+        }
+        return new Response(failure.body ? JSON.stringify(failure.body) : null, {
+          status: failure.statusCode,
+          headers: { "content-type": "application/json" },
+        });
+      }
     }
     if (input.action === "admin-update") {
       return auth.api.adminUpdateOAuthClient({
