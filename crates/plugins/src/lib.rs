@@ -83,6 +83,7 @@ mod passwordless_numeric;
 pub mod phone_number;
 pub mod session_management;
 pub mod siwe;
+pub mod sso;
 pub(crate) mod token_crypto;
 pub mod two_factor;
 pub mod user_management;
@@ -323,3 +324,5 @@ pub use user_management::{
 pub(crate) struct StatusResponse {
     status: bool,
 }
+
+pub use sso::{SsoConfig, SsoPlugin};
