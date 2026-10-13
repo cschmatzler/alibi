@@ -480,4 +480,6 @@ impl alibi::store::OAuthClientStore for ApplicationStore {
 
  async fn delete_oauth_client(&self,client_id:&str)->AuthResult<()> {self.inner.delete_oauth_client(client_id).await}
 
+ async fn update_oauth_client_secret(&self,client_id:&str,secret:String,updated_at:chrono::DateTime<chrono::Utc>)->AuthResult<Option<alibi::store::OAuthClient>> {self.inner.update_oauth_client_secret(client_id,secret,updated_at).await}
+
 }

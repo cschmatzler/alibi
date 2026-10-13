@@ -231,10 +231,17 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             AuthRoute::get("/oauth2/public-client", "getOAuthClientPublic"),
             AuthRoute::get("/oauth2/get-clients", "getOAuthClients"),
             AuthRoute::post("/oauth2/delete-client", "deleteOAuthClient"),
+            AuthRoute::post("/oauth2/client/rotate-secret", "rotateClientSecret"),
         ]
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "rotateClientSecret",
+                "rotateClientSecret",
+                Some("/oauth2/client/rotate-secret"),
+                HttpMethod::Post,
+            ),
             crate::endpoint::definition(
                 "deleteOAuthClient",
                 "deleteOAuthClient",
@@ -285,7 +292,10 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
         Ok(EndpointInput {
-            body: if call.operation_id() == "deleteOAuthClient" {
+            body: if matches!(
+                call.operation_id(),
+                "deleteOAuthClient" | "rotateClientSecret"
+            ) {
                 Some(clients::validate_delete(call.body())?)
             } else if call.operation_id() == "createOAuthClient" {
                 Some(clients::validate(call.body())?)
@@ -307,6 +317,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "rotateClientSecret" {
+            return Box::pin(self.rotate_client_secret(call.body_as()?, call, ctx)).await;
+        }
         if call.operation_id() == "deleteOAuthClient" {
             return Box::pin(self.delete_client(call.body_as()?, call, ctx)).await;
         }
@@ -340,10 +353,21 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
-        if req.path() == "/oauth2/delete-client" && *req.method() == HttpMethod::Post {
+        if matches!(
+            req.path(),
+            "/oauth2/delete-client" | "/oauth2/client/rotate-secret"
+        ) && *req.method() == HttpMethod::Post
+        {
             let body: alibi_core::utils::json::JsValue = req.body_as_json()?;
             let input =
                 alibi_core::utils::json::from_value(clients::validate_delete(Some(&body))?)?;
+            if req.path() == "/oauth2/client/rotate-secret" {
+                return Ok(Some(
+                    Box::pin(self.rotate_client_secret(input, req, ctx))
+                        .await?
+                        .to_response()?,
+                ));
+            }
             return Ok(Some(
                 Box::pin(self.delete_client(input, req, ctx))
                     .await?
