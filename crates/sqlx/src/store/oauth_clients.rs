@@ -10,10 +10,21 @@ use alibi_core::{
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
+    async fn store_oauth_refresh_replay(&self, id: &str, ciphertext: &str) -> AuthResult<()> {
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "UPDATE ");
+        sql.ident("oauthRefreshToken");
+        sql.push(" SET ");
+        sql.assign("rotationReplayResponse", ciphertext);
+        sql.push(" WHERE ");
+        sql.compare("oauthRefreshToken", "id", " = ", id);
+        _ = self.exec().execute(sql).await?;
+        Ok(())
+    }
     async fn claim_oauth_refresh_rotation(
         &self,
         token: &str,
         at: chrono::DateTime<chrono::Utc>,
+        replay_expires: Option<chrono::DateTime<chrono::Utc>>,
     ) -> AuthResult<bool> {
         let mut sql = crate::sql::Sql::with(self.exec().engine(), "UPDATE ");
         sql.ident("oauthRefreshToken");
@@ -21,6 +32,10 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         sql.assign("revoked", at);
         sql.push(", ");
         sql.assign("rotatedAt", at);
+        if let Some(expires) = replay_expires {
+            sql.push(", ");
+            sql.assign("rotationReplayExpiresAt", expires);
+        }
         sql.push(" WHERE ");
         sql.compare("oauthRefreshToken", "token", " = ", token);
         sql.push(" AND ");

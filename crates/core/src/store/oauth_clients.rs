@@ -53,10 +53,17 @@ pub struct CreateOAuthToken {
 #[async_trait]
 pub trait OAuthClientStore: Send + Sync {
     /// Claim default refresh rotation with both revocation and rotation timestamps.
+    async fn store_oauth_refresh_replay(&self, id: &str, ciphertext: &str) -> AuthResult<()> {
+        let _ = (id, ciphertext);
+        Err(AuthError::config(
+            "OAuth token persistence is not supported by this store",
+        ))
+    }
     async fn claim_oauth_refresh_rotation(
         &self,
         _token: &str,
         _at: DateTime<Utc>,
+        _replay_expires: Option<DateTime<Utc>>,
     ) -> AuthResult<bool> {
         Err(AuthError::config(
             "OAuth token persistence is not supported by this store",

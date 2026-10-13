@@ -417,3 +417,5 @@ mod oauth_refresh_grant;
 mod oauth_client_credentials;
 
 mod oauth_protocol_forms;
+
+mod oauth_refresh_reuse;
