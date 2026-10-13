@@ -433,3 +433,5 @@ mod sso_provider_update;
 mod sso_domain_request;
 
 mod sso_domain_verify;
+
+mod sso_sign_in;

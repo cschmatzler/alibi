@@ -40,6 +40,13 @@ export async function ssoFixture(base: BetterAuthOptions) {
         headers: { "content-type": "application/json" },
       });
     }
+    if (input.action === "sign-in") {
+      return auth.api.signInSSO({
+        body: input.body,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
     if (input.action === "verify-domain") {
       return auth.api.verifyDomain({
         body: input.body,

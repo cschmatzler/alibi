@@ -277,7 +277,7 @@ pub(super) fn decode_database_state_cookie_value(secret: &str, token: &str) -> A
         .ok_or_else(|| AuthError::internal("Invalid OAuth state cookie"))
 }
 
-pub(super) fn create_cookie_state_value(
+pub(crate) fn create_cookie_state_value(
     config: &AuthConfig,
     payload: &OAuthStatePayload,
 ) -> AuthResult<String> {
