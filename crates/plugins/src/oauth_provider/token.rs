@@ -42,6 +42,9 @@ impl OAuthProviderPlugin {
         if grant == "refresh_token" {
             return Box::pin(self.refresh_grant(&body, req, ctx)).await;
         }
+        if grant == "client_credentials" {
+            return Box::pin(self.machine_grant(&body, req, ctx)).await;
+        }
         // Each remaining grant receives its own issuance and lifecycle finding.
         if grant != "authorization_code" {
             return error(

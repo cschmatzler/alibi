@@ -7,6 +7,7 @@ mod credentials;
 mod id_token;
 mod introspection;
 mod logout;
+mod machine;
 mod refresh;
 mod resources;
 mod revocation;
@@ -24,10 +25,24 @@ use async_trait::async_trait;
 pub use clients::CreateOAuthClientInput;
 use serde_json::{Value, json};
 
+/// Actual authenticated context passed to an operator client-privilege decision.
+#[derive(Debug, Clone)]
+pub struct OAuthClientPrivilegeContext {
+    pub action: &'static str,
+    pub headers: alibi_core::Headers,
+    pub user: Value,
+    pub session: Value,
+}
+#[async_trait]
+pub trait OAuthClientPrivileges: Send + Sync + std::fmt::Debug {
+    async fn allowed(&self, context: &OAuthClientPrivilegeContext) -> AuthResult<bool>;
+}
 /// Immutable policy shared by authorization-server metadata and grant admission.
 #[derive(Clone, Debug)]
 pub struct OAuthProviderConfig {
     pub scopes: Vec<String>,
+    /// Operator decision for assigning client-credentials scopes.
+    pub client_credentials_scope_privileges: Option<std::sync::Arc<dyn OAuthClientPrivileges>>,
     pub login_page: String,
     pub consent_page: String,
     pub select_account_page: Option<String>,
@@ -46,6 +61,7 @@ pub struct OAuthProviderConfig {
 impl Default for OAuthProviderConfig {
     fn default() -> Self {
         Self {
+            client_credentials_scope_privileges: None,
             login_page: "/login".into(),
             consent_page: "/consent".into(),
             select_account_page: None,

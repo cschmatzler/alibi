@@ -14,6 +14,23 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   await (await getMigrations(options)).runMigrations();
   const auths = {
     default: betterAuth(options),
+    machine: betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          scopes: ["api:read", "api:write"],
+          clientPrivileges: ({ action, headers, user, session }) =>
+            action !== "configure-client-credentials-scopes" ||
+            (headers.get("x-machine-operator") === "grant" &&
+              Boolean(user?.email.includes("machine-owner")) &&
+              session?.userId === user?.id),
+        }),
+      ],
+    }),
     prelogin: betterAuth({
       ...options,
       plugins: [
@@ -330,7 +347,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
                 authTime: row.authTime ?? null,
                 resources: row.resources ?? null,
                 revoked: row.revoked ?? null,
-                rotatedAt:row.rotatedAt ?? null,
+                rotatedAt: row.rotatedAt ?? null,
               }
             : null,
         ),

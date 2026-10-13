@@ -1090,7 +1090,10 @@ impl OAuthProviderPlugin {
         _ = updates.remove("client_secret_expires_at");
         merged.extend(updates);
         if let Some(scopes) = scopes.and_then(|value| value.as_array().cloned()) {
-            if let Some(response) = self.admit_credential_scopes(&scopes, &merged)? {
+            if let Some(response) = self
+                .admit_credential_scopes(&scopes, &merged, req, ctx)
+                .await?
+            {
                 return Ok(response);
             }
             _ = merged.insert("client_credentials_scopes".into(), json!(scopes));
@@ -1414,7 +1417,10 @@ impl OAuthProviderPlugin {
             .remove("client_credentials_scopes")
             .and_then(|value| value.as_array().cloned())
             .unwrap_or_default();
-        if let Some(response) = self.admit_credential_scopes(&scopes, &metadata)? {
+        if let Some(response) = self
+            .admit_credential_scopes(&scopes, &metadata, req, ctx)
+            .await?
+        {
             return Ok(response);
         }
         _ = metadata.remove("client_secret_expires_at");
@@ -1431,7 +1437,7 @@ impl OAuthProviderPlugin {
                 _ = metadata.insert(name, value);
             }
         }
-        _ = metadata.insert("client_credentials_scopes".into(), json!([]));
+        _ = metadata.insert("client_credentials_scopes".into(), json!(scopes));
         self.persist_client(metadata, Some(user.id().as_ref().to_owned()), ctx)
             .await
     }
@@ -1510,10 +1516,12 @@ const RESERVED_METADATA_FIELDS: &[&str] = &[
 ];
 
 impl OAuthProviderPlugin {
-    fn admit_credential_scopes(
+    async fn admit_credential_scopes<S: AuthSchema>(
         &self,
         scopes: &[Value],
         metadata: &serde_json::Map<String, Value>,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
     ) -> AuthResult<Option<EndpointResponse>> {
         if !scopes.is_empty() {
             if !metadata
@@ -1558,6 +1566,25 @@ impl OAuthProviderPlugin {
                     ),
                 )
                 .map(Some);
+            }
+            if let Some(privileges) = &self.config.client_credentials_scope_privileges
+                && let Ok((user, session)) = Box::pin(ctx.require_cached_session(req)).await
+            {
+                let mut headers = alibi_core::Headers::new();
+                for (name, value) in req.session_headers() {
+                    _ = headers.insert(name.clone(), value.clone());
+                }
+                if privileges
+                    .allowed(&super::OAuthClientPrivilegeContext {
+                        action: "configure-client-credentials-scopes",
+                        headers,
+                        user: serde_json::to_value(user)?,
+                        session: serde_json::to_value(session)?,
+                    })
+                    .await?
+                {
+                    return Ok(None);
+                }
             }
             return Ok(Some(
                 EndpointResponse::error(AuthError::Api {
