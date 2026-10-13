@@ -21,3 +21,7 @@ pub mod wallet_address;
 pub mod oauth_client;
 
 pub mod oauth_consent;
+
+pub mod oauth_resource;
+
+pub mod oauth_client_resource;

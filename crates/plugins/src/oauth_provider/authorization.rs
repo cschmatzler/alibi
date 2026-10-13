@@ -234,13 +234,84 @@ impl OAuthProviderPlugin {
                 ctx.config.base_url.trim_end_matches('/'),
                 ctx.config.base_path
             );
+            let mut resolved = Vec::new();
+            let mut seen = std::collections::HashSet::new();
             for resource in resources {
-                if resource != userinfo {
+                if resource == userinfo || !seen.insert(resource) {
+                    continue;
+                }
+                let Some(row) = ctx.database.get_oauth_resource(resource).await? else {
                     return admission_error(
                         "invalid_target",
                         &format!("requested resource {resource} is not configured"),
                     );
+                };
+                if row.metadata.get("disabled") == Some(&json!(true)) {
+                    return admission_error(
+                        "invalid_target",
+                        &format!("requested resource {resource} is disabled"),
+                    );
                 }
+                resolved.push(row);
+            }
+            if self.config.enforce_per_client_resources && !resolved.is_empty() {
+                let links = ctx.database.list_oauth_client_resources(&client_id).await?;
+                let unlinked = resolved
+                    .iter()
+                    .filter(|resource| {
+                        !links
+                            .iter()
+                            .any(|link| link.resource_id == resource.identifier)
+                    })
+                    .map(|resource| resource.identifier.as_str())
+                    .collect::<Vec<_>>();
+                if !unlinked.is_empty() {
+                    return admission_error(
+                        "invalid_target",
+                        &format!(
+                            "client {client_id} is not linked to resource(s) {}",
+                            unlinked.join(", ")
+                        ),
+                    );
+                }
+            }
+            let mut effective = requested.clone();
+            let mut algorithms = std::collections::HashSet::new();
+            let mut keys = std::collections::HashSet::new();
+            for row in resolved {
+                if let Some(scopes) = row.metadata.get("allowedScopes").and_then(Value::as_array) {
+                    effective
+                        .retain(|scope| scopes.iter().any(|value| value.as_str() == Some(scope)));
+                    if effective.is_empty() {
+                        return admission_error(
+                            "invalid_scope",
+                            &format!(
+                                "none of the requested scopes are allowed for resource {}",
+                                row.identifier
+                            ),
+                        );
+                    }
+                }
+                if let Some(algorithm) =
+                    row.metadata.get("signingAlgorithm").and_then(Value::as_str)
+                {
+                    _ = algorithms.insert(algorithm.to_owned());
+                }
+                if let Some(key) = row.metadata.get("signingKeyId").and_then(Value::as_str) {
+                    _ = keys.insert(key.to_owned());
+                }
+            }
+            if algorithms.len() > 1 {
+                return admission_error(
+                    "invalid_request",
+                    "multi-resource request has conflicting signingAlgorithm pins; a single JWS signature cannot satisfy multiple algorithms",
+                );
+            }
+            if keys.len() > 1 {
+                return admission_error(
+                    "invalid_request",
+                    "multi-resource request has conflicting signingKeyId pins; a single JWS signature cannot satisfy multiple key ids",
+                );
             }
         }
         let challenge = text("code_challenge");

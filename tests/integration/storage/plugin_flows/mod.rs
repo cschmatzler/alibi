@@ -377,3 +377,5 @@ mod oauth_consent_read;
 mod oauth_consent_update;
 
 mod oauth_consent_delete;
+
+mod oauth_resource_creation;

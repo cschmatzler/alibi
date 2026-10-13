@@ -22,6 +22,7 @@ impl MigratorTrait for AuthMigrator {
             Box::new(AuthSchemaMigration),
             Box::new(OAuthClientsMigration),
             Box::new(OAuthConsentsMigration),
+            Box::new(OAuthResourcesMigration),
         ]
     }
 
@@ -983,6 +984,110 @@ impl MigrationTrait for OAuthConsentsMigration {
             .drop_table(
                 Table::drop()
                     .table(super::entities::oauth_consent::Entity)
+                    .to_owned(),
+            )
+            .await
+    }
+}
+
+struct OAuthResourcesMigration;
+impl MigrationName for OAuthResourcesMigration {
+    fn name(&self) -> &'static str {
+        "m20261013_000004_oauth_resources"
+    }
+}
+#[async_trait::async_trait]
+impl MigrationTrait for OAuthResourcesMigration {
+    fn use_transaction(&self) -> Option<bool> {
+        Some(true)
+    }
+    #[expect(
+        elided_lifetimes_in_paths,
+        reason = "SeaORM migration manager lifetime must remain late-bound"
+    )]
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        use super::entities::oauth_client_resource::{Column as LinkColumn, Entity as Link};
+        use super::entities::oauth_resource::{Column, Entity};
+        manager
+            .create_table(
+                Table::create()
+                    .table(Entity)
+                    .col(primary_key(Column::Id))
+                    .col(required(Column::Identifier))
+                    .col(required(Column::Metadata))
+                    .col(timestamp(Column::CreatedAt))
+                    .col(timestamp(Column::UpdatedAt))
+                    .to_owned(),
+            )
+            .await?;
+        create_index(
+            manager,
+            "idx_oauth_resource_identifier",
+            Entity,
+            &["identifier"],
+            true,
+        )
+        .await?;
+        manager
+            .create_table(
+                Table::create()
+                    .table(Link)
+                    .col(primary_key(LinkColumn::Id))
+                    .col(required(LinkColumn::ClientId))
+                    .col(required(LinkColumn::ResourceId))
+                    .col(ColumnDef::new(LinkColumn::Metadata).string())
+                    .col(ColumnDef::new(LinkColumn::CreatedAt).timestamp_with_time_zone())
+                    .foreign_key(
+                        ForeignKey::create()
+                            .from(Link, LinkColumn::ClientId)
+                            .to(
+                                super::entities::oauth_client::Entity,
+                                super::entities::oauth_client::Column::ClientId,
+                            )
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .from(Link, LinkColumn::ResourceId)
+                            .to(Entity, Column::Identifier)
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        create_index(
+            manager,
+            "idx_oauth_client_resource_pair",
+            Link,
+            &["client_id", "resource_id"],
+            true,
+        )
+        .await?;
+        create_index(
+            manager,
+            "idx_oauth_client_resource_resource",
+            Link,
+            &["resource_id"],
+            false,
+        )
+        .await
+    }
+    #[expect(
+        elided_lifetimes_in_paths,
+        reason = "SeaORM migration manager lifetime must remain late-bound"
+    )]
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(super::entities::oauth_client_resource::Entity)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(super::entities::oauth_resource::Entity)
                     .to_owned(),
             )
             .await

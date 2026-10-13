@@ -10,6 +10,66 @@ use alibi_core::{
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
+    async fn list_oauth_client_resources(
+        &self,
+        client_id: &str,
+    ) -> AuthResult<Vec<alibi_core::store::OAuthClientResource>> {
+        let mut sql =
+            model::select_model::<super::entities::oauth_client_resource::Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare(
+            super::entities::oauth_client_resource::Model::TABLE,
+            "client_id",
+            " = ",
+            client_id,
+        );
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
+        self.exec()
+            .fetch_all::<super::entities::oauth_client_resource::Model>(sql)
+            .await?
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect()
+    }
+    async fn create_oauth_resource(
+        &self,
+        data: alibi_core::store::CreateOAuthResource,
+    ) -> AuthResult<alibi_core::store::OAuthResource> {
+        let mut active = ActiveRow::new();
+        active.set(
+            "id",
+            self.generated_id(self.exec(), "oauthResource", "oauth_resource", "id")
+                .await?
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        );
+        active.set("identifier", data.identifier);
+        active.set("metadata", serde_json::to_string(&data.metadata)?);
+        active.set("created_at", data.created_at);
+        active.set("updated_at", data.created_at);
+        model::insert::<super::entities::oauth_resource::Model>(self.exec(), &active)
+            .await?
+            .try_into()
+    }
+    async fn get_oauth_resource(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<alibi_core::store::OAuthResource>> {
+        let mut sql = model::select_model::<super::entities::oauth_resource::Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare(
+            super::entities::oauth_resource::Model::TABLE,
+            "identifier",
+            " = ",
+            identifier,
+        );
+        model::limit_one(&mut sql);
+        self.exec()
+            .fetch_optional::<super::entities::oauth_resource::Model>(sql)
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+    }
     async fn create_oauth_consent(
         &self,
         data: alibi_core::store::CreateOAuthConsent,

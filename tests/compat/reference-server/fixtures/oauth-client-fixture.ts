@@ -39,6 +39,18 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         }),
       ],
     }),
+    "resources-open": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          enforcePerClientResources: false,
+        }),
+      ],
+    }),
     dynamic: betterAuth({
       ...options,
       plugins: [
@@ -145,6 +157,33 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
                 { headers },
               ),
             }),
+      });
+    }
+    if (input.action === "resource-create") {
+      return auth.api.adminCreateOAuthResource({
+        body: input.body,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
+    if (input.action === "resource-row") {
+      const context = await auth.$context;
+      const row = await context.adapter.findOne({
+        model: "oauthResource",
+        where: [{ field: "identifier", value: input.identifier }],
+      });
+      return new Response(JSON.stringify(row), { headers: { "content-type": "application/json" } });
+    }
+    if (input.action === "resource-http") {
+      const response = await auth.handler(
+        new Request(`${base.baseURL}${base.basePath ?? "/api/auth"}/admin/oauth2/resources`, {
+          method: "POST",
+          headers: { ...input.headers, "content-type": "application/json" },
+          body: JSON.stringify(input.body),
+        }),
+      );
+      return new Response(JSON.stringify({ status: response.status }), {
+        headers: { "content-type": "application/json" },
       });
     }
     if (input.action === "consent-delete") {
