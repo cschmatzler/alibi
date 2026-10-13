@@ -52,6 +52,12 @@ pub struct BackupCodeVerified {
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
         definition(
+            "generateBackupCodes",
+            "generateBackupCodes",
+            Some("/two-factor/generate-backup-codes"),
+            HttpMethod::Post,
+        ),
+        definition(
             "verifyBackupCode",
             "verifyBackupCode",
             Some("/two-factor/verify-backup-code"),
@@ -156,6 +162,21 @@ pub(super) fn validate(
             query: call.query().cloned(),
         });
     }
+    if call.operation_id() == "generateBackupCodes" {
+        return Ok(EndpointInput {
+            body: Some(validate_fields(
+                call.body(),
+                "body",
+                &[JsonField::string(
+                    "password",
+                    !config
+                        .backup_allow_passwordless
+                        .unwrap_or(allow_passwordless),
+                )],
+            )?),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "getTOTPURI" {
         return Ok(EndpointInput {
             body: Some(validate_fields(
@@ -245,6 +266,42 @@ fn verification_response(output: alibi_core::AuthResponse) -> AuthResult<Endpoin
 }
 
 impl TwoFactorPlugin {
+    /// Replace the authenticated owner's recovery-code set.
+    #[must_use]
+    pub fn generate_backup_codes_endpoint(
+        input: super::GenerateBackupCodesInput,
+    ) -> ServerEndpoint<BackupCodesOutput> {
+        let mut body = indexmap::IndexMap::new();
+        if let Some(password) = input.password {
+            _ = body.insert("password".into(), JsValue::String(password));
+        }
+        ServerEndpoint::new("two-factor", "generateBackupCodes")
+            .with_body_value(JsValue::Object(body))
+    }
+
+    async fn generate_backup_endpoint_call(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<EndpointResponse> {
+        let (user, _) = Box::pin(crate::helpers::ordinary_session(call, ctx)).await?;
+        match Box::pin(super::generate_backup_codes_core(
+            &call.body_as()?,
+            &user,
+            &self.config,
+            ctx,
+        ))
+        .await
+        {
+            Ok(output) => EndpointResponse::json(&output),
+            Err(BackupOperationError::InvalidGeneration) => Ok(EndpointResponse::error(
+                alibi_core::AuthError::internal("Backup code generation failed"),
+            )
+            .without_error_body()),
+            Err(BackupOperationError::Auth(error)) => Err(error),
+        }
+    }
+
     /// Consume a recovery code for the current owner or pending sign-in challenge.
     #[must_use]
     pub fn verify_backup_code_endpoint(
@@ -463,7 +520,9 @@ impl TwoFactorPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
-        if call.operation_id() == "verifyBackupCode" {
+        if call.operation_id() == "generateBackupCodes" {
+            Box::pin(self.generate_backup_endpoint_call(call, ctx)).await
+        } else if call.operation_id() == "verifyBackupCode" {
             Box::pin(self.verify_backup_endpoint_call(call, ctx)).await
         } else if call.operation_id() == "verifyTwoFactorOTP" {
             Box::pin(self.verify_otp_endpoint_call(call, ctx)).await

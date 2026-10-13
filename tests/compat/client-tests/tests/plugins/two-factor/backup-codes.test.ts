@@ -65,7 +65,7 @@ compatScenario(
     const email = ctx.uniqueEmail("two-factor-generate");
     const password = "password123";
 
-    await client.signUp.email({
+    const created = await client.signUp.email({
       email,
       password,
       name: "Two Factor Generate",
@@ -73,12 +73,69 @@ compatScenario(
 
     const enable = await client.twoFactor.enable({ password });
     const setupCode = await generateCurrentTotp(enrollmentUri(enable.data));
-    await client.twoFactor.verifyTotp({ code: setupCode });
-
-    const generateBackupCodes = await client.twoFactor.generateBackupCodes({ password });
-
+    let ownerCookie = "";
+    await client.twoFactor.verifyTotp({
+      code: setupCode,
+      fetchOptions: {
+        onSuccess({ response }) {
+          ownerCookie = response.headers
+            .getSetCookie()
+            .filter((raw) => Boolean(Cookie.parse(raw)?.value))
+            .map((cookie) => cookie.split(";")[0])
+            .join("; ");
+        },
+      },
+    });
+    async function serverGenerate(body: unknown, cookie = ownerCookie) {
+      const response = await ctx
+        .actor("primary")
+        .fetch(`${ctx.baseURL}/__test/server-api/two-factor-generate-backup`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ body, headers: { cookie } }),
+        });
+      const value = (await response.json()) as any;
+      return response.ok
+        ? { data: value, error: null }
+        : { data: null, error: { ...value, status: response.status } };
+    }
+    const before = await ctx.readUserState({ userId: created.data!.user.id });
+    const rejected = [];
+    for (const [body, cookie, status, code] of [
+      [{}, ownerCookie, 400, "VALIDATION_ERROR"],
+      [{ password: 42 }, ownerCookie, 400, "VALIDATION_ERROR"],
+      [{ password: "incorrect" }, ownerCookie, 400, "INVALID_PASSWORD"],
+      [{ password }, "", 401, "UNAUTHORIZED"],
+    ] as const) {
+      const denied = await serverGenerate(body, cookie);
+      expect(denied.error).toMatchObject({ status, code });
+      expect(await ctx.readUserState({ userId: created.data!.user.id })).toEqual(before);
+      rejected.push(ctx.snapshot(denied));
+    }
+    const generateBackupCodes = await serverGenerate({ password, userId: "untrusted-selector" });
+    expect(generateBackupCodes.error).toBeNull();
+    expect(generateBackupCodes.data.status).toBe(true);
+    expect(generateBackupCodes.data.backupCodes).toHaveLength(10);
+    const view = await ctx.rawRequest({
+      path: `/__test/view-backup-codes?userId=${encodeURIComponent(created.data!.user.id)}`,
+    });
+    expect(view.status).toBe(200);
+    expect((view.body as { backupCodes: string[] }).backupCodes).toEqual(
+      generateBackupCodes.data.backupCodes,
+    );
+    const old = await client.twoFactor.verifyBackupCode({
+      code: (enable.data as { backupCodes: string[] }).backupCodes[0]!,
+    });
+    expect(old.error).toMatchObject({ status: 401, code: "INVALID_BACKUP_CODE" });
+    const used = await client.twoFactor.verifyBackupCode({
+      code: generateBackupCodes.data.backupCodes[0]!,
+    });
+    expect(used.error).toBeNull();
     return {
+      rejected,
       generateBackupCodes: ctx.snapshot(redactBackupCodePayload(generateBackupCodes)),
+      old: ctx.snapshot(old),
+      used: ctx.snapshot(used),
     };
   },
 );

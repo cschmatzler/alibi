@@ -1228,6 +1228,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let auth_for_view_backup_codes = auth.clone();
     let auth_for_password = auth.clone();
 
+    let auth_for_two_factor_generate_backup = auth.clone();
     let auth_for_two_factor_verify_backup = auth.clone();
     let auth_for_two_factor_verify_otp = auth.clone();
     let auth_for_two_factor_send_otp = auth.clone();
@@ -1306,6 +1307,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             async move {
                 let mut endpoint = alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("passkey", "generatePasskeyRegistrationOptions");
                 if let Some(query) = input.get("query") { endpoint = endpoint.with_query(query).unwrap(); }
+                match auth.dispatch_endpoint(endpoint, alibi::endpoint::EndpointOptions { headers: input.get("headers").map(|headers| serde_json::from_value(headers.clone()).unwrap()), ..Default::default() }).await {
+                    Ok(output) => output.into_response().unwrap().into_response(),
+                    Err(error) => {
+                        let mut response = if error.body_absent {alibi::AuthResponse::new(error.error.status_code())} else {error.error.to_auth_response()};
+                        if let Some(body) = error.body { response.body = serde_json::to_vec(&*body).unwrap(); }
+                        if let Some(headers) = error.headers { for (name,value) in headers.iter() { if name.eq_ignore_ascii_case("set-cookie") { response.headers.append(name,value); } else { response.headers.insert(name,value); } } }
+                        response.into_response()
+                    }
+                }
+            }
+        }))
+        .route("/__test/server-api/two-factor-generate-backup", post(move |Json(input): Json<serde_json::Value>| {
+            let auth = auth_for_two_factor_generate_backup.clone();
+            async move {
+                let endpoint = alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("two-factor", "generateBackupCodes").with_body(&input["body"]).unwrap();
                 match auth.dispatch_endpoint(endpoint, alibi::endpoint::EndpointOptions { headers: input.get("headers").map(|headers| serde_json::from_value(headers.clone()).unwrap()), ..Default::default() }).await {
                     Ok(output) => output.into_response().unwrap().into_response(),
                     Err(error) => {
