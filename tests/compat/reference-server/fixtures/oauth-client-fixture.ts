@@ -39,6 +39,13 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         { headers: { "content-type": "application/json" } },
       );
     }
+    if (input.action === "get") {
+      return auth.api.getOAuthClient({
+        query: input.query,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
     return auth.api.createOAuthClient({
       body: input.body,
       ...(input.headers ? { headers: new Headers(input.headers) } : {}),
