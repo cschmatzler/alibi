@@ -80,17 +80,54 @@ pub(super) fn sanitize<S: AuthSchema>(
         .as_deref()
         .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
         .filter(|value| !value.is_null());
-    if saml.is_some() {
-        return Err(AuthError::not_implemented(
-            "SAML provider sanitization is not implemented",
-        ));
-    }
     let base = format!(
         "{}{}",
         ctx.config.base_url.trim_end_matches('/'),
         ctx.config.base_path.trim_end_matches('/')
     );
-    let mut output = json!({"providerId":provider.provider_id,"type":"oidc","issuer":provider.issuer,"domain":provider.domain,"organizationId":provider.organization_id.as_deref().filter(|id|!id.is_empty()),"domainVerified":provider.domain_verified.unwrap_or(false),"spMetadataUrl":format!("{base}/sso/saml2/sp/metadata?providerId={}",component(&provider.provider_id))});
+    let mut output = json!({"providerId":provider.provider_id,"type":if saml.is_some(){"saml"}else{"oidc"},"issuer":provider.issuer,"domain":provider.domain,"organizationId":provider.organization_id.as_deref().filter(|id|!id.is_empty()),"domainVerified":provider.domain_verified.unwrap_or(false),"spMetadataUrl":format!("{base}/sso/saml2/sp/metadata?providerId={}",component(&provider.provider_id))});
+    if let Some(config) = saml {
+        let mut safe = serde_json::Map::new();
+        for field in [
+            "entryPoint",
+            "callbackUrl",
+            "idpInitiatedCallbackUrl",
+            "audience",
+            "wantAssertionsSigned",
+            "authnRequestsSigned",
+            "identifierFormat",
+            "signatureAlgorithm",
+            "digestAlgorithm",
+        ] {
+            if let Some(value) = config.get(field) {
+                _ = safe.insert(field.into(), value.clone());
+            }
+        }
+        if let Some(certs) = config
+            .get("idpMetadata")
+            .and_then(|metadata| metadata.get("cert"))
+            .filter(|cert| !cert.is_null())
+            .or_else(|| config.get("cert"))
+        {
+            let certs = certs
+                .as_array()
+                .map_or_else(|| vec![certs], |certs| certs.iter().collect());
+            let details = certs
+                .into_iter()
+                .map(|cert| {
+                    cert.as_str().map_or_else(
+                        || json!({"error":"Failed to parse certificate"}),
+                        certificate_details,
+                    )
+                })
+                .collect::<Vec<_>>();
+            _ = safe.insert("certificate".into(), json!(details));
+        }
+        let object = output
+            .as_object_mut()
+            .ok_or_else(|| AuthError::internal("SSO provider serialization failed"))?;
+        _ = object.insert("samlConfig".into(), Value::Object(safe));
+    }
     if let Some(config) = provider
         .oidc_config
         .as_deref()
@@ -150,4 +187,56 @@ pub(super) fn validate_query(value: Option<&JsValue>) -> AuthResult<JsValue> {
             true,
         )],
     )
+}
+
+fn certificate_details(pem: &str) -> Value {
+    use base64::Engine as _;
+    use sha2::Digest as _;
+    let parse = || -> Option<Value> {
+        let encoded = if pem.contains("-----BEGIN") {
+            pem.split_once("-----BEGIN CERTIFICATE-----")?
+                .1
+                .split_once("-----END CERTIFICATE-----")?
+                .0
+        } else {
+            pem
+        };
+        let encoded: String = encoded.chars().filter(|ch| !ch.is_whitespace()).collect();
+        let der = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .ok()?;
+        let (_, certificate) = x509_parser::parse_x509_certificate(&der).ok()?;
+        let fingerprint = sha2::Sha256::digest(&der)
+            .iter()
+            .map(|byte| format!("{byte:02X}"))
+            .collect::<Vec<_>>()
+            .join(":");
+        let date = |timestamp| {
+            chrono::DateTime::from_timestamp(timestamp, 0)
+                .map(|time| time.format("%b %e %H:%M:%S %Y GMT").to_string())
+        };
+        let algorithm = match certificate
+            .public_key()
+            .algorithm
+            .algorithm
+            .to_id_string()
+            .as_str()
+        {
+            "1.2.840.113549.1.1.1" => "RSA",
+            "1.2.840.113549.1.1.10" => "RSA-PSS",
+            "1.2.840.10045.2.1" => "EC",
+            "1.2.840.10040.4.1" => "DSA",
+            "1.3.101.112" => "ED25519",
+            "1.3.101.113" => "ED448",
+            "1.3.101.110" => "X25519",
+            "1.3.101.111" => "X448",
+            "1.2.840.113549.1.3.1" | "1.2.840.10046.2.1" => "DH",
+            _ => "UNKNOWN",
+        };
+        Some(json!({"fingerprintSha256":fingerprint,
+            "notBefore":date(certificate.validity().not_before.timestamp())?,
+            "notAfter":date(certificate.validity().not_after.timestamp())?,
+            "publicKeyAlgorithm":algorithm}))
+    };
+    parse().unwrap_or_else(|| json!({"error":"Failed to parse certificate"}))
 }
