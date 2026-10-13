@@ -651,7 +651,6 @@ pub(crate) async fn router(
                         .map(|_| {
                             alibi::AuthRequest::new(alibi::HttpMethod::Get, "/incoming-request")
                         }),
-                    ..Default::default()
                 };
                 match auth.dispatch_endpoint(endpoint, options).await {
                     Ok(output) => {
