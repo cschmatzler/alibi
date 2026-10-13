@@ -27,11 +27,17 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             Some("/device/approve"),
             HttpMethod::Post,
         ),
+        crate::endpoint::definition(
+            "deviceDeny",
+            "deviceDeny",
+            Some("/device/deny"),
+            HttpMethod::Post,
+        ),
     ]
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
-    let body = if call.operation_id() == "deviceApprove" {
+    let body = if matches!(call.operation_id(), "deviceApprove" | "deviceDeny") {
         let body = crate::endpoint::validate_fields(
             call.body(),
             "body",
@@ -78,13 +84,30 @@ impl DeviceAuthorizationPlugin {
         )
     }
 
-    pub(super) async fn approve_endpoint<S: AuthSchema>(
+    /// Deny a pending device grant previously claimed by the caller's session.
+    #[must_use]
+    pub fn device_deny_endpoint(
+        user_code: impl Into<String>,
+    ) -> ServerEndpoint<DeviceActionResponse> {
+        ServerEndpoint::new("device-authorization", "deviceDeny").with_body_value(JsValue::Object(
+            [("userCode".into(), JsValue::String(user_code.into()))]
+                .into_iter()
+                .collect(),
+        ))
+    }
+
+    pub(super) async fn decision_endpoint<S: AuthSchema>(
         &self,
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        let decision = if call.operation_id() == "deviceDeny" {
+            super::DeviceDecision::Deny
+        } else {
+            super::DeviceDecision::Approve
+        };
         endpoint_response(
-            self.decision_core(call, ctx, super::DeviceDecision::Approve, call.body_as()?)
+            self.decision_core(call, ctx, decision, call.body_as()?)
                 .await?,
         )
     }

@@ -311,8 +311,8 @@ alibi_core::impl_auth_plugin! {
         endpoint::validate(call)
     }
     async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
-        if call.operation_id() == "deviceApprove" {
-            self.approve_endpoint(call, ctx).await
+        if matches!(call.operation_id(), "deviceApprove" | "deviceDeny") {
+            self.decision_endpoint(call, ctx).await
         } else if call.operation_id() == "deviceVerify" {
             self.verify_endpoint(call, ctx).await
         } else {
