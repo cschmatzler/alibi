@@ -65,7 +65,7 @@ pub(crate) async fn router(
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
             if input["action"]=="admin-http" {
-                let mut request=alibi::AuthRequest::new(alibi::HttpMethod::Post,admin_path);
+                let mut request=alibi::AuthRequest::new(if input["operation"]=="update" {alibi::HttpMethod::Patch}else{alibi::HttpMethod::Post},if input["operation"]=="update" {admin_path.replace("create-client","update-client")}else{admin_path});
                 request.body=Some(serde_json::to_vec(&input["body"]).unwrap());
                 _=request.headers.insert("content-type".into(),"application/json".into());
                 if let Some(cookie)=input["headers"]["cookie"].as_str(){_=request.headers.insert("cookie".into(),cookie.to_owned());}
@@ -76,7 +76,7 @@ pub(crate) async fn router(
                 let row=auth.store().get_oauth_client(input["clientId"].as_str().unwrap()).await.unwrap();
                 return axum::Json(row.map(|row|serde_json::json!({"clientId":row.client_id,"userId":row.user_id,"clientName":row.metadata.get("client_name"),"redirectUris":row.metadata.get("redirect_uris"),"client_secret":row.client_secret}))).into_response();
             }
-            let (plugin,operation)=if input["action"]=="signup" {("email-password","signUpEmail")}else if input["action"]=="admin-create" {("oauth-provider","adminCreateOAuthClient")}else if input["action"]=="register" {("oauth-provider","registerOAuthClient")}else if input["action"]=="update" {("oauth-provider","updateOAuthClient")}else if input["action"]=="rotate" {("oauth-provider","rotateClientSecret")}else if input["action"]=="delete" {("oauth-provider","deleteOAuthClient")}else if input["action"]=="list" {("oauth-provider","getOAuthClients")}else if input["action"]=="public" {("oauth-provider","getOAuthClientPublic")}else if input["action"]=="get" {("oauth-provider","getOAuthClient")}else{("oauth-provider","createOAuthClient")};
+            let (plugin,operation)=if input["action"]=="signup" {("email-password","signUpEmail")}else if input["action"]=="admin-update" {("oauth-provider","adminUpdateOAuthClient")}else if input["action"]=="admin-create" {("oauth-provider","adminCreateOAuthClient")}else if input["action"]=="register" {("oauth-provider","registerOAuthClient")}else if input["action"]=="update" {("oauth-provider","updateOAuthClient")}else if input["action"]=="rotate" {("oauth-provider","rotateClientSecret")}else if input["action"]=="delete" {("oauth-provider","deleteOAuthClient")}else if input["action"]=="list" {("oauth-provider","getOAuthClients")}else if input["action"]=="public" {("oauth-provider","getOAuthClientPublic")}else if input["action"]=="get" {("oauth-provider","getOAuthClient")}else{("oauth-provider","createOAuthClient")};
             let endpoint=if input["action"]=="get" || input["action"]=="public" {alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(plugin,operation).with_query(&input["query"]).unwrap()} else {alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(plugin,operation).with_body(&input["body"]).unwrap()};
             match auth.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),..Default::default()}).await {
                 Ok(output)=>output.into_response().unwrap().into_response(),
