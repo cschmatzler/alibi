@@ -309,6 +309,16 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
             .try_into()
     }
     async fn delete_oauth_resource(&self, identifier: &str) -> AuthResult<()> {
+        let mut links = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+        links.ident(super::entities::oauth_client_resource::Model::TABLE);
+        links.push(" WHERE ");
+        links.compare(
+            super::entities::oauth_client_resource::Model::TABLE,
+            "resourceId",
+            " = ",
+            identifier,
+        );
+        _ = self.exec().execute(links).await?;
         let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
         sql.ident(super::entities::oauth_resource::Model::TABLE);
         sql.push(" WHERE ");

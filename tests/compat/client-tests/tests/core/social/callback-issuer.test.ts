@@ -69,6 +69,7 @@ compatScenario(
         .setProtectedHeader({ alg: "RS256", kid: "one-tap-local-rs256" })
         .setIssuer(issuer)
         .setAudience("discovery-client")
+        .setIssuedAt()
         .setExpirationTime("5m")
         .sign(key);
       await ctx.rawRequest({

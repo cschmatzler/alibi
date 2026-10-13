@@ -144,7 +144,8 @@ pub(crate) async fn router(
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = config.clone().base_path(&path);
-        let mut field = alibi::field_policy::FieldConfig::new(json!({"type":"json"}));
+        let mut field = alibi::field_policy::FieldConfig::new(json!({"type":"json"}))
+            .default_value(json!({"supportCode":"private-fixture-code"}));
         field.input = false;
         field.returned = false;
         _ = config

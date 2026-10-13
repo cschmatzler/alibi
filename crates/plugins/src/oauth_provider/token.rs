@@ -265,10 +265,7 @@ impl OAuthProviderPlugin {
             .await?;
         let mut response = json!({"access_token":token,"expires_in":3600,"expires_at":expires.timestamp(),"token_type":"Bearer","scope":scope});
         if scopes.contains(&"openid") {
-            match self
-                .issue_id_token(&client, &value, &token, req, ctx)
-                .await?
-            {
+            match Box::pin(self.issue_id_token(&client, &value, &token, req, ctx)).await? {
                 Ok(Some(token)) => {
                     _ = response
                         .as_object_mut()

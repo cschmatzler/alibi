@@ -231,6 +231,11 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
         .try_into()
     }
     async fn delete_oauth_resource(&self, identifier: &str) -> AuthResult<()> {
+        _ = super::entities::oauth_client_resource::Entity::delete_many()
+            .filter(super::entities::oauth_client_resource::Column::ResourceId.eq(identifier))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
         super::entities::oauth_resource::Entity::delete_many()
             .filter(super::entities::oauth_resource::Column::Identifier.eq(identifier))
             .exec(self.scoped_connection())
