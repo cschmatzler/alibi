@@ -24,6 +24,11 @@ pub type SsoProviderUpdateWork =
     dyn Fn(&SsoProvider) -> AuthResult<SsoProviderUpdate> + Send + Sync;
 #[async_trait]
 pub trait SsoProviderStore: Send + Sync {
+    async fn mark_sso_domain_verified(&self, _id: &str, _domain: &str) -> AuthResult<bool> {
+        Err(AuthError::config(
+            "SSO persistence is not supported by this store",
+        ))
+    }
     async fn update_sso_provider(
         &self,
         _id: &str,

@@ -1,4 +1,5 @@
 //! Enterprise single-sign-on provider registration.
+mod domain_confirmation;
 mod domain_verification;
 mod provider_delete;
 mod provider_list;
@@ -20,6 +21,8 @@ use serde_json::{Value, json};
 pub struct SsoConfig {
     pub providers_limit: usize,
     pub domain_verification: bool,
+    /// Override the system DNS servers, for example for an enterprise DNS zone.
+    pub domain_verification_dns_servers: Vec<std::net::SocketAddr>,
     pub domain_verification_token_prefix: String,
     pub default_override_user_info: bool,
     pub redirect_uri: Option<String>,
@@ -29,6 +32,7 @@ impl Default for SsoConfig {
         Self {
             providers_limit: 10,
             domain_verification: false,
+            domain_verification_dns_servers: Vec::new(),
             domain_verification_token_prefix: "better-auth-token".into(),
             default_override_user_info: false,
             redirect_uri: None,
@@ -297,6 +301,7 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
             AuthRoute::post("/sso/update-provider", "updateSSOProvider"),
         ];
         if self.config.domain_verification {
+            routes.push(AuthRoute::post("/sso/verify-domain", "verifyDomain"));
             routes.push(AuthRoute::post(
                 "/sso/request-domain-verification",
                 "requestDomainVerification",
@@ -339,6 +344,12 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         ];
         if self.config.domain_verification {
             endpoints.push(super::endpoint::definition(
+                "verifyDomain",
+                "verifyDomain",
+                Some("/sso/verify-domain"),
+                HttpMethod::Post,
+            ));
+            endpoints.push(super::endpoint::definition(
                 "requestDomainVerification",
                 "requestDomainVerification",
                 Some("/sso/request-domain-verification"),
@@ -360,7 +371,7 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         }
         if matches!(
             call.operation_id(),
-            "deleteSSOProvider" | "requestDomainVerification"
+            "deleteSSOProvider" | "requestDomainVerification" | "verifyDomain"
         ) {
             return Ok(EndpointInput {
                 body: Some(Self::validate_delete(call.body())?),
@@ -389,6 +400,16 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "verifyDomain" {
+            return self
+                .verify_domain(
+                    call.body()
+                        .ok_or_else(|| super::endpoint::validation("Missing body"))?,
+                    call,
+                    ctx,
+                )
+                .await;
+        }
         if call.operation_id() == "requestDomainVerification" {
             return self
                 .request_domain(
@@ -445,6 +466,20 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if self.config.domain_verification
+            && req.path() == "/sso/verify-domain"
+            && *req.method() == HttpMethod::Post
+        {
+            let input = alibi_core::utils::json::parse_value(
+                std::str::from_utf8(req.body.as_deref().unwrap_or_default())
+                    .map_err(|_| super::endpoint::validation("Invalid JSON"))?,
+            )?;
+            return Ok(Some(
+                self.verify_domain(&Self::validate_delete(Some(&input))?, req, ctx)
+                    .await?
+                    .to_response()?,
+            ));
+        }
         if self.config.domain_verification
             && req.path() == "/sso/request-domain-verification"
             && *req.method() == HttpMethod::Post

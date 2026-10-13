@@ -5,18 +5,21 @@ use alibi::plugins::{EmailPasswordPlugin,SessionManagementPlugin,SsoPlugin,SsoCo
 use alibi::seaorm::DatabaseConnection;
 use axum::{Router,Json,routing::post,response::IntoResponse};
 use std::sync::Arc;
-async fn instance(config:&AuthConfig,database:&DatabaseConnection,domain:bool)->AuthResult<Alibi<TestSchema>> {
- AuthBuilder::<TestSchema>::new(config.clone()).store(crate::backend::store::<TestSchema>(config.clone(),database.clone())).plugin(EmailPasswordPlugin::new()).plugin(SessionManagementPlugin::new()).plugin(SsoPlugin::with_config(SsoConfig{domain_verification:domain,..Default::default()})).build().await
+async fn instance(config:&AuthConfig,database:&DatabaseConnection,domain:bool,dns:std::net::SocketAddr)->AuthResult<Alibi<TestSchema>> {
+ AuthBuilder::<TestSchema>::new(config.clone()).store(crate::backend::store::<TestSchema>(config.clone(),database.clone())).plugin(EmailPasswordPlugin::new()).plugin(SessionManagementPlugin::new()).plugin(SsoPlugin::with_config(SsoConfig{domain_verification:domain,domain_verification_dns_servers:vec![dns],..Default::default()})).build().await
 }
 pub(crate) async fn router(config:&AuthConfig,database:DatabaseConnection)->AuthResult<Router> {
- let config=config.clone();
+ let config=config.clone();let dns=super::sso_dns_fixture::start().await;
  let auths=Arc::new(std::collections::HashMap::from([
- ("default",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,false).await?)))),
- ("domain",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,true).await?))))]));
+ ("default",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,false,dns.address).await?)))),
+ ("domain",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,true,dns.address).await?))))]));
  Ok(Router::new().route("/__test/server-api/sso",post(move|Json(input):Json<serde_json::Value>|{
- let mode=if input["mode"]=="domain" {"domain"}else{"default"};let auth=auths.get(mode).unwrap().clone();let config=config.clone();let database=database.clone();async move {
- if input["action"]=="restart"{*auth.lock().await=Arc::new(instance(&config,&database,mode=="domain").await.unwrap());return Json(serde_json::json!({"restarted":true})).into_response();}
+ let mode=if input["mode"]=="domain" {"domain"}else{"default"};let auth=auths.get(mode).unwrap().clone();let dns=dns.clone();let config=config.clone();let database=database.clone();async move {
+ if input["action"]=="restart"{*auth.lock().await=Arc::new(instance(&config,&database,mode=="domain",dns.address).await.unwrap());return Json(serde_json::json!({"restarted":true})).into_response();}
  let auth=auth.lock().await.clone();
+ if input["action"]=="dns-records"{*dns.records.lock().unwrap()=serde_json::from_value(input["records"].clone()).unwrap();return Json(serde_json::json!({"configured":true})).into_response();}
+ if input["action"]=="dns-queries"{return Json(dns.queries.lock().unwrap().clone()).into_response();}
+
  if input["action"]=="row" {
  let row=auth.store().get_sso_provider(input["providerId"].as_str().unwrap()).await.unwrap();
  let mut row=serde_json::to_value(row).unwrap();if mode!="domain" {if let Some(object)=row.as_object_mut(){_=object.remove("domainVerified");}}
@@ -47,7 +50,7 @@ pub(crate) async fn router(config:&AuthConfig,database:DatabaseConnection)->Auth
  let row=auth.store().get_account(input["providerId"].as_str().unwrap(),input["accountId"].as_str().unwrap()).await.unwrap();
  return Json(row.map(|row|serde_json::json!({"id":row.id(),"userId":row.user_id(),"providerId":row.provider_id(),"accountId":row.account_id()}))).into_response();
  }
- let endpoint=if input["action"]=="signup"{alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("email-password","signUpEmail").with_body(&input["body"]).unwrap()}else if input["action"]=="request-domain"{alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("sso","requestDomainVerification").with_body(&input["body"]).unwrap()}else if input["action"]=="update"{alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("sso","updateSSOProvider").with_body(&input["body"]).unwrap()}else if input["action"]=="delete"{alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("sso","deleteSSOProvider").with_body(&input["body"]).unwrap()}else if input["action"]=="list"{alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("sso","listSSOProviders")}else if input["action"]=="get"{alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("sso","getSSOProvider").with_query(&input["query"]).unwrap()}else{SsoPlugin::register_sso_provider_endpoint(&input["body"]).unwrap()};
+ let endpoint=if input["action"]=="signup"{alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("email-password","signUpEmail").with_body(&input["body"]).unwrap()}else if input["action"]=="verify-domain"{alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("sso","verifyDomain").with_body(&input["body"]).unwrap()}else if input["action"]=="request-domain"{alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("sso","requestDomainVerification").with_body(&input["body"]).unwrap()}else if input["action"]=="update"{alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("sso","updateSSOProvider").with_body(&input["body"]).unwrap()}else if input["action"]=="delete"{alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("sso","deleteSSOProvider").with_body(&input["body"]).unwrap()}else if input["action"]=="list"{alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("sso","listSSOProviders")}else if input["action"]=="get"{alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("sso","getSSOProvider").with_query(&input["query"]).unwrap()}else{SsoPlugin::register_sso_provider_endpoint(&input["body"]).unwrap()};
  let result=auth.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),..Default::default()}).await;
  match result {
  Ok(output)=>output.into_response().unwrap().into_response(),

@@ -2,6 +2,8 @@ import { sso } from "@better-auth/sso";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { username } from "better-auth/plugins";
+
+import { ssoDnsFixture } from "./sso-dns-fixture";
 export async function ssoFixture(base: BetterAuthOptions) {
   const options = {
     baseURL: base.baseURL,
@@ -12,6 +14,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
     plugins: [username(), sso()],
   };
   await (await getMigrations(options)).runMigrations();
+  const dns = await ssoDnsFixture();
   const domainOptions = {
     ...options,
     plugins: [username(), sso({ domainVerification: { enabled: true } })],
@@ -26,6 +29,24 @@ export async function ssoFixture(base: BetterAuthOptions) {
     const input = await request.json();
     const mode = input.mode === "domain" ? "domain" : "default";
     const auth = instances.get(mode)!;
+    if (input.action === "dns-records") {
+      dns.setRecords(input.records);
+      return new Response(JSON.stringify({ configured: true }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "dns-queries") {
+      return new Response(JSON.stringify(dns.queries()), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "verify-domain") {
+      return auth.api.verifyDomain({
+        body: input.body,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
     if (input.action === "request-domain") {
       return auth.api.requestDomainVerification({
         body: input.body,

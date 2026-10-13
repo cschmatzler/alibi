@@ -777,6 +777,9 @@ impl<S: AuthSchema> crate::store::OAuthClientStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
+    async fn mark_sso_domain_verified(&self, id: &str, domain: &str) -> AuthResult<bool> {
+        self.inner.mark_sso_domain_verified(id, domain).await
+    }
     async fn update_sso_provider(
         &self,
         id: &str,

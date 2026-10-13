@@ -15,6 +15,19 @@ impl<S: AuthSchema> SsoProviderStore for SeaOrmStore<S>
 where
     S::Account: crate::schema::SeaOrmAccountModel,
 {
+    async fn mark_sso_domain_verified(&self, id: &str, domain: &str) -> AuthResult<bool> {
+        Entity::update_many()
+            .col_expr(
+                Column::DomainVerified,
+                sea_orm::sea_query::Expr::value(true),
+            )
+            .filter(Column::Id.eq(id))
+            .filter(Column::Domain.eq(domain))
+            .exec(self.scoped_connection())
+            .await
+            .map(|result| result.rows_affected > 0)
+            .map_err(map_db_err)
+    }
     async fn update_sso_provider(
         &self,
         id: &str,
