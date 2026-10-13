@@ -580,6 +580,9 @@ impl<S: AuthSchema> WalletAddressStore for PluginStore<S> {
 
 #[async_trait::async_trait]
 impl<S: AuthSchema> crate::store::OAuthClientStore for PluginStore<S> {
+    async fn list_oauth_resources(&self) -> AuthResult<Vec<crate::store::OAuthResource>> {
+        self.inner.list_oauth_resources().await
+    }
     async fn list_oauth_client_resources(
         &self,
         client_id: &str,

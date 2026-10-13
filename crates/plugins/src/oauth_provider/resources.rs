@@ -227,3 +227,26 @@ impl OAuthProviderPlugin {
         Ok(None)
     }
 }
+
+impl OAuthProviderPlugin {
+    /// List the provider's complete resource catalog through its server-only API.
+    #[must_use]
+    pub fn admin_list_oauth_resources_endpoint() -> ServerEndpoint<Value> {
+        ServerEndpoint::new("oauth-provider", "adminListOAuthResources")
+    }
+    pub(super) async fn list_resources<S: AuthSchema>(
+        &self,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        if let Some(response) = Box::pin(self.resource_admission(req, ctx)).await? {
+            return Ok(response);
+        }
+        let rows = ctx.database.list_oauth_resources().await?;
+        let values = rows
+            .into_iter()
+            .map(resource_value)
+            .collect::<AuthResult<Vec<_>>>()?;
+        EndpointResponse::json(&values)
+    }
+}

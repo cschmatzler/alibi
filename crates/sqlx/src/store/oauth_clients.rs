@@ -10,6 +10,17 @@ use alibi_core::{
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
+    async fn list_oauth_resources(&self) -> AuthResult<Vec<alibi_core::store::OAuthResource>> {
+        let mut sql = model::select_model::<super::entities::oauth_resource::Model>(self.exec());
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
+        self.exec()
+            .fetch_all::<super::entities::oauth_resource::Model>(sql)
+            .await?
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect()
+    }
     async fn list_oauth_client_resources(
         &self,
         client_id: &str,
