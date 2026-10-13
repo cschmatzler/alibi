@@ -23,6 +23,14 @@ pub struct CreateOAuthClient {
 }
 #[async_trait]
 pub trait OAuthClientStore: Send + Sync {
+    async fn create_oauth_client_resource(
+        &self,
+        _data: CreateOAuthClientResource,
+    ) -> AuthResult<OAuthClientResource> {
+        Err(AuthError::config(
+            "OAuth resource linkage is not supported by this store",
+        ))
+    }
     async fn delete_oauth_resource(&self, _identifier: &str) -> AuthResult<()> {
         Err(AuthError::config(
             "OAuth resource persistence is not supported by this store",
@@ -173,4 +181,11 @@ pub struct OAuthClientResource {
     pub resource_id: String,
     pub metadata: Value,
     pub created_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CreateOAuthClientResource {
+    pub client_id: String,
+    pub resource_id: String,
+    pub created_at: DateTime<Utc>,
 }

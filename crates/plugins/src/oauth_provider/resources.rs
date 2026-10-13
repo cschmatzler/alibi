@@ -399,3 +399,67 @@ impl OAuthProviderPlugin {
         EndpointResponse::json(&json!({"deleted":true}))
     }
 }
+
+impl OAuthProviderPlugin {
+    /// Grant a client durable membership in a provider resource through the server-only API.
+    pub fn admin_link_client_resource_endpoint(
+        identifier: &str,
+        client_id: &str,
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("oauth-provider", "adminLinkClientResource")
+            .with_params(&json!({"identifier":identifier,"client_id":client_id}))
+    }
+    pub(super) async fn link_resource<S: AuthSchema>(
+        &self,
+        params: Option<&JsValue>,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let identifier = decode_parameter(params, "identifier")?;
+        let client_id = decode_parameter(params, "client_id")?;
+        if let Some(response) = Box::pin(self.resource_admission(req, ctx)).await? {
+            return Ok(response);
+        }
+        if ctx
+            .database
+            .get_oauth_resource(&identifier)
+            .await?
+            .is_none()
+        {
+            return super::clients::status_protocol_error(
+                404,
+                "not_found",
+                &format!("resource {identifier} not found"),
+            );
+        }
+        if ctx.database.get_oauth_client(&client_id).await?.is_none() {
+            return super::clients::status_protocol_error(
+                404,
+                "not_found",
+                &format!("client {client_id} not found"),
+            );
+        }
+        let now = chrono::DateTime::from_timestamp_millis(chrono::Utc::now().timestamp_millis())
+            .ok_or_else(|| AuthError::internal("Invalid resource link timestamp"))?;
+        match ctx
+            .database
+            .create_oauth_client_resource(alibi_core::store::CreateOAuthClientResource {
+                client_id,
+                resource_id: identifier,
+                created_at: now,
+            })
+            .await
+        {
+            Ok(_) => EndpointResponse::json(&json!({"linked":true})),
+            Err(error)
+                if {
+                    let message = error.to_string().to_ascii_lowercase();
+                    message.contains("unique") || message.contains("duplicate")
+                } =>
+            {
+                EndpointResponse::json(&json!({"linked":true,"alreadyLinked":true}))
+            }
+            Err(error) => Err(error),
+        }
+    }
+}

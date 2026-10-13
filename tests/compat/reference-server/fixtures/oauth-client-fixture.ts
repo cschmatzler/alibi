@@ -159,12 +159,43 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             }),
       });
     }
-    if (input.action === "resource-delete") {
-      return auth.api.adminDeleteOAuthResource({
+    if (input.action === "resource-link") {
+      return auth.api.adminLinkClientResource({
         params: input.params,
         headers: new Headers(input.headers ?? {}),
         asResponse: true,
       });
+    }
+    if (input.action === "resource-links") {
+      const context = await auth.$context;
+      const rows = await context.adapter.findMany({
+        model: "oauthClientResource",
+        where: [{ field: "clientId", value: input.clientId }],
+      });
+      return new Response(JSON.stringify(rows), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "resource-delete") {
+      const call = () =>
+        auth.api.adminDeleteOAuthResource({
+          params: input.params,
+          headers: new Headers(input.headers ?? {}),
+          asResponse: true,
+        });
+      if (input.foreignKeys === true) {
+        const database = base.database as import("bun:sqlite").Database;
+        const prior = database
+          .query<{ foreign_keys: number }, []>("PRAGMA foreign_keys")
+          .get()!.foreign_keys;
+        database.exec("PRAGMA foreign_keys=ON");
+        try {
+          return await call();
+        } finally {
+          database.exec(`PRAGMA foreign_keys=${prior}`);
+        }
+      }
+      return call();
     }
     if (input.action === "resource-update") {
       return auth.api.adminUpdateOAuthResource({
@@ -205,7 +236,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     if (input.action === "resource-http") {
       const response = await auth.handler(
         new Request(
-          `${base.baseURL}${base.basePath ?? "/api/auth"}/admin/oauth2/resources${["read", "update", "delete"].includes(input.operation) ? `/${encodeURIComponent(input.identifier)}` : ""}`,
+          `${base.baseURL}${base.basePath ?? "/api/auth"}/admin/oauth2/resources${["read", "update", "delete", "link"].includes(input.operation) ? `/${encodeURIComponent(input.identifier)}${input.operation === "link" ? `/clients/${encodeURIComponent(input.clientId)}` : ""}` : ""}`,
           {
             method:
               input.operation === "delete"
