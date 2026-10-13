@@ -67,6 +67,25 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         { headers: { "content-type": "application/json" } },
       );
     }
+    if (input.action === "admin-http") {
+      const response = await auth.handler(
+        new Request(`${base.baseURL}${base.basePath ?? "/api/auth"}/admin/oauth2/create-client`, {
+          method: "POST",
+          headers: { ...input.headers, "content-type": "application/json" },
+          body: JSON.stringify(input.body),
+        }),
+      );
+      return new Response(JSON.stringify({ status: response.status }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "admin-create") {
+      return auth.api.adminCreateOAuthClient({
+        body: input.body,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
     if (input.action === "register") {
       return auth.api.registerOAuthClient({
         body: input.body,

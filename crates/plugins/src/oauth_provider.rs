@@ -239,6 +239,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
             crate::endpoint::definition(
+                "adminCreateOAuthClient",
+                "adminCreateOAuthClient",
+                Some("/admin/oauth2/create-client"),
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
                 "registerOAuthClient",
                 "registerOAuthClient",
                 Some("/oauth2/register"),
@@ -306,7 +312,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
         Ok(EndpointInput {
-            body: if call.operation_id() == "updateOAuthClient" {
+            body: if call.operation_id() == "adminCreateOAuthClient" {
+                Some(clients::validate_admin_create(call.body())?)
+            } else if call.operation_id() == "updateOAuthClient" {
                 Some(clients::validate_update(call.body())?)
             } else if matches!(
                 call.operation_id(),
@@ -333,6 +341,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "adminCreateOAuthClient" {
+            return Box::pin(self.admin_create_client(call.body_as()?, call, ctx)).await;
+        }
         if call.operation_id() == "registerOAuthClient" {
             return Box::pin(self.register_client(call.body(), call, ctx)).await;
         }
