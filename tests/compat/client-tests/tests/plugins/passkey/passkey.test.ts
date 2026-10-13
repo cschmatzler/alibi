@@ -140,13 +140,46 @@ compatScenario(
     });
     expect(attackerSignup.error).toBeNull();
 
-    const forbiddenDelete = await ctx.rawRequest({
-      actor: "attacker",
+    async function serverDelete(body: unknown, cookie?: string) {
+      const response = await owner.fetch(`${ctx.baseURL}/__test/server-api/passkey-delete`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ body, ...(cookie ? { headers: { cookie } } : {}) }),
+      });
+      expect(response.headers.get("set-cookie")).toBeNull();
+      const text = await response.text();
+      return { status: response.status, body: text ? JSON.parse(text) : null, absent: text === "" };
+    }
+    const forbiddenDelete = await serverDelete({ id: passkey.id }, attackerCookie);
+    expect(forbiddenDelete.status).toBe(401);
+    expect(forbiddenDelete.absent).toBe(true);
+    const malformedDelete = await serverDelete({ id: 42 }, ownerCookie);
+    expect(malformedDelete.status).toBe(400);
+    expect(malformedDelete.body.code).toBe("VALIDATION_ERROR");
+    const guestDelete = await serverDelete({ id: passkey.id });
+    expect(guestDelete.status).toBe(401);
+    expect(guestDelete.body.code).toBe("UNAUTHORIZED");
+    const missingDelete = await serverDelete({ id: "missing-passkey" }, ownerCookie);
+    expect(missingDelete.status).toBe(404);
+    expect(missingDelete.body.code).toBe("PASSKEY_NOT_FOUND");
+    const emptyDelete = await serverDelete({ id: "" }, ownerCookie);
+    expect(emptyDelete.status).toBe(400);
+    expect(emptyDelete.body.message).toBe("Missing required parameter: id");
+    const emptyHttpDelete = await ctx.rawRequest({
+      actor: "owner",
       path: "/api/auth/passkey/delete-passkey",
       method: "POST",
-      json: { id: passkey.id },
+      json: { id: "" },
     });
-    expect(forbiddenDelete.status).toBe(401);
+    expect(emptyHttpDelete.status).toBe(400);
+    expect(emptyHttpDelete.body).toEqual(emptyDelete.body);
+    const retained = await ctx.rawRequest({
+      actor: "owner",
+      path: "/api/auth/passkey/list-user-passkeys",
+    });
+    expect(retained.body).toMatchObject([
+      { id: passkey.id, userId: user.id, credentialID: passkey.credentialID, name: "Laptop" },
+    ]);
 
     const forbiddenUpdate = await ctx.rawRequest({
       actor: "attacker",
@@ -221,12 +254,23 @@ compatScenario(
     expect(authOptions.status).toBe(200);
 
     const assertion = authenticator.authenticate(authOptions.body, ctx.baseURL);
-    const authentication = await ctx.rawRequest({
-      actor: "owner",
-      path: "/api/auth/passkey/verify-authentication",
-      method: "POST",
-      json: { response: assertion },
-    });
+    const authenticationResponse = await owner.fetch(
+      `${ctx.baseURL}/api/auth/passkey/verify-authentication`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ response: assertion }),
+      },
+    );
+    ownerCookie = authenticationResponse.headers
+      .getSetCookie()
+      .map((raw) => raw.split(";")[0])
+      .join("; ");
+    const authentication = {
+      status: authenticationResponse.status,
+      location: authenticationResponse.headers.get("location"),
+      body: await authenticationResponse.json(),
+    };
     expect(authentication.status).toBe(200);
 
     const session = await owner.client.getSession();
@@ -251,13 +295,15 @@ compatScenario(
     });
     expect(replay.status).toBeGreaterThanOrEqual(400);
 
-    const deleted = await ctx.rawRequest({
-      actor: "owner",
-      path: "/api/auth/passkey/delete-passkey",
-      method: "POST",
-      json: { id: passkey.id },
-    });
+    const deleted = await serverDelete(
+      { id: passkey.id, userId: attackerSignup.data!.user.id },
+      ownerCookie,
+    );
     expect(deleted.status).toBe(200);
+    expect(deleted.body).toEqual({ status: true });
+    const deleteReplay = await serverDelete({ id: passkey.id }, ownerCookie);
+    expect(deleteReplay.status).toBe(404);
+    expect(deleteReplay.body.code).toBe("PASSKEY_NOT_FOUND");
 
     const empty = await ctx.rawRequest({
       actor: "owner",

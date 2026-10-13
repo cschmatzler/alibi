@@ -1,5 +1,6 @@
 mod authentication;
 mod endpoint;
+pub use endpoint::PasskeyDeleted;
 mod options;
 pub use options::{
     PasskeyAuthenticatorSelection, PasskeyExtensions, PasskeyExtensionsResolver,
@@ -374,8 +375,11 @@ alibi_core::impl_auth_plugin! {
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
         endpoint::definitions()
     }
+    fn validate_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointInput> {
+        endpoint::validate(call)
+    }
     async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
-        self.list_endpoint(call, ctx).await
+        if call.operation_id() == "deletePasskey" { self.delete_endpoint(call, ctx).await } else { self.list_endpoint(call, ctx).await }
     }
     route_openapi_metadata!(S);
  }

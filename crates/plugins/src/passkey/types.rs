@@ -93,7 +93,6 @@ impl Validate for VerifyAuthenticationRequest {
 #[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DeletePasskeyRequest {
-    #[validate(length(min = 1))]
     pub(super) id: String,
 }
 
