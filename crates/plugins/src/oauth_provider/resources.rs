@@ -364,3 +364,38 @@ impl OAuthProviderPlugin {
         EndpointResponse::json(&resource_value(row)?)
     }
 }
+
+impl OAuthProviderPlugin {
+    /// Remove durable provider resource policy through the server-only administration API.
+    pub fn admin_delete_oauth_resource_endpoint(
+        identifier: &str,
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("oauth-provider", "adminDeleteOAuthResource")
+            .with_params(&json!({"identifier":identifier}))
+    }
+    pub(super) async fn delete_resource<S: AuthSchema>(
+        &self,
+        params: Option<&JsValue>,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let identifier = decode_parameter(params, "identifier")?;
+        if let Some(response) = Box::pin(self.resource_admission(req, ctx)).await? {
+            return Ok(response);
+        }
+        if ctx
+            .database
+            .get_oauth_resource(&identifier)
+            .await?
+            .is_none()
+        {
+            return super::clients::status_protocol_error(
+                404,
+                "not_found",
+                &format!("resource {identifier} not found"),
+            );
+        }
+        ctx.database.delete_oauth_resource(&identifier).await?;
+        EndpointResponse::json(&json!({"deleted":true}))
+    }
+}

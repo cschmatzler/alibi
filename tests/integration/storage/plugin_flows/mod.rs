@@ -385,3 +385,5 @@ mod oauth_resource_list;
 mod oauth_resource_read;
 
 mod oauth_resource_update;
+
+mod oauth_resource_delete;
