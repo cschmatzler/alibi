@@ -1,12 +1,26 @@
 //! Generated service-provider metadata publishes the actual endpoint and policy.
 use super::*;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
-use alibi::plugins::SsoPlugin;
-backend_tests!(sso_sp_metadata_publishes_registered_authority_and_acs);
+use alibi::plugins::{SsoConfig, SsoPlugin};
+backend_tests!(
+    sso_sp_metadata_publishes_registered_authority_and_acs,
+    sso_sp_metadata_publishes_both_logout_bindings_when_enabled
+);
 async fn sso_sp_metadata_publishes_registered_authority_and_acs<B: Backend>(db: Db) -> TestResult {
+    metadata_flow::<B>(db, false).await
+}
+async fn sso_sp_metadata_publishes_both_logout_bindings_when_enabled<B: Backend>(
+    db: Db,
+) -> TestResult {
+    metadata_flow::<B>(db, true).await
+}
+async fn metadata_flow<B: Backend>(db: Db, slo: bool) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
-        .plugin(SsoPlugin::new())
+        .plugin(SsoPlugin::with_config(SsoConfig {
+            saml_enable_single_logout: slo,
+            ..Default::default()
+        }))
         .build()
         .await?;
     let owner = signup(&auth, "saml-metadata-owner@example.test").await;
@@ -40,6 +54,7 @@ async fn sso_sp_metadata_publishes_registered_authority_and_acs<B: Backend>(db: 
     let mut reader = quick_xml::Reader::from_str(xml);
     let mut elements = std::collections::HashMap::new();
     let mut texts = Vec::new();
+    let mut logout_services = Vec::new();
     loop {
         match reader.read_event()? {
             quick_xml::events::Event::Start(event) | quick_xml::events::Event::Empty(event) => {
@@ -59,6 +74,10 @@ async fn sso_sp_metadata_publishes_registered_authority_and_acs<B: Backend>(db: 
                         ))
                     })
                     .collect::<Result<std::collections::HashMap<_, _>, _>>()?;
+                if name == "SingleLogoutService" {
+                    logout_services.push(attributes);
+                    continue;
+                }
                 assert!(
                     elements.insert(name, attributes).is_none(),
                     "unexpected duplicate metadata element"
@@ -100,7 +119,21 @@ async fn sso_sp_metadata_publishes_registered_authority_and_acs<B: Backend>(db: 
         texts,
         vec!["urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"]
     );
-    assert!(!elements.contains_key("SingleLogoutService"));
+    if slo {
+        assert_eq!(logout_services.len(), 2);
+        for (service, binding) in logout_services.iter().zip(["HTTP-POST", "HTTP-Redirect"]) {
+            assert_eq!(
+                service["Binding"],
+                format!("urn:oasis:names:tc:SAML:2.0:bindings:{binding}")
+            );
+            assert_eq!(
+                service["Location"],
+                format!("{ORIGIN}/api/auth/sso/saml2/sp/slo/metadata-provider")
+            );
+        }
+    } else {
+        assert!(logout_services.is_empty());
+    }
     assert!(!elements.contains_key("KeyDescriptor"));
     assert!(!xml.contains("BEGIN CERTIFICATE"));
     let missing = Box::pin(
