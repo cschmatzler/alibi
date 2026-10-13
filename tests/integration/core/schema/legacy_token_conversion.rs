@@ -151,12 +151,18 @@ async fn exercise<S: AuthSchema>(
             &[],
         )
         .await?;
+    let mut owner_input = CreateUser::new().with_email("owner@conversion190.test");
+    owner_input.id = Some("conversion-owner".into());
     let owner = store
-        .create_user(CreateUser::new().with_email("owner@conversion190.test"))
+        .create_user(owner_input)
         .await?;
     let other = store
         .create_user(CreateUser::new().with_email("other@conversion190.test"))
         .await?;
+    // Case-only owner changes must still reference a real user under the source FK.
+    let mut case_owner = CreateUser::new().with_email("case-owner@conversion190.test");
+    case_owner.id = Some(owner.id().to_uppercase());
+    _ = store.create_user(case_owner).await?;
     let account = store
         .create_account(CreateAccount {
             user_id: owner.id().into_owned(),
@@ -253,15 +259,15 @@ async fn exercise<S: AuthSchema>(
         ("refreshToken", false),
         ("accessToken", false),
         ("idToken", false),
-        ("user_id", false),
-        ("provider_id", false),
-        ("account_id", false),
+        ("userId", false),
+        ("providerId", false),
+        ("accountId", false),
         ("refreshToken", true),
         ("accessToken", true),
         ("idToken", true),
-        ("provider_id", true),
-        ("account_id", true),
-        ("user_id", true),
+        ("providerId", true),
+        ("accountId", true),
+        ("userId", true),
     ] {
         _ = db.execute("UPDATE \"account\" SET \"accessToken\"=$1, \"refreshToken\"=$2, \"idToken\"=$3, \"userId\"=$4, \"providerId\"=$5, \"accountId\"=$6 WHERE id=$7", &[
             input.observed.tokens.access_token.as_deref().ok_or("access")?, input.observed.tokens.refresh_token.as_deref().ok_or("refresh")?, input.observed.tokens.id_token.as_deref().ok_or("id")?, &input.observed.user_id, &input.observed.provider_id, &input.observed.account_id, &input.observed.id]).await?;
@@ -281,12 +287,12 @@ async fn exercise<S: AuthSchema>(
                     .as_deref()
                     .ok_or("refresh")?,
                 "idToken" => input.observed.tokens.id_token.as_deref().ok_or("id")?,
-                "provider_id" => &input.observed.provider_id,
-                "account_id" => &input.observed.account_id,
+                "providerId" => &input.observed.provider_id,
+                "accountId" => &input.observed.account_id,
                 _ => &input.observed.user_id,
             }
             .to_uppercase()
-        } else if change == "user_id" {
+        } else if change == "userId" {
             other.id().into_owned()
         } else {
             "concurrent-change".into()
