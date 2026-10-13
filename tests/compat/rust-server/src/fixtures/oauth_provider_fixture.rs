@@ -42,7 +42,10 @@ pub(crate) async fn router(
         );
         instances.insert(mode.to_owned(), auth);
     }
-    let client_auth = Arc::new(
+    let mut client_instances=HashMap::new();
+    for mode in ["default","dynamic","public"] {
+        let provider=OAuthProviderConfig {allow_dynamic_client_registration:mode!="default",allow_unauthenticated_client_registration:mode=="public",..Default::default()};
+        let auth = Arc::new(
         AuthBuilder::<TestSchema>::new(config.clone())
             .store(crate::backend::store::<TestSchema>(
                 config.clone(),
@@ -51,17 +54,19 @@ pub(crate) async fn router(
             .plugin(alibi::plugins::EmailPasswordPlugin::new())
             .plugin(alibi::plugins::SessionManagementPlugin::new())
             .plugin(JwtPlugin::new())
-            .plugin(OAuthProviderPlugin::new())
+            .plugin(OAuthProviderPlugin::with_config(provider))
             .build()
             .await?,
     );
+        client_instances.insert(mode.to_owned(),auth);
+    }
     Ok(Router::new().route("/__test/server-api/oauth-provider-clients",axum::routing::post(move |axum::Json(input):axum::Json<serde_json::Value>| {
-        let auth=client_auth.clone();async move {
+        let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
             if input["action"]=="row" {
                 let row=auth.store().get_oauth_client(input["clientId"].as_str().unwrap()).await.unwrap();
                 return axum::Json(row.map(|row|serde_json::json!({"clientId":row.client_id,"userId":row.user_id,"clientName":row.metadata.get("client_name"),"redirectUris":row.metadata.get("redirect_uris"),"client_secret":row.client_secret}))).into_response();
             }
-            let (plugin,operation)=if input["action"]=="signup" {("email-password","signUpEmail")}else if input["action"]=="update" {("oauth-provider","updateOAuthClient")}else if input["action"]=="rotate" {("oauth-provider","rotateClientSecret")}else if input["action"]=="delete" {("oauth-provider","deleteOAuthClient")}else if input["action"]=="list" {("oauth-provider","getOAuthClients")}else if input["action"]=="public" {("oauth-provider","getOAuthClientPublic")}else if input["action"]=="get" {("oauth-provider","getOAuthClient")}else{("oauth-provider","createOAuthClient")};
+            let (plugin,operation)=if input["action"]=="signup" {("email-password","signUpEmail")}else if input["action"]=="register" {("oauth-provider","registerOAuthClient")}else if input["action"]=="update" {("oauth-provider","updateOAuthClient")}else if input["action"]=="rotate" {("oauth-provider","rotateClientSecret")}else if input["action"]=="delete" {("oauth-provider","deleteOAuthClient")}else if input["action"]=="list" {("oauth-provider","getOAuthClients")}else if input["action"]=="public" {("oauth-provider","getOAuthClientPublic")}else if input["action"]=="get" {("oauth-provider","getOAuthClient")}else{("oauth-provider","createOAuthClient")};
             let endpoint=if input["action"]=="get" || input["action"]=="public" {alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(plugin,operation).with_query(&input["query"]).unwrap()} else {alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(plugin,operation).with_body(&input["body"]).unwrap()};
             match auth.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),..Default::default()}).await {
                 Ok(output)=>output.into_response().unwrap().into_response(),
