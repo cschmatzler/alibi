@@ -30,7 +30,7 @@ const oauthTables = new Set(
     .map(([, table]) => table.modelName),
 );
 for (const dialect of ["sqlite", "postgres"]) {
-  const groups = { auth: [], oauth: [], rate: [] };
+  const groups = { auth: [], oauth: [], rate: [], sso: [] };
   for (const statement of probe(dialect)
     .split(";")
     .map((sql) => sql.trim())
@@ -40,14 +40,21 @@ for (const dialect of ["sqlite", "postgres"]) {
     );
     if (!match) throw new Error(`Unexpected upstream migration statement: ${statement}`);
     const table = match[1] ?? match[2];
-    groups[table === "rateLimit" ? "rate" : oauthTables.has(table) ? "oauth" : "auth"].push(
-      `${statement};`,
-    );
+    groups[
+      table === "ssoProvider"
+        ? "sso"
+        : table === "rateLimit"
+          ? "rate"
+          : oauthTables.has(table)
+            ? "oauth"
+            : "auth"
+    ].push(`${statement};`);
   }
   for (const [group, suffix] of [
     ["auth", ""],
     ["oauth", "_oauth_clients"],
     ["rate", "_rate_limit"],
+    ["sso", "_sso"],
   ]) {
     await Bun.write(
       new URL(`crates/schema-registry/schema/${dialect}${suffix}.sql`, root),
@@ -55,7 +62,7 @@ for (const dialect of ["sqlite", "postgres"]) {
     );
   }
   const oracle = JSON.parse(probe(dialect, true));
-  if (oracle.length !== 24) throw new Error(`Expected 24 ${dialect} tables`);
+  if (oracle.length !== 25) throw new Error(`Expected 25 ${dialect} tables`);
   await Bun.write(
     new URL(`tests/fixtures/schema/${dialect}-${snapshot.version}.json`, root),
     `${JSON.stringify(oracle, null, 2)}\n`,

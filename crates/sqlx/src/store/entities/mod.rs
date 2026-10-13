@@ -25,3 +25,5 @@ pub mod oauth_client_resource;
 pub mod oauth_consent;
 pub mod oauth_refresh_token;
 pub mod oauth_resource;
+
+pub mod sso_provider;

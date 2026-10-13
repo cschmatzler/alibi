@@ -1989,6 +1989,93 @@
     ]
   },
   {
+    "table": "ssoProvider",
+    "columns": [
+      {
+        "name": "domain",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "domainVerified",
+        "type": "boolean",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "issuer",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "oidcConfig",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "organizationId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "providerId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "samlConfig",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "userId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "ssoProvider_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "ssoProvider_providerId_key",
+        "unique": true,
+        "columns": [
+          "providerId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON DELETE CASCADE"
+    ]
+  },
+  {
     "table": "team",
     "columns": [
       {

@@ -28,7 +28,7 @@ async fn all_tables_match_pinned_typescript_defaults<B: Backend>(db: Db) -> Test
             .ok_or("missing schema snapshot")?,
     )?;
     let expected: serde_json::Value = serde_json::from_str(oracle)?;
-    assert_eq!(actual.as_array().map(Vec::len), Some(24));
+    assert_eq!(actual.as_array().map(Vec::len), Some(25));
     assert_eq!(
         actual, expected,
         "table/column names, types, nullability, defaults, primary keys, indexes and foreign keys must match TypeScript"

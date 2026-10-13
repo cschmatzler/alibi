@@ -2,6 +2,7 @@ import { apiKey } from "@better-auth/api-key";
 import { getAuthTables } from "@better-auth/core/db";
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { passkey } from "@better-auth/passkey";
+import { sso } from "@better-auth/sso";
 import {
   admin,
   anonymous,
@@ -15,6 +16,7 @@ import {
   siwe,
 } from "better-auth/plugins";
 export const plugins = [
+  sso({ domainVerification: { enabled: true } }),
   admin(),
   anonymous(),
   phoneNumber(),

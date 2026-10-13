@@ -519,3 +519,5 @@ impl alibi::store::OAuthClientStore for ApplicationStore {
             .await
     }
 }
+
+impl alibi::store::SsoProviderStore for ApplicationStore {}

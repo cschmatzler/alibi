@@ -646,6 +646,27 @@ static PLUGINS: &[PluginSchema] = &[
         ],
     },
     PluginSchema {
+        name: "sso",
+        user_fields: &[],
+        session_fields: &[],
+        extra_entities: &[ExtraEntitySchema {
+            mod_name: "sso_provider",
+            table_name: "ssoProvider",
+            role: None,
+            fields: &[
+                pk!("id", "String"),
+                f!("issuer", "String"),
+                f!("domain", "String"),
+                f_col!("provider_id", "String", "providerId"),
+                f_col!("user_id", "String", "userId"),
+                f_col!("organization_id", "Option<String>", "organizationId"),
+                f_col!("oidc_config", "Option<String>", "oidcConfig"),
+                f_col!("saml_config", "Option<String>", "samlConfig"),
+                f_col!("domain_verified", "Option<bool>", "domainVerified"),
+            ],
+        }],
+    },
+    PluginSchema {
         name: "rate-limit",
         user_fields: &[],
         session_fields: &[],
@@ -707,3 +728,6 @@ pub const SQLITE_OAUTH_SCHEMA: &str = include_str!("../schema/sqlite_oauth_clien
 pub const POSTGRES_OAUTH_SCHEMA: &str = include_str!("../schema/postgres_oauth_clients.sql");
 pub const SQLITE_RATE_LIMIT_SCHEMA: &str = include_str!("../schema/sqlite_rate_limit.sql");
 pub const POSTGRES_RATE_LIMIT_SCHEMA: &str = include_str!("../schema/postgres_rate_limit.sql");
+
+pub const SQLITE_SSO_SCHEMA: &str = include_str!("../schema/sqlite_sso.sql");
+pub const POSTGRES_SSO_SCHEMA: &str = include_str!("../schema/postgres_sso.sql");

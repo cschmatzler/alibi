@@ -10,6 +10,7 @@ impl MigratorTrait for AuthMigrator {
         vec![
             Box::new(AuthSchemaMigration),
             Box::new(OAuthClientsMigration),
+            Box::new(SsoMigration),
         ]
     }
     fn migration_table_name() -> DynIden {
@@ -25,6 +26,12 @@ struct AuthSchemaMigration;
 impl MigrationName for AuthSchemaMigration {
     fn name(&self) -> &'static str {
         "m20261013_000001_typescript_auth_schema"
+    }
+}
+struct SsoMigration;
+impl MigrationName for SsoMigration {
+    fn name(&self) -> &'static str {
+        "m20261013_000003_typescript_sso_schema"
     }
 }
 struct OAuthClientsMigration;
@@ -102,6 +109,11 @@ migration!(
     alibi_schema_registry::POSTGRES_OAUTH_SCHEMA
 );
 
+migration!(
+    SsoMigration,
+    alibi_schema_registry::SQLITE_SSO_SCHEMA,
+    alibi_schema_registry::POSTGRES_SSO_SCHEMA
+);
 // LCOV_EXCL_START
 #[cfg(test)]
 mod tests {
