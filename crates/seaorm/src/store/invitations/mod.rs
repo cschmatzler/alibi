@@ -129,7 +129,10 @@ where
             let session = <S::Session as SeaOrmSessionModel>::Entity::find()
                 .filter(S::Session::token_column().eq(session_token))
                 .filter(S::Session::user_id_column().eq(S::Session::parse_user_id(user_id)?))
-                .filter(S::Session::active_column().eq(true))
+                .filter(
+                    sea_orm::Condition::all()
+                        .add_option(S::Session::active_column().map(|column| column.eq(true))),
+                )
                 .lock_exclusive()
                 .one(&transaction)
                 .await

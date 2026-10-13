@@ -1,5 +1,6 @@
 //! Application-owned UTC wall-clock schemas must preserve PostgreSQL wire types.
-//! The same store lifecycle also runs over aware models and SQLite.
+//! The same store lifecycle also runs over aware models and SQLite, using
+//! Better Auth core session columns without a legacy active flag.
 
 #![allow(
     unreachable_pub,
@@ -68,7 +69,6 @@ macro_rules! auth_models {
             pub updated_at: $date,
             pub ip_address: Option<String>,
             pub user_agent: Option<String>,
-            pub active: bool,
         });
         auth_model!($backend, account, "account", "accounts", {
             pub account_id: String,
@@ -199,7 +199,7 @@ async fn install(db: &Db, naive: bool) -> TestResult {
             "CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT, name TEXT, email_verified BOOLEAN NOT NULL, image TEXT, banned BOOLEAN, ban_reason TEXT, ban_expires {date}, created_at {date} NOT NULL, updated_at {date} NOT NULL)"
         ),
         format!(
-            "CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token TEXT NOT NULL, expires_at {date} NOT NULL, created_at {date} NOT NULL, updated_at {date} NOT NULL, ip_address TEXT, user_agent TEXT, active BOOLEAN NOT NULL)"
+            "CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token TEXT NOT NULL, expires_at {date} NOT NULL, created_at {date} NOT NULL, updated_at {date} NOT NULL, ip_address TEXT, user_agent TEXT)"
         ),
         format!(
             "CREATE TABLE accounts (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, provider_id TEXT NOT NULL, user_id TEXT NOT NULL, access_token TEXT, refresh_token TEXT, id_token TEXT, access_token_expires_at {date}, refresh_token_expires_at {date}, scope TEXT, password TEXT, created_at {date} NOT NULL, updated_at {date} NOT NULL)"
@@ -360,6 +360,15 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
         })
         .await?;
     let session_id = session.id().into_owned();
+    assert!(session.active());
+    assert_eq!(store.get_user_sessions(&user.id()).await?.len(), 1);
+    assert_eq!(
+        store
+            .get_sessions_by_tokens(&["synthetic-session".into()])
+            .await?
+            .len(),
+        1
+    );
     assert_eq!(session.expires_at(), expires);
     assert!(session.created_at() >= now && session.updated_at() >= now);
     assert_eq!(

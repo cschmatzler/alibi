@@ -74,7 +74,6 @@ pub struct SessionModel {
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub ip_address: Option<String>,
     pub user_agent: Option<String>,
-    pub active: bool,
 }
 ```
 
@@ -112,3 +111,5 @@ The function must return a unique `String` and runs only when no explicit id is 
 3. Add the unique indexes on `users.email` and `sessions.token` if they are missing ([Database](/concepts/database/#migrations)).
 4. Generate plugin tables with `alibi generate --plugins …` and review the DDL against yours.
 5. Keep application migrations in charge of the schema; do not call `run_app_migrations` against production data.
+
+Session models may omit `active`, matching Better Auth’s core session schema. Session validity uses `expires_at`; revocation that preserves a row updates its expiry. If you declare an `active: bool` field, the adapters also filter inactive rows and remove them during expired-session cleanup.

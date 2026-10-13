@@ -197,6 +197,11 @@ pub(crate) fn session_impl(
     let seaorm_root = &roots.seaorm;
     let core_root = &roots.core;
     let has = |name: &str| codegen::has_field(fields, name);
+    let active_column = if has("active") {
+        quote! { Some(Column::Active) }
+    } else {
+        quote! { None }
+    };
     let new_active = new_active(EntityRole::Session, fields, roots);
     let additional = additional_fields(model_fields, roots);
     let set = set_field(roots);
@@ -277,7 +282,7 @@ pub(crate) fn session_impl(
             fn id_column() -> Self::Column { Column::Id }
             fn token_column() -> Self::Column { Column::Token }
             fn user_id_column() -> Self::Column { Column::UserId }
-            fn active_column() -> Self::Column { Column::Active }
+            fn active_column() -> Option<Self::Column> { #active_column }
             fn expires_at_column() -> Self::Column { Column::ExpiresAt }
             fn created_at_column() -> Self::Column { Column::CreatedAt }
             fn parse_id(id: &str) -> #core_root::AuthResult<Self::Id> {

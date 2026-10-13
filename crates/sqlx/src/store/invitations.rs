@@ -174,8 +174,10 @@ where
                 " = ",
                 S::Session::parse_user_id(user_id)?,
             );
-            session.push(" AND ");
-            session.compare(session_table, S::Session::active_column(), " = ", true);
+            if let Some(column) = S::Session::active_column() {
+                session.push(" AND ");
+                session.compare(session_table, column, " = ", true);
+            }
             model::limit_one(&mut session);
             lock_exclusive(&mut session);
             let session = exec

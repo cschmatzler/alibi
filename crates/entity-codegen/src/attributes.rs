@@ -115,6 +115,8 @@ pub fn validate_core_fields(
 ) -> syn::Result<()> {
     if let Some(missing) = registry::core_field_names(role)
         .iter()
+        // Keep bundled/generated schemas backward compatible while accepting Better Auth tables.
+        .filter(|required| role != EntityRole::Session || **required != "active")
         .find(|required| !has_field(fields, required))
     {
         return Err(syn::Error::new_spanned(

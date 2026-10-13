@@ -175,7 +175,10 @@ pub trait SeaOrmSessionModel:
 
     fn user_id_column() -> Self::Column;
 
-    fn active_column() -> Self::Column;
+    /// Optional legacy flag. Schemas without it use session expiry for validity.
+    fn active_column() -> Option<Self::Column> {
+        None
+    }
 
     fn expires_at_column() -> Self::Column;
 
