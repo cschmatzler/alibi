@@ -25,3 +25,7 @@ pub mod oauth_consent;
 pub mod oauth_resource;
 
 pub mod oauth_client_resource;
+
+pub mod oauth_access_token;
+
+pub mod oauth_refresh_token;

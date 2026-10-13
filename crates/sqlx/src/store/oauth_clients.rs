@@ -10,6 +10,126 @@ use alibi_core::{
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
+    async fn create_oauth_token(
+        &self,
+        kind: alibi_core::store::OAuthTokenKind,
+        data: alibi_core::store::CreateOAuthToken,
+    ) -> AuthResult<alibi_core::store::OAuthToken> {
+        match kind {
+            alibi_core::store::OAuthTokenKind::Access => {
+                let mut active = ActiveRow::new();
+                active.set(
+                    "id",
+                    self.generated_id(self.exec(), "oauthAccessToken", "oauth_access_token", "id")
+                        .await?
+                        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                );
+                active.set("token", data.token);
+                active.set("client_id", data.client_id);
+                active.set("user_id", data.user_id);
+                active.set("session_id", data.session_id);
+                active.set("authorization_code_id", data.authorization_code_id);
+                active.set("created_at", data.created_at);
+                active.set("expires_at", data.expires_at);
+                active.set("metadata", serde_json::to_string(&data.metadata)?);
+                model::insert::<super::entities::oauth_access_token::Model>(self.exec(), &active)
+                    .await?
+                    .try_into()
+            }
+            alibi_core::store::OAuthTokenKind::Refresh => {
+                let mut active = ActiveRow::new();
+                active.set(
+                    "id",
+                    self.generated_id(
+                        self.exec(),
+                        "oauthRefreshToken",
+                        "oauth_refresh_token",
+                        "id",
+                    )
+                    .await?
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                );
+                active.set("token", data.token);
+                active.set("client_id", data.client_id);
+                active.set("user_id", data.user_id);
+                active.set("session_id", data.session_id);
+                active.set("authorization_code_id", data.authorization_code_id);
+                active.set("created_at", data.created_at);
+                active.set("expires_at", data.expires_at);
+                active.set("metadata", serde_json::to_string(&data.metadata)?);
+                model::insert::<super::entities::oauth_refresh_token::Model>(self.exec(), &active)
+                    .await?
+                    .try_into()
+            }
+        }
+    }
+    async fn get_oauth_token(
+        &self,
+        kind: alibi_core::store::OAuthTokenKind,
+        token: &str,
+    ) -> AuthResult<Option<alibi_core::store::OAuthToken>> {
+        match kind {
+            alibi_core::store::OAuthTokenKind::Access => {
+                let mut sql =
+                    model::select_model::<super::entities::oauth_access_token::Model>(self.exec());
+                sql.push(" WHERE ");
+                sql.compare(
+                    super::entities::oauth_access_token::Model::TABLE,
+                    "token",
+                    " = ",
+                    token,
+                );
+                self.exec()
+                    .fetch_optional::<super::entities::oauth_access_token::Model>(sql)
+                    .await?
+                    .map(TryInto::try_into)
+                    .transpose()
+            }
+            alibi_core::store::OAuthTokenKind::Refresh => {
+                let mut sql =
+                    model::select_model::<super::entities::oauth_refresh_token::Model>(self.exec());
+                sql.push(" WHERE ");
+                sql.compare(
+                    super::entities::oauth_refresh_token::Model::TABLE,
+                    "token",
+                    " = ",
+                    token,
+                );
+                self.exec()
+                    .fetch_optional::<super::entities::oauth_refresh_token::Model>(sql)
+                    .await?
+                    .map(TryInto::try_into)
+                    .transpose()
+            }
+        }
+    }
+    async fn delete_oauth_tokens_for_code(&self, code: &str) -> AuthResult<()> {
+        {
+            let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+            sql.ident(super::entities::oauth_access_token::Model::TABLE);
+            sql.push(" WHERE ");
+            sql.compare(
+                super::entities::oauth_access_token::Model::TABLE,
+                "authorization_code_id",
+                " = ",
+                code,
+            );
+            _ = self.exec().execute(sql).await?;
+        }
+        {
+            let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+            sql.ident(super::entities::oauth_refresh_token::Model::TABLE);
+            sql.push(" WHERE ");
+            sql.compare(
+                super::entities::oauth_refresh_token::Model::TABLE,
+                "authorization_code_id",
+                " = ",
+                code,
+            );
+            _ = self.exec().execute(sql).await?;
+        }
+        Ok(())
+    }
     async fn delete_oauth_client_resource(
         &self,
         client_id: &str,

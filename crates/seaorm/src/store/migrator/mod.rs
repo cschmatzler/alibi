@@ -23,6 +23,7 @@ impl MigratorTrait for AuthMigrator {
             Box::new(OAuthClientsMigration),
             Box::new(OAuthConsentsMigration),
             Box::new(OAuthResourcesMigration),
+            Box::new(OAuthTokensMigration),
         ]
     }
 
@@ -1088,6 +1089,206 @@ impl MigrationTrait for OAuthResourcesMigration {
             .drop_table(
                 Table::drop()
                     .table(super::entities::oauth_resource::Entity)
+                    .to_owned(),
+            )
+            .await
+    }
+}
+
+struct OAuthTokensMigration;
+impl MigrationName for OAuthTokensMigration {
+    fn name(&self) -> &'static str {
+        "m20261013_000005_oauth_tokens"
+    }
+}
+#[async_trait::async_trait]
+impl MigrationTrait for OAuthTokensMigration {
+    fn use_transaction(&self) -> Option<bool> {
+        Some(true)
+    }
+    #[expect(
+        elided_lifetimes_in_paths,
+        reason = "SeaORM migration manager lifetime must remain late-bound"
+    )]
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        {
+            use super::entities::oauth_access_token::{Column, Entity};
+            manager
+                .create_table(
+                    Table::create()
+                        .table(Entity)
+                        .col(primary_key(Column::Id))
+                        .col(required(Column::Token))
+                        .col(required(Column::ClientId))
+                        .col(ColumnDef::new(Column::UserId).string())
+                        .col(ColumnDef::new(Column::SessionId).string())
+                        .col(ColumnDef::new(Column::AuthorizationCodeId).string())
+                        .col(required(Column::Metadata))
+                        .col(timestamp(Column::CreatedAt))
+                        .col(timestamp(Column::ExpiresAt))
+                        .foreign_key(
+                            ForeignKey::create()
+                                .from(Entity, Column::ClientId)
+                                .to(
+                                    super::entities::oauth_client::Entity,
+                                    super::entities::oauth_client::Column::ClientId,
+                                )
+                                .on_delete(ForeignKeyAction::Cascade),
+                        )
+                        .foreign_key(
+                            ForeignKey::create()
+                                .from(Entity, Column::UserId)
+                                .to(user::Entity, user::Column::Id)
+                                .on_delete(ForeignKeyAction::Cascade),
+                        )
+                        .foreign_key(
+                            ForeignKey::create()
+                                .from(Entity, Column::SessionId)
+                                .to(session::Entity, session::Column::Id)
+                                .on_delete(ForeignKeyAction::SetNull),
+                        )
+                        .to_owned(),
+                )
+                .await?;
+            create_index(
+                manager,
+                "idx_oauth_access_token_token",
+                Entity,
+                &["token"],
+                true,
+            )
+            .await?;
+            create_index(
+                manager,
+                "idx_oauth_access_token_authorization_code_id",
+                Entity,
+                &["authorization_code_id"],
+                false,
+            )
+            .await?;
+            create_index(
+                manager,
+                "idx_oauth_access_token_client_id",
+                Entity,
+                &["client_id"],
+                false,
+            )
+            .await?;
+            create_index(
+                manager,
+                "idx_oauth_access_token_user_id",
+                Entity,
+                &["user_id"],
+                false,
+            )
+            .await?;
+            create_index(
+                manager,
+                "idx_oauth_access_token_session_id",
+                Entity,
+                &["session_id"],
+                false,
+            )
+            .await?;
+        }
+        {
+            use super::entities::oauth_refresh_token::{Column, Entity};
+            manager
+                .create_table(
+                    Table::create()
+                        .table(Entity)
+                        .col(primary_key(Column::Id))
+                        .col(required(Column::Token))
+                        .col(required(Column::ClientId))
+                        .col(ColumnDef::new(Column::UserId).string())
+                        .col(ColumnDef::new(Column::SessionId).string())
+                        .col(ColumnDef::new(Column::AuthorizationCodeId).string())
+                        .col(required(Column::Metadata))
+                        .col(timestamp(Column::CreatedAt))
+                        .col(timestamp(Column::ExpiresAt))
+                        .foreign_key(
+                            ForeignKey::create()
+                                .from(Entity, Column::ClientId)
+                                .to(
+                                    super::entities::oauth_client::Entity,
+                                    super::entities::oauth_client::Column::ClientId,
+                                )
+                                .on_delete(ForeignKeyAction::Cascade),
+                        )
+                        .foreign_key(
+                            ForeignKey::create()
+                                .from(Entity, Column::UserId)
+                                .to(user::Entity, user::Column::Id)
+                                .on_delete(ForeignKeyAction::Cascade),
+                        )
+                        .foreign_key(
+                            ForeignKey::create()
+                                .from(Entity, Column::SessionId)
+                                .to(session::Entity, session::Column::Id)
+                                .on_delete(ForeignKeyAction::SetNull),
+                        )
+                        .to_owned(),
+                )
+                .await?;
+            create_index(
+                manager,
+                "idx_oauth_refresh_token_token",
+                Entity,
+                &["token"],
+                true,
+            )
+            .await?;
+            create_index(
+                manager,
+                "idx_oauth_refresh_token_authorization_code_id",
+                Entity,
+                &["authorization_code_id"],
+                false,
+            )
+            .await?;
+            create_index(
+                manager,
+                "idx_oauth_refresh_token_client_id",
+                Entity,
+                &["client_id"],
+                false,
+            )
+            .await?;
+            create_index(
+                manager,
+                "idx_oauth_refresh_token_user_id",
+                Entity,
+                &["user_id"],
+                false,
+            )
+            .await?;
+            create_index(
+                manager,
+                "idx_oauth_refresh_token_session_id",
+                Entity,
+                &["session_id"],
+                false,
+            )
+            .await?;
+        }
+        Ok(())
+    }
+    #[expect(
+        elided_lifetimes_in_paths,
+        reason = "SeaORM migration manager lifetime must remain late-bound"
+    )]
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(super::entities::oauth_access_token::Entity)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(super::entities::oauth_refresh_token::Entity)
                     .to_owned(),
             )
             .await

@@ -21,8 +21,61 @@ pub struct CreateOAuthClient {
     pub metadata: Value,
     pub created_at: DateTime<Utc>,
 }
+/// Durable token kind; refresh and opaque access tokens have distinct lifecycles.
+#[derive(Clone, Copy, Debug)]
+pub enum OAuthTokenKind {
+    Access,
+    Refresh,
+}
+#[derive(Clone, Debug)]
+pub struct OAuthToken {
+    pub id: String,
+    pub token: String,
+    pub client_id: String,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub authorization_code_id: Option<String>,
+    pub metadata: Value,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+}
+#[derive(Clone, Debug)]
+pub struct CreateOAuthToken {
+    pub token: String,
+    pub client_id: String,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub authorization_code_id: Option<String>,
+    pub metadata: Value,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+}
 #[async_trait]
 pub trait OAuthClientStore: Send + Sync {
+    async fn create_oauth_token(
+        &self,
+        _kind: OAuthTokenKind,
+        _data: CreateOAuthToken,
+    ) -> AuthResult<OAuthToken> {
+        Err(AuthError::config(
+            "OAuth token persistence is not supported by this store",
+        ))
+    }
+    async fn get_oauth_token(
+        &self,
+        _kind: OAuthTokenKind,
+        _token: &str,
+    ) -> AuthResult<Option<OAuthToken>> {
+        Err(AuthError::config(
+            "OAuth token persistence is not supported by this store",
+        ))
+    }
+    async fn delete_oauth_tokens_for_code(&self, _code: &str) -> AuthResult<()> {
+        Err(AuthError::config(
+            "OAuth token persistence is not supported by this store",
+        ))
+    }
+
     async fn delete_oauth_client_resource(
         &self,
         _client_id: &str,

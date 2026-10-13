@@ -14,6 +14,93 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
+    async fn create_oauth_token(
+        &self,
+        kind: alibi_core::store::OAuthTokenKind,
+        data: alibi_core::store::CreateOAuthToken,
+    ) -> AuthResult<alibi_core::store::OAuthToken> {
+        match kind {
+            alibi_core::store::OAuthTokenKind::Access => {
+                super::entities::oauth_access_token::ActiveModel {
+                    id: Set(self
+                        .generated_id(&self.db, "oauthAccessToken", "oauth_access_token", "id")
+                        .await?
+                        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
+                    token: Set(data.token),
+                    client_id: Set(data.client_id),
+                    user_id: Set(data.user_id),
+                    session_id: Set(data.session_id),
+                    authorization_code_id: Set(data.authorization_code_id),
+                    created_at: Set(data.created_at),
+                    expires_at: Set(data.expires_at),
+                    metadata: Set(serde_json::to_string(&data.metadata)?),
+                }
+                .insert(self.scoped_connection())
+                .await
+                .map_err(map_db_err)?
+                .try_into()
+            }
+            alibi_core::store::OAuthTokenKind::Refresh => {
+                super::entities::oauth_refresh_token::ActiveModel {
+                    id: Set(self
+                        .generated_id(&self.db, "oauthRefreshToken", "oauth_refresh_token", "id")
+                        .await?
+                        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
+                    token: Set(data.token),
+                    client_id: Set(data.client_id),
+                    user_id: Set(data.user_id),
+                    session_id: Set(data.session_id),
+                    authorization_code_id: Set(data.authorization_code_id),
+                    created_at: Set(data.created_at),
+                    expires_at: Set(data.expires_at),
+                    metadata: Set(serde_json::to_string(&data.metadata)?),
+                }
+                .insert(self.scoped_connection())
+                .await
+                .map_err(map_db_err)?
+                .try_into()
+            }
+        }
+    }
+    async fn get_oauth_token(
+        &self,
+        kind: alibi_core::store::OAuthTokenKind,
+        token: &str,
+    ) -> AuthResult<Option<alibi_core::store::OAuthToken>> {
+        match kind {
+            alibi_core::store::OAuthTokenKind::Access => {
+                super::entities::oauth_access_token::Entity::find()
+                    .filter(super::entities::oauth_access_token::Column::Token.eq(token))
+                    .one(self.scoped_connection())
+                    .await
+                    .map_err(map_db_err)?
+                    .map(TryInto::try_into)
+                    .transpose()
+            }
+            alibi_core::store::OAuthTokenKind::Refresh => {
+                super::entities::oauth_refresh_token::Entity::find()
+                    .filter(super::entities::oauth_refresh_token::Column::Token.eq(token))
+                    .one(self.scoped_connection())
+                    .await
+                    .map_err(map_db_err)?
+                    .map(TryInto::try_into)
+                    .transpose()
+            }
+        }
+    }
+    async fn delete_oauth_tokens_for_code(&self, code: &str) -> AuthResult<()> {
+        _ = super::entities::oauth_access_token::Entity::delete_many()
+            .filter(super::entities::oauth_access_token::Column::AuthorizationCodeId.eq(code))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        _ = super::entities::oauth_refresh_token::Entity::delete_many()
+            .filter(super::entities::oauth_refresh_token::Column::AuthorizationCodeId.eq(code))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        Ok(())
+    }
     async fn delete_oauth_client_resource(
         &self,
         client_id: &str,
