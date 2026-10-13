@@ -2,6 +2,7 @@
 mod authorization;
 mod clients;
 mod consent;
+mod resources;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
@@ -21,6 +22,7 @@ pub struct OAuthProviderConfig {
     pub consent_page: String,
     pub code_expires_in: f64,
     pub allow_public_client_prelogin: bool,
+    pub enforce_per_client_resources: bool,
     pub advertised_scopes: Option<Vec<String>>,
     pub advertised_claims: Option<Vec<String>>,
     pub grant_types: Vec<String>,
@@ -37,6 +39,7 @@ impl Default for OAuthProviderConfig {
             consent_page: "/consent".into(),
             code_expires_in: 600.0,
             allow_public_client_prelogin: false,
+            enforce_per_client_resources: true,
             scopes: ["openid", "profile", "email", "offline_access"]
                 .map(str::to_owned)
                 .into(),
@@ -260,6 +263,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
             crate::endpoint::definition(
+                "adminCreateOAuthResource",
+                "adminCreateOAuthResource",
+                Some("/admin/oauth2/resources"),
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
                 "deleteOAuthConsent",
                 "deleteOAuthConsent",
                 Some("/oauth2/delete-consent"),
@@ -381,7 +390,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
         Ok(EndpointInput {
-            body: if call.operation_id() == "deleteOAuthConsent" {
+            body: if call.operation_id() == "adminCreateOAuthResource" {
+                Some(resources::validate_create(call.body())?)
+            } else if call.operation_id() == "deleteOAuthConsent" {
                 Some(consent::validate_id(call.body(), "body")?)
             } else if call.operation_id() == "updateOAuthConsent" {
                 Some(consent::validate_update(call.body())?)
@@ -422,6 +433,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "adminCreateOAuthResource" {
+            return Box::pin(self.create_resource(call.body_as()?, call, ctx)).await;
+        }
         if call.operation_id() == "deleteOAuthConsent" {
             return Box::pin(self.delete_consent(call.body_as()?, call, ctx)).await;
         }
