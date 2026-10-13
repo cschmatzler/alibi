@@ -181,21 +181,48 @@ compatScenario(
       { id: passkey.id, userId: user.id, credentialID: passkey.credentialID, name: "Laptop" },
     ]);
 
-    const forbiddenUpdate = await ctx.rawRequest({
-      actor: "attacker",
-      path: "/api/auth/passkey/update-passkey",
-      method: "POST",
-      json: { id: passkey.id, name: "Hijacked" },
-    });
+    async function serverUpdate(body: unknown, cookie?: string) {
+      const response = await owner.fetch(`${ctx.baseURL}/__test/server-api/passkey-update`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ body, ...(cookie ? { headers: { cookie } } : {}) }),
+      });
+      expect(response.headers.get("set-cookie")).toBeNull();
+      return { status: response.status, body: (await response.json()) as any };
+    }
+    for (const [input, cookie, status, code] of [
+      [{ id: passkey.id, name: 42 }, ownerCookie, 400, "VALIDATION_ERROR"],
+      [{ id: passkey.id, name: " \uFEFF\u00A0\u2028\t " }, ownerCookie, 400, "VALIDATION_ERROR"],
+      [{ id: passkey.id, name: "Renamed" }, undefined, 401, "UNAUTHORIZED"],
+      [{ id: "missing-passkey", name: "Renamed" }, ownerCookie, 404, "PASSKEY_NOT_FOUND"],
+      [{ id: "", name: "Renamed" }, ownerCookie, 400, undefined],
+    ] as const) {
+      const result = await serverUpdate(input, cookie);
+      expect(result.status).toBe(status);
+      expect(result.body.code).toBe(code);
+    }
+    const forbiddenUpdate = await serverUpdate(
+      { id: passkey.id, name: "Hijacked" },
+      attackerCookie,
+    );
     expect(forbiddenUpdate.status).toBe(401);
+    expect(forbiddenUpdate.body.code).toBe("YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY");
 
-    const renamed = await ctx.rawRequest({
-      actor: "owner",
-      path: "/api/auth/passkey/update-passkey",
-      method: "POST",
-      json: { id: passkey.id, name: " \uFEFF\u00A0Renamed\u2028\t " },
-    });
+    const renamed = await serverUpdate(
+      {
+        id: passkey.id,
+        name: " \uFEFF\u00A0Renamed\u2028\t ",
+        userId: attackerSignup.data!.user.id,
+      },
+      ownerCookie,
+    );
     expect(renamed.status).toBe(200);
+    expect(renamed.body.passkey).toMatchObject({
+      id: passkey.id,
+      userId: user.id,
+      credentialID: passkey.credentialID,
+      name: "Renamed",
+    });
 
     async function serverList(cookie?: string) {
       const response = await owner.fetch(`${ctx.baseURL}/__test/server-api/passkey-list`, {

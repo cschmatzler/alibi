@@ -99,7 +99,6 @@ pub(crate) struct DeletePasskeyRequest {
 #[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct UpdatePasskeyRequest {
-    #[validate(length(min = 1))]
     pub(super) id: String,
     #[validate(custom(function = "validate_trimmed_name"))]
     pub(super) name: String,

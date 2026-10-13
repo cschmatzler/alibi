@@ -336,6 +336,96 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         .get_passkey_by_credential_id(&URL_SAFE_NO_PAD.encode(&key.id))
         .await?
         .unwrap();
+    let before_update = db
+        .tables(&["users", "accounts", "sessions", "passkeys"])
+        .await?;
+    for (input, cookie, status, code) in [
+        (
+            json!({"id":registered.id,"name":42}),
+            Some(owner.as_str()),
+            400,
+            Some("VALIDATION_ERROR"),
+        ),
+        (
+            json!({"id":registered.id,"name":" \u{feff}\u{a0}\u{2028}\t "}),
+            Some(owner.as_str()),
+            400,
+            Some("VALIDATION_ERROR"),
+        ),
+        (
+            json!({"id":registered.id,"name":"Renamed"}),
+            None,
+            401,
+            Some("UNAUTHORIZED"),
+        ),
+        (
+            json!({"id":registered.id,"name":"Hijacked"}),
+            Some(foreign.as_str()),
+            401,
+            Some("YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY"),
+        ),
+        (
+            json!({"id":"missing-passkey","name":"Renamed"}),
+            Some(owner.as_str()),
+            404,
+            Some("PASSKEY_NOT_FOUND"),
+        ),
+        (
+            json!({"id":"","name":"Renamed"}),
+            Some(owner.as_str()),
+            400,
+            None,
+        ),
+    ] {
+        let error = Box::pin(
+            auth.dispatch_endpoint(
+                alibi::endpoint::ServerEndpoint::<Value>::new("passkey", "updatePasskey")
+                    .with_body(&input)?,
+                alibi::endpoint::EndpointOptions {
+                    headers: cookie
+                        .map(|cookie| [("cookie".into(), cookie.to_owned())].into_iter().collect()),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.error.status_code(), status);
+        assert_eq!(error.error.error_payload().1.as_deref(), code);
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "passkeys"])
+                .await?,
+            before_update
+        );
+    }
+    let renamed = Box::pin(auth.dispatch_endpoint(
+        PasskeyPlugin::update_passkey_endpoint(&registered.id, " \u{feff}\u{a0}Renamed\u{2028}\t ")
+            .with_body(&json!({"id":registered.id,"name":" \u{feff}\u{a0}Renamed\u{2028}\t ","userId":"foreign-selector"}))?,
+        alibi::endpoint::EndpointOptions { headers: Some([("cookie".to_owned(), owner.clone())].into_iter().collect()), ..Default::default() }
+    )).await?;
+    assert_eq!(renamed.decode()?.passkey["name"], "Renamed");
+    assert_eq!(renamed.decode()?.passkey["id"], registered.id);
+    let after_update = db
+        .tables(&["users", "accounts", "sessions", "passkeys"])
+        .await?;
+    assert_eq!(&after_update[..3], &before_update[..3]);
+    let mut expected: Vec<Value> = serde_json::from_str(&before_update[3])?;
+    for row in &mut expected {
+        if row["id"] == registered.id {
+            row["name"] = json!("Renamed");
+            let actual: Vec<Value> = serde_json::from_str(&after_update[3])?;
+            let updated = actual
+                .iter()
+                .find(|value| value["id"] == registered.id)
+                .unwrap();
+            assert!(updated["updated_at"].as_str().unwrap() >= row["updated_at"].as_str().unwrap());
+            row["updated_at"] = updated["updated_at"].clone();
+        }
+    }
+    assert_eq!(
+        serde_json::from_str::<Vec<Value>>(&after_update[3])?,
+        expected
+    );
     let before_delete = db
         .tables(&["users", "accounts", "sessions", "passkeys"])
         .await?;
