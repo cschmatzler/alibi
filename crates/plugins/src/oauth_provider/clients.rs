@@ -675,3 +675,64 @@ fn safe_uri_issues(uri: &str) -> Vec<&'static str> {
     }
     issues
 }
+
+#[derive(Debug, Deserialize)]
+pub(super) struct ReadClientInput {
+    pub client_id: String,
+}
+pub(super) fn validate_read(query: Option<&JsValue>) -> AuthResult<JsValue> {
+    crate::endpoint::validate_fields(
+        query,
+        "query",
+        &[crate::authentication_helpers::JsonField::string(
+            "client_id",
+            true,
+        )],
+    )
+}
+impl OAuthProviderPlugin {
+    /// Read an owned client without exposing its stored credential.
+    pub fn get_oauth_client_endpoint(client_id: &str) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("oauth-provider", "getOAuthClient")
+            .with_query(&json!({"client_id":client_id}))
+    }
+    pub(super) async fn read_client<S: AuthSchema>(
+        &self,
+        input: ReadClientInput,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
+        let Some(client) = ctx.database.get_oauth_client(&input.client_id).await? else {
+            return Ok(EndpointResponse::error(AuthError::Api {
+                status: 404,
+                code: None,
+                message: String::new(),
+            })
+            .with_error_body(alibi_core::utils::json::parse_value(
+                r#"{"error":"not_found","error_description":"client not found"}"#,
+            )?));
+        };
+        if client.user_id.as_deref() != Some(user.id().as_ref()) {
+            return Ok(EndpointResponse::error(AuthError::Api {
+                status: 401,
+                code: None,
+                message: String::new(),
+            })
+            .without_error_body()
+            .with_header("Content-Type", "application/json"));
+        }
+        let mut output: serde_json::Map<String, Value> = serde_json::from_value(client.metadata)?;
+        _ = output.insert("client_id".into(), json!(client.client_id));
+        _ = output.insert("user_id".into(), json!(client.user_id));
+        _ = output.insert(
+            "client_id_issued_at".into(),
+            json!(client.created_at.timestamp()),
+        );
+        if client.client_secret.is_some() {
+            _ = output.insert("client_secret_expires_at".into(), json!(0));
+        }
+        _ = output.remove("client_secret");
+        EndpointResponse::json(&Value::Object(output))
+    }
+}
