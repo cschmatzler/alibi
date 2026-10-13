@@ -2,6 +2,7 @@
 mod provider_delete;
 mod provider_list;
 mod provider_read;
+mod provider_update;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
@@ -283,10 +284,17 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
             AuthRoute::get("/sso/get-provider", "getSSOProvider"),
             AuthRoute::get("/sso/providers", "listSSOProviders"),
             AuthRoute::post("/sso/delete-provider", "deleteSSOProvider"),
+            AuthRoute::post("/sso/update-provider", "updateSSOProvider"),
         ]
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            super::endpoint::definition(
+                "updateSSOProvider",
+                "updateSSOProvider",
+                Some("/sso/update-provider"),
+                HttpMethod::Post,
+            ),
             super::endpoint::definition(
                 "deleteSSOProvider",
                 "deleteSSOProvider",
@@ -318,6 +326,12 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
+        if call.operation_id() == "updateSSOProvider" {
+            return Ok(EndpointInput {
+                body: Some(provider_update::validate_update(call.body())?),
+                query: call.query().cloned(),
+            });
+        }
         if call.operation_id() == "deleteSSOProvider" {
             return Ok(EndpointInput {
                 body: Some(Self::validate_delete(call.body())?),
@@ -346,6 +360,16 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "updateSSOProvider" {
+            return self
+                .update(
+                    call.body()
+                        .ok_or_else(|| super::endpoint::validation("Missing body"))?,
+                    call,
+                    ctx,
+                )
+                .await;
+        }
         if call.operation_id() == "deleteSSOProvider" {
             return self
                 .delete(
@@ -382,6 +406,17 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/sso/update-provider" && *req.method() == HttpMethod::Post {
+            let input = alibi_core::utils::json::parse_value(
+                std::str::from_utf8(req.body.as_deref().unwrap_or_default())
+                    .map_err(|_| super::endpoint::validation("Invalid JSON"))?,
+            )?;
+            return Ok(Some(
+                self.update(&provider_update::validate_update(Some(&input))?, req, ctx)
+                    .await?
+                    .to_response()?,
+            ));
+        }
         if req.path() == "/sso/delete-provider" && *req.method() == HttpMethod::Post {
             let input = alibi_core::utils::json::parse_value(
                 std::str::from_utf8(req.body.as_deref().unwrap_or_default())

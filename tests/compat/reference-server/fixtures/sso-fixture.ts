@@ -65,6 +65,13 @@ export async function ssoFixture(base: BetterAuthOptions) {
         { headers: { "content-type": "application/json" } },
       );
     }
+    if (input.action === "update") {
+      return auth.api.updateSSOProvider({
+        body: input.body,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
     if (input.action === "delete") {
       return auth.api.deleteSSOProvider({
         body: input.body,

@@ -27,6 +27,15 @@ impl SsoPlugin {
             .get("providerId")
             .and_then(JsValue::as_str)
             .ok_or_else(|| super::super::endpoint::validation("Invalid providerId"))?;
+        self.authorize_provider_id(provider_id, user.id().as_ref(), ctx)
+            .await
+    }
+    pub(super) async fn authorize_provider_id<S: AuthSchema>(
+        &self,
+        provider_id: &str,
+        user_id: &str,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<SsoProvider> {
         let provider = ctx
             .database
             .get_sso_provider(provider_id)
@@ -42,7 +51,7 @@ impl SsoPlugin {
                 .is_some()
             {
                 ctx.database
-                    .get_member(organization_id, user.id().as_ref())
+                    .get_member(organization_id, user_id)
                     .await?
                     .is_some_and(|member| {
                         member
@@ -51,10 +60,10 @@ impl SsoPlugin {
                             .any(|role| matches!(role.trim(), "owner" | "admin"))
                     })
             } else {
-                provider.user_id.as_deref() == Some(user.id().as_ref())
+                provider.user_id.as_deref() == Some(user_id)
             }
         } else {
-            provider.user_id.as_deref() == Some(user.id().as_ref())
+            provider.user_id.as_deref() == Some(user_id)
         };
         if !allowed {
             return Err(api(403, "You don't have access to this provider"));

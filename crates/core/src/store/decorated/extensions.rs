@@ -777,6 +777,16 @@ impl<S: AuthSchema> crate::store::OAuthClientStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
+    async fn update_sso_provider(
+        &self,
+        id: &str,
+        provider_id: &str,
+        prepare: &crate::store::SsoProviderUpdateWork,
+    ) -> AuthResult<Option<crate::store::SsoProvider>> {
+        self.inner
+            .update_sso_provider(id, provider_id, prepare)
+            .await
+    }
     async fn delete_sso_provider_and_accounts(
         &self,
         id: &str,
