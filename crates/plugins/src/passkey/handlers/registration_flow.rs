@@ -209,7 +209,7 @@ pub(in crate::passkey) async fn generate_register_options_core(
 )]
 pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSchema>(
     body: &VerifyRegistrationRequest,
-    req: &alibi_core::AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     authenticated_owner: Option<&str>,
     config: &PasskeyConfig,
     ctx: &AuthContext<S>,
@@ -442,14 +442,15 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
     let client_data = response.clone();
     let stored_context = stored_state.context;
     let authenticated_owner = authenticated_owner.map(str::to_owned);
-    let request = req.clone();
+    let request = req.physical_request().cloned();
+    let endpoint = req.endpoint_call().cloned();
     let auth_config = std::sync::Arc::clone(&ctx.config);
     let extensions = ctx.extensions.clone();
     let apply_policy = move |mut input_2: CreatePasskey| async move {
         if let Some(callback) = callback {
             let callback_context = PasskeyRegistrationContext {
-                request: Some(&request),
-                endpoint: None,
+                request: request.as_ref(),
+                endpoint: endpoint.as_ref(),
                 auth_config: &auth_config,
                 extensions: &extensions,
             };
@@ -503,7 +504,28 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
         Ok(input_2)
     };
     let outcome: AuthResult<Value> = if body.create_session.as_bool() == Some(true) {
-        let meta = alibi_core::RequestMeta::from_request(req);
+        let meta = if req.endpoint_call().is_some() {
+            alibi_core::RequestMeta {
+                ip_address: Some(
+                    ctx.config
+                        .advanced
+                        .ip_address
+                        .resolve_ip(req.session_headers())
+                        .unwrap_or_default(),
+                ),
+                user_agent: Some(
+                    req.session_headers()
+                        .iter()
+                        .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
+                        .map(|(_, value)| value.clone())
+                        .unwrap_or_default(),
+                ),
+            }
+        } else {
+            req.physical_request()
+                .map(alibi_core::RequestMeta::from_request)
+                .unwrap_or_default()
+        };
         let expires_at = Utc::now() + ctx.config.session.expires_in;
         let committed = ctx
             .database

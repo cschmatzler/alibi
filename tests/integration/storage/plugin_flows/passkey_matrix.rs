@@ -188,13 +188,163 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
             &authenticator.attestation("localhost", flags, curve),
             padded,
         );
-        Box::pin(auth.handle_request(request(
-            "/passkey/verify-registration",
-            Some(json!({"response": proof, "name": "matrix key"})),
-            &format!("{owner}; {}", cookies(&options)),
-        )))
-        .await
-        .unwrap()
+        if authenticator.id == b"matrix-key-one" {
+            let before = db
+                .tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                .await
+                .unwrap();
+            for (input, cookie, status, code) in [
+                (
+                    json!({"response":proof,"name":42}),
+                    Some(format!("{owner}; {}", cookies(&options))),
+                    400,
+                    "VALIDATION_ERROR",
+                ),
+                (
+                    json!({"response":proof,"createSession":"true"}),
+                    Some(format!("{owner}; {}", cookies(&options))),
+                    400,
+                    "VALIDATION_ERROR",
+                ),
+                (
+                    json!({}),
+                    Some(format!("{owner}; {}", cookies(&options))),
+                    400,
+                    "VALIDATION_ERROR",
+                ),
+                (json!({"response":proof}), None, 401, "UNAUTHORIZED"),
+                (
+                    json!({"response":proof}),
+                    Some(owner.clone()),
+                    400,
+                    "CHALLENGE_NOT_FOUND",
+                ),
+            ] {
+                let error = Box::pin(
+                    auth.dispatch_endpoint(
+                        alibi::endpoint::ServerEndpoint::<Value>::new(
+                            "passkey",
+                            "verifyPasskeyRegistration",
+                        )
+                        .with_body(&input)
+                        .unwrap(),
+                        alibi::endpoint::EndpointOptions {
+                            headers: cookie.map(|cookie| {
+                                [("cookie".into(), cookie), ("origin".into(), ORIGIN.into())]
+                                    .into_iter()
+                                    .collect()
+                            }),
+                            ..Default::default()
+                        },
+                    ),
+                )
+                .await
+                .unwrap_err();
+                assert_eq!(error.error.status_code(), status);
+                assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
+                assert_eq!(
+                    db.tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                        .await
+                        .unwrap(),
+                    before
+                );
+            }
+        }
+        let result = Box::pin(
+            auth.dispatch_endpoint(
+                PasskeyPlugin::verify_passkey_registration_endpoint(
+                    alibi::plugins::passkey::PasskeyRegistrationInput {
+                        response: alibi::utils::json::parse_value(&proof.to_string()).unwrap(),
+                        name: Some(" \u{feff}matrix key\u{a0} ".into()),
+                        create_session: None,
+                    },
+                ),
+                alibi::endpoint::EndpointOptions {
+                    headers: Some(
+                        [
+                            (
+                                "cookie".to_owned(),
+                                format!("{owner}; {}", cookies(&options)),
+                            ),
+                            ("origin".to_owned(), ORIGIN.to_owned()),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await;
+        match result {
+            Ok(output) => {
+                if authenticator.id == b"matrix-key-one" {
+                    let before = db
+                        .tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                        .await
+                        .unwrap();
+                    let replay = Box::pin(
+                        auth.dispatch_endpoint(
+                            alibi::endpoint::ServerEndpoint::<Value>::new(
+                                "passkey",
+                                "verifyPasskeyRegistration",
+                            )
+                            .with_body(&json!({"response":proof}))
+                            .unwrap(),
+                            alibi::endpoint::EndpointOptions {
+                                headers: Some(
+                                    [
+                                        (
+                                            "cookie".into(),
+                                            format!("{owner}; {}", cookies(&options)),
+                                        ),
+                                        ("origin".into(), ORIGIN.into()),
+                                    ]
+                                    .into_iter()
+                                    .collect(),
+                                ),
+                                ..Default::default()
+                            },
+                        ),
+                    )
+                    .await
+                    .unwrap_err();
+                    assert_eq!(replay.error.status_code(), 400);
+                    assert_eq!(
+                        replay.error.error_payload().1.as_deref(),
+                        Some("CHALLENGE_NOT_FOUND")
+                    );
+                    assert_eq!(
+                        db.tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                            .await
+                            .unwrap(),
+                        before
+                    );
+                }
+                output.into_response().unwrap()
+            }
+            Err(error) => {
+                assert_ne!(
+                    error.error.status_code(),
+                    404,
+                    "registration operation unavailable: {}",
+                    error.error
+                );
+                let mut response = error.error.to_auth_response();
+                if let Some(body) = error.body {
+                    response.body = serde_json::to_vec(&*body).unwrap();
+                }
+                if error.body_absent {
+                    response.body.clear();
+                }
+                if let Some(headers) = error.headers {
+                    for (name, value) in headers.iter() {
+                        _ = response.headers.insert(name, value);
+                    }
+                }
+                response
+            }
+        }
     };
     let create = |origin: &'static str| move |challenge: &Value| json!({"type": "webauthn.create", "challenge": challenge, "origin": origin});
     let with_binding = |binding: Value| move |challenge: &Value| json!({"type": "webauthn.create", "challenge": challenge, "origin": ORIGIN, "tokenBinding": binding});

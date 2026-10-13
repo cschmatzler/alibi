@@ -2,7 +2,7 @@ use super::PasskeyConfig;
 use super::source::{
     Verifier, credential::Passkey as WebauthnPasskey, crypto::COSEKeyType, data::AuthenticatorData,
 };
-use alibi_core::{AuthConfig, AuthError, AuthRequest, AuthResult};
+use alibi_core::{AuthConfig, AuthError, AuthResult};
 use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD};
 use chrono::Utc;
@@ -113,9 +113,12 @@ struct ChallengeCookieClaims {
     iat: usize,
 }
 
-pub(super) fn resolve_origin(config: &PasskeyConfig, req: &AuthRequest) -> Option<String> {
+pub(super) fn resolve_origin(
+    config: &PasskeyConfig,
+    req: &impl alibi_core::session::SessionRequest,
+) -> Option<String> {
     if config.origin.is_empty() {
-        req.headers.get("origin").cloned()
+        req.session_headers().get("origin").cloned()
     } else {
         Some(config.origin.clone())
     }
@@ -124,7 +127,7 @@ pub(super) fn resolve_origin(config: &PasskeyConfig, req: &AuthRequest) -> Optio
 /// Select the original signed origin only when it belongs to the explicit allowlist.
 pub(super) fn ceremony_origin(
     config: &PasskeyConfig,
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     response: Option<&alibi_core::utils::json::JsValue>,
 ) -> Option<String> {
     if config.origins.is_empty() {
@@ -148,8 +151,11 @@ pub(super) fn ceremony_origin(
     }
 }
 
-pub(super) fn get_cookie_value(req: &AuthRequest, name: &str) -> Option<String> {
-    let header = req.headers.get("cookie")?;
+pub(super) fn get_cookie_value(
+    req: &impl alibi_core::session::SessionRequest,
+    name: &str,
+) -> Option<String> {
+    let header = req.session_headers().get("cookie")?;
     header.split(';').find_map(|cookie| {
         let trimmed = cookie.trim();
         let (cookie_name, cookie_value) = trimmed.split_once('=')?;

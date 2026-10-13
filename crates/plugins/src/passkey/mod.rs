@@ -1,6 +1,6 @@
 mod authentication;
 mod endpoint;
-pub use endpoint::{PasskeyDeleted, PasskeyUpdated};
+pub use endpoint::{PasskeyDeleted, PasskeyRegistrationInput, PasskeyUpdated};
 mod options;
 pub use options::{
     PasskeyAuthenticatorSelection, PasskeyExtensions, PasskeyExtensionsResolver,
@@ -175,6 +175,15 @@ impl PasskeyPlugin {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
+        self.verify_registration(&body, req, ctx).await
+    }
+
+    async fn verify_registration<S: alibi_core::AuthSchema>(
+        &self,
+        body: &VerifyRegistrationRequest,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<AuthResponse> {
         let session = if self.config.registration.require_session {
             self.registration_session(req, ctx).await?
         } else {
@@ -183,7 +192,7 @@ impl PasskeyPlugin {
         let owner_id = session
             .as_ref()
             .map(|(user, _)| alibi_core::AuthUser::id(user).into_owned());
-        match verify_registration_core(&body, req, owner_id.as_deref(), &self.config, ctx).await? {
+        match verify_registration_core(body, req, owner_id.as_deref(), &self.config, ctx).await? {
             PasskeyHandlerOutcome::Success(result) => {
                 let token = result
                     .get("session")
@@ -399,7 +408,7 @@ alibi_core::impl_auth_plugin! {
         endpoint::validate(call)
     }
     async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
-        if call.operation_id() == "passkeyGenerateAuthenticateOptions" { self.authentication_options_endpoint(call, ctx).await } else if call.operation_id() == "generatePasskeyRegistrationOptions" { self.registration_options_endpoint(call, ctx).await } else if call.operation_id() == "deletePasskey" { self.delete_endpoint(call, ctx).await } else if call.operation_id() == "updatePasskey" { self.update_endpoint(call, ctx).await } else { self.list_endpoint(call, ctx).await }
+        if call.operation_id() == "passkeyVerifyRegistration" { self.verify_registration_endpoint(call, ctx).await } else if call.operation_id() == "passkeyGenerateAuthenticateOptions" { self.authentication_options_endpoint(call, ctx).await } else if call.operation_id() == "generatePasskeyRegistrationOptions" { self.registration_options_endpoint(call, ctx).await } else if call.operation_id() == "deletePasskey" { self.delete_endpoint(call, ctx).await } else if call.operation_id() == "updatePasskey" { self.update_endpoint(call, ctx).await } else { self.list_endpoint(call, ctx).await }
     }
     route_openapi_metadata!(S);
  }
