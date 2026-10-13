@@ -265,7 +265,30 @@ compatScenario(
     expect(production.production).toEqual(before.production);
     expect(production.preview).toEqual(saved.preview);
 
-    const completed = await response(await owner.fetch(forwarded.bridge, { redirect: "manual" }));
+    const serverComplete = async (
+      query: unknown = Object.fromEntries(new URL(forwarded.bridge).searchParams),
+    ) =>
+      response(
+        await owner.fetch(`${ctx.baseURL}${path}/__server-proxy`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ query }),
+          redirect: "manual",
+        }),
+      );
+    const rejected = [];
+    for (const query of [
+      {},
+      { callbackURL: 42 },
+      { callbackURL: `${ctx.baseURL}/proxy-done`, profile: null },
+    ]) {
+      const denied = await serverComplete(query);
+      expect(denied.status).toBe(400);
+      expect(denied.body).toMatchObject({ code: "VALIDATION_ERROR" });
+      expect((await state(ctx)).preview).toEqual(saved.preview);
+      rejected.push(denied);
+    }
+    const completed = await serverComplete();
     expect(completed.status).toBe(302);
     expect(completed.location).toBe(`${ctx.baseURL}/proxy-new`);
 
@@ -290,7 +313,7 @@ compatScenario(
       before.preview.sessions,
     );
 
-    const replay = await response(await owner.fetch(forwarded.bridge, { redirect: "manual" }));
+    const replay = await serverComplete();
     expect(new URL(replay.location!).searchParams.get("error")).toBe("state_mismatch");
     expect((await state(ctx)).preview).toEqual(after.preview);
 
@@ -312,6 +335,7 @@ compatScenario(
       forwarded: forwarded.forwarded,
       oauthProxyProfile: forwarded.atom,
       afterProduction: observations(production),
+      rejected,
       completed,
       current,
       after: observations(after),

@@ -150,7 +150,23 @@ struct ProxyPayload {
     timestamp: f64,
 }
 
+/// Query accepted by the legacy public OAuth Proxy server operation.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OAuthProxyInput {
+    #[serde(rename = "callbackURL")]
+    pub callback_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+}
+
 impl OAuthProxyPlugin {
+    /// Complete a genuine proxy profile against the originating owner's state.
+    pub fn oauth_proxy_endpoint(
+        input: &OAuthProxyInput,
+    ) -> AuthResult<alibi_core::endpoint::ServerEndpoint<Value>> {
+        alibi_core::endpoint::ServerEndpoint::new("oauth-proxy", "oAuthProxy").with_query(input)
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -408,11 +424,11 @@ impl OAuthProxyPlugin {
     async fn complete<S: AuthSchema>(
         &self,
         provider_id: Option<&str>,
-        req: &AuthRequest,
+        query: &std::collections::HashMap<String, String>,
+        req: &impl alibi_core::session::SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<AuthResponse> {
-        let callback = req
-            .query
+        let callback = query
             .get("callbackURL")
             .ok_or_else(|| AuthError::bad_request("Missing callbackURL"))?;
         if !ctx.config.current_origin_check_disabled()
@@ -431,11 +447,7 @@ impl OAuthProxyPlugin {
                     ctx.config.base_url.trim_end_matches('/')
                 )
             });
-        let Some(profile) = req
-            .query
-            .get("profile")
-            .filter(|profile| !profile.is_empty())
-        else {
+        let Some(profile) = query.get("profile").filter(|profile| !profile.is_empty()) else {
             return error_redirect(&default_error, "missing_profile", None);
         };
         let Ok(plain) = self.decrypt(profile, ctx, EncryptionPurpose::ProxyProfile) else {
@@ -636,7 +648,27 @@ impl OAuthProxyPlugin {
             },
             &tokens,
             payload.disable_sign_up.unwrap_or(false),
-            &alibi_core::RequestMeta::from_request(req),
+            &if req.endpoint_call().is_some() {
+                alibi_core::RequestMeta {
+                    ip_address: Some(
+                        ctx.config
+                            .advanced
+                            .ip_address
+                            .resolve_ip(req.session_headers())
+                            .unwrap_or_default(),
+                    ),
+                    user_agent: Some(
+                        req.session_headers()
+                            .get("user-agent")
+                            .cloned()
+                            .unwrap_or_default(),
+                    ),
+                }
+            } else {
+                req.physical_request()
+                    .map(alibi_core::RequestMeta::from_request)
+                    .unwrap_or_default()
+            },
             ctx,
             (user_output.as_ref(), None),
         )
@@ -733,6 +765,68 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
 
     fn name(&self) -> &'static str {
         "oauth-proxy"
+    }
+    fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
+        vec![crate::endpoint::definition(
+            "oAuthProxy",
+            "oauthProxyCallback",
+            Some("/oauth-proxy-callback"),
+            HttpMethod::Get,
+        )]
+    }
+    fn validate_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
+        Ok(alibi_core::endpoint::EndpointInput {
+            body: call.body().cloned(),
+            query: Some(crate::endpoint::validate_fields(
+                call.query(),
+                "query",
+                &[
+                    crate::authentication_helpers::JsonField::string("callbackURL", true),
+                    crate::authentication_helpers::JsonField::string("profile", false),
+                ],
+            )?),
+        })
+    }
+    async fn on_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        let query: std::collections::HashMap<String, String> = alibi_core::utils::json::from_value(
+            call.query()
+                .cloned()
+                .unwrap_or(alibi_core::utils::json::JsValue::Null),
+        )?;
+        let response = Box::pin(self.complete(None, &query, call, ctx)).await?;
+        let mut output = if response.status == 302 {
+            alibi_core::endpoint::EndpointResponse::redirect(
+                response
+                    .headers
+                    .get("location")
+                    .cloned()
+                    .unwrap_or_default(),
+            )
+        } else {
+            alibi_core::endpoint::EndpointResponse::error(AuthError::Api {
+                status: response.status,
+                code: None,
+                message: String::new(),
+            })
+            .without_error_body()
+        };
+        if response.status == 302 {
+            output = output.with_header("Content-Type", "application/json");
+        }
+        for (name, value) in response.headers {
+            if !name.eq_ignore_ascii_case("content-type") {
+                output = output.with_header(name, value);
+            }
+        }
+        Ok(output)
     }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
@@ -841,10 +935,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
             return Ok(None);
         }
         if let Some(provider) = completion_provider(req.path()) {
-            return Ok(Some(self.complete(Some(provider), req, ctx).await?));
+            return Ok(Some(
+                self.complete(Some(provider), &req.query, req, ctx).await?,
+            ));
         }
         if req.path() == "/oauth-proxy-callback" {
-            return Ok(Some(self.complete(None, req, ctx).await?));
+            return Ok(Some(self.complete(None, &req.query, req, ctx).await?));
         }
         Ok(None)
     }
