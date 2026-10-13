@@ -208,15 +208,19 @@ async fn workflow<S: AuthSchema>(auth: &Alibi<S>, backend: &str) -> TestResult<S
         );
     }
     for decision in ["approve", "deny"] {
-        let issued = call(
-            auth,
-            &mut trace,
-            "/device/code",
-            Some(json!({"client_id":"console","scope":"profile raw"})),
-            "",
-            None,
-        )
-        .await?;
+        let issued = auth
+            .dispatch_endpoint(
+                DeviceAuthorizationPlugin::device_code_endpoint(
+                    &alibi::plugins::device_authorization::DeviceCodeRequest {
+                        client_id: "console".into(),
+                        user_id: None,
+                        scope: Some("profile raw".into()),
+                    },
+                )?,
+                alibi::endpoint::EndpointOptions::default(),
+            )
+            .await?
+            .into_response()?;
         assert_eq!(
             issued.status,
             200,

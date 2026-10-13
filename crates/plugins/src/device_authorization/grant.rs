@@ -74,7 +74,7 @@ pub trait DeviceAuthorizationGrant: Send + Sync {
     async fn authorize_request(
         &self,
         request: &Map<String, Value>,
-        original: &AuthRequest,
+        original: Option<&AuthRequest>,
     ) -> Result<DeviceGrantAuthorization, DeviceGrantFailure>;
     async fn assert_session_redemption(
         &self,
@@ -245,6 +245,17 @@ impl DeviceAuthorizationPlugin {
         } else {
             req.body_as_json()?
         };
+        self.application_issuance_body(body, Some(req), ctx, grant)
+            .await
+    }
+
+    pub(super) async fn application_issuance_body(
+        &self,
+        body: Value,
+        original: Option<&AuthRequest>,
+        ctx: &AuthContext<impl AuthSchema>,
+        grant: &dyn DeviceAuthorizationGrant,
+    ) -> AuthResult<AuthResponse> {
         let mut request = body.as_object().cloned().unwrap_or_default();
         let fields = grant.request_schema_fields();
         let mut issues = Vec::new();
@@ -268,7 +279,7 @@ impl DeviceAuthorizationPlugin {
         request.retain(|name, _| {
             ["scope", "client_id", "user_id"].contains(&name.as_str()) || fields.contains_key(name)
         });
-        let authorized = match grant.authorize_request(&request, req).await {
+        let authorized = match grant.authorize_request(&request, original).await {
             Ok(value) => value,
             Err(error) => {
                 return error.into_response().map(no_store);
