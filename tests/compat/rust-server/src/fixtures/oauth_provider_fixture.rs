@@ -50,15 +50,39 @@ pub(crate) async fn router(
                 .unwrap()
                 .clone();
             async move {
-                auth.dispatch_endpoint(
-                    OAuthProviderPlugin::get_oauth_server_config_endpoint(),
-                    alibi::endpoint::EndpointOptions::default(),
-                )
-                .await
-                .unwrap()
-                .into_response()
-                .unwrap()
-                .into_response()
+                let endpoint = alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(
+                    "oauth-provider",
+                    if query
+                        .get("operation")
+                        .is_some_and(|operation| operation == "getOpenIdConfig")
+                    {
+                        "getOpenIdConfig"
+                    } else {
+                        "getOAuthServerConfig"
+                    },
+                );
+                match auth
+                    .dispatch_endpoint(endpoint, alibi::endpoint::EndpointOptions::default())
+                    .await
+                {
+                    Ok(output) => output.into_response().unwrap().into_response(),
+                    Err(error) => {
+                        let mut response = if error.body_absent {
+                            alibi::AuthResponse::new(error.error.status_code())
+                        } else {
+                            error.error.to_auth_response()
+                        };
+                        if let Some(body) = error.body {
+                            response.body = serde_json::to_vec(&*body).unwrap();
+                        }
+                        if let Some(headers) = error.headers {
+                            for (name, value) in headers.iter() {
+                                response.headers.append(name, value);
+                            }
+                        }
+                        response.into_response()
+                    }
+                }
             }
         }),
     ))

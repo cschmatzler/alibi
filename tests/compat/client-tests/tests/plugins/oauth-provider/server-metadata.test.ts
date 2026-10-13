@@ -46,3 +46,35 @@ for (const mode of ["default", "oauth", "disabled", "configured"] as const) {
     },
   );
 }
+
+for (const mode of ["default", "oauth", "disabled", "configured"] as const) {
+  compatScenario(
+    `OAuth Provider ${mode} direct OpenID discovery admits only openid scope`,
+    async (ctx) => {
+      const response = await ctx
+        .actor()
+        .fetch(
+          `${ctx.baseURL}/__test/server-api/oauth-provider-metadata?mode=${mode}&operation=getOpenIdConfig`,
+        );
+      expect(response.headers.get("content-type")).toBe("application/json");
+      if (mode === "oauth" || mode === "configured") {
+        expect(response.status).toBe(404);
+        expect(await response.text()).toBe("");
+        return { status: response.status };
+      }
+      expect(response.status).toBe(200);
+      const document = (await response.json()) as Record<string, any>;
+      expect(document.issuer).toBe(`${ctx.baseURL}/api/auth`);
+      expect(document.userinfo_endpoint).toBe(`${ctx.baseURL}/api/auth/oauth2/userinfo`);
+      expect(document.claims_parameter_supported).toBe(true);
+      expect(document.subject_types_supported).toEqual(["public"]);
+      expect(document.id_token_signing_alg_values_supported).toEqual([
+        mode === "disabled" ? "HS256" : "EdDSA",
+      ]);
+      for (const claim of ["sub", "sid", "name", "email_verified"]) {
+        expect(document.claims_supported).toContain(claim);
+      }
+      return ctx.snapshot(document);
+    },
+  );
+}

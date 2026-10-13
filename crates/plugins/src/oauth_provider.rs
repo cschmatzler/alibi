@@ -66,6 +66,11 @@ impl OAuthProviderPlugin {
     pub fn get_oauth_server_config_endpoint() -> ServerEndpoint<Value> {
         ServerEndpoint::new("oauth-provider", "getOAuthServerConfig")
     }
+    /// Return `OpenID` configuration when the provider supports the openid scope.
+    #[must_use]
+    pub fn get_open_id_config_endpoint() -> ServerEndpoint<Value> {
+        ServerEndpoint::new("oauth-provider", "getOpenIdConfig")
+    }
     fn metadata<S: AuthSchema>(&self, ctx: &AuthContext<S>) -> AuthResult<Value> {
         let jwt = if self.config.disable_jwt_plugin {
             None
@@ -221,12 +226,20 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         vec![]
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
-        vec![crate::endpoint::definition(
-            "getOAuthServerConfig",
-            "getOAuthServerConfig",
-            Some("/.well-known/oauth-authorization-server"),
-            HttpMethod::Get,
-        )]
+        vec![
+            crate::endpoint::definition(
+                "getOAuthServerConfig",
+                "getOAuthServerConfig",
+                Some("/.well-known/oauth-authorization-server"),
+                HttpMethod::Get,
+            ),
+            crate::endpoint::definition(
+                "getOpenIdConfig",
+                "getOpenIdConfig",
+                Some("/.well-known/openid-configuration"),
+                HttpMethod::Get,
+            ),
+        ]
     }
     fn validate_endpoint(
         &self,
@@ -240,9 +253,20 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     async fn on_endpoint(
         &self,
-        _call: &EndpointCall,
+        call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "getOpenIdConfig"
+            && !self.config.scopes.iter().any(|scope| scope == "openid")
+        {
+            return Ok(EndpointResponse::error(AuthError::Api {
+                status: 404,
+                code: None,
+                message: String::new(),
+            })
+            .without_error_body()
+            .with_header("Content-Type", "application/json"));
+        }
         EndpointResponse::json(&self.metadata(ctx)?)
     }
     async fn on_request(

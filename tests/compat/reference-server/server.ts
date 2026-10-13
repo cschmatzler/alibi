@@ -3575,7 +3575,10 @@ const server = Bun.serve({
         return Response.json({ present: cache.has(body.token) });
       }
       if (url.pathname === "/__test/server-api/oauth-provider-metadata") {
-        return oauthProviderMetadata(url.searchParams.get("mode") ?? "default");
+        return oauthProviderMetadata(
+          url.searchParams.get("mode") ?? "default",
+          url.searchParams.get("operation") ?? "getOAuthServerConfig",
+        );
       }
       for (const [name, instance] of openApiInstances) {
         if (url.pathname === `/__test/profiles/${name}/api/auth/__test/server-api/schema`) {
