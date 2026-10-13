@@ -10,6 +10,72 @@ use alibi_core::{
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
+    async fn mark_oauth_token_revoked(
+        &self,
+        kind: alibi_core::store::OAuthTokenKind,
+        id: &str,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<()> {
+        let table = match kind {
+            alibi_core::store::OAuthTokenKind::Access => "oauthAccessToken",
+            alibi_core::store::OAuthTokenKind::Refresh => "oauthRefreshToken",
+        };
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "UPDATE ");
+        sql.ident(table);
+        sql.push(" SET ");
+        sql.assign("revoked", at);
+        sql.push(" WHERE ");
+        sql.compare(table, "id", " = ", id);
+        _ = self.exec().execute(sql).await?;
+        Ok(())
+    }
+    async fn list_oauth_tokens_for_session(
+        &self,
+        kind: alibi_core::store::OAuthTokenKind,
+        session_id: &str,
+    ) -> AuthResult<Vec<alibi_core::store::OAuthToken>> {
+        match kind {
+            alibi_core::store::OAuthTokenKind::Access => {
+                let mut sql =
+                    model::select_model::<super::entities::oauth_access_token::Model>(self.exec());
+                sql.push(" WHERE ");
+                sql.compare(
+                    super::entities::oauth_access_token::Model::TABLE,
+                    "sessionId",
+                    " = ",
+                    session_id,
+                );
+                sql.push(" LIMIT ");
+                sql.bind(self.find_many_limit());
+                self.exec()
+                    .fetch_all::<super::entities::oauth_access_token::Model>(sql)
+                    .await?
+                    .into_iter()
+                    .map(TryInto::try_into)
+                    .collect()
+            }
+            alibi_core::store::OAuthTokenKind::Refresh => {
+                let mut sql =
+                    model::select_model::<super::entities::oauth_refresh_token::Model>(self.exec());
+                sql.push(" WHERE ");
+                sql.compare(
+                    super::entities::oauth_refresh_token::Model::TABLE,
+                    "sessionId",
+                    " = ",
+                    session_id,
+                );
+                sql.push(" LIMIT ");
+                sql.bind(self.find_many_limit());
+                self.exec()
+                    .fetch_all::<super::entities::oauth_refresh_token::Model>(sql)
+                    .await?
+                    .into_iter()
+                    .map(TryInto::try_into)
+                    .collect()
+            }
+        }
+    }
+
     async fn delete_oauth_token(
         &self,
         kind: alibi_core::store::OAuthTokenKind,

@@ -128,6 +128,17 @@ impl<S: AuthSchema> AuthInitContext<S> {
         self.extensions.insert(callbacks);
     }
 
+    /// Register instance-local dependant work around successful session deletion.
+    pub fn register_session_deletion_hook(
+        &mut self,
+        hook: Arc<dyn crate::store::SessionDeletionHook<S>>,
+    ) {
+        let mut hooks = self
+            .extensions
+            .cloned_or_default::<crate::store::SessionDeletionHooks<S>>();
+        hooks.0.push(hook);
+        self.extensions.insert(hooks);
+    }
     /// Finalize the instance's store without mutating a shared underlying adapter.
     #[must_use]
     pub fn database_with_registered_transforms(&self) -> Arc<dyn AuthStore<S>> {
@@ -150,6 +161,10 @@ impl<S: AuthSchema> AuthInitContext<S> {
                 .extensions
                 .get::<crate::store::AdapterCallbacks<S>>()
                 .is_none_or(|callbacks| callbacks.0.is_empty())
+            && self
+                .extensions
+                .get::<crate::store::SessionDeletionHooks<S>>()
+                .is_none_or(|hooks| hooks.0.is_empty())
             && self.config.user_validation.is_none()
         {
             return Arc::clone(&self.database);

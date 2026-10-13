@@ -8,6 +8,7 @@ pub mod oauth_clients;
 mod org_extensions;
 mod secondary_sessions;
 pub mod secondary_storage;
+mod session_deletion;
 pub mod stateless;
 mod wallets;
 
@@ -37,6 +38,8 @@ pub use org_extensions::{OrganizationRoleStore, TeamStore, team_membership_key};
 #[cfg(feature = "redis-cache")]
 pub use secondary_storage::RedisAdapter;
 pub use secondary_storage::{CacheAdapter, MemoryCacheAdapter};
+pub(crate) use session_deletion::SessionDeletionHooks;
+pub use session_deletion::{SessionDeletionHook, SessionDeletionWork};
 pub use wallets::WalletAddressStore;
 
 pub trait AuthStore<S: AuthSchema>:

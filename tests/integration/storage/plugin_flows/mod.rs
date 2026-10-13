@@ -409,3 +409,5 @@ mod oauth_userinfo;
 mod oauth_logout;
 
 mod oauth_logout_confirmation;
+
+mod oauth_session_retirement;
