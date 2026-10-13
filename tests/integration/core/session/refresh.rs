@@ -404,6 +404,7 @@ mod secondary {
     }
 
     #[derive(sqlx::FromRow)]
+    #[sqlx(rename_all = "camelCase")]
     struct PhysicalSession {
         expires_at: chrono::DateTime<Utc>,
         active_organization_id: Option<String>,

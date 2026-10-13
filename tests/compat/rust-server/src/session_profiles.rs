@@ -207,7 +207,7 @@ pub(super) async fn router(
         let read = async |table: &str, owner: bool| {
             let columns = if owner {"id, user_id"} else {"id"};
             let rows = database.query_all_raw(Statement::from_string(database.get_database_backend(), format!("SELECT {columns} FROM {table}"))).await.unwrap();
-            rows.iter().map(|row| {let mut value = json!({"id": row.try_get::<String>("", "id").unwrap()}); if owner {value["userId"] = json!(row.try_get::<String>("", "user_id").unwrap());} value}).collect::<Vec<_>>()
+            rows.iter().map(|row| {let mut value = json!({"id": row.try_get::<String>("", "id").unwrap()}); if owner {value["userId"] = json!(row.try_get::<String>("", "userId").unwrap());} value}).collect::<Vec<_>>()
         };
         Json(json!({"users": read("users",false).await, "accounts": read("accounts",true).await, "sessions": read("sessions",true).await, "verification": read("verifications",false).await, "events": *events.lock().unwrap()}))
     }}));

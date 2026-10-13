@@ -201,9 +201,9 @@ async fn physical_account(db: &Db, id: &str) -> TestResult<Value> {
         .fetch_one(pool)
         .await?;
         json!({"id":row.try_get::<String,_>("id")?,
-            "userId":row.try_get::<String,_>("user_id")?,
-            "accountId":row.try_get::<String,_>("account_id")?,
-            "accessToken":row.try_get::<String,_>("access_token")?,
+            "userId":row.try_get::<String,_>("userId")?,
+            "accountId":row.try_get::<String,_>("accountId")?,
+            "accessToken":row.try_get::<String,_>("accessToken")?,
             "scope":row.try_get::<String,_>("scope")?})
     }))
 }

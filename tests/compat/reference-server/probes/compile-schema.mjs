@@ -8,8 +8,9 @@ import { config } from "./schema-parity.mjs";
 const kind = process.argv[2] ?? "sqlite";
 if (!["sqlite", "postgres"].includes(kind)) throw new Error(`Unknown dialect ${kind}`);
 const inspect = process.argv[3] === "inspect";
-if (kind === "postgres" && !process.env.BETTER_AUTH_TEST_POSTGRES_URL)
+if (kind === "postgres" && !process.env.BETTER_AUTH_TEST_POSTGRES_URL) {
   throw new Error("Set BETTER_AUTH_TEST_POSTGRES_URL to a disposable database");
+}
 const sql =
   kind === "postgres" ? new SQL(process.env.BETTER_AUTH_TEST_POSTGRES_URL, { max: 1 }) : null;
 const schemaName = `alibi_schema_reference_${crypto.randomUUID().replaceAll("-", "")}`;

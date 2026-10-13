@@ -40,7 +40,7 @@ async fn reruns_are_no_ops_recorded_once_in_the_namespaced_ledger<B: Backend>(
     let schema = tables(&db).await?;
     store.migrate().await?;
     assert_eq!(tables(&db).await?, schema);
-    assert_eq!(db.count("better_auth_migrations").await?, 4);
+    assert_eq!(db.count("better_auth_migrations").await?, 2);
     assert_eq!(
         db.text("SELECT version FROM better_auth_migrations WHERE version = 'm20261013_000001_typescript_auth_schema'", &[])
             .await?,

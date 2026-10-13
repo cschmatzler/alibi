@@ -559,7 +559,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                             AuthError::SessionCreationCancelled => AuthError::Upstream {
                                 status: 500,
                                 code: "UNABLE_TO_CREATE_SESSION",
-                                message: "Unable to create \"session\"",
+                                message: "Unable to create session",
                             },
                             other @ (AuthError::Api { .. }
                             | AuthError::Upstream { .. }

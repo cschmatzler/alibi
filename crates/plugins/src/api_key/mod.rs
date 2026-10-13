@@ -3316,7 +3316,7 @@ mod crud_tests {
             )
             .await
             .unwrap();
-        connection.execute_raw(Statement::from_string(DbBackend::Sqlite,"CREATE TRIGGER reject_api_key_cleanup BEFORE DELETE ON api_keys BEGIN SELECT RAISE(ABORT,'application cleanup rejected'); END")).await.unwrap();
+        connection.execute_raw(Statement::from_string(DbBackend::Sqlite,"CREATE TRIGGER reject_api_key_cleanup BEFORE DELETE ON \"apikey\" BEGIN SELECT RAISE(ABORT,'application cleanup rejected'); END")).await.unwrap();
         let failed = plugin.delete_all_expired_api_keys(&ctx).await;
         assert!(failed.success);
         assert!(failed.error.is_none());

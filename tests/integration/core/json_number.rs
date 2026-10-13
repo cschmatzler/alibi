@@ -226,7 +226,7 @@ mod tests {
             STORED_METADATA
         );
         assert_eq!(
-            row.try_get::<String>("", "reference_id").unwrap(),
+            row.try_get::<String>("", "referenceId").unwrap(),
             (*(*(owner).get("user").unwrap_or(&Value::Null))
                 .get("id")
                 .unwrap_or(&Value::Null))
@@ -284,7 +284,7 @@ mod tests {
             r#"{"replacement":[null,0,9007199254740992]}"#
         );
         assert_eq!(
-            row_2.try_get::<String>("", "reference_id").unwrap(),
+            row_2.try_get::<String>("", "referenceId").unwrap(),
             (*(*(owner).get("user").unwrap_or(&Value::Null))
                 .get("id")
                 .unwrap_or(&Value::Null))
@@ -434,7 +434,7 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap();
-            assert_eq!(row.try_get::<String>("", "phone_number").unwrap(), expected);
+            assert_eq!(row.try_get::<String>("", "phoneNumber").unwrap(), expected);
             let repeated = auth
                 .context()
                 .database

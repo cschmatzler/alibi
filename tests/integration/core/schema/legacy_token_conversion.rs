@@ -137,7 +137,7 @@ async fn exercise<S: AuthSchema>(
     // only this empty owned fixture table with NOCASE token/identity columns.
     let schema = db
         .text(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND \"name\"='accounts'",
+            "SELECT sql FROM sqlite_master WHERE type='table' AND \"name\"='account'",
             &[],
         )
         .await?
@@ -230,7 +230,7 @@ async fn exercise<S: AuthSchema>(
             .and_then(|rows| rows.first_mut())
             .and_then(serde_json::Value::as_object_mut)
             .ok_or("physical row")?;
-        for field in ["access_token", "refresh_token", "id_token"] {
+        for field in ["accessToken", "refreshToken", "idToken"] {
             _ = row.remove(field);
         }
     }

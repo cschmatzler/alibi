@@ -5,11 +5,10 @@ use std::sync::Arc;
 
 type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
-// This application insert intentionally omits config_id so the generated database
-// default is exercised independently of the plugin, which supplies it explicitly.
+// Application inserts must supply the source schema's required configId.
 const DEFAULT_KEY_INSERT: &str = r#"INSERT INTO "apikey"
-    (id, "key", "referenceId", "enabled", "rateLimitEnabled", "createdAt", "updatedAt")
-    VALUES ('application-key', 'application-hash', 'application-owner', TRUE, FALSE,
+    (id, "configId", "key", "referenceId", "enabled", "rateLimitEnabled", "createdAt", "updatedAt")
+    VALUES ('application-key', 'default', 'application-hash', 'application-owner', TRUE, FALSE,
             '2026-10-04T00:00:00Z', '2026-10-04T00:00:00Z')"#;
 
 #[cfg(feature = "sqlx")]

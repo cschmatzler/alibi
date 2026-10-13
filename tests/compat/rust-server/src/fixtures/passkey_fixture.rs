@@ -220,7 +220,7 @@ pub(crate) async fn router(
                         .iter()
                         .map(|row| {
                             json!({
-                                "userId": row.try_get::<String>("", "user_id").unwrap(),
+                                "userId": row.try_get::<String>("", "userId").unwrap(),
                                 "counter": row.try_get::<i64>("", "counter").unwrap(),
                                 "name": row.try_get::<Option<String>>("", "name").unwrap(),
                             })

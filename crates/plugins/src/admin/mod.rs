@@ -1162,7 +1162,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn admin_creation_stores_application_metadata_without_reserved_role_input() {
+    async fn admin_creation_ignores_unconfigured_application_fields_without_reserved_role_input() {
         let (ctx, admin, admin_session, _other, other_session) = create_admin_context().await;
         let expected = serde_json::json!({"preferences":{"theme":"night","nested":{"$serde_json::private::RawValue":"literal"}}});
         let request = make_request(
@@ -1186,7 +1186,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(created.role(), Some("user"));
-        assert_eq!(created.metadata(), &expected);
+        assert_eq!(created.metadata(), &serde_json::json!({}));
         assert_eq!(
             json_body(&response)
                 .get("user")

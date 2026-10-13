@@ -739,9 +739,9 @@ mod tests {
         );
         // Read physical SQL independently of the production store's getters.
         for (column, expected) in [
-            ("access_token", "rotated-access-token"),
-            ("refresh_token", "rotated-refresh-token"),
-            ("user_id", user_id.as_str()),
+            ("accessToken", "rotated-access-token"),
+            ("refreshToken", "rotated-refresh-token"),
+            ("userId", user_id.as_str()),
         ] {
             assert_eq!(
                 physical

@@ -181,7 +181,7 @@ mod tests {
         let admin_token = setup_admin(&auth).await;
 
         let req = post_json_with_auth(
-            "/admin/create-\"user\"",
+            "/admin/create-user",
             json!({
                 "email": "newuser@test.com",
                 "password": "password123",
@@ -192,7 +192,7 @@ mod tests {
         );
         let (status, json) = send_request(&auth, req).await;
 
-        assert_eq!(status, 200, "create-\"user\" should succeed: {json}");
+        assert_eq!(status, 200, "create-user should succeed: {json}");
         assert!(
             json["user"].is_object(),
             "response must contain user object"
@@ -208,7 +208,7 @@ mod tests {
 
         // The admin already exists with admin@test.com
         let req = post_json_with_auth(
-            "/admin/create-\"user\"",
+            "/admin/create-user",
             json!({
                 "email": "admin@test.com",
                 "password": "password123",
@@ -228,7 +228,7 @@ mod tests {
             signup_user(&auth, "regular@test.com", "password123", "Regular").await;
 
         let req = post_json_with_auth(
-            "/admin/create-\"user\"",
+            "/admin/create-user",
             json!({
                 "email": "blocked@test.com",
                 "password": "password123",
@@ -250,17 +250,12 @@ mod tests {
         let auth = create_test_auth().await;
         let admin_token = setup_admin(&auth).await;
 
-        let (_, signup_json) = signup_user(
-            &auth,
-            "update-\"user\"@test.com",
-            "password123",
-            "Update User",
-        )
-        .await;
+        let (_, signup_json) =
+            signup_user(&auth, "update-user@test.com", "password123", "Update User").await;
         let user_id = signup_json["user"]["id"].as_str().unwrap();
 
         let req = post_json_with_auth(
-            "/admin/update-\"user\"",
+            "/admin/update-user",
             json!({
                 "userId": user_id,
                 "data": {
@@ -272,7 +267,7 @@ mod tests {
         );
         let (status, json) = send_request(&auth, req).await;
 
-        assert_eq!(status, 200, "update-\"user\" should succeed: {json}");
+        assert_eq!(status, 200, "update-user should succeed: {json}");
         assert_eq!(json["name"].as_str().unwrap(), "Updated User");
         assert_eq!(json["role"].as_str().unwrap(), "admin");
     }
@@ -282,7 +277,7 @@ mod tests {
         let auth = create_test_auth().await;
         let (_, signup_json) = signup_user(
             &auth,
-            "update-\"user\"-regular@test.com",
+            "update-user-regular@test.com",
             "password123",
             "Update User",
         )
@@ -292,7 +287,7 @@ mod tests {
             signup_user(&auth, "regular@test.com", "password123", "Regular").await;
 
         let req = post_json_with_auth(
-            "/admin/update-\"user\"",
+            "/admin/update-user",
             json!({
                 "userId": user_id,
                 "data": {
@@ -407,7 +402,7 @@ mod tests {
         let admin_token = setup_admin(&auth).await;
 
         let req = post_json_with_auth(
-            "/admin/create-\"user\"",
+            "/admin/create-user",
             json!({
                 "email": "passwordless@test.com",
                 "name": "Passwordless User"
@@ -418,14 +413,14 @@ mod tests {
 
         assert_eq!(
             status, 200,
-            "create-\"user\" without \"password\" should succeed: {json}"
+            "create-user without password should succeed: {json}"
         );
         let user_id = json["user"]["id"].as_str().unwrap();
 
         let accounts = auth.store().get_user_accounts(user_id).await.unwrap();
         assert!(
             accounts.is_empty(),
-            "passwordless admin create-\"user\" should not create a credential \"account\""
+            "passwordless admin create-user should not create a credential account"
         );
     }
 
@@ -551,7 +546,7 @@ mod tests {
 
         // create-user without auth
         let req_3 = post_json(
-            "/admin/create-\"user\"",
+            "/admin/create-user",
             json!({
                 "email": "no-auth@test.com",
                 "password": "password123",
@@ -559,15 +554,15 @@ mod tests {
             }),
         );
         let (status_3, _) = send_request(&auth, req_3).await;
-        assert_eq!(status_3, 401, "create-\"user\" without auth should get 401");
+        assert_eq!(status_3, 401, "create-user without auth should get 401");
 
         // update-user without auth
         let req_4 = post_json(
-            "/admin/update-\"user\"",
+            "/admin/update-user",
             json!({ "userId": "some-id", "data": { "name": "No Auth" } }),
         );
         let (status_4, _) = send_request(&auth, req_4).await;
-        assert_eq!(status_4, 401, "update-\"user\" without auth should get 401");
+        assert_eq!(status_4, 401, "update-user without auth should get 401");
 
         // remove-user without auth
         let req_5 = post_json("/admin/remove-user", json!({ "userId": "some-id" }));

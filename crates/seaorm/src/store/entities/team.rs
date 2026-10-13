@@ -8,7 +8,6 @@ pub struct Model {
     pub name: String,
     #[sea_orm(column_name = "organizationId")]
     pub organization_id: String,
-    #[sea_orm(default_value = 0)]
     #[sea_orm(column_name = "memberCount")]
     pub member_count: crate::Integer,
     #[sea_orm(column_name = "createdAt")]

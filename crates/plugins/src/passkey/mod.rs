@@ -1107,7 +1107,7 @@ mod tests {
                     .encode(serde_cbor_2::to_vec(cose)?),
 
                 counter: 0,
-                device_type: "singleDevice".into(),
+                device_type: "multiDevice".into(),
                 backed_up: false,
                 transports: None,
                 aaguid: None,
@@ -1193,7 +1193,7 @@ mod tests {
                     );
                     assert_eq!(after.counter, u64::from(counter));
                     assert!(!after.backed_up);
-                    assert_eq!(after.device_type, "singleDevice");
+                    assert_eq!(after.device_type, "multiDevice");
                     assert_eq!(
                         plugin
                             .handle_verify_authentication(&request, &ctx)

@@ -337,8 +337,8 @@ async fn set_timestamps(
         .ok_or(alibi::AuthError::UserNotFound)?;
     Ok(Json(json!({
         "userId": row.try_get::<String>("", "id").map_err(|error| alibi::AuthError::Database(alibi::DatabaseError::Query(error.to_string())))?,
-        "createdAt": row.try_get::<String>("", "created_at").map_err(|error| alibi::AuthError::Database(alibi::DatabaseError::Query(error.to_string())))?,
-        "updatedAt": row.try_get::<String>("", "updated_at").map_err(|error| alibi::AuthError::Database(alibi::DatabaseError::Query(error.to_string())))?,
+        "createdAt": row.try_get::<String>("", "createdAt").map_err(|error| alibi::AuthError::Database(alibi::DatabaseError::Query(error.to_string())))?,
+        "updatedAt": row.try_get::<String>("", "updatedAt").map_err(|error| alibi::AuthError::Database(alibi::DatabaseError::Query(error.to_string())))?,
     })))
 }
 

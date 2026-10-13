@@ -526,14 +526,14 @@ pub(crate) async fn router(
                             ("startType", "startType"),
                             ("prefix", "prefix"),
                             ("key", "key"),
-                            ("referenceId", "reference_id"),
-                            ("configId", "config_id"),
+                            ("referenceId", "referenceId"),
+                            ("configId", "configId"),
                             ("permissions", "permissions"),
-                            ("createdAt", "created_at"),
-                            ("updatedAt", "updated_at"),
-                            ("expiresAt", "expires_at"),
-                            ("lastRequest", "last_request"),
-                            ("lastRefillAt", "last_refill_at"),
+                            ("createdAt", "createdAt"),
+                            ("updatedAt", "updatedAt"),
+                            ("expiresAt", "expiresAt"),
+                            ("lastRequest", "lastRequest"),
+                            ("lastRefillAt", "lastRefillAt"),
                         ] {
                             let data = row.try_get::<Option<String>>("", column).unwrap();
                             value[wire] = if [
@@ -556,17 +556,17 @@ pub(crate) async fn router(
                         }
                         for (wire, column) in [
                             ("remaining", "remaining"),
-                            ("requestCount", "request_count"),
-                            ("refillAmount", "refill_amount"),
-                            ("refillInterval", "refill_interval"),
-                            ("rateLimitMax", "rate_limit_max"),
-                            ("rateLimitTimeWindow", "rate_limit_time_window"),
+                            ("requestCount", "requestCount"),
+                            ("refillAmount", "refillAmount"),
+                            ("refillInterval", "refillInterval"),
+                            ("rateLimitMax", "rateLimitMax"),
+                            ("rateLimitTimeWindow", "rateLimitTimeWindow"),
                         ] {
                             value[wire] = json!(row.try_get::<Option<f64>>("", column).unwrap());
                         }
                         for (wire, column) in [
                             ("enabled", "enabled"),
-                            ("rateLimitEnabled", "rate_limit_enabled"),
+                            ("rateLimitEnabled", "rateLimitEnabled"),
                         ] {
                             value[wire] = json!(row.try_get::<bool>("", column).unwrap());
                         }

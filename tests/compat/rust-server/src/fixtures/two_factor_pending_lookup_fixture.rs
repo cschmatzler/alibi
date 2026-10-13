@@ -79,7 +79,7 @@ async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
                 .map(|date| date.to_rfc3339_opts(SecondsFormat::Millis, true))
                 .map_err(|error| AuthError::internal(error.to_string()))
         };
-        verifications.push(json!({"id":string("id")?,"identifier":string("identifier")?,"value":string("value")?,"expiresAt":date("expires_at")?,"createdAt":date("created_at")?,"updatedAt":date("updated_at")?}));
+        verifications.push(json!({"id":string("id")?,"identifier":string("identifier")?,"value":string("value")?,"expiresAt":date("expiresAt")?,"createdAt":date("createdAt")?,"updatedAt":date("updatedAt")?}));
     }
     let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT t.id,t.\"userId\",t.\"secret\",t.\"backupCodes\",t.\"verified\",CAST(t.\"failedVerificationCount\" AS REAL) AS \"failedVerificationCount\",t.\"lockedUntil\" FROM \"twoFactor\" t JOIN \"user\" u ON u.id=t.\"userId\" ORDER BY u.\"email\",t.id")).await.map_err(|error|AuthError::internal(error.to_string()))?;
     let mut factors = Vec::new();
@@ -92,12 +92,12 @@ async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
             .try_get::<Option<bool>>("", "verified")
             .map_err(|error| AuthError::internal(error.to_string()))?;
         let count = row
-            .try_get::<Option<f64>>("", "failed_verification_count")
+            .try_get::<Option<f64>>("", "failedVerificationCount")
             .map_err(|error| AuthError::internal(error.to_string()))?;
         let locked = row
-            .try_get::<Option<DateTime<Utc>>>("", "locked_until")
+            .try_get::<Option<DateTime<Utc>>>("", "lockedUntil")
             .map_err(|error| AuthError::internal(error.to_string()))?;
-        factors.push(json!({"id":string("id")?,"userId":string("user_id")?,"secret":string("secret")?,"backupCodes":string("backup_codes")?,"verified":verified,"failedVerificationCount":count,"lockedUntil":locked.map(|date|date.to_rfc3339_opts(SecondsFormat::Millis,true))}));
+        factors.push(json!({"id":string("id")?,"userId":string("userId")?,"secret":string("secret")?,"backupCodes":string("backupCodes")?,"verified":verified,"failedVerificationCount":count,"lockedUntil":locked.map(|date|date.to_rfc3339_opts(SecondsFormat::Millis,true))}));
     }
     Ok(json!({"verifications":verifications,"factors":factors}))
 }
@@ -232,7 +232,7 @@ pub(crate) async fn router(
                         }
                     }
                     "patch" => {
-                        for (key, column) in [("expiresAt", "expires_at"), ("value", "value")] {
+                        for (key, column) in [("expiresAt", "expiresAt"), ("value", "value")] {
                             if body[key].is_string() {
                                 database
                                     .execute_raw(Statement::from_sql_and_values(

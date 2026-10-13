@@ -206,7 +206,7 @@ pub async fn initialize(db: &DatabaseConnection) -> AuthResult<()> {
         let exists = db
             .query_one_raw(Statement::from_sql_and_values(
                 db.get_database_backend(),
-                "SELECT name FROM pragma_table_info('deviceCode') WHERE name = ?",
+                "SELECT \"name\" FROM pragma_table_info('deviceCode') WHERE \"name\" = ?",
                 [column.into()],
             ))
             .await

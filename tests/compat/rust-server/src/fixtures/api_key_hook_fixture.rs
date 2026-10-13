@@ -128,10 +128,10 @@ pub(crate) async fn router(
                 )).await.unwrap();
                 let keys: Vec<Value> = rows.iter().map(|row| json!({
                     "id": row.try_get::<String>("", "id").unwrap(),
-                    "referenceId": row.try_get::<String>("", "reference_id").unwrap(),
-                    "configId": row.try_get::<String>("", "config_id").unwrap(),
+                    "referenceId": row.try_get::<String>("", "referenceId").unwrap(),
+                    "configId": row.try_get::<String>("", "configId").unwrap(),
                     "remaining": row.try_get::<Option<f64>>("", "remaining").unwrap(),
-                    "requestCount": row.try_get::<Option<f64>>("", "request_count").unwrap(),
+                    "requestCount": row.try_get::<Option<f64>>("", "requestCount").unwrap(),
                     "enabled": row.try_get::<bool>("", "enabled").unwrap(),
                 })).collect();
                 let sessions = database.query_one_raw(Statement::from_sql_and_values(

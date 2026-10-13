@@ -141,7 +141,7 @@ mod tests {
         let (status_10, body_10) = send_request(
             &auth,
             post_json_with_auth(
-                "/update-\"user\"",
+                "/update-user",
                 serde_json::json!({
                     "name": "Updated Name"
                 }),
@@ -149,16 +149,16 @@ mod tests {
             ),
         )
         .await;
-        validator.validate_endpoint("/update-\"user\"", "post", status_10, &body_10);
+        validator.validate_endpoint("/update-user", "post", status_10, &body_10);
 
         // --- POST /delete-user (spec method) ---
         let (del_token, _) = signup_user(&auth, "del@example.com", "password123", "DEL User").await;
         let (status_11, body_11) = send_request(
             &auth,
-            post_json_with_auth("/delete-\"user\"", serde_json::json!({}), &del_token),
+            post_json_with_auth("/delete-user", serde_json::json!({}), &del_token),
         )
         .await;
-        validator.validate_endpoint("/delete-\"user\"", "post", status_11, &body_11);
+        validator.validate_endpoint("/delete-user", "post", status_11, &body_11);
 
         // --- POST /change-email ---
         let (ce_token, _) = signup_user(&auth, "ce@example.com", "password123", "CE User").await;

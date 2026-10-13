@@ -208,7 +208,7 @@ pub(crate) async fn router(
         let database = read_database.clone();
         async move {
             let rows = database.query_all_raw(Statement::from_string(DbBackend::Sqlite, "SELECT \"key\",\"count\",\"lastRequest\" FROM \"rateLimit\" ORDER BY \"key\"")).await.unwrap();
-            Json(rows.into_iter().map(|row| json!({"key": row.try_get::<String>("", "key").unwrap(), "count": row.try_get::<f64>("", "count").unwrap(), "lastRequest": row.try_get::<i64>("", "last_request").unwrap()})).collect::<Vec<_>>())
+            Json(rows.into_iter().map(|row| json!({"key": row.try_get::<String>("", "key").unwrap(), "count": row.try_get::<f64>("", "count").unwrap(), "lastRequest": row.try_get::<i64>("", "lastRequest").unwrap()})).collect::<Vec<_>>())
         }
     }));
     router = router.route(

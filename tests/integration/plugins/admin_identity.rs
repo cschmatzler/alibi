@@ -81,12 +81,16 @@ mod sqlx_numeric {
         pub name: Option<String>,
         pub role: Option<String>,
         pub banned: bool,
+        #[sqlx(rename = "banReason")]
         pub ban_reason: Option<String>,
+        #[sqlx(rename = "banExpires")]
         pub ban_expires: Option<chrono::DateTime<Utc>>,
         pub score: i64,
         pub reviewed_at: chrono::DateTime<Utc>,
         pub profile: serde_json::Value,
+        #[sqlx(rename = "createdAt")]
         pub created_at: chrono::DateTime<Utc>,
+        #[sqlx(rename = "updatedAt")]
         pub updated_at: chrono::DateTime<Utc>,
     }
     user_contract!();
@@ -101,14 +105,14 @@ mod sqlx_numeric {
             "name"
         }
         fn created_at_column() -> &'static str {
-            "created_at"
+            "createdAt"
         }
         fn list_users_column(field: &str) -> Option<&'static str> {
             match field {
                 "id" => Some("id"),
                 "email" => Some("email"),
                 "name" => Some("name"),
-                "createdAt" => Some("created_at"),
+                "createdAt" => Some("createdAt"),
                 "score" => Some("score"),
                 "reviewedAt" => Some("reviewed_at"),
                 "profile" => Some("profile"),
@@ -133,10 +137,10 @@ mod sqlx_numeric {
             row.set("name", user.name);
             row.set("role", user.role);
             row.set("banned", user.banned.unwrap_or(false));
-            row.set("ban_reason", Option::<String>::None);
-            row.set("ban_expires", Option::<chrono::DateTime<Utc>>::None);
-            row.set("created_at", now);
-            row.set("updated_at", now);
+            row.set("banReason", Option::<String>::None);
+            row.set("banExpires", Option::<chrono::DateTime<Utc>>::None);
+            row.set("createdAt", now);
+            row.set("updatedAt", now);
             row
         }
         fn apply_update(row: &mut ActiveRow, user: UpdateUser, now: chrono::DateTime<Utc>) {
@@ -152,13 +156,13 @@ mod sqlx_numeric {
             if let Some(banned) = user.banned {
                 row.set("banned", banned);
             }
-            row.set("ban_reason", user.ban_reason);
+            row.set("banReason", user.ban_reason);
             if let Some(expiry) = user.ban_expires {
-                row.set("ban_expires", expiry);
+                row.set("banExpires", expiry);
             } else if user.banned == Some(false) {
-                row.set("ban_expires", Option::<chrono::DateTime<Utc>>::None);
+                row.set("banExpires", Option::<chrono::DateTime<Utc>>::None);
             }
-            row.set("updated_at", now);
+            row.set("updatedAt", now);
         }
     }
     struct Schema;
@@ -223,12 +227,16 @@ mod seaorm_numeric {
         pub name: Option<String>,
         pub role: Option<String>,
         pub banned: bool,
+        #[sea_orm(column_name = "banReason")]
         pub ban_reason: Option<String>,
+        #[sea_orm(column_name = "banExpires")]
         pub ban_expires: Option<chrono::DateTime<Utc>>,
         pub score: i64,
         pub reviewed_at: chrono::DateTime<Utc>,
         pub profile: serde_json::Value,
+        #[sea_orm(column_name = "createdAt")]
         pub created_at: chrono::DateTime<Utc>,
+        #[sea_orm(column_name = "updatedAt")]
         pub updated_at: chrono::DateTime<Utc>,
     }
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -491,9 +499,9 @@ async fn exercise<S: AuthSchema>(
                 active_organization_id: None,
             })
             .await?;
-        let before_users = rows(raw, "users").await?;
-        let before_accounts = rows(raw, "accounts").await?;
-        let before_sessions = rows(raw, "sessions").await?;
+        let before_users = rows(raw, "user").await?;
+        let before_accounts = rows(raw, "account").await?;
+        let before_sessions = rows(raw, "session").await?;
         let count: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe("SELECT COUNT(*) FROM \"session\""))
             .fetch_one(raw)
             .await?;
@@ -566,9 +574,9 @@ async fn exercise<S: AuthSchema>(
                 .id(),
             original.id()
         );
-        let after_users = rows(raw, "users").await?;
-        let after_accounts = rows(raw, "accounts").await?;
-        let after_sessions = rows(raw, "sessions").await?;
+        let after_users = rows(raw, "user").await?;
+        let after_accounts = rows(raw, "account").await?;
+        let after_sessions = rows(raw, "session").await?;
         assert_eq!(before_users, after_users);
         assert_eq!(before_accounts, after_accounts);
         for original_row in &before_sessions {
@@ -614,7 +622,7 @@ async fn exercise<S: AuthSchema>(
         ),
         (serde_json::json!({"name":"Supported mutation"}), 200),
     ] {
-        let before = rows(raw, "users").await?;
+        let before = rows(raw, "user").await?;
         let mut request = AuthRequest::new(alibi::HttpMethod::Post, "/update-user");
         request.headers.extend([
             ("origin".into(), config().base_url.clone()),
@@ -633,7 +641,7 @@ async fn exercise<S: AuthSchema>(
             String::from_utf8_lossy(&response.body)
         );
         if status == 500 {
-            assert_eq!(rows(raw, "users").await?, before);
+            assert_eq!(rows(raw, "user").await?, before);
         } else {
             assert_eq!(
                 store.get_user_by_id("43").await?.unwrap().name(),
@@ -684,9 +692,9 @@ async fn exercise_query<S: AuthSchema>(
         })
         .await?;
     let before = [
-        rows(raw, "users").await?,
-        rows(raw, "accounts").await?,
-        rows(raw, "sessions").await?,
+        rows(raw, "user").await?,
+        rows(raw, "account").await?,
+        rows(raw, "session").await?,
     ];
     for (direction, expected) in [
         (None, vec!["42", "3"]),
@@ -723,7 +731,7 @@ async fn exercise_query<S: AuthSchema>(
         let body: serde_json::Value = serde_json::from_slice(&response.body)?;
         println!(
             "{}",
-            serde_json::json!({"adapter": std::any::type_name::<S>(), "direction": direction, "status": response.status, "body": body, "before": before, "after": [rows(raw, "users").await?, rows(raw, "accounts").await?, rows(raw, "sessions").await?]})
+            serde_json::json!({"adapter": std::any::type_name::<S>(), "direction": direction, "status": response.status, "body": body, "before": before, "after": [rows(raw, "user").await?, rows(raw, "account").await?, rows(raw, "session").await?]})
         );
         assert_eq!(response.status, 200);
         let ids = body
@@ -743,9 +751,9 @@ async fn exercise_query<S: AuthSchema>(
         assert_eq!(body.get("limit"), Some(&serde_json::json!(2)));
     }
     let after = [
-        rows(raw, "users").await?,
-        rows(raw, "accounts").await?,
-        rows(raw, "sessions").await?,
+        rows(raw, "user").await?,
+        rows(raw, "account").await?,
+        rows(raw, "session").await?,
     ];
     println!(
         "{}",
@@ -802,9 +810,9 @@ async fn exercise_custom_query<S: AuthSchema>(
         })
         .await?;
     let before = [
-        rows(raw, "users").await?,
-        rows(raw, "accounts").await?,
-        rows(raw, "sessions").await?,
+        rows(raw, "user").await?,
+        rows(raw, "account").await?,
+        rows(raw, "session").await?,
     ];
     for (field, operator, value, sort, direction, expected, total) in [
         ("score", "gte", "3", "score", "asc", vec!["3", "2"], 3),
@@ -856,9 +864,9 @@ async fn exercise_custom_query<S: AuthSchema>(
         let response = auth.handle_request(request).await?;
         let body: serde_json::Value = serde_json::from_slice(&response.body)?;
         let after = [
-            rows(raw, "users").await?,
-            rows(raw, "accounts").await?,
-            rows(raw, "sessions").await?,
+            rows(raw, "user").await?,
+            rows(raw, "account").await?,
+            rows(raw, "session").await?,
         ];
         println!(
             "custom observation: {}",
@@ -1101,9 +1109,9 @@ async fn exercise_admission<S: AuthSchema>(
         hooks.events.lock().await.clear();
         hooks.mode.store(mode, std::sync::atomic::Ordering::SeqCst);
         let before = [
-            rows(raw, "users").await?,
-            rows(raw, "accounts").await?,
-            rows(raw, "sessions").await?,
+            rows(raw, "user").await?,
+            rows(raw, "account").await?,
+            rows(raw, "session").await?,
         ];
         let mut request = AuthRequest::new(alibi::HttpMethod::Post, "/admin/impersonate-user");
         _ = request
@@ -1126,9 +1134,9 @@ async fn exercise_admission<S: AuthSchema>(
         let response = auth.handle_request(request).await?;
         let observed = hooks.events.lock().await.clone();
         let after = [
-            rows(raw, "users").await?,
-            rows(raw, "accounts").await?,
-            rows(raw, "sessions").await?,
+            rows(raw, "user").await?,
+            rows(raw, "account").await?,
+            rows(raw, "session").await?,
         ];
         println!(
             "admission observation: {}",

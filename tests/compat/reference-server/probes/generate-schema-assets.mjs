@@ -6,8 +6,9 @@ const root = new URL("../../../../", import.meta.url);
 const packageJson = await Bun.file(
   new URL("../node_modules/better-auth/package.json", import.meta.url),
 ).json();
-if (packageJson.version !== snapshot.version)
+if (packageJson.version !== snapshot.version) {
   throw new Error(`Expected Better Auth ${snapshot.version}, got ${packageJson.version}`);
+}
 
 function probe(dialect, inspect = false) {
   const result = Bun.spawnSync(

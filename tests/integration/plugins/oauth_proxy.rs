@@ -501,11 +501,11 @@ async fn cookie_state_link_restores_initiating_owner_across_session_change<B: Ba
     );
     assert_eq!(
         serde_json::from_str::<Value>(&fixture.preview_db.table("user").await?)?,
-        before.get("users").unwrap().clone()
+        before.get("user").unwrap().clone()
     );
     assert_eq!(
         serde_json::from_str::<Value>(&fixture.preview_db.table("session").await?)?,
-        before.get("sessions").unwrap().clone()
+        before.get("session").unwrap().clone()
     );
     assert_eq!(
         fixture
@@ -1418,31 +1418,31 @@ mod tests {
         let after = rows(&fixture.preview_db).await;
         assert_eq!(
             after
-                .get("users")
+                .get("user")
                 .expect("provider fixture contains this parameter"),
             issued
-                .get("users")
+                .get("user")
                 .expect("provider fixture contains this parameter")
         );
         assert_eq!(
             after
-                .get("accounts")
+                .get("account")
                 .expect("provider fixture contains this parameter"),
             issued
-                .get("accounts")
+                .get("account")
                 .expect("provider fixture contains this parameter")
         );
         assert_eq!(
             after
-                .get("sessions")
+                .get("session")
                 .expect("provider fixture contains this parameter"),
             issued
-                .get("sessions")
+                .get("session")
                 .expect("provider fixture contains this parameter")
         );
         assert_eq!(
             after
-                .get("verifications")
+                .get("verification")
                 .expect("provider fixture contains this parameter"),
             &json!([])
         );
@@ -1604,7 +1604,7 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .map(|account| account["provider_id"].as_str().unwrap().to_owned())
+            .map(|account| account["providerId"].as_str().unwrap().to_owned())
             .collect::<std::collections::BTreeSet<_>>();
         assert_eq!(
             providers,

@@ -30,7 +30,13 @@ use alibi::seaorm::{Database, SeaOrmStore};
 use alibi::{AuthBuilder, AuthConfig};
 use alibi::{AuthUser, CreateUser, UpdateUser};
 
-type Schema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+struct Schema;
+impl alibi::AuthSchema for Schema {
+    type User = custom_user::Model;
+    type Session = alibi::seaorm::store::entities::session::Model;
+    type Account = alibi::seaorm::store::entities::account::Model;
+    type Verification = alibi::seaorm::store::entities::verification::Model;
+}
 
 struct MetadataHook;
 
@@ -145,6 +151,11 @@ mod tests {
         alibi::seaorm::store::__private_test_support::migrator::run_migrations(&db)
             .await
             .unwrap();
+        let builder = alibi::seaorm::sea_orm::Schema::new(DbBackend::Sqlite);
+        _ = db
+            .execute(&builder.create_table_from_entity(custom_user::Entity))
+            .await
+            .unwrap();
         let config = AuthConfig::new("user-json-persistence-secret-minimum-32-characters");
         let auth = AuthBuilder::new(config.clone())
             .store(SeaOrmStore::<Schema>::new(config, db.clone()).hook(MetadataHook))
@@ -195,7 +206,7 @@ mod tests {
         let row = db
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
-                "SELECT \"metadata\" FROM \"user\" WHERE id = ?",
+                "SELECT \"metadata\" FROM custom_metadata_users WHERE id = ?",
                 [id.clone().into()],
             ))
             .await
@@ -231,7 +242,7 @@ mod tests {
         let row_2 = db
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
-                "SELECT \"metadata\" FROM \"user\" WHERE id = ?",
+                "SELECT \"metadata\" FROM custom_metadata_users WHERE id = ?",
                 [id.into()],
             ))
             .await

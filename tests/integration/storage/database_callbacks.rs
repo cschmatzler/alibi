@@ -489,7 +489,7 @@ async fn bulk_session_delete_hooks<B: Backend>(db: Db) -> TestResult {
     _ = db
         .raw
         .execute(
-            "UPDATE \"session\" SET \"expiresAt\"='2000-01-01' WHERE \"token\"='second'",
+            "UPDATE \"session\" SET \"expiresAt\"='2000-01-01T00:00:00Z' WHERE \"token\"='second'",
             &[],
         )
         .await?;
