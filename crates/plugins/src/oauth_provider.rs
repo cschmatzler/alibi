@@ -229,10 +229,17 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             AuthRoute::post("/oauth2/create-client", "createOAuthClient"),
             AuthRoute::get("/oauth2/get-client", "getOAuthClient"),
             AuthRoute::get("/oauth2/public-client", "getOAuthClientPublic"),
+            AuthRoute::get("/oauth2/get-clients", "getOAuthClients"),
         ]
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "getOAuthClients",
+                "getOAuthClients",
+                Some("/oauth2/get-clients"),
+                HttpMethod::Get,
+            ),
             crate::endpoint::definition(
                 "getOAuthClientPublic",
                 "getOAuthClientPublic",
@@ -291,6 +298,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "getOAuthClients" {
+            return Box::pin(self.list_clients(call, ctx)).await;
+        }
         if call.operation_id() == "getOAuthClientPublic" {
             return Box::pin(self.read_public_client(call.query_as()?, call, ctx)).await;
         }
@@ -318,6 +328,11 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/oauth2/get-clients" && *req.method() == HttpMethod::Get {
+            return Ok(Some(
+                Box::pin(self.list_clients(req, ctx)).await?.to_response()?,
+            ));
+        }
         if matches!(req.path(), "/oauth2/get-client" | "/oauth2/public-client")
             && *req.method() == HttpMethod::Get
         {
