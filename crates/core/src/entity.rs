@@ -204,7 +204,6 @@ pub trait AuthOrganization: Clone + Send + Sync + Serialize + std::fmt::Debug + 
     fn logo(&self) -> Option<&str>;
     fn metadata(&self) -> Option<&serde_json::Value>;
     fn created_at(&self) -> DateTime<Utc>;
-    fn updated_at(&self) -> DateTime<Utc>;
 }
 
 /// Trait representing an organization member entity.
@@ -260,7 +259,7 @@ pub trait AuthTwoFactor: Clone + Send + Sync + Serialize + std::fmt::Debug + 'st
     fn secret(&self) -> &str;
     fn backup_codes(&self) -> &str;
     fn user_id(&self) -> Cow<'_, str>;
-    /// Legacy records without this field are not explicitly unverified.
+    /// A nullable verification value is not explicitly false.
     fn verified(&self) -> Option<bool> {
         None
     }

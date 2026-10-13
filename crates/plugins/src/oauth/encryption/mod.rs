@@ -27,9 +27,9 @@ pub fn encrypt_token(plaintext: &str, secret: &str) -> Result<String, AuthError>
     encrypt_token_with_config(plaintext, &AuthConfig::new(secret))
 }
 
-/// Decrypt a token with a single persistence key, passing through plaintext.
+/// Decrypt current-format ciphertext with a single persistence key.
 ///
-/// Use [`decrypt_token_with_config`] to read managed or legacy key versions.
+/// Use [`decrypt_token_with_config`] to read managed key versions.
 pub fn decrypt_token(stored: &str, secret: &str) -> Result<String, AuthError> {
     decrypt_token_with_config(stored, &AuthConfig::new(secret))
 }
@@ -62,19 +62,11 @@ pub fn encrypt_token_with_config(
     crate::token_crypto::encrypt_with_config(plaintext, secret)
 }
 
-/// Source recognizes even-length hexadecimal (and versioned `$ba$` envelopes)
-/// as ciphertext. Other strings, including old plaintext tokens, pass through.
+/// Decrypt current-format ciphertext; reject plaintext and obsolete formats.
 pub fn decrypt_token_with_config(
     stored: &str,
     secret: &alibi_core::AuthConfig,
 ) -> Result<String, AuthError> {
-    let likely_encrypted = stored.starts_with("$ba$")
-        || (!stored.is_empty()
-            && stored.len().is_multiple_of(2)
-            && stored.bytes().all(|byte| byte.is_ascii_hexdigit()));
-    if !likely_encrypted {
-        return Ok(stored.to_owned());
-    }
     crate::token_crypto::decrypt_with_config(stored, secret)
 }
 
@@ -229,6 +221,7 @@ mod tests {
 
         let decrypted = decrypt_token(&encrypted, secret).unwrap();
         assert_eq!(decrypted, plaintext);
+        assert!(decrypt_token("unversioned-old-plaintext", secret).is_err());
     }
 
     // Upstream reference: packages/better-auth/src/api/routes/account.test.ts :: describe("account") and packages/better-auth/src/oauth2/utils.ts; adapted to the Rust OAuth token encryption helpers.

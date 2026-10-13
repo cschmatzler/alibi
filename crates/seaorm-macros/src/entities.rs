@@ -329,9 +329,6 @@ pub(crate) fn account_impl(
     quote! {
         impl #seaorm_root::SeaOrmAccountModel for #ident {
             #additional
-            fn oauth_token_columns() -> Option<[Self::Column; 3]> {
-                Some([Column::AccessToken, Column::RefreshToken, Column::IdToken])
-            }
             type Id = ::std::string::String;
             type UserId = ::std::string::String;
             type Entity = Entity;

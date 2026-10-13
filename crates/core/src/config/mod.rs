@@ -65,7 +65,7 @@ pub struct AuthConfig {
     pub secret: String,
 
     /// Versioned encryption keys. When present, its current key signs new tokens.
-    /// Bare encrypted values require an explicitly configured legacy key.
+    /// Managed ciphertext requires a versioned envelope.
     pub managed_secrets: Option<ManagedSecrets>,
 
     /// Application name, used for cookie prefixes, email templates, etc.
@@ -348,7 +348,7 @@ impl AuthConfig {
             .map_or(self.secret.as_str(), ManagedSecrets::current_secret)
     }
 
-    /// Encryption readers in configured order, followed by a distinct legacy key.
+    /// Current-format encryption readers in configured order.
     pub fn verification_secrets(&self) -> impl Iterator<Item = &str> {
         let keys = self
             .managed_secrets
@@ -553,12 +553,12 @@ pub fn extract_origin(url: &str) -> Option<String> {
     }
     // Custom schemes retain the existing Rust contract. Their upstream
     // authority/path matcher is a separate capability.
-    legacy_pattern_origin(url)
+    pattern_origin(url)
 }
 
 // Configured glob/custom-scheme matching keeps its existing contract; avoid
 // normalizing an explicit pattern into a newly trusted authority.
-fn legacy_pattern_origin(url: &str) -> Option<String> {
+fn pattern_origin(url: &str) -> Option<String> {
     let scheme_end = url.find("://")?;
     let rest = url.get(scheme_end + 3..)?;
     let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());

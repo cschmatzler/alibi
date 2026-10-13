@@ -228,7 +228,6 @@ async fn organization_database_patch_retains_unrequested_native_columns<B: Backe
     assert_eq!(updated.logo, None);
     assert_eq!(updated.metadata, original.metadata);
     assert_eq!(updated.created_at, original.created_at);
-    assert_eq!(updated.updated_at, original.updated_at);
     assert!(
         matches!(
             store

@@ -326,11 +326,7 @@ async fn build_router(
                     "old" => Some(alibi::ManagedSecrets::new(0, OLD)),
                     "retained" => Some(alibi::ManagedSecrets::new(2, CURRENT).retain(0, OLD)),
                     "retired" => Some(alibi::ManagedSecrets::new(2, CURRENT)),
-                    "legacy" => Some(
-                        alibi::ManagedSecrets::new(2, CURRENT)
-                            .retain(0, OLD)
-                            .legacy(LEGACY),
-                    ),
+                    "legacy" => Some(alibi::ManagedSecrets::new(2, CURRENT).retain(0, OLD)),
                     _ => None,
                 };
             }

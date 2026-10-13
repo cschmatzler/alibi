@@ -40,7 +40,6 @@ fn auth_config(current: &str, previous: &str) -> AuthConfig {
 
 - `ManagedSecrets::new(version, key)` sets the **current** version used for all new ciphertext.
 - `.retain(version, key)` keeps an older version readable. Reading old ciphertext does not rewrite it.
-- `.legacy(key)` additionally reads *bare* ciphertext written before managed secrets existed (with the old single secret).
 - `.retire(version)` drops a reader (the current version cannot be retired). Anything still encrypted with it becomes unreadable.
 
 In managed mode `AuthConfig.secret` is ignored; use `config.current_secret()` in application callbacks that need the signing key. The current key must be at least 32 bytes.
@@ -54,7 +53,6 @@ In managed mode `AuthConfig.secret` is ignored; use `config.current_secret()` in
 3. Let records migrate or expire: tokens rewritten on refresh, OTP codes and verification values (minutes), two-factor secrets and OAuth tokens (when the user next re-saves or reconnects), JWKS keys (rotate through the [JWT plugin](/plugins/jwt/)).
 4. Only then `.retire(…)` the old versions — retiring early locks out users whose factors still depend on them.
 
-Moving from a plain single secret: start with `ManagedSecrets::new(1, new).legacy(old_secret)`; after the data has migrated, drop `.legacy`.
 
 ## Using the secret in your own code
 

@@ -94,11 +94,7 @@ pub(crate) async fn router(
             "old" => Some(ManagedSecrets::new(0, OLD)),
             "retained" => Some(ManagedSecrets::new(2, CURRENT).retain(0, OLD)),
             "retired" => Some(ManagedSecrets::new(2, CURRENT)),
-            "legacy" => Some(
-                ManagedSecrets::new(2, CURRENT)
-                    .retain(0, OLD)
-                    .legacy(LEGACY),
-            ),
+            "legacy" => Some(ManagedSecrets::new(2, CURRENT).retain(0, OLD)),
             _ => None,
         };
         let otp = EmailOtpConfig {

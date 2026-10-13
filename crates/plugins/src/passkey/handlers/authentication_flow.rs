@@ -15,7 +15,6 @@ use crate::passkey::webauthn::StoredAuthenticationState;
 use crate::passkey::webauthn::StoredRegistrationState;
 use crate::passkey::webauthn::authentication_options_json;
 use crate::passkey::webauthn::build_verification_core;
-use crate::passkey::webauthn::build_webauthn;
 use crate::passkey::webauthn::challenge_cookie_name;
 use crate::passkey::webauthn::create_challenge_cookie;
 use crate::passkey::webauthn::credential_id_from_authentication;
@@ -38,7 +37,6 @@ use chrono::Utc;
 use serde_json::Value;
 use serde_json::json;
 use uuid::Uuid;
-use webauthn_rs::prelude::DiscoverableKey;
 use webauthn_rs::prelude::PublicKeyCredential;
 use webauthn_rs_core::error::WebauthnError;
 use webauthn_rs_core::proto::UserVerificationPolicy;
@@ -203,16 +201,9 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
             &origin,
             counter,
         ),
-        (crate::passkey::raw_none::StoredCredential::Raw(_), _) => {
-            return passkey_authentication_failure();
-        }
         (crate::passkey::raw_none::StoredCredential::Core(stored_passkey), state) => {
-            let Ok(webauthn) = build_webauthn(config, &ctx.config, &origin) else {
-                return passkey_authentication_failure();
-            };
             let result = match state {
-                StoredAuthenticationState::Core { state }
-                | StoredAuthenticationState::CoreRaw { state, .. } => {
+                StoredAuthenticationState::CoreRaw { state, .. } => {
                     let mut current = stored_passkey.cred.clone();
                     current.counter = counter;
                     stored_passkey.cred = current;
@@ -226,20 +217,6 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
                         stored_passkey,
                         counter,
                         &origin,
-                    )
-                }
-                StoredAuthenticationState::Passkey { state } => {
-                    webauthn.finish_passkey_authentication(&authentication, &state)
-                }
-                StoredAuthenticationState::Discoverable { state } => {
-                    let Ok(legacy) = stored_passkey.to_registry() else {
-                        return passkey_authentication_failure();
-                    };
-                    let discoverable_key = DiscoverableKey::from(legacy);
-                    webauthn.finish_discoverable_authentication(
-                        &authentication,
-                        state,
-                        &[discoverable_key],
                     )
                 }
             };

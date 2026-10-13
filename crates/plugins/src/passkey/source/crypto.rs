@@ -9,7 +9,7 @@ use webauthn_rs_core::{
     proto::{COSEAlgorithm, COSEEC2Key, COSEOKPKey, ECDSACurve},
 };
 
-// Keep the historical persisted shape, including arbitrary RSA exponent bytes.
+// Represent COSE keys, including arbitrary RSA exponent bytes.
 // Registry COSERSAKey uses [u8; 3] and cannot read all credentials we have issued.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(in crate::passkey) struct COSEKey {

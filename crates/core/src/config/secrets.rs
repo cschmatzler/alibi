@@ -9,7 +9,6 @@ use indexmap::IndexMap;
 pub struct ManagedSecrets {
     current_version: u64,
     keys: IndexMap<u64, String>,
-    legacy_secret: Option<String>,
 }
 
 impl ManagedSecrets {
@@ -18,7 +17,6 @@ impl ManagedSecrets {
         Self {
             current_version: version,
             keys: IndexMap::from([(version, secret.into())]),
-            legacy_secret: None,
         }
     }
 
@@ -27,13 +25,6 @@ impl ManagedSecrets {
     #[must_use]
     pub fn retain(mut self, version: u64, secret: impl Into<String>) -> Self {
         _ = self.keys.insert(version, secret.into());
-        self
-    }
-
-    /// Permit pre-managed bare ciphertext encrypted with this key.
-    #[must_use]
-    pub fn legacy(mut self, secret: impl Into<String>) -> Self {
-        self.legacy_secret = Some(secret.into());
         self
     }
 
@@ -62,17 +53,8 @@ impl ManagedSecrets {
         self.keys.get(&version).map(String::as_str)
     }
 
-    #[must_use]
-    pub fn legacy_secret(&self) -> Option<&str> {
-        self.legacy_secret.as_deref()
-    }
-
     pub fn verification_secrets(&self) -> impl Iterator<Item = &str> {
-        self.keys.values().map(String::as_str).chain(
-            self.legacy_secret
-                .as_deref()
-                .filter(|legacy| !self.keys.values().any(|key| key == legacy)),
-        )
+        self.keys.values().map(String::as_str)
     }
 
     /// # Errors
@@ -91,9 +73,6 @@ impl ManagedSecrets {
             return Err(AuthError::config(
                 "Current secret key must be at least 32 characters",
             ));
-        }
-        if self.legacy_secret.as_deref().is_some_and(str::is_empty) {
-            return Err(AuthError::config("Legacy secret key cannot be empty"));
         }
         Ok(())
     }

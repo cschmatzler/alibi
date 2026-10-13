@@ -191,7 +191,6 @@ dependencies = [
 name = "alibi-plugins"
 version = "0.6.0"
 dependencies = [
- "aes-gcm",
  "alibi-core",
  "alibi-schema-registry",
  "alibi-seaorm",

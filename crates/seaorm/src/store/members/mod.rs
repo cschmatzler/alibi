@@ -222,7 +222,7 @@ where
         &self,
         params: &MemberPageQuery,
     ) -> AuthResult<(Vec<Member>, usize)> {
-        let legacy_filter = ListOrganizationMembersParams {
+        let filter_params = ListOrganizationMembersParams {
             organization_id: params.organization_id.clone(),
             sort_by: params.sort_by.clone(),
             sort_direction: params.sort_direction.clone(),
@@ -232,7 +232,7 @@ where
             ..Default::default()
         };
         let base = Entity::find().filter(Column::OrganizationId.eq(&params.organization_id));
-        let mut query = apply_member_filter(base, &legacy_filter);
+        let mut query = apply_member_filter(base, &filter_params);
         let total = usize::try_from(
             query
                 .clone()
@@ -242,7 +242,7 @@ where
         )
         .map_err(|error| AuthError::Internal(error.to_string()))?;
         if params.sort_by.as_deref().and_then(member_column).is_some() {
-            query = apply_member_sort(query, &legacy_filter);
+            query = apply_member_sort(query, &filter_params);
         }
         let backend = self.scoped_connection().get_database_backend();
         let statement = super::bind_page(query.build(backend), params.limit, params.offset)?;

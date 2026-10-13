@@ -1,16 +1,13 @@
-//! Existing credential codec, retaining the fork's variable-length RSA exponent.
+//! Current credential state with variable-length RSA exponents.
 //! MPL-2.0; see LICENSE.md. Registry fields are reused except for the extended key.
 use super::crypto::COSEKey;
-use serde::{Deserialize, Serialize};
-use webauthn_rs_core::{
-    error::WebauthnError,
-    proto::{
-        AttestationFormat, AuthenticationResult, AuthenticatorTransport, Counter, CredentialID,
-        ParsedAttestation, RegisteredExtensions, UserVerificationPolicy,
-    },
+use serde::Serialize;
+use webauthn_rs_core::proto::{
+    AttestationFormat, AuthenticationResult, AuthenticatorTransport, Counter, CredentialID,
+    ParsedAttestation, RegisteredExtensions, UserVerificationPolicy,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub(in crate::passkey) struct Credential {
     pub cred_id: CredentialID,
     pub cred: COSEKey,
@@ -24,20 +21,13 @@ pub(in crate::passkey) struct Credential {
     pub attestation: ParsedAttestation,
     pub attestation_format: AttestationFormat,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub(in crate::passkey) struct Passkey {
     pub cred: Credential,
 }
 impl Passkey {
     pub(in crate::passkey) fn cred_id(&self) -> &CredentialID {
         &self.cred.cred_id
-    }
-    pub(in crate::passkey) fn to_registry(
-        &self,
-    ) -> Result<webauthn_rs::prelude::Passkey, WebauthnError> {
-        // Legacy ceremonies were issued by the registry verifier. Its serialized
-        // format remains the boundary; new Source ceremonies never take this path.
-        serde_json::from_value(serde_json::to_value(self)?).map_err(Into::into)
     }
     pub(in crate::passkey) fn update_credential(
         &mut self,

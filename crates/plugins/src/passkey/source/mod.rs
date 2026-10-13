@@ -1,5 +1,5 @@
 //! Better Auth ceremony policy layered on registry `WebAuthn` protocol/crypto types.
-//! Registry code owns options and legacy ceremonies. These extensions retain
+//! Registry code supplies protocol types. These extensions retain
 //! original signed bytes and the persisted credential format. See README.md.
 mod attestation;
 pub(super) mod credential;

@@ -11,7 +11,6 @@ mod jwks;
 mod members;
 pub(crate) mod migrator;
 mod oauth_clients;
-mod oauth_token_conversion;
 mod organization_roles;
 mod organizations;
 mod passkeys;

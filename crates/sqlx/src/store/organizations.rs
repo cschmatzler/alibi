@@ -57,7 +57,6 @@ where
         active.set("logo", org.logo);
         active.set("metadata", metadata.into_sql_value());
         active.set("created_at", now);
-        active.set("updated_at", now);
         self.organization_models
             .organization
             .set_fields(self.exec(), &mut active, &mut org.additional_fields)
@@ -343,7 +342,6 @@ fn apply_organization_update(
             .into_sql_value(),
         );
     }
-    active.set("updated_at", Utc::now());
 
     Ok(active)
 }

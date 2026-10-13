@@ -16,11 +16,9 @@ pub(crate) struct RawNonePolicy {
     pub origin: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub(super) enum RawCredential {
-    // Keep the historical codec discriminator readable across upgrades.
-    #[serde(rename = "sourceRawNone")]
     SourceRawKey {
         credential_id: Vec<u8>,
         public_key: Vec<u8>,
@@ -32,8 +30,6 @@ pub(super) enum RawCredential {
     },
 }
 
-#[derive(Deserialize)]
-#[serde(untagged)]
 pub(super) enum StoredCredential {
     Raw(RawCredential),
     Core(Passkey),

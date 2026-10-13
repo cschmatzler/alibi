@@ -460,8 +460,8 @@ async fn corrupt_imported_oauth_ciphertexts_reject_before_transport_or_writes<B:
         (wrong.clone(), None),
         (tampered.clone(), None),
         ("00".into(), None),
-        ("legacy-plaintext".into(), Some("legacy-plaintext")),
-        ("abc".into(), Some("abc")),
+        ("old-plaintext".into(), None),
+        ("abc".into(), None),
     ] {
         _ = db
             .execute(

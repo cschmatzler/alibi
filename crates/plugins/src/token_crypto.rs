@@ -103,8 +103,8 @@ pub(crate) fn encrypt_with_config(
     }
 }
 
-/// Resolve a versioned reader without trying unrelated keys. Bare persistence
-/// data requires an explicit legacy key in managed mode.
+/// Resolve a versioned reader without trying unrelated keys. Managed persistence
+/// data requires an authenticated versioned envelope.
 pub(crate) fn decrypt_with_config(
     stored: &str,
     config: &alibi_core::AuthConfig,
@@ -132,9 +132,9 @@ pub(crate) fn decryption_key<'a>(
             AuthError::Encryption("Encrypted secret version has been retired".into())
         });
     }
-    keys.legacy_secret().ok_or_else(|| {
-        AuthError::Encryption("Legacy encrypted data requires an explicit legacy secret".into())
-    })
+    Err(AuthError::Encryption(
+        "Managed ciphertext requires a versioned envelope".into(),
+    ))
 }
 
 fn parse_envelope(stored: &str) -> Option<(u64, &str)> {
@@ -225,13 +225,6 @@ mod tests {
         assert!(stored.starts_with("$ba$2$"));
         assert_eq!(
             decrypt_with_config_for_purpose(&stored, &config, EncryptionPurpose::ProxyState)
-                .unwrap(),
-            "state"
-        );
-        let legacy = encrypt_for_purpose("state", OLD, EncryptionPurpose::ProxyState).unwrap();
-        let config = managed(ManagedSecrets::new(2, NEW).legacy(OLD));
-        assert_eq!(
-            decrypt_with_config_for_purpose(&legacy, &config, EncryptionPurpose::ProxyState)
                 .unwrap(),
             "state"
         );

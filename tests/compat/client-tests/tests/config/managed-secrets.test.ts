@@ -109,7 +109,6 @@ compatScenario(
     const results = [];
     for (const [write, read, version] of [
       ["managed-old", "managed-retained", 0],
-      ["managed-bare", "managed-legacy", null],
     ] as const) {
       const email = ctx.uniqueEmail(write);
       const sent = await request(ctx, write, "email-otp/send-verification-otp", {

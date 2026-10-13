@@ -65,7 +65,7 @@ Alibi can *consume* OAuth/OIDC providers (including enterprise IdPs through [Gen
 
 ## Known boundaries
 
-- **Native token encoding.** Rows written by *early* versions of this Rust implementation use an older OAuth-token encoding; see [Legacy OAuth token conversion](/guides/legacy-oauth-tokens/).
+- **Token encoding.** Only current-format ciphertext is supported. Earlier Rust encodings and plaintext imports are rejected; no conversion API is provided.
 - **Concurrent device decisions** and a few other races retain the behavior measured on 1.7.6, unchanged by the 1.7.7 delta, including its edge cases.
 - The TypeScript generic-OAuth client helper `signIn.oauth2` is not served; use `signIn.social` ([Generic OAuth](/authentication/generic-oauth/#frontend)).
 

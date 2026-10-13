@@ -27,7 +27,6 @@ pub mod error;
 pub mod field_policy;
 pub mod hooks;
 pub mod middleware;
-pub mod oauth_token_conversion;
 pub mod openapi;
 pub mod plugin;
 pub mod schema;

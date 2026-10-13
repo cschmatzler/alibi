@@ -26,7 +26,6 @@ impl From<&Model> for Organization {
             logo: model.logo.clone(),
             metadata: model.metadata.as_ref().map(|metadata| (**metadata).clone()),
             created_at: model.created_at,
-            updated_at: model.created_at,
         }
     }
 }

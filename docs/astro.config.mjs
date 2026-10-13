@@ -143,7 +143,6 @@ export default defineConfig({
             'guides/cross-origin',
             'guides/server-side-calls',
             'guides/writing-a-plugin',
-            'guides/legacy-oauth-tokens',
           ],
         },
         {
