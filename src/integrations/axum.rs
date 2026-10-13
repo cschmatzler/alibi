@@ -227,6 +227,10 @@ where
         let mut inner = std::mem::replace(&mut self.inner, ready);
         let layer = self.layer.clone();
         Box::pin(async move {
+            // An outer layer already resolved this request; reuse its result.
+            if request.extensions().get::<Resolution>().is_some() {
+                return inner.call(request).await;
+            }
             let (session, headers) =
                 layer
                     .get_session(request.headers())

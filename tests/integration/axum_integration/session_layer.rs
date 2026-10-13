@@ -166,3 +166,20 @@ async fn resolved_session_fails_closed_without_the_layer() {
 
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
+
+#[tokio::test]
+async fn nested_session_layers_resolve_once() {
+    let auth = refreshing_auth().await;
+    let router = app(&auth, SessionLayer::new(Arc::clone(&auth)))
+        .layer(SessionLayer::new(Arc::clone(&auth)));
+    let (_, token) = create_test_user(router.clone()).await;
+
+    let response = get_with_cookie(&router, "/me", &test_session_cookie(&token)).await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let renewals = set_cookies(&response)
+        .into_iter()
+        .filter(|cookie| cookie.starts_with("better-auth.session_token="))
+        .count();
+    assert_eq!(renewals, 1);
+}
