@@ -389,7 +389,7 @@ impl SsoPlugin {
             }))
     }
 }
-fn safe_redirect<'a, S: AuthSchema>(
+pub(super) fn safe_redirect<'a, S: AuthSchema>(
     candidates: impl IntoIterator<Item = Option<&'a str>>,
     callback: &str,
     ctx: &AuthContext<S>,

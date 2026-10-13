@@ -102,37 +102,7 @@ pub(super) fn verify(
             .filter_map(Value::as_str)
             .collect()
     };
-    // Same-document, whole-node references prevent file/network resolution and filtered-claim signatures.
-    for node in doc.descendants(root) {
-        if doc
-            .element(node)
-            .is_some_and(|element| element.name.matches(Some(DSIG), "Reference"))
-        {
-            if !attribute(&doc, node, "URI").is_some_and(|uri| uri.starts_with('#')) {
-                return Err(invalid());
-            }
-            for transform in child(&doc, node, DSIG, "Transforms")
-                .map_or_else(Vec::new, |transforms| {
-                    children(&doc, transforms, DSIG, "Transform")
-                })
-            {
-                if !attribute(&doc, transform, "Algorithm").is_some_and(|algorithm| {
-                    matches!(
-                        algorithm,
-                        "http://www.w3.org/2000/09/xmldsig#enveloped-signature"
-                            | "http://www.w3.org/2001/10/xml-exc-c14n#"
-                            | "http://www.w3.org/2001/10/xml-exc-c14n#WithComments"
-                            | "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
-                            | "http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments"
-                            | "http://www.w3.org/2006/12/xml-c14n11"
-                            | "http://www.w3.org/2006/12/xml-c14n11#WithComments"
-                    )
-                }) {
-                    return Err(invalid());
-                }
-            }
-        }
-    }
+    validate_signature_references(&doc, root)?;
     let mut verified = HashSet::new();
     let mut assertion_signed = false;
     let mut response_signed = false;
@@ -391,4 +361,43 @@ pub(super) fn verify(
             .and_then(|statement| attribute(&doc, statement, "SessionIndex"))
             .map(str::to_owned),
     })
+}
+
+pub(super) fn validate_signature_references(
+    doc: &Document<'_>,
+    root: NodeId,
+) -> Result<(), Failure> {
+    // Same-document, whole-node references prevent file/network resolution and filtered-claim signatures.
+    for node in doc.descendants(root) {
+        if doc
+            .element(node)
+            .is_some_and(|element| element.name.matches(Some(DSIG), "Reference"))
+        {
+            if !attribute(doc, node, "URI").is_some_and(|uri| uri.starts_with('#')) {
+                return Err(invalid());
+            }
+            for transform in child(doc, node, DSIG, "Transforms")
+                .map_or_else(Vec::new, |transforms| {
+                    children(doc, transforms, DSIG, "Transform")
+                })
+            {
+                if !attribute(doc, transform, "Algorithm").is_some_and(|algorithm| {
+                    matches!(
+                        algorithm,
+                        "http://www.w3.org/2000/09/xmldsig#enveloped-signature"
+                            | "http://www.w3.org/2001/10/xml-exc-c14n#"
+                            | "http://www.w3.org/2001/10/xml-exc-c14n#WithComments"
+                            | "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
+                            | "http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments"
+                            | "http://www.w3.org/2006/12/xml-c14n11"
+                            | "http://www.w3.org/2006/12/xml-c14n11#WithComments"
+                    )
+                }) {
+                    return Err(invalid());
+                }
+            }
+        }
+    }
+
+    Ok(())
 }

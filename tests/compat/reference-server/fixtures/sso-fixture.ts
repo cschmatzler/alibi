@@ -88,6 +88,16 @@ export async function ssoFixture(base: BetterAuthOptions) {
         ),
       );
     }
+    if (input.action === "slo") {
+      return auth.api.sloEndpoint({
+        params: input.params,
+        body: input.body,
+        query: input.query,
+        method: "POST",
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
     if (input.action === "initiate-slo") {
       return auth.api.initiateSLO({
         params: input.params,
