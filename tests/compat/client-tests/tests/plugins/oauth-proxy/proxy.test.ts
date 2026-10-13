@@ -243,111 +243,127 @@ async function forward(
 
 const comparison = { oauthProxyProfileSecret: oauthPurposeSecret(secret, "oauth-proxy-profile") };
 
-compatScenario(
-  "OAuth proxy exchanges on production then consumes preview state for only the provider owner",
-  async (ctx) => {
-    const owner = ctx.actor("proxy-owner", "oauth-proxy");
-    const foreign = ctx.actor("proxy-foreign", "oauth-proxy");
-    const seeded = await foreign.client.signUp.email({
-      email: ctx.uniqueEmail("proxy-foreign"),
-      name: "Foreign",
-      password: "password123",
-    });
-    expect(seeded.error).toBeNull();
+for (const operation of ["oAuthProxy", "oAuthProxyCompletion"] as const) {
+  compatScenario(
+    `OAuth proxy ${operation} exchanges on production then consumes preview state for only the provider owner`,
+    async (ctx) => {
+      const owner = ctx.actor("proxy-owner", "oauth-proxy");
+      const foreign = ctx.actor("proxy-foreign", "oauth-proxy");
+      const seeded = await foreign.client.signUp.email({
+        email: ctx.uniqueEmail("proxy-foreign"),
+        name: "Foreign",
+        password: "password123",
+      });
+      expect(seeded.error).toBeNull();
 
-    const before = await state(ctx);
-    const issued = await issue(ctx, owner);
-    const saved = await state(ctx);
-    expect(saved.preview.verification).toHaveLength(1);
+      const before = await state(ctx);
+      const issued = await issue(ctx, owner);
+      const saved = await state(ctx);
+      expect(saved.preview.verification).toHaveLength(1);
 
-    const forwarded = await forward(ctx, owner, issued);
-    const production = await state(ctx);
-    expect(production.production).toEqual(before.production);
-    expect(production.preview).toEqual(saved.preview);
+      const forwarded = await forward(ctx, owner, issued);
+      const production = await state(ctx);
+      expect(production.production).toEqual(before.production);
+      expect(production.preview).toEqual(saved.preview);
 
-    const serverComplete = async (
-      query: unknown = Object.fromEntries(new URL(forwarded.bridge).searchParams),
-    ) =>
-      response(
-        await owner.fetch(`${ctx.baseURL}${path}/__server-proxy`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ query }),
+      const serverComplete = async (
+        query: unknown = Object.fromEntries(new URL(forwarded.bridge).searchParams),
+        provider = "gitlab",
+      ) =>
+        response(
+          await owner.fetch(`${ctx.baseURL}${path}/__server-proxy`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ query, operation, params: { id: provider } }),
+            redirect: "manual",
+          }),
+        );
+      const rejected = [];
+      for (const query of [
+        {},
+        { callbackURL: 42 },
+        { callbackURL: `${ctx.baseURL}/proxy-done`, profile: null },
+      ]) {
+        const denied = await serverComplete(query);
+        expect(denied.status).toBe(400);
+        expect(denied.body).toMatchObject({ code: "VALIDATION_ERROR" });
+        expect((await state(ctx)).preview).toEqual(saved.preview);
+        rejected.push(denied);
+      }
+      const providerMismatch =
+        operation === "oAuthProxyCompletion" ? await serverComplete(undefined, "google") : null;
+      if (providerMismatch) {
+        expect(providerMismatch.status).toBe(302);
+        expect(new URL(providerMismatch.location!).searchParams.get("error")).toBe(
+          "provider_mismatch",
+        );
+        expect((await state(ctx)).preview).toEqual(saved.preview);
+      }
+      const completed = await serverComplete();
+      expect(completed.status).toBe(302);
+      expect(completed.location).toBe(`${ctx.baseURL}/proxy-new`);
+
+      const current = await owner.client.getSession();
+      expect(current.data!.user.email).toBe("proxy-owner@fixture.test");
+
+      const after = await state(ctx);
+      expect(after.preview.verification).toHaveLength(0);
+      expect(after.preview.users).toHaveLength(2);
+      expect(after.preview.accounts).toHaveLength(2);
+      expect(after.preview.sessions).toHaveLength(2);
+
+      const id = current.data!.user.id;
+      expect(after.preview.accounts.find((r) => r.providerId === "gitlab")!.userId).toBe(id);
+      expect(after.preview.sessions.find((r) => r.userId === id)!.token).toBe(
+        current.data!.session.token,
+      );
+      expect(after.preview.users.find((r) => r.id === seeded.data!.user.id)).toEqual(
+        before.preview.users[0],
+      );
+      expect(after.preview.sessions.filter((r) => r.userId === seeded.data!.user.id)).toEqual(
+        before.preview.sessions,
+      );
+
+      const replay = await serverComplete();
+      expect(new URL(replay.location!).searchParams.get("error")).toBe("state_mismatch");
+      expect((await state(ctx)).preview).toEqual(after.preview);
+
+      const codeReplay = await response(
+        await owner.fetch(forwarded.approved.location!, {
           redirect: "manual",
+          credentials: "omit",
         }),
       );
-    const rejected = [];
-    for (const query of [
-      {},
-      { callbackURL: 42 },
-      { callbackURL: `${ctx.baseURL}/proxy-done`, profile: null },
-    ]) {
-      const denied = await serverComplete(query);
-      expect(denied.status).toBe(400);
-      expect(denied.body).toMatchObject({ code: "VALIDATION_ERROR" });
-      expect((await state(ctx)).preview).toEqual(saved.preview);
-      rejected.push(denied);
-    }
-    const completed = await serverComplete();
-    expect(completed.status).toBe(302);
-    expect(completed.location).toBe(`${ctx.baseURL}/proxy-new`);
+      expect(new URL(codeReplay.location!).searchParams.get("error")).toBe("invalid_code");
 
-    const current = await owner.client.getSession();
-    expect(current.data!.user.email).toBe("proxy-owner@fixture.test");
+      const final = await state(ctx);
+      expect(final.preview).toEqual(after.preview);
+      expect(final.production).toEqual(before.production);
 
-    const after = await state(ctx);
-    expect(after.preview.verification).toHaveLength(0);
-    expect(after.preview.users).toHaveLength(2);
-    expect(after.preview.accounts).toHaveLength(2);
-    expect(after.preview.sessions).toHaveLength(2);
-
-    const id = current.data!.user.id;
-    expect(after.preview.accounts.find((r) => r.providerId === "gitlab")!.userId).toBe(id);
-    expect(after.preview.sessions.find((r) => r.userId === id)!.token).toBe(
-      current.data!.session.token,
-    );
-    expect(after.preview.users.find((r) => r.id === seeded.data!.user.id)).toEqual(
-      before.preview.users[0],
-    );
-    expect(after.preview.sessions.filter((r) => r.userId === seeded.data!.user.id)).toEqual(
-      before.preview.sessions,
-    );
-
-    const replay = await serverComplete();
-    expect(new URL(replay.location!).searchParams.get("error")).toBe("state_mismatch");
-    expect((await state(ctx)).preview).toEqual(after.preview);
-
-    const codeReplay = await response(
-      await owner.fetch(forwarded.approved.location!, { redirect: "manual", credentials: "omit" }),
-    );
-    expect(new URL(codeReplay.location!).searchParams.get("error")).toBe("invalid_code");
-
-    const final = await state(ctx);
-    expect(final.preview).toEqual(after.preview);
-    expect(final.production).toEqual(before.production);
-
-    return {
-      before: observations(before),
-      started: issued.started,
-      issuedState: issued.issuedState,
-      issued: observations(saved),
-      approved: forwarded.approved,
-      forwarded: forwarded.forwarded,
-      oauthProxyProfile: forwarded.atom,
-      afterProduction: observations(production),
-      rejected,
-      completed,
-      current,
-      after: observations(after),
-      replay,
-      codeReplay,
-      final: observations(final),
-    };
-  },
-  ["POST /sign-in/social", "GET /callback/{}/oauth-proxy"],
-  undefined,
-  comparison,
-);
+      return {
+        before: observations(before),
+        started: issued.started,
+        issuedState: issued.issuedState,
+        issued: observations(saved),
+        approved: forwarded.approved,
+        forwarded: forwarded.forwarded,
+        oauthProxyProfile: forwarded.atom,
+        afterProduction: observations(production),
+        rejected,
+        providerMismatch,
+        completed,
+        current,
+        after: observations(after),
+        replay,
+        codeReplay,
+        final: observations(final),
+      };
+    },
+    ["POST /sign-in/social", "GET /callback/{}/oauth-proxy"],
+    undefined,
+    comparison,
+  );
+}
 
 compatScenario(
   "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",

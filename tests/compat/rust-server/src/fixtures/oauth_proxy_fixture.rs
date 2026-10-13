@@ -398,7 +398,7 @@ async fn build_router(
                 (index, mode.to_owned()),
                 Router::new().nest(path, Router::new()
                     .route("/__server-proxy",post({let auth=auth.clone();move |Json(input):Json<Value>|{let auth=auth.clone();async move {
-                        let endpoint=alibi::endpoint::ServerEndpoint::<Value>::new("oauth-proxy","oAuthProxy").with_query(&input["query"]).unwrap();
+                        let endpoint=alibi::endpoint::ServerEndpoint::<Value>::new("oauth-proxy",if input["operation"]=="oAuthProxyCompletion" {"oAuthProxyCompletion"}else{"oAuthProxy"}).with_query(&input["query"]).unwrap().with_params(&input["params"]).unwrap();
                         match auth.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),..Default::default()}).await {
                             Ok(output)=>output.into_response().unwrap().into_response(),
                             Err(error)=>{let mut response=if error.body_absent{AuthResponse::new(error.error.status_code())}else{error.error.to_auth_response()};if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}if let Some(headers)=error.headers{for(name,value)in headers.iter(){if name.eq_ignore_ascii_case("set-cookie"){response.headers.append(name,value);}else{response.headers.insert(name,value);}}}response.into_response()}
