@@ -82,7 +82,8 @@ pub use backup_storage::{TwoFactorBackupCipher, TwoFactorBackupStorage};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
 pub use endpoint::{
-    BackupCodesOutput, TotpOutput, TotpVerified, TwoFactorDisabled, TwoFactorOtpSent,
+    BackupCodeVerified, BackupCodesOutput, TotpOutput, TotpVerified, TwoFactorDisabled,
+    TwoFactorOtpSent,
 };
 use hkdf::Hkdf;
 use hmac::{Hmac, KeyInit, Mac};
@@ -207,14 +208,17 @@ pub(crate) struct GenerateBackupCodesRequest {
     password: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
-pub(crate) struct VerifyBackupCodeRequest {
-    code: String,
-    #[serde(rename = "disableSession")]
-    disable_session: Option<bool>,
-    #[serde(rename = "trustDevice")]
-    trust_device: Option<bool>,
+/// Recovery code and optional session/device publication preferences.
+#[derive(Debug, Deserialize, Serialize, Validate)]
+pub struct VerifyBackupCodeRequest {
+    pub code: String,
+    #[serde(rename = "disableSession", skip_serializing_if = "Option::is_none")]
+    pub disable_session: Option<bool>,
+    #[serde(rename = "trustDevice", skip_serializing_if = "Option::is_none")]
+    pub trust_device: Option<bool>,
 }
+/// Public input for direct recovery-code verification.
+pub type VerifyBackupCodeInput = VerifyBackupCodeRequest;
 
 /// A generated authenticator enrollment or an immediately enabled OTP factor.
 #[derive(Debug, Serialize, Deserialize)]
@@ -632,8 +636,17 @@ impl TwoFactorPlugin {
             Err(resp) => return Ok(resp),
         };
 
+        self.verify_backup_code(&body, req, ctx).await
+    }
+
+    async fn verify_backup_code<S: alibi_core::AuthSchema>(
+        &self,
+        body: &VerifyBackupCodeInput,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<AuthResponse> {
         let (response, set_cookie_headers) =
-            match Box::pin(verify_backup_code_core(req, &body, &self.config, ctx)).await {
+            match Box::pin(verify_backup_code_core(req, body, &self.config, ctx)).await {
                 Ok(result) => result,
                 Err(error) => return verification_error_response(error, ctx),
             };

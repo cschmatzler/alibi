@@ -1271,16 +1271,120 @@ async fn two_factor_pending_unverified_totp_backup_recovery<B: Backend>(db: Db) 
         .await?,
         before
     );
-    let completed = call(
-        &auth,
-        request(
-            "/two-factor/verify-backup-code",
-            Some(json!({"code":enrollment["backupCodes"][0]})),
-            &cookies(&pending),
+    for (input, cookie, status, code) in [
+        (json!({}), Some(cookies(&pending)), 400, "VALIDATION_ERROR"),
+        (
+            json!({"code":42}),
+            Some(cookies(&pending)),
+            400,
+            "VALIDATION_ERROR",
         ),
-        200,
+        (
+            json!({"code":"unused","disableSession":null}),
+            Some(cookies(&pending)),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (
+            json!({"code":"unused","trustDevice":42}),
+            Some(cookies(&pending)),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (
+            json!({"code":"unused"}),
+            None,
+            401,
+            "INVALID_TWO_FACTOR_COOKIE",
+        ),
+    ] {
+        let error = Box::pin(
+            auth.dispatch_endpoint(
+                alibi::endpoint::ServerEndpoint::<Value>::new("two-factor", "verifyBackupCode")
+                    .with_body(&input)?,
+                alibi::endpoint::EndpointOptions {
+                    headers: cookie.map(|cookie| [("cookie".into(), cookie)].into_iter().collect()),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.error.status_code(), status);
+        assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
+        assert_eq!(
+            db.tables(&[
+                "two_factor",
+                "verifications",
+                "sessions",
+                "users",
+                "accounts"
+            ])
+            .await?,
+            before
+        );
+    }
+    let before_unpublished = db.tables(&["sessions", "users", "accounts"]).await?;
+    let unpublished = Box::pin(auth.dispatch_endpoint(
+        TwoFactorPlugin::verify_backup_code_endpoint(
+            alibi::plugins::two_factor::VerifyBackupCodeInput {
+                code: enrollment["backupCodes"][1].as_str().unwrap().into(),
+                disable_session: Some(true),
+                trust_device: Some(true),
+            },
+        ),
+        alibi::endpoint::EndpointOptions {
+            headers: Some([("cookie".into(), cookies(&pending))].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(body(&unpublished)["user"]["id"], id);
+    assert!(body(&unpublished).get("token").is_none());
+    assert!(cookies(&unpublished).is_empty());
+    assert_eq!(
+        db.tables(&["sessions", "users", "accounts"]).await?,
+        before_unpublished
+    );
+    let retired = Box::pin(
+        auth.dispatch_endpoint(
+            alibi::endpoint::ServerEndpoint::<Value>::new("two-factor", "verifyBackupCode")
+                .with_body(&json!({"code":enrollment["backupCodes"][0]}))?,
+            alibi::endpoint::EndpointOptions {
+                headers: Some([("cookie".into(), cookies(&pending))].into_iter().collect()),
+                ..Default::default()
+            },
+        ),
     )
-    .await;
+    .await
+    .unwrap_err();
+    assert_eq!(retired.error.status_code(), 401);
+    assert_eq!(
+        retired.error.error_payload().1.as_deref(),
+        Some("INVALID_TWO_FACTOR_COOKIE")
+    );
+    let pending = sign_in(&auth, "unverified@example.test", json!({}), "").await;
+    let completed = Box::pin(
+        auth.dispatch_endpoint(
+            TwoFactorPlugin::verify_backup_code_endpoint(
+                alibi::plugins::two_factor::VerifyBackupCodeInput {
+                    code: enrollment["backupCodes"][0].as_str().unwrap().into(),
+                    disable_session: None,
+                    trust_device: None,
+                },
+            )
+            .with_body(
+                &json!({"code":enrollment["backupCodes"][0],"userId":"untrusted-selector"}),
+            )?,
+            alibi::endpoint::EndpointOptions {
+                headers: Some([("cookie".into(), cookies(&pending))].into_iter().collect()),
+                ..Default::default()
+            },
+        ),
+    )
+    .await?
+    .into_response()?;
     assert_eq!(body(&completed)["user"]["id"], id);
     authenticated(&auth, &cookies(&completed), "unverified@example.test").await;
     let factor = auth.store().get_two_factor_by_user_id(&id).await?.unwrap();
