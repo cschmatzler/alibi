@@ -48,7 +48,6 @@ export type ComparisonContext = {
   /** Managed proxy fixtures select one declared envelope version, never try a key ring. */
   readonly oauthProxyProfileManagedKeys?: {
     readonly keys: Readonly<Record<number, string>>;
-    readonly legacySecret?: string;
   };
   readonly leftBaseURL: string;
   readonly rightBaseURL: string;
@@ -3815,7 +3814,7 @@ export function compareValues(
       const secret = context.oauthProxyProfileManagedKeys
         ? envelope
           ? context.oauthProxyProfileManagedKeys.keys[Number(envelope[1])]
-          : context.oauthProxyProfileManagedKeys.legacySecret
+          : undefined
         : envelope
           ? undefined
           : context.oauthProxyProfileSecret;
