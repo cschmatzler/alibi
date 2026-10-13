@@ -6,6 +6,14 @@ use alibi::seaorm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use axum::{Router, extract::Query, response::IntoResponse, routing::get};
 use std::{collections::HashMap, sync::Arc};
+#[derive(Debug)]
+struct MachinePrivileges;
+#[async_trait::async_trait]
+impl alibi::plugins::OAuthClientPrivileges for MachinePrivileges {
+    async fn allowed(&self,ctx:&alibi::plugins::OAuthClientPrivilegeContext)->alibi::AuthResult<bool> {
+        Ok(ctx.action=="configure-client-credentials-scopes" && ctx.headers.get("x-machine-operator").map(String::as_str)==Some("grant") && ctx.user.get("email").and_then(serde_json::Value::as_str).is_some_and(|email|email.contains("machine-owner")) && ctx.session.get("userId")==ctx.user.get("id"))
+    }
+}
 pub(crate) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
@@ -51,8 +59,11 @@ pub(crate) async fn router(
         "expired",
         "resources-open",
         "selection",
+        "machine",
     ] {
         let provider = OAuthProviderConfig {
+            client_credentials_scope_privileges:if mode=="machine"{Some(Arc::new(MachinePrivileges))}else{None},
+            scopes:if mode=="machine"{vec!["api:read".into(),"api:write".into()]}else{OAuthProviderConfig::default().scopes},
             select_account_page: if mode == "selection" {
                 Some("/select".into())
             } else {

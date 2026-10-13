@@ -284,7 +284,9 @@ pub use magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
 pub use multi_session::{MultiSessionConfig, MultiSessionPlugin};
 pub use oauth::OAuthPlugin;
 pub use oauth_popup::OAuthPopupPlugin;
-pub use oauth_provider::{OAuthProviderConfig, OAuthProviderPlugin};
+pub use oauth_provider::{
+    OAuthClientPrivilegeContext, OAuthClientPrivileges, OAuthProviderConfig, OAuthProviderPlugin,
+};
 pub use oauth_proxy::{OAuthProxyConfig, OAuthProxyPlugin};
 pub use one_tap::{OAuthJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin};
 pub use open_api::{OpenApiConfig, OpenApiPlugin};
