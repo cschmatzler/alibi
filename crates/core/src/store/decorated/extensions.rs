@@ -598,4 +598,7 @@ impl<S: AuthSchema> crate::store::OAuthClientStore for PluginStore<S> {
     ) -> AuthResult<Vec<crate::store::OAuthClient>> {
         self.inner.list_oauth_clients_by_user(user_id).await
     }
+    async fn delete_oauth_client(&self, client_id: &str) -> AuthResult<()> {
+        self.inner.delete_oauth_client(client_id).await
+    }
 }

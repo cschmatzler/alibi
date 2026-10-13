@@ -38,4 +38,9 @@ pub trait OAuthClientStore: Send + Sync {
             "OAuth client persistence is not supported by this store",
         ))
     }
+    async fn delete_oauth_client(&self, _client_id: &str) -> AuthResult<()> {
+        Err(AuthError::config(
+            "OAuth client persistence is not supported by this store",
+        ))
+    }
 }

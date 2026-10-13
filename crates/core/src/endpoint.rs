@@ -602,6 +602,14 @@ impl EndpointResponse {
         )?))
     }
 
+    /// Return no logical value and an empty successful HTTP response.
+    #[must_use]
+    pub fn empty() -> Self {
+        let mut response = Self::value(JsValue::Null);
+        response.http_response = Some(crate::AuthResponse::new(200));
+        response
+    }
+
     /// Return an actual HTTP response value, retaining its bytes, status and headers.
     ///
     /// Endpoint hooks still run. Accumulated hook headers and status remain
@@ -871,7 +879,11 @@ impl<T: DeserializeOwned + 'static> EndpointOutput<T> {
     /// # Errors
     /// Returns an error if an application hook replaced the expected output type.
     pub fn decode(&self) -> AuthResult<T> {
-        if self.http_response.is_some() {
+        if self
+            .http_response
+            .as_ref()
+            .is_some_and(|response| !(response.body.is_empty() && self.value == JsValue::Null))
+        {
             return Err(AuthError::internal(
                 "Endpoint returned an HTTP response; use http_response or into_response",
             ));
