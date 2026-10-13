@@ -191,7 +191,6 @@ dependencies = [
 name = "alibi-plugins"
 version = "0.6.0"
 dependencies = [
- "aes-gcm",
  "alibi-core",
  "alibi-schema-registry",
  "alibi-seaorm",
@@ -251,6 +250,7 @@ name = "alibi-seaorm"
 version = "0.6.0"
 dependencies = [
  "alibi-core",
+ "alibi-schema-registry",
  "alibi-seaorm-macros",
  "async-trait",
  "chrono",
@@ -280,6 +280,7 @@ name = "alibi-sqlx"
 version = "0.6.0"
 dependencies = [
  "alibi-core",
+ "alibi-schema-registry",
  "alibi-sqlx-macros",
  "async-trait",
  "chrono",

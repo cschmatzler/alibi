@@ -96,15 +96,15 @@ async fn oauth_resource_unlink_is_idempotent_and_revokes_linked_client_admission
     assert_eq!(url.path(), "/login");
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
-            "oauth_client_resource",
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
+            "oauthClientResource",
         ])
         .await?;
     let denied = Box::pin(auth.dispatch_endpoint(
@@ -120,15 +120,15 @@ async fn oauth_resource_unlink_is_idempotent_and_revokes_linked_client_admission
     assert_eq!(
         before,
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
-            "oauth_client_resource"
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
+            "oauthClientResource"
         ])
         .await?
     );
@@ -141,14 +141,14 @@ async fn oauth_resource_unlink_is_idempotent_and_revokes_linked_client_admission
     assert_eq!(Box::pin(auth.handle_request(http)).await?.status, 404);
     let unrelated = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
         ])
         .await?;
     let result = Box::pin(auth.dispatch_endpoint(
@@ -177,18 +177,18 @@ async fn oauth_resource_unlink_is_idempotent_and_revokes_linked_client_admission
         auth.store().list_oauth_client_resources(&second_id).await?[0].id,
         other_row
     );
-    assert_eq!(db.count("oauth_client_resource").await?, 2);
+    assert_eq!(db.count("oauthClientResource").await?, 2);
     let state = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
-            "oauth_client_resource",
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
+            "oauthClientResource",
         ])
         .await?;
     for (identifier, client_id) in [
@@ -238,29 +238,29 @@ async fn oauth_resource_unlink_is_idempotent_and_revokes_linked_client_admission
     assert_eq!(
         state,
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
-            "oauth_client_resource"
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
+            "oauthClientResource"
         ])
         .await?
     );
     assert_eq!(
         unrelated,
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource"
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource"
         ])
         .await?
     );

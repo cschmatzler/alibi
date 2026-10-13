@@ -36,13 +36,13 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
     let signed = url.query().unwrap();
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
+            "oauthClient",
+            "oauthConsent",
         ])
         .await?;
     let output = auth
@@ -77,13 +77,13 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
     assert_eq!(
         before,
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent"
+            "oauthClient",
+            "oauthConsent"
         ])
         .await?
     );
@@ -136,13 +136,13 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
     assert_eq!(
         before,
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent"
+            "oauthClient",
+            "oauthConsent"
         ])
         .await?
     );
@@ -223,7 +223,7 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
     let rows = auth.store().list_oauth_consents_by_user(user_id).await?;
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, row_id);
-    assert_eq!(db.count("oauth_consent").await?, 1);
-    assert_eq!(db.count("verifications").await?, 2);
+    assert_eq!(db.count("oauthConsent").await?, 1);
+    assert_eq!(db.count("verification").await?, 2);
     Ok(())
 }

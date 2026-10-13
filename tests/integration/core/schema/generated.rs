@@ -182,7 +182,7 @@ mod sqlx_core {
             None,
         ))
         .await?;
-        for table in ["users", "accounts", "sessions"] {
+        for table in ["user", "account", "session"] {
             assert_eq!(
                 db.count(table).await?,
                 1,
@@ -232,7 +232,7 @@ mod seaorm_core {
             None,
         ))
         .await?;
-        for table in ["users", "accounts", "sessions"] {
+        for table in ["user", "account", "session"] {
             assert_eq!(
                 db.count(table).await?,
                 1,
@@ -247,7 +247,7 @@ async fn assert_core_only(db: &crate::storage::Db) -> TestResult {
     let query = if db.raw.is_postgres() {
         "SELECT COUNT(*) FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'api_keys'"
     } else {
-        "SELECT COUNT(*) FROM sqlite_master WHERE name = 'api_keys'"
+        "SELECT COUNT(*) FROM sqlite_master WHERE \"name\" = 'api_keys'"
     };
     assert_eq!(db.count_where(query, &[]).await?, 0);
     Ok(())

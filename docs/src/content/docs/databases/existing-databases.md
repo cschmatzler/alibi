@@ -74,7 +74,6 @@ pub struct SessionModel {
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub ip_address: Option<String>,
     pub user_agent: Option<String>,
-    pub active: bool,
 }
 ```
 
@@ -112,3 +111,7 @@ The function must return a unique `String` and runs only when no explicit id is 
 3. Add the unique indexes on `users.email` and `sessions.token` if they are missing ([Database](/concepts/database/#migrations)).
 4. Generate plugin tables with `alibi generate --plugins …` and review the DDL against yours.
 5. Keep application migrations in charge of the schema; do not call `run_app_migrations` against production data.
+
+The bundled and CLI-generated schemas match Better Auth TypeScript 1.7.7 defaults, including singular and camelCase physical names (`user`, `session`, `expiresAt`) and field nullability. Sessions have no `active` column; validity uses `expiresAt`, and revocation deletes a session or expires it.
+
+This changes the previous Alibi schema. Existing databases need an explicit migration before adopting the new bundled models. Rename tables and columns, supply required user names and emails, and reconcile plugin columns and constraints with the pinned schema. The bundled migrators reject an old migration ledger rather than silently rewriting or discarding existing data. Application-owned models can still describe an explicitly customized schema.

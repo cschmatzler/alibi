@@ -185,7 +185,6 @@ impl<M: AuthSession> AuthSession for AdapterRecord<M> {
     delegate!(impersonated_by, Option<&str>);
     delegate!(active_organization_id, Option<&str>);
     delegate!(active_team_id, Option<&str>);
-    delegate!(active, bool);
 }
 
 impl<M: AuthAccount> AuthAccount for AdapterRecord<M> {

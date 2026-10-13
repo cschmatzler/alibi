@@ -149,7 +149,7 @@ async fn dynamic_refresh_preserves_grant_authority_and_callback_precedence<B: Ba
         authorization["code_challenge"]
     );
     assert_eq!(grant.headers["x-code-policy"], "operator-value");
-    let account = db.text("SELECT id FROM accounts", &[]).await?.unwrap();
+    let account = db.text("SELECT id FROM \"account\"", &[]).await?.unwrap();
     let make_request = |path: &str, mode: &str| {
         let mut req = request(
             path,
@@ -206,36 +206,36 @@ async fn dynamic_refresh_preserves_grant_authority_and_callback_precedence<B: Ba
             if mode == "none" { None } else { Some(mode) }
         );
         assert_eq!(
-            db.text("SELECT access_token FROM accounts", &[])
+            db.text("SELECT \"accessToken\" FROM \"account\"", &[])
                 .await?
                 .as_deref(),
             Some(access.as_str())
         );
         assert_eq!(
-            db.text("SELECT refresh_token FROM accounts", &[])
+            db.text("SELECT \"refreshToken\" FROM \"account\"", &[])
                 .await?
                 .as_deref(),
             Some(refresh.as_str())
         );
         prior_refresh = refresh;
     }
-    let unchanged = db.table("accounts").await?;
+    let unchanged = db.table("account").await?;
     let rejected = call(&auth, make_request("/refresh-token", "error"), 400).await;
     assert_eq!(body(&rejected)["code"], "FAILED_TO_REFRESH_ACCESS_TOKEN");
     assert!(remote.take().is_empty());
-    assert_eq!(db.table("accounts").await?, unchanged);
+    assert_eq!(db.table("account").await?, unchanged);
     db.set_timestamp(
-        "accounts",
-        "access_token_expires_at",
+        "account",
+        "accessTokenExpiresAt",
         ("id", &account),
         chrono::Utc::now() - chrono::Duration::hours(1),
     )
     .await?;
-    let unchanged = db.table("accounts").await?;
+    let unchanged = db.table("account").await?;
     let rejected = call(&auth, make_request("/get-access-token", "error"), 400).await;
     assert_eq!(body(&rejected)["code"], "FAILED_TO_GET_ACCESS_TOKEN");
     assert!(remote.take().is_empty());
-    assert_eq!(db.table("accounts").await?, unchanged);
+    assert_eq!(db.table("account").await?, unchanged);
     let observed = calls.lock().unwrap().clone();
     assert_eq!(
         observed,
@@ -250,7 +250,7 @@ async fn dynamic_refresh_preserves_grant_authority_and_callback_precedence<B: Ba
     let response = call(&custom_auth, make_request("/refresh-token", "error"), 200).await;
     assert_eq!(body(&response)["accessToken"], "custom-access");
     assert_eq!(
-        db.text("SELECT refresh_token FROM accounts", &[])
+        db.text("SELECT \"refreshToken\" FROM \"account\"", &[])
             .await?
             .as_deref(),
         Some("custom-refresh")
@@ -333,12 +333,12 @@ async fn account_info_dynamic_refresh_preserves_request_and_grant_authority<B: B
     let owner = signup(&auth, "dynamic-info-owner@example.test").await;
     let foreign = signup(&auth, "dynamic-info-foreign@example.test").await;
     let id = seed(&auth, body(&owner)["user"]["id"].as_str().unwrap()).await?;
-    let protected = db.tables(&["users", "sessions"]).await?;
+    let protected = db.tables(&["user", "session"]).await?;
     for mode in ["approved-a", "approved-b"] {
-        _=db.execute("UPDATE accounts SET access_token='old-access',refresh_token='old-refresh' WHERE id=$1",&[&id]).await?;
+        _=db.execute("UPDATE \"account\" SET \"accessToken\"='old-access',\"refreshToken\"='old-refresh' WHERE id=$1",&[&id]).await?;
         db.set_timestamp(
-            "accounts",
-            "access_token_expires_at",
+            "account",
+            "accessTokenExpiresAt",
             ("id", &id),
             chrono::Utc::now() - chrono::Duration::hours(1),
         )
@@ -378,14 +378,14 @@ async fn account_info_dynamic_refresh_preserves_request_and_grant_authority<B: B
             format!("Bearer access-{mode}")
         );
         assert_eq!(
-            db.text("SELECT scope FROM accounts WHERE id=$1", &[&id])
+            db.text("SELECT \"scope\" FROM \"account\" WHERE id=$1", &[&id])
                 .await?
                 .as_deref(),
             Some("calendar,drive")
         );
-        assert_eq!(db.tables(&["users", "sessions"]).await?, protected);
+        assert_eq!(db.tables(&["user", "session"]).await?, protected);
     }
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let called = policy.0.lock().unwrap().len();
     let mut input = request("/account-info", None, &cookies(&foreign));
     input.set_query_pairs([("accountId", id.as_str())]);
@@ -395,7 +395,7 @@ async fn account_info_dynamic_refresh_preserves_request_and_grant_authority<B: B
     _ = call(&auth, input, 400).await;
     assert_eq!(policy.0.lock().unwrap().len(), called);
     assert!(remote.take().is_empty());
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     B::close(connection).await
 }
 
@@ -464,7 +464,7 @@ async fn concurrent_accepted_refreshes_preserve_account_and_browser_authority<B:
     let owner = signup(&auth, "concurrent-refresh@example.test").await;
     let foreign = signup(&auth, "concurrent-foreign@example.test").await;
     let id = seed(&auth, body(&owner)["user"]["id"].as_str().unwrap()).await?;
-    let protected = db.tables(&["users", "sessions"]).await?;
+    let protected = db.tables(&["user", "session"]).await?;
     let input = request(
         "/refresh-token",
         Some(json!({"accountId":id})),
@@ -478,36 +478,36 @@ async fn concurrent_accepted_refreshes_preserve_account_and_browser_authority<B:
     assert_eq!(handler.entered.load(std::sync::atomic::Ordering::SeqCst), 2);
     assert!(remote.take().is_empty());
     assert_eq!(
-        db.text("SELECT user_id FROM accounts WHERE id=$1", &[&id])
+        db.text("SELECT \"userId\" FROM \"account\" WHERE id=$1", &[&id])
             .await?,
         body(&owner)["user"]["id"].as_str().map(str::to_owned)
     );
     assert_eq!(
-        db.text("SELECT account_id FROM accounts WHERE id=$1", &[&id])
+        db.text("SELECT \"accountId\" FROM \"account\" WHERE id=$1", &[&id])
             .await?
             .as_deref(),
         Some("account-subject")
     );
     assert_eq!(
-        db.text("SELECT provider_id FROM accounts WHERE id=$1", &[&id])
+        db.text("SELECT \"providerId\" FROM \"account\" WHERE id=$1", &[&id])
             .await?
             .as_deref(),
         Some("generic")
     );
     assert_eq!(
-        db.text("SELECT scope FROM accounts WHERE id=$1", &[&id])
+        db.text("SELECT \"scope\" FROM \"account\" WHERE id=$1", &[&id])
             .await?
             .as_deref(),
         Some("calendar,drive")
     );
     for (column, expected) in [
-        ("access_token", "concurrent-access"),
-        ("refresh_token", "concurrent-refresh"),
-        ("id_token", "concurrent-id"),
+        ("accessToken", "concurrent-access"),
+        ("refreshToken", "concurrent-refresh"),
+        ("idToken", "concurrent-id"),
     ] {
         assert_eq!(
             db.text(
-                &format!("SELECT {column} FROM accounts WHERE id=$1"),
+                &format!("SELECT \"{column}\" FROM \"account\" WHERE id=$1"),
                 &[&id]
             )
             .await?
@@ -515,8 +515,8 @@ async fn concurrent_accepted_refreshes_preserve_account_and_browser_authority<B:
             Some(expected)
         );
     }
-    assert_eq!(db.count("accounts").await?, 3);
-    assert_eq!(db.tables(&["users", "sessions"]).await?, protected);
+    assert_eq!(db.count("account").await?, 3);
+    assert_eq!(db.tables(&["user", "session"]).await?, protected);
     authenticated(&auth, &cookies(&foreign), "concurrent-foreign@example.test").await;
     B::close(connection).await
 }

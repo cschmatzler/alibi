@@ -485,8 +485,8 @@ async fn admin_impersonation_and_bans<B: Backend>(db: Db) -> TestResult {
         .await?,
     );
     db.set_timestamp(
-        "users",
-        "ban_expires",
+        "user",
+        "banExpires",
         ("id", &member_id),
         chrono::Utc::now() - chrono::Duration::minutes(1),
     )
@@ -511,8 +511,8 @@ async fn admin_impersonation_and_bans<B: Backend>(db: Db) -> TestResult {
     )
     .await;
     db.set_timestamp(
-        "users",
-        "ban_expires",
+        "user",
+        "banExpires",
         ("id", &member_id),
         chrono::Utc::now() - chrono::Duration::minutes(1),
     )
@@ -554,7 +554,7 @@ async fn create_only_role_cannot_initialize_ban_properties<B: Backend>(db: Db) -
     let creator = signup(&auth, "creator@example.test").await;
     _ = promote(&auth, &creator, "creator").await;
     let cookie = cookies(&creator);
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for data in [
         json!({"banned":false}),
         json!({"banReason":"reason"}),
@@ -562,7 +562,7 @@ async fn create_only_role_cannot_initialize_ban_properties<B: Backend>(db: Db) -
     ] {
         let denied = call(&auth, request("/admin/create-user", Some(json!({"email":"target@example.test","name":"Target","password":PASSWORD,"data":data})), &cookie), 403).await;
         assert_eq!(body(&denied)["code"], "YOU_ARE_NOT_ALLOWED_TO_BAN_USERS");
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     }
     let created = call(
         &auth,
@@ -574,9 +574,9 @@ async fn create_only_role_cannot_initialize_ban_properties<B: Backend>(db: Db) -
         200,
     )
     .await;
-    assert_eq!(db.count("users").await?, 2);
-    assert_eq!(db.count("accounts").await?, 2);
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("user").await?, 2);
+    assert_eq!(db.count("account").await?, 2);
+    assert_eq!(db.count("session").await?, 1);
     let login = call(
         &auth,
         request(
@@ -602,7 +602,7 @@ async fn update_only_role_cannot_mutate_any_ban_property<B: Backend>(db: Db) -> 
     let cookie = cookies(&manager);
     let owner = signup(&auth, "target@example.test").await;
     let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for data in [
         json!({"banned":false,"name":"must-not-commit"}),
         json!({"banReason":"reason","name":"must-not-commit"}),
@@ -619,10 +619,10 @@ async fn update_only_role_cannot_mutate_any_ban_property<B: Backend>(db: Db) -> 
         )
         .await;
         assert_eq!(body(&denied)["code"], "YOU_ARE_NOT_ALLOWED_TO_BAN_USERS");
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     }
-    let accounts = db.table("accounts").await?;
-    let sessions = db.table("sessions").await?;
+    let accounts = db.table("account").await?;
+    let sessions = db.table("session").await?;
     let accepted = call(
         &auth,
         request(
@@ -635,13 +635,13 @@ async fn update_only_role_cannot_mutate_any_ban_property<B: Backend>(db: Db) -> 
     .await;
     assert_eq!(body(&accepted)["name"], "Allowed name");
     assert_eq!(
-        db.text("SELECT name FROM users WHERE id=$1", &[&id])
+        db.text("SELECT \"name\" FROM \"user\" WHERE id=$1", &[&id])
             .await?
             .as_deref(),
         Some("Allowed name")
     );
-    assert_eq!(db.table("accounts").await?, accounts);
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("account").await?, accounts);
+    assert_eq!(db.table("session").await?, sessions);
     authenticated(&auth, &cookies(&owner), "target@example.test").await;
     B::close(connection).await
 }
@@ -656,7 +656,7 @@ async fn update_only_role_cannot_change_email_verification<B: Backend>(db: Db) -
     _ = promote(&auth, &manager, "support").await;
     let owner = signup(&auth, "target@example.test").await;
     let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let denied = call(
         &auth,
         request(
@@ -671,7 +671,7 @@ async fn update_only_role_cannot_change_email_verification<B: Backend>(db: Db) -
         body(&denied)["code"],
         "YOU_ARE_NOT_ALLOWED_TO_SET_USERS_EMAIL"
     );
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let accepted = call(
         &auth,
         request(
@@ -700,7 +700,7 @@ async fn admin_password_bounds_preserve_credentials_until_valid_replacement<B: B
     _ = promote(&auth, &administrator, "admin").await;
     let owner = signup(&auth, "target@example.test").await;
     let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (length, code) in [(7, "PASSWORD_TOO_SHORT"), (129, "PASSWORD_TOO_LONG")] {
         let denied = call(
             &auth,
@@ -713,7 +713,7 @@ async fn admin_password_bounds_preserve_credentials_until_valid_replacement<B: B
         )
         .await;
         assert_eq!(body(&denied)["code"], code);
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     }
     for password in [PASSWORD.to_owned(), "x".repeat(8), "x".repeat(128)] {
         if password != PASSWORD {
@@ -756,8 +756,8 @@ async fn admin_email_replacement_moves_login_without_replacing_accounts_or_sessi
     _ = promote(&auth, &administrator, "admin").await;
     let owner = signup(&auth, "old@example.test").await;
     let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
-    let accounts = db.table("accounts").await?;
-    let sessions = db.table("sessions").await?;
+    let accounts = db.table("account").await?;
+    let sessions = db.table("session").await?;
     let updated = call(
         &auth,
         request(
@@ -771,13 +771,13 @@ async fn admin_email_replacement_moves_login_without_replacing_accounts_or_sessi
     assert_eq!(body(&updated)["id"], id);
     assert_eq!(body(&updated)["email"], "new@example.test");
     assert_eq!(
-        db.text("SELECT email FROM users WHERE id=$1", &[&id])
+        db.text("SELECT \"email\" FROM \"user\" WHERE id=$1", &[&id])
             .await?
             .as_deref(),
         Some("new@example.test")
     );
-    assert_eq!(db.table("accounts").await?, accounts);
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("account").await?, accounts);
+    assert_eq!(db.table("session").await?, sessions);
     let denied = call(
         &auth,
         request(
@@ -789,7 +789,7 @@ async fn admin_email_replacement_moves_login_without_replacing_accounts_or_sessi
     )
     .await;
     assert_eq!(body(&denied)["code"], "INVALID_EMAIL_OR_PASSWORD");
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("session").await?, sessions);
     let login = call(
         &auth,
         request(
@@ -801,7 +801,7 @@ async fn admin_email_replacement_moves_login_without_replacing_accounts_or_sessi
     )
     .await;
     assert_eq!(body(&login)["user"]["id"], id);
-    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.table("account").await?, accounts);
     authenticated(&auth, &cookies(&owner), "new@example.test").await;
     B::close(connection).await
 }
@@ -816,7 +816,7 @@ async fn configured_role_validation_precedes_missing_target_lookup<B: Backend>(
         .await?;
     let admin = signup(&auth, "admin@example.test").await;
     _ = promote(&auth, &admin, "admin").await;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let denied = call(
         &auth,
         request(
@@ -842,7 +842,7 @@ async fn configured_role_validation_precedes_missing_target_lookup<B: Backend>(
     )
     .await;
     assert_eq!(body(&missing)["code"], "USER_NOT_FOUND");
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     B::close(connection).await
 }
 
@@ -858,7 +858,7 @@ async fn admin_email_values_are_coerced_and_validated_before_any_update<B: Backe
     _ = promote(&auth, &admin, "admin").await;
     let owner = signup(&auth, "owner@example.test").await;
     let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for email in [json!(null), json!(123), json!(false), json!([]), json!({})] {
         let denied = call(
             &auth,
@@ -871,7 +871,7 @@ async fn admin_email_values_are_coerced_and_validated_before_any_update<B: Backe
         )
         .await;
         assert_eq!(body(&denied)["code"], "INVALID_EMAIL");
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     }
     let accepted = call(
         &auth,
@@ -941,7 +941,7 @@ async fn demoted_admin_cannot_use_stale_cookie_cache_to_restore_grants<B: Backen
     .await;
     let cached = call(&auth, request("/get-session", None, &cookie), 200).await;
     assert_eq!(body(&cached)["user"]["role"], "admin");
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (path, input, code) in [
         (
             "/admin/set-role",
@@ -956,7 +956,7 @@ async fn demoted_admin_cannot_use_stale_cookie_cache_to_restore_grants<B: Backen
     ] {
         let denied = call(&auth, request(path, Some(input), &cookie), 403).await;
         assert_eq!(body(&denied)["code"], code);
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     }
     let permission = call(
         &auth,
@@ -992,7 +992,7 @@ async fn explicit_empty_admin_roles_deny_builtin_grants_without_losing_sessions<
     let owner = signup(&auth, "owner@example.test").await;
     let target = signup(&auth, "target@example.test").await;
     let id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let mut get = request("/admin/get-user", None, &cookies(&owner));
     _ = get.query.insert("id".into(), id.clone());
     _ = call(&auth, get.clone(), 403).await;
@@ -1017,7 +1017,7 @@ async fn explicit_empty_admin_roles_deny_builtin_grants_without_losing_sessions<
     )
     .await;
     assert_eq!(body(&check)["success"], false);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     authenticated(&auth, &cookies(&owner), "owner@example.test").await;
     let standard = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(AdminPlugin::new())
@@ -1045,7 +1045,7 @@ async fn admin_role_tokens_with_whitespace_do_not_gain_privileges_or_admin_prote
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let admin = signup(&auth, "admin@example.test").await;
     let admin_id = promote(&auth, &admin, "admin").await;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let check = call(
         &auth,
         request(
@@ -1067,7 +1067,7 @@ async fn admin_role_tokens_with_whitespace_do_not_gain_privileges_or_admin_prote
         403,
     )
     .await;
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let impersonated = call(
         &auth,
         request(
@@ -1123,7 +1123,7 @@ async fn blank_admin_role_falls_back_to_configured_user_permission<B: Backend>(
     )
     .await;
     assert_eq!(body(&check)["success"], true);
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let mut get = request("/admin/get-user", None, &cookies(&owner));
     _ = get.query.insert("id".into(), id.clone());
     let visible = call(&auth, get, 200).await;
@@ -1138,7 +1138,7 @@ async fn blank_admin_role_falls_back_to_configured_user_permission<B: Backend>(
         403,
     )
     .await;
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     B::close(connection).await
 }
 
@@ -1158,7 +1158,7 @@ async fn create_only_role_cannot_select_explicit_or_nested_roles<B: Backend>(db:
         .build()
         .await?;
     let owner = signup(&auth, "creator@example.test").await;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for extra in [
         json!({"role":"support"}),
         json!({"role":""}),
@@ -1182,7 +1182,7 @@ async fn create_only_role_cannot_select_explicit_or_nested_roles<B: Backend>(db:
             body(&denied)["code"],
             "YOU_ARE_NOT_ALLOWED_TO_CHANGE_USERS_ROLE"
         );
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     }
     let created = call(
         &auth,
@@ -1195,13 +1195,13 @@ async fn create_only_role_cannot_select_explicit_or_nested_roles<B: Backend>(db:
     )
     .await;
     assert_eq!(body(&created)["user"]["role"], "creator");
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     let duplicate=call(&auth,request("/admin/create-user",Some(json!({"email":"target@example.test","name":"Target","password":PASSWORD,"data":{"role":"user"}})),&cookies(&owner)),403).await;
     assert_eq!(
         body(&duplicate)["code"],
         "YOU_ARE_NOT_ALLOWED_TO_CHANGE_USERS_ROLE"
     );
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, after);
     B::close(connection).await
 }
 
@@ -1217,13 +1217,13 @@ async fn admin_password_field_rejects_accompanying_profile_mutations<B: Backend>
     _ = promote(&auth, &admin, "admin").await;
     let target = signup(&auth, "target@example.test").await;
     let id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let denied=call(&auth,request("/admin/update-user",Some(json!({"userId":id,"data":{"password":"replacement-password-123","name":"must-not-commit"}})),&cookies(&admin)),400).await;
     assert_eq!(
         body(&denied)["code"],
         "PASSWORD_CANNOT_BE_UPDATED_VIA_UPDATE_USER"
     );
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     _ = call(
         &auth,
         request(
@@ -1234,7 +1234,7 @@ async fn admin_password_field_rejects_accompanying_profile_mutations<B: Backend>
         401,
     )
     .await;
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let login = call(
         &auth,
         request(
@@ -1264,7 +1264,7 @@ async fn admin_colliding_email_rejects_accompanying_profile_mutations<B: Backend
     let left = signup(&auth, "left@example.test").await;
     let right = signup(&auth, "right@example.test").await;
     let id = body(&left)["user"]["id"].as_str().unwrap().to_owned();
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for email in ["right@example.test", "RIGHT@EXAMPLE.TEST"] {
         let denied = call(
             &auth,
@@ -1280,7 +1280,7 @@ async fn admin_colliding_email_rejects_accompanying_profile_mutations<B: Backend
             body(&denied)["code"],
             "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"
         );
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     }
     for (email, owner) in [("left@example.test", &left), ("right@example.test", &right)] {
         let login = call(
@@ -1325,10 +1325,13 @@ async fn admin_update_ban_revokes_every_target_browser_and_preserves_foreign_ses
     .await;
     let foreign = signup(&auth, "foreign@example.test").await;
     let id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
-    let accounts = db.table("accounts").await?;
+    let accounts = db.table("account").await?;
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+            &[&id]
+        )
+        .await?,
         2
     );
     let updated = call(
@@ -1345,12 +1348,15 @@ async fn admin_update_ban_revokes_every_target_browser_and_preserves_foreign_ses
     assert_eq!(body(&updated)["banned"], true);
     assert_eq!(body(&updated)["banReason"], "Update route ban");
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+            &[&id]
+        )
+        .await?,
         0
     );
-    assert_eq!(db.count("sessions").await?, 2);
-    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.count("session").await?, 2);
+    assert_eq!(db.table("account").await?, accounts);
     for browser in [&target, &sibling] {
         let response = call(&auth, request("/get-session", None, &cookies(browser)), 200).await;
         assert!(body(&response).is_null());
@@ -1373,7 +1379,7 @@ async fn admin_self_ban_update_preserves_state_and_live_authority<B: Backend>(
     let admin = signup(&auth, "self-ban-admin@example.test").await;
     let id = promote(&auth, &admin, "admin").await;
     let cookie = cookies(&admin);
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let mut read = request("/admin/get-user", None, &cookie);
     _ = read.query.insert("id".into(), id.clone());
     let visible_before = body(&call(&auth, read.clone(), 200).await);
@@ -1392,7 +1398,7 @@ async fn admin_self_ban_update_preserves_state_and_live_authority<B: Backend>(
     )
     .await;
     assert_eq!(body(&denied)["code"], "YOU_CANNOT_BAN_YOURSELF");
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     assert_eq!(body(&call(&auth, read, 200).await), visible_before);
     let session = call(&auth, request("/get-session", None, &cookie), 200).await;
     assert_eq!(body(&session)["user"]["id"], id);
@@ -1411,7 +1417,7 @@ async fn admin_self_ban_update_preserves_state_and_live_authority<B: Backend>(
     assert_eq!(body(&accepted)["id"], id);
     assert_eq!(body(&accepted)["name"], "Still authorized");
     assert_eq!(
-        db.text("SELECT name FROM users WHERE id=$1", &[&id])
+        db.text("SELECT \"name\" FROM \"user\" WHERE id=$1", &[&id])
             .await?
             .as_deref(),
         Some("Still authorized")
@@ -1429,7 +1435,7 @@ async fn admin_empty_update_authority_order<B: Backend>(db: Db) -> TestResult {
     _ = promote(&auth, &administrator, "admin").await;
     let target = signup(&auth, "empty-update-target@example.test").await;
     let id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (cookie, status, code) in [
         (cookies(&target), 403, "YOU_ARE_NOT_ALLOWED_TO_UPDATE_USERS"),
         (cookies(&administrator), 400, "NO_DATA_TO_UPDATE"),
@@ -1445,7 +1451,7 @@ async fn admin_empty_update_authority_order<B: Backend>(db: Db) -> TestResult {
         )
         .await;
         assert_eq!(body(&response)["code"], code);
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     }
     let retry = call(
         &auth,
@@ -1460,7 +1466,7 @@ async fn admin_empty_update_authority_order<B: Backend>(db: Db) -> TestResult {
     assert_eq!(body(&retry)["id"], id);
     assert_eq!(body(&retry)["name"], "Valid retry");
     assert_eq!(
-        db.text("SELECT name FROM users WHERE id=$1", &[&id])
+        db.text("SELECT \"name\" FROM \"user\" WHERE id=$1", &[&id])
             .await?
             .as_deref(),
         Some("Valid retry")
@@ -1481,7 +1487,7 @@ async fn admin_literal_role_input_admission<B: Backend>(db: Db) -> TestResult {
     _ = promote(&auth, &administrator, "admin").await;
     let target = signup(&auth, "literal-target@example.test").await;
     let id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for role in [
         json!("admin,user"),
         json!(["admin,user"]),
@@ -1505,7 +1511,7 @@ async fn admin_literal_role_input_admission<B: Backend>(db: Db) -> TestResult {
                 body(&response)["code"],
                 "YOU_ARE_NOT_ALLOWED_TO_SET_NON_EXISTENT_VALUE"
             );
-            assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+            assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
         }
     }
     for (role, expected) in [
@@ -1526,13 +1532,13 @@ async fn admin_literal_role_input_admission<B: Backend>(db: Db) -> TestResult {
         .await;
         assert_eq!(body(&response)["user"]["role"], expected);
         assert_eq!(
-            db.text("SELECT role FROM users WHERE id=$1", &[&id])
+            db.text("SELECT \"role\" FROM \"user\" WHERE id=$1", &[&id])
                 .await?
                 .as_deref(),
             Some(expected)
         );
-        assert_eq!(db.table("accounts").await?, before[1]);
-        assert_eq!(db.table("sessions").await?, before[2]);
+        assert_eq!(db.table("account").await?, before[1]);
+        assert_eq!(db.table("session").await?, before[2]);
     }
     authenticated(
         &auth,
@@ -1553,7 +1559,7 @@ async fn admin_create_role_selector_precedence<B: Backend>(db: Db) -> TestResult
         .await?;
     let administrator = signup(&auth, "create-role-admin@example.test").await;
     _ = promote(&auth, &administrator, "admin").await;
-    let initial = db.tables(&["users", "accounts", "sessions"]).await?;
+    let initial = db.tables(&["user", "account", "session"]).await?;
     for (index, input) in [
         json!({"role":["user"],"data":{"role":"admin,user"}}),
         json!({"data":{"role":["user"]}}),
@@ -1583,12 +1589,12 @@ async fn admin_create_role_selector_precedence<B: Backend>(db: Db) -> TestResult
         assert_eq!(body(&response)["user"]["role"], expected);
         let id = body(&response)["user"]["id"].as_str().unwrap().to_owned();
         assert_eq!(
-            db.text("SELECT role FROM users WHERE id=$1", &[&id])
+            db.text("SELECT \"role\" FROM \"user\" WHERE id=$1", &[&id])
                 .await?
                 .as_deref(),
             Some(expected)
         );
-        assert_eq!(db.count_where("SELECT COUNT(*) FROM accounts WHERE user_id=$1 AND account_id=$1 AND provider_id='credential'", &[&id]).await?, 1);
+        assert_eq!(db.count_where("SELECT COUNT(*) FROM \"account\" WHERE \"userId\"=$1 AND \"accountId\"=$1 AND \"providerId\"='credential'", &[&id]).await?, 1);
         let login = call(
             &auth,
             request(
@@ -1602,13 +1608,13 @@ async fn admin_create_role_selector_precedence<B: Backend>(db: Db) -> TestResult
         assert_eq!(body(&login)["user"]["id"], id);
         assert_eq!(body(&login)["user"]["role"], expected);
     }
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for role in [Value::Null, json!({"unexpected":"admin"})] {
         let response = call(&auth, request("/admin/create-user", Some(json!({"email":"invalid-nested@example.test","name":"Invalid","data":{"role":role}})), &cookies(&administrator)), 400).await;
         assert_eq!(body(&response)["code"], "INVALID_ROLE_TYPE");
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     }
-    let users: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+    let users: Vec<Value> = serde_json::from_str(&db.table("user").await?)?;
     assert!(
         serde_json::from_str::<Vec<Value>>(&initial[0])?
             .iter()
@@ -1642,7 +1648,7 @@ async fn admin_array_filter_sql_operands<B: Backend>(db: Db) -> TestResult {
     }
     _ = promote(&auth, &users[0], "admin").await;
     let jar = cookies(&users[0]);
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let make = |field: &str, operator: &str, values: Vec<String>, page: bool, cookie: &str| {
         let mut input = request("/admin/list-users", None, cookie);
         let mut query: Vec<(String, String)> = vec![
@@ -1824,7 +1830,7 @@ async fn admin_array_filter_sql_operands<B: Backend>(db: Db) -> TestResult {
         )
         .await;
     }
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     B::close(connection).await
 }
 
@@ -1837,7 +1843,7 @@ async fn admin_repeated_query_validation_before_auth<B: Backend>(db: Db) -> Test
     let owner = signup(&auth, "repeat-owner@example.test").await;
     let regular = signup(&auth, "repeat-regular@example.test").await;
     _ = promote(&auth, &owner, "admin").await;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for cookie in [String::new(), cookies(&regular), cookies(&owner)] {
         for (route, key, a, b, message) in [
             (
@@ -1962,7 +1968,7 @@ async fn admin_repeated_query_validation_before_auth<B: Backend>(db: Db) -> Test
             assert_eq!(body(&result)["id"], body(&regular)["user"]["id"]);
         }
     }
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     B::close(connection).await
 }
 
@@ -1982,7 +1988,7 @@ async fn admin_stored_timestamp_precision_survives_public_projections<B: Backend
     let target_email = "timestamp-target@example.test";
     let target = signup(&auth, target_email).await;
     let target_id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
-    let stable_authority = db.tables(&["accounts", "sessions"]).await?;
+    let stable_authority = db.tables(&["account", "session"]).await?;
     let mut read = request("/admin/get-user", None, &cookies(&admin));
     _ = read.query.insert("id".into(), target_id.clone());
     let mut list = request("/admin/list-users", None, &cookies(&admin));
@@ -1997,13 +2003,13 @@ async fn admin_stored_timestamp_precision_survives_public_projections<B: Backend
         let updated_at = "2026-09-30T22:12:34.321456Z";
         assert_eq!(
             db.execute(
-                "UPDATE users SET created_at=$1, updated_at=$2 WHERE id=$3",
+                "UPDATE \"user\" SET \"createdAt\"=$1, \"updatedAt\"=$2 WHERE id=$3",
                 &[&created_at, updated_at, &target_id],
             )
             .await?,
             1
         );
-        let physical_before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let physical_before = db.tables(&["user", "account", "session"]).await?;
         let user = body(&call(&auth, read.clone(), 200).await);
         assert_eq!(user["id"], target_id);
         assert_eq!(user["createdAt"], "2026-09-30T22:11:23.145Z");
@@ -2020,7 +2026,7 @@ async fn admin_stored_timestamp_precision_survives_public_projections<B: Backend
         .await;
         assert!(denied.headers.get_all("set-cookie").next().is_none());
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
+            db.tables(&["user", "account", "session"]).await?,
             physical_before
         );
 
@@ -2051,17 +2057,17 @@ async fn admin_stored_timestamp_precision_survives_public_projections<B: Backend
         assert_eq!(listed["users"].as_array().unwrap().len(), 1);
         assert_eq!(listed["users"][0], updated_user);
         let stored_created = db
-            .text("SELECT created_at FROM users WHERE id=$1", &[&target_id])
+            .text(
+                "SELECT \"createdAt\" FROM \"user\" WHERE id=$1",
+                &[&target_id],
+            )
             .await?
             .unwrap();
         assert_eq!(
             chrono::DateTime::parse_from_rfc3339(&stored_created)?,
             chrono::DateTime::parse_from_rfc3339(&created_at)?
         );
-        assert_eq!(
-            db.tables(&["accounts", "sessions"]).await?,
-            stable_authority
-        );
+        assert_eq!(db.tables(&["account", "session"]).await?, stable_authority);
         for established in [&admin, &target] {
             let session = call(
                 &auth,
@@ -2078,10 +2084,7 @@ async fn admin_stored_timestamp_precision_survives_public_projections<B: Backend
                 body(established)["token"]
             );
         }
-        assert_eq!(
-            db.tables(&["accounts", "sessions"]).await?,
-            stable_authority
-        );
+        assert_eq!(db.tables(&["account", "session"]).await?, stable_authority);
     }
     B::close(connection).await
 }
@@ -2140,7 +2143,7 @@ async fn admin_date_callback_error_identity<B: Backend>(db: Db) -> TestResult {
         .plugin(AdminPlugin::new().roles(roles()))
         .build()
         .await?;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (route, data, status, code) in [
         (
             "/admin/ban-user",
@@ -2158,7 +2161,7 @@ async fn admin_date_callback_error_identity<B: Backend>(db: Db) -> TestResult {
         let failed = call(&auth, request(route, Some(data), &cookies(&owner)), status).await;
         assert_eq!(body(&failed), json!({"code":code,"message":"Invalid Date"}));
         assert!(!failed.headers.contains_key("set-cookie"));
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     }
     authenticated(&auth, &cookies(&owner), "date-callback-admin@example.test").await;
     authenticated(
@@ -2193,7 +2196,7 @@ async fn admin_impersonation_operator_metadata<B: Backend>(db: Db) -> TestResult
     let target = signup(&auth, "target@example.test").await;
     let foreign = signup(&auth, "foreign@example.test").await;
     let target_id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     _ = call(
         &auth,
         request(
@@ -2204,7 +2207,7 @@ async fn admin_impersonation_operator_metadata<B: Backend>(db: Db) -> TestResult
         403,
     )
     .await;
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let mut input = request(
         "/admin/impersonate-user",
         Some(json!({"userId":target_id})),
@@ -2223,14 +2226,17 @@ async fn admin_impersonation_operator_metadata<B: Backend>(db: Db) -> TestResult
     assert_eq!(current["user"]["id"], target_id);
     let token = current["session"]["token"].as_str().unwrap();
     assert_eq!(
-        db.text("SELECT user_id FROM sessions WHERE token=$1", &[token])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT \"userId\" FROM \"session\" WHERE \"token\"=$1",
+            &[token]
+        )
+        .await?
+        .as_deref(),
         Some(target_id.as_str())
     );
     assert_eq!(
         db.text(
-            "SELECT impersonated_by FROM sessions WHERE token=$1",
+            "SELECT \"impersonatedBy\" FROM \"session\" WHERE \"token\"=$1",
             &[token]
         )
         .await?
@@ -2238,18 +2244,24 @@ async fn admin_impersonation_operator_metadata<B: Backend>(db: Db) -> TestResult
         Some(operator_id.as_str())
     );
     assert_eq!(
-        db.text("SELECT ip_address FROM sessions WHERE token=$1", &[token])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT \"ipAddress\" FROM \"session\" WHERE \"token\"=$1",
+            &[token]
+        )
+        .await?
+        .as_deref(),
         Some("198.51.100.224")
     );
     assert_eq!(
-        db.text("SELECT user_agent FROM sessions WHERE token=$1", &[token])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT \"userAgent\" FROM \"session\" WHERE \"token\"=$1",
+            &[token]
+        )
+        .await?
+        .as_deref(),
         Some("admin-browser")
     );
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     for (before, now) in before.iter().zip(after.iter()) {
         let before: Vec<Value> = serde_json::from_str(before)?;
         let now: Vec<Value> = serde_json::from_str(now)?;
@@ -2271,7 +2283,7 @@ async fn admin_impersonation_operator_metadata<B: Backend>(db: Db) -> TestResult
     );
     assert_eq!(restored["user"]["id"], operator_id);
     assert_eq!(restored["session"]["token"], body(&operator)["token"]);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     authenticated(&auth, &cookies(&target), "target@example.test").await;
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
@@ -2304,7 +2316,7 @@ async fn admin_missing_tampered_and_revoked_sessions_reject_without_writes<B: Ba
     .await;
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM sessions WHERE user_id=$1",
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
             &[&retired_id]
         )
         .await?,
@@ -2330,7 +2342,7 @@ async fn admin_missing_tampered_and_revoked_sessions_reject_without_writes<B: Ba
         url::form_urlencoded::byte_serialize(altered.as_bytes()).collect::<String>()
     );
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let posts = [
         (
@@ -2390,7 +2402,7 @@ async fn admin_missing_tampered_and_revoked_sessions_reject_without_writes<B: Ba
             );
             assert!(cookies(&response).is_empty());
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "verifications"])
+                db.tables(&["user", "account", "session", "verification"])
                     .await?,
                 before
             );
@@ -2410,7 +2422,7 @@ async fn admin_missing_tampered_and_revoked_sessions_reject_without_writes<B: Ba
     );
     assert_eq!(denied["code"], "YOU_ARE_NOT_ALLOWED_TO_BAN_USERS");
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -2421,7 +2433,7 @@ async fn admin_missing_tampered_and_revoked_sessions_reject_without_writes<B: Ba
     authenticated(&auth, &cookies(&target), "guest-wire-target@example.test").await;
     authenticated(&auth, &cookies(&foreign), "guest-wire-foreign@example.test").await;
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );

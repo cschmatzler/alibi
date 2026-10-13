@@ -11,7 +11,6 @@ mod jwks;
 mod members;
 pub(crate) mod migrator;
 mod oauth_clients;
-mod oauth_token_conversion;
 mod organization_roles;
 mod organizations;
 mod passkeys;
@@ -202,7 +201,7 @@ impl<S: AuthSchema> SchemaMigrator for SqlxStore<S> {
             let commands = mapping.migration_statements()?;
             self.in_transaction(false, async move |tx| {
                 let exec = Exec::tx(tx);
-                if migrator::has_table(exec, "two_factor").await? {
+                if migrator::has_table(exec, "twoFactor").await? {
                     for command in commands {
                         _ = exec.execute(Sql::with(exec.engine(), &command)).await?;
                     }

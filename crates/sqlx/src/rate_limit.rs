@@ -1,27 +1,27 @@
 //! Atomic rolling rate limits persisted independently of an application's auth schema.
 
+use crate::SqlxValue;
 use crate::pool::{Exec, SqlxPool};
 use crate::sql::Sql;
 use crate::store::migrator::{Migration, apply};
-use alibi_core::middleware::rate_limit::bucket::{self, LongestWindow, Step};
+use alibi_core::middleware::rate_limit::bucket::{self, Step};
 use alibi_core::store::SchemaMigrator;
 use alibi_core::{AuthResult, EndpointRateLimit, RateLimitDecision, RateLimitStorage};
 use async_trait::async_trait;
-use std::sync::Arc;
 
 const RATE_LIMIT_SCHEMA: Migration = Migration {
-    name: "m20261002_000001_rate_limit",
-    sqlite: r#"CREATE TABLE IF NOT EXISTS "rate_limit" ( "key" varchar NOT NULL PRIMARY KEY, "count" double NOT NULL, "expires_at" integer, "last_request" integer NOT NULL );"#,
-    postgres: r#"CREATE TABLE IF NOT EXISTS "rate_limit" ( "key" varchar NOT NULL PRIMARY KEY, "count" double precision NOT NULL, "expires_at" bigint, "last_request" bigint NOT NULL );"#,
+    name: "m20261013_000003_typescript_rate_limit_schema",
+    sqlite: alibi_schema_registry::SQLITE_RATE_LIMIT_SCHEMA,
+    postgres: alibi_schema_registry::POSTGRES_RATE_LIMIT_SCHEMA,
 };
 
 /// One stored quota bucket.
 #[derive(Clone, Debug, PartialEq, sqlx::FromRow)]
 pub struct RateLimitRow {
     pub key: String,
-    pub count: f64,
+    pub count: crate::Number,
+    #[sqlx(rename = "lastRequest")]
     pub last_request: i64,
-    pub expires_at: Option<i64>,
 }
 
 /// Shared database storage. Run [`SchemaMigrator::migrate`] before serving
@@ -30,35 +30,16 @@ pub struct RateLimitRow {
 #[derive(Clone, Debug)]
 pub struct SqlxRateLimitStorage {
     pool: SqlxPool,
-    longest_window: Arc<LongestWindow>,
 }
 
 impl SqlxRateLimitStorage {
     #[must_use]
     pub fn new(pool: impl Into<SqlxPool>) -> Self {
-        Self {
-            pool: pool.into(),
-            longest_window: Arc::new(LongestWindow::new()),
-        }
+        Self { pool: pool.into() }
     }
 
     const fn exec(&self) -> Exec<'_> {
         Exec::pool(&self.pool)
-    }
-
-    async fn prune(&self, now: i64) {
-        let Some(cutoff) = self.longest_window.prune_cutoff(now) else {
-            return;
-        };
-        let mut sql = Sql::with(self.exec().engine(), "DELETE FROM \"rate_limit\" WHERE ");
-        sql.compare("rate_limit", "last_request", " < ", cutoff);
-        sql.push(" AND ");
-        sql.compare("rate_limit", "expires_at", " <= ", now);
-        // Pruning failures do not undo a successful quota consumption. The
-        // next admitted new/reset bucket retries cleanup without logging keys.
-        if self.exec().execute(sql).await.is_err() {
-            tracing::warn!("Rate-limit cleanup failed");
-        }
     }
 }
 
@@ -78,64 +59,52 @@ impl SchemaMigrator for SqlxRateLimitStorage {
 
 #[async_trait]
 impl RateLimitStorage for SqlxRateLimitStorage {
-    fn observe_window(&self, window: f64) {
-        self.longest_window.observe(window);
-    }
-
     async fn consume(&self, key: &str, rule: &EndpointRateLimit) -> AuthResult<RateLimitDecision> {
-        self.observe_window(rule.window_seconds);
         let backend = self.exec().engine();
         loop {
             let mut select = Sql::with(
                 backend,
-                "SELECT \"rate_limit\".\"key\", \"rate_limit\".\"count\", \"rate_limit\".\"last_request\", \"rate_limit\".\"expires_at\" FROM \"rate_limit\" WHERE ",
+                "SELECT \"rateLimit\".\"key\", \"rateLimit\".\"count\", \"rateLimit\".\"lastRequest\" FROM \"rateLimit\" WHERE ",
             );
-            select.compare("rate_limit", "key", " = ", key);
+            select.compare("rateLimit", "key", " = ", key);
             select.push(" LIMIT 1");
             let observed = self.exec().fetch_optional::<RateLimitRow>(select).await?;
             let now = chrono::Utc::now().timestamp_millis();
             let Some(observed) = observed else {
                 let mut insert = Sql::with(
                     backend,
-                    "INSERT INTO \"rate_limit\" (\"key\", \"count\", \"last_request\", \"expires_at\") VALUES (",
+                    "INSERT INTO \"rateLimit\" (\"id\", \"key\", \"count\", \"lastRequest\") VALUES (",
                 );
+                insert.bind(uuid::Uuid::new_v4().to_string());
+                insert.push(", ");
                 insert.bind(key);
                 insert.push(", ");
-                insert.bind(1.0_f64);
+                insert.bind(1_i32);
                 insert.push(", ");
                 insert.bind(now);
-                insert.push(", ");
-                insert.bind(bucket::expires_at(now, rule.window_seconds));
                 insert.push(") ON CONFLICT (\"key\") DO NOTHING");
                 if self.exec().execute(insert).await? == 1 {
-                    self.prune(now).await;
                     return Ok(RateLimitDecision::Allowed);
                 }
                 continue;
             };
-            let (count, reset) =
-                match bucket::step(observed.count, observed.last_request, now, rule) {
-                    Step::Blocked { retry_after } => {
-                        return Ok(RateLimitDecision::Blocked { retry_after });
-                    }
-                    Step::Allowed { count, reset } => (count, reset),
-                };
-            let mut update = Sql::with(backend, "UPDATE \"rate_limit\" SET \"count\" = ");
-            update.bind(count);
-            update.push(", \"last_request\" = ");
-            update.bind(now);
-            update.push(", \"expires_at\" = ");
-            update.bind(bucket::expires_at(now, rule.window_seconds));
-            update.push(" WHERE ");
-            update.compare("rate_limit", "key", " = ", key);
-            update.push(" AND ");
-            update.compare("rate_limit", "last_request", " = ", observed.last_request);
-            update.push(" AND ");
-            update.compare("rate_limit", "count", " = ", observed.count);
-            if self.exec().execute(update).await? == 1 {
-                if reset {
-                    self.prune(now).await;
+            let count = match bucket::step(observed.count.0, observed.last_request, now, rule) {
+                Step::Blocked { retry_after } => {
+                    return Ok(RateLimitDecision::Blocked { retry_after });
                 }
+                Step::Allowed { count, .. } => count,
+            };
+            let mut update = Sql::with(backend, "UPDATE \"rateLimit\" SET \"count\" = ");
+            update.bind(crate::Number(count).into_sql_value());
+            update.push(", \"lastRequest\" = ");
+            update.bind(now);
+            update.push(" WHERE ");
+            update.compare("rateLimit", "key", " = ", key);
+            update.push(" AND ");
+            update.compare("rateLimit", "lastRequest", " = ", observed.last_request);
+            update.push(" AND ");
+            update.compare("rateLimit", "count", " = ", observed.count.into_sql_value());
+            if self.exec().execute(update).await? == 1 {
                 return Ok(RateLimitDecision::Allowed);
             }
         }

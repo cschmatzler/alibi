@@ -60,7 +60,7 @@ async fn server_create_invitation_delivers_stored_invitation_without_request<B: 
         ..Default::default()
     };
     let before = db
-        .tables(&["invitation", "member", "sessions", "organization"])
+        .tables(&["invitation", "member", "session", "organization"])
         .await?;
     for (input, headers, status, code) in [
         (None, EndpointOptions::default(), 400, "VALIDATION_ERROR"),
@@ -114,7 +114,7 @@ async fn server_create_invitation_delivers_stored_invitation_without_request<B: 
     }
     assert!(delivery.0.lock().unwrap().is_empty());
     assert_eq!(
-        db.tables(&["invitation", "member", "sessions", "organization"])
+        db.tables(&["invitation", "member", "session", "organization"])
             .await?,
         before
     );
@@ -154,7 +154,7 @@ async fn server_create_invitation_delivers_stored_invitation_without_request<B: 
     assert_eq!(sent[0].user.id, owner_id);
     assert_eq!(sent[0].email(), "server-invitation-recipient@example.test");
     assert_eq!(
-        db.tables(&["member", "sessions", "organization"]).await?,
+        db.tables(&["member", "session", "organization"]).await?,
         before[1..]
     );
     let accepted = call(

@@ -47,27 +47,27 @@ impl SendTwoFactorOtp for Delivery {
 }
 fn phase(sql: &str) -> Option<&'static str> {
     let query = sql.to_lowercase();
-    if query.starts_with("select") && query.contains("from \"verifications\"") {
+    if query.starts_with("select") && query.contains("from \"verification\"") {
         if query.contains("\"identifier\" =") {
             return Some("lookup");
         }
-        if query.contains("\"expires_at\" <") {
+        if query.contains("\"expiresat\" <") {
             return Some("cleanup-read");
         }
     }
     if query.starts_with("delete")
-        && query.contains("from \"verifications\"")
-        && query.contains("\"expires_at\" <")
+        && query.contains("from \"verification\"")
+        && query.contains("\"expiresat\" <")
     {
         return Some("cleanup-delete");
     }
-    if query.starts_with("select") && query.contains("from \"users\"") {
+    if query.starts_with("select") && query.contains("from \"user\"") {
         return Some("user");
     }
     None
 }
 async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
-    let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT id,identifier,value,expires_at,created_at,updated_at FROM verifications ORDER BY CASE WHEN identifier LIKE '2fa-attempts-%' THEN 0 WHEN identifier LIKE '2fa-otp-%' THEN 1 WHEN identifier LIKE '2fa-%' THEN 2 ELSE 3 END,created_at,id")).await.map_err(|error|AuthError::internal(error.to_string()))?;
+    let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT id,\"identifier\",\"value\",\"expiresAt\",\"createdAt\",\"updatedAt\" FROM \"verification\" ORDER BY CASE WHEN \"identifier\" LIKE '2fa-attempts-%' THEN 0 WHEN \"identifier\" LIKE '2fa-otp-%' THEN 1 WHEN \"identifier\" LIKE '2fa-%' THEN 2 ELSE 3 END,\"createdAt\",id")).await.map_err(|error|AuthError::internal(error.to_string()))?;
     let mut verifications = Vec::new();
     for row in rows {
         let string = |column| {
@@ -79,9 +79,9 @@ async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
                 .map(|date| date.to_rfc3339_opts(SecondsFormat::Millis, true))
                 .map_err(|error| AuthError::internal(error.to_string()))
         };
-        verifications.push(json!({"id":string("id")?,"identifier":string("identifier")?,"value":string("value")?,"expiresAt":date("expires_at")?,"createdAt":date("created_at")?,"updatedAt":date("updated_at")?}));
+        verifications.push(json!({"id":string("id")?,"identifier":string("identifier")?,"value":string("value")?,"expiresAt":date("expiresAt")?,"createdAt":date("createdAt")?,"updatedAt":date("updatedAt")?}));
     }
-    let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT t.id,t.user_id,t.secret,t.backup_codes,t.verified,CAST(t.failed_verification_count AS REAL) AS failed_verification_count,t.locked_until FROM two_factor t JOIN users u ON u.id=t.user_id ORDER BY u.email,t.id")).await.map_err(|error|AuthError::internal(error.to_string()))?;
+    let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT t.id,t.\"userId\",t.\"secret\",t.\"backupCodes\",t.\"verified\",CAST(t.\"failedVerificationCount\" AS REAL) AS \"failedVerificationCount\",t.\"lockedUntil\" FROM \"twoFactor\" t JOIN \"user\" u ON u.id=t.\"userId\" ORDER BY u.\"email\",t.id")).await.map_err(|error|AuthError::internal(error.to_string()))?;
     let mut factors = Vec::new();
     for row in rows {
         let string = |column| {
@@ -92,12 +92,12 @@ async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
             .try_get::<Option<bool>>("", "verified")
             .map_err(|error| AuthError::internal(error.to_string()))?;
         let count = row
-            .try_get::<Option<f64>>("", "failed_verification_count")
+            .try_get::<Option<f64>>("", "failedVerificationCount")
             .map_err(|error| AuthError::internal(error.to_string()))?;
         let locked = row
-            .try_get::<Option<DateTime<Utc>>>("", "locked_until")
+            .try_get::<Option<DateTime<Utc>>>("", "lockedUntil")
             .map_err(|error| AuthError::internal(error.to_string()))?;
-        factors.push(json!({"id":string("id")?,"userId":string("user_id")?,"secret":string("secret")?,"backupCodes":string("backup_codes")?,"verified":verified,"failedVerificationCount":count,"lockedUntil":locked.map(|date|date.to_rfc3339_opts(SecondsFormat::Millis,true))}));
+        factors.push(json!({"id":string("id")?,"userId":string("userId")?,"secret":string("secret")?,"backupCodes":string("backupCodes")?,"verified":verified,"failedVerificationCount":count,"lockedUntil":locked.map(|date|date.to_rfc3339_opts(SecondsFormat::Millis,true))}));
     }
     Ok(json!({"verifications":verifications,"factors":factors}))
 }
@@ -224,7 +224,7 @@ pub(crate) async fn router(
                             database
                                 .execute_raw(Statement::from_sql_and_values(
                                     DbBackend::Sqlite,
-                                    "UPDATE verifications SET created_at=? WHERE id=?",
+                                    "UPDATE \"verification\" SET \"createdAt\"=? WHERE id=?",
                                     [text("createdAt").into(), row.id.into()],
                                 ))
                                 .await
@@ -232,13 +232,13 @@ pub(crate) async fn router(
                         }
                     }
                     "patch" => {
-                        for (key, column) in [("expiresAt", "expires_at"), ("value", "value")] {
+                        for (key, column) in [("expiresAt", "expiresAt"), ("value", "value")] {
                             if body[key].is_string() {
                                 database
                                     .execute_raw(Statement::from_sql_and_values(
                                         DbBackend::Sqlite,
                                         format!(
-                                            "UPDATE verifications SET {column}=? WHERE identifier=?"
+                                            "UPDATE \"verification\" SET {column}=? WHERE \"identifier\"=?"
                                         ),
                                         [text(key).into(), text("identifier").into()],
                                     ))

@@ -110,8 +110,8 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
         .decode()?;
     assert_eq!(generated.len(), 6);
     assert!(generated.bytes().all(|byte| byte.is_ascii_digit()));
-    assert_eq!(db.count("users").await?, 0);
-    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(db.count("user").await?, 0);
+    assert_eq!(db.count("verification").await?, 1);
     assert_eq!(
         auth.dispatch_endpoint(
             EmailOtpPlugin::get_verification_otp_endpoint(email, EmailOtpType::SignIn),
@@ -155,8 +155,8 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
         .otp
         .is_none()
     );
-    let original_sessions = db.table("sessions").await?;
-    assert_eq!(db.count("accounts").await?, 0);
+    let original_sessions = db.table("session").await?;
+    assert_eq!(db.count("account").await?, 0);
     let context = auth.context();
     let authorized = request("/server-only", None, &cookie);
     for (cookie, password, status) in [
@@ -172,12 +172,12 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
         .await
         .unwrap_err();
         assert_eq!(denied.status_code(), status);
-        assert_eq!(db.count("accounts").await?, 0);
+        assert_eq!(db.count("account").await?, 0);
     }
     alibi::plugins::password_management::set_password(&authorized, PASSWORD, context).await?;
-    assert_eq!(db.count("accounts").await?, 1);
-    assert_eq!(db.table("sessions").await?, original_sessions);
-    let accounts = db.table("accounts").await?;
+    assert_eq!(db.count("account").await?, 1);
+    assert_eq!(db.table("session").await?, original_sessions);
+    let accounts = db.table("account").await?;
     let denied = alibi::plugins::password_management::set_password(
         &authorized,
         "a-different-password",
@@ -192,7 +192,7 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
             ..
         }
     ));
-    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.table("account").await?, accounts);
     let login = call(
         &auth,
         request(
@@ -261,8 +261,8 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
             additional_fields: Default::default(),
         })
         .await?;
-    let empty_accounts = db.table("accounts").await?;
-    let sessions = db.table("sessions").await?;
+    let empty_accounts = db.table("account").await?;
+    let sessions = db.table("session").await?;
     let input = request(
         "/caller-path-is-not-the-logical-identity",
         None,
@@ -280,7 +280,7 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
         .await
         .unwrap_err();
         assert!(matches!(error,alibi::AuthError::Upstream {code,..} if code==expected));
-        assert_eq!(db.table("accounts").await?, empty_accounts);
+        assert_eq!(db.table("account").await?, empty_accounts);
     }
     assert!(probe.events.lock().unwrap().is_empty());
     probe.fail.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -289,14 +289,17 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
             .await
             .unwrap_err();
     assert_eq!(failed.status_code(), 403);
-    assert_eq!(db.table("accounts").await?, empty_accounts);
+    assert_eq!(db.table("account").await?, empty_accounts);
     probe.fail.store(false, std::sync::atomic::Ordering::SeqCst);
     alibi::plugins::password_management::set_password(&input, "😀😀😀😀", configured.context())
         .await?;
     use alibi::entity::AuthAccount;
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM accounts WHERE user_id=$1", &[&user])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"account\" WHERE \"userId\"=$1",
+            &[&user]
+        )
+        .await?,
         1
     );
     let saved = configured.store().get_user_accounts(&user).await?;
@@ -309,8 +312,8 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
         )
         .await?
     );
-    assert_eq!(db.table("sessions").await?, sessions);
-    let saved_accounts = db.table("accounts").await?;
+    assert_eq!(db.table("session").await?, sessions);
+    let saved_accounts = db.table("account").await?;
     let duplicate = alibi::plugins::password_management::set_password(
         &input,
         "😀😀😀😀😀",
@@ -329,7 +332,7 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
         *probe.events.lock().unwrap(),
         vec!["hook", "hasher", "hook", "hasher", "hook", "hasher"]
     );
-    assert_eq!(db.table("accounts").await?, saved_accounts);
+    assert_eq!(db.table("account").await?, saved_accounts);
     let login = call(
         &configured,
         request(
@@ -353,7 +356,7 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
             .unwrap_err();
     assert_eq!(denied.status_code(), 401);
     assert_eq!(probe.events.lock().unwrap().len(), 6);
-    assert_eq!(db.table("accounts").await?, saved_accounts);
+    assert_eq!(db.table("account").await?, saved_accounts);
     B::close(connection).await
 }
 
@@ -405,7 +408,7 @@ async fn server_jwt_signatures_are_usable_by_an_independent_consumer<B: Backend>
         ),
         ..Default::default()
     };
-    let original_sessions = db.table("sessions").await?;
+    let original_sessions = db.table("session").await?;
     let virtual_token = auth
         .dispatch_endpoint(JwtPlugin::token_endpoint(), virtual_options())
         .await?
@@ -419,7 +422,7 @@ async fn server_jwt_signatures_are_usable_by_an_independent_consumer<B: Backend>
             .remaining,
         Some(1.0)
     );
-    assert_eq!(db.table("sessions").await?, original_sessions);
+    assert_eq!(db.table("session").await?, original_sessions);
     let deleted = call(
         &auth,
         request(
@@ -436,8 +439,8 @@ async fn server_jwt_signatures_are_usable_by_an_independent_consumer<B: Backend>
             .await
             .is_err()
     );
-    assert_eq!(db.count("api_keys").await?, 0);
-    assert_eq!(db.table("sessions").await?, original_sessions);
+    assert_eq!(db.count("apikey").await?, 0);
+    assert_eq!(db.table("session").await?, original_sessions);
     let signed = auth
         .dispatch_endpoint(
             JwtPlugin::sign_endpoint(parse_value(r#"{"sub":"service-worker","task":"export"}"#)?),
@@ -527,7 +530,7 @@ async fn server_one_time_token_distinguishes_logical_and_client_requests<B: Back
         .await
         .unwrap_err();
     assert_eq!(denied.error.status_code(), 400);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     let _ = call(&auth, physical, 400).await;
     let token = auth
         .dispatch_endpoint(
@@ -537,8 +540,8 @@ async fn server_one_time_token_distinguishes_logical_and_client_requests<B: Back
         .await?
         .decode()?
         .token;
-    assert_eq!(db.count("verifications").await?, 1);
-    let original_sessions = db.table("sessions").await?;
+    assert_eq!(db.count("verification").await?, 1);
+    let original_sessions = db.table("session").await?;
     let verified = auth
         .dispatch_endpoint(
             OneTimeTokenPlugin::verify_endpoint(&token),
@@ -553,8 +556,8 @@ async fn server_one_time_token_distinguishes_logical_and_client_requests<B: Back
         .collect::<Vec<_>>()
         .join("; ");
     authenticated(&auth, &republished, "ott-server@example.test").await;
-    assert_eq!(db.count("verifications").await?, 0);
-    assert_eq!(db.table("sessions").await?, original_sessions);
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(db.table("session").await?, original_sessions);
     assert_eq!(
         auth.dispatch_endpoint(
             OneTimeTokenPlugin::verify_endpoint(token),
@@ -606,7 +609,7 @@ async fn server_organization_authority_and_member_lifecycle<B: Backend>(db: Db) 
         .decode()?;
     let organization_id = created.organization.id;
     assert_eq!(db.count("organization").await?, 1);
-    assert_eq!(db.count_where("SELECT COUNT(*) FROM member WHERE organization_id = $1 AND user_id = $2 AND role = 'owner'", &[&organization_id, &owner_id]).await?, 1);
+    assert_eq!(db.count_where("SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\" = $1 AND \"userId\" = $2 AND \"role\" = 'owner'", &[&organization_id, &owner_id]).await?, 1);
     let member_input = AddOrganizationMemberRequest {
         user_id: member_id.clone(),
         role: RoleInput::One("member".into()),
@@ -623,7 +626,7 @@ async fn server_organization_authority_and_member_lifecycle<B: Backend>(db: Db) 
     assert_eq!(admitted.user_id, member_id);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM member WHERE organization_id = $1 AND user_id = $2",
+            "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\" = $1 AND \"userId\" = $2",
             &[&organization_id, &member_id]
         )
         .await?,
@@ -648,7 +651,7 @@ async fn server_organization_authority_and_member_lifecycle<B: Backend>(db: Db) 
         member_id_or_email: admitted.id,
         organization_id: Some(organization_id.clone()),
     };
-    let retained = db.tables(&["organization", "member", "sessions"]).await?;
+    let retained = db.tables(&["organization", "member", "session"]).await?;
     for options in [EndpointOptions::default(), credentials(&cookies(&member))] {
         let denied = auth
             .dispatch_endpoint(
@@ -659,7 +662,7 @@ async fn server_organization_authority_and_member_lifecycle<B: Backend>(db: Db) 
             .unwrap_err();
         assert_eq!(denied.error.status_code(), 401);
         assert_eq!(
-            db.tables(&["organization", "member", "sessions"]).await?,
+            db.tables(&["organization", "member", "session"]).await?,
             retained
         );
     }
@@ -672,7 +675,7 @@ async fn server_organization_authority_and_member_lifecycle<B: Backend>(db: Db) 
         .decode()?;
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM member WHERE organization_id = $1 AND user_id = $2",
+            "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\" = $1 AND \"userId\" = $2",
             &[&organization_id, &member_id]
         )
         .await?,
@@ -687,7 +690,7 @@ async fn server_organization_authority_and_member_lifecycle<B: Backend>(db: Db) 
         .decode()?;
     assert_eq!(db.count("organization").await?, 0);
     assert_eq!(db.count("member").await?, 0);
-    assert_eq!(db.count("users").await?, 2);
+    assert_eq!(db.count("user").await?, 2);
     B::close(connection).await
 }
 
@@ -786,17 +789,20 @@ async fn server_password_ignores_misbound_credential_identity<B: Backend>(db: Db
     let other = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
     _ = db
         .execute(
-            "UPDATE accounts SET account_id=$1,password=NULL WHERE user_id=$2",
+            "UPDATE \"account\" SET \"accountId\"=$1,\"password\"=NULL WHERE \"userId\"=$2",
             &[&other, &id],
         )
         .await?;
     let old = db
-        .text("SELECT id FROM accounts WHERE user_id=$1", &[&id])
+        .text("SELECT id FROM \"account\" WHERE \"userId\"=$1", &[&id])
         .await?
         .unwrap();
-    let before = db.tables(&["users", "sessions"]).await?;
+    let before = db.tables(&["user", "session"]).await?;
     let foreign_accounts = db
-        .text("SELECT password FROM accounts WHERE user_id=$1", &[&other])
+        .text(
+            "SELECT \"password\" FROM \"account\" WHERE \"userId\"=$1",
+            &[&other],
+        )
         .await?;
     alibi::plugins::password_management::set_password(
         &request("/trusted", None, &cookies(&owner)),
@@ -804,26 +810,29 @@ async fn server_password_ignores_misbound_credential_identity<B: Backend>(db: Db
         auth.context(),
     )
     .await?;
-    assert_eq!(db.tables(&["users", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "session"]).await?, before);
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM accounts WHERE user_id=$1", &[&id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"account\" WHERE \"userId\"=$1",
+            &[&id]
+        )
+        .await?,
         2
     );
     assert_eq!(
-        db.text("SELECT account_id FROM accounts WHERE id=$1", &[&old])
+        db.text("SELECT \"accountId\" FROM \"account\" WHERE id=$1", &[&old])
             .await?
             .as_deref(),
         Some(other.as_str())
     );
     assert_eq!(
-        db.text("SELECT password FROM accounts WHERE id=$1", &[&old])
+        db.text("SELECT \"password\" FROM \"account\" WHERE id=$1", &[&old])
             .await?,
         None
     );
     assert_eq!(
         db.text(
-            "SELECT password FROM accounts WHERE user_id=$1 AND account_id=$1",
+            "SELECT \"password\" FROM \"account\" WHERE \"userId\"=$1 AND \"accountId\"=$1",
             &[&id]
         )
         .await?
@@ -831,8 +840,11 @@ async fn server_password_ignores_misbound_credential_identity<B: Backend>(db: Db
         Some("fast$canonical-password-123")
     );
     assert_eq!(
-        db.text("SELECT password FROM accounts WHERE user_id=$1", &[&other])
-            .await?,
+        db.text(
+            "SELECT \"password\" FROM \"account\" WHERE \"userId\"=$1",
+            &[&other]
+        )
+        .await?,
         foreign_accounts
     );
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
@@ -848,11 +860,11 @@ async fn server_password_discards_foreign_virtual_authority<B: Backend>(db: Db) 
     let foreign = signup(&auth, "foreign@example.test").await;
     let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     _ = db
-        .execute("DELETE FROM accounts WHERE user_id=$1", &[&id])
+        .execute("DELETE FROM \"account\" WHERE \"userId\"=$1", &[&id])
         .await?;
     let foreign_token = body(&foreign)["token"].as_str().unwrap().to_owned();
     let physical = auth.store().get_session(&foreign_token).await?.unwrap();
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let mut guest = request("/trusted", None, "");
     guest.set_virtual_session(auth.context().session_view(&physical));
     let error = alibi::plugins::password_management::set_password(
@@ -863,18 +875,21 @@ async fn server_password_discards_foreign_virtual_authority<B: Backend>(db: Db) 
     .await
     .unwrap_err();
     assert_eq!(error.status_code(), 401);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let mut owned = request("/trusted", None, &cookies(&owner));
     owned.set_virtual_session(auth.context().session_view(&physical));
     alibi::plugins::password_management::set_password(&owned, "owner-password-123", auth.context())
         .await?;
     assert_eq!(
-        db.text("SELECT password FROM accounts WHERE user_id=$1", &[&id])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT \"password\" FROM \"account\" WHERE \"userId\"=$1",
+            &[&id]
+        )
+        .await?
+        .as_deref(),
         Some("fast$owner-password-123")
     );
-    assert_eq!(db.count("accounts").await?, 2);
+    assert_eq!(db.count("account").await?, 2);
     let login = call(
         &auth,
         request(
@@ -913,16 +928,16 @@ async fn server_password_expired_physical_session_cannot_use_cached_identity<B: 
     let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let token = body(&owner)["token"].as_str().unwrap().to_owned();
     _ = db
-        .execute("DELETE FROM accounts WHERE user_id=$1", &[&id])
+        .execute("DELETE FROM \"account\" WHERE \"userId\"=$1", &[&id])
         .await?;
     db.set_timestamp(
-        "sessions",
-        "expires_at",
+        "session",
+        "expiresAt",
         ("token", &token),
         chrono::Utc::now() - chrono::Duration::hours(1),
     )
     .await?;
-    let before = db.tables(&["users", "accounts"]).await?;
+    let before = db.tables(&["user", "account"]).await?;
     authenticated(&auth, &cookies(&owner), "owner@example.test").await;
     let error = alibi::plugins::password_management::set_password(
         &request("/trusted", None, &cookies(&owner)),
@@ -932,11 +947,14 @@ async fn server_password_expired_physical_session_cannot_use_cached_identity<B: 
     .await
     .unwrap_err();
     assert_eq!(error.status_code(), 401);
-    assert_eq!(db.tables(&["users", "accounts"]).await?, before);
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.tables(&["user", "account"]).await?, before);
+    assert_eq!(db.count("session").await?, 1);
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE token=$1", &[&token])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"token\"=$1",
+            &[&token]
+        )
+        .await?,
         0
     );
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
@@ -979,7 +997,7 @@ async fn server_password_hash_error_precedes_existing_password_denial<B: Backend
         .build()
         .await?;
     let owner = signup(&auth, "owner@example.test").await;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let baseline = hash.calls.load(Ordering::SeqCst);
     hash.fail.store(true, Ordering::SeqCst);
     let input = request("/trusted", None, &cookies(&owner));
@@ -992,7 +1010,7 @@ async fn server_password_hash_error_precedes_existing_password_denial<B: Backend
     .unwrap_err();
     assert_eq!(error.status_code(), 500);
     assert_eq!(hash.calls.load(Ordering::SeqCst), baseline + 1);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     hash.fail.store(false, Ordering::SeqCst);
     let error = alibi::plugins::password_management::set_password(
         &input,
@@ -1009,7 +1027,7 @@ async fn server_password_hash_error_precedes_existing_password_denial<B: Backend
         }
     ));
     assert_eq!(hash.calls.load(Ordering::SeqCst), baseline + 2);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     authenticated(&auth, &cookies(&owner), "owner@example.test").await;
     B::close(connection).await
 }
@@ -1028,16 +1046,19 @@ async fn server_password_credential_write_failure_preserves_authority_for_retry<
         let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
         if existing {
             _ = db
-                .execute("UPDATE accounts SET password=NULL WHERE user_id=$1", &[&id])
+                .execute(
+                    "UPDATE \"account\" SET \"password\"=NULL WHERE \"userId\"=$1",
+                    &[&id],
+                )
                 .await?;
         } else {
             _ = db
-                .execute("DELETE FROM accounts WHERE user_id=$1", &[&id])
+                .execute("DELETE FROM \"account\" WHERE \"userId\"=$1", &[&id])
                 .await?;
         }
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         let verb = if existing { "UPDATE" } else { "INSERT" };
-        _=db.execute(&format!("CREATE TRIGGER reject_credential BEFORE {verb} ON accounts WHEN NEW.provider_id='credential' BEGIN SELECT RAISE(ABORT,'credential write unavailable'); END"),&[]).await?;
+        _=db.execute(&format!("CREATE TRIGGER reject_credential BEFORE {verb} ON \"account\" WHEN NEW.\"providerId\"='credential' BEGIN SELECT RAISE(ABORT,'credential write unavailable'); END"),&[]).await?;
         let input = request("/trusted", None, &cookies(&owner));
         let error = alibi::plugins::password_management::set_password(
             &input,
@@ -1047,7 +1068,7 @@ async fn server_password_credential_write_failure_preserves_authority_for_retry<
         .await
         .unwrap_err();
         assert_eq!(error.status_code(), 500);
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
         authenticated(&auth, &cookies(&owner), "owner@example.test").await;
         authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
         _ = db.execute("DROP TRIGGER reject_credential", &[]).await?;
@@ -1057,10 +1078,10 @@ async fn server_password_credential_write_failure_preserves_authority_for_retry<
             auth.context(),
         )
         .await?;
-        assert_eq!(db.count_where("SELECT COUNT(*) FROM accounts WHERE user_id=$1 AND account_id=$1 AND provider_id='credential'",&[&id]).await?,1);
+        assert_eq!(db.count_where("SELECT COUNT(*) FROM \"account\" WHERE \"userId\"=$1 AND \"accountId\"=$1 AND \"providerId\"='credential'",&[&id]).await?,1);
         assert_eq!(
             db.text(
-                "SELECT password FROM accounts WHERE user_id=$1 AND account_id=$1",
+                "SELECT \"password\" FROM \"account\" WHERE \"userId\"=$1 AND \"accountId\"=$1",
                 &[&id]
             )
             .await?
@@ -1121,19 +1142,22 @@ async fn server_password_concurrent_admissions_keep_original_browser_authority<B
         let foreign = signup(&auth, "foreign@example.test").await;
         let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
         let original = db
-            .text("SELECT id FROM accounts WHERE user_id=$1", &[&id])
+            .text("SELECT id FROM \"account\" WHERE \"userId\"=$1", &[&id])
             .await?
             .unwrap();
         if existing {
             _ = db
-                .execute("UPDATE accounts SET password=NULL WHERE user_id=$1", &[&id])
+                .execute(
+                    "UPDATE \"account\" SET \"password\"=NULL WHERE \"userId\"=$1",
+                    &[&id],
+                )
                 .await?;
         } else {
             _ = db
-                .execute("DELETE FROM accounts WHERE user_id=$1", &[&id])
+                .execute("DELETE FROM \"account\" WHERE \"userId\"=$1", &[&id])
                 .await?;
         }
-        let before = db.tables(&["users", "sessions"]).await?;
+        let before = db.tables(&["user", "session"]).await?;
         hash.armed.store(true, std::sync::atomic::Ordering::SeqCst);
         let input = request("/trusted", None, &cookies(&owner));
         let (left, right) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
@@ -1155,20 +1179,23 @@ async fn server_password_concurrent_admissions_keep_original_browser_authority<B
         right?;
         hash.armed.store(false, std::sync::atomic::Ordering::SeqCst);
         assert_eq!(
-            db.count_where("SELECT COUNT(*) FROM accounts WHERE user_id=$1", &[&id])
-                .await?,
+            db.count_where(
+                "SELECT COUNT(*) FROM \"account\" WHERE \"userId\"=$1",
+                &[&id]
+            )
+            .await?,
             if existing { 1 } else { 2 }
         );
-        assert_eq!(db.count_where("SELECT COUNT(*) FROM accounts WHERE user_id=$1 AND account_id=$1 AND password='fast$concurrent-password-123'",&[&id]).await?,if existing {1}else{2});
+        assert_eq!(db.count_where("SELECT COUNT(*) FROM \"account\" WHERE \"userId\"=$1 AND \"accountId\"=$1 AND \"password\"='fast$concurrent-password-123'",&[&id]).await?,if existing {1}else{2});
         if existing {
             assert_eq!(
-                db.text("SELECT id FROM accounts WHERE user_id=$1", &[&id])
+                db.text("SELECT id FROM \"account\" WHERE \"userId\"=$1", &[&id])
                     .await?
                     .as_deref(),
                 Some(original.as_str())
             );
         }
-        assert_eq!(db.tables(&["users", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "session"]).await?, before);
         authenticated(&auth, &cookies(&owner), "owner@example.test").await;
         authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
         let login = call(

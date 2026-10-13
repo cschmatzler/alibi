@@ -165,7 +165,7 @@ impl TeamStore for StatelessStore {
             id: uuid::Uuid::new_v4().to_string(),
             team_id: team_id.into(),
             user_id: user_id.into(),
-            created_at: Utc::now(),
+            created_at: Some(Utc::now()),
             membership_key: Some(key),
         };
         _ = state.team_members.insert(row.id.clone(), row.clone());

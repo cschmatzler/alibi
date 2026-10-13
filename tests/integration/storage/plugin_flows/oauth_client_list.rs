@@ -49,6 +49,10 @@ async fn oauth_client_list_isolates_owner_and_redacts_secrets<B: Backend>(db: Db
             .into_response()?;
         let mut value = body(&created);
         _ = value.as_object_mut().unwrap().remove("client_secret");
+        _ = value
+            .as_object_mut()
+            .unwrap()
+            .remove("client_credentials_scopes");
         if name == "Foreign" {
             other_expected.push(value);
         } else {
@@ -57,12 +61,12 @@ async fn oauth_client_list_isolates_owner_and_redacts_secrets<B: Backend>(db: Db
     }
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
+            "oauthClient",
         ])
         .await?;
     for (cookie, expected) in [
@@ -95,12 +99,12 @@ async fn oauth_client_list_isolates_owner_and_redacts_secrets<B: Backend>(db: Db
     assert_eq!(error.error.status_code(), 401);
     assert_eq!(
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client"
+            "oauthClient"
         ])
         .await?,
         before

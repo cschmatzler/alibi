@@ -1551,10 +1551,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(
-            source_user.email.as_deref(),
-            Some("duplicate-source@test.com")
-        );
+        assert_eq!(source_user.email(), Some("duplicate-source@test.com"));
         assert!(!source_user.email_verified);
     }
 

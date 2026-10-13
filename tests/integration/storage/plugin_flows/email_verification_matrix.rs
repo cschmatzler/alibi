@@ -101,13 +101,16 @@ async fn verify_email_token_outcomes<B: Backend>(db: Db) -> TestResult {
     let _ = signup(&auth, "gone@example.test").await;
     let (_, gone) = inbox.take();
     _ = db
-        .execute("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email = 'gone@example.test')", &[])
+        .execute("DELETE FROM \"session\" WHERE \"userId\" IN (SELECT id FROM \"user\" WHERE \"email\" = 'gone@example.test')", &[])
         .await?;
     _ = db
-        .execute("DELETE FROM accounts WHERE user_id IN (SELECT id FROM users WHERE email = 'gone@example.test')", &[])
+        .execute("DELETE FROM \"account\" WHERE \"userId\" IN (SELECT id FROM \"user\" WHERE \"email\" = 'gone@example.test')", &[])
         .await?;
     _ = db
-        .execute("DELETE FROM users WHERE email = 'gone@example.test'", &[])
+        .execute(
+            "DELETE FROM \"user\" WHERE \"email\" = 'gone@example.test'",
+            &[],
+        )
         .await?;
     let now = chrono::Utc::now().timestamp();
     let claims = |extra: Value| {
@@ -184,7 +187,7 @@ async fn verify_email_token_outcomes<B: Backend>(db: Db) -> TestResult {
         "verified",
         json!(
             db.count_where(
-                "SELECT COUNT(*) FROM users WHERE email_verified = true",
+                "SELECT COUNT(*) FROM \"user\" WHERE \"emailVerified\" = true",
                 &[]
             )
             .await?
@@ -234,7 +237,7 @@ async fn verify_email_session_adoption<B: Backend>(db: Db) -> TestResult {
         let _ = stranger;
         probe
             .trace
-            .value("sessions", json!(db.count("sessions").await?));
+            .value("sessions", json!(db.count("session").await?));
         trace = probe.trace;
         B::close(connection).await?;
     }
@@ -259,7 +262,7 @@ async fn verify_email_change_confirmation_chain<B: Backend>(db: Db) -> TestResul
         accounts.push(cookies(&response));
     }
     _ = db
-        .execute("UPDATE users SET email_verified = true", &[])
+        .execute("UPDATE \"user\" SET \"emailVerified\" = true", &[])
         .await?;
     for (label, callback, target) in [
         ("with callback", Some("/done"), "moved@example.test"),
@@ -299,8 +302,8 @@ async fn verify_email_change_confirmation_chain<B: Backend>(db: Db) -> TestResul
             probe.trace.value(
                 "emails",
                 json!([
-                    db.text("SELECT email FROM users WHERE name = 'Native owner' ORDER BY created_at LIMIT 1", &[]).await?,
-                    db.count("sessions").await?
+                    db.text("SELECT \"email\" FROM \"user\" WHERE \"name\" = 'Native owner' ORDER BY \"createdAt\" LIMIT 1", &[]).await?,
+                    db.count("session").await?
                 ]),
             );
         } else {
@@ -358,7 +361,7 @@ async fn send_verification_email_matrix<B: Backend>(db: Db) -> TestResult {
             .await;
     }
     _ = db
-        .execute("UPDATE users SET email_verified = true", &[])
+        .execute("UPDATE \"user\" SET \"emailVerified\" = true", &[])
         .await?;
     let _ = probe
         .post(
@@ -409,7 +412,7 @@ async fn verified_guest_replay_skips_hooks_and_session_issuance<B: Backend>(db: 
     // null differs from an absent optional claim: serde Option alone would
     // accept it and permit verification, hooks, and automatic session issuance.
     let unverified = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for field in ["updateTo", "requestType"] {
         let mut claims = json!({
@@ -428,7 +431,7 @@ async fn verified_guest_replay_skips_hooks_and_session_issuance<B: Backend>(db: 
         assert_eq!(before_count.load(Ordering::SeqCst), 0);
         assert_eq!(after_count.load(Ordering::SeqCst), 0);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             unverified,
             "null {field} must not change either principal"
@@ -449,7 +452,7 @@ async fn verified_guest_replay_skips_hooks_and_session_issuance<B: Backend>(db: 
     .await;
     assert_eq!(before_count.load(Ordering::SeqCst), 1);
     assert_eq!(after_count.load(Ordering::SeqCst), 1);
-    let rows = db.tables(&["users", "accounts", "sessions"]).await?;
+    let rows = db.tables(&["user", "account", "session"]).await?;
     let replay = call(&auth, verify(&token, Some(""), ""), 200).await;
     assert_eq!(body(&replay), json!({"status":true,"user":null}));
     assert!(!replay.headers.contains_key("set-cookie"));
@@ -462,7 +465,7 @@ async fn verified_guest_replay_skips_hooks_and_session_issuance<B: Backend>(db: 
     );
     assert!(redirected.body.is_empty());
     assert!(!redirected.headers.contains_key("set-cookie"));
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, rows);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, rows);
     assert_eq!(before_count.load(Ordering::SeqCst), 1);
     assert_eq!(after_count.load(Ordering::SeqCst), 1);
     assert!(body(&call(&auth, request("/get-session", None, ""), 200).await).is_null());
@@ -485,10 +488,8 @@ async fn verified_guest_replay_skips_hooks_and_session_issuance<B: Backend>(db: 
     let empty_email = "empty-update-owner@example.test";
     let empty_owner = signup(&auth, empty_email).await;
     let _ = inbox.take();
-    let stable = db
-        .tables(&["accounts", "sessions", "verifications"])
-        .await?;
-    let users_before: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+    let stable = db.tables(&["account", "session", "verification"]).await?;
+    let users_before: Vec<Value> = serde_json::from_str(&db.table("user").await?)?;
     let inbox_before = inbox.0.lock().unwrap().clone();
     let proof =
         forged(&json!({"email":empty_email,"updateTo":"","iat":946684800,"exp":4102444800_i64}));
@@ -509,7 +510,7 @@ async fn verified_guest_replay_skips_hooks_and_session_issuance<B: Backend>(db: 
     assert_eq!(before_count.load(Ordering::SeqCst), 2);
     assert_eq!(after_count.load(Ordering::SeqCst), 2);
     assert_eq!(*inbox.0.lock().unwrap(), inbox_before);
-    let users_after: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+    let users_after: Vec<Value> = serde_json::from_str(&db.table("user").await?)?;
     assert_eq!(users_after.len(), users_before.len());
     for prior in &users_before {
         let actual = users_after
@@ -518,14 +519,12 @@ async fn verified_guest_replay_skips_hooks_and_session_issuance<B: Backend>(db: 
             .unwrap();
         if prior["id"] == body(&empty_owner)["user"]["id"] {
             assert_eq!(actual["email"], empty_email);
-            assert_eq!(actual["email_verified"], 1);
+            assert_eq!(actual["emailVerified"], 1);
         } else {
             assert_eq!(actual, prior);
         }
     }
-    let stable_after = db
-        .tables(&["accounts", "sessions", "verifications"])
-        .await?;
+    let stable_after = db.tables(&["account", "session", "verification"]).await?;
     assert_eq!(stable_after[0], stable[0]);
     assert_eq!(stable_after[2], stable[2]);
     let prior_sessions: Vec<Value> = serde_json::from_str(&stable[1])?;
@@ -568,25 +567,25 @@ async fn verification_after_hook_rejection_commits_user_without_issuing_session<
     let owner = signup(&auth, "verification-veto-owner@example.test").await;
     let (_, token) = inbox.take();
     let foreign = signup(&auth, "verification-veto-foreign@example.test").await;
-    let rows = db.tables(&["accounts", "sessions"]).await?;
+    let rows = db.tables(&["account", "session"]).await?;
     let response = call(&auth, verify(&token, None, ""), 403).await;
     assert_eq!(body(&response)["code"], "VERIFICATION_VETO");
     assert!(!response.headers.contains_key("set-cookie"));
-    let users: Value = serde_json::from_str(&db.table("users").await?)?;
+    let users: Value = serde_json::from_str(&db.table("user").await?)?;
     let updated = users
         .as_array()
         .unwrap()
         .iter()
         .find(|u| u["id"] == body(&owner)["user"]["id"])
         .unwrap();
-    assert_eq!(updated["email_verified"], json!(1));
-    assert_eq!(db.tables(&["accounts", "sessions"]).await?, rows);
+    assert_eq!(updated["emailVerified"], json!(1));
+    assert_eq!(db.tables(&["account", "session"]).await?, rows);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     let replay = call(&auth, verify(&token, None, ""), 200).await;
     assert_eq!(body(&replay), json!({"status":true,"user":null}));
     assert!(!replay.headers.contains_key("set-cookie"));
     assert_eq!(calls.load(Ordering::SeqCst), 1);
-    assert_eq!(db.tables(&["accounts", "sessions"]).await?, rows);
+    assert_eq!(db.tables(&["account", "session"]).await?, rows);
     authenticated(
         &auth,
         &cookies(&owner),
@@ -662,12 +661,12 @@ async fn verification_delivery_keeps_original_bodies_and_headers_for_all_entry_p
             "direct",
         ),
     ] {
-        let before = db.count("sessions").await?;
+        let before = db.count("session").await?;
         let mut actual = request(path, Some(input.clone()), "");
         let _ = actual.headers.insert("x-app-marker".into(), marker.into());
         let response = call(&auth, actual, status).await;
         if path == "/sign-in/email" {
-            assert_eq!(db.count("sessions").await?, before);
+            assert_eq!(db.count("session").await?, before);
             assert!(!response.headers.contains_key("set-cookie"));
         }
         let delivery = inbox.0.lock().unwrap().pop().expect("actual delivery");
@@ -699,7 +698,7 @@ async fn email_verification_request_metadata<B: Backend>(db: Db) -> TestResult {
             .build()
             .await?;
         let foreign = signup(&auth, "foreign@example.test").await;
-        let foreign_before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let foreign_before = db.tables(&["user", "account", "session"]).await?;
         let owner = signup(&auth, "owner@example.test").await;
         let (_, token) = inbox.take();
         _ = call(
@@ -708,7 +707,7 @@ async fn email_verification_request_metadata<B: Backend>(db: Db) -> TestResult {
             200,
         )
         .await;
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         let invalid = format!("{}.invalid-signature", token.rsplit_once('.').unwrap().0);
         let with_meta = |token: &str| {
             let mut r = verify(token, None, "");
@@ -723,7 +722,7 @@ async fn email_verification_request_metadata<B: Backend>(db: Db) -> TestResult {
         };
         let forged = call(&auth, with_meta(&invalid), 401).await;
         assert!(forged.headers.get_all("set-cookie").next().is_none());
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
         let verified = call(&auth, with_meta(&token), 200).await;
         let current = body(
             &call(
@@ -737,18 +736,24 @@ async fn email_verification_request_metadata<B: Backend>(db: Db) -> TestResult {
         assert_eq!(current["user"]["emailVerified"], true);
         let session = current["session"]["token"].as_str().unwrap();
         assert_eq!(
-            db.text("SELECT ip_address FROM sessions WHERE token=$1", &[session])
-                .await?
-                .as_deref(),
+            db.text(
+                "SELECT \"ipAddress\" FROM \"session\" WHERE \"token\"=$1",
+                &[session]
+            )
+            .await?
+            .as_deref(),
             Some(if disabled { "" } else { "198.51.100.223" })
         );
         assert_eq!(
-            db.text("SELECT user_agent FROM sessions WHERE token=$1", &[session])
-                .await?
-                .as_deref(),
+            db.text(
+                "SELECT \"userAgent\" FROM \"session\" WHERE \"token\"=$1",
+                &[session]
+            )
+            .await?
+            .as_deref(),
             Some("verification-browser")
         );
-        let after = db.tables(&["users", "accounts", "sessions"]).await?;
+        let after = db.tables(&["user", "account", "session"]).await?;
         for (before, now) in foreign_before.iter().zip(after.iter()) {
             let before: Vec<Value> = serde_json::from_str(before)?;
             let now: Vec<Value> = serde_json::from_str(now)?;

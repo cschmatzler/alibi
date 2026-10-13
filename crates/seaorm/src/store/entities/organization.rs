@@ -9,9 +9,10 @@ pub struct Model {
     pub name: String,
     pub slug: String,
     pub logo: Option<String>,
+    #[sea_orm(column_type = "Text", save_as = "text")]
     pub metadata: Option<JsonMetadata>,
+    #[sea_orm(column_name = "createdAt")]
     pub created_at: DateTimeUtc,
-    pub updated_at: DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

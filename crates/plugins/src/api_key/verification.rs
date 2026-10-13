@@ -600,7 +600,6 @@ impl ApiKeyPlugin {
             }),
             impersonated_by: None,
             active_organization_id: None,
-            active: true,
         };
         Ok(session)
     }

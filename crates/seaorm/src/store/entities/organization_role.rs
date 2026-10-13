@@ -2,14 +2,17 @@ use alibi_core::AuthError;
 use alibi_core::types::OrganizationRole;
 use sea_orm::entity::prelude::*;
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
-#[sea_orm(table_name = "organization_role")]
+#[sea_orm(table_name = "organizationRole")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
+    #[sea_orm(column_name = "organizationId")]
     pub organization_id: String,
     pub role: String,
     pub permission: String,
+    #[sea_orm(column_name = "createdAt")]
     pub created_at: DateTimeUtc,
+    #[sea_orm(column_name = "updatedAt")]
     pub updated_at: Option<DateTimeUtc>,
 }
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

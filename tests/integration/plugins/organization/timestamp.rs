@@ -104,7 +104,6 @@ mod tests {
             .unwrap()
             .into_active_model();
         org.created_at = Set(source);
-        org.updated_at = Set(source);
         drop(org.update(&database).await.unwrap());
         let mut owner = member::Entity::find_by_id(member_id)
             .one(&database)
@@ -160,10 +159,7 @@ mod tests {
             assert_eq!(value.get("id"), Some(&json!(organization_id)));
             assert_eq!(value.get("name"), Some(&json!("Timestamp Organization")));
         }
-        assert_eq!(
-            serde_json::to_value(&org_2).unwrap().get("updatedAt"),
-            Some(&json!(WIRE))
-        );
+        assert_eq!(serde_json::to_value(&org_2).unwrap().get("updatedAt"), None);
         for value in [
             serde_json::to_value(&owner_2).unwrap(),
             serde_json::to_value(BasicMemberResponse::from_member(&owner_2)).unwrap(),

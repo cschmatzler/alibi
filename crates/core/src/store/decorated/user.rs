@@ -1,6 +1,8 @@
-use crate::AdapterRecord;
-use crate::store::{AdapterEvent, NumericTextInput, PluginStore, UserStore, create_data};
+use crate::store::{
+    AccountStore, AdapterEvent, NumericTextInput, PluginStore, SessionStore, UserStore, create_data,
+};
 use crate::user_validation::{PreparedUserCreation, UserValidationSource, prepare_creation};
+use crate::{AdapterRecord, AuthAccount};
 use crate::{AuthResult, AuthSchema, CreateUser, ListUsersParams, UpdateUser};
 use async_trait::async_trait;
 #[async_trait]
@@ -187,6 +189,10 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
     }
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
         let tokens = self.cached_user_tokens(id).await?;
+        self.delete_user_sessions(id).await?;
+        for account in self.get_user_accounts(id).await? {
+            self.delete_account(account.id().as_ref()).await?;
+        }
         self.inner.delete_user(id).await?;
         self.remove_cached_user_sessions(id, tokens).await?;
         Ok(())

@@ -510,7 +510,7 @@ async fn jwt_public_keyring_failures_preserve_context_and_owned_storage<B: Backe
         .await?;
     let owner = signup(&auth, "owner@example.test").await;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for operation in ["read", "create"] {
         for status in [0, 403, 500] {
             *app.failure.lock().unwrap() = (operation, status);
@@ -543,7 +543,7 @@ async fn jwt_public_keyring_failures_preserve_context_and_owned_storage<B: Backe
             }
             assert!(app.rows.lock().unwrap().is_empty());
             assert!(auth.store().list_jwks().await?.is_empty());
-            assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+            assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
         }
     }
     *app.failure.lock().unwrap() = ("", 0);
@@ -661,7 +661,7 @@ async fn jwt_session_claim_failures_stop_before_keyring_and_preserve_sessions<B:
         .await?;
     let owner = signup(&auth, "owner@example.test").await;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for operation in ["payload", "subject"] {
         for status in [0, 403, 500] {
             for path in ["/token", "/get-session"] {
@@ -696,7 +696,7 @@ async fn jwt_session_claim_failures_stop_before_keyring_and_preserve_sessions<B:
                 );
                 assert!(app.rows.lock().unwrap().is_empty());
                 assert!(auth.store().list_jwks().await?.is_empty());
-                assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+                assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
             }
         }
     }
@@ -833,7 +833,7 @@ async fn jwt_server_keyring_preserves_absent_request_and_virtual_endpoint<B: Bac
     }
     assert_eq!(app.rows.lock().unwrap().len(), 1);
     assert!(auth.store().list_jwks().await?.is_empty());
-    assert_eq!(db.count("sessions").await?, 0);
+    assert_eq!(db.count("session").await?, 0);
     B::close(connection).await
 }
 
@@ -956,7 +956,7 @@ async fn jwt_application_keyring_concurrent_initial_discovery_retains_both_signi
         );
     }
     assert!(auth.store().list_jwks().await?.is_empty());
-    assert_eq!(db.count("sessions").await?, 0);
+    assert_eq!(db.count("session").await?, 0);
     B::close(connection).await
 }
 
@@ -1157,9 +1157,9 @@ async fn jwt_compact_revoked_principal_signing<B: Backend>(db: Db) -> TestResult
     }
     _ = call(&auth, request("/token", None, &cleared_jar), 401).await;
     authenticated(&auth, &cookies(&foreign), "cached-jwt-foreign@example.test").await;
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     assert_eq!(
-        db.text("SELECT name FROM users WHERE id=$1", &[&id])
+        db.text("SELECT \"name\" FROM \"user\" WHERE id=$1", &[&id])
             .await?
             .as_deref(),
         Some("Durable rename")
@@ -1403,7 +1403,7 @@ async fn jwt_custom_cache_callback_shape<B: Backend>(db: Db) -> TestResult {
         .await?;
     let owner = signup(&auth, "shape-owner@example.test").await;
     let foreign = signup(&auth, "shape-foreign@example.test").await;
-    let protected = db.table("sessions").await?;
+    let protected = db.table("session").await?;
     let jar = cookies(&owner);
     let encoded = jar
         .split("; ")
@@ -1488,7 +1488,7 @@ async fn jwt_custom_cache_callback_shape<B: Backend>(db: Db) -> TestResult {
         .unwrap();
     assert!(claims["snapshot"].get("updatedAt").is_none());
     assert!(claims["snapshot"].get("version").is_none());
-    assert_eq!(db.table("sessions").await?, protected);
+    assert_eq!(db.table("session").await?, protected);
     authenticated(&auth, &cookies(&foreign), "shape-foreign@example.test").await;
     B::close(connection).await
 }
@@ -1501,7 +1501,7 @@ async fn jwt_server_key_override_replacement<B: Backend>(db: Db) -> TestResult {
         .build()
         .await?;
     let foreign = signup(&setup, "override-key-foreign@example.test").await;
-    let protected = db.tables(&["users", "accounts", "sessions"]).await?;
+    let protected = db.tables(&["user", "account", "session"]).await?;
     let jwt = JwtPlugin::with_config(JwtPluginConfig {
         key_pair: JwtKeyPairConfig {
             algorithm: JwtAlgorithm::Es256,
@@ -1551,7 +1551,7 @@ async fn jwt_server_key_override_replacement<B: Backend>(db: Db) -> TestResult {
         let id = header.kid.as_deref().unwrap();
         assert_eq!(db.count("jwks").await?, 1);
         let private = db
-            .text("SELECT private_key FROM jwks WHERE id=$1", &[id])
+            .text("SELECT \"privateKey\" FROM \"jwks\" WHERE id=$1", &[id])
             .await?
             .unwrap();
         let private: Value = serde_json::from_str(&private)?;
@@ -1569,11 +1569,12 @@ async fn jwt_server_key_override_replacement<B: Backend>(db: Db) -> TestResult {
         )?
         .claims;
         assert_eq!(claims["sub"], "per-call-key-owner");
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, protected);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
-            protected
+            db.execute("DELETE FROM \"jwks\" WHERE id=$1", &[id])
+                .await?,
+            1
         );
-        assert_eq!(db.execute("DELETE FROM jwks WHERE id=$1", &[id]).await?, 1);
     }
     authenticated(
         &auth,

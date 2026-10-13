@@ -14,7 +14,6 @@ use crate::passkey::webauthn::StoredCoreRegistrationState;
 use crate::passkey::webauthn::StoredRegistrationState;
 use crate::passkey::webauthn::StoredRegistrationVerifier;
 use crate::passkey::webauthn::build_verification_core;
-use crate::passkey::webauthn::build_webauthn;
 use crate::passkey::webauthn::challenge_cookie_name;
 use crate::passkey::webauthn::create_challenge_cookie;
 use crate::passkey::webauthn::decode_challenge_cookie;
@@ -306,7 +305,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                 Err(_) => return passkey_registration_failure(),
             }
         }
-        StoredRegistrationVerifier::Source(_) | StoredRegistrationVerifier::Legacy(_) => None,
+        StoredRegistrationVerifier::Source(_) => None,
     };
     let (snapshot, metadata, credential_id) = if let Some(raw) = raw_registration {
         let metadata = crate::passkey::webauthn::RegisteredPasskeyMetadata {
@@ -314,22 +313,13 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
             aaguid: Some(Uuid::from_bytes(raw.aaguid()).to_string()),
         };
         (
-            raw.snapshot()?,
+            raw.snapshot(),
             metadata,
             crate::passkey::raw_none::raw_credential_id(&raw),
         )
     } else {
         let verified_passkey: crate::passkey::source::credential::Passkey =
             match &stored_state.state {
-                StoredRegistrationVerifier::Legacy(state) => {
-                    let Ok(webauthn) = build_webauthn(config, &ctx.config, &origin) else {
-                        return passkey_registration_failure();
-                    };
-                    match webauthn.finish_passkey_registration(&registration, state) {
-                        Ok(passkey) => passkey.into(),
-                        Err(_) => return passkey_registration_failure(),
-                    }
-                }
                 StoredRegistrationVerifier::Source(
                     StoredCoreRegistrationState::Core { state }
                     | StoredCoreRegistrationState::CoreRawNone { state, .. },
@@ -435,7 +425,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
         device_type: snapshot.device_type().to_owned(),
         backed_up: snapshot.backed_up,
         transports: None,
-        credential: snapshot.serialized,
+
         aaguid: metadata.aaguid,
     };
     let callback = config.registration.after_verification.clone();

@@ -78,10 +78,10 @@ where
         let reserved_count = std::cmp::max(
             i64::try_from(count)
                 .map_err(|_error| AuthError::internal("Team membership count overflow"))?,
-            room.member_count,
+            room.member_count.0,
         );
         let mut active = room.into_active_model();
-        active.member_count = Set(reserved_count);
+        active.member_count = Set(crate::Integer(reserved_count));
         let room = active.update(tx).await.map_err(map_db_err)?;
         if let Some(maximum) = maximum {
             let predicate = if tx.get_database_backend() == sea_orm::DbBackend::Postgres {
@@ -108,21 +108,22 @@ where
         let key = team_membership_key(team_id, user_id)?;
         let member = team_member::ActiveModel {
             id: Set(self
-                .generated_id(tx, "teamMember", "team_member", "id")
+                .generated_id(tx, "teamMember", "teamMember", "id")
                 .await?
                 .unwrap_or_else(|| Uuid::new_v4().to_string())),
             team_id: Set(team_id.to_owned()),
             user_id: Set(user_id.to_owned()),
             membership_key: Set(Some(key)),
-            created_at: Set(Utc::now()),
+            created_at: Set(Some(Utc::now())),
         }
         .insert(tx)
         .await
         .map_err(map_db_err)?;
         let mut active = room.into_active_model();
-        active.member_count = Set(reserved_count
-            .checked_add(1)
-            .ok_or_else(|| AuthError::internal("Team membership count overflow"))?);
+        active.member_count =
+            Set(crate::Integer(reserved_count.checked_add(1).ok_or_else(
+                || AuthError::internal("Team membership count overflow"),
+            )?));
         _ = active.update(tx).await.map_err(map_db_err)?;
         Ok(AddTeamMemberResult::Added(member.into()))
     }
@@ -143,7 +144,7 @@ where
                 .unwrap_or_else(|| Uuid::new_v4().to_string())),
             name: Set(data.name),
             organization_id: Set(data.organization_id),
-            member_count: Set(0),
+            member_count: Set(crate::Integer(0)),
             created_at: Set(now),
             updated_at: Set(data.updated_at),
         }
@@ -336,7 +337,7 @@ pub(super) async fn remove_owned_team_members(
     organization_id: Option<&str>,
 ) -> AuthResult<()> {
     if !connection
-        .has_table("team_member")
+        .has_table("teamMember")
         .await
         .map_err(map_db_err)?
     {

@@ -26,7 +26,7 @@ postgres_tests!(
     public_numeric_pages_bind_raw_limits_and_keep_insertion_order_filtered_count_and_full_state,
 );
 
-const TEAM_TABLES: [&str; 3] = ["member", "team", "team_member"];
+const TEAM_TABLES: [&str; 3] = ["member", "team", "teamMember"];
 
 fn rows(snapshot: &str) -> TestResult<Vec<serde_json::Value>> {
     Ok(serde_json::from_str(snapshot)?)
@@ -58,7 +58,7 @@ async fn organization_list_pages_physical_members_before_joining_and_keeps_full_
         (&old.id, "2020-01-01T00:00:00Z"),
         (&new.id, "2021-01-01T00:00:00Z"),
     ] {
-        db.set_timestamp("organization", "created_at", ("id", id), date.parse()?)
+        db.set_timestamp("organization", "createdAt", ("id", id), date.parse()?)
             .await?;
     }
     let old = store
@@ -298,7 +298,7 @@ async fn captured_member_deletion_orders_writes_and_distinguishes_veto_ignore_an
             .await?,
     );
     let before = db.tables(&TEAM_TABLES).await?;
-    _ = db.execute("CREATE TRIGGER member_veto BEFORE DELETE ON member WHEN OLD.role='victim' BEGIN SELECT RAISE(ABORT,'member deletion veto'); END", &[]).await?;
+    _ = db.execute("CREATE TRIGGER member_veto BEFORE DELETE ON \"member\" WHEN OLD.\"role\"='victim' BEGIN SELECT RAISE(ABORT,'member deletion veto'); END", &[]).await?;
     let member_error = store
         .delete_member_with_context(&member.id, &organization.id, &owner_id, true)
         .await
@@ -311,7 +311,7 @@ async fn captured_member_deletion_orders_writes_and_distinguishes_veto_ignore_an
         "member veto must preserve all member/team rows"
     );
     _ = db.execute("DROP TRIGGER member_veto", &[]).await?;
-    _ = db.execute("CREATE TRIGGER team_veto BEFORE DELETE ON team_member WHEN OLD.user_id=(SELECT id FROM users WHERE email='target@member-delete.fixture.test') BEGIN SELECT RAISE(ABORT,'team deletion veto'); END", &[]).await?;
+    _ = db.execute("CREATE TRIGGER team_veto BEFORE DELETE ON \"teamMember\" WHEN OLD.\"userId\"=(SELECT id FROM \"user\" WHERE \"email\"='target@member-delete.fixture.test') BEGIN SELECT RAISE(ABORT,'team deletion veto'); END", &[]).await?;
     let team_error = store
         .delete_member_with_context(&member.id, &organization.id, &owner_id, true)
         .await
@@ -324,7 +324,7 @@ async fn captured_member_deletion_orders_writes_and_distinguishes_veto_ignore_an
         "later team veto must roll back the member deletion"
     );
     _ = db.execute("DROP TRIGGER team_veto", &[]).await?;
-    _ = db.execute("CREATE TRIGGER ignored_member BEFORE DELETE ON member WHEN OLD.role='victim' BEGIN SELECT RAISE(IGNORE); END", &[]).await?;
+    _ = db.execute("CREATE TRIGGER ignored_member BEFORE DELETE ON \"member\" WHEN OLD.\"role\"='victim' BEGIN SELECT RAISE(IGNORE); END", &[]).await?;
     store
         .delete_member_with_context(&member.id, &organization.id, &owner_id, true)
         .await?;
@@ -354,7 +354,7 @@ async fn captured_member_deletion_orders_writes_and_distinguishes_veto_ignore_an
     );
     _ = db.execute("DROP TRIGGER ignored_member", &[]).await?;
     drop(store.add_team_member(&own_team.id, &owner_id, None).await?);
-    _ = db.execute("CREATE TRIGGER phase_guard BEFORE DELETE ON team_member WHEN EXISTS(SELECT 1 FROM member WHERE user_id=OLD.user_id AND role='victim') BEGIN SELECT RAISE(ABORT,'member must be deleted first'); END", &[]).await?;
+    _ = db.execute("CREATE TRIGGER phase_guard BEFORE DELETE ON \"teamMember\" WHEN EXISTS(SELECT 1 FROM \"member\" WHERE \"userId\"=OLD.\"userId\" AND \"role\"='victim') BEGIN SELECT RAISE(ABORT,'member must be deleted first'); END", &[]).await?;
     store
         .delete_member_with_context(&member.id, &organization.id, &owner_id, true)
         .await?;
@@ -411,7 +411,7 @@ async fn captured_member_deletion_orders_writes_and_distinguishes_veto_ignore_an
             .into_iter()
             .map(|mut row| {
                 if row["id"] == own_team.id.as_str() {
-                    row["member_count"] = (row["member_count"].as_i64().unwrap() - 1).into();
+                    row["memberCount"] = (row["memberCount"].as_i64().unwrap() - 1).into();
                 }
                 row
             })
@@ -421,8 +421,8 @@ async fn captured_member_deletion_orders_writes_and_distinguishes_veto_ignore_an
         rows(&after[2])?,
         rows(&before[2])?
             .into_iter()
-            .filter(|row| !(row["team_id"] == own_team.id.as_str()
-                && row["user_id"] == owner_id.as_str()))
+            .filter(|row| !(row["teamId"] == own_team.id.as_str()
+                && row["userId"] == owner_id.as_str()))
             .collect::<Vec<_>>()
     );
     B::close(connection).await
@@ -468,7 +468,7 @@ async fn contextual_deletion_uses_original_scope_and_unsorted_configured_pages<B
         (&first.id, "2030-01-01T00:00:00Z"),
         (&second.id, "2000-01-01T00:00:00Z"),
     ] {
-        db.set_timestamp("member", "created_at", ("id", id), date.parse()?)
+        db.set_timestamp("member", "createdAt", ("id", id), date.parse()?)
             .await?;
     }
     assert_eq!(
@@ -509,7 +509,7 @@ async fn contextual_deletion_uses_original_scope_and_unsorted_configured_pages<B
     let before = db.tables(&TEAM_TABLES).await?;
     _ = db
         .execute(
-            "UPDATE member SET organization_id=$1, user_id=$2 WHERE id=$3",
+            "UPDATE \"member\" SET \"organizationId\"=$1, \"userId\"=$2 WHERE id=$3",
             &[&other.id, &other_user_id, &first.id],
         )
         .await?;
@@ -545,7 +545,7 @@ async fn contextual_deletion_uses_original_scope_and_unsorted_configured_pages<B
             .into_iter()
             .map(|mut row| {
                 if row["id"] == first_team.id.as_str() {
-                    row["member_count"] = (row["member_count"].as_i64().unwrap() - 1).into();
+                    row["memberCount"] = (row["memberCount"].as_i64().unwrap() - 1).into();
                 }
                 row
             })
@@ -555,7 +555,7 @@ async fn contextual_deletion_uses_original_scope_and_unsorted_configured_pages<B
         rows(&after[2])?,
         rows(&before[2])?
             .into_iter()
-            .filter(|row| row["team_id"] != first_team.id.as_str())
+            .filter(|row| row["teamId"] != first_team.id.as_str())
             .collect::<Vec<_>>()
     );
     assert_eq!(
@@ -622,7 +622,7 @@ async fn optional_member_role_updates_distinguish_missing_rows_from_write_errors
         serde_json::to_value(store.get_member_by_id(&target.id).await?)?,
         serde_json::to_value(Some(&updated))?
     );
-    _ = db.execute("CREATE TRIGGER veto_optional_member BEFORE UPDATE OF role ON member WHEN OLD.role='admin' BEGIN SELECT RAISE(ABORT,'optional member storage veto'); END", &[]).await?;
+    _ = db.execute("CREATE TRIGGER veto_optional_member BEFORE UPDATE OF \"role\" ON \"member\" WHEN OLD.\"role\"='admin' BEGIN SELECT RAISE(ABORT,'optional member storage veto'); END", &[]).await?;
     assert!(
         store
             .update_member_role_if_present(&target.id, "must-not-persist")
@@ -635,7 +635,7 @@ async fn optional_member_role_updates_distinguish_missing_rows_from_write_errors
         serde_json::to_value(Some(&updated))?
     );
     _ = db.execute("DROP TRIGGER veto_optional_member", &[]).await?;
-    _ = db.execute("CREATE TRIGGER ignore_optional_member BEFORE UPDATE OF role ON member WHEN OLD.role='admin' BEGIN SELECT RAISE(IGNORE); END", &[]).await?;
+    _ = db.execute("CREATE TRIGGER ignore_optional_member BEFORE UPDATE OF \"role\" ON \"member\" WHEN OLD.\"role\"='admin' BEGIN SELECT RAISE(IGNORE); END", &[]).await?;
     assert!(
         store
             .update_member_role_if_present(&target.id, "ignored")
@@ -738,12 +738,12 @@ async fn query_organization_members_applies_filter_sort_and_pagination<B: Backen
 async fn numeric_page_snapshot(db: &Db) -> TestResult<Option<String>> {
     if db.is_postgres() {
         return db.text(
-            "SELECT json_build_object('members',(SELECT json_agg(r ORDER BY id) FROM member r),'users',(SELECT json_agg(r ORDER BY id) FROM users r),'organizations',(SELECT json_agg(r ORDER BY id) FROM organization r))::text",
+            "SELECT json_build_object('members',(SELECT json_agg(r ORDER BY id) FROM \"member\" r),'users',(SELECT json_agg(r ORDER BY id) FROM \"user\" r),'organizations',(SELECT json_agg(r ORDER BY id) FROM \"organization\" r))::text",
             &[],
         ).await;
     }
     db.text(
-        "SELECT json_object('members',(SELECT json_group_array(json_object('rowid',rowid,'id',id,'org',organization_id,'user',user_id,'role',role,'created',created_at)) FROM (SELECT rowid,* FROM member ORDER BY rowid)),'users',(SELECT json_group_array(json_object('id',id,'email',email,'created',created_at,'updated',updated_at)) FROM (SELECT * FROM users ORDER BY rowid)),'organizations',(SELECT json_group_array(json_object('id',id,'name',name,'created',created_at)) FROM (SELECT * FROM organization ORDER BY rowid)))",
+        "SELECT json_object('members',(SELECT json_group_array(json_object('rowid',rowid,'id',id,'org',\"organizationId\",'user',\"userId\",'role',\"role\",'created',\"createdAt\")) FROM (SELECT rowid,* FROM \"member\" ORDER BY rowid)),'users',(SELECT json_group_array(json_object('id',id,'email',\"email\",'created',\"createdAt\",'updated',\"updatedAt\")) FROM (SELECT * FROM \"user\" ORDER BY rowid)),'organizations',(SELECT json_group_array(json_object('id',id,'name',\"name\",'created',\"createdAt\")) FROM (SELECT * FROM \"organization\" ORDER BY rowid)))",
         &[],
     )
     .await
@@ -791,7 +791,7 @@ async fn public_numeric_pages_bind_raw_limits_and_keep_insertion_order_filtered_
         (&first.id, "2021-01-01T00:00:00Z"),
         (&second.id, "2020-01-01T00:00:00Z"),
     ] {
-        db.set_timestamp("member", "created_at", ("id", id), date.parse()?)
+        db.set_timestamp("member", "createdAt", ("id", id), date.parse()?)
             .await?;
     }
     let first = store

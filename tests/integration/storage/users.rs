@@ -27,7 +27,7 @@ async fn disabled_plugin_creation_preserves_sql_null<B: Backend>(db: Db) -> Test
     assert_eq!(user.banned_value(), None);
     assert_eq!(
         db.text(
-            "SELECT CASE WHEN two_factor_enabled IS NULL AND banned IS NULL THEN 'null,null' END FROM users WHERE id = $1",
+            "SELECT CASE WHEN \"twoFactorEnabled\" IS NULL AND \"banned\" IS NULL THEN 'null,null' END FROM \"user\" WHERE id = $1",
             &[user.id().as_ref()]
         )
         .await?,
@@ -243,11 +243,14 @@ pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
         (installed_keys, &foreign_key, &owned_key)
     {
         let foreign_before = db
-            .text("SELECT key FROM api_keys WHERE id = $1", &[foreign_key])
+            .text(
+                "SELECT \"key\" FROM \"apikey\" WHERE id = $1",
+                &[foreign_key],
+            )
             .await?;
         if admin {
             {
-                let (table, label) = ("users", "user veto");
+                let (table, label) = ("user", "user veto");
                 // A user-delete failure retains the identity and its keys.
                 // Earlier account/session removals are separate HTTP effects.
                 let condition = format!("OLD.id = '{owner}'");
@@ -260,18 +263,24 @@ pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
                 .await?;
                 assert_eq!(response.status, 500, "{label} must abort deletion");
                 assert_eq!(
-                    db.count_where("SELECT COUNT(*) FROM users WHERE id = $1", &[&owner])
+                    db.count_where("SELECT COUNT(*) FROM \"user\" WHERE id = $1", &[&owner])
                         .await?,
                     1
                 );
                 assert_eq!(
-                    db.count_where("SELECT COUNT(*) FROM api_keys WHERE id = $1", &[owned_key])
-                        .await?,
+                    db.count_where(
+                        "SELECT COUNT(*) FROM \"apikey\" WHERE id = $1",
+                        &[owned_key]
+                    )
+                    .await?,
                     1
                 );
                 assert_eq!(
-                    db.text("SELECT key FROM api_keys WHERE id = $1", &[foreign_key])
-                        .await?,
+                    db.text(
+                        "SELECT \"key\" FROM \"apikey\" WHERE id = $1",
+                        &[foreign_key]
+                    )
+                    .await?,
                     foreign_before
                 );
                 _ = db.execute("DROP TRIGGER cleanup_veto", &[]).await?;
@@ -333,7 +342,7 @@ pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
         }
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM api_keys WHERE reference_id = $1",
+                "SELECT COUNT(*) FROM \"apikey\" WHERE \"referenceId\" = $1",
                 &[&owner]
             )
             .await?,
@@ -341,7 +350,7 @@ pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM api_keys WHERE id = $1 AND reference_id = $2",
+                "SELECT COUNT(*) FROM \"apikey\" WHERE id = $1 AND \"referenceId\" = $2",
                 &[foreign_key, &admin_id]
             )
             .await?,
@@ -376,7 +385,7 @@ pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
         assert_eq!(response.status, 200);
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM users WHERE id = $1",
+                "SELECT COUNT(*) FROM \"user\" WHERE id = $1",
                 &[&disabled_owner]
             )
             .await?,
@@ -384,7 +393,7 @@ pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM api_keys WHERE id = $1",
+                "SELECT COUNT(*) FROM \"apikey\" WHERE id = $1",
                 &[&disabled_key]
             )
             .await?,
@@ -392,7 +401,7 @@ pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM api_keys WHERE id = $1 AND reference_id = $2",
+                "SELECT COUNT(*) FROM \"apikey\" WHERE id = $1 AND \"referenceId\" = $2",
                 &[foreign_key, &admin_id]
             )
             .await?,

@@ -128,7 +128,6 @@ mod tests {
             impersonated_by: None,
             active_organization_id: None,
             active_team_id: None,
-            active: true,
             extension_fields: std::collections::BTreeMap::default(),
         });
         assert_eq!(req.virtual_user_id(), Some("user-123"));

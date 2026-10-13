@@ -468,7 +468,6 @@ impl SessionStore<BundledSchema> for MemoryStore {
                 .into_iter()
                 .map(|(name, value)| value.to_json_value().map(|value| (name, value)))
                 .collect::<Result<_, _>>()?,
-            active: true,
         };
         let mut state = self.lock();
         if state.sessions.contains_key(&token) {
@@ -539,9 +538,7 @@ impl SessionStore<BundledSchema> for MemoryStore {
         let now = Utc::now();
         let mut state = self.lock();
         let before = state.sessions.len();
-        state
-            .sessions
-            .retain(|_, session| session.expires_at > now && session.active);
+        state.sessions.retain(|_, session| session.expires_at > now);
         Ok(before - state.sessions.len())
     }
 

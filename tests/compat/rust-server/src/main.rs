@@ -2,6 +2,7 @@ mod account_linking_profiles;
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 mod additional_field_models;
+mod admin_user_model;
 mod fixtures;
 use fixtures::managed_secrets_fixture;
 mod anonymous_user_model;
@@ -322,7 +323,17 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
     // keyring profiles.
     {
         use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
-        for table in ["fixtureJwtKeyring", "application_delete_receipts"] {
+        for table in [
+            "fixtureJwtKeyring",
+            "application_delete_receipts",
+            "oauthAccessToken",
+            "oauthRefreshToken",
+            "oauthClientAssertion",
+            "oauthConsent",
+            "oauthClientResource",
+            "oauthResource",
+            "oauthClient",
+        ] {
             let _ = database
                 .execute_raw(Statement::from_string(
                     DbBackend::Sqlite,
@@ -345,7 +356,7 @@ async fn database_residue(
         .query_all_raw(Statement::from_string(
             DbBackend::Sqlite,
             // Migration bookkeeping is schema, not scenario state.
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('better_auth_migrations', 'better_auth_rate_limit_migrations') ORDER BY name",
+            "SELECT \"name\" FROM sqlite_master WHERE type = 'table' AND \"name\" NOT LIKE 'sqlite_%' AND \"name\" NOT IN ('better_auth_migrations', 'better_auth_rate_limit_migrations') ORDER BY \"name\"",
         ))
         .await?;
     let mut residue = serde_json::Map::new();
@@ -355,7 +366,7 @@ async fn database_residue(
             .query_one_raw(Statement::from_string(
                 DbBackend::Sqlite,
                 format!(
-                    "SELECT count(*) AS n FROM \"{}\"",
+                    "SELECT \"count\"(*) AS n FROM \"{}\"",
                     name.replace('"', "\"\"")
                 ),
             ))
@@ -2486,9 +2497,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
                         let result: AuthResult<serde_json::Value> = async {
                             db_for_oauth_seed.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,
-                                "UPDATE accounts SET created_at=?,updated_at=? WHERE id=?", [created.into(),updated.into(),account.id().into()])).await.map_err(|error| AuthError::Internal(error.to_string()))?;
+                                "UPDATE \"account\" SET \"createdAt\"=?,\"updatedAt\"=? WHERE id=?", [created.into(),updated.into(),account.id().into()])).await.map_err(|error| AuthError::Internal(error.to_string()))?;
                             let row = db_for_oauth_seed.query_one_raw(Statement::from_sql_and_values(DbBackend::Sqlite,
-                                "SELECT created_at AS createdAt,updated_at AS updatedAt FROM accounts WHERE id=?", [account.id().into()])).await.map_err(|error|AuthError::Internal(error.to_string()))?.ok_or_else(||AuthError::Internal("Seeded account missing".into()))?;
+                                "SELECT \"createdAt\" AS createdAt,\"updatedAt\" AS updatedAt FROM \"account\" WHERE id=?", [account.id().into()])).await.map_err(|error|AuthError::Internal(error.to_string()))?.ok_or_else(||AuthError::Internal("Seeded account missing".into()))?;
                             Ok(serde_json::json!({"createdAt":row.try_get::<String>("","createdAt").map_err(|error|AuthError::Internal(error.to_string()))?,"updatedAt":row.try_get::<String>("","updatedAt").map_err(|error|AuthError::Internal(error.to_string()))?}))
                         }.await;
                         return match result {

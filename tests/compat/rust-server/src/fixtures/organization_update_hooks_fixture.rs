@@ -31,22 +31,22 @@ pub(crate) async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value>
     for (name, sql, columns) in [
         (
             "organizations",
-            "SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id",
+            "SELECT id,\"name\",\"slug\",\"logo\",\"metadata\" FROM \"organization\" ORDER BY \"slug\",id",
             &["id", "name", "slug", "logo", "metadata"][..],
         ),
         (
             "members",
-            "SELECT m.id,m.organization_id AS organizationId,m.user_id AS userId,m.role FROM member m LEFT JOIN organization o ON o.id=m.organization_id JOIN users u ON u.id=m.user_id ORDER BY o.slug,u.email,m.id",
+            "SELECT m.id,m.\"organizationId\" AS organizationId,m.\"userId\" AS userId,m.\"role\" FROM \"member\" m LEFT JOIN \"organization\" o ON o.id=m.\"organizationId\" JOIN \"user\" u ON u.id=m.\"userId\" ORDER BY o.\"slug\",u.\"email\",m.id",
             &["id", "organizationId", "userId", "role"][..],
         ),
         (
             "sessions",
-            "SELECT s.id,s.user_id AS userId,s.active_organization_id AS activeOrganizationId,s.active_team_id AS activeTeamId FROM sessions s JOIN users u ON u.id=s.user_id ORDER BY u.email,s.created_at,s.id",
+            "SELECT s.id,s.\"userId\" AS userId,s.\"activeOrganizationId\" AS activeOrganizationId,s.\"activeTeamId\" AS activeTeamId FROM \"session\" s JOIN \"user\" u ON u.id=s.\"userId\" ORDER BY u.\"email\",s.\"createdAt\",s.id",
             &["id", "userId", "activeOrganizationId", "activeTeamId"][..],
         ),
         (
             "users",
-            "SELECT id,email,name FROM users ORDER BY email,id",
+            "SELECT id,\"email\",\"name\" FROM \"user\" ORDER BY \"email\",id",
             &["id", "email", "name"][..],
         ),
     ] {
@@ -277,8 +277,8 @@ pub(crate) async fn router(
             hooks.database.execute_unprepared("DROP TRIGGER IF EXISTS default_organization_update").await.map_err(|error|AuthError::internal(error.to_string()))?;
             if let Some(mode @ ("delete" | "ignore" | "veto")) = body["mode"].as_str() {
                 let id=body["organizationId"].as_str().unwrap_or_default().replace('\'',"''");
-                let action=match mode { "delete"=>"DELETE FROM member WHERE organization_id=OLD.id; DELETE FROM invitation WHERE organization_id=OLD.id; DELETE FROM organization WHERE id=OLD.id; SELECT RAISE(IGNORE);", "ignore"=>"SELECT RAISE(IGNORE);", _=>"SELECT RAISE(ABORT,'organization update veto');" };
-                hooks.database.execute_unprepared(&format!("CREATE TRIGGER default_organization_update BEFORE UPDATE ON organization WHEN OLD.id='{id}' BEGIN {action} END")).await.map_err(|error|AuthError::internal(error.to_string()))?;
+                let action=match mode { "delete"=>"DELETE FROM \"member\" WHERE \"organizationId\"=OLD.id; DELETE FROM \"invitation\" WHERE \"organizationId\"=OLD.id; DELETE FROM \"organization\" WHERE id=OLD.id; SELECT RAISE(IGNORE);", "ignore"=>"SELECT RAISE(IGNORE);", _=>"SELECT RAISE(ABORT,'organization update veto');" };
+                hooks.database.execute_unprepared(&format!("CREATE TRIGGER default_organization_update BEFORE UPDATE ON \"organization\" WHEN OLD.id='{id}' BEGIN {action} END")).await.map_err(|error|AuthError::internal(error.to_string()))?;
             }
             Ok::<_,AuthError>(Json(json!({"configured":true})))
         }}))

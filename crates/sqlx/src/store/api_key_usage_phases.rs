@@ -99,14 +99,14 @@ impl<S: AuthSchema> SqlxStore<S> {
             {
                 let refill_guard = match observed.last_refill_at.as_deref() {
                     Some(value) => {
-                        Guard::Compare("last_refill_at", " = ", stored_date(value)?.into())
+                        Guard::Compare("lastRefillAt", " = ", stored_date(value)?.into())
                     }
-                    None => Guard::IsNull("last_refill_at"),
+                    None => Guard::IsNull("lastRefillAt"),
                 };
                 self.guarded_update(
                     vec![
                         Set::Value("remaining", (amount - 1.0).into()),
-                        Set::Value("last_refill_at", now.into()),
+                        Set::Value("lastRefillAt", now.into()),
                     ],
                     vec![
                         Guard::Compare("id", " = ", observed.id.as_str().into()),
@@ -142,7 +142,7 @@ impl<S: AuthSchema> SqlxStore<S> {
             if !global_rate_limit_enabled || !row.rate_limit_enabled {
                 if let Some(updated) = self
                     .guarded_update(
-                        vec![Set::Value("last_request", now.into())],
+                        vec![Set::Value("lastRequest", now.into())],
                         vec![Guard::Compare("id", " = ", row.id.as_str().into())],
                     )
                     .await?
@@ -157,13 +157,13 @@ impl<S: AuthSchema> SqlxStore<S> {
             let previous = row.last_request.as_deref().map(stored_date).transpose()?;
             let elapsed =
                 previous.map(|last| (now.timestamp_millis() - last.timestamp_millis()) as f64);
-            let mut sets = vec![Set::Value("last_request", now.into())];
+            let mut sets = vec![Set::Value("lastRequest", now.into())];
             let mut guards = vec![Guard::Compare("id", " = ", row.id.as_str().into())];
             if let Some(elapsed) = elapsed {
                 if elapsed > window {
-                    sets.push(Set::Value("request_count", 1.0_f64.into()));
+                    sets.push(Set::Value("requestCount", 1.0_f64.into()));
                     guards.push(Guard::Compare(
-                        "last_request",
+                        "lastRequest",
                         " <= ",
                         window_start(now, window)?.into(),
                     ));
@@ -173,17 +173,17 @@ impl<S: AuthSchema> SqlxStore<S> {
                             try_again_in: (window - elapsed).ceil(),
                         });
                     }
-                    sets.push(Set::Offset("request_count", " + ", 1.0));
+                    sets.push(Set::Offset("requestCount", " + ", 1.0));
                     guards.push(Guard::Compare(
-                        "last_request",
+                        "lastRequest",
                         " > ",
                         window_start(now, window)?.into(),
                     ));
-                    guards.push(Guard::Compare("request_count", " < ", max.into()));
+                    guards.push(Guard::Compare("requestCount", " < ", max.into()));
                 }
             } else {
-                sets.push(Set::Value("request_count", 1.0_f64.into()));
-                guards.push(Guard::IsNull("last_request"));
+                sets.push(Set::Value("requestCount", 1.0_f64.into()));
+                guards.push(Guard::IsNull("lastRequest"));
             }
             if let Some(updated) = self.guarded_update(sets, guards).await? {
                 row = ApiKey::from(&updated);
@@ -202,7 +202,7 @@ impl<S: AuthSchema> SqlxStore<S> {
         // including claims committed by concurrent verifications before this write.
         let updated = self
             .guarded_update(
-                vec![Set::Value("updated_at", Utc::now().into())],
+                vec![Set::Value("updatedAt", Utc::now().into())],
                 vec![Guard::Compare("id", " = ", row.id.as_str().into())],
             )
             .await?

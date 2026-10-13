@@ -238,7 +238,7 @@ async fn hooks_without_overrides_admit_every_lifecycle_operation<B: Backend>(db:
         .await?;
     store.delete_session(session.token()).await?;
     store.delete_user(&id).await?;
-    assert_eq!(db.count("users").await?, 0);
+    assert_eq!(db.count("user").await?, 0);
     Ok(())
 }
 
@@ -262,7 +262,9 @@ async fn required_null_fields_take_their_configured_creation_default<B: Backend>
     let user = store.create_user(input).await?;
     assert_eq!(user.role(), Some("member"));
     assert_eq!(
-        db.text("SELECT role FROM users", &[]).await?.as_deref(),
+        db.text("SELECT \"role\" FROM \"user\"", &[])
+            .await?
+            .as_deref(),
         Some("member")
     );
     Ok(())
@@ -295,6 +297,6 @@ async fn cancelling_user_hooks_surface_creation_cancelled<B: Backend>(db: Db) ->
         matches!(error, AuthError::UserCreationCancelled),
         "{error:?}"
     );
-    assert_eq!(db.count("users").await?, 0);
+    assert_eq!(db.count("user").await?, 0);
     Ok(())
 }

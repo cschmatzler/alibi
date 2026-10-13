@@ -495,13 +495,13 @@ async fn token_grants_follow_the_provider_policy<B: Backend>(db: Db) -> TestResu
         );
         let account = db
             .text(
-                "SELECT scope FROM accounts WHERE account_id = $1",
+                "SELECT \"scope\" FROM \"account\" WHERE \"accountId\" = $1",
                 &[&format!("grant-sub-{index}")],
             )
             .await?;
         let expiring = db
             .count_where(
-                "SELECT COUNT(*) FROM accounts WHERE account_id = $1 AND access_token_expires_at IS NOT NULL",
+                "SELECT COUNT(*) FROM \"account\" WHERE \"accountId\" = $1 AND \"accessTokenExpiresAt\" IS NOT NULL",
                 &[&format!("grant-sub-{index}")],
             )
             .await?;
@@ -605,7 +605,7 @@ async fn refresh_grants_follow_the_provider_policy<B: Backend>(db: Db) -> TestRe
     assert_eq!(signed_in.status, 302);
     let session = super::cookies(&signed_in);
     drop(social.provider.take());
-    let account = db.text("SELECT id FROM accounts", &[]).await?.unwrap();
+    let account = db.text("SELECT id FROM \"account\"", &[]).await?.unwrap();
 
     social.provider.respond(
         400,
@@ -675,7 +675,7 @@ async fn cookie_state_strategy_covers_linking_and_unknown_providers<B: Backend>(
         &owner,
     )
     .await;
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     let mut unknown = request("/callback/unknown", None, &cookie);
     unknown.set_query_pairs([("code", "grant"), ("state", state.as_str())]);
     let response = Box::pin(auth.handle_request(unknown)).await?;
@@ -693,7 +693,7 @@ async fn cookie_state_strategy_covers_linking_and_unknown_providers<B: Backend>(
     assert_eq!(linked.status, 302);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM accounts WHERE provider_id = $1",
+            "SELECT COUNT(*) FROM \"account\" WHERE \"providerId\" = $1",
             &["google"]
         )
         .await?,
@@ -782,8 +782,8 @@ async fn oauth_dynamic_origin_state_publication<B: Backend>(db: Db) -> TestResul
         let response = call(&auth, input, if expected.is_some() { 200 } else { 500 }).await;
         assert_eq!(auth.context().config.base_url, original);
         assert!(social.provider.requests.lock().unwrap().is_empty());
-        assert_eq!(db.count("users").await?, 0);
-        assert_eq!(db.count("sessions").await?, 0);
+        assert_eq!(db.count("user").await?, 0);
+        assert_eq!(db.count("session").await?, 0);
         if let Some(origin) = expected {
             let authorization = url::Url::parse(body(&response)["url"].as_str().unwrap())?;
             let query = authorization
@@ -794,7 +794,7 @@ async fn oauth_dynamic_origin_state_publication<B: Backend>(db: Db) -> TestResul
                 query["redirect_uri"],
                 format!("{origin}/api/auth/callback/google")
             );
-            assert_eq!(db.count("verifications").await?, 1);
+            assert_eq!(db.count("verification").await?, 1);
             let stored = auth
                 .context()
                 .verifications()
@@ -812,7 +812,7 @@ async fn oauth_dynamic_origin_state_publication<B: Backend>(db: Db) -> TestResul
             );
             assert!(response.headers.get_all("set-cookie").next().is_some());
         } else {
-            assert_eq!(db.count("verifications").await?, 0);
+            assert_eq!(db.count("verification").await?, 0);
             assert!(response.headers.get_all("set-cookie").next().is_none());
         }
         B::close(connection).await?;

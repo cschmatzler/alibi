@@ -48,7 +48,6 @@ export type ComparisonContext = {
   /** Managed proxy fixtures select one declared envelope version, never try a key ring. */
   readonly oauthProxyProfileManagedKeys?: {
     readonly keys: Readonly<Record<number, string>>;
-    readonly legacySecret?: string;
   };
   readonly leftBaseURL: string;
   readonly rightBaseURL: string;
@@ -3871,7 +3870,7 @@ export function compareValues(
       const secret = context.oauthProxyProfileManagedKeys
         ? envelope
           ? context.oauthProxyProfileManagedKeys.keys[Number(envelope[1])]
-          : context.oauthProxyProfileManagedKeys.legacySecret
+          : undefined
         : envelope
           ? undefined
           : context.oauthProxyProfileSecret;
@@ -4825,6 +4824,40 @@ export function compareValues(
           }
         }
       }
+    }
+
+    if (
+      path === "observation.issued.expires_at" &&
+      typeof a === "number" &&
+      typeof b === "number"
+    ) {
+      for (const [root, expiry, start, end] of [
+        [normalizedLeft, a, context.leftStartedAt, context.leftFinishedAt ?? context.leftStartedAt],
+        [
+          normalizedRight,
+          b,
+          context.rightStartedAt,
+          context.rightFinishedAt ?? context.rightStartedAt,
+        ],
+      ] as const) {
+        const observation = record(root) && record(root.observation) ? root.observation : undefined;
+        const issued = observation && record(observation.issued) ? observation.issued : undefined;
+        if (
+          !issued ||
+          typeof observation?.clientId !== "string" ||
+          !record(observation.authorizationSession) ||
+          !record(observation.authorizationSession.session) ||
+          typeof issued.id_token !== "string" ||
+          typeof issued.access_token !== "string" ||
+          issued.expires_in !== 3600 ||
+          !Number.isInteger(expiry) ||
+          expiry - 3600 < Math.floor(start / 1000) ||
+          expiry - 3600 > Math.floor(end / 1000)
+        ) {
+          fail(path, "OIDC access-token expiration is outside its observed issuance window");
+        }
+      }
+      return;
     }
 
     if (

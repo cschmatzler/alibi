@@ -20,14 +20,13 @@ import { storedVerification, verificationCount } from "../../support/verificatio
 import { verifyWithOfficialJose } from "../plugins/jwt/helpers";
 const old = "managed-old-reader-key-at-least-32-characters";
 const current = "compat-test-only-key-not-real-minimum-32chars";
-const legacy = "managed-legacy-reader-key-at-least-32-characters";
+const wrongSecret = "managed-wrong-reader-key-at-least-32-characters";
 const keys = {
   keys: new Map([
     [2, current],
     [0, old],
   ]),
   currentVersion: 2,
-  legacySecret: legacy,
 };
 const comparisonOptions = {
   managedAccountCookieProfiles: {
@@ -48,7 +47,6 @@ const comparisonOptions = {
   },
   sessionCookieSecretsByAuthPath: {
     [authProfilePath("managed-old")]: old,
-    [authProfilePath("managed-bare")]: legacy,
   },
 };
 function client(ctx: ScenarioContext, profile: FixtureProfile, actor = "owner") {
@@ -107,10 +105,7 @@ compatScenario(
   "managed rotation retains encrypted proofs and factors, retires readers and invalidates old signed cookies",
   async (ctx) => {
     const results = [];
-    for (const [write, read, version] of [
-      ["managed-old", "managed-retained", 0],
-      ["managed-bare", "managed-legacy", null],
-    ] as const) {
+    for (const [write, read, version] of [["managed-old", "managed-retained", 0]] as const) {
       const email = ctx.uniqueEmail(write);
       const sent = await request(ctx, write, "email-otp/send-verification-otp", {
         email,
@@ -473,7 +468,7 @@ compatScenario(
     expect(cached?.session.token).toBe(login.data!.token!);
     expect(
       await getCookieCache(new Headers({ cookie: `better-auth.session_data=${cacheToken}` }), {
-        secret: legacy,
+        secret: wrongSecret,
         strategy: "compact",
         isSecure: false,
       }),

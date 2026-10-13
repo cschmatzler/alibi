@@ -116,6 +116,8 @@ impl From<Option<serde_json::Value>> for SqlValue {
 /// binding, exactly as the `SeaORM` adapter coerces by its column type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ColumnKind {
+    /// A Better Auth Number stored with INTEGER affinity.
+    Number,
     /// `String`, `char` and text columns: values use the backend's TEXT cast.
     Text,
     /// JSON documents.

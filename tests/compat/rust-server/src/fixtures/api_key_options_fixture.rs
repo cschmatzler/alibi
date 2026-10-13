@@ -167,10 +167,10 @@ fn persisted(row: &QueryResult) -> Value {
         .map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
     json!({
         "id":row.try_get::<String>("","id").unwrap(),"name":row.try_get::<Option<String>>("","name").unwrap(),"start":start,"prefix":row.try_get::<Option<String>>("","prefix").unwrap(),
-        "key":row.try_get::<String>("","key").unwrap(),"referenceId":row.try_get::<String>("","reference_id").unwrap(),"configId":row.try_get::<String>("","config_id").unwrap(),
-        "refillInterval":row.try_get::<Option<f64>>("","refill_interval").unwrap(),"refillAmount":row.try_get::<Option<f64>>("","refill_amount").unwrap(),"lastRefillAt":date(row,"last_refill_at"),
-        "enabled":row.try_get::<bool>("","enabled").unwrap(),"rateLimitEnabled":row.try_get::<bool>("","rate_limit_enabled").unwrap(),"rateLimitTimeWindow":row.try_get::<Option<f64>>("","rate_limit_time_window").unwrap(),"rateLimitMax":row.try_get::<Option<f64>>("","rate_limit_max").unwrap(),
-        "requestCount":row.try_get::<Option<f64>>("","request_count").unwrap(),"remaining":row.try_get::<Option<f64>>("","remaining").unwrap(),"lastRequest":date(row,"last_request"),"expiresAt":date(row,"expires_at"),"createdAt":date(row,"created_at"),"updatedAt":date(row,"updated_at"),
+        "key":row.try_get::<String>("","key").unwrap(),"referenceId":row.try_get::<String>("","referenceId").unwrap(),"configId":row.try_get::<String>("","configId").unwrap(),
+        "refillInterval":row.try_get::<Option<alibi::seaorm::Number>>("","refillInterval").unwrap(),"refillAmount":row.try_get::<Option<alibi::seaorm::Number>>("","refillAmount").unwrap(),"lastRefillAt":date(row,"lastRefillAt"),
+        "enabled":row.try_get::<bool>("","enabled").unwrap(),"rateLimitEnabled":row.try_get::<bool>("","rateLimitEnabled").unwrap(),"rateLimitTimeWindow":row.try_get::<Option<alibi::seaorm::Number>>("","rateLimitTimeWindow").unwrap(),"rateLimitMax":row.try_get::<Option<alibi::seaorm::Number>>("","rateLimitMax").unwrap(),
+        "requestCount":row.try_get::<Option<alibi::seaorm::Number>>("","requestCount").unwrap(),"remaining":row.try_get::<Option<alibi::seaorm::Number>>("","remaining").unwrap(),"lastRequest":date(row,"lastRequest"),"expiresAt":date(row,"expiresAt"),"createdAt":date(row,"createdAt"),"updatedAt":date(row,"updatedAt"),
         "permissions":row.try_get::<Option<String>>("","permissions").unwrap(),"metadata":row.try_get::<Option<String>>("","metadata").unwrap(),"startHex":row.try_get::<String>("","startHex").unwrap(),"startType":row.try_get::<String>("","startType").unwrap(),
     })
 }
@@ -224,7 +224,7 @@ struct Fixture {
     application: Application,
 }
 async fn state(State(fixture): State<Fixture>) -> Json<Value> {
-    let rows=fixture.database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT *,hex(CAST(start AS BLOB)) AS startHex,typeof(start) AS startType FROM api_keys ORDER BY name,id")).await.unwrap();
+    let rows=fixture.database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT *,hex(CAST(\"start\" AS BLOB)) AS startHex,typeof(\"start\") AS startType FROM \"apikey\" ORDER BY \"name\",id")).await.unwrap();
     Json(json!({"keys":rows.iter().map(persisted).collect::<Vec<_>>()}))
 }
 async fn events(State(fixture): State<Fixture>) -> Json<Value> {
@@ -246,8 +246,8 @@ async fn install(State(fixture): State<Fixture>, Json(input): Json<Value>) -> Js
     for (field, value) in input["patch"].as_object().unwrap() {
         let column = match field.as_str() {
             "permissions" => "permissions",
-            "referenceId" => "reference_id",
-            "configId" => "config_id",
+            "referenceId" => "referenceId",
+            "configId" => "configId",
             _ => panic!("Unsupported installed field"),
         };
         let value = value.as_str().map(str::to_owned);
@@ -255,7 +255,7 @@ async fn install(State(fixture): State<Fixture>, Json(input): Json<Value>) -> Js
             .database
             .execute_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
-                format!("UPDATE api_keys SET {column}=? WHERE id=?"),
+                format!("UPDATE \"apikey\" SET {column}=? WHERE id=?"),
                 [value.into(), input["keyId"].as_str().unwrap().into()],
             ))
             .await

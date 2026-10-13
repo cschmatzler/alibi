@@ -49,14 +49,16 @@ async fn username_signup_lookup_and_denials_share_normalized_identity<B: Backend
     assert_eq!(body(&owner)["user"]["username"], "cool_user");
     assert_eq!(body(&owner)["user"]["displayUsername"], "Cool User");
     assert_eq!(
-        db.text("SELECT username FROM users", &[]).await?.as_deref(),
+        db.text("SELECT \"username\" FROM \"user\"", &[])
+            .await?
+            .as_deref(),
         Some("cool_user")
     );
     assert_eq!(
         body(&call(&auth, availability, 200).await)["available"],
         false
     );
-    let snapshot = db.tables(&["users", "accounts", "sessions"]).await?;
+    let snapshot = db.tables(&["user", "account", "session"]).await?;
     for (username, password) in [("COOL_USER", "wrong-password"), ("no_such_user", PASSWORD)] {
         let denied = call(
             &auth,
@@ -70,17 +72,11 @@ async fn username_signup_lookup_and_denials_share_normalized_identity<B: Backend
         .await;
         assert_eq!(body(&denied)["code"], "INVALID_USERNAME_OR_PASSWORD");
         assert!(cookies(&denied).is_empty());
-        assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
-            snapshot
-        );
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, snapshot);
     }
     let duplicate = call(&auth, request("/sign-up/email", Some(json!({"email":"different@example.test","password":PASSWORD,"name":"Different","username":"COOL_USER"})), ""), 400).await;
     assert_eq!(body(&duplicate)["code"], "USERNAME_IS_ALREADY_TAKEN");
-    assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
-        snapshot
-    );
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, snapshot);
     let login = call(
         &auth,
         request(
@@ -127,11 +123,11 @@ async fn email_otp_verification_reset_and_email_change_bind_owner_and_scope<B: B
     let verification = mailbox.take();
     assert_eq!(verification.email, "email-otp-owner@example.test");
     assert_eq!(verification.otp_type, EmailOtpType::EmailVerification);
-    let code_rows = db.table("verifications").await?;
+    let code_rows = db.table("verification").await?;
     let check = call(&auth, request("/email-otp/check-verification-otp", Some(json!({"email":verification.email,"type":"email-verification","otp":verification.otp})), ""), 200).await;
     assert_eq!(body(&check)["success"], true);
     assert_eq!(
-        db.table("verifications").await?,
+        db.table("verification").await?,
         code_rows,
         "checking a proof must not consume it"
     );
@@ -146,7 +142,7 @@ async fn email_otp_verification_reset_and_email_change_bind_owner_and_scope<B: B
     )
     .await;
     assert_eq!(
-        db.table("verifications").await?,
+        db.table("verification").await?,
         code_rows,
         "verification scope cannot authenticate sign-in"
     );
@@ -163,13 +159,13 @@ async fn email_otp_verification_reset_and_email_change_bind_owner_and_scope<B: B
     assert_eq!(body(&verified)["status"], true);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM users WHERE id=$1 AND email_verified=true",
+            "SELECT COUNT(*) FROM \"user\" WHERE id=$1 AND \"emailVerified\"=true",
             &[&owner_id]
         )
         .await?,
         1
     );
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     let mut previous_password = PASSWORD.to_owned();
     for (route, replacement) in [
         ("/email-otp/request-password-reset", "first-reset-password"),
@@ -198,16 +194,16 @@ async fn email_otp_verification_reset_and_email_change_bind_owner_and_scope<B: B
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM sessions WHERE user_id=$1",
+                "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
                 &[&owner_id]
             )
             .await?,
             0
         );
-        let stored = db.tables(&["users", "accounts", "sessions"]).await?;
+        let stored = db.tables(&["user", "account", "session"]).await?;
         let replay = call(&auth, reset, 400).await;
         assert_eq!(body(&replay)["code"], "INVALID_OTP");
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stored);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, stored);
         let _ = call(
             &auth,
             request(
@@ -257,7 +253,7 @@ async fn email_otp_verification_reset_and_email_change_bind_owner_and_scope<B: B
     let new_proof = mailbox.take();
     assert_eq!(new_proof.email, "changed@example.test");
     assert_eq!(new_proof.otp_type, EmailOtpType::ChangeEmail);
-    let identities = db.tables(&["users", "accounts", "sessions"]).await?;
+    let identities = db.tables(&["user", "account", "session"]).await?;
     let change = json!({"newEmail":new_proof.email,"otp":new_proof.otp});
     let _ = call(
         &auth,
@@ -270,7 +266,7 @@ async fn email_otp_verification_reset_and_email_change_bind_owner_and_scope<B: B
     )
     .await;
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         identities
     );
     let changed = call(
@@ -281,14 +277,14 @@ async fn email_otp_verification_reset_and_email_change_bind_owner_and_scope<B: B
     .await;
     assert_eq!(body(&changed)["success"], true);
     assert_eq!(
-        db.text("SELECT email FROM users WHERE id=$1", &[&owner_id])
+        db.text("SELECT \"email\" FROM \"user\" WHERE id=$1", &[&owner_id])
             .await?
             .as_deref(),
         Some("changed@example.test")
     );
     authenticated(&auth, &cookies(&changed), "changed@example.test").await;
     authenticated(&auth, &cookies(&foreign), "email-otp-foreign@example.test").await;
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     B::close(connection).await
 }
 
@@ -326,7 +322,7 @@ async fn profile_update_publishes_accepted_fields_and_preserves_rejected_identit
         let owner=call(&auth,request("/sign-up/email",Some(json!({"email":email,"password":PASSWORD,"name":"Original", "username":username})),""),200).await;
         let _=call(&auth,request("/sign-up/email",Some(json!({"email":format!("foreign-{immutable}@example.test"),"password":PASSWORD,"name":"Foreign", "username":taken})),""),200).await;
         let cookie = cookies(&owner);
-        let original = db.tables(&["users", "accounts", "sessions"]).await?;
+        let original = db.tables(&["user", "account", "session"]).await?;
         for input in [
             json!({"email":"forged@example.test"}),
             json!({"username":taken}),
@@ -337,10 +333,7 @@ async fn profile_update_publishes_accepted_fields_and_preserves_rejected_identit
             json!([]),
         ] {
             let _ = call(&auth, request("/update-user", Some(input), &cookie), 400).await;
-            assert_eq!(
-                db.tables(&["users", "accounts", "sessions"]).await?,
-                original
-            );
+            assert_eq!(db.tables(&["user", "account", "session"]).await?, original);
         }
         let _ = call(
             &auth,
@@ -352,10 +345,7 @@ async fn profile_update_publishes_accepted_fields_and_preserves_rejected_identit
             401,
         )
         .await;
-        assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
-            original
-        );
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, original);
         if immutable {
             let denied = call(
                 &auth,
@@ -368,16 +358,16 @@ async fn profile_update_publishes_accepted_fields_and_preserves_rejected_identit
             )
             .await;
             assert_eq!(body(&denied)["code"], "USERNAME_IS_IMMUTABLE");
-            assert_eq!(
-                db.tables(&["users", "accounts", "sessions"]).await?,
-                original
-            );
+            assert_eq!(db.tables(&["user", "account", "session"]).await?, original);
         }
         let response=call(&auth,request("/update-user",Some(json!({"name":"Updated Owner","image":"https://images.test/updated","username":username.to_uppercase(),"displayUsername":"Updated Display"})),&cookie),200).await;
         assert_eq!(
-            db.text("SELECT name FROM users WHERE email=$1", &[&email])
-                .await?
-                .as_deref(),
+            db.text(
+                "SELECT \"name\" FROM \"user\" WHERE \"email\"=$1",
+                &[&email]
+            )
+            .await?
+            .as_deref(),
             Some("Updated Owner")
         );
         let updated = cookies(&response);
@@ -396,7 +386,7 @@ async fn profile_update_publishes_accepted_fields_and_preserves_rejected_identit
         assert_eq!(body(&session)["user"]["email"], email);
         let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
         auth.store().delete_user(&owner_id).await?;
-        let physical = db.tables(&["users", "accounts", "sessions"]).await?;
+        let physical = db.tables(&["user", "account", "session"]).await?;
         let snapshot_only = call(
             &auth,
             request(
@@ -408,7 +398,7 @@ async fn profile_update_publishes_accepted_fields_and_preserves_rejected_identit
         )
         .await;
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
+            db.tables(&["user", "account", "session"]).await?,
             physical,
             "an authenticated cached snapshot must never recreate a deleted identity"
         );
@@ -452,7 +442,7 @@ async fn password_change_verification_and_session_revocation_are_owner_scoped<B:
             200,
         )
         .await;
-        let snapshot = db.tables(&["users", "accounts", "sessions"]).await?;
+        let snapshot = db.tables(&["user", "account", "session"]).await?;
         let _ = call(
             &auth,
             request("/verify-password", Some(json!({"password":PASSWORD})), ""),
@@ -481,10 +471,7 @@ async fn password_change_verification_and_session_revocation_are_owner_scoped<B:
         .await;
         assert_eq!(body(&valid)["status"], true);
         let _=call(&auth,request("/change-password",Some(json!({"currentPassword":"wrong-password","newPassword":"replacement-password123","revokeOtherSessions":revoke})),&cookie),400).await;
-        assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
-            snapshot
-        );
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, snapshot);
         let changed=call(&auth,request("/change-password",Some(json!({"currentPassword":PASSWORD,"newPassword":"replacement-password123","revokeOtherSessions":revoke})),&cookie),200).await;
         if revoke {
             authenticated(&auth, &cookies(&changed), "password-owner@example.test").await;
@@ -494,7 +481,7 @@ async fn password_change_verification_and_session_revocation_are_owner_scoped<B:
             }
             assert_eq!(
                 db.count_where(
-                    "SELECT COUNT(*) FROM sessions WHERE user_id=$1",
+                    "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
                     &[body(&owner)["user"]["id"].as_str().unwrap()]
                 )
                 .await?,
@@ -505,7 +492,7 @@ async fn password_change_verification_and_session_revocation_are_owner_scoped<B:
             assert!(cookies(&changed).is_empty());
             authenticated(&auth, &cookie, "password-owner@example.test").await;
             authenticated(&auth, &cookies(&peer), "password-owner@example.test").await;
-            assert_eq!(db.table("sessions").await?, snapshot[2]);
+            assert_eq!(db.table("session").await?, snapshot[2]);
         }
         authenticated(&auth, &cookies(&foreign), "password-foreign@example.test").await;
         let _ = call(
@@ -585,7 +572,7 @@ async fn configured_username_policy<B: Backend>(parent: &Db) -> TestResult {
             ("raw-ADMITTED", "raw-display-validator-error", 500),
         ] {
             let _ = call(&auth, request("/sign-up/email", Some(json!({"email":"configured@example.test","password":PASSWORD,"name":"Configured", "username":username,"displayUsername":display})), ""), status).await;
-            for table in ["users", "accounts", "sessions"] {
+            for table in ["user", "account", "session"] {
                 assert_eq!(db.count(table).await?, 0);
             }
         }
@@ -593,11 +580,13 @@ async fn configured_username_policy<B: Backend>(parent: &Db) -> TestResult {
         assert_eq!(body(&created)["user"]["username"], "admitted");
         assert_eq!(body(&created)["user"]["displayUsername"], "visible");
         assert_eq!(
-            db.text("SELECT username FROM users", &[]).await?.as_deref(),
+            db.text("SELECT \"username\" FROM \"user\"", &[])
+                .await?
+                .as_deref(),
             Some("admitted")
         );
         assert_eq!(
-            db.text("SELECT display_username FROM users", &[])
+            db.text("SELECT \"displayUsername\" FROM \"user\"", &[])
                 .await?
                 .as_deref(),
             Some("visible")
@@ -615,16 +604,16 @@ async fn configured_username_policy<B: Backend>(parent: &Db) -> TestResult {
         assert_eq!(body(&available)["available"], false);
         // Sign-in's explicit PreNormalization setting validates the normalized
         // value; signup's setting validates the submitted value.
-        let before_login = db.table("sessions").await?;
+        let before_login = db.table("session").await?;
         let logged = call(&auth, request("/sign-in/username", Some(json!({"username":if post { "admitted" } else { "raw-ADMITTED" },"password":PASSWORD})), ""), if post {200} else {422}).await;
         if post {
             assert_eq!(body(&logged)["user"]["id"], body(&created)["user"]["id"]);
             authenticated(&auth, &cookies(&logged), "configured@example.test").await;
         } else {
             assert_eq!(body(&logged)["code"], "INVALID_USERNAME");
-            assert_eq!(db.table("sessions").await?, before_login);
+            assert_eq!(db.table("session").await?, before_login);
         }
-        let snapshot = db.tables(&["users", "accounts", "sessions"]).await?;
+        let snapshot = db.tables(&["user", "account", "session"]).await?;
         let _ = call(
             &auth,
             request(
@@ -645,10 +634,7 @@ async fn configured_username_policy<B: Backend>(parent: &Db) -> TestResult {
             400,
         )
         .await;
-        assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
-            snapshot
-        );
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, snapshot);
         B::close(connection).await?;
     }
     Ok(())
@@ -687,7 +673,7 @@ async fn password_length_limits_apply_to_every_new_password_endpoint<B: Backend>
             .await?,
     );
     let cookie = cookies(&owner);
-    let snapshot = db.tables(&["users", "accounts"]).await?;
+    let snapshot = db.tables(&["user", "account"]).await?;
     // 9 and 25 UTF-16 units; their byte and character counts lie inside the limits.
     let too_short = "😀😀😀😀a";
     let too_long = format!("{}a", "😀".repeat(12));
@@ -714,7 +700,7 @@ async fn password_length_limits_apply_to_every_new_password_endpoint<B: Backend>
         ] {
             let rejected = call(&auth, request(path, Some(input), credentials), 400).await;
             assert_eq!(body(&rejected)["code"], code, "{path}");
-            assert_eq!(db.tables(&["users", "accounts"]).await?, snapshot, "{path}");
+            assert_eq!(db.tables(&["user", "account"]).await?, snapshot, "{path}");
         }
     }
     // Ten UTF-16 units in five characters meets the minimum.
@@ -756,24 +742,27 @@ async fn duplicate_canonical_credentials_keep_first_physical_row_authoritative<B
     let foreign = signup(&auth, "duplicate-foreign@example.test").await;
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let original = db
-        .text("SELECT id FROM accounts WHERE user_id=$1", &[&owner_id])
+        .text(
+            "SELECT id FROM \"account\" WHERE \"userId\"=$1",
+            &[&owner_id],
+        )
         .await?
         .unwrap();
-    _ = db.execute("INSERT INTO accounts (id,user_id,account_id,provider_id,password,created_at,updated_at) SELECT 'later-credential',user_id,account_id,provider_id,password,created_at,updated_at FROM accounts WHERE id=$1", &[&original]).await?;
+    _ = db.execute("INSERT INTO \"account\" (id,\"userId\",\"accountId\",\"providerId\",\"password\",\"createdAt\",\"updatedAt\") SELECT 'later-credential',\"userId\",\"accountId\",\"providerId\",\"password\",\"createdAt\",\"updatedAt\" FROM \"account\" WHERE id=$1", &[&original]).await?;
     db.set_timestamp(
-        "accounts",
-        "created_at",
+        "account",
+        "createdAt",
         ("id", "later-credential"),
         chrono::DateTime::parse_from_rfc3339("2000-01-01T00:00:00Z")?.with_timezone(&chrono::Utc),
     )
     .await?;
     _ = db
         .execute(
-            "UPDATE accounts SET password=NULL WHERE id=$1",
+            "UPDATE \"account\" SET \"password\"=NULL WHERE id=$1",
             &[&original],
         )
         .await?;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let listed = body(
         &call(
             &auth,
@@ -814,10 +803,13 @@ async fn duplicate_canonical_credentials_keep_first_physical_row_authoritative<B
     )
     .await;
     assert_eq!(body(&denied)["code"], "CREDENTIAL_ACCOUNT_NOT_FOUND");
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
     let foreign_account = db
-        .text("SELECT id FROM accounts WHERE user_id=$1", &[&foreign_id])
+        .text(
+            "SELECT id FROM \"account\" WHERE \"userId\"=$1",
+            &[&foreign_id],
+        )
         .await?
         .unwrap();
     let rejected = call(
@@ -831,7 +823,7 @@ async fn duplicate_canonical_credentials_keep_first_physical_row_authoritative<B
     )
     .await;
     assert_eq!(body(&rejected)["code"], "ACCOUNT_NOT_FOUND");
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     assert_eq!(
         body(
             &call(
@@ -860,16 +852,19 @@ async fn duplicate_canonical_credentials_keep_first_physical_row_authoritative<B
     assert_eq!(body(&accepted)["user"]["id"], owner_id);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM accounts WHERE user_id=$1",
+            "SELECT COUNT(*) FROM \"account\" WHERE \"userId\"=$1",
             &[&owner_id]
         )
         .await?,
         1
     );
     assert_eq!(
-        db.text("SELECT id FROM accounts WHERE user_id=$1", &[&owner_id])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT id FROM \"account\" WHERE \"userId\"=$1",
+            &[&owner_id]
+        )
+        .await?
+        .as_deref(),
         Some("later-credential")
     );
     authenticated(&auth, &cookies(&foreign), "duplicate-foreign@example.test").await;
@@ -886,8 +881,8 @@ async fn cookie_emission_failure_preserves_endpoint_commit_stage<B: Backend>(db:
             .await?;
         let owner = signup(&normal, "emission-owner@example.test").await;
         let foreign = signup(&normal, "emission-foreign@example.test").await;
-        let principals = db.tables(&["users", "accounts"]).await?;
-        let sessions = db.count("sessions").await?;
+        let principals = db.tables(&["user", "account"]).await?;
+        let sessions = db.count("session").await?;
         let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
         match mode {
             "age" => config.session.expires_in = chrono::Duration::seconds(34_560_001),
@@ -922,14 +917,14 @@ async fn cookie_emission_failure_preserves_endpoint_commit_stage<B: Backend>(db:
             let failed=call(&auth,request(if signin{"/sign-in/email"}else{"/sign-up/email"},Some(json!({"email":if signin{"emission-owner@example.test"}else{"emission-new@example.test"},"password":PASSWORD,"name":"Incoming"})),""),500).await;
             assert!(failed.body.is_empty());
             assert!(!failed.headers.contains_key("set-cookie"));
-            assert_eq!(db.tables(&["users", "accounts"]).await?, principals);
+            assert_eq!(db.tables(&["user", "account"]).await?, principals);
             assert_eq!(
-                db.count("sessions").await?,
+                db.count("session").await?,
                 sessions + if signin { 1 } else { 0 }
             );
             assert_eq!(
                 db.count_where(
-                    "SELECT COUNT(*) FROM users WHERE email=$1",
+                    "SELECT COUNT(*) FROM \"user\" WHERE \"email\"=$1",
                     &["emission-new@example.test"]
                 )
                 .await?,
@@ -938,7 +933,7 @@ async fn cookie_emission_failure_preserves_endpoint_commit_stage<B: Backend>(db:
         }
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM sessions WHERE user_id=$1",
+                "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
                 &[body(&owner)["user"]["id"].as_str().unwrap()]
             )
             .await?,
@@ -977,16 +972,16 @@ async fn username_unicode_identity_admission<B: Backend>(db: Db) -> TestResult {
         .plugin(SessionManagementPlugin::new())
         .build()
         .await?;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let rejected=call(&auth,request("/sign-up/email",Some(json!({"email":"unicode-rejected@example.test","password":PASSWORD,"name":"Rejected","username":"😀😀😀"})),""),400).await;
     assert_eq!(body(&rejected)["code"], "USERNAME_TOO_LONG");
     assert!(!rejected.headers.contains_key("set-cookie"));
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let owner=call(&auth,request("/sign-up/email",Some(json!({"email":"unicode-owner@example.test","password":PASSWORD,"name":"Unicode owner","username":"😀😀"})),""),200).await;
     assert_eq!(body(&owner)["user"]["username"], "😀😀");
     assert!(observed.lock().unwrap().iter().any(|v| v == "😀😀"));
     authenticated(&auth, &cookies(&owner), "unicode-owner@example.test").await;
-    let accounts = db.table("accounts").await?;
+    let accounts = db.table("account").await?;
     _ = call(
         &auth,
         request(
@@ -999,7 +994,7 @@ async fn username_unicode_identity_admission<B: Backend>(db: Db) -> TestResult {
     .await;
     assert_eq!(
         db.text(
-            "SELECT username FROM users WHERE id=$1",
+            "SELECT \"username\" FROM \"user\" WHERE id=$1",
             &[body(&owner)["user"]["id"].as_str().unwrap()]
         )
         .await?
@@ -1017,7 +1012,7 @@ async fn username_unicode_identity_admission<B: Backend>(db: Db) -> TestResult {
     )
     .await;
     assert_eq!(body(&signed)["user"]["id"], body(&owner)["user"]["id"]);
-    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.table("account").await?, accounts);
     authenticated(&auth, &cookies(&signed), "unicode-owner@example.test").await;
     B::close(connection).await
 }
@@ -1041,16 +1036,16 @@ async fn username_readonly_registration_admission<B: Backend>(db: Db) -> TestRes
         .build()
         .await?;
     let foreign = signup(&auth, "readonly-foreign@example.test").await;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let rejected=call(&auth,request("/sign-up/email",Some(json!({"email":"readonly-owner@example.test","password":PASSWORD,"name":"Owner","username":"owner_name"})),""),400).await;
     assert_eq!(body(&rejected)["code"], "FIELD_NOT_ALLOWED");
     assert!(!rejected.headers.contains_key("set-cookie"));
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     authenticated(&auth, &cookies(&foreign), "readonly-foreign@example.test").await;
     let owner = signup(&auth, "readonly-owner@example.test").await;
-    assert_eq!(db.count("users").await?, 2);
-    assert_eq!(db.count("accounts").await?, 2);
-    assert_eq!(db.count("sessions").await?, 2);
+    assert_eq!(db.count("user").await?, 2);
+    assert_eq!(db.count("account").await?, 2);
+    assert_eq!(db.count("session").await?, 2);
     assert_eq!(body(&owner)["user"]["username"], Value::Null);
     authenticated(&auth, &cookies(&owner), "readonly-owner@example.test").await;
     B::close(connection).await
@@ -1079,7 +1074,7 @@ async fn application_id_policy_owns_signup_principals_and_verification<B: Backen
             .await?;
         let foreign = signup(&setup, "foreign@example.test").await;
         let baseline = db
-            .tables(&["users", "accounts", "sessions", "verifications"])
+            .tables(&["user", "account", "session", "verification"])
             .await?;
         let calls = Arc::new(Mutex::new(Vec::<String>::new()));
         let log = calls.clone();
@@ -1113,7 +1108,7 @@ async fn application_id_policy_owns_signup_principals_and_verification<B: Backen
         if matches!(mode, "none" | "throws") {
             assert!(response.headers.get_all("set-cookie").next().is_none());
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "verifications"])
+                db.tables(&["user", "account", "session", "verification"])
                     .await?,
                 baseline
             );
@@ -1149,11 +1144,7 @@ async fn application_id_policy_owns_signup_principals_and_verification<B: Backen
                 .unwrap();
             assert_eq!(proof.value()?, id);
             let mut ids = Vec::new();
-            for (table, key) in [
-                ("users", "id"),
-                ("accounts", "user_id"),
-                ("sessions", "user_id"),
-            ] {
+            for (table, key) in [("user", "id"), ("account", "userId"), ("session", "userId")] {
                 ids.push(
                     db.text(&format!("SELECT id FROM {table} WHERE {key}=$1"), &[&id])
                         .await?
@@ -1182,7 +1173,7 @@ async fn application_id_policy_owns_signup_principals_and_verification<B: Backen
                 );
             }
             let after = db
-                .tables(&["users", "accounts", "sessions", "verifications"])
+                .tables(&["user", "account", "session", "verification"])
                 .await?;
             for (before, now) in baseline.iter().zip(after.iter()) {
                 let before: Vec<Value> = serde_json::from_str(before)?;
@@ -1296,7 +1287,7 @@ async fn rate_storage_failures_preserve_signup_and_recovery_authority<B: Backend
             .await?;
         let foreign = signup(&setup, "foreign@example.test").await;
         let before = db
-            .tables(&["users", "accounts", "sessions", "verifications"])
+            .tables(&["user", "account", "session", "verification"])
             .await?;
         let cache = Arc::new(Cache {
             memory: MemoryCacheAdapter::new(),
@@ -1333,7 +1324,7 @@ async fn rate_storage_failures_preserve_signup_and_recovery_authority<B: Backend
             }
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -1382,7 +1373,7 @@ async fn rate_storage_failures_preserve_signup_and_recovery_authority<B: Backend
         let first = signup(&ready, "first@example.test").await;
         let second = signup(&ready, "second@example.test").await;
         let committed = db
-            .tables(&["users", "accounts", "sessions", "verifications"])
+            .tables(&["user", "account", "session", "verification"])
             .await?;
         let denied = call(
             &ready,
@@ -1396,7 +1387,7 @@ async fn rate_storage_failures_preserve_signup_and_recovery_authority<B: Backend
         .await;
         assert!(denied.headers.get_all("set-cookie").next().is_none());
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             committed
         );

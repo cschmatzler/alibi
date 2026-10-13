@@ -118,7 +118,7 @@ async fn pwned_range_reply_matrix<B: Backend>(db: Db) -> TestResult {
             &Box::pin(auth.handle_request(request("/sign-up/email", Some(input), ""))).await?,
         );
     }
-    trace.value("users", json!(db.count("users").await?));
+    trace.value("users", json!(db.count("user").await?));
 
     provider.respond(200, "text/plain", format!("{hit}\n"));
     for (label, paths, enabled) in [
@@ -363,7 +363,7 @@ async fn captcha_normalized_physical_paths_reject_before_json_and_origin_validat
     let owner = signup(&base, "owner@example.test").await;
     let foreign = signup(&base, "foreign@example.test").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for (patterns, paths, control) in [
         (
@@ -403,7 +403,7 @@ async fn captcha_normalized_physical_paths_reject_before_json_and_origin_validat
             let denied = call(&auth, input, 400).await;
             assert_eq!(body(&denied)["code"], "MISSING_RESPONSE");
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "verifications"])
+                db.tables(&["user", "account", "session", "verification"])
                     .await?,
                 before
             );
@@ -471,7 +471,7 @@ async fn captcha_botid_validator_receives_actual_request_and_full_verification<B
         .await?;
     let owner = signup(&auth, "owner@example.test").await;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let mut input = request(
         "/sign-in/email",
         Some(json!({"email":"owner@example.test","password":PASSWORD})),
@@ -479,7 +479,7 @@ async fn captcha_botid_validator_receives_actual_request_and_full_verification<B
     );
     let denied = call(&auth, input.clone(), 403).await;
     assert_eq!(body(&denied)["code"], "VERIFICATION_FAILED");
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     _ = input
         .headers
         .insert("x-app-marker".into(), "allowed".into());
@@ -534,7 +534,7 @@ async fn captcha_botid_validator_error_preserves_all_existing_principals<B: Back
     let owner = signup(&auth, "owner@example.test").await;
     let foreign = signup(&auth, "foreign@example.test").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let input = request(
         "/sign-in/email",
@@ -545,7 +545,7 @@ async fn captcha_botid_validator_error_preserves_all_existing_principals<B: Back
     assert_eq!(body(&denied)["code"], "UNKNOWN_ERROR");
     assert!(denied.headers.get_all("set-cookie").next().is_none());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -591,7 +591,7 @@ async fn captcha_slow_successful_response_body_still_authenticates_existing_owne
         .await?;
     let owner = signup(&auth, "owner@example.test").await;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let accounts = db.table("accounts").await?;
+    let accounts = db.table("account").await?;
     let mut input = request(
         "/sign-in/email",
         Some(json!({"email":"owner@example.test","password":PASSWORD})),
@@ -611,8 +611,8 @@ async fn captcha_slow_successful_response_body_still_authenticates_existing_owne
         String::from_utf8_lossy(&response.body)
     );
     assert_eq!(body(&response)["user"]["id"], body(&owner)["user"]["id"]);
-    assert_eq!(db.table("accounts").await?, accounts);
-    assert_eq!(db.count("sessions").await?, 3);
+    assert_eq!(db.table("account").await?, accounts);
+    assert_eq!(db.count("session").await?, 3);
     authenticated(&auth, &cookies(&response), "owner@example.test").await;
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     server.await?;
@@ -780,7 +780,7 @@ async fn captcha_physical_method_admission<B: Backend>(db: Db) -> TestResult {
     let owner = signup(&setup, "method-captcha-owner@example.test").await;
     let foreign = signup(&setup, "method-captcha-foreign@example.test").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let events = Arc::new(Mutex::new(Vec::new()));
     let mut options = TurnstileConfig::new("actual-captcha-secret");
@@ -817,7 +817,7 @@ async fn captcha_physical_method_admission<B: Backend>(db: Db) -> TestResult {
         assert_eq!(*events.lock().unwrap(), ["early"]);
         assert!(provider.take().is_empty());
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -898,7 +898,7 @@ async fn captcha_headers_deadline_with<B: Backend>(db: Db) -> TestResult {
     let owner = signup(&auth, "captcha-deadline-owner@example.test").await;
     let foreign = signup(&auth, "captcha-deadline-foreign@example.test").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let input = || {
         let mut req = request(
@@ -929,14 +929,14 @@ async fn captcha_headers_deadline_with<B: Backend>(db: Db) -> TestResult {
     );
     assert!(rejected.headers.get_all("set-cookie").next().is_none());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
     release.send(()).unwrap();
     tokio::time::timeout(std::time::Duration::from_secs(5), late).await??;
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -947,12 +947,12 @@ async fn captcha_headers_deadline_with<B: Backend>(db: Db) -> TestResult {
     .await??;
     assert_eq!(recovered.status, 200);
     assert_eq!(body(&recovered)["user"]["id"], body(&owner)["user"]["id"]);
-    assert_eq!(db.tables(&["users", "accounts"]).await?, before[..2]);
+    assert_eq!(db.tables(&["user", "account"]).await?, before[..2]);
     let prior: Vec<Value> = serde_json::from_str(&before[2])?;
-    let sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let sessions: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     assert_eq!(sessions.len(), prior.len() + 1);
     assert!(prior.iter().all(|row| sessions.contains(row)));
-    assert_eq!(db.table("verifications").await?, before[3]);
+    assert_eq!(db.table("verification").await?, before[3]);
     authenticated(
         &auth,
         &cookies(&recovered),

@@ -61,11 +61,11 @@ async fn server_verify_siwe_message_requires_request_and_publishes_usable_sessio
     let endpoint = || ServerEndpoint::<JsValue>::new("siwe", "verifySiweMessage");
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "wallet_address",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "walletAddress",
+            "verification",
         ])
         .await?;
     for body_input in [
@@ -90,11 +90,11 @@ async fn server_verify_siwe_message_requires_request_and_publishes_usable_sessio
     }
     assert_eq!(
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "wallet_address",
-            "verifications"
+            "user",
+            "account",
+            "session",
+            "walletAddress",
+            "verification"
         ])
         .await?,
         before
@@ -160,18 +160,18 @@ async fn server_verify_siwe_message_requires_request_and_publishes_usable_sessio
     assert_eq!(body(&observed)["user"]["id"], user_id);
     assert_eq!(body(&observed)["session"]["ipAddress"], "198.51.100.19");
     assert_eq!(body(&observed)["session"]["userAgent"], "siwe-server-sdk");
-    assert_eq!(db.count("users").await?, 1);
-    assert_eq!(db.count("sessions").await?, 1);
-    assert_eq!(db.count("accounts").await?, 1);
-    assert_eq!(db.count("wallet_address").await?, 1);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("user").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
+    assert_eq!(db.count("account").await?, 1);
+    assert_eq!(db.count("walletAddress").await?, 1);
+    assert_eq!(db.count("verification").await?, 0);
     let after = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "wallet_address",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "walletAddress",
+            "verification",
         ])
         .await?;
     let replay = Box::pin(auth.dispatch_endpoint(
@@ -190,11 +190,11 @@ async fn server_verify_siwe_message_requires_request_and_publishes_usable_sessio
     );
     assert_eq!(
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "wallet_address",
-            "verifications"
+            "user",
+            "account",
+            "session",
+            "walletAddress",
+            "verification"
         ])
         .await?,
         after
@@ -228,11 +228,11 @@ async fn server_verify_siwe_message_requires_request_and_publishes_usable_sessio
     );
     assert_eq!(
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "wallet_address",
-            "verifications"
+            "user",
+            "account",
+            "session",
+            "walletAddress",
+            "verification"
         ])
         .await?,
         after

@@ -78,7 +78,7 @@ async fn server_set_active_team_preserves_selection_and_usable_session_cookies<B
         ServerEndpoint::<JsValue>::new("organization", "setActiveTeam").with_body(&input)
     };
     let before = db
-        .tables(&["users", "sessions", "member", "team", "team_member"])
+        .tables(&["user", "session", "member", "team", "teamMember"])
         .await?;
     for (input, options, status, code) in [
         (
@@ -122,13 +122,11 @@ async fn server_set_active_team_preserves_selection_and_usable_session_cookies<B
         assert_eq!(body(&error.error.to_auth_response())["code"], code);
     }
     assert_eq!(
-        db.tables(&["users", "sessions", "member", "team", "team_member"])
+        db.tables(&["user", "session", "member", "team", "teamMember"])
             .await?,
         before
     );
-    let immutable = db
-        .tables(&["users", "member", "team", "team_member"])
-        .await?;
+    let immutable = db.tables(&["user", "member", "team", "teamMember"]).await?;
     let mut cookie = cookies(&owner);
     for (selection, active, emits_cookie) in [
         (NullableStringField::Missing, false, false),
@@ -168,18 +166,17 @@ async fn server_set_active_team_preserves_selection_and_usable_session_cookies<B
             body(&observed)["session"]["activeTeamId"],
             if active { json!(team_id) } else { Value::Null }
         );
-        let sessions: Vec<Value> = serde_json::from_str(&db.tables(&["sessions"]).await?[0])?;
+        let sessions: Vec<Value> = serde_json::from_str(&db.tables(&["session"]).await?[0])?;
         let stored = sessions
             .iter()
-            .find(|session| session["user_id"] == user_id)
+            .find(|session| session["userId"] == user_id)
             .unwrap();
         assert_eq!(
-            stored["active_team_id"],
+            stored["activeTeamId"],
             if active { json!(team_id) } else { Value::Null }
         );
         assert_eq!(
-            db.tables(&["users", "member", "team", "team_member"])
-                .await?,
+            db.tables(&["user", "member", "team", "teamMember"]).await?,
             immutable
         );
     }

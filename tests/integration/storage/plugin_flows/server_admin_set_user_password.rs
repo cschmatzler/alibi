@@ -73,7 +73,7 @@ async fn server_admin_set_user_password_creates_or_replaces_credentials<B: Backe
         headers: Some([("cookie".into(), cookies(response))].into_iter().collect()),
         ..Default::default()
     };
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (input, headers, status, code) in [
         (None, EndpointOptions::default(), 400, "VALIDATION_ERROR"),
         (
@@ -167,7 +167,7 @@ async fn server_admin_set_user_password_creates_or_replaces_credentials<B: Backe
         .await
         .unwrap_err();
     assert_eq!(error.error.status_code(), 403);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let original_foreign =
         serde_json::to_value(auth.store().get_user_accounts(&foreign_id).await?)?;
     for (owner, owner_id, email, new_password) in [
@@ -190,7 +190,7 @@ async fn server_admin_set_user_password_creates_or_replaces_credentials<B: Backe
             "AdminNew123!",
         ),
     ] {
-        let immutable = db.tables(&["users", "sessions"]).await?;
+        let immutable = db.tables(&["user", "session"]).await?;
         let prior = auth.store().get_user_accounts(owner_id).await?;
         let remote = serde_json::to_value(
             prior
@@ -220,7 +220,7 @@ async fn server_admin_set_user_password_creates_or_replaces_credentials<B: Backe
                 "application_b=second; Path=/; HttpOnly"
             ]
         );
-        assert_eq!(db.tables(&["users", "sessions"]).await?, immutable);
+        assert_eq!(db.tables(&["user", "session"]).await?, immutable);
         let accounts = auth.store().get_user_accounts(owner_id).await?;
         assert_eq!(
             serde_json::to_value(

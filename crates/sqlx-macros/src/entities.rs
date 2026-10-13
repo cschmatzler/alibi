@@ -175,7 +175,6 @@ pub(crate) fn session_impl(
     let id_column = column("id")?;
     let token_column = column("token")?;
     let user_id_column = column("user_id")?;
-    let active_column = column("active")?;
     let expires_at_column = column("expires_at")?;
     let created_at_column = column("created_at")?;
     let set_expires_at = set(
@@ -236,7 +235,6 @@ pub(crate) fn session_impl(
             fn id_column() -> &'static str { #id_column }
             fn token_column() -> &'static str { #token_column }
             fn user_id_column() -> &'static str { #user_id_column }
-            fn active_column() -> &'static str { #active_column }
             fn expires_at_column() -> &'static str { #expires_at_column }
             fn created_at_column() -> &'static str { #created_at_column }
             fn parse_id(id: &str) -> #core_root::AuthResult<#sqlx_root::value::SqlValue> {
@@ -296,16 +294,10 @@ pub(crate) fn account_impl(
     let account_id_column = column("account_id")?;
     let user_id_column = column("user_id")?;
     let created_at_column = column("created_at")?;
-    let access_token_column = column("access_token")?;
-    let refresh_token_column = column("refresh_token")?;
-    let id_token_column = column("id_token")?;
     let additional = additional_fields(columns, roots);
     Ok(quote! {
         impl #sqlx_root::SqlxAccountModel for #ident {
             #additional
-            fn oauth_token_columns() -> Option<[&'static str; 3]> {
-                Some([#access_token_column, #refresh_token_column, #id_token_column])
-            }
             fn id_column() -> &'static str { #id_column }
             fn provider_id_column() -> &'static str { #provider_id_column }
             fn account_id_column() -> &'static str { #account_id_column }

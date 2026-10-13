@@ -32,8 +32,6 @@ pub struct SessionView {
     )]
     pub extension_fields: std::collections::BTreeMap<String, serde_json::Value>,
     #[serde(skip)]
-    pub active: bool,
-    #[serde(skip)]
     pub omitted_fields: std::collections::BTreeSet<String>,
 }
 
@@ -99,7 +97,6 @@ impl<T: AuthSession> From<&T> for SessionView {
             active_team_id: session.active_team_id().map(str::to_owned),
             extension_fields: session.additional_fields().into_iter().collect(),
             omitted_fields: std::collections::BTreeSet::default(),
-            active: session.active(),
         }
     }
 }
@@ -143,8 +140,5 @@ impl AuthSession for SessionView {
     }
     fn active_team_id(&self) -> Option<&str> {
         self.active_team_id.as_deref()
-    }
-    fn active(&self) -> bool {
-        self.active
     }
 }

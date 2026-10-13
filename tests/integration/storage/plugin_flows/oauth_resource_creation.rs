@@ -58,14 +58,14 @@ async fn oauth_resource_creation_persists_policy_and_admits_resource_authorizati
     assert_eq!(stored.metadata["metadata"], json!({"tenant":"fixture"}));
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
         ])
         .await?;
     for (input, cookie, status, error) in [
@@ -134,14 +134,14 @@ async fn oauth_resource_creation_persists_policy_and_admits_resource_authorizati
         assert_eq!(
             before,
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
+                "user",
+                "account",
+                "session",
+                "verification",
                 "jwks",
-                "oauth_client",
-                "oauth_consent",
-                "oauth_resource"
+                "oauthClient",
+                "oauthConsent",
+                "oauthResource"
             ])
             .await?
         );
@@ -216,14 +216,14 @@ async fn oauth_resource_creation_persists_policy_and_admits_resource_authorizati
         .await?;
     let before_auth = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
         ])
         .await?;
     for (resource, scope, path, error) in [
@@ -277,17 +277,17 @@ async fn oauth_resource_creation_persists_policy_and_admits_resource_authorizati
     assert_eq!(
         before_auth,
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource"
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource"
         ])
         .await?
     );
-    assert_eq!(db.count("oauth_resource").await?, 2);
+    assert_eq!(db.count("oauthResource").await?, 2);
     Ok(())
 }

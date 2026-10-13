@@ -87,13 +87,13 @@ async fn oauth_consent_delete_removes_owned_grant_and_requires_consent_again<B: 
     );
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
+            "oauthClient",
+            "oauthConsent",
         ])
         .await?;
     for (input, cookie, status, error) in [
@@ -134,25 +134,25 @@ async fn oauth_consent_delete_removes_owned_grant_and_requires_consent_again<B: 
         assert_eq!(
             before,
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
+                "user",
+                "account",
+                "session",
+                "verification",
                 "jwks",
-                "oauth_client",
-                "oauth_consent"
+                "oauthClient",
+                "oauthConsent"
             ])
             .await?
         );
     }
     let unrelated = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
+            "oauthClient",
         ])
         .await?;
     let deleted = Box::pin(auth.dispatch_endpoint(
@@ -170,7 +170,7 @@ async fn oauth_consent_delete_removes_owned_grant_and_requires_consent_again<B: 
         deleted.headers.get("content-type").map(String::as_str),
         Some("application/json")
     );
-    assert_eq!(db.count("oauth_consent").await?, 0);
+    assert_eq!(db.count("oauthConsent").await?, 0);
     let missing = Box::pin(auth.dispatch_endpoint(
         OAuthProviderPlugin::get_oauth_consent_endpoint(consent_id)?,
         EndpointOptions {
@@ -217,12 +217,12 @@ async fn oauth_consent_delete_removes_owned_grant_and_requires_consent_again<B: 
     assert_eq!(
         unrelated,
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client"
+            "oauthClient"
         ])
         .await?
     );

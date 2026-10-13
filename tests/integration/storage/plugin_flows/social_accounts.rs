@@ -83,14 +83,14 @@ async fn account_cookie_and_token_retention_on_sign_in<B: Backend>(db: Db) -> Te
         let db = &db;
         async move {
             db.text(
-                &format!("SELECT {column} FROM accounts WHERE account_id = $1"),
+                &format!("SELECT \"{column}\" FROM \"account\" WHERE \"accountId\" = $1"),
                 &["social-sub"],
             )
             .await
         }
     };
     assert_eq!(
-        stored("refresh_token").await?.as_deref(),
+        stored("refreshToken").await?.as_deref(),
         Some("provider-refresh")
     );
 
@@ -103,11 +103,11 @@ async fn account_cookie_and_token_retention_on_sign_in<B: Backend>(db: Db) -> Te
     assert!(account_cookie(&returning));
     trace.response("returning without refresh token", &returning);
     assert_eq!(
-        stored("access_token").await?.as_deref(),
+        stored("accessToken").await?.as_deref(),
         Some("rotated-access")
     );
     assert_eq!(
-        stored("refresh_token").await?.as_deref(),
+        stored("refreshToken").await?.as_deref(),
         Some("provider-refresh")
     );
 
@@ -125,7 +125,7 @@ async fn account_cookie_and_token_retention_on_sign_in<B: Backend>(db: Db) -> Te
     assert!(account_cookie(&unchanged));
     trace.response("returning without token update", &unchanged);
     assert_eq!(
-        stored("access_token").await?.as_deref(),
+        stored("accessToken").await?.as_deref(),
         Some("rotated-access")
     );
 
@@ -153,13 +153,13 @@ async fn account_cookie_and_token_retention_on_sign_in<B: Backend>(db: Db) -> Te
     assert!(!cookies(&failed).contains("session_token"));
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM users WHERE email = $1",
+            "SELECT COUNT(*) FROM \"user\" WHERE \"email\" = $1",
             &["broken@example.com"]
         )
         .await?,
         1
     );
-    assert_eq!(db.count("sessions").await?, 4);
+    assert_eq!(db.count("session").await?, 4);
     trace.assert("social/account-cookie");
     B::close(connection).await
 }
@@ -182,7 +182,7 @@ async fn implicit_linking_and_verification_promotion<B: Backend>(db: Db) -> Test
         "local user",
         json!(
             db.count_where(
-                "SELECT COUNT(*) FROM users WHERE email = $1 AND name = 'Provider local-sub' AND image = 'https://images.example/local-sub' AND email_verified = true",
+                "SELECT COUNT(*) FROM \"user\" WHERE \"email\" = $1 AND \"name\" = 'Provider local-sub' AND \"image\" = 'https://images.example/local-sub' AND \"emailVerified\" = true",
                 &["local@example.com"]
             )
             .await?
@@ -197,7 +197,7 @@ async fn implicit_linking_and_verification_promotion<B: Backend>(db: Db) -> Test
         "late user",
         json!(
             db.count_where(
-                "SELECT COUNT(*) FROM users WHERE email = $1 AND email_verified = true",
+                "SELECT COUNT(*) FROM \"user\" WHERE \"email\" = $1 AND \"emailVerified\" = true",
                 &["late@example.com"]
             )
             .await?
@@ -219,7 +219,7 @@ async fn implicit_linking_and_verification_promotion<B: Backend>(db: Db) -> Test
         "moved user",
         json!(
             db.count_where(
-                "SELECT COUNT(*) FROM users WHERE email = $1 AND email_verified = true",
+                "SELECT COUNT(*) FROM \"user\" WHERE \"email\" = $1 AND \"emailVerified\" = true",
                 &["moved@example.com"]
             )
             .await?
@@ -285,7 +285,7 @@ async fn provider_supplied_fields_and_identity_denials<B: Backend>(db: Db) -> Te
     trace.response("registered with fields", &sign_in(&auth, "").await);
     assert_eq!(
         db.text(
-            "SELECT role FROM users WHERE email = $1",
+            "SELECT \"role\" FROM \"user\" WHERE \"email\" = $1",
             &["fields@example.com"]
         )
         .await?
@@ -302,7 +302,7 @@ async fn provider_supplied_fields_and_identity_denials<B: Backend>(db: Db) -> Te
     trace.response("returning with fields", &sign_in(&auth, "").await);
     assert_eq!(
         db.text(
-            "SELECT role FROM users WHERE email = $1",
+            "SELECT \"role\" FROM \"user\" WHERE \"email\" = $1",
             &["fields@example.com"]
         )
         .await?
@@ -314,7 +314,7 @@ async fn provider_supplied_fields_and_identity_denials<B: Backend>(db: Db) -> Te
     trace.response("denied registration", &sign_in(&auth, "").await);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM users WHERE email = $1",
+            "SELECT COUNT(*) FROM \"user\" WHERE \"email\" = $1",
             &["deny@example.com"]
         )
         .await?,
@@ -378,7 +378,7 @@ async fn id_token_sign_in_failure_modes<B: Backend>(db: Db) -> TestResult {
         )
         .await?;
     trace.response("verification unavailable", &sign_in(&unsupported).await);
-    for table in ["users", "accounts", "sessions"] {
+    for table in ["user", "account", "session"] {
         assert_eq!(db.count(table).await?, 0, "{table}");
     }
     trace.assert("social/id-token-failures");
@@ -534,11 +534,11 @@ async fn ambiguous_provider_accounts_fail_closed<B: Backend>(db: Db) -> TestResu
     let owner = cookies(&signup(&auth, "owner@example.com").await);
     _ = db
         .execute(
-            "INSERT INTO accounts (id, user_id, account_id, provider_id, created_at, updated_at) SELECT 'duplicate-account', user_id, account_id, provider_id, created_at, updated_at FROM accounts WHERE provider_id = 'google'",
+            "INSERT INTO \"account\" (id, \"userId\", \"accountId\", \"providerId\", \"createdAt\", \"updatedAt\") SELECT 'duplicate-account', \"userId\", \"accountId\", \"providerId\", \"createdAt\", \"updatedAt\" FROM \"account\" WHERE \"providerId\" = 'google'",
             &[],
         )
         .await?;
-    let sessions = db.count("sessions").await?;
+    let sessions = db.count("session").await?;
     trace.response("callback sign-in", &sign_in(&auth, "").await);
     let by_token = |path: &'static str, cookie: &str| {
         let req = request(
@@ -563,7 +563,7 @@ async fn ambiguous_provider_accounts_fail_closed<B: Backend>(db: Db) -> TestResu
         "callback link",
         &callback(&auth, &[("code", "grant"), ("state", &state)], &cookie).await,
     );
-    assert_eq!(db.count("sessions").await?, sessions);
+    assert_eq!(db.count("session").await?, sessions);
     trace.assert("social/ambiguous-accounts");
     B::close(connection).await
 }
@@ -594,7 +594,7 @@ async fn returning_social_signin_preserves_previously_granted_scopes<B: Backend>
         .await,
     );
     let owner_id = current["user"]["id"].clone();
-    _=db.execute("UPDATE accounts SET scope='calendar,drive',created_at='2026-10-02T06:19:31.630828Z',updated_at='2026-10-02T06:20:00.145927123Z' WHERE account_id=$1 AND provider_id='google'",&["social-sub"]).await?;
+    _=db.execute("UPDATE \"account\" SET \"scope\"='calendar,drive',\"createdAt\"='2026-10-02T06:19:31.630828Z',\"updatedAt\"='2026-10-02T06:20:00.145927123Z' WHERE \"accountId\"=$1 AND \"providerId\"='google'",&["social-sub"]).await?;
     let original_wire = body(
         &call(
             &auth,
@@ -605,13 +605,13 @@ async fn returning_social_signin_preserves_previously_granted_scopes<B: Backend>
     );
     assert_eq!(original_wire[0]["createdAt"], "2026-10-02T06:19:31.630Z");
     assert_eq!(original_wire[0]["updatedAt"], "2026-10-02T06:20:00.145Z");
-    let before: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    let before: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
     let original = before
         .iter()
-        .find(|row| row["account_id"] == "social-sub")
+        .find(|row| row["accountId"] == "social-sub")
         .unwrap();
-    let users = db.table("users").await?;
-    let sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let users = db.table("user").await?;
+    let sessions: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     social.provider.respond(200,"application/json",json!({"access_token":"rotated-access","refresh_token":"rotated-refresh","id_token":"rotated-id","token_type":"Bearer","expires_in":3600,"scope":"openid email profile"}).to_string());
     _ = social.provider.take();
     let returning = sign_in(&auth, "").await;
@@ -629,7 +629,7 @@ async fn returning_social_signin_preserves_previously_granted_scopes<B: Backend>
         .await,
     );
     assert_eq!(current["user"]["id"], owner_id);
-    let after: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    let after: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
     assert_eq!(after.len(), before.len());
     let updated = after
         .iter()
@@ -637,18 +637,18 @@ async fn returning_social_signin_preserves_previously_granted_scopes<B: Backend>
         .unwrap();
     for field in [
         "id",
-        "user_id",
-        "account_id",
-        "provider_id",
-        "created_at",
+        "userId",
+        "accountId",
+        "providerId",
+        "createdAt",
         "scope",
     ] {
         assert_eq!(updated[field], original[field], "{field}");
     }
     assert_eq!(updated["scope"], "calendar,drive");
-    assert_eq!(updated["access_token"], "rotated-access");
-    assert_eq!(updated["refresh_token"], "rotated-refresh");
-    assert_eq!(updated["id_token"], "rotated-id");
+    assert_eq!(updated["accessToken"], "rotated-access");
+    assert_eq!(updated["refreshToken"], "rotated-refresh");
+    assert_eq!(updated["idToken"], "rotated-id");
     for row in before.iter().filter(|row| row["id"] != original["id"]) {
         assert!(after.contains(row));
     }
@@ -675,10 +675,10 @@ async fn returning_social_signin_preserves_previously_granted_scopes<B: Backend>
     let digits = fraction.strip_suffix('Z').unwrap();
     assert!(digits.bytes().all(|byte| byte.is_ascii_digit()));
     let physical_created =
-        chrono::DateTime::parse_from_rfc3339(updated["created_at"].as_str().unwrap())?;
+        chrono::DateTime::parse_from_rfc3339(updated["createdAt"].as_str().unwrap())?;
     assert_eq!(physical_created.timestamp_subsec_nanos(), 630_828_000);
-    assert_eq!(db.table("users").await?, users);
-    let new_sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    assert_eq!(db.table("user").await?, users);
+    let new_sessions: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     assert_eq!(new_sessions.len(), sessions.len() + 1);
     assert!(sessions.iter().all(|row| new_sessions.contains(row)));
     let receipts = social.provider.take();
@@ -706,16 +706,16 @@ async fn orphan_oauth_binding_never_adopts_same_email_owner<B: Backend>(db: Db) 
         .await?;
     let owner = signup(&auth, "orphan-owner@example.test").await;
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
-    _ = db.execute("INSERT INTO accounts (id,user_id,account_id,provider_id,access_token,refresh_token,created_at,updated_at) SELECT 'orphan-account',user_id,'orphan-sub','google','old-access','old-refresh',created_at,updated_at FROM accounts WHERE user_id=$1", &[&owner_id]).await?;
+    _ = db.execute("INSERT INTO \"account\" (id,\"userId\",\"accountId\",\"providerId\",\"accessToken\",\"refreshToken\",\"createdAt\",\"updatedAt\") SELECT 'orphan-account',\"userId\",'orphan-sub','google','old-access','old-refresh',\"createdAt\",\"updatedAt\" FROM \"account\" WHERE \"userId\"=$1", &[&owner_id]).await?;
     _ = db.execute("PRAGMA foreign_keys=OFF", &[]).await?;
     _ = db
         .execute(
-            "UPDATE accounts SET user_id='missing-owner' WHERE id='orphan-account'",
+            "UPDATE \"account\" SET \"userId\"='missing-owner' WHERE id='orphan-account'",
             &[],
         )
         .await?;
     _ = db.execute("PRAGMA foreign_keys=ON", &[]).await?;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     social
         .profile
         .set("orphan-sub", "orphan-owner@example.test", true);
@@ -742,8 +742,8 @@ async fn orphan_oauth_binding_never_adopts_same_email_owner<B: Backend>(db: Db) 
         "unable_to_link_account"
     );
     assert!(cookies(&rejected).is_empty());
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
+    assert_eq!(db.count("verification").await?, 0);
     authenticated(&auth, &cookies(&owner), "orphan-owner@example.test").await;
     B::close(connection).await
 }
@@ -772,7 +772,7 @@ async fn local_email_verification_gates_implicit_oauth_adoption<B: Backend>(db: 
     social
         .profile
         .set("local-gate-sub", "local-gate-owner@example.test", true);
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let (state, cookie) = authorize(
         &auth,
         "/sign-in/social",
@@ -791,8 +791,8 @@ async fn local_email_verification_gates_implicit_oauth_adoption<B: Backend>(db: 
             .1,
         "account_not_linked"
     );
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
+    assert_eq!(db.count("verification").await?, 0);
     assert!(!cookies(&denied).contains("session_token="));
     assert_eq!(social.provider.take().len(), 1);
     let proof = jsonwebtoken::encode(
@@ -805,9 +805,9 @@ async fn local_email_verification_gates_implicit_oauth_adoption<B: Backend>(db: 
     let verified = call(&auth, verify, 200).await;
     assert_eq!(body(&verified), json!({"status":true,"user":null}));
     assert!(cookies(&verified).is_empty());
-    let users = db.table("users").await?;
-    let accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
-    let sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let users = db.table("user").await?;
+    let accounts: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
+    let sessions: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     let (state, cookie) = authorize(
         &auth,
         "/sign-in/social",
@@ -831,19 +831,19 @@ async fn local_email_verification_gates_implicit_oauth_adoption<B: Backend>(db: 
     );
     assert_eq!(current["user"]["id"], owner_id);
     assert_eq!(current["user"]["emailVerified"], true);
-    assert_eq!(db.table("users").await?, users);
-    let new_accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    assert_eq!(db.table("user").await?, users);
+    let new_accounts: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
     assert_eq!(new_accounts.len(), accounts.len() + 1);
     assert!(accounts.iter().all(|row| new_accounts.contains(row)));
     let binding = new_accounts
         .iter()
-        .find(|row| row["account_id"] == "local-gate-sub")
+        .find(|row| row["accountId"] == "local-gate-sub")
         .unwrap();
-    assert_eq!(binding["user_id"], owner_id);
-    let new_sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    assert_eq!(binding["userId"], owner_id);
+    let new_sessions: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     assert_eq!(new_sessions.len(), sessions.len() + 1);
     assert!(sessions.iter().all(|row| new_sessions.contains(row)));
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     assert_eq!(social.provider.take().len(), 1);
     authenticated(&auth, &cookies(&owner), "local-gate-owner@example.test").await;
     authenticated(&auth, &cookies(&foreign), "local-gate-foreign@example.test").await;

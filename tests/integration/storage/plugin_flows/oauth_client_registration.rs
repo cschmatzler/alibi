@@ -26,12 +26,12 @@ async fn oauth_dynamic_registration_enforces_policy_and_persists_clients<B: Back
     let owner = signup(&auths[0], "oauth-registration-owner@example.test").await;
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
+            "oauthClient",
         ])
         .await?;
     for (mode, input, cookie, status) in [
@@ -93,12 +93,12 @@ async fn oauth_dynamic_registration_enforces_policy_and_persists_clients<B: Back
         assert_eq!(e.error.status_code(), status);
         assert_eq!(
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
+                "user",
+                "account",
+                "session",
+                "verification",
                 "jwks",
-                "oauth_client"
+                "oauthClient"
             ])
             .await?,
             before
@@ -137,6 +137,6 @@ async fn oauth_dynamic_registration_enforces_policy_and_persists_clients<B: Back
             assert_eq!(row.user_id.as_deref(), body(&owner)["user"]["id"].as_str());
         }
     }
-    assert_eq!(db.count("oauth_client").await?, 2);
+    assert_eq!(db.count("oauthClient").await?, 2);
     Ok(())
 }

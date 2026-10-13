@@ -126,16 +126,16 @@ async fn email_otp_custom_codec_controls_reuse_and_failure_consumption<B: Backen
             )
         };
         let _ = call(&auth, send(), 500).await;
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
         assert!(codec.delivered.lock().unwrap().is_empty());
         *codec.failure.lock().unwrap() = "";
         let _ = call(&auth, send(), 200).await;
         let first = codec.last();
-        let stored = db.table("verifications").await?;
+        let stored = db.table("verification").await?;
         assert!(!stored.contains(&first));
         *codec.failure.lock().unwrap() = "retrieve";
         let _ = call(&auth, send(), 500).await;
-        assert_eq!(db.table("verifications").await?, stored);
+        assert_eq!(db.table("verification").await?, stored);
         assert_eq!(codec.delivered.lock().unwrap().len(), 1);
         let retrieval = || {
             ServerEndpoint::<JsValue>::new("email-otp", "getVerificationOTP")
@@ -148,7 +148,7 @@ async fn email_otp_custom_codec_controls_reuse_and_failure_consumption<B: Backen
             .unwrap_err();
         assert_eq!(failed.error.status_code(), 500);
         assert!(matches!(failed.error, AuthError::CallbackFailure(_)));
-        assert_eq!(db.table("verifications").await?, stored);
+        assert_eq!(db.table("verification").await?, stored);
         *codec.failure.lock().unwrap() = "";
         let recovered = auth
             .dispatch_endpoint(retrieval(), EndpointOptions::default())
@@ -166,7 +166,7 @@ async fn email_otp_custom_codec_controls_reuse_and_failure_consumption<B: Backen
                 json!({"message":"OTP is hashed, cannot return the plain text OTP"})
             );
         }
-        assert_eq!(db.table("verifications").await?, stored);
+        assert_eq!(db.table("verification").await?, stored);
         let _ = call(&auth, send(), 200).await;
         assert_eq!(codec.last() == first, reversible);
         *codec.failure.lock().unwrap() = "verify";
@@ -180,7 +180,7 @@ async fn email_otp_custom_codec_controls_reuse_and_failure_consumption<B: Backen
             500,
         )
         .await;
-        for table in ["users", "accounts", "sessions", "verifications"] {
+        for table in ["user", "account", "session", "verification"] {
             assert_eq!(db.count(table).await?, 0);
         }
         *codec.failure.lock().unwrap() = "";
@@ -195,8 +195,8 @@ async fn email_otp_custom_codec_controls_reuse_and_failure_consumption<B: Backen
             400,
         )
         .await;
-        assert_eq!(db.count("verifications").await?, 1);
-        assert_eq!(db.count("sessions").await?, 0);
+        assert_eq!(db.count("verification").await?, 1);
+        assert_eq!(db.count("session").await?, 0);
         let accepted = call(
             &auth,
             request(
@@ -208,8 +208,8 @@ async fn email_otp_custom_codec_controls_reuse_and_failure_consumption<B: Backen
         )
         .await;
         authenticated(&auth, &cookies(&accepted), "codec@example.test").await;
-        assert_eq!(db.count("verifications").await?, 0);
-        assert_eq!(db.count("sessions").await?, 1);
+        assert_eq!(db.count("verification").await?, 0);
+        assert_eq!(db.count("session").await?, 1);
         B::close(connection).await?;
     }
     Ok(())
@@ -283,7 +283,7 @@ async fn email_otp_verification_override_owns_signup_transaction_and_direct_deli
             sender.fail.store(true, Ordering::SeqCst);
             let _ = call(&auth, signup_request(), 500).await;
             assert_eq!(sender.otp.lock().unwrap().len(), 1);
-            for table in ["users", "accounts", "sessions", "verifications"] {
+            for table in ["user", "account", "session", "verification"] {
                 assert_eq!(db.count(table).await?, 0);
             }
             sender.otp.lock().unwrap().clear();
@@ -292,9 +292,9 @@ async fn email_otp_verification_override_owns_signup_transaction_and_direct_deli
         let created = call(&auth, signup_request(), 200).await;
         assert!(body(&created)["token"].is_null());
         assert!(cookies(&created).is_empty());
-        assert_eq!(db.count("users").await?, 1);
-        assert_eq!(db.count("accounts").await?, 1);
-        assert_eq!(db.count("sessions").await?, 0);
+        assert_eq!(db.count("user").await?, 1);
+        assert_eq!(db.count("account").await?, 1);
+        assert_eq!(db.count("session").await?, 0);
         assert_eq!(
             sender.tokens.lock().unwrap().len(),
             usize::from(explicit_sender)
@@ -338,11 +338,14 @@ async fn email_otp_verification_override_owns_signup_transaction_and_direct_deli
                 200,
             )
             .await;
-            assert_eq!(db.count("verifications").await?, 0);
+            assert_eq!(db.count("verification").await?, 0);
         }
         assert_eq!(
-            db.count_where("SELECT COUNT(*) FROM users WHERE email_verified=true", &[])
-                .await?,
+            db.count_where(
+                "SELECT COUNT(*) FROM \"user\" WHERE \"emailVerified\"=true",
+                &[]
+            )
+            .await?,
             1
         );
         let logged = call(
@@ -381,20 +384,20 @@ async fn email_otp_real_signup_after_hook<B: Backend>(db: Db) -> TestResult {
     let delivery = &deliveries[0];
     assert_eq!(delivery.otp_type, EmailOtpType::EmailVerification);
     assert_eq!(delivery.email, "signup-otp@example.test");
-    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(db.count("verification").await?, 1);
     assert_eq!(
-        db.text("SELECT identifier FROM verifications", &[])
+        db.text("SELECT \"identifier\" FROM \"verification\"", &[])
             .await?
             .as_deref(),
         Some("email-verification-otp-signup-otp@example.test")
     );
     assert_eq!(
-        db.text("SELECT value FROM verifications", &[])
+        db.text("SELECT \"value\" FROM \"verification\"", &[])
             .await?
             .as_deref(),
         Some(format!("{}:0", delivery.otp).as_str())
     );
-    let before = db.tables(&["accounts", "sessions"]).await?;
+    let before = db.tables(&["account", "session"]).await?;
     let current = body(&call(&auth, request("/get-session", None, &cookies(&owner)), 200).await);
     assert_eq!(current["user"]["id"], id);
     assert_eq!(current["user"]["emailVerified"], false);
@@ -407,11 +410,11 @@ async fn email_otp_real_signup_after_hook<B: Backend>(db: Db) -> TestResult {
     let current = body(&call(&auth, request("/get-session", None, &cookies(&owner)), 200).await);
     assert_eq!(current["user"]["id"], id);
     assert_eq!(current["user"]["emailVerified"], true);
-    assert_eq!(db.count("verifications").await?, 0);
-    assert_eq!(db.tables(&["accounts", "sessions"]).await?, before);
-    let stable = db.tables(&["users", "accounts", "sessions"]).await?;
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(db.tables(&["account", "session"]).await?, before);
+    let stable = db.tables(&["user", "account", "session"]).await?;
     assert_eq!(body(&call(&auth, input, 400).await)["code"], "INVALID_OTP");
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stable);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, stable);
     B::close(connection).await
 }
 
@@ -444,7 +447,7 @@ async fn delegated_otp_issuance_retains_original_request_and_live_proof<B: Backe
             assert_eq!(
                 self.raw
                     .count_where(
-                        "SELECT COUNT(*) FROM verifications WHERE value=$1",
+                        "SELECT COUNT(*) FROM \"verification\" WHERE \"value\"=$1",
                         &[&format!("{}:0", d.otp)]
                     )
                     .await
@@ -536,8 +539,8 @@ async fn delegated_otp_issuance_retains_original_request_and_live_proof<B: Backe
         }
     }
     _=call(&auth,request("/email-otp/reset-password",Some(json!({"email":"delegated-target@example.test","otp":"246810","password":"new-delegated-password"})),""),200).await;
-    assert_eq!(db.count("verifications").await?, 0);
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(db.count("session").await?, 1);
     authenticated(&auth, &cookies(&owner), "delegated-target@example.test").await;
     _=call(&auth,request("/sign-in/email",Some(json!({"email":"delegated-target@example.test","password":"new-delegated-password"})),""),200).await;
     B::close(connection).await

@@ -70,7 +70,7 @@ pub(crate) async fn prepare_value(
             };
             Ok(JsonMetadata::for_backend(json, backend)?.into_sql_value())
         }
-        ColumnKind::Double => Ok(match value {
+        ColumnKind::Double | ColumnKind::Number => Ok(match value {
             SqlValue::BigInt(Some(value)) => SqlValue::Double(Some(value as f64)),
             SqlValue::Text(None) => SqlValue::Double(None),
             other => other,

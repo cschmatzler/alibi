@@ -166,7 +166,7 @@ async fn stored_and_cached_reads_preserve_projection_and_storage_errors<B: Backe
     let cached_cookie = format!("{cookie}; {cache}");
 
     // A real storage outage distinguishes cache hits from accidental database fallbacks.
-    _ = db.raw.execute("DROP TABLE sessions", &[]).await?;
+    _ = db.raw.execute("DROP TABLE \"session\"", &[]).await?;
     let cached = auth
         .dispatch_endpoint(
             SessionManagementPlugin::get_session_endpoint()

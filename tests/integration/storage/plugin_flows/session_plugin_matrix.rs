@@ -157,7 +157,7 @@ async fn multi_session_limits_and_revocation<B: Backend>(db: Db) -> TestResult {
             json!(jar.matches("_multi-").count()),
         );
     }
-    let before_list = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before_list = db.tables(&["user", "account", "session"]).await?;
     let endpoint = || ServerEndpoint::<Value>::new("multi-session", "listDeviceSessions");
     let missing = Box::pin(auth.dispatch_endpoint(endpoint(), EndpointOptions::default()))
         .await
@@ -220,7 +220,7 @@ async fn multi_session_limits_and_revocation<B: Backend>(db: Db) -> TestResult {
     .await?;
     assert!(overridden.decode()?.is_empty());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         before_list
     );
 
@@ -241,7 +241,7 @@ async fn multi_session_limits_and_revocation<B: Backend>(db: Db) -> TestResult {
     let select_endpoint = |body: &Value| {
         ServerEndpoint::<Value>::new("multi-session", "setActiveSession").with_body(body)
     };
-    let before_selection = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before_selection = db.tables(&["user", "account", "session"]).await?;
     for (input, headers, code, status) in [
         (
             json!({"sessionToken":tokens[0]}),
@@ -275,7 +275,7 @@ async fn multi_session_limits_and_revocation<B: Backend>(db: Db) -> TestResult {
         assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
     }
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         before_selection
     );
     _ = signup(&auth, "device-fourth@example.com").await;
@@ -295,7 +295,7 @@ async fn multi_session_limits_and_revocation<B: Backend>(db: Db) -> TestResult {
         .unwrap()
         .to_owned();
     let remembering = merge(&jar, &dont_remember);
-    let before_selection = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before_selection = db.tables(&["user", "account", "session"]).await?;
     let selected = Box::pin(
         auth.dispatch_endpoint(
             MultiSessionPlugin::set_active_session_endpoint(tokens[0].clone()),
@@ -313,7 +313,7 @@ async fn multi_session_limits_and_revocation<B: Backend>(db: Db) -> TestResult {
     assert_eq!(selected.decode()?.session.token, tokens[0]);
     let selected = selected.into_response()?;
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         before_selection
     );
     assert!(cookies(&selected).contains("dont_remember"));
@@ -329,7 +329,7 @@ async fn multi_session_limits_and_revocation<B: Backend>(db: Db) -> TestResult {
     let endpoint = |body: &Value| {
         ServerEndpoint::<Value>::new("multi-session", "revokeDeviceSession").with_body(body)
     };
-    let before_revoke = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before_revoke = db.tables(&["user", "account", "session"]).await?;
     for (input, headers, status, code) in [
         (
             json!({"sessionToken":tokens[0]}),
@@ -369,7 +369,7 @@ async fn multi_session_limits_and_revocation<B: Backend>(db: Db) -> TestResult {
         assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
     }
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         before_revoke
     );
     let revoked = Box::pin(auth.dispatch_endpoint(
@@ -465,7 +465,7 @@ async fn session_management_failures<B: Backend>(db: Db) -> TestResult {
     let other_token = body(&other)["token"].as_str().unwrap().to_owned();
     _ = db
         .execute(
-            "CREATE TRIGGER fail_session_delete BEFORE DELETE ON sessions BEGIN SELECT RAISE(ABORT, 'forced'); END",
+            "CREATE TRIGGER fail_session_delete BEFORE DELETE ON \"session\" BEGIN SELECT RAISE(ABORT, 'forced'); END",
             &[],
         )
         .await?;
@@ -482,20 +482,26 @@ async fn session_management_failures<B: Backend>(db: Db) -> TestResult {
     _ = db.execute("DROP TRIGGER fail_session_delete", &[]).await?;
 
     _ = db
-        .execute("ALTER TABLE sessions RENAME TO sessions_unavailable", &[])
+        .execute(
+            "ALTER TABLE \"session\" RENAME TO sessions_unavailable",
+            &[],
+        )
         .await?;
     trace.response(
         "list-sessions storage failure",
         &Box::pin(auth.handle_request(request("/list-sessions", None, &cookie))).await?,
     );
     _ = db
-        .execute("ALTER TABLE sessions_unavailable RENAME TO sessions", &[])
+        .execute(
+            "ALTER TABLE sessions_unavailable RENAME TO \"session\"",
+            &[],
+        )
         .await?;
 
     db.set_timestamp(
-        "sessions",
-        "created_at",
-        ("user_id", &owner_id),
+        "session",
+        "createdAt",
+        ("userId", &owner_id),
         chrono::Utc::now() - chrono::Duration::days(3),
     )
     .await?;
@@ -525,7 +531,7 @@ async fn session_management_failures<B: Backend>(db: Db) -> TestResult {
 
     _ = db
         .execute(
-            "DELETE FROM sessions WHERE token = $1",
+            "DELETE FROM \"session\" WHERE \"token\" = $1",
             &[body(&owner)["token"].as_str().unwrap()],
         )
         .await?;
@@ -654,12 +660,12 @@ async fn multi_session_raw_capacity_controls_proofs_without_evicting_durable_ses
         );
         assert_eq!(listed.as_array().unwrap().len(), expected);
         authenticated(&auth, &jar, "owner-2@example.test").await;
-        assert_eq!(db.count("sessions").await?, 3);
+        assert_eq!(db.count("session").await?, 3);
         for token in &tokens {
             assert!(auth.store().get_session(token).await?.is_some());
         }
         let foreign = signup(&auth, "foreign@example.test").await;
-        let before = db.table("sessions").await?;
+        let before = db.table("session").await?;
         let denied = call(
             &auth,
             request(
@@ -684,7 +690,7 @@ async fn multi_session_raw_capacity_controls_proofs_without_evicting_durable_ses
         if expected > 0 {
             assert_eq!(body(&selected)["session"]["token"], tokens[0]);
         }
-        assert_eq!(db.table("sessions").await?, before);
+        assert_eq!(db.table("session").await?, before);
         authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
         B::close(connection).await?;
     }
@@ -750,7 +756,7 @@ async fn multi_session_repeated_genuine_proofs_retire_before_fractional_capacity
     assert_eq!(fresh.len(), 1);
     assert!(fresh[0].contains(&current));
     assert!(auth.store().get_session(&original).await?.is_none());
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     let selector = call(
         &auth,
         request(
@@ -904,7 +910,7 @@ async fn multi_session_without_database_preserves_order_fallback_and_cache_repla
     )
     .await;
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
-    for table in ["users", "accounts", "sessions"] {
+    for table in ["user", "account", "session"] {
         assert_eq!(db.count(table).await?, 0);
     }
     B::close(connection).await
@@ -1013,11 +1019,14 @@ async fn parallel_sibling_revocation_retains_owned_deletes_after_rejection<B: Ba
     gates.failure_release.notify_one();
     let rejected = tokio::time::timeout(std::time::Duration::from_secs(2), response).await??;
     assert!(!rejected.headers.contains_key("set-cookie"));
-    assert_eq!(db.count("sessions").await?, 4);
+    assert_eq!(db.count("session").await?, 4);
     for (index, (token, _)) in siblings.iter().enumerate() {
         assert_eq!(
-            db.count_where("SELECT COUNT(*) FROM sessions WHERE token = $1", &[token])
-                .await?,
+            db.count_where(
+                "SELECT COUNT(*) FROM \"session\" WHERE \"token\" = $1",
+                &[token]
+            )
+            .await?,
             i64::from(index != 2)
         );
     }
@@ -1027,10 +1036,10 @@ async fn parallel_sibling_revocation_retains_owned_deletes_after_rejection<B: Ba
         gates.held_committed.notified(),
     )
     .await?;
-    assert_eq!(db.count("sessions").await?, 3);
+    assert_eq!(db.count("session").await?, 3);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM sessions WHERE token = $1",
+            "SELECT COUNT(*) FROM \"session\" WHERE \"token\" = $1",
             &[&siblings[0].0]
         )
         .await?,
@@ -1067,7 +1076,7 @@ async fn bearer_browser_header_precedence<B: Backend>(db: Db) -> TestResult {
             .unwrap()
             .1
             .into_owned();
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         for route in ["/get-session", "/list-sessions"] {
             let mut input = request(route, None, &jar);
             _ = input
@@ -1092,7 +1101,7 @@ async fn bearer_browser_header_precedence<B: Backend>(db: Db) -> TestResult {
         );
         let fallback = call(&auth, rejected, 200).await;
         assert_eq!(body(&fallback)["user"]["id"], body(&foreign)["user"]["id"]);
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
         let mut logout = request("/sign-out", Some(json!({})), &jar);
         _ = logout
             .headers
@@ -1100,7 +1109,7 @@ async fn bearer_browser_header_precedence<B: Backend>(db: Db) -> TestResult {
         _ = call(&auth, logout, 200).await;
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM sessions WHERE token=$1",
+                "SELECT COUNT(*) FROM \"session\" WHERE \"token\"=$1",
                 &[body(&owner)["token"].as_str().unwrap()]
             )
             .await?,
@@ -1108,13 +1117,13 @@ async fn bearer_browser_header_precedence<B: Backend>(db: Db) -> TestResult {
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM sessions WHERE token=$1",
+                "SELECT COUNT(*) FROM \"session\" WHERE \"token\"=$1",
                 &[body(&foreign)["token"].as_str().unwrap()]
             )
             .await?,
             1
         );
-        assert_eq!(db.tables(&["users", "accounts"]).await?, before[..2]);
+        assert_eq!(db.tables(&["user", "account"]).await?, before[..2]);
         authenticated(&auth, &jar, "header-foreign@example.test").await;
         B::close(connection).await?;
     }
@@ -1200,7 +1209,7 @@ async fn bearer_completed_issuance_header_receipt<B: Backend>(db: Db) -> TestRes
         assert_eq!(body(&actual)["session"]["token"], body(response)["token"]);
         assert_eq!(body(&actual)["user"]["id"], body(response)["user"]["id"]);
     }
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let failed = call(
         &auth,
         request(
@@ -1219,7 +1228,7 @@ async fn bearer_completed_issuance_header_receipt<B: Backend>(db: Db) -> TestRes
             .map(String::as_str),
         Some("X-First, X-First, X-Second")
     );
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let logout = call(
         &auth,
         request("/sign-out", Some(json!({})), &cookies(&signed)),
@@ -1295,7 +1304,7 @@ async fn bearer_configured_cookie_authority<B: Backend>(db: Db) -> TestResult {
             .into_owned();
         assert_eq!(owner.headers.get("set-auth-token"), Some(&signed));
         authenticated(&auth, &jar, "named-header-owner@example.test").await;
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         for token in [body(&owner)["token"].as_str().unwrap(), signed.as_str()] {
             let mut input = request("/get-session", None, &cookies(&foreign));
             _ = input
@@ -1305,7 +1314,7 @@ async fn bearer_configured_cookie_authority<B: Backend>(db: Db) -> TestResult {
             assert_eq!(body(&read)["session"]["token"], body(&owner)["token"]);
             assert_eq!(body(&read)["user"]["id"], body(&owner)["user"]["id"]);
         }
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
         let mut input = request("/sign-out", Some(json!({})), &cookies(&foreign));
         _ = input
             .headers
@@ -1320,7 +1329,7 @@ async fn bearer_configured_cookie_authority<B: Backend>(db: Db) -> TestResult {
         assert!(!logout.headers.contains_key("set-auth-token"));
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM sessions WHERE token=$1",
+                "SELECT COUNT(*) FROM \"session\" WHERE \"token\"=$1",
                 &[body(&owner)["token"].as_str().unwrap()]
             )
             .await?,
@@ -1382,7 +1391,7 @@ async fn bearer_real_hmac_padding_alias<B: Backend>(db: Db) -> TestResult {
     chars[position] = alphabet_bytes[index ^ 4];
     let corrupt = String::from_utf8(chars)?;
     assert_ne!(engine.decode(&corrupt)?, engine.decode(signature)?);
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (value, cookie, expected) in [
         (alias.as_str(), String::new(), Some(&owner)),
         (alias.as_str(), cookies(&foreign), Some(&owner)),
@@ -1415,6 +1424,6 @@ async fn bearer_real_hmac_padding_alias<B: Backend>(db: Db) -> TestResult {
             .collect::<Vec<_>>(),
         [body(&owner)["user"]["id"].clone()]
     );
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     B::close(connection).await
 }

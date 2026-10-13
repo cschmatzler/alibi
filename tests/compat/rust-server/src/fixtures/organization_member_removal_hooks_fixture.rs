@@ -33,12 +33,12 @@ async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
     for (name, sql, columns) in [
         (
             "teams",
-            "SELECT id,organization_id AS organizationId,name,member_count AS memberCount FROM team ORDER BY name,id",
+            "SELECT id,\"organizationId\" AS organizationId,\"name\",\"memberCount\" AS memberCount FROM \"team\" ORDER BY \"name\",id",
             &["id", "organizationId", "name", "memberCount"][..],
         ),
         (
             "teamMembers",
-            "SELECT m.id,m.team_id AS teamId,m.user_id AS userId FROM team_member m JOIN team t ON t.id=m.team_id JOIN users u ON u.id=m.user_id ORDER BY t.name,u.email,m.id",
+            "SELECT m.id,m.\"teamId\" AS teamId,m.\"userId\" AS userId FROM \"teamMember\" m JOIN \"team\" t ON t.id=m.\"teamId\" JOIN \"user\" u ON u.id=m.\"userId\" ORDER BY t.\"name\",u.\"email\",m.id",
             &["id", "teamId", "userId"][..],
         ),
     ] {
@@ -118,16 +118,16 @@ impl Hooks {
         }
         let trigger = match mode {
             "sql-member-abort" => Some(
-                "CREATE TRIGGER member_removal_guard_member BEFORE DELETE ON member WHEN OLD.id=(SELECT memberId FROM __test_member_removal_guard) BEGIN SELECT RAISE(ABORT,'member removal member veto'); END",
+                "CREATE TRIGGER member_removal_guard_member BEFORE DELETE ON \"member\" WHEN OLD.id=(SELECT memberId FROM __test_member_removal_guard) BEGIN SELECT RAISE(ABORT,'member removal member veto'); END",
             ),
             "sql-member-ignore" => Some(
-                "CREATE TRIGGER member_removal_guard_member BEFORE DELETE ON member WHEN OLD.id=(SELECT memberId FROM __test_member_removal_guard) BEGIN SELECT RAISE(IGNORE); END",
+                "CREATE TRIGGER member_removal_guard_member BEFORE DELETE ON \"member\" WHEN OLD.id=(SELECT memberId FROM __test_member_removal_guard) BEGIN SELECT RAISE(IGNORE); END",
             ),
             "sql-team-abort" => Some(
-                "CREATE TRIGGER member_removal_guard_team BEFORE DELETE ON team_member WHEN OLD.user_id=(SELECT userId FROM __test_member_removal_guard) AND OLD.team_id IN (SELECT id FROM team WHERE organization_id=(SELECT organizationId FROM __test_member_removal_guard)) BEGIN SELECT RAISE(ABORT,'member removal team veto'); END",
+                "CREATE TRIGGER member_removal_guard_team BEFORE DELETE ON \"teamMember\" WHEN OLD.\"userId\"=(SELECT userId FROM __test_member_removal_guard) AND OLD.\"teamId\" IN (SELECT id FROM \"team\" WHERE \"organizationId\"=(SELECT organizationId FROM __test_member_removal_guard)) BEGIN SELECT RAISE(ABORT,'member removal team veto'); END",
             ),
             "sql-before-error" | "sql-after-error" => Some(
-                "CREATE TRIGGER member_removal_guard_user BEFORE UPDATE ON users WHEN OLD.id=(SELECT userId FROM __test_member_removal_guard) BEGIN SELECT RAISE(ABORT,'member removal user veto'); END",
+                "CREATE TRIGGER member_removal_guard_user BEFORE UPDATE ON \"user\" WHEN OLD.id=(SELECT userId FROM __test_member_removal_guard) BEGIN SELECT RAISE(ABORT,'member removal user veto'); END",
             ),
             _ => None,
         };

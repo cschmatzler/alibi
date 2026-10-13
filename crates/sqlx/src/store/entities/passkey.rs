@@ -3,21 +3,25 @@ use alibi_core::Passkey;
 use chrono::{DateTime, Utc};
 
 #[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, SqlxModel)]
-#[auth(table = "passkeys")]
+#[auth(table = "passkey")]
 pub struct Model {
     pub id: String,
     pub name: Option<String>,
+    #[sqlx(rename = "publicKey")]
     pub public_key: String,
+    #[sqlx(rename = "userId")]
     pub user_id: String,
+    #[sqlx(rename = "credentialID")]
     pub credential_id: String,
     pub counter: i64,
+    #[sqlx(rename = "deviceType")]
     pub device_type: String,
+    #[sqlx(rename = "backedUp")]
     pub backed_up: bool,
     pub transports: Option<String>,
-    pub credential: String,
     pub aaguid: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    #[sqlx(rename = "createdAt")]
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 impl From<&Model> for Passkey {
@@ -33,9 +37,8 @@ impl From<&Model> for Passkey {
             backed_up: model.backed_up,
             transports: model.transports.clone(),
             created_at: model.created_at,
-            updated_at: model.updated_at,
+
             aaguid: model.aaguid.clone(),
-            credential: model.credential.clone(),
         }
     }
 }

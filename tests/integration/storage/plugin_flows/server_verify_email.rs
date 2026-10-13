@@ -49,7 +49,7 @@ async fn server_verify_email_changes_only_proof_owner_without_request<B: Backend
         .1
         .clone();
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for query in [
         json!({}),
@@ -75,14 +75,12 @@ async fn server_verify_email_changes_only_proof_owner_without_request<B: Backend
         .unwrap_err();
     assert_eq!(invalid.error.status_code(), 401);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
-    let unchanged = db
-        .tables(&["accounts", "sessions", "verifications"])
-        .await?;
-    let users: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+    let unchanged = db.tables(&["account", "session", "verification"]).await?;
+    let users: Vec<Value> = serde_json::from_str(&db.table("user").await?)?;
     let verified = auth
         .dispatch_endpoint(
             endpoint(
@@ -104,27 +102,26 @@ async fn server_verify_email_changes_only_proof_owner_without_request<B: Backend
         Some("logical")
     );
     assert_eq!(
-        db.tables(&["accounts", "sessions", "verifications"])
-            .await?,
+        db.tables(&["account", "session", "verification"]).await?,
         unchanged
     );
-    let after_users: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+    let after_users: Vec<Value> = serde_json::from_str(&db.table("user").await?)?;
     let owner_id = body(&owner)["user"]["id"].clone();
     assert_eq!(users.len(), after_users.len());
     assert!(after_users.iter().any(|user| user["id"] == owner_id));
     for (before, after) in users.iter().zip(&after_users) {
         if after["id"] == owner_id {
-            assert_eq!(after["email_verified"], json!(1));
+            assert_eq!(after["emailVerified"], json!(1));
             let mut expected = before.clone();
-            expected["email_verified"] = json!(1);
-            expected["updated_at"] = after["updated_at"].clone();
+            expected["emailVerified"] = json!(1);
+            expected["updatedAt"] = after["updatedAt"].clone();
             assert_eq!(*after, expected);
         } else {
             assert_eq!(before, after);
         }
     }
     let after = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let replay = auth
         .dispatch_endpoint(
@@ -172,7 +169,7 @@ async fn server_verify_email_changes_only_proof_owner_without_request<B: Backend
             Some(expected)
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             after
         );

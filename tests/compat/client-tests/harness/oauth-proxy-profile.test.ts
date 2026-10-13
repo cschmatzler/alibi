@@ -141,7 +141,7 @@ test("published managed proxy envelopes use only their declared version and pres
   const ctx = {
     ...context(left, right),
     oauthProxyProfileSecret: undefined,
-    oauthProxyProfileManagedKeys: { keys: Object.fromEntries(managed.keys), legacySecret: secret },
+    oauthProxyProfileManagedKeys: { keys: Object.fromEntries(managed.keys) },
   };
   expect(compareValues(values(left), values(right), ctx)).toEqual([]);
   expect(
@@ -174,13 +174,7 @@ test("published managed proxy envelopes use only their declared version and pres
   });
   const bareLeft = await issue(leftBaseURL);
   const bareRight = await issue(rightBaseURL);
-  expect(compareValues(values(bareLeft), values(bareRight), ctx)).toEqual([]);
-  expect(
-    compareValues(values(bareLeft), values(bareRight), {
-      ...ctx,
-      oauthProxyProfileManagedKeys: { keys: ctx.oauthProxyProfileManagedKeys.keys },
-    }).length,
-  ).toBeGreaterThan(0);
+  expect(compareValues(values(bareLeft), values(bareRight), ctx).length).toBeGreaterThan(0);
 });
 
 test("proxy authentication retains provider JSON claims arrays expiry state and every callback selector", async () => {

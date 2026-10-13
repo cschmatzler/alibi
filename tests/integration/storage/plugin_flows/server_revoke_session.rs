@@ -49,13 +49,13 @@ async fn server_revoke_session_preserves_foreign_authority_and_rejects_revoked_c
     let foreign_token = body(&foreign)["token"].as_str().unwrap().to_owned();
     assert!(cookies(&owner).contains("better-auth.session_data="));
     db.set_timestamp(
-        "sessions",
-        "expires_at",
+        "session",
+        "expiresAt",
         ("token", &owner_token),
         chrono::Utc::now() + chrono::Duration::hours(1),
     )
     .await?;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for input in [json!({}), json!({"token":null}), json!({"token":7})] {
         let denied = auth
             .dispatch_endpoint(
@@ -97,7 +97,7 @@ async fn server_revoke_session_preserves_foreign_authority_and_rejects_revoked_c
         assert!(noop.decode()?.status);
         assert!(noop.headers().get_all("set-cookie").next().is_none());
     }
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let revoked = auth
         .dispatch_endpoint(revoke_endpoint(&other_token)?, options(&owner))
         .await?;
@@ -113,30 +113,27 @@ async fn server_revoke_session_preserves_foreign_authority_and_rejects_revoked_c
     assert!(auth.store().get_session(&other_token).await?.is_none());
     assert!(auth.store().get_session(&owner_token).await?.is_some());
     assert!(auth.store().get_session(&foreign_token).await?.is_some());
-    let current = db.tables(&["users", "accounts", "sessions"]).await?;
+    let current = db.tables(&["user", "account", "session"]).await?;
     assert_eq!(current[..2], before[..2]);
     let stale = auth
         .dispatch_endpoint(revoke_endpoint(&foreign_token)?, options(&other))
         .await
         .unwrap_err();
     assert_eq!(stale.error.status_code(), 401);
-    assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
-        current
-    );
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, current);
     let self_revoke = auth
         .dispatch_endpoint(revoke_endpoint(&owner_token)?, options(&owner))
         .await?;
     assert!(self_revoke.decode()?.status);
     assert!(self_revoke.headers().get_all("set-cookie").next().is_none());
     assert!(auth.store().get_session(&owner_token).await?.is_none());
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     let stale = auth
         .dispatch_endpoint(revoke_endpoint(&foreign_token)?, options(&owner))
         .await
         .unwrap_err();
     assert_eq!(stale.error.status_code(), 401);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, after);
     assert!(auth.store().get_session(&foreign_token).await?.is_some());
     {
         let events = observer.0.lock().unwrap();

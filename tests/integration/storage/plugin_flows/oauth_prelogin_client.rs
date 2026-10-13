@@ -55,12 +55,12 @@ async fn oauth_prelogin_client_requires_signed_authorization<B: Backend>(db: Db)
         .await?;
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
+            "oauthClient",
         ])
         .await?;
     let tampered = signed.replace("sig=", "sig=tampered");
@@ -152,12 +152,12 @@ async fn oauth_prelogin_client_requires_signed_authorization<B: Backend>(db: Db)
     assert_eq!(
         before,
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client"
+            "oauthClient"
         ])
         .await?
     );

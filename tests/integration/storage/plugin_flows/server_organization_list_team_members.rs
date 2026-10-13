@@ -94,7 +94,7 @@ async fn server_list_team_members_preserves_active_selection_and_seat_authority<
     };
     let endpoint = || ServerEndpoint::<JsValue>::new("organization", "listTeamMembers");
     let before = db
-        .tables(&["users", "sessions", "member", "team", "team_member"])
+        .tables(&["user", "session", "member", "team", "teamMember"])
         .await?;
     for (query, options, status, code) in [
         (None, EndpointOptions::default(), 400, "VALIDATION_ERROR"),
@@ -171,7 +171,7 @@ async fn server_list_team_members_preserves_active_selection_and_seat_authority<
         json!([body(&admitted)])
     );
     assert_eq!(
-        db.tables(&["users", "sessions", "member", "team", "team_member"])
+        db.tables(&["user", "session", "member", "team", "teamMember"])
             .await?,
         before
     );

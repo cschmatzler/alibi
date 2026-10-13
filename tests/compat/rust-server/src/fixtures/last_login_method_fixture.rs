@@ -358,15 +358,15 @@ pub(crate) async fn router(
     let observed = state.clone();
     let read_db = database.clone();
     router=router.route("/__test/last-login-method",get(move || {let state=observed.clone();let database=read_db.clone();async move {
-        let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT id,email,name,last_login_method FROM users ORDER BY email,id")).await.map_err(|error|AuthError::internal(error.to_string()))?;
-        let mut users=Vec::new();for row in rows {users.push(json!({"id":row.try_get::<String>("","id").map_err(|error|AuthError::internal(error.to_string()))?,"email":row.try_get::<String>("","email").map_err(|error|AuthError::internal(error.to_string()))?,"name":row.try_get::<Option<String>>("","name").map_err(|error|AuthError::internal(error.to_string()))?,"lastLoginMethod":row.try_get::<Option<String>>("","last_login_method").map_err(|error|AuthError::internal(error.to_string()))?}));}
+        let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT id,\"email\",\"name\",\"lastLoginMethod\" FROM \"user\" ORDER BY \"email\",id")).await.map_err(|error|AuthError::internal(error.to_string()))?;
+        let mut users=Vec::new();for row in rows {users.push(json!({"id":row.try_get::<String>("","id").map_err(|error|AuthError::internal(error.to_string()))?,"email":row.try_get::<String>("","email").map_err(|error|AuthError::internal(error.to_string()))?,"name":row.try_get::<Option<String>>("","name").map_err(|error|AuthError::internal(error.to_string()))?,"lastLoginMethod":row.try_get::<Option<String>>("","lastLoginMethod").map_err(|error|AuthError::internal(error.to_string()))?}));}
         let events=state.events.lock().map_err(|_|AuthError::internal("observer lock"))?.clone();Ok::<_,AuthError>(Json(json!({"events":events,"users":users})))
     }}).post(move |Json(body):Json<Value>| {let state=state.clone();let database=database.clone();async move {
         match body["action"].as_str().unwrap_or_default() {
             "clear"=>state.events.lock().map_err(|_|AuthError::internal("observer lock"))?.clear(),
             "reset"=>{state.events.lock().map_err(|_|AuthError::internal("observer lock"))?.clear();state.deliveries.lock().map_err(|_|AuthError::internal("delivery lock"))?.clear();state.sequence.store(0,Ordering::SeqCst);},
             "delivery"=>return Ok::<_,AuthError>(Json(state.deliveries.lock().map_err(|_|AuthError::internal("delivery lock"))?.get(body["key"].as_str().unwrap_or_default()).cloned().unwrap_or(Value::Null))),
-            "update-error"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"CREATE TRIGGER last_login_update_error BEFORE UPDATE OF last_login_method ON users BEGIN SELECT RAISE(ABORT,'application update rejected'); END")).await.map_err(|error|AuthError::internal(error.to_string()))?;},
+            "update-error"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"CREATE TRIGGER last_login_update_error BEFORE UPDATE OF \"lastLoginMethod\" ON \"user\" BEGIN SELECT RAISE(ABORT,'application update rejected'); END")).await.map_err(|error|AuthError::internal(error.to_string()))?;},
             "restore-updates"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"DROP TRIGGER IF EXISTS last_login_update_error")).await.map_err(|error|AuthError::internal(error.to_string()))?;},
             _=>{}
         } Ok(Json(json!({"changed":true})))

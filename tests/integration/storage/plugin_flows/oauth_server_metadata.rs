@@ -31,7 +31,7 @@ async fn oauth_server_discovery_tracks_configured_policy_without_writes<B: Backe
             .build()
             .await?;
         let before = db
-            .tables(&["users", "accounts", "sessions", "verifications", "jwks"])
+            .tables(&["user", "account", "session", "verification", "jwks"])
             .await?;
         let output = auth
             .dispatch_endpoint(
@@ -137,7 +137,7 @@ async fn oauth_server_discovery_tracks_configured_policy_without_writes<B: Backe
             }
         }
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications", "jwks"])
+            db.tables(&["user", "account", "session", "verification", "jwks"])
                 .await?,
             before
         );

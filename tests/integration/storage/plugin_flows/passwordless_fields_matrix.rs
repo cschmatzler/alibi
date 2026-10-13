@@ -97,14 +97,14 @@ async fn passwordless_signup_applies_username_policy_and_schema_defaults<B: Back
     probe.trace.value(
         "rows",
         json!({
-            "users": db.count("users").await?,
+            "users": db.count("user").await?,
             "defaults": db
                 .count_where(
-                    "SELECT COUNT(*) FROM users WHERE banned = false AND is_anonymous = false AND two_factor_enabled = false",
+                    "SELECT COUNT(*) FROM \"user\" WHERE \"banned\" = false AND \"isAnonymous\" = false AND \"twoFactorEnabled\" = false",
                     &[],
                 )
                 .await?,
-            "usernames": db.text("SELECT username FROM users WHERE email = 'named@example.test'", &[]).await?,
+            "usernames": db.text("SELECT \"username\" FROM \"user\" WHERE \"email\" = 'named@example.test'", &[]).await?,
         }),
     );
     probe.trace.assert("passwordless/signup-fields");
@@ -114,7 +114,7 @@ async fn passwordless_signup_applies_username_policy_and_schema_defaults<B: Back
 async fn additional_field_validation_and_username_stripping<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     _ = db
-        .execute("ALTER TABLE users ADD COLUMN nickname TEXT", &[])
+        .execute("ALTER TABLE \"user\" ADD COLUMN nickname TEXT", &[])
         .await?;
     let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
     _ = config.user.additional_fields.insert(

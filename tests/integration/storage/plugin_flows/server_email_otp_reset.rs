@@ -41,7 +41,7 @@ async fn server_email_otp_password_reset_replaces_credentials_without_reissuing_
         let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
         let foreign = Box::pin(signup(&auth, "server-reset-foreign@example.test")).await;
         let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
-        let sessions = db.table("sessions").await?;
+        let sessions = db.table("session").await?;
         let foreign_before = auth.store().get_user_by_id(&foreign_id).await?.unwrap();
         let otp = Box::pin(auth.dispatch_endpoint(
             EmailOtpPlugin::create_verification_otp_endpoint(email, EmailOtpType::ForgetPassword),
@@ -49,8 +49,8 @@ async fn server_email_otp_password_reset_replaces_credentials_without_reissuing_
         ))
         .await?
         .decode()?;
-        let proof = db.table("verifications").await?;
-        let identities = db.tables(&["users", "accounts", "sessions"]).await?;
+        let proof = db.table("verification").await?;
+        let identities = db.tables(&["user", "account", "session"]).await?;
         let endpoint = |body: &Value| {
             ServerEndpoint::<Value>::new("email-otp", "resetPasswordEmailOTP").with_body(body)
         };
@@ -70,9 +70,9 @@ async fn server_email_otp_password_reset_replaces_credentials_without_reissuing_
                     .unwrap_err();
             assert_eq!(error.error.status_code(), 400);
             assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
-            assert_eq!(db.table("verifications").await?, proof);
+            assert_eq!(db.table("verification").await?, proof);
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions"]).await?,
+                db.tables(&["user", "account", "session"]).await?,
                 identities
             );
         }
@@ -98,8 +98,8 @@ async fn server_email_otp_password_reset_replaces_credentials_without_reissuing_
         let output=Box::pin(auth.dispatch_endpoint(EmailOtpPlugin::reset_password_email_otp_endpoint(&alibi::plugins::email_otp::EmailOtpPasswordResetInput {email:email.to_uppercase(),otp:otp.clone(),password:"replacement-password123".into()})?.with_body(&json!({"email":email.to_uppercase(),"otp":otp,"password":"replacement-password123","userId":foreign_id}))?,EndpointOptions::default())).await?;
         assert!(output.decode()?.success);
         assert!(output.headers().get_all("set-cookie").next().is_none());
-        assert_eq!(db.count("verifications").await?, 0);
-        assert_eq!(db.table("sessions").await?, sessions);
+        assert_eq!(db.count("verification").await?, 0);
+        assert_eq!(db.table("session").await?, sessions);
         use alibi::AuthUser;
         let updated = auth.store().get_user_by_id(&owner_id).await?.unwrap();
         assert!(updated.email_verified());
@@ -107,7 +107,7 @@ async fn server_email_otp_password_reset_replaces_credentials_without_reissuing_
             serde_json::to_value(auth.store().get_user_by_id(&foreign_id).await?.unwrap())?,
             serde_json::to_value(foreign_before)?
         );
-        assert_eq!(db.count("accounts").await?, 2);
+        assert_eq!(db.count("account").await?, 2);
         Box::pin(authenticated(&auth, &cookies(&owner), email)).await;
         Box::pin(authenticated(
             &auth,
@@ -116,7 +116,7 @@ async fn server_email_otp_password_reset_replaces_credentials_without_reissuing_
         ))
         .await;
         let completed = db
-            .tables(&["users", "accounts", "sessions", "verifications"])
+            .tables(&["user", "account", "session", "verification"])
             .await?;
         let replay = Box::pin(auth.dispatch_endpoint(
             endpoint(&json!({"email":email,"otp":otp,"password":"must-not-commit123"}))?,
@@ -129,7 +129,7 @@ async fn server_email_otp_password_reset_replaces_credentials_without_reissuing_
             Some("INVALID_OTP")
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             completed
         );

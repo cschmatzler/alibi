@@ -47,7 +47,7 @@ impl PasskeyAuthenticationAfterVerification for Application {
             .database
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
-                "SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?",
+                "SELECT COUNT(*) AS \"count\" FROM \"session\" WHERE \"userId\" = ?",
                 [row.user_id().into_owned().into()],
             ))
             .await
@@ -57,7 +57,7 @@ impl PasskeyAuthenticationAfterVerification for Application {
             .database
             .query_one_raw(Statement::from_string(
                 DbBackend::Sqlite,
-                "SELECT COUNT(*) AS count FROM verifications",
+                "SELECT COUNT(*) AS \"count\" FROM \"verification\"",
             ))
             .await
             .map_err(database_error)?
@@ -103,7 +103,7 @@ impl PasskeyAuthenticationAfterVerification for Application {
                 .database
                 .query_one_raw(Statement::from_string(
                     DbBackend::Sqlite,
-                    "SELECT id FROM users WHERE name = 'Foreign'",
+                    "SELECT id FROM \"user\" WHERE \"name\" = 'Foreign'",
                 ))
                 .await
                 .map_err(database_error)?
@@ -112,7 +112,7 @@ impl PasskeyAuthenticationAfterVerification for Application {
                 .try_get::<String>("", "id")
                 .map_err(database_error)?;
             self.database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,
-                "UPDATE passkeys SET user_id = ?, backed_up = 1, device_type = 'application-updated', name = 'Application updated' WHERE id = ?",
+                "UPDATE \"passkey\" SET \"userId\" = ?, \"backedUp\" = 1, \"deviceType\" = 'application-updated', \"name\" = 'Application updated' WHERE id = ?",
                 [foreign_id.into(), row.id().into_owned().into()])).await.map_err(database_error)?;
         }
         match self.mode {

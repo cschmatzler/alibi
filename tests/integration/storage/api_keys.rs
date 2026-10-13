@@ -61,10 +61,10 @@ async fn file_sqlite_connections_consume_quota_without_lock_upgrade_errors<B: Ba
     store.migrate().await?;
     let created = store
         .create_api_key(CreateApiKey {
-            remaining: Some(12.5),
+            remaining: Some(if db.is_postgres() { 13.0 } else { 12.5 }),
             rate_limit_enabled: true,
             rate_limit_time_window: Some(86_400_000.0),
-            rate_limit_max: Some(2.5),
+            rate_limit_max: Some(if db.is_postgres() { 3.0 } else { 2.5 }),
             ..key("owner", "concurrent-key-hash")
         })
         .await?;
@@ -89,13 +89,16 @@ async fn file_sqlite_connections_consume_quota_without_lock_upgrade_errors<B: Ba
         .get_api_key_by_id(&created.id)
         .await?
         .ok_or("fractional exhausted quota must retain the key")?;
-    assert_eq!(persisted.remaining, Some(-0.5));
+    assert_eq!(
+        persisted.remaining,
+        Some(if db.is_postgres() { 0.0 } else { -0.5 })
+    );
     assert_eq!(persisted.request_count, Some(3.0));
     let observed = store
         .update_api_key(
             &created.id,
             UpdateApiKey {
-                remaining: Some(12.5),
+                remaining: Some(if db.is_postgres() { 13.0 } else { 12.5 }),
                 request_count: Some(0.0),
                 last_request: Some(None),
                 ..Default::default()
@@ -346,15 +349,15 @@ async fn assert_usage_source_phase<B: Backend>(db: Db, phase: &str) -> TestResul
         )
         .await?;
     let condition = if phase == "rate" {
-        "NEW.request_count<>OLD.request_count"
+        "NEW.\"requestCount\"<>OLD.\"requestCount\""
     } else {
-        "NEW.remaining IS OLD.remaining AND NEW.request_count IS OLD.request_count AND NEW.last_request IS OLD.last_request AND NEW.last_refill_at IS OLD.last_refill_at"
+        "NEW.remaining IS OLD.remaining AND NEW.\"requestCount\" IS OLD.\"requestCount\" AND NEW.\"lastRequest\" IS OLD.\"lastRequest\" AND NEW.\"lastRefillAt\" IS OLD.\"lastRefillAt\""
     };
     let sql = if phase == "current" {
-        "CREATE TRIGGER current_row AFTER UPDATE ON api_keys WHEN OLD.name='phase-target' AND NEW.last_request IS NOT OLD.last_request AND NEW.updated_at IS OLD.updated_at BEGIN UPDATE api_keys SET remaining=77,name='current-row' WHERE id=NEW.id; END".to_owned()
+        "CREATE TRIGGER current_row AFTER UPDATE ON \"apikey\" WHEN OLD.\"name\"='phase-target' AND NEW.\"lastRequest\" IS NOT OLD.\"lastRequest\" AND NEW.\"updatedAt\" IS OLD.\"updatedAt\" BEGIN UPDATE \"apikey\" SET \"remaining\"=77,\"name\"='current-row' WHERE id=NEW.id; END".to_owned()
     } else {
         format!(
-            "CREATE TRIGGER phase_veto BEFORE UPDATE ON api_keys WHEN OLD.name='phase-target' AND ({condition}) BEGIN SELECT RAISE(ABORT,'actual phase storage veto'); END"
+            "CREATE TRIGGER phase_veto BEFORE UPDATE ON \"apikey\" WHEN OLD.\"name\"='phase-target' AND ({condition}) BEGIN SELECT RAISE(ABORT,'actual phase storage veto'); END"
         )
     };
     _ = db.execute(&sql, &[]).await?;

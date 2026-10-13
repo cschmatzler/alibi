@@ -96,10 +96,10 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("; ");
             drop(request.headers.insert("cookie".into(), cookie.clone()));
-            let before = db.tables(&["users", "sessions"]).await?;
+            let before = db.tables(&["user", "session"]).await?;
             let rejected = Box::pin(auth.handle_request(request.clone())).await?;
             assert_eq!(rejected.status, 400);
-            assert_eq!(db.tables(&["users", "sessions"]).await?, before);
+            assert_eq!(db.tables(&["user", "session"]).await?, before);
             request.path = "/api/auth/delete-anonymous-user".into();
             let deleted = Box::pin(auth.handle_request(request.clone())).await?;
             assert_eq!(deleted.status, 200);
@@ -108,8 +108,8 @@ mod tests {
                 json!({"success":true})
             );
             assert!(auth.store().get_user_by_id(id).await.unwrap().is_none());
-            assert_eq!(db.count("users").await?, 0);
-            assert_eq!(db.count("sessions").await?, 0);
+            assert_eq!(db.count("user").await?, 0);
+            assert_eq!(db.count("session").await?, 0);
             assert_eq!(auth.store().get_user_sessions(id).await.unwrap().len(), 0);
             let replay = Box::pin(auth.handle_request(request)).await?;
             assert_eq!(replay.status, 401);

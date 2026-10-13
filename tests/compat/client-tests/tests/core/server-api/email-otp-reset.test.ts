@@ -41,13 +41,11 @@ for (const credential of [true, false]) {
         expect(response.status).toBe(200);
         ownerId = ((await response.json()) as { user: { id: string } }).user.id;
       }
-      const foreign = await ctx
-        .actor("foreign")
-        .client.signUp.email({
-          email: ctx.uniqueEmail("server-reset-foreign"),
-          password: "password123",
-          name: "Foreign",
-        });
+      const foreign = await ctx.actor("foreign").client.signUp.email({
+        email: ctx.uniqueEmail("server-reset-foreign"),
+        password: "password123",
+        name: "Foreign",
+      });
       expect(foreign.error).toBeNull();
       const before = await readUserState(ctx, ownerId);
       const foreignBefore = await readUserState(ctx, foreign.data!.user.id);

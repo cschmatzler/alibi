@@ -599,7 +599,7 @@ async fn transport(
 async fn raw_sql_state(db: &DatabaseConnection) -> Result<Value, alibi::seaorm::sea_orm::DbErr> {
     use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
     let mut state = serde_json::Map::new();
-    for table in ["users", "accounts", "sessions", "verifications"] {
+    for table in ["user", "account", "session", "verification"] {
         let columns = db
             .query_all_raw(Statement::from_string(
                 DbBackend::Sqlite,

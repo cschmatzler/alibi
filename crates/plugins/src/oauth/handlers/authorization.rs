@@ -502,7 +502,12 @@ pub(in crate::oauth::handlers) async fn initiate_oauth_flow_core(
     }
 
     match ctx.config.account.store_state_strategy {
-        alibi_core::OAuthStateStrategy::Automatic | alibi_core::OAuthStateStrategy::Database => {
+        alibi_core::OAuthStateStrategy::Automatic => {
+            return Err(AuthError::config(
+                "OAuth state strategy has not been initialized",
+            ));
+        }
+        alibi_core::OAuthStateStrategy::Database => {
             let created = ctx
                 .verifications()
                 .create(CreateVerification {

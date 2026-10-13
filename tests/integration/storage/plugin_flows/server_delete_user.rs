@@ -49,13 +49,13 @@ async fn server_delete_user_deletes_only_authenticated_owner_and_all_owned_sessi
     assert!(cookies(&owner).contains("better-auth.session_data="));
     let owner_id = body(&owner)["user"]["id"].clone();
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let sessions: Vec<Value> = serde_json::from_str(&before[2])?;
     assert_eq!(
         sessions
             .iter()
-            .filter(|row| row["user_id"] == owner_id)
+            .filter(|row| row["userId"] == owner_id)
             .count(),
         2
     );
@@ -93,7 +93,7 @@ async fn server_delete_user_deletes_only_authenticated_owner_and_all_owned_sessi
     assert_eq!(wrong.error.status_code(), 400);
     assert!(wrong.error.to_string().contains("Invalid password"));
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -128,7 +128,7 @@ async fn server_delete_user_deletes_only_authenticated_owner_and_all_owned_sessi
         observer.0.lock().unwrap().last().unwrap().as_deref(),
         owner_id.as_str()
     );
-    for (index, table) in ["users", "accounts", "sessions", "verifications"]
+    for (index, table) in ["user", "account", "session", "verification"]
         .iter()
         .enumerate()
     {
@@ -136,8 +136,8 @@ async fn server_delete_user_deletes_only_authenticated_owner_and_all_owned_sessi
         let expected: Vec<_> = original
             .into_iter()
             .filter(|row| match *table {
-                "users" => row["id"] != owner_id,
-                "accounts" | "sessions" => row["user_id"] != owner_id,
+                "user" => row["id"] != owner_id,
+                "account" | "session" => row["userId"] != owner_id,
                 _ => true,
             })
             .collect();
@@ -145,7 +145,7 @@ async fn server_delete_user_deletes_only_authenticated_owner_and_all_owned_sessi
         assert_eq!(actual, expected, "unexpected writes to {table}");
     }
     let after = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for saved in [&owner, &second] {
         let replay = auth
@@ -155,7 +155,7 @@ async fn server_delete_user_deletes_only_authenticated_owner_and_all_owned_sessi
         assert_eq!(replay.error.status_code(), 401);
     }
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         after
     );

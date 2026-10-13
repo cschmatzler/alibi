@@ -713,7 +713,7 @@ mod tests {
             ] {
                 let mut auth_config = test_helpers::create_test_config();
                 auth_config.session.expires_in = Duration::seconds(lifetime);
-                auth_config.session.cookie_name = "otp-fixture.session_token".to_owned();
+                auth_config.advanced.cookie_prefix = Some("otp-fixture".into());
                 let ctx = test_helpers::create_test_context_with_config(auth_config).await;
                 let (config, outbox) = configured();
                 let plugin = EmailOtpPlugin::new(config);

@@ -55,15 +55,15 @@ async fn oauth_resource_link_persists_unique_membership_and_admits_linked_client
     );
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
-            "oauth_client_resource",
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
+            "oauthClientResource",
         ])
         .await?;
     for (identifier, client_id, cookie, status, error) in [
@@ -114,15 +114,15 @@ async fn oauth_resource_link_persists_unique_membership_and_admits_linked_client
         assert_eq!(
             before,
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
+                "user",
+                "account",
+                "session",
+                "verification",
                 "jwks",
-                "oauth_client",
-                "oauth_consent",
-                "oauth_resource",
-                "oauth_client_resource"
+                "oauthClient",
+                "oauthConsent",
+                "oauthResource",
+                "oauthClientResource"
             ])
             .await?
         );
@@ -162,15 +162,15 @@ async fn oauth_resource_link_persists_unique_membership_and_admits_linked_client
     let row_id = rows[0].id.clone();
     let linked_state = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
-            "oauth_client_resource",
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
+            "oauthClientResource",
         ])
         .await?;
     let duplicate = Box::pin(auth.dispatch_endpoint(
@@ -215,15 +215,15 @@ async fn oauth_resource_link_persists_unique_membership_and_admits_linked_client
     assert_eq!(
         linked_state,
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
-            "oauth_client_resource"
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
+            "oauthClientResource"
         ])
         .await?
     );
@@ -243,7 +243,7 @@ async fn oauth_resource_link_persists_unique_membership_and_admits_linked_client
             .await?
             .is_empty()
     );
-    assert_eq!(db.count("oauth_client_resource").await?, 0);
+    assert_eq!(db.count("oauthClientResource").await?, 0);
     assert!(auth.store().get_oauth_client(&id).await?.is_some());
     Ok(())
 }

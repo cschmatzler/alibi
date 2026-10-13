@@ -537,7 +537,7 @@ mod tests {
                 device_type: "singleDevice".to_owned(),
                 backed_up: false,
                 transports: Some("usb,nfc".to_owned()),
-                credential: "invalid-stored-passkey".to_owned(),
+
                 aaguid: Some("00000000-0000-0000-0000-000000000000".to_owned()),
             })
             .await
@@ -648,7 +648,7 @@ mod tests {
                 device_type: "singleDevice".to_owned(),
                 backed_up: false,
                 transports: Some("internal".to_owned()),
-                credential: "invalid-stored-passkey".to_owned(),
+
                 aaguid: None,
             })
             .await
@@ -793,7 +793,7 @@ mod tests {
                 device_type: "singleDevice".to_owned(),
                 backed_up: false,
                 transports: None,
-                credential: "invalid-stored-passkey".to_owned(),
+
                 aaguid: Some("00000000-0000-0000-0000-000000000000".to_owned()),
             })
             .await
@@ -855,7 +855,7 @@ mod tests {
                 device_type: "singleDevice".to_owned(),
                 backed_up: false,
                 transports: None,
-                credential: "invalid-stored-passkey".to_owned(),
+
                 aaguid: None,
             })
             .await
@@ -909,7 +909,7 @@ mod tests {
                 device_type: "singleDevice".to_owned(),
                 backed_up: false,
                 transports: None,
-                credential: "invalid-stored-passkey".to_owned(),
+
                 aaguid: None,
             })
             .await
@@ -942,290 +942,6 @@ mod tests {
     }
 
     /// Previously persisted ceremonies keep both their codec and original Required policy.
-    #[tokio::test]
-    #[expect(
-        clippy::panic_in_result_fn,
-        clippy::too_many_lines,
-        reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
-    )]
-    async fn pending_registration_challenges_keep_original_verification_policy()
-    -> Result<(), Box<dyn std::error::Error>> {
-        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-        use p256::elliptic_curve::{Generate as _, sec1::ToSec1Point as _};
-        use serde_cbor_2::Value as Cbor;
-        use sha2::{Digest, Sha256};
-        use std::collections::BTreeMap;
-        use webauthn_rs::prelude::RegisterPublicKeyCredential;
-
-        let config = PasskeyConfig {
-            rp_id: "localhost".into(),
-            origin: "http://localhost:3100".into(),
-            ..Default::default()
-        };
-        let webauthn =
-            webauthn::build_webauthn(&config, &alibi_core::AuthConfig::default(), &config.origin)?;
-        let (options, legacy) = webauthn.start_passkey_registration(
-            uuid::Uuid::new_v4(),
-            "Legacy owner",
-            "Legacy owner",
-            None,
-        )?;
-        // This is the old externally persisted protocol, with a real library state.
-        let stored = serde_json::to_string(&serde_json::json!({
-            "user_id": "legacy-owner", "user": null, "context": "old-context", "state": legacy,
-        }))?;
-        let decoded: webauthn::StoredRegistrationState = serde_json::from_str(&stored)?;
-        assert_eq!(decoded.user_id, "legacy-owner");
-        assert_eq!(decoded.context.as_deref(), Some("old-context"));
-        let webauthn::StoredRegistrationVerifier::Legacy(state) = decoded.state else {
-            panic!("Old challenge changed verifier policy");
-        };
-        let secret = p256::SecretKey::generate();
-        let point = secret.public_key().to_sec1_point(false);
-        let key = Cbor::Map(BTreeMap::from([
-            (Cbor::Integer(1), Cbor::Integer(2)),
-            (Cbor::Integer(3), Cbor::Integer(-7)),
-            (Cbor::Integer(-1), Cbor::Integer(1)),
-            (
-                Cbor::Integer(-2),
-                Cbor::Bytes(point.x().ok_or("missing generated X coordinate")?.to_vec()),
-            ),
-            (
-                Cbor::Integer(-3),
-                Cbor::Bytes(point.y().ok_or("missing generated Y coordinate")?.to_vec()),
-            ),
-        ]));
-        let core = webauthn::build_verification_core(
-            &config,
-            &alibi_core::AuthConfig::default(),
-            &config.origin,
-        )?;
-        let builder = core
-            .new_challenge_register_builder(b"actual-core-owner", "Core owner", "Core owner")?
-            .user_verification_policy(webauthn_rs_core::proto::UserVerificationPolicy::Preferred);
-        let (core_options, core_state) = core.generate_challenge_register(builder)?;
-        let old_core_wire = serde_json::to_string(&serde_json::json!({
-            "user_id": "core-owner", "user": null, "context": "old-core-context",
-            "state": {"kind": "core", "state": core_state},
-        }))?;
-        let decoded_core: webauthn::StoredRegistrationState = serde_json::from_str(&old_core_wire)?;
-        let webauthn::StoredRegistrationVerifier::Source(
-            webauthn::StoredCoreRegistrationState::Core { state: old_core },
-        ) = decoded_core.state
-        else {
-            panic!("Old Core protocol changed verifier");
-        };
-        let credential_id = b"actual-legacy-credential";
-        let client_data = serde_json::to_vec(&serde_json::json!({
-            "type": "webauthn.create", "challenge": options.public_key.challenge,
-            "origin": config.origin, "crossOrigin": false,
-        }))?;
-        for verified in [true, false] {
-            let mut auth_data = Sha256::digest(config.rp_id.as_bytes()).to_vec();
-            auth_data.push(if verified { 0x45 } else { 0x41 });
-            auth_data.extend_from_slice(&[0; 20]);
-            auth_data.extend_from_slice(&u16::try_from(credential_id.len())?.to_be_bytes());
-            auth_data.extend_from_slice(credential_id);
-            auth_data.extend_from_slice(&serde_cbor_2::to_vec(&key)?);
-            let attestation = Cbor::Map(BTreeMap::from([
-                (Cbor::Text("fmt".into()), Cbor::Text("none".into())),
-                (Cbor::Text("attStmt".into()), Cbor::Map(BTreeMap::new())),
-                (Cbor::Text("authData".into()), Cbor::Bytes(auth_data)),
-            ]));
-            let response: RegisterPublicKeyCredential = serde_json::from_value(
-                serde_json::json!({
-                    "id": URL_SAFE_NO_PAD.encode(credential_id), "rawId": URL_SAFE_NO_PAD.encode(credential_id),
-                    "type": "public-key", "clientExtensionResults": {}, "response": {
-                        "clientDataJSON": URL_SAFE_NO_PAD.encode(&client_data),
-                        "attestationObject": URL_SAFE_NO_PAD.encode(serde_cbor_2::to_vec(&attestation)?),
-                        "transports": ["internal"],
-                    },
-                }),
-            )?;
-            // Feed the historical Core wire's genuinely issued challenge to its
-            // actual consumer. This old policy accepts UV absent as well as present.
-            let core_client_data = serde_json::to_vec(&serde_json::json!({
-                "type": "webauthn.create", "challenge": core_options.public_key.challenge,
-                "origin": config.origin, "crossOrigin": false,
-            }))?;
-            let mut core_response = response.clone();
-            core_response.response.client_data_json = core_client_data.into();
-            let restored_core = webauthn::finish_core_registration(
-                &core,
-                &core_response,
-                &old_core,
-                &config.origin,
-            )?;
-            assert_eq!(restored_core.cred_id().as_ref(), credential_id);
-            let stored_credential = serde_json::to_string(&restored_core)?;
-            let raw_none::StoredCredential::Core(decoded_credential) =
-                serde_json::from_str(&stored_credential)?
-            else {
-                panic!("historical typed credential must retain its codec")
-            };
-            assert_eq!(decoded_credential.cred_id(), restored_core.cred_id());
-            let result = webauthn.finish_passkey_registration(&response, &state);
-            if verified {
-                let legacy_key = result?;
-                assert_eq!(legacy_key.cred_id().as_ref(), credential_id);
-                complete_historical_authentication(&config, &secret, &key, legacy_key).await?;
-            } else {
-                assert!(matches!(
-                    result,
-                    Err(webauthn_rs_core::error::WebauthnError::UserNotVerified)
-                ));
-            }
-        }
-        Ok(())
-    }
-
-    async fn complete_historical_authentication(
-        config: &PasskeyConfig,
-        secret: &p256::SecretKey,
-        cose: &serde_cbor_2::Value,
-        mut key: webauthn_rs::prelude::Passkey,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        use p256::pkcs8::EncodePrivateKey;
-        use sha2::{Digest, Sha256};
-        let (ctx, user, _) = test_helpers::create_test_context_with_user(
-            CreateUser::new().with_email("legacy-auth@example.test"),
-            Duration::hours(1),
-        )
-        .await;
-        let plugin = PasskeyPlugin {
-            config: config.clone(),
-        };
-        let webauthn = webauthn::build_webauthn(config, &ctx.config, &config.origin)?;
-        let credential_id = URL_SAFE_NO_PAD.encode(key.cred_id().as_ref());
-        let persisted = ctx
-            .database
-            .create_passkey(CreatePasskey {
-                user_id: user.id.clone(),
-                name: Some("Historical".into()),
-                credential_id: credential_id.clone(),
-                public_key: base64::engine::general_purpose::STANDARD
-                    .encode(serde_cbor_2::to_vec(cose)?),
-                credential: serde_json::to_string(&key)?,
-                counter: 0,
-                device_type: "singleDevice".into(),
-                backed_up: false,
-                transports: None,
-                aaguid: None,
-            })
-            .await?;
-        let signing = openssl::pkey::PKey::private_key_from_der(secret.to_pkcs8_der()?.as_bytes())?;
-        for (kind, counter, backup) in [
-            ("passkey", 1_u32, 0x08_u8),
-            ("discoverable", 2, 0x18),
-            ("discoverable", 3, 0x08),
-        ] {
-            for verified in [false, true] {
-                let (challenge, state) = if kind == "passkey" {
-                    let (options, state) = webauthn.start_passkey_authentication(&[key.clone()])?;
-                    (
-                        options.public_key.challenge,
-                        serde_json::json!({"kind":"passkey","state":state}),
-                    )
-                } else {
-                    let (options, state) = webauthn.start_discoverable_authentication()?;
-                    (
-                        options.public_key.challenge,
-                        serde_json::json!({"kind":"discoverable","state":state}),
-                    )
-                };
-                let token = uuid::Uuid::new_v4().to_string();
-                _ = ctx
-                    .verifications()
-                    .create(alibi_core::CreateVerification {
-                        identifier: token.clone(),
-                        value: serde_json::to_string(&state)?,
-                        expires_at: chrono::Utc::now() + Duration::minutes(5),
-                    })
-                    .await?;
-                let cookie = webauthn::create_challenge_cookie(&ctx.config, 300, &token, config)?;
-                let client = serde_json::to_vec(
-                    &serde_json::json!({"type":"webauthn.get","challenge":challenge,"origin":config.origin}),
-                )?;
-                let mut data = Sha256::digest(config.rp_id.as_bytes()).to_vec();
-                data.push(backup | if verified { 0x05 } else { 0x01 });
-                data.extend_from_slice(&counter.to_be_bytes());
-                let mut signer =
-                    openssl::sign::Signer::new(openssl::hash::MessageDigest::sha256(), &signing)?;
-                signer.update(&data)?;
-                signer.update(&Sha256::digest(&client))?;
-                let body = serde_json::json!({"response":{"id":credential_id,"rawId":credential_id,"type":"public-key","clientExtensionResults":{},"response":{"clientDataJSON":URL_SAFE_NO_PAD.encode(client),"authenticatorData":URL_SAFE_NO_PAD.encode(data),"signature":URL_SAFE_NO_PAD.encode(signer.sign_to_vec()?)}}});
-                let mut request = test_helpers::create_auth_request(
-                    HttpMethod::Post,
-                    "/passkey/verify-authentication",
-                    None,
-                    Some(serde_json::to_vec(&body)?),
-                    HashMap::new(),
-                );
-                _ = request
-                    .headers
-                    .insert("cookie".into(), cookie.split(';').next().unwrap().into());
-                _ = request
-                    .headers
-                    .insert("origin".into(), config.origin.clone());
-                let before = ctx
-                    .database
-                    .get_passkey_by_id(&persisted.id)
-                    .await?
-                    .unwrap();
-                let sessions = ctx.database.get_user_sessions(&user.id).await?.len();
-                let result = plugin.handle_verify_authentication(&request, &ctx).await?;
-                assert_eq!(
-                    result.status,
-                    if verified { 200 } else { 400 },
-                    "{kind}: {}",
-                    String::from_utf8_lossy(&result.body)
-                );
-                let after = ctx
-                    .database
-                    .get_passkey_by_id(&persisted.id)
-                    .await?
-                    .unwrap();
-                if verified {
-                    assert_eq!(
-                        ctx.database.get_user_sessions(&user.id).await?.len(),
-                        sessions + 1
-                    );
-                    assert_eq!(after.counter, u64::from(counter));
-                    let opaque: serde_json::Value = serde_json::from_str(&after.credential)?;
-                    assert_eq!(
-                        opaque.get("cred").and_then(|c| c.get("backup_eligible")),
-                        Some(&serde_json::json!(true))
-                    );
-                    assert_eq!(
-                        opaque.get("cred").and_then(|c| c.get("backup_state")),
-                        Some(&serde_json::json!(backup == 0x18))
-                    );
-                    assert!(!after.backed_up);
-                    assert_eq!(after.device_type, "singleDevice");
-                    key = serde_json::from_str(&after.credential)?;
-                    assert_eq!(
-                        plugin
-                            .handle_verify_authentication(&request, &ctx)
-                            .await?
-                            .status,
-                        400
-                    );
-                } else {
-                    assert_eq!(
-                        serde_json::to_value(&after)?,
-                        serde_json::to_value(&before)?
-                    );
-                    assert_eq!(
-                        ctx.database.get_user_sessions(&user.id).await?.len(),
-                        sessions
-                    );
-                }
-                assert!(ctx.verifications().find(&token).await?.is_none());
-            }
-        }
-        Ok(())
-    }
-
     #[tokio::test]
     #[expect(
         clippy::panic_in_result_fn,
@@ -1317,16 +1033,6 @@ mod tests {
             assert_eq!(
                 row.public_key,
                 base64::engine::general_purpose::STANDARD.encode(&key)
-            );
-            let raw_none::StoredCredential::Raw(raw) = serde_json::from_str(&row.credential)?
-            else {
-                panic!("actual raw codec required")
-            };
-            assert_eq!(raw.credential_id(), id);
-            assert_eq!(raw.public_key(), key);
-            assert_eq!(raw.snapshot()?.counter, 25);
-            assert!(
-                serde_json::from_str::<webauthn_rs::prelude::Passkey>(&row.credential).is_err()
             );
             if curve == 6 {
                 use ed25519_dalek::Signer;
@@ -1442,18 +1148,6 @@ mod tests {
                     assert_eq!(updated.credential_id, row.credential_id);
                     assert_eq!(updated.user_id, row.user_id);
                     assert_eq!(updated.counter, u64::from(counter));
-                    let raw_none::StoredCredential::Raw(raw) =
-                        serde_json::from_str(&updated.credential)?
-                    else {
-                        panic!("authentication must retain raw codec")
-                    };
-                    assert_eq!(raw.public_key(), key);
-                    assert_eq!(raw.credential_id(), id);
-                    assert_eq!(raw.snapshot()?.counter, u64::from(counter));
-                    assert!(
-                        serde_json::from_str::<webauthn_rs::prelude::Passkey>(&updated.credential)
-                            .is_err()
-                    );
                 }
             }
             assert_eq!(

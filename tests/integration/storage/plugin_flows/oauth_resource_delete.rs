@@ -53,15 +53,15 @@ async fn oauth_resource_delete_removes_catalog_policy_and_rejects_resource_autho
     assert_eq!(url.path(), "/login");
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
-            "oauth_client_resource",
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
+            "oauthClientResource",
         ])
         .await?;
     for (identifier, cookie, status, error) in [
@@ -87,15 +87,15 @@ async fn oauth_resource_delete_removes_catalog_policy_and_rejects_resource_autho
         assert_eq!(
             before,
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
+                "user",
+                "account",
+                "session",
+                "verification",
                 "jwks",
-                "oauth_client",
-                "oauth_consent",
-                "oauth_resource",
-                "oauth_client_resource"
+                "oauthClient",
+                "oauthConsent",
+                "oauthResource",
+                "oauthClientResource"
             ])
             .await?
         );
@@ -109,14 +109,14 @@ async fn oauth_resource_delete_removes_catalog_policy_and_rejects_resource_autho
     assert_eq!(Box::pin(auth.handle_request(http)).await?.status, 404);
     let unrelated = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_client_resource",
+            "oauthClient",
+            "oauthConsent",
+            "oauthClientResource",
         ])
         .await?;
     let result = Box::pin(
@@ -136,7 +136,7 @@ async fn oauth_resource_delete_removes_catalog_policy_and_rejects_resource_autho
     };
     assert_eq!(response.status, 200, "resource deletion must be registered");
     assert_eq!(body(&response), json!({"deleted":true}));
-    assert_eq!(db.count("oauth_resource").await?, 0);
+    assert_eq!(db.count("oauthResource").await?, 0);
     assert!(
         auth.store()
             .get_oauth_resource("https://api.fixture.test/delete")
@@ -197,14 +197,14 @@ async fn oauth_resource_delete_removes_catalog_policy_and_rejects_resource_autho
     assert_eq!(
         unrelated,
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_client_resource"
+            "oauthClient",
+            "oauthConsent",
+            "oauthClientResource"
         ])
         .await?
     );

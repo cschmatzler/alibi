@@ -1,5 +1,6 @@
 //! Application-owned UTC wall-clock schemas must preserve PostgreSQL wire types.
-//! The same store lifecycle also runs over aware models and SQLite.
+//! The same store lifecycle also runs over aware models and SQLite, using
+//! Better Auth core session columns without a legacy active flag.
 
 #![allow(
     unreachable_pub,
@@ -22,6 +23,7 @@ macro_rules! auth_model {
             use super::*;
             #[derive(alibi::sqlx::AuthEntity, Clone, Debug, serde::Serialize, sqlx::FromRow)]
             #[auth(role = $role, table = $table)]
+            #[sqlx(rename_all = "camelCase")]
             pub struct Model {
                 pub id: String,
                 $($fields)*
@@ -34,7 +36,7 @@ macro_rules! auth_model {
             use alibi::seaorm::sea_orm::{self, entity::prelude::*};
             #[derive(alibi::seaorm::AuthEntity, Clone, Debug, serde::Serialize, DeriveEntityModel)]
             #[auth(role = $role)]
-            #[sea_orm(table_name = $table)]
+            #[sea_orm(table_name = $table, rename_all = "camelCase")]
             pub struct Model {
                 #[sea_orm(primary_key, auto_increment = false)]
                 pub id: String,
@@ -49,7 +51,7 @@ macro_rules! auth_model {
 
 macro_rules! auth_models {
     ($backend:ident, $date:ty) => {
-        auth_model!($backend, user, "user", "users", {
+        auth_model!($backend, user, "user", "user", {
             pub email: Option<String>,
             pub name: Option<String>,
             pub email_verified: bool,
@@ -60,7 +62,7 @@ macro_rules! auth_models {
             pub created_at: $date,
             pub updated_at: $date,
         });
-        auth_model!($backend, session, "session", "sessions", {
+        auth_model!($backend, session, "session", "session", {
             pub user_id: String,
             pub token: String,
             pub expires_at: $date,
@@ -68,9 +70,8 @@ macro_rules! auth_models {
             pub updated_at: $date,
             pub ip_address: Option<String>,
             pub user_agent: Option<String>,
-            pub active: bool,
         });
-        auth_model!($backend, account, "account", "accounts", {
+        auth_model!($backend, account, "account", "account", {
             pub account_id: String,
             pub provider_id: String,
             pub user_id: String,
@@ -84,7 +85,7 @@ macro_rules! auth_models {
             pub created_at: $date,
             pub updated_at: $date,
         });
-        auth_model!($backend, verification, "verification", "verifications", {
+        auth_model!($backend, verification, "verification", "verification", {
             pub identifier: String,
             pub value: String,
             pub expires_at: $date,
@@ -196,16 +197,16 @@ async fn install(db: &Db, naive: bool) -> TestResult {
     // Deliberately application-owned DDL; no store migrator or timezone casts.
     for statement in [
         format!(
-            "CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT, name TEXT, email_verified BOOLEAN NOT NULL, image TEXT, banned BOOLEAN, ban_reason TEXT, ban_expires {date}, created_at {date} NOT NULL, updated_at {date} NOT NULL)"
+            "CREATE TABLE \"user\" (id TEXT PRIMARY KEY, \"email\" TEXT, \"name\" TEXT, \"emailVerified\" BOOLEAN NOT NULL, \"image\" TEXT, \"banned\" BOOLEAN, \"banReason\" TEXT, \"banExpires\" {date}, \"createdAt\" {date} NOT NULL, \"updatedAt\" {date} NOT NULL)"
         ),
         format!(
-            "CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token TEXT NOT NULL, expires_at {date} NOT NULL, created_at {date} NOT NULL, updated_at {date} NOT NULL, ip_address TEXT, user_agent TEXT, active BOOLEAN NOT NULL)"
+            "CREATE TABLE \"session\" (id TEXT PRIMARY KEY, \"userId\" TEXT NOT NULL, \"token\" TEXT NOT NULL, \"expiresAt\" {date} NOT NULL, \"createdAt\" {date} NOT NULL, \"updatedAt\" {date} NOT NULL, \"ipAddress\" TEXT, \"userAgent\" TEXT)"
         ),
         format!(
-            "CREATE TABLE accounts (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, provider_id TEXT NOT NULL, user_id TEXT NOT NULL, access_token TEXT, refresh_token TEXT, id_token TEXT, access_token_expires_at {date}, refresh_token_expires_at {date}, scope TEXT, password TEXT, created_at {date} NOT NULL, updated_at {date} NOT NULL)"
+            "CREATE TABLE \"account\" (id TEXT PRIMARY KEY, \"accountId\" TEXT NOT NULL, \"providerId\" TEXT NOT NULL, \"userId\" TEXT NOT NULL, \"accessToken\" TEXT, \"refreshToken\" TEXT, \"idToken\" TEXT, \"accessTokenExpiresAt\" {date}, \"refreshTokenExpiresAt\" {date}, \"scope\" TEXT, \"password\" TEXT, \"createdAt\" {date} NOT NULL, \"updatedAt\" {date} NOT NULL)"
         ),
         format!(
-            "CREATE TABLE verifications (id TEXT PRIMARY KEY, identifier TEXT NOT NULL, value TEXT NOT NULL, expires_at {date} NOT NULL, created_at {date} NOT NULL, updated_at {date} NOT NULL)"
+            "CREATE TABLE \"verification\" (id TEXT PRIMARY KEY, \"identifier\" TEXT NOT NULL, \"value\" TEXT NOT NULL, \"expiresAt\" {date} NOT NULL, \"createdAt\" {date} NOT NULL, \"updatedAt\" {date} NOT NULL)"
         ),
     ] {
         _ = db.raw.execute(&statement, &[]).await?;
@@ -220,7 +221,9 @@ async fn stored_date(
     id: &str,
     naive: bool,
 ) -> TestResult<Option<DateTime<Utc>>> {
-    let statement = sqlx::AssertSqlSafe(format!("SELECT {column} FROM {table} WHERE id = $1"));
+    let statement = sqlx::AssertSqlSafe(format!(
+        "SELECT \"{column}\" FROM \"{table}\" WHERE id = $1"
+    ));
     if naive {
         let date: Option<NaiveDateTime> = on_raw!(raw, |pool| {
             sqlx::query_scalar(statement)
@@ -251,11 +254,11 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
     assert_eq!(user.created_at(), historical);
     assert_eq!(user.updated_at(), historical);
     assert_eq!(
-        stored_date(raw, "users", "created_at", &user_id, naive).await?,
+        stored_date(raw, "user", "createdAt", &user_id, naive).await?,
         Some(historical)
     );
     assert_eq!(
-        stored_date(raw, "users", "ban_expires", &user_id, naive).await?,
+        stored_date(raw, "user", "banExpires", &user_id, naive).await?,
         None
     );
     let user = store
@@ -270,7 +273,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
         .await?;
     assert_eq!(user.ban_expires(), Some(expires));
     assert_eq!(
-        stored_date(raw, "users", "ban_expires", &user_id, naive).await?,
+        stored_date(raw, "user", "banExpires", &user_id, naive).await?,
         Some(expires)
     );
     assert!(user.updated_at() >= now);
@@ -285,7 +288,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
         .await?;
     assert_eq!(user.ban_expires(), None);
     assert_eq!(
-        stored_date(raw, "users", "ban_expires", &user_id, naive).await?,
+        stored_date(raw, "user", "banExpires", &user_id, naive).await?,
         None
     );
 
@@ -308,14 +311,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
     assert_eq!(account.access_token_expires_at(), None);
     assert_eq!(account.refresh_token_expires_at(), Some(expires));
     assert_eq!(
-        stored_date(
-            raw,
-            "accounts",
-            "access_token_expires_at",
-            &account_id,
-            naive
-        )
-        .await?,
+        stored_date(raw, "account", "accessTokenExpiresAt", &account_id, naive).await?,
         None
     );
     let account = store
@@ -334,14 +330,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
         Some(expires + Duration::minutes(5))
     );
     assert_eq!(
-        stored_date(
-            raw,
-            "accounts",
-            "refresh_token_expires_at",
-            &account_id,
-            naive
-        )
-        .await?,
+        stored_date(raw, "account", "refreshTokenExpiresAt", &account_id, naive).await?,
         account.refresh_token_expires_at()
     );
     assert!(account.created_at() >= now && account.updated_at() >= now);
@@ -360,10 +349,19 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
         })
         .await?;
     let session_id = session.id().into_owned();
+    assert!(session.expires_at() > chrono::Utc::now());
+    assert_eq!(store.get_user_sessions(&user.id()).await?.len(), 1);
+    assert_eq!(
+        store
+            .get_sessions_by_tokens(&["synthetic-session".into()])
+            .await?
+            .len(),
+        1
+    );
     assert_eq!(session.expires_at(), expires);
     assert!(session.created_at() >= now && session.updated_at() >= now);
     assert_eq!(
-        stored_date(raw, "sessions", "expires_at", &session_id, naive).await?,
+        stored_date(raw, "session", "expiresAt", &session_id, naive).await?,
         Some(expires)
     );
     let session = store
@@ -381,7 +379,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
     );
     assert_eq!(store.delete_expired_sessions().await?, 0);
     store.end_session_preserving("synthetic-session").await?;
-    let ended = stored_date(raw, "sessions", "expires_at", &session_id, naive)
+    let ended = stored_date(raw, "session", "expiresAt", &session_id, naive)
         .await?
         .unwrap();
     assert!(ended >= now && ended <= Utc::now());
@@ -402,7 +400,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
     store
         .end_user_sessions_preserving(user.id().as_ref())
         .await?;
-    let ended = stored_date(raw, "sessions", "expires_at", second.id().as_ref(), naive)
+    let ended = stored_date(raw, "session", "expiresAt", second.id().as_ref(), naive)
         .await?
         .unwrap();
     assert!(ended >= now && ended <= Utc::now());
@@ -419,8 +417,8 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
     assert_eq!(original.expires_at(), historical);
     let stored = stored_date(
         raw,
-        "verifications",
-        "expires_at",
+        "verification",
+        "expiresAt",
         original.id().as_ref(),
         naive,
     )
@@ -440,7 +438,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
     assert_eq!(verification.expires_at(), expires);
     assert!(verification.created_at() >= now && verification.updated_at() >= now);
     assert_eq!(
-        stored_date(raw, "verifications", "expires_at", &verification_id, naive).await?,
+        stored_date(raw, "verification", "expiresAt", &verification_id, naive).await?,
         Some(expires)
     );
     assert!(
@@ -460,7 +458,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
         )
         .await?;
     assert_eq!(
-        stored_date(raw, "verifications", "expires_at", &verification_id, naive).await?,
+        stored_date(raw, "verification", "expiresAt", &verification_id, naive).await?,
         Some(now - Duration::minutes(30))
     );
     let updated = store
@@ -496,25 +494,11 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
         .await?;
     assert!(snapshot.is_some());
     assert_eq!(
-        stored_date(
-            raw,
-            "verifications",
-            "created_at",
-            "synthetic-record",
-            naive
-        )
-        .await?,
+        stored_date(raw, "verification", "createdAt", "synthetic-record", naive).await?,
         Some(historical)
     );
     assert_eq!(
-        stored_date(
-            raw,
-            "verifications",
-            "updated_at",
-            "synthetic-record",
-            naive
-        )
-        .await?,
+        stored_date(raw, "verification", "updatedAt", "synthetic-record", naive).await?,
         Some(historical + Duration::seconds(1))
     );
     assert!(
@@ -528,14 +512,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
             .await?
     );
     assert_eq!(
-        stored_date(
-            raw,
-            "verifications",
-            "expires_at",
-            "synthetic-record",
-            naive
-        )
-        .await?,
+        stored_date(raw, "verification", "expiresAt", "synthetic-record", naive).await?,
         Some(expires + Duration::minutes(5))
     );
     assert!(

@@ -83,7 +83,6 @@ mod tests {
             impersonated_by: Some("admin-1".to_owned()),
             active_organization_id: Some("org-1".to_owned()),
             active_team_id: None,
-            active: true,
             extension_fields: std::collections::BTreeMap::default(),
         };
 

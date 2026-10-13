@@ -179,6 +179,9 @@ compatScenario(
       expect(after.request).toBeNull();
       expect(after.session).toBeNull();
       const cookie = value.cookies.map((cookie) => cookie.split(";")[0]).join("; ");
+      // JWT signatures are deterministic within one iat second. Separate these
+      // publications so scheduling cannot change their repeated-token relationship.
+      await Bun.sleep(1100);
       const read = await ctx.rawRequest({
         path: `/__test/profiles/${profile}/api/auth/get-session`,
         headers: { cookie },

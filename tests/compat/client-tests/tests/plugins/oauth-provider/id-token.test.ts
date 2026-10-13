@@ -150,6 +150,19 @@ compatScenario(
         }).some((difference) => difference.reason.includes(reason)),
       ).toBe(true);
     }
+    const expired = {
+      observation: { ...original.observation, issued: { ...token, expires_at: 0 } },
+    };
+    expect(
+      compareValues(original, expired, {
+        leftBaseURL: ctx.baseURL,
+        rightBaseURL: ctx.baseURL,
+        leftStartedAt: (token.expires_at - token.expires_in) * 1000,
+        rightStartedAt: (token.expires_at - token.expires_in) * 1000,
+        leftFinishedAt: Date.now(),
+        rightFinishedAt: Date.now(),
+      }).filter((difference) => difference.reason.includes("access-token expiration")),
+    ).toHaveLength(1);
     return ctx.snapshot({ authorizationSession: session, clientId: id, issued: token });
   },
 );

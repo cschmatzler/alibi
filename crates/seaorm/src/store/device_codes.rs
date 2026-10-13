@@ -5,12 +5,13 @@ use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::store::DeviceCodeStore;
 use alibi_core::types::{CreateDeviceCode, DeviceCode, UpdateDeviceCode};
 use async_trait::async_trait;
-use sea_orm::sea_query::Expr;
+use sea_orm::sea_query::{Alias, IntoIden, Query};
+use sea_orm::sea_query::{Expr, ExprTrait};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, Set,
-    Statement, TransactionTrait,
+    Statement,
 };
-use std::fmt::Write as _;
+use sea_orm::{IdenStatic, Iterable};
 use uuid::Uuid;
 
 #[async_trait]
@@ -19,76 +20,76 @@ where
     S: AuthSchema + Send + Sync,
 {
     async fn create_device_code(&self, input: CreateDeviceCode) -> AuthResult<DeviceCode> {
-        self.create_device_code_with_connection(self.scoped_connection(), input)
-            .await
+        self.create_device_code_with_connection(
+            self.scoped_connection(),
+            input,
+            serde_json::Map::new(),
+        )
+        .await
     }
     async fn create_device_code_with_fields(
         &self,
         input: CreateDeviceCode,
         fields: serde_json::Map<String, serde_json::Value>,
     ) -> AuthResult<DeviceCode> {
-        if fields.is_empty() {
-            return self.create_device_code(input).await;
-        }
-        let transaction = self.scoped_connection().begin().await.map_err(map_db_err)?;
-        _ = transaction.execute_unprepared("CREATE TABLE IF NOT EXISTS device_code_fields (device_code_id TEXT PRIMARY KEY REFERENCES device_code(id) ON DELETE CASCADE, fields TEXT NOT NULL)").await.map_err(map_db_err)?;
-        let row = self
-            .create_device_code_with_connection(&transaction, input)
-            .await?;
-        let backend = transaction.get_database_backend();
-        let sql = if backend == sea_orm::DbBackend::Postgres {
-            "INSERT INTO device_code_fields (device_code_id, fields) VALUES ($1, $2)"
-        } else {
-            "INSERT INTO device_code_fields (device_code_id, fields) VALUES (?, ?)"
-        };
-        _ = transaction
-            .execute_raw(Statement::from_sql_and_values(
-                backend,
-                sql,
-                [
-                    row.id.clone().into(),
-                    serde_json::to_string(&fields)?.into(),
-                ],
-            ))
+        self.create_device_code_with_connection(self.scoped_connection(), input, fields)
             .await
-            .map_err(map_db_err)?;
-        transaction.commit().await.map_err(map_db_err)?;
-        Ok(row)
     }
     async fn device_code_fields(
         &self,
         id: &str,
     ) -> AuthResult<serde_json::Map<String, serde_json::Value>> {
-        if !self
-            .scoped_connection()
-            .has_table("device_code_fields")
-            .await
-            .map_err(map_db_err)?
-        {
-            return Ok(serde_json::Map::new());
-        }
-        let backend = self.scoped_connection().get_database_backend();
-        let sql = if backend == sea_orm::DbBackend::Postgres {
-            "SELECT fields FROM device_code_fields WHERE device_code_id = $1"
+        let connection = self.scoped_connection();
+        let backend = connection.get_database_backend();
+        let query = if backend == sea_orm::DbBackend::Postgres {
+            "SELECT to_jsonb(t)::text AS fields FROM \"deviceCode\" t WHERE \"id\" = $1".to_owned()
         } else {
-            "SELECT fields FROM device_code_fields WHERE device_code_id = ?"
+            let columns = connection
+                .query_all_raw(Statement::from_string(
+                    backend,
+                    "SELECT name FROM pragma_table_info('deviceCode')",
+                ))
+                .await
+                .map_err(map_db_err)?;
+            let columns = columns
+                .into_iter()
+                .map(|column| column.try_get::<String>("", "name"))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(map_db_err)?;
+            let object = columns
+                .iter()
+                .map(|name| {
+                    format!(
+                        "'{}',\"{}\"",
+                        name.replace('\'', "''"),
+                        name.replace('"', "\"\"")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("SELECT json_object({object}) AS fields FROM \"deviceCode\" WHERE \"id\" = ?")
         };
-        let row = self
-            .scoped_connection()
+        let row = connection
             .query_one_raw(Statement::from_sql_and_values(
                 backend,
-                sql,
+                query,
                 [id.to_owned().into()],
             ))
             .await
             .map_err(map_db_err)?;
-        row.map(|row| {
-            row.try_get::<String>("", "fields")
-                .map_err(map_db_err)
-                .and_then(|fields| serde_json::from_str(&fields).map_err(Into::into))
-        })
-        .transpose()
-        .map(Option::unwrap_or_default)
+        let mut fields = row
+            .map(|row| {
+                row.try_get::<String>("", "fields")
+                    .map_err(map_db_err)
+                    .and_then(|json| {
+                        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&json)
+                            .map_err(Into::into)
+                    })
+            })
+            .transpose()?
+            .unwrap_or_default();
+        fields.retain(|name, _| !Column::iter().any(|column| column.as_str() == name));
+        Ok(fields)
     }
     async fn consume_device_code(
         &self,
@@ -97,48 +98,27 @@ where
         ownership: &serde_json::Map<String, serde_json::Value>,
     ) -> AuthResult<Option<DeviceCode>> {
         let backend = self.scoped_connection().get_database_backend();
-        let mut values: Vec<sea_orm::Value> = Vec::new();
-        let mut bind = |value: String| {
-            values.push(value.into());
-            if backend == sea_orm::DbBackend::Postgres {
-                format!("${}", values.len())
-            } else {
-                "?".into()
-            }
-        };
-        let mut sql = format!(
-            "DELETE FROM device_code WHERE id = {} AND status = {}",
-            bind(id.into()),
-            bind(status.into())
-        );
+        let mut query = Query::delete();
+        _ = query
+            .from_table(Entity)
+            .and_where(Expr::col(Column::Id).eq(id))
+            .and_where(Expr::col(Column::Status).eq(status));
         for (field, value) in ownership {
-            sql.push_str(" AND EXISTS (SELECT 1 FROM device_code_fields WHERE device_code_id = device_code.id AND ");
-            if backend == sea_orm::DbBackend::Postgres {
-                _ = write!(
-                    sql,
-                    "CAST(fields AS JSONB) -> {} = CAST({} AS JSONB)",
-                    bind(field.clone()),
-                    bind(value.to_string())
-                );
+            let column = Expr::col(Alias::new(field));
+            _ = query.and_where(if value.is_null() {
+                column.is_null()
             } else {
-                _ = write!(
-                    sql,
-                    "json_extract(fields, {}) IS json_extract({}, '$')",
-                    bind(format!("$.{}", serde_json::to_string(field)?)),
-                    bind(value.to_string())
-                );
-            }
-            sql.push(')');
+                column.eq(device_field_expr(value.clone()))
+            });
         }
-        sql.push_str(" RETURNING *");
+        _ = query.returning(Query::returning().columns(Column::iter()));
         Entity::find()
-            .from_raw_sql(Statement::from_sql_and_values(backend, sql, values))
+            .from_raw_sql(backend.build(&query))
             .one(self.scoped_connection())
             .await
             .map_err(map_db_err)
             .map(|row| row.as_ref().map(DeviceCode::from))
     }
-
     async fn get_device_code_by_device_code(
         &self,
         device_code: &str,
@@ -256,10 +236,11 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         &self,
         connection: &C,
         input: CreateDeviceCode,
+        fields: serde_json::Map<String, serde_json::Value>,
     ) -> AuthResult<DeviceCode> {
-        ActiveModel {
+        let active = ActiveModel {
             id: Set(self
-                .generated_id(&self.db, "deviceCode", "device_code", "id")
+                .generated_id(&self.db, "deviceCode", "deviceCode", "id")
                 .await?
                 .unwrap_or_else(|| Uuid::new_v4().to_string())),
             device_code: Set(input.device_code),
@@ -268,13 +249,65 @@ impl<S: AuthSchema> SeaOrmStore<S> {
             expires_at: Set(input.expires_at),
             status: Set(input.status),
             last_polled_at: Set(input.last_polled_at),
-            polling_interval: Set(input.polling_interval),
+            polling_interval: Set(input.polling_interval.map(crate::Integer::from)),
             client_id: Set(input.client_id),
             scope: Set(input.scope),
+        };
+        if fields.is_empty() {
+            return active
+                .insert(connection)
+                .await
+                .map(|model| DeviceCode::from(&model))
+                .map_err(map_db_err);
         }
-        .insert(connection)
-        .await
-        .map(|model| DeviceCode::from(&model))
-        .map_err(map_db_err)
+        if fields
+            .keys()
+            .any(|name| Column::iter().any(|column| column.as_str() == name))
+        {
+            return Err(AuthError::bad_request(
+                "Application device fields cannot replace core columns",
+            ));
+        }
+        let columns = Column::iter()
+            .map(IntoIden::into_iden)
+            .chain(fields.keys().map(|name| Alias::new(name).into_iden()))
+            .collect::<Vec<_>>();
+        let mut values = Column::iter()
+            .map(|column| {
+                active
+                    .get(column)
+                    .into_value()
+                    .map(Expr::val)
+                    .ok_or_else(|| AuthError::internal("Unstaged device column"))
+            })
+            .collect::<AuthResult<Vec<_>>>()?;
+        values.extend(fields.into_values().map(device_field_expr));
+        let mut query = Query::insert();
+        _ = query
+            .into_table(Entity)
+            .columns(columns)
+            .values(values)
+            .map_err(|error| AuthError::internal(error.to_string()))?
+            .returning(Query::returning().columns(Column::iter()));
+        Entity::find()
+            .from_raw_sql(connection.get_database_backend().build(&query))
+            .one(connection)
+            .await
+            .map_err(map_db_err)?
+            .map(|model| DeviceCode::from(&model))
+            .ok_or_else(|| AuthError::internal("Device code insertion returned no row"))
+    }
+}
+
+fn device_field_expr(value: serde_json::Value) -> sea_orm::sea_query::Expr {
+    match value {
+        serde_json::Value::String(value) => Expr::val(value),
+        serde_json::Value::Bool(value) => Expr::val(value),
+        serde_json::Value::Number(value) => value.as_i64().map_or_else(
+            || Expr::val(crate::Number(value.as_f64().unwrap_or_default())),
+            Expr::val,
+        ),
+        serde_json::Value::Null => Expr::cust("NULL"),
+        value => Expr::val(value),
     }
 }

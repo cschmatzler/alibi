@@ -18,7 +18,7 @@ async fn server_update_session_validates_records_and_preserves_default_owner<B: 
         .await?;
     let owner = signup(&auth, "logical-session-owner@example.test").await;
     let foreign = signup(&auth, "logical-session-foreign@example.test").await;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for input in [json!(null), json!([]), json!(7)] {
         let denied = auth
             .dispatch_endpoint(
@@ -54,7 +54,7 @@ async fn server_update_session_validates_records_and_preserves_default_owner<B: 
         assert_eq!(denied.error.status_code(), 400);
         assert!(denied.error.to_string().contains("No fields to update"));
     }
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let events = observer.0.lock().unwrap().clone();
     assert_eq!(
         events.last().unwrap().as_deref(),

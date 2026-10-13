@@ -26,7 +26,7 @@ async fn server_sign_in_email_validates_credentials_and_issues_usable_owned_sess
     let endpoint = |input: &Value| {
         ServerEndpoint::<Value>::new("email-password", "signInEmail").with_body(input)
     };
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (input, status) in [
         (json!({}), 400),
         (json!({"email":null,"password":PASSWORD}), 400),
@@ -60,7 +60,7 @@ async fn server_sign_in_email_validates_credentials_and_issues_usable_owned_sess
             .await
             .unwrap_err();
         assert_eq!(error.error.status_code(), status);
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     }
     let mut incoming = request("/incoming-login", None, "");
     incoming.method = HttpMethod::Post;
@@ -79,7 +79,7 @@ async fn server_sign_in_email_validates_credentials_and_issues_usable_owned_sess
     .await
     .unwrap_err();
     assert_eq!(denied.error.status_code(), 403);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let mut minted = Vec::new();
     for (remember, callback) in [
         (None, None),
@@ -149,13 +149,13 @@ async fn server_sign_in_email_validates_credentials_and_issues_usable_owned_sess
         let token = value["token"].as_str().unwrap();
         assert!(!minted.contains(&token.to_owned()));
         minted.push(token.to_owned());
-        let rows: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+        let rows: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
         let row = rows.iter().find(|row| row["token"] == token).unwrap();
-        assert_eq!(row["user_id"], owner_id);
-        assert_eq!(row["ip_address"], "192.0.2.205");
-        assert_eq!(row["user_agent"], "logical-login-agent");
-        let expiry = chrono::DateTime::parse_from_rfc3339(row["expires_at"].as_str().unwrap())?;
-        let created = chrono::DateTime::parse_from_rfc3339(row["created_at"].as_str().unwrap())?;
+        assert_eq!(row["userId"], owner_id);
+        assert_eq!(row["ipAddress"], "192.0.2.205");
+        assert_eq!(row["userAgent"], "logical-login-agent");
+        let expiry = chrono::DateTime::parse_from_rfc3339(row["expiresAt"].as_str().unwrap())?;
+        let created = chrono::DateTime::parse_from_rfc3339(row["createdAt"].as_str().unwrap())?;
         let seconds = (expiry - created).num_seconds();
         if remember == Some(false) {
             assert!((86_395..=86_405).contains(&seconds));
@@ -189,11 +189,11 @@ async fn server_sign_in_email_validates_credentials_and_issues_usable_owned_sess
             .collect::<Vec<_>>()
             .join("; ");
         authenticated(&auth, &cookie, "logical-signin-owner@example.test").await;
-        assert_eq!(db.table("users").await?, before[0]);
-        assert_eq!(db.table("accounts").await?, before[1]);
+        assert_eq!(db.table("user").await?, before[0]);
+        assert_eq!(db.table("account").await?, before[1]);
     }
     let original: Vec<Value> = serde_json::from_str(&before[2])?;
-    let after: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let after: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     assert_eq!(after.len(), original.len() + 3);
     assert!(original.iter().all(|row| after.contains(row)));
     authenticated(

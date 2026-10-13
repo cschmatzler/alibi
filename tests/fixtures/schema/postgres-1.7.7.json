@@ -1,0 +1,2503 @@
+[
+  {
+    "table": "account",
+    "columns": [
+      {
+        "name": "accessToken",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "accessTokenExpiresAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "accountId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": "CURRENT_TIMESTAMP",
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "idToken",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "password",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "providerId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "refreshToken",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "refreshTokenExpiresAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "scope",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "updatedAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "userId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "account_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "account_userId_idx",
+        "unique": false,
+        "columns": [
+          "userId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON DELETE CASCADE"
+    ]
+  },
+  {
+    "table": "apikey",
+    "columns": [
+      {
+        "name": "configId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "enabled",
+        "type": "boolean",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "expiresAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "key",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "lastRefillAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "lastRequest",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "metadata",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "permissions",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "prefix",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "rateLimitEnabled",
+        "type": "boolean",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "rateLimitMax",
+        "type": "integer",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "rateLimitTimeWindow",
+        "type": "integer",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "referenceId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "refillAmount",
+        "type": "integer",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "refillInterval",
+        "type": "integer",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "remaining",
+        "type": "integer",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "requestCount",
+        "type": "integer",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "start",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "updatedAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "apikey_configId_idx",
+        "unique": false,
+        "columns": [
+          "configId"
+        ]
+      },
+      {
+        "name": "apikey_key_idx",
+        "unique": false,
+        "columns": [
+          "key"
+        ]
+      },
+      {
+        "name": "apikey_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "apikey_referenceId_idx",
+        "unique": false,
+        "columns": [
+          "referenceId"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "deviceCode",
+    "columns": [
+      {
+        "name": "clientId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "deviceCode",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "expiresAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "lastPolledAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "pollingInterval",
+        "type": "integer",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "scope",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "userCode",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "userId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "deviceCode_deviceCode_uidx",
+        "unique": true,
+        "columns": [
+          "deviceCode"
+        ]
+      },
+      {
+        "name": "deviceCode_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "deviceCode_userCode_uidx",
+        "unique": true,
+        "columns": [
+          "userCode"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "invitation",
+    "columns": [
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": "CURRENT_TIMESTAMP",
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "email",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "expiresAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "inviterId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "organizationId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "role",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "teamId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "invitation_email_idx",
+        "unique": false,
+        "columns": [
+          "email"
+        ]
+      },
+      {
+        "name": "invitation_organizationId_idx",
+        "unique": false,
+        "columns": [
+          "organizationId"
+        ]
+      },
+      {
+        "name": "invitation_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      "FOREIGN KEY (\"inviterId\") REFERENCES \"user\"(id) ON DELETE CASCADE",
+      "FOREIGN KEY (\"organizationId\") REFERENCES organization(id) ON DELETE CASCADE"
+    ]
+  },
+  {
+    "table": "jwks",
+    "columns": [
+      {
+        "name": "alg",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "crv",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "expiresAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "privateKey",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "publicKey",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "jwks_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "member",
+    "columns": [
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "organizationId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "role",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "userId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "member_organizationId_idx",
+        "unique": false,
+        "columns": [
+          "organizationId"
+        ]
+      },
+      {
+        "name": "member_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "member_userId_idx",
+        "unique": false,
+        "columns": [
+          "userId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      "FOREIGN KEY (\"organizationId\") REFERENCES organization(id) ON DELETE CASCADE",
+      "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON DELETE CASCADE"
+    ]
+  },
+  {
+    "table": "oauthAccessToken",
+    "columns": [
+      {
+        "name": "authorizationCodeId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "clientId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "confirmation",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "expiresAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "referenceId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "refreshId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "requestedUserInfoClaims",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "resources",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "revoked",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "scopes",
+        "type": "jsonb",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "sessionId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "token",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "userId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "oauthAccessToken_authorizationCodeId_idx",
+        "unique": false,
+        "columns": [
+          "authorizationCodeId"
+        ]
+      },
+      {
+        "name": "oauthAccessToken_clientId_idx",
+        "unique": false,
+        "columns": [
+          "clientId"
+        ]
+      },
+      {
+        "name": "oauthAccessToken_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "oauthAccessToken_refreshId_idx",
+        "unique": false,
+        "columns": [
+          "refreshId"
+        ]
+      },
+      {
+        "name": "oauthAccessToken_sessionId_idx",
+        "unique": false,
+        "columns": [
+          "sessionId"
+        ]
+      },
+      {
+        "name": "oauthAccessToken_token_key",
+        "unique": true,
+        "columns": [
+          "token"
+        ]
+      },
+      {
+        "name": "oauthAccessToken_userId_idx",
+        "unique": false,
+        "columns": [
+          "userId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      "FOREIGN KEY (\"clientId\") REFERENCES \"oauthClient\"(\"clientId\") ON DELETE CASCADE",
+      "FOREIGN KEY (\"refreshId\") REFERENCES \"oauthRefreshToken\"(id) ON DELETE CASCADE",
+      "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON DELETE SET NULL",
+      "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON DELETE CASCADE"
+    ]
+  },
+  {
+    "table": "oauthClient",
+    "columns": [
+      {
+        "name": "applicationType",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "backchannelLogoutSessionRequired",
+        "type": "boolean",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "backchannelLogoutUri",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "clientCredentialsScopes",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "clientDiscoveryId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "clientId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "clientSecret",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "contacts",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "disabled",
+        "type": "boolean",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "dpopBoundAccessTokens",
+        "type": "boolean",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "enableEndSession",
+        "type": "boolean",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "grantTypes",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "icon",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "jwks",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "jwksUri",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "policy",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "postLogoutRedirectUris",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "redirectUris",
+        "type": "jsonb",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "referenceId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "requirePKCE",
+        "type": "boolean",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "responseTypes",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "scopes",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "skipConsent",
+        "type": "boolean",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "softwareId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "softwareStatement",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "softwareVersion",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "subjectType",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "tokenEndpointAuthMethod",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "tos",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "updatedAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "uri",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "userId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "oauthClient_clientId_key",
+        "unique": true,
+        "columns": [
+          "clientId"
+        ]
+      },
+      {
+        "name": "oauthClient_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "oauthClient_userId_idx",
+        "unique": false,
+        "columns": [
+          "userId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON DELETE CASCADE"
+    ]
+  },
+  {
+    "table": "oauthClientAssertion",
+    "columns": [
+      {
+        "name": "expiresAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      }
+    ],
+    "indexes": [
+      {
+        "name": "oauthClientAssertion_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "oauthClientResource",
+    "columns": [
+      {
+        "name": "clientId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "resourceId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "oauthClientResource_clientId_idx",
+        "unique": false,
+        "columns": [
+          "clientId"
+        ]
+      },
+      {
+        "name": "oauthClientResource_clientId_resourceId_uidx",
+        "unique": true,
+        "columns": [
+          "clientId",
+          "resourceId"
+        ]
+      },
+      {
+        "name": "oauthClientResource_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "oauthClientResource_resourceId_idx",
+        "unique": false,
+        "columns": [
+          "resourceId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      "FOREIGN KEY (\"clientId\") REFERENCES \"oauthClient\"(\"clientId\") ON DELETE CASCADE",
+      "FOREIGN KEY (\"resourceId\") REFERENCES \"oauthResource\"(identifier) ON DELETE CASCADE"
+    ]
+  },
+  {
+    "table": "oauthConsent",
+    "columns": [
+      {
+        "name": "clientId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "referenceId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "requestedUserInfoClaims",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "resources",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "scopes",
+        "type": "jsonb",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "updatedAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "userId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "oauthConsent_clientId_idx",
+        "unique": false,
+        "columns": [
+          "clientId"
+        ]
+      },
+      {
+        "name": "oauthConsent_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "oauthConsent_userId_idx",
+        "unique": false,
+        "columns": [
+          "userId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      "FOREIGN KEY (\"clientId\") REFERENCES \"oauthClient\"(\"clientId\") ON DELETE CASCADE",
+      "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON DELETE CASCADE"
+    ]
+  },
+  {
+    "table": "oauthRefreshToken",
+    "columns": [
+      {
+        "name": "authTime",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "authorizationCodeId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "clientId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "confirmation",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "expiresAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "referenceId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "requestedUserInfoClaims",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "resources",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "revoked",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "rotatedAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "rotationReplayExpiresAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "rotationReplayResponse",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "scopes",
+        "type": "jsonb",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "sessionId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "token",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "userId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "oauthRefreshToken_authorizationCodeId_idx",
+        "unique": false,
+        "columns": [
+          "authorizationCodeId"
+        ]
+      },
+      {
+        "name": "oauthRefreshToken_clientId_idx",
+        "unique": false,
+        "columns": [
+          "clientId"
+        ]
+      },
+      {
+        "name": "oauthRefreshToken_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "oauthRefreshToken_sessionId_idx",
+        "unique": false,
+        "columns": [
+          "sessionId"
+        ]
+      },
+      {
+        "name": "oauthRefreshToken_token_key",
+        "unique": true,
+        "columns": [
+          "token"
+        ]
+      },
+      {
+        "name": "oauthRefreshToken_userId_idx",
+        "unique": false,
+        "columns": [
+          "userId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      "FOREIGN KEY (\"clientId\") REFERENCES \"oauthClient\"(\"clientId\") ON DELETE CASCADE",
+      "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON DELETE SET NULL",
+      "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON DELETE CASCADE"
+    ]
+  },
+  {
+    "table": "oauthResource",
+    "columns": [
+      {
+        "name": "accessTokenTtl",
+        "type": "integer",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "allowedScopes",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "customClaims",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "disabled",
+        "type": "boolean",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "dpopBoundAccessTokensRequired",
+        "type": "boolean",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "identifier",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "policyVersion",
+        "type": "integer",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "refreshTokenTtl",
+        "type": "integer",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "signingAlgorithm",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "signingKeyId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "updatedAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "oauthResource_identifier_key",
+        "unique": true,
+        "columns": [
+          "identifier"
+        ]
+      },
+      {
+        "name": "oauthResource_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "organization",
+    "columns": [
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "logo",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "metadata",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "slug",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "organization_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "organization_slug_key",
+        "unique": true,
+        "columns": [
+          "slug"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "organizationRole",
+    "columns": [
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": "CURRENT_TIMESTAMP",
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "organizationId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "permission",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "role",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "updatedAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "organizationRole_organizationId_idx",
+        "unique": false,
+        "columns": [
+          "organizationId"
+        ]
+      },
+      {
+        "name": "organizationRole_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "organizationRole_role_idx",
+        "unique": false,
+        "columns": [
+          "role"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      "FOREIGN KEY (\"organizationId\") REFERENCES organization(id) ON DELETE CASCADE"
+    ]
+  },
+  {
+    "table": "passkey",
+    "columns": [
+      {
+        "name": "aaguid",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "backedUp",
+        "type": "boolean",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "counter",
+        "type": "integer",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "credentialID",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "deviceType",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "publicKey",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "transports",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "userId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "passkey_credentialID_idx",
+        "unique": false,
+        "columns": [
+          "credentialID"
+        ]
+      },
+      {
+        "name": "passkey_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "passkey_userId_idx",
+        "unique": false,
+        "columns": [
+          "userId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON DELETE CASCADE"
+    ]
+  },
+  {
+    "table": "rateLimit",
+    "columns": [
+      {
+        "name": "count",
+        "type": "integer",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "key",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "lastRequest",
+        "type": "bigint",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "rateLimit_key_key",
+        "unique": true,
+        "columns": [
+          "key"
+        ]
+      },
+      {
+        "name": "rateLimit_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "session",
+    "columns": [
+      {
+        "name": "activeOrganizationId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "activeTeamId",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": "CURRENT_TIMESTAMP",
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "expiresAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "impersonatedBy",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "ipAddress",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "token",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "updatedAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "userAgent",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "userId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "session_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "session_token_key",
+        "unique": true,
+        "columns": [
+          "token"
+        ]
+      },
+      {
+        "name": "session_userId_idx",
+        "unique": false,
+        "columns": [
+          "userId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON DELETE CASCADE"
+    ]
+  },
+  {
+    "table": "team",
+    "columns": [
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "memberCount",
+        "type": "integer",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "organizationId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "updatedAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "team_organizationId_idx",
+        "unique": false,
+        "columns": [
+          "organizationId"
+        ]
+      },
+      {
+        "name": "team_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      "FOREIGN KEY (\"organizationId\") REFERENCES organization(id) ON DELETE CASCADE"
+    ]
+  },
+  {
+    "table": "teamMember",
+    "columns": [
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "membershipKey",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "teamId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "userId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "teamMember_membershipKey_key",
+        "unique": true,
+        "columns": [
+          "membershipKey"
+        ]
+      },
+      {
+        "name": "teamMember_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "teamMember_teamId_idx",
+        "unique": false,
+        "columns": [
+          "teamId"
+        ]
+      },
+      {
+        "name": "teamMember_userId_idx",
+        "unique": false,
+        "columns": [
+          "userId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      "FOREIGN KEY (\"teamId\") REFERENCES team(id) ON DELETE CASCADE",
+      "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON DELETE CASCADE"
+    ]
+  },
+  {
+    "table": "twoFactor",
+    "columns": [
+      {
+        "name": "backupCodes",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "failedVerificationCount",
+        "type": "integer",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "lockedUntil",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "secret",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "userId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "verified",
+        "type": "boolean",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "twoFactor_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "twoFactor_secret_idx",
+        "unique": false,
+        "columns": [
+          "secret"
+        ]
+      },
+      {
+        "name": "twoFactor_userId_idx",
+        "unique": false,
+        "columns": [
+          "userId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON DELETE CASCADE"
+    ]
+  },
+  {
+    "table": "user",
+    "columns": [
+      {
+        "name": "banExpires",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "banReason",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "banned",
+        "type": "boolean",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": "CURRENT_TIMESTAMP",
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "displayUsername",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "email",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "emailVerified",
+        "type": "boolean",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "image",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "isAnonymous",
+        "type": "boolean",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "lastLoginMethod",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "phoneNumber",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "phoneNumberVerified",
+        "type": "boolean",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "role",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "twoFactorEnabled",
+        "type": "boolean",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      },
+      {
+        "name": "updatedAt",
+        "type": "timestamp with time zone",
+        "default": "CURRENT_TIMESTAMP",
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "username",
+        "type": "text",
+        "default": null,
+        "required": false,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "user_email_key",
+        "unique": true,
+        "columns": [
+          "email"
+        ]
+      },
+      {
+        "name": "user_phoneNumber_key",
+        "unique": true,
+        "columns": [
+          "phoneNumber"
+        ]
+      },
+      {
+        "name": "user_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "user_username_key",
+        "unique": true,
+        "columns": [
+          "username"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "verification",
+    "columns": [
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": "CURRENT_TIMESTAMP",
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "expiresAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "identifier",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "updatedAt",
+        "type": "timestamp with time zone",
+        "default": "CURRENT_TIMESTAMP",
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "value",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "verification_identifier_idx",
+        "unique": false,
+        "columns": [
+          "identifier"
+        ]
+      },
+      {
+        "name": "verification_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "walletAddress",
+    "columns": [
+      {
+        "name": "address",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "chainId",
+        "type": "integer",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "createdAt",
+        "type": "timestamp with time zone",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": true
+      },
+      {
+        "name": "isPrimary",
+        "type": "boolean",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      },
+      {
+        "name": "userId",
+        "type": "text",
+        "default": null,
+        "required": true,
+        "primaryKey": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "walletAddress_pkey",
+        "unique": true,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "walletAddress_userId_idx",
+        "unique": false,
+        "columns": [
+          "userId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON DELETE CASCADE"
+    ]
+  }
+]

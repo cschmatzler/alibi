@@ -61,7 +61,7 @@ async fn server_admin_create_user_scopes_provisioning_and_creates_usable_credent
         headers: Some([("cookie".into(), cookies(response))].into_iter().collect()),
         ..Default::default()
     };
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (input, options, status) in [
         (None, EndpointOptions::default(), 400),
         (Some(json!(null)), EndpointOptions::default(), 400),
@@ -156,7 +156,7 @@ async fn server_admin_create_user_scopes_provisioning_and_creates_usable_credent
         .unwrap_err();
     assert_eq!(error.error.status_code(), 400);
     assert!(error.error.to_string().contains("non-existent"));
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let original_users = [
         auth.store().get_user_by_id(&admin_id).await?.unwrap(),
         auth.store().get_user_by_id(&member_id).await?.unwrap(),

@@ -130,7 +130,7 @@ impl Application {
                         let email = database
                             .query_one_raw(Statement::from_sql_and_values(
                                 DbBackend::Sqlite,
-                                "SELECT email FROM users WHERE id=?",
+                                "SELECT \"email\" FROM \"user\" WHERE id=?",
                                 [reference.into()],
                             ))
                             .await
@@ -141,7 +141,7 @@ impl Application {
                             database
                                 .query_one_raw(Statement::from_sql_and_values(
                                     DbBackend::Sqlite,
-                                    "SELECT slug FROM organization WHERE id=?",
+                                    "SELECT \"slug\" FROM \"organization\" WHERE id=?",
                                     [reference.into()],
                                 ))
                                 .await
@@ -510,7 +510,7 @@ pub(crate) async fn router(
                 let rows = database
                     .query_all_raw(Statement::from_string(
                         DbBackend::Sqlite,
-                "SELECT *,hex(CAST(start AS BLOB)) AS startHex,typeof(start) AS startType FROM api_keys ORDER BY name",
+                "SELECT *,hex(CAST(\"start\" AS BLOB)) AS startHex,typeof(\"start\") AS startType FROM \"apikey\" ORDER BY \"name\"",
                     ))
                     .await
                     .unwrap();
@@ -526,14 +526,14 @@ pub(crate) async fn router(
                             ("startType", "startType"),
                             ("prefix", "prefix"),
                             ("key", "key"),
-                            ("referenceId", "reference_id"),
-                            ("configId", "config_id"),
+                            ("referenceId", "referenceId"),
+                            ("configId", "configId"),
                             ("permissions", "permissions"),
-                            ("createdAt", "created_at"),
-                            ("updatedAt", "updated_at"),
-                            ("expiresAt", "expires_at"),
-                            ("lastRequest", "last_request"),
-                            ("lastRefillAt", "last_refill_at"),
+                            ("createdAt", "createdAt"),
+                            ("updatedAt", "updatedAt"),
+                            ("expiresAt", "expiresAt"),
+                            ("lastRequest", "lastRequest"),
+                            ("lastRefillAt", "lastRefillAt"),
                         ] {
                             let data = row.try_get::<Option<String>>("", column).unwrap();
                             value[wire] = if [
@@ -556,17 +556,17 @@ pub(crate) async fn router(
                         }
                         for (wire, column) in [
                             ("remaining", "remaining"),
-                            ("requestCount", "request_count"),
-                            ("refillAmount", "refill_amount"),
-                            ("refillInterval", "refill_interval"),
-                            ("rateLimitMax", "rate_limit_max"),
-                            ("rateLimitTimeWindow", "rate_limit_time_window"),
+                            ("requestCount", "requestCount"),
+                            ("refillAmount", "refillAmount"),
+                            ("refillInterval", "refillInterval"),
+                            ("rateLimitMax", "rateLimitMax"),
+                            ("rateLimitTimeWindow", "rateLimitTimeWindow"),
                         ] {
-                            value[wire] = json!(row.try_get::<Option<f64>>("", column).unwrap());
+                            value[wire] = json!(row.try_get::<Option<alibi::seaorm::Number>>("", column).unwrap().map(|value| value.0));
                         }
                         for (wire, column) in [
                             ("enabled", "enabled"),
-                            ("rateLimitEnabled", "rate_limit_enabled"),
+                            ("rateLimitEnabled", "rateLimitEnabled"),
                         ] {
                             value[wire] = json!(row.try_get::<bool>("", column).unwrap());
                         }
@@ -681,10 +681,10 @@ pub(crate) async fn router(
                             for (field, value) in input["patch"].as_object().unwrap() {
                                 let column = match field.as_str() {
                                     "remaining" => "remaining",
-                                    "expiresAt" => "expires_at",
-                                    "lastRefillAt" => "last_refill_at",
-                                    "refillAmount" => "refill_amount",
-                                    "refillInterval" => "refill_interval",
+                                    "expiresAt" => "expiresAt",
+                                    "lastRefillAt" => "lastRefillAt",
+                                    "refillAmount" => "refillAmount",
+                                    "refillInterval" => "refillInterval",
                                     "name" => "name",
                                     _ => panic!("supported application column required"),
                                 };
@@ -703,7 +703,7 @@ pub(crate) async fn router(
                                 database
                                     .execute_raw(Statement::from_sql_and_values(
                                         DbBackend::Sqlite,
-                                        format!("UPDATE api_keys SET {column}=? WHERE id=?"),
+                                        format!("UPDATE \"apikey\" SET {column}=? WHERE id=?"),
                                         [value, input["keyId"].as_str().unwrap().to_owned().into()],
                                     ))
                                     .await

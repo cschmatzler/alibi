@@ -195,7 +195,7 @@ pub(crate) async fn router(
                     let result = database
                         .execute_raw(Statement::from_sql_and_values(
                             DbBackend::Sqlite,
-                            "UPDATE passkeys SET public_key = ? WHERE credential_id = ?",
+                            "UPDATE \"passkey\" SET \"publicKey\" = ? WHERE \"credentialID\" = ?",
                             [input.public_key.into(), input.credential_id.into()],
                         ))
                         .await
@@ -212,7 +212,7 @@ pub(crate) async fn router(
                     let rows = database
                         .query_all_raw(Statement::from_string(
                             DbBackend::Sqlite,
-                            "SELECT user_id, counter, name FROM passkeys ORDER BY id",
+                            "SELECT \"userId\", \"counter\", \"name\" FROM \"passkey\" ORDER BY id",
                         ))
                         .await
                         .unwrap();
@@ -220,7 +220,7 @@ pub(crate) async fn router(
                         .iter()
                         .map(|row| {
                             json!({
-                                "userId": row.try_get::<String>("", "user_id").unwrap(),
+                                "userId": row.try_get::<String>("", "userId").unwrap(),
                                 "counter": row.try_get::<i64>("", "counter").unwrap(),
                                 "name": row.try_get::<Option<String>>("", "name").unwrap(),
                             })
@@ -229,7 +229,7 @@ pub(crate) async fn router(
                     let sessions = database
                         .query_one_raw(Statement::from_sql_and_values(
                             DbBackend::Sqlite,
-                            "SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?",
+                            "SELECT COUNT(*) AS \"count\" FROM \"session\" WHERE \"userId\" = ?",
                             [query.user_id.into()],
                         ))
                         .await
@@ -238,7 +238,7 @@ pub(crate) async fn router(
                     let challenges = database
                         .query_one_raw(Statement::from_string(
                             DbBackend::Sqlite,
-                            "SELECT COUNT(*) AS count FROM verifications",
+                            "SELECT COUNT(*) AS \"count\" FROM \"verification\"",
                         ))
                         .await
                         .unwrap()
@@ -257,7 +257,7 @@ pub(crate) async fn router(
                     let result = database
                         .execute_raw(Statement::from_sql_and_values(
                             DbBackend::Sqlite,
-                            "UPDATE passkeys SET counter = ? WHERE credential_id = ?",
+                            "UPDATE \"passkey\" SET \"counter\" = ? WHERE \"credentialID\" = ?",
                             [i64::from(input.counter).into(), input.credential_id.into()],
                         ))
                         .await
@@ -274,7 +274,7 @@ pub(crate) async fn router(
                     database
                         .execute_raw(Statement::from_sql_and_values(
                             DbBackend::Sqlite,
-                            "UPDATE verifications SET expires_at = ?",
+                            "UPDATE \"verification\" SET \"expiresAt\" = ?",
                             [clock.expires_at.into()],
                         ))
                         .await

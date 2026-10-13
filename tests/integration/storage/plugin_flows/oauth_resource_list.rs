@@ -47,15 +47,15 @@ async fn oauth_resource_list_returns_global_policy_for_authenticated_server_call
     let other = signup(&auth, "resource-list-other@example.test").await;
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
-            "oauth_client_resource",
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
+            "oauthClientResource",
         ])
         .await?;
     for cookie in [cookies(&owner), cookies(&other)] {
@@ -86,15 +86,15 @@ async fn oauth_resource_list_returns_global_policy_for_authenticated_server_call
     assert_eq!(
         before,
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
-            "oauth_client_resource"
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
+            "oauthClientResource"
         ])
         .await?
     );

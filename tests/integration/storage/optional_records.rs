@@ -68,9 +68,9 @@ async fn optional_record_workflow<B: Backend>(db: Db) -> TestResult {
         std::any::type_name::<B>().rsplit("::").next().unwrap(),
     )
     .await?;
-    assert_eq!(db.count("sessions").await?, 0);
-    assert_eq!(db.count("two_factor").await?, 0);
-    assert_eq!(db.count("passkeys").await?, 0);
+    assert_eq!(db.count("session").await?, 0);
+    assert_eq!(db.count("twoFactor").await?, 0);
+    assert_eq!(db.count("passkey").await?, 0);
     B::close(connection).await
 }
 #[tokio::test]
@@ -152,8 +152,7 @@ async fn without_database_optional_record_workflow() -> TestResult {
         )
         .await?
         .unwrap();
-    assert_eq!(rotated.created_at, factor.created_at);
-    assert_eq!(rotated.updated_at, factor.updated_at);
+    assert_eq!(rotated.secret, "rotated-secret");
     let mut claims = tokio::task::JoinSet::new();
     for index in 0..4 {
         let store = Arc::clone(auth.store());
@@ -197,7 +196,6 @@ async fn without_database_optional_record_workflow() -> TestResult {
         key.id
     );
     let update = || UpdatePasskeyAuthentication {
-        credential: "verified-private-credential".into(),
         counter: 7,
         backed_up: true,
         device_type: "multiDevice".into(),
@@ -209,7 +207,6 @@ async fn without_database_optional_record_workflow() -> TestResult {
         .unwrap();
     assert_eq!(authenticated.counter, 7);
     assert!(authenticated.backed_up);
-    assert_eq!(authenticated.credential, "verified-private-credential");
     assert_eq!(authenticated.created_at, key.created_at);
     let restarted = plugins(AuthBuilder::without_database(config))
         .build()
@@ -351,7 +348,7 @@ async fn workflow<S: AuthSchema>(
     let expected_name = input.name.clone();
     let passkey = auth.store().create_passkey(input).await?;
     let before_list = if let Some(db) = physical {
-        let rows: Value = serde_json::from_str(&db.raw.table("passkeys").await?)?;
+        let rows: Value = serde_json::from_str(&db.raw.table("passkey").await?)?;
         assert_eq!(rows.as_array().unwrap().len(), 1);
         let row = &rows[0];
         assert_eq!(row.get("name"), Some(&Value::Null));
@@ -376,7 +373,7 @@ async fn workflow<S: AuthSchema>(
         assert_eq!(row.get("name"), Some(&Value::Null));
         assert_eq!(row.get("transports"), Some(&Value::Null));
         assert!(!row.as_object().unwrap().contains_key("updatedAt"));
-        let after_list: Value = serde_json::from_str(&db.raw.table("passkeys").await?)?;
+        let after_list: Value = serde_json::from_str(&db.raw.table("passkey").await?)?;
         assert_eq!(
             Some(after_list),
             before_list,
@@ -467,7 +464,6 @@ fn passkey_input(user_id: &str) -> CreatePasskey {
         device_type: "singleDevice".into(),
         backed_up: false,
         transports: Some("internal".into()),
-        credential: "private-credential".into(),
         aaguid: None,
     }
 }

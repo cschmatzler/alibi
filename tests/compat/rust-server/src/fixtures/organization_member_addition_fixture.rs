@@ -36,17 +36,17 @@ async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
     for (name, sql, columns) in [
         (
             "members",
-            "SELECT m.id,m.organization_id AS organizationId,m.user_id AS userId,m.role FROM member m JOIN organization o ON o.id=m.organization_id JOIN users u ON u.id=m.user_id ORDER BY o.slug,u.email,m.created_at,m.rowid",
+            "SELECT m.id,m.\"organizationId\" AS organizationId,m.\"userId\" AS userId,m.\"role\" FROM \"member\" m JOIN \"organization\" o ON o.id=m.\"organizationId\" JOIN \"user\" u ON u.id=m.\"userId\" ORDER BY o.\"slug\",u.\"email\",m.\"createdAt\",m.rowid",
             &["id", "organizationId", "userId", "role"][..],
         ),
         (
             "teams",
-            "SELECT id,organization_id AS organizationId,name,member_count AS memberCount FROM team ORDER BY name,id",
+            "SELECT id,\"organizationId\" AS organizationId,\"name\",\"memberCount\" AS memberCount FROM \"team\" ORDER BY \"name\",id",
             &["id", "organizationId", "name", "memberCount"][..],
         ),
         (
             "teamMembers",
-            "SELECT m.id,m.team_id AS teamId,m.user_id AS userId FROM team_member m JOIN team t ON t.id=m.team_id JOIN users u ON u.id=m.user_id ORDER BY t.name,u.email,m.id",
+            "SELECT m.id,m.\"teamId\" AS teamId,m.\"userId\" AS userId FROM \"teamMember\" m JOIN \"team\" t ON t.id=m.\"teamId\" JOIN \"user\" u ON u.id=m.\"userId\" ORDER BY t.\"name\",u.\"email\",m.id",
             &["id", "teamId", "userId"][..],
         ),
     ] {
@@ -82,12 +82,12 @@ async fn full_snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
     let queries = [
         (
             "members",
-            "SELECT id,organization_id AS organizationId,user_id AS userId,role,created_at AS createdAt FROM member ORDER BY rowid",
+            "SELECT id,\"organizationId\" AS organizationId,\"userId\" AS userId,\"role\",\"createdAt\" AS createdAt FROM \"member\" ORDER BY rowid",
             &["id", "organizationId", "userId", "role", "createdAt"][..],
         ),
         (
             "teams",
-            "SELECT id,name,organization_id AS organizationId,member_count AS memberCount,created_at AS createdAt,updated_at AS updatedAt FROM team ORDER BY rowid",
+            "SELECT id,\"name\",\"organizationId\" AS organizationId,\"memberCount\" AS memberCount,\"createdAt\" AS createdAt,\"updatedAt\" AS updatedAt FROM \"team\" ORDER BY rowid",
             &[
                 "id",
                 "name",
@@ -99,7 +99,7 @@ async fn full_snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
         ),
         (
             "teamMembers",
-            "SELECT id,team_id AS teamId,user_id AS userId,membership_key AS membershipKey,created_at AS createdAt FROM team_member ORDER BY rowid",
+            "SELECT id,\"teamId\" AS teamId,\"userId\" AS userId,\"membershipKey\" AS membershipKey,\"createdAt\" AS createdAt FROM \"teamMember\" ORDER BY rowid",
             &["id", "teamId", "userId", "membershipKey", "createdAt"][..],
         ),
     ];
@@ -229,16 +229,16 @@ impl Application {
                 .map_err(|error| AuthError::internal(error.to_string()))?;
             let sql = match mode {
                 "sql-member-abort" => Some(
-                    "CREATE TRIGGER addition_guard_member BEFORE INSERT ON member WHEN NEW.user_id=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission member veto'); END",
+                    "CREATE TRIGGER addition_guard_member BEFORE INSERT ON \"member\" WHEN NEW.\"userId\"=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission member veto'); END",
                 ),
                 "sql-team-abort" => Some(
-                    "CREATE TRIGGER addition_guard_team BEFORE INSERT ON team_member WHEN NEW.user_id=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission team veto'); END",
+                    "CREATE TRIGGER addition_guard_team BEFORE INSERT ON \"teamMember\" WHEN NEW.\"userId\"=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission team veto'); END",
                 ),
                 "sql-cleanup-abort" => Some(
-                    "CREATE TRIGGER addition_guard_cleanup BEFORE DELETE ON member WHEN OLD.user_id=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission cleanup veto'); END",
+                    "CREATE TRIGGER addition_guard_cleanup BEFORE DELETE ON \"member\" WHEN OLD.\"userId\"=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission cleanup veto'); END",
                 ),
                 "sql-before-error" | "sql-after-error" => Some(
-                    "CREATE TRIGGER addition_guard_user BEFORE UPDATE ON users WHEN OLD.id=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission callback veto'); END",
+                    "CREATE TRIGGER addition_guard_user BEFORE UPDATE ON \"user\" WHEN OLD.id=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission callback veto'); END",
                 ),
                 _ => None,
             };

@@ -18,29 +18,46 @@ pub mod application_session {
     #[cfg_attr(
         feature = "seaorm",
         derive(alibi::seaorm::AuthEntity, DeriveEntityModel),
-        sea_orm(table_name = "sessions")
+        sea_orm(table_name = "session")
     )]
     #[cfg_attr(
         not(feature = "seaorm"),
         derive(alibi::sqlx::AuthEntity, sqlx::FromRow),
-        auth(table = "sessions")
+        auth(table = "session")
     )]
     #[derive(Clone, Debug, PartialEq, Serialize)]
     #[auth(role = "session", secondary_storage)]
     pub struct Model {
         #[cfg_attr(feature = "seaorm", sea_orm(primary_key, auto_increment = false))]
         pub id: String,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "expiresAt"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "expiresAt"))]
         pub expires_at: DateTime<Utc>,
         pub token: String,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "createdAt"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "createdAt"))]
         pub created_at: DateTime<Utc>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "updatedAt"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "updatedAt"))]
         pub updated_at: DateTime<Utc>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "ipAddress"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "ipAddress"))]
         pub ip_address: Option<String>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "userAgent"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "userAgent"))]
         pub user_agent: Option<String>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "userId"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "userId"))]
         pub user_id: String,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "impersonatedBy"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "impersonatedBy"))]
         pub impersonated_by: Option<String>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "activeOrganizationId"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "activeOrganizationId"))]
         pub active_organization_id: Option<String>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "activeTeamId"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "activeTeamId"))]
         pub active_team_id: Option<String>,
-        pub active: bool,
         pub label: Option<String>,
         pub hidden: Option<String>,
         pub number: Option<f64>,

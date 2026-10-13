@@ -50,69 +50,50 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
         else {
             return Ok(false);
         };
-        let mut metadata: serde_json::Value = serde_json::from_str(&row.metadata)?;
-        if metadata
-            .get("revoked")
-            .is_some_and(|value| !value.is_null())
-        {
+        if row.revoked.is_some() {
             return Ok(false);
         }
-        _ = metadata
-            .as_object_mut()
-            .ok_or_else(|| alibi_core::AuthError::internal("Invalid refresh metadata"))?
-            .insert("revoked".into(), serde_json::json!(revoked_at));
         let result = super::entities::oauth_refresh_token::Entity::update_many()
             .col_expr(
-                super::entities::oauth_refresh_token::Column::Metadata,
-                sea_orm::sea_query::Expr::value(serde_json::to_string(&metadata)?),
+                super::entities::oauth_refresh_token::Column::Revoked,
+                sea_orm::sea_query::Expr::value(revoked_at),
             )
             .filter(super::entities::oauth_refresh_token::Column::Token.eq(token))
-            .filter(super::entities::oauth_refresh_token::Column::Metadata.eq(row.metadata))
+            .filter(super::entities::oauth_refresh_token::Column::Revoked.is_null())
             .exec(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
         Ok(result.rows_affected > 0)
     }
     async fn delete_oauth_access_tokens_for_refresh(&self, refresh_id: &str) -> AuthResult<()> {
-        let template =
-            if self.scoped_connection().get_database_backend() == sea_orm::DbBackend::Postgres {
-                "metadata::jsonb->>'refreshId' = $1"
-            } else {
-                "json_extract(metadata, '$.refreshId') = ?"
-            };
         _ = super::entities::oauth_access_token::Entity::delete_many()
-            .filter(sea_orm::sea_query::Expr::cust_with_values(
-                template,
-                [refresh_id.to_owned()],
-            ))
+            .filter(super::entities::oauth_access_token::Column::RefreshId.eq(refresh_id))
             .exec(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
         Ok(())
     }
     async fn delete_oauth_refresh_family(&self, client_id: &str, user_id: &str) -> AuthResult<()> {
-        let template = if self.scoped_connection().get_database_backend()
-            == sea_orm::DbBackend::Postgres
-        {
-            "metadata::jsonb->>'refreshId' IN (SELECT id FROM oauth_refresh_token WHERE client_id = $1 AND user_id = $2 LIMIT $3)"
-        } else {
-            "json_extract(metadata, '$.refreshId') IN (SELECT id FROM oauth_refresh_token WHERE client_id = ? AND user_id = ? LIMIT ?)"
-        };
-        let values: Vec<sea_orm::Value> = vec![
-            client_id.to_owned().into(),
-            user_id.to_owned().into(),
-            i64::try_from(self.config().advanced.database.default_find_many_limit)
-                .unwrap_or(i64::MAX)
-                .into(),
-        ];
-        _ = super::entities::oauth_access_token::Entity::delete_many()
-            .filter(sea_orm::sea_query::Expr::cust_with_values(template, values))
+        use super::entities::{oauth_access_token, oauth_refresh_token};
+        use sea_orm::sea_query::{Expr, ExprTrait, Query};
+        let query = Query::select()
+            .column(oauth_refresh_token::Column::Id)
+            .from(oauth_refresh_token::Entity)
+            .and_where(Expr::col(oauth_refresh_token::Column::ClientId).eq(client_id))
+            .and_where(Expr::col(oauth_refresh_token::Column::UserId).eq(user_id))
+            .limit(
+                u64::try_from(self.config().advanced.database.default_find_many_limit)
+                    .unwrap_or(u64::MAX),
+            )
+            .to_owned();
+        _ = oauth_access_token::Entity::delete_many()
+            .filter(oauth_access_token::Column::RefreshId.in_subquery(query))
             .exec(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
-        _ = super::entities::oauth_refresh_token::Entity::delete_many()
-            .filter(super::entities::oauth_refresh_token::Column::ClientId.eq(client_id))
-            .filter(super::entities::oauth_refresh_token::Column::UserId.eq(user_id))
+        _ = oauth_refresh_token::Entity::delete_many()
+            .filter(oauth_refresh_token::Column::ClientId.eq(client_id))
+            .filter(oauth_refresh_token::Column::UserId.eq(user_id))
             .exec(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
@@ -125,9 +106,12 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
     ) -> AuthResult<alibi_core::store::OAuthToken> {
         match kind {
             alibi_core::store::OAuthTokenKind::Access => {
-                super::entities::oauth_access_token::ActiveModel {
+                let fields = super::entities::oauth_access_token::Model::columns_from_metadata(
+                    data.metadata,
+                )?;
+                let mut active = super::entities::oauth_access_token::ActiveModel {
                     id: Set(self
-                        .generated_id(&self.db, "oauthAccessToken", "oauth_access_token", "id")
+                        .generated_id(&self.db, "oauthAccessToken", "oauthAccessToken", "id")
                         .await?
                         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
                     token: Set(data.token),
@@ -137,32 +121,41 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
                     authorization_code_id: Set(data.authorization_code_id),
                     created_at: Set(data.created_at),
                     expires_at: Set(data.expires_at),
-                    metadata: Set(serde_json::to_string(&data.metadata)?),
-                }
-                .insert(self.scoped_connection())
-                .await
-                .map_err(map_db_err)?
-                .try_into()
+                    ..Default::default()
+                };
+                fields.stage_metadata(&mut active);
+                active
+                    .insert(self.scoped_connection())
+                    .await
+                    .map_err(map_db_err)?
+                    .try_into()
             }
             alibi_core::store::OAuthTokenKind::Refresh => {
-                super::entities::oauth_refresh_token::ActiveModel {
+                let fields = super::entities::oauth_refresh_token::Model::columns_from_metadata(
+                    data.metadata,
+                )?;
+                let mut active = super::entities::oauth_refresh_token::ActiveModel {
                     id: Set(self
-                        .generated_id(&self.db, "oauthRefreshToken", "oauth_refresh_token", "id")
+                        .generated_id(&self.db, "oauthRefreshToken", "oauthRefreshToken", "id")
                         .await?
                         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
                     token: Set(data.token),
                     client_id: Set(data.client_id),
-                    user_id: Set(data.user_id),
+                    user_id: Set(data.user_id.ok_or_else(|| {
+                        alibi_core::AuthError::bad_request("Refresh token userId is required")
+                    })?),
                     session_id: Set(data.session_id),
                     authorization_code_id: Set(data.authorization_code_id),
                     created_at: Set(data.created_at),
                     expires_at: Set(data.expires_at),
-                    metadata: Set(serde_json::to_string(&data.metadata)?),
-                }
-                .insert(self.scoped_connection())
-                .await
-                .map_err(map_db_err)?
-                .try_into()
+                    ..Default::default()
+                };
+                fields.stage_metadata(&mut active);
+                active
+                    .insert(self.scoped_connection())
+                    .await
+                    .map_err(map_db_err)?
+                    .try_into()
             }
         }
     }
@@ -224,12 +217,7 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
     ) -> AuthResult<alibi_core::store::OAuthClientResource> {
         super::entities::oauth_client_resource::ActiveModel {
             id: Set(self
-                .generated_id(
-                    &self.db,
-                    "oauthClientResource",
-                    "oauth_client_resource",
-                    "id",
-                )
+                .generated_id(&self.db, "oauthClientResource", "oauthClientResource", "id")
                 .await?
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
             client_id: Set(data.client_id),
@@ -243,6 +231,11 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
         .try_into()
     }
     async fn delete_oauth_resource(&self, identifier: &str) -> AuthResult<()> {
+        _ = super::entities::oauth_client_resource::Entity::delete_many()
+            .filter(super::entities::oauth_client_resource::Column::ResourceId.eq(identifier))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
         super::entities::oauth_resource::Entity::delete_many()
             .filter(super::entities::oauth_resource::Column::Identifier.eq(identifier))
             .exec(self.scoped_connection())
@@ -265,8 +258,9 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             return Ok(None);
         };
         let mut active = model.into_active_model();
-        active.metadata = Set(serde_json::to_string(&metadata)?);
-        active.updated_at = Set(updated_at);
+        super::entities::oauth_resource::Model::columns_from_metadata(metadata)?
+            .stage_metadata(&mut active);
+        active.updated_at = Set(Some(updated_at));
         active
             .update(self.scoped_connection())
             .await
@@ -308,20 +302,23 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
         &self,
         data: alibi_core::store::CreateOAuthResource,
     ) -> AuthResult<alibi_core::store::OAuthResource> {
-        super::entities::oauth_resource::ActiveModel {
+        let fields = super::entities::oauth_resource::Model::columns_from_metadata(data.metadata)?;
+        let mut active = super::entities::oauth_resource::ActiveModel {
             id: Set(self
-                .generated_id(&self.db, "oauthResource", "oauth_resource", "id")
+                .generated_id(&self.db, "oauthResource", "oauthResource", "id")
                 .await?
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
             identifier: Set(data.identifier),
-            metadata: Set(serde_json::to_string(&data.metadata)?),
-            created_at: Set(data.created_at),
-            updated_at: Set(data.created_at),
-        }
-        .insert(self.scoped_connection())
-        .await
-        .map_err(map_db_err)?
-        .try_into()
+            created_at: Set(Some(data.created_at)),
+            updated_at: Set(Some(data.created_at)),
+            ..Default::default()
+        };
+        fields.stage_metadata(&mut active);
+        active
+            .insert(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .try_into()
     }
     async fn get_oauth_resource(
         &self,
@@ -339,21 +336,24 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
         &self,
         data: alibi_core::store::CreateOAuthConsent,
     ) -> AuthResult<alibi_core::store::OAuthConsent> {
-        super::entities::oauth_consent::ActiveModel {
+        let fields = super::entities::oauth_consent::Model::columns_from_metadata(data.metadata)?;
+        let mut active = super::entities::oauth_consent::ActiveModel {
             id: Set(self
-                .generated_id(&self.db, "oauthConsent", "oauth_consent", "id")
+                .generated_id(&self.db, "oauthConsent", "oauthConsent", "id")
                 .await?
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
             client_id: Set(data.client_id),
             user_id: Set(data.user_id),
-            metadata: Set(serde_json::to_string(&data.metadata)?),
             created_at: Set(data.created_at),
             updated_at: Set(data.created_at),
-        }
-        .insert(self.scoped_connection())
-        .await
-        .map_err(map_db_err)?
-        .try_into()
+            ..Default::default()
+        };
+        fields.stage_metadata(&mut active);
+        active
+            .insert(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .try_into()
     }
     async fn list_oauth_consents_by_user(
         &self,
@@ -386,7 +386,8 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             return Ok(None);
         };
         let mut active = model.into_active_model();
-        active.metadata = Set(serde_json::to_string(&metadata)?);
+        super::entities::oauth_consent::Model::columns_from_metadata(metadata)?
+            .stage_metadata(&mut active);
         active.updated_at = Set(updated_at);
         active
             .update(self.scoped_connection())
@@ -396,22 +397,25 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             .map(Some)
     }
     async fn create_oauth_client(&self, data: CreateOAuthClient) -> AuthResult<OAuthClient> {
-        oauth_client::ActiveModel {
+        let fields = oauth_client::Model::columns_from_metadata(data.metadata)?;
+        let mut active = oauth_client::ActiveModel {
             id: Set(self
-                .generated_id(&self.db, "oauthClient", "oauth_client", "id")
+                .generated_id(&self.db, "oauthClient", "oauthClient", "id")
                 .await?
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
             client_id: Set(data.client_id),
             user_id: Set(data.user_id),
             client_secret: Set(data.client_secret),
-            metadata: Set(serde_json::to_string(&data.metadata)?),
-            created_at: Set(data.created_at),
-            updated_at: Set(data.created_at),
-        }
-        .insert(self.scoped_connection())
-        .await
-        .map_err(map_db_err)?
-        .try_into()
+            created_at: Set(Some(data.created_at)),
+            updated_at: Set(Some(data.created_at)),
+            ..Default::default()
+        };
+        fields.stage_metadata(&mut active);
+        active
+            .insert(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .try_into()
     }
     async fn get_oauth_consent(
         &self,
@@ -480,7 +484,7 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
         };
         let mut active = model.into_active_model();
         active.client_secret = Set(Some(secret));
-        active.updated_at = Set(updated_at);
+        active.updated_at = Set(Some(updated_at));
         active
             .update(self.scoped_connection())
             .await
@@ -503,8 +507,8 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             return Ok(None);
         };
         let mut active = model.into_active_model();
-        active.metadata = Set(serde_json::to_string(&metadata)?);
-        active.updated_at = Set(updated_at);
+        oauth_client::Model::columns_from_metadata(metadata)?.stage_metadata(&mut active);
+        active.updated_at = Set(Some(updated_at));
         active
             .update(self.scoped_connection())
             .await

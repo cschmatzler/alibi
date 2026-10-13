@@ -41,12 +41,12 @@ async fn oauth_client_secret_rotation_replaces_hash_and_enforces_owner<B: Backen
     let public_id = clients[1]["client_id"].as_str().unwrap();
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
+            "oauthClient",
         ])
         .await?;
     for (id, cookie, status) in [
@@ -69,12 +69,12 @@ async fn oauth_client_secret_rotation_replaces_hash_and_enforces_owner<B: Backen
         assert_eq!(e.error.status_code(), status);
         assert_eq!(
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
+                "user",
+                "account",
+                "session",
+                "verification",
                 "jwks",
-                "oauth_client"
+                "oauthClient"
             ])
             .await?,
             before
@@ -82,7 +82,7 @@ async fn oauth_client_secret_rotation_replaces_hash_and_enforces_owner<B: Backen
     }
     let old = auth.store().get_oauth_client(id).await?.unwrap();
     let unrelated = db
-        .tables(&["users", "accounts", "sessions", "verifications", "jwks"])
+        .tables(&["user", "account", "session", "verification", "jwks"])
         .await?;
     let start = chrono::Utc::now().timestamp();
     let r = auth
@@ -111,6 +111,10 @@ async fn oauth_client_secret_rotation_replaces_hash_and_enforces_owner<B: Backen
     assert!(secret.bytes().all(|c| c.is_ascii_alphabetic()));
     assert_ne!(rotated["client_secret"], clients[0]["client_secret"]);
     let mut expected = clients[0].clone();
+    _ = expected
+        .as_object_mut()
+        .unwrap()
+        .remove("client_credentials_scopes");
     expected["client_secret"] = json!(secret);
     assert_eq!(rotated, expected);
     let stored = auth.store().get_oauth_client(id).await?.unwrap();
@@ -122,11 +126,13 @@ async fn oauth_client_secret_rotation_replaces_hash_and_enforces_owner<B: Backen
     assert_eq!(stored.user_id, old.user_id);
     assert_eq!(stored.metadata, old.metadata);
     assert_eq!(stored.created_at, old.created_at);
-    assert!(stored.updated_at.timestamp() >= start);
-    assert!(stored.updated_at.timestamp() <= chrono::Utc::now().timestamp());
-    assert_eq!(db.count("oauth_client").await?, 2);
+    assert!(stored.updated_at.expect("client timestamp").timestamp() >= start);
+    assert!(
+        stored.updated_at.expect("client timestamp").timestamp() <= chrono::Utc::now().timestamp()
+    );
+    assert_eq!(db.count("oauthClient").await?, 2);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications", "jwks"])
+        db.tables(&["user", "account", "session", "verification", "jwks"])
             .await?,
         unrelated
     );

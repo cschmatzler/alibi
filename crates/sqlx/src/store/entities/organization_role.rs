@@ -4,13 +4,16 @@ use alibi_core::types::OrganizationRole;
 use chrono::{DateTime, Utc};
 
 #[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, SqlxModel)]
-#[auth(table = "organization_role")]
+#[auth(table = "organizationRole")]
 pub struct Model {
     pub id: String,
+    #[sqlx(rename = "organizationId")]
     pub organization_id: String,
     pub role: String,
     pub permission: String,
+    #[sqlx(rename = "createdAt")]
     pub created_at: DateTime<Utc>,
+    #[sqlx(rename = "updatedAt")]
     pub updated_at: Option<DateTime<Utc>>,
 }
 

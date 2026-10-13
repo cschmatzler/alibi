@@ -16,6 +16,7 @@ struct Event {
     slug: String,
     logo: Option<String>,
     metadata: Option<String>,
+    #[sqlx(rename = "createdAt")]
     created_at: NaiveDateTime,
     language: String,
     billing_key: String,
@@ -29,8 +30,10 @@ struct Membership {
     #[auth(column_type = "bpchar")]
     organization_id: String,
     #[auth(column_type = "bpchar")]
+    #[sqlx(rename = "userId")]
     user_id: String,
     role: String,
+    #[sqlx(rename = "createdAt")]
     created_at: NaiveDateTime,
 }
 #[derive(Clone, Debug, sqlx::FromRow, SqlxModel)]
@@ -45,18 +48,20 @@ struct Invite {
     role: Option<String>,
     status: String,
     #[auth(column_type = "bpchar")]
+    #[sqlx(rename = "inviterId")]
     inviter_id: String,
+    #[sqlx(rename = "expiresAt")]
     expires_at: NaiveDateTime,
+    #[sqlx(rename = "createdAt")]
     created_at: NaiveDateTime,
 }
-auth_model!(sqlx, session, "session", "sessions", [user_id: String], {
+auth_model!(sqlx, session, "session", "session", [user_id: String], {
     pub token: String,
     pub expires_at: NaiveDateTime,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub ip_address: Option<String>,
     pub user_agent: Option<String>,
-    pub active: bool,
     #[sqlx(rename = "active_event_id")]
     #[auth(column_type = "bpchar")]
     pub active_organization_id: Option<String>,
@@ -100,15 +105,17 @@ async fn exercise(db: Db) -> TestResult {
     let id_type = if db.is_postgres() { "CHAR(30)" } else { "TEXT" };
     for statement in [
         format!(
-            "CREATE TABLE event (id {id_type} PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE, logo TEXT, metadata TEXT, created_at TIMESTAMP NOT NULL, language TEXT NOT NULL, billing_key TEXT NOT NULL DEFAULT 'existing-billing')"
+            "CREATE TABLE event (id {id_type} PRIMARY KEY, \"name\" TEXT NOT NULL, \"slug\" TEXT NOT NULL UNIQUE, \"logo\" TEXT, \"metadata\" TEXT, \"createdAt\" TIMESTAMP NOT NULL, language TEXT NOT NULL, billing_key TEXT NOT NULL DEFAULT 'existing-billing')"
         ),
         format!(
-            "CREATE TABLE member (id {id_type} PRIMARY KEY, event_id {id_type} NOT NULL REFERENCES event(id), user_id {id_type} NOT NULL REFERENCES users(id), role TEXT NOT NULL, created_at TIMESTAMP NOT NULL)"
+            "CREATE TABLE \"member\" (id {id_type} PRIMARY KEY, event_id {id_type} NOT NULL REFERENCES event(id), \"userId\" {id_type} NOT NULL REFERENCES \"user\"(id), \"role\" TEXT NOT NULL, \"createdAt\" TIMESTAMP NOT NULL)"
         ),
         format!(
-            "CREATE TABLE invitation (id {id_type} PRIMARY KEY, event_id {id_type} NOT NULL REFERENCES event(id), email TEXT NOT NULL, role TEXT, status TEXT NOT NULL, inviter_id {id_type} NOT NULL REFERENCES users(id), expires_at TIMESTAMP NOT NULL, created_at TIMESTAMP NOT NULL)"
+            "CREATE TABLE \"invitation\" (id {id_type} PRIMARY KEY, event_id {id_type} NOT NULL REFERENCES event(id), \"email\" TEXT NOT NULL, \"role\" TEXT, \"status\" TEXT NOT NULL, \"inviterId\" {id_type} NOT NULL REFERENCES \"user\"(id), \"expiresAt\" TIMESTAMP NOT NULL, \"createdAt\" TIMESTAMP NOT NULL)"
         ),
-        format!("ALTER TABLE sessions ADD COLUMN active_event_id {id_type} REFERENCES event(id)"),
+        format!(
+            "ALTER TABLE \"session\" ADD COLUMN active_event_id {id_type} REFERENCES event(id)"
+        ),
     ] {
         _ = db.execute(&statement, &[]).await?;
     }
@@ -281,7 +288,7 @@ async fn exercise(db: Db) -> TestResult {
     // An imported nullable role remains null on reads and status transitions.
     _ = db
         .execute(
-            "UPDATE invitation SET role = NULL WHERE id = $1",
+            "UPDATE \"invitation\" SET \"role\" = NULL WHERE id = $1",
             &[&invitation.id],
         )
         .await?;
@@ -438,7 +445,7 @@ async fn exercise(db: Db) -> TestResult {
     );
     assert_eq!(
         db.text(
-            "SELECT active_event_id FROM sessions WHERE token = $1",
+            "SELECT active_event_id FROM \"session\" WHERE \"token\" = $1",
             &[guest_session.token()]
         )
         .await?

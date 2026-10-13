@@ -178,7 +178,7 @@ async fn password_reset_token_matrix<B: Backend>(db: Db) -> TestResult {
             )
             .await;
         _ = db
-            .execute("DELETE FROM accounts WHERE provider_id = 'credential' AND user_id IN (SELECT id FROM users WHERE email = 'doomed@example.test')", &[])
+            .execute("DELETE FROM \"account\" WHERE \"providerId\" = 'credential' AND \"userId\" IN (SELECT id FROM \"user\" WHERE \"email\" = 'doomed@example.test')", &[])
             .await?;
         let _ = probe
             .post(
@@ -190,7 +190,10 @@ async fn password_reset_token_matrix<B: Backend>(db: Db) -> TestResult {
             .await;
         let (_, token) = mailbox.0.lock().unwrap().pop().unwrap();
         _ = db
-            .execute("UPDATE verifications SET value = 'missing-user'", &[])
+            .execute(
+                "UPDATE \"verification\" SET \"value\" = 'missing-user'",
+                &[],
+            )
             .await?;
         let _ = probe
             .post(
@@ -323,7 +326,10 @@ async fn change_and_verify_password_matrix<B: Backend>(db: Db) -> TestResult {
                 .await;
         }
         _ = db
-            .execute("DELETE FROM accounts WHERE provider_id = 'credential'", &[])
+            .execute(
+                "DELETE FROM \"account\" WHERE \"providerId\" = 'credential'",
+                &[],
+            )
             .await?;
         let _ = probe
             .post(
@@ -359,11 +365,11 @@ async fn disabled_reset_rejects_before_lookup_without_changing_principals<B: Bac
     let owner = signup(&auth, "disabled-owner@example.test").await;
     let foreign = signup(&auth, "disabled-foreign@example.test").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let _ = db
         .execute(
-            "ALTER TABLE users RENAME TO temporarily_unavailable_users",
+            "ALTER TABLE \"user\" RENAME TO temporarily_unavailable_users",
             &[],
         )
         .await?;
@@ -380,16 +386,16 @@ async fn disabled_reset_rejects_before_lookup_without_changing_principals<B: Bac
         .await;
         assert_eq!(body(&rejected)["code"], "RESET_PASSWORD_DISABLED");
         assert!(!rejected.headers.contains_key("set-cookie"));
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
     }
     let _ = db
         .execute(
-            "ALTER TABLE temporarily_unavailable_users RENAME TO users",
+            "ALTER TABLE temporarily_unavailable_users RENAME TO \"user\"",
             &[],
         )
         .await?;
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -473,7 +479,7 @@ async fn reset_callback_failure_keeps_new_password_and_existing_sessions<B: Back
     )
     .await;
     let (_, token) = mailbox.0.lock().unwrap().pop().unwrap();
-    let before = db.tables(&["users", "sessions"]).await?;
+    let before = db.tables(&["user", "session"]).await?;
     let response = call(
         &auth,
         request(
@@ -485,11 +491,11 @@ async fn reset_callback_failure_keeps_new_password_and_existing_sessions<B: Back
     )
     .await;
     assert!(!response.headers.contains_key("set-cookie"));
-    assert_eq!(db.tables(&["users", "sessions"]).await?, before);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.tables(&["user", "session"]).await?, before);
+    assert_eq!(db.count("verification").await?, 0);
     assert_eq!(
         db.text(
-            "SELECT password FROM accounts WHERE user_id = $1",
+            "SELECT \"password\" FROM \"account\" WHERE \"userId\" = $1",
             &[body(&owner)["user"]["id"].as_str().unwrap()]
         )
         .await?
@@ -545,7 +551,7 @@ async fn expired_delivered_reset_redirect_replaces_error_and_preserves_fragment<
         .await?;
     let owner = signup(&auth, "expired-reset-owner@example.test").await;
     let foreign = signup(&auth, "expired-reset-foreign@example.test").await;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let callback = "/done?error=old&keep=a%2Bb#details";
     let _ = call(
         &auth,
@@ -560,8 +566,8 @@ async fn expired_delivered_reset_redirect_replaces_error_and_preserves_fragment<
     let (url, token) = mailbox.0.lock().unwrap().pop().unwrap();
     let identifier = format!("reset-password:{token}");
     db.set_timestamp(
-        "verifications",
-        "expires_at",
+        "verification",
+        "expiresAt",
         ("identifier", &identifier),
         chrono::Utc::now() - chrono::Duration::hours(1),
     )
@@ -580,7 +586,7 @@ async fn expired_delivered_reset_redirect_replaces_error_and_preserves_fragment<
         rejected.headers.get("location").map(String::as_str),
         Some(expected.as_str())
     );
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     authenticated(&auth, &cookies(&owner), "expired-reset-owner@example.test").await;
     authenticated(
         &auth,
@@ -633,7 +639,7 @@ async fn expired_delivered_reset_redirect_replaces_error_and_preserves_fragment<
         ""
     );
     let unchanged = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     // Compat owner: core/password/required-callback.test.ts. Missing differs
     // from an explicitly empty callback: the public query schema rejects it
@@ -654,7 +660,7 @@ async fn expired_delivered_reset_redirect_replaces_error_and_preserves_fragment<
     assert!(!absent.headers.contains_key("location"));
     assert!(absent.headers.get_all("set-cookie").next().is_none());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         unchanged
     );
@@ -674,7 +680,7 @@ async fn expired_delivered_reset_redirect_replaces_error_and_preserves_fragment<
     assert!(denied.body.is_empty());
     assert!(denied.headers.get_all("set-cookie").next().is_none());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         unchanged
     );
@@ -699,7 +705,7 @@ async fn expired_delivered_reset_redirect_replaces_error_and_preserves_fragment<
     assert!(accepted.body.is_empty());
     assert!(accepted.headers.get_all("set-cookie").next().is_none());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         unchanged
     );
@@ -771,7 +777,7 @@ async fn change_password_invalid_revocation_flag_never_runs_crypto<B: Backend>(
     hasher.hashes.store(0, Ordering::SeqCst);
     hasher.verifies.store(0, Ordering::SeqCst);
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for flag in [json!("true"), json!("false"), Value::Null, json!(1)] {
         let rejected = call(&auth, request("/change-password", Some(json!({"currentPassword":PASSWORD,"newPassword":"schema-new-password","revokeOtherSessions":flag})), &cookies(&owner)), 400).await;
@@ -779,7 +785,7 @@ async fn change_password_invalid_revocation_flag_never_runs_crypto<B: Backend>(
         assert_eq!(hasher.hashes.load(Ordering::SeqCst), 0);
         assert_eq!(hasher.verifies.load(Ordering::SeqCst), 0);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -787,10 +793,10 @@ async fn change_password_invalid_revocation_flag_never_runs_crypto<B: Backend>(
     let _ = call(&auth, request("/change-password", Some(json!({"currentPassword":PASSWORD,"newPassword":"schema-new-password","revokeOtherSessions":false})), &cookies(&owner)), 200).await;
     assert_eq!(hasher.hashes.load(Ordering::SeqCst), 1);
     assert_eq!(hasher.verifies.load(Ordering::SeqCst), 1);
-    assert_eq!(db.count("sessions").await?, 3);
+    assert_eq!(db.count("session").await?, 3);
     assert_eq!(
         db.text(
-            "SELECT password FROM accounts WHERE user_id = $1",
+            "SELECT \"password\" FROM \"account\" WHERE \"userId\" = $1",
             &[body(&owner)["user"]["id"].as_str().unwrap()]
         )
         .await?
@@ -865,7 +871,7 @@ async fn reset_hash_failure_consumes_proof_without_changing_credentials<B: Backe
     )
     .await;
     let (_, token) = mailbox.0.lock().unwrap().pop().unwrap();
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     hasher.hashes.store(0, Ordering::SeqCst);
     hasher.fail.store(true, Ordering::SeqCst);
     let failed = call(
@@ -881,8 +887,8 @@ async fn reset_hash_failure_consumes_proof_without_changing_credentials<B: Backe
     assert!(!failed.headers.contains_key("set-cookie"));
     assert_eq!(hasher.hashes.load(Ordering::SeqCst), 1);
     assert_eq!(callbacks.load(Ordering::SeqCst), 0);
-    assert_eq!(db.count("verifications").await?, 0);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let replay = call(
         &auth,
         request(
@@ -988,20 +994,20 @@ async fn invalid_stored_reset_proofs_consume_before_crypto_or_callback<B: Backen
         if missing_owner {
             let _ = db
                 .execute(
-                    "UPDATE verifications SET value = 'missing-owner' WHERE identifier = $1",
+                    "UPDATE \"verification\" SET \"value\" = 'missing-owner' WHERE \"identifier\" = $1",
                     &[&identifier],
                 )
                 .await?;
         } else {
             db.set_timestamp(
-                "verifications",
-                "expires_at",
+                "verification",
+                "expiresAt",
                 ("identifier", &identifier),
                 chrono::Utc::now() - chrono::Duration::hours(1),
             )
             .await?;
         }
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         hasher.hashes.store(0, Ordering::SeqCst);
         hasher.verifies.store(0, Ordering::SeqCst);
         let rejected = call(
@@ -1033,11 +1039,11 @@ async fn invalid_stored_reset_proofs_consume_before_crypto_or_callback<B: Backen
         )
         .await;
         assert_eq!(body(&replay)["code"], "INVALID_TOKEN");
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
         assert_eq!(hasher.hashes.load(Ordering::SeqCst), 0);
         assert_eq!(hasher.verifies.load(Ordering::SeqCst), 0);
         assert_eq!(callbacks.load(Ordering::SeqCst), 0);
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
         authenticated(&auth, &cookies(&owner), "invalid-proof-owner@example.test").await;
         authenticated(
             &auth,
@@ -1114,7 +1120,7 @@ async fn concurrent_reset_proof_is_consumed_before_hashing_and_callback<B: Backe
     )
     .await;
     let (_, token) = mailbox.0.lock().unwrap().pop().unwrap();
-    let before = db.tables(&["accounts", "sessions"]).await?;
+    let before = db.tables(&["account", "session"]).await?;
     let worker = auth.clone();
     let first_token = token.clone();
     let first = tokio::spawn(async move {
@@ -1130,8 +1136,8 @@ async fn concurrent_reset_proof_is_consumed_before_hashing_and_callback<B: Backe
         .await
     });
     tokio::time::timeout(std::time::Duration::from_secs(2), hasher.entered.notified()).await?;
-    assert_eq!(db.count("verifications").await?, 0);
-    assert_eq!(db.tables(&["accounts", "sessions"]).await?, before);
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(db.tables(&["account", "session"]).await?, before);
     let replay = call(
         &auth,
         request(
@@ -1185,11 +1191,11 @@ async fn zero_password_options_enforce_default_bounds_and_reset_expiry<B: Backen
         (8, 200, ""),
         (128, 200, ""),
     ] {
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         let response = call(&auth, request("/sign-up/email", Some(json!({"email":format!("boundary-{length}@example.test"),"name":"Boundary","password":"x".repeat(length)})), ""), status).await;
         if status == 400 {
             assert_eq!(body(&response)["code"], code);
-            assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+            assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
         }
     }
     for accepted in [8, 128] {
@@ -1204,21 +1210,19 @@ async fn zero_password_options_enforce_default_bounds_and_reset_expiry<B: Backen
         )
         .await;
         let (_, token) = mailbox.0.lock().unwrap().pop().unwrap();
-        let proof: Value = serde_json::from_str(&db.table("verifications").await?)?;
+        let proof: Value = serde_json::from_str(&db.table("verification").await?)?;
         let row = proof
             .as_array()
             .unwrap()
             .iter()
             .find(|r| r["identifier"] == format!("reset-password:{token}"))
             .unwrap();
-        let expires = chrono::DateTime::parse_from_rfc3339(row["expires_at"].as_str().unwrap())?;
+        let expires = chrono::DateTime::parse_from_rfc3339(row["expiresAt"].as_str().unwrap())?;
         let remaining = expires
             .signed_duration_since(chrono::Utc::now())
             .num_seconds();
         assert!((3590..=3600).contains(&remaining));
-        let before = db
-            .tables(&["accounts", "sessions", "verifications"])
-            .await?;
+        let before = db.tables(&["account", "session", "verification"]).await?;
         for (length, code) in [(7, "PASSWORD_TOO_SHORT"), (129, "PASSWORD_TOO_LONG")] {
             let rejected = call(
                 &auth,
@@ -1232,8 +1236,7 @@ async fn zero_password_options_enforce_default_bounds_and_reset_expiry<B: Backen
             .await;
             assert_eq!(body(&rejected)["code"], code);
             assert_eq!(
-                db.tables(&["accounts", "sessions", "verifications"])
-                    .await?,
+                db.tables(&["account", "session", "verification"]).await?,
                 before
             );
         }
@@ -1315,12 +1318,12 @@ async fn reset_body_proof_wins_over_conflicting_live_query_proof<B: Backend>(db:
         .to_owned();
     let query_password = db
         .text(
-            "SELECT password FROM accounts WHERE user_id = $1",
+            "SELECT \"password\" FROM \"account\" WHERE \"userId\" = $1",
             &[&query_id],
         )
         .await?;
-    let rows = db.tables(&["users", "sessions"]).await?;
-    let before: Value = serde_json::from_str(&db.table("verifications").await?)?;
+    let rows = db.tables(&["user", "session"]).await?;
+    let before: Value = serde_json::from_str(&db.table("verification").await?)?;
     let query_proof = before
         .as_array()
         .unwrap()
@@ -1335,16 +1338,16 @@ async fn reset_body_proof_wins_over_conflicting_live_query_proof<B: Backend>(db:
     );
     let _ = input.query.insert("token".into(), tokens[1].clone());
     let _ = call(&auth, input, 200).await;
-    assert_eq!(db.tables(&["users", "sessions"]).await?, rows);
+    assert_eq!(db.tables(&["user", "session"]).await?, rows);
     assert_eq!(
         db.text(
-            "SELECT password FROM accounts WHERE user_id = $1",
+            "SELECT \"password\" FROM \"account\" WHERE \"userId\" = $1",
             &[&query_id]
         )
         .await?,
         query_password
     );
-    let after: Value = serde_json::from_str(&db.table("verifications").await?)?;
+    let after: Value = serde_json::from_str(&db.table("verification").await?)?;
     assert_eq!(after, json!([query_proof]));
     let _ = call(
         &auth,
@@ -1450,11 +1453,14 @@ async fn verify_password_uses_initialized_callback_and_utf16_maximum<B: Backend>
     let owner=call(&auth,request("/sign-up/email",Some(json!({"email":"initialized-verify@example.test","password":password,"name":"Owner"})),""),200).await;
     let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let hash = db
-        .text("SELECT password FROM accounts WHERE user_id=$1", &[&id])
+        .text(
+            "SELECT \"password\" FROM \"account\" WHERE \"userId\"=$1",
+            &[&id],
+        )
         .await?
         .unwrap();
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for mode in [0, 1, 2, 3] {
         *crypto.mode.lock().unwrap() = mode;
@@ -1488,7 +1494,7 @@ async fn verify_password_uses_initialized_callback_and_utf16_maximum<B: Backend>
             [(hash.clone(), password.clone())]
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -1496,7 +1502,7 @@ async fn verify_password_uses_initialized_callback_and_utf16_maximum<B: Backend>
     for removed in [false, true] {
         if removed {
             _ = db
-                .execute("DELETE FROM accounts WHERE user_id=$1", &[&id])
+                .execute("DELETE FROM \"account\" WHERE \"userId\"=$1", &[&id])
                 .await?;
         }
         crypto.seen.lock().unwrap().clear();
@@ -1592,7 +1598,7 @@ async fn reset_delivery_failures_retain_genuine_redeemable_proof_and_principals<
             .await?;
         let owner = signup(&auth, "owner@example.test").await;
         let foreign = signup(&auth, "foreign@example.test").await;
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         // Compat owner: core/password/empty-redirect.test.ts. Empty redirectTo
         // passes the optional string schema and source truthiness check, and
         // still creates a real redeemable proof; the failure modes keep /reset.
@@ -1631,8 +1637,8 @@ async fn reset_delivery_failures_retain_genuine_redeemable_proof_and_principals<
         assert_eq!(proof.value()?, body(&owner)["user"]["id"].as_str().unwrap());
         assert!(proof.expires_at()? >= start + chrono::Duration::seconds(3599));
         assert!(proof.expires_at()? <= chrono::Utc::now() + chrono::Duration::seconds(3600));
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
-        let proof_before = db.table("verifications").await?;
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
+        let proof_before = db.table("verification").await?;
         _ = call(
             &auth,
             request(
@@ -1644,7 +1650,7 @@ async fn reset_delivery_failures_retain_genuine_redeemable_proof_and_principals<
         )
         .await;
         assert_eq!(delivery.seen.lock().unwrap().len(), 1);
-        assert_eq!(db.table("verifications").await?, proof_before);
+        assert_eq!(db.table("verification").await?, proof_before);
         if mode == "ok" {
             let rejected = call(
                 &auth,
@@ -1654,8 +1660,8 @@ async fn reset_delivery_failures_retain_genuine_redeemable_proof_and_principals<
             assert_eq!(body(&rejected)["code"], "INVALID_REDIRECT_URL");
             assert!(rejected.headers.get_all("set-cookie").next().is_none());
             assert_eq!(delivery.seen.lock().unwrap().len(), 1);
-            assert_eq!(db.table("verifications").await?, proof_before);
-            assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+            assert_eq!(db.table("verification").await?, proof_before);
+            assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
         }
         let reset = call(
             &auth,
@@ -1668,8 +1674,8 @@ async fn reset_delivery_failures_retain_genuine_redeemable_proof_and_principals<
         )
         .await;
         assert_eq!(body(&reset), json!({"status":true}));
-        assert_eq!(db.count("verifications").await?, 0);
-        let after = db.tables(&["users", "accounts", "sessions"]).await?;
+        assert_eq!(db.count("verification").await?, 0);
+        let after = db.tables(&["user", "account", "session"]).await?;
         _ = call(
             &auth,
             request(
@@ -1680,7 +1686,7 @@ async fn reset_delivery_failures_retain_genuine_redeemable_proof_and_principals<
             400,
         )
         .await;
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, after);
         let signed = call(
             &auth,
             request(

@@ -149,8 +149,6 @@ pub trait SqlxSessionModel: AuthSession + SqlxModel {
 
     fn user_id_column() -> &'static str;
 
-    fn active_column() -> &'static str;
-
     fn expires_at_column() -> &'static str;
 
     fn created_at_column() -> &'static str;
@@ -218,12 +216,6 @@ pub trait SqlxAccountModel: AuthAccount + SqlxModel {
         Err(alibi_core::AuthError::internal(
             "the account schema cannot stage additional fields",
         ))
-    }
-
-    /// Physical access, refresh and ID token columns for operator conversion.
-    /// Handwritten models opt in explicitly; absence fails closed.
-    fn oauth_token_columns() -> Option<[&'static str; 3]> {
-        None
     }
 
     fn id_column() -> &'static str;

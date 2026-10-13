@@ -159,7 +159,7 @@ async fn dynamic_origin_dispatch<B: Backend>(db: Db) -> TestResult {
         let response = auth.handle_request(req).await?;
         assert_eq!(response.status, status);
         assert!(response.headers.get("set-cookie").is_none());
-        for table in ["users", "accounts", "sessions"] {
+        for table in ["user", "account", "session"] {
             assert_eq!(db.count(table).await?, 0);
         }
     }
@@ -179,8 +179,8 @@ async fn dynamic_origin_dispatch<B: Backend>(db: Db) -> TestResult {
             .await?;
         assert_eq!(response.status, 403, "{origin}: {:?}", response.body);
         assert!(response.headers.get("set-cookie").is_none());
-        assert_eq!(db.count("users").await?, 0);
-        assert_eq!(db.count("sessions").await?, 0);
+        assert_eq!(db.count("user").await?, 0);
+        assert_eq!(db.count("session").await?, 0);
     }
     let response = auth
         .handle_request(request(
@@ -193,8 +193,8 @@ async fn dynamic_origin_dispatch<B: Backend>(db: Db) -> TestResult {
         .await?;
     assert_eq!(response.status, 200, "{:?}", response.body);
     assert!(response.headers.get("set-cookie").is_some());
-    assert_eq!(db.count("users").await?, 1);
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("user").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     for (callback, mobile, accepted) in [
         ("https://b.example.test:443/cb?q=1#fragment", false, true),
         ("https://user:pass@b.example.test/cb", false, true),
@@ -206,7 +206,7 @@ async fn dynamic_origin_dispatch<B: Backend>(db: Db) -> TestResult {
         ("myapp://client:123/cb", true, false),
         ("myapp://user@client/cb", true, false),
     ] {
-        let before = db.count("sessions").await?;
+        let before = db.count("session").await?;
         let mut req = request(
             HttpMethod::Post,
             "/sign-in/email",
@@ -229,13 +229,13 @@ async fn dynamic_origin_dispatch<B: Backend>(db: Db) -> TestResult {
             accepted.then_some(callback)
         );
         assert_eq!(response.headers.get("set-cookie").is_some(), accepted);
-        assert_eq!(db.count("sessions").await?, before + i64::from(accepted));
+        assert_eq!(db.count("session").await?, before + i64::from(accepted));
     }
     println!(
         "{}: dispatch users={} sessions={}",
         std::any::type_name::<B>(),
-        db.count("users").await?,
-        db.count("sessions").await?
+        db.count("user").await?,
+        db.count("session").await?
     );
     assert_eq!(auth.config().base_url, "http://localhost:3000");
     assert!(auth.config().trusted_origins.is_empty());
@@ -279,7 +279,7 @@ async fn dynamic_origin_magic_link<B: Backend>(db: Db) -> TestResult {
             .url
             .starts_with("https://a.example.test/api/auth/magic-link/verify?")
     );
-    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(db.count("verification").await?, 1);
     for callback in ["https://a.example.test.evil.test/done", "myapp://client/cb"] {
         let mut req = request(
             HttpMethod::Get,
@@ -293,9 +293,9 @@ async fn dynamic_origin_magic_link<B: Backend>(db: Db) -> TestResult {
         let response = auth.handle_request(req).await?;
         assert_eq!(response.status, 403);
         assert!(response.headers.get("set-cookie").is_none());
-        assert_eq!(db.count("verifications").await?, 1);
-        assert_eq!(db.count("users").await?, 0);
-        assert_eq!(db.count("sessions").await?, 0);
+        assert_eq!(db.count("verification").await?, 1);
+        assert_eq!(db.count("user").await?, 0);
+        assert_eq!(db.count("session").await?, 0);
     }
     let mut req = request(
         HttpMethod::Get,
@@ -314,12 +314,12 @@ async fn dynamic_origin_magic_link<B: Backend>(db: Db) -> TestResult {
         Some("https://b.example.test/done")
     );
     assert!(response.headers.get("set-cookie").is_some());
-    assert_eq!(db.count("verifications").await?, 0);
-    assert_eq!(db.count("users").await?, 1);
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(db.count("user").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     let response = auth.handle_request(replay).await?;
     assert!(response.headers.get("set-cookie").is_none());
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     drop(auth);
     B::close(connection).await?;
     Ok(())

@@ -329,12 +329,7 @@ where
             if remove_team_members {
                 let mut rooms = model::select_model::<team::Model>(exec);
                 rooms.push(" WHERE ");
-                rooms.compare(
-                    team::Model::TABLE,
-                    "organization_id",
-                    " = ",
-                    organization_id,
-                );
+                rooms.compare(team::Model::TABLE, "organizationId", " = ", organization_id);
                 rooms.push(" LIMIT ");
                 rooms.bind(limit);
                 lock_exclusive(&mut rooms);
@@ -421,7 +416,7 @@ where
         &self,
         params: &MemberPageQuery,
     ) -> AuthResult<(Vec<Member>, usize)> {
-        let legacy_filter = ListOrganizationMembersParams {
+        let filter_params = ListOrganizationMembersParams {
             organization_id: params.organization_id.clone(),
             sort_by: params.sort_by.clone(),
             sort_direction: params.sort_direction.clone(),
@@ -430,7 +425,7 @@ where
             filter_operator: params.filter_operator.clone(),
             ..Default::default()
         };
-        let filter = member_filter(&legacy_filter);
+        let filter = member_filter(&filter_params);
         let total = usize::try_from(
             self.count_members(&params.organization_id, filter.as_ref())
                 .await?,
@@ -444,7 +439,7 @@ where
             filter.as_ref(),
         )?;
         if params.sort_by.as_deref().and_then(member_column).is_some() {
-            member_sort(&self.organization_models.member, &mut sql, &legacy_filter)?;
+            member_sort(&self.organization_models.member, &mut sql, &filter_params)?;
         }
         super::bind_page(&mut sql, params.limit, params.offset);
         Ok((

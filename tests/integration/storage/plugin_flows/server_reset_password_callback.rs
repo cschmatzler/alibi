@@ -110,7 +110,7 @@ async fn server_reset_callback_preserves_proof_and_original_logical_params<B: Ba
     .await;
     let token = delivery.0.lock().unwrap()[0].clone();
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for query in [
         json!({}),
@@ -175,7 +175,7 @@ async fn server_reset_callback_preserves_proof_and_original_logical_params<B: Ba
         let _ = expected.query_pairs_mut().append_pair(key, value);
         assert_eq!(location, expected);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -200,7 +200,7 @@ async fn server_reset_callback_preserves_proof_and_original_logical_params<B: Ba
     );
     assert_eq!(observer.0.lock().unwrap().last().unwrap()["token"], token);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -226,7 +226,7 @@ async fn server_reset_callback_preserves_proof_and_original_logical_params<B: Ba
             .and_then(alibi::utils::json::JsValue::as_bool),
         Some(true)
     );
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     let login=call(&auth,request("/sign-in/email",Some(json!({"email":"callback-owner@example.test","password":"callback-replacement-205"})),""),200).await;
     assert_eq!(body(&login)["user"]["id"], body(&owner)["user"]["id"]);
     B::close(connection).await

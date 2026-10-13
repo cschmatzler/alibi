@@ -17,12 +17,12 @@ async fn oauth_admin_creation_persists_operator_fields_without_metadata_forgery<
     let owner = signup(&auth, "oauth-admin-client-owner@example.test").await;
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
+            "oauthClient",
         ])
         .await?;
     for (input, cookie, status) in [
@@ -92,12 +92,12 @@ async fn oauth_admin_creation_persists_operator_fields_without_metadata_forgery<
         }
         assert_eq!(
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
+                "user",
+                "account",
+                "session",
+                "verification",
                 "jwks",
-                "oauth_client"
+                "oauthClient"
             ])
             .await?,
             before
@@ -170,6 +170,6 @@ async fn oauth_admin_creation_persists_operator_fields_without_metadata_forgery<
         ))
         .await?;
     assert_eq!(response.status, 404);
-    assert_eq!(db.count("oauth_client").await?, 1);
+    assert_eq!(db.count("oauthClient").await?, 1);
     Ok(())
 }

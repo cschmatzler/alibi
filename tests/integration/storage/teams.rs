@@ -321,8 +321,8 @@ async fn invitation_acceptance_is_atomic_for_capacity_identity_and_tenant_failur
 
     let expired_token = session(&store, &recipient).await?;
     db.set_timestamp(
-        "sessions",
-        "expires_at",
+        "session",
+        "expiresAt",
         ("token", &expired_token),
         Utc::now() - Duration::minutes(1),
     )
@@ -334,12 +334,11 @@ async fn invitation_acceptance_is_atomic_for_capacity_identity_and_tenant_failur
         Err(AuthError::SessionNotFound)
     ));
     // A persisted, revoked session cannot authorize the compound transition.
-    // Capacity is available here so a missing active predicate cannot hide
-    // behind the team's capacity rejection.
+    // Capacity is available here so expiration is the only rejection.
     let revoked_token = session(&store, &recipient).await?;
     _ = db
         .execute(
-            "UPDATE sessions SET active=FALSE WHERE token=$1",
+            "UPDATE \"session\" SET \"expiresAt\"='2020-01-01T00:00:00Z' WHERE \"token\"=$1",
             &[&revoked_token],
         )
         .await?;
@@ -651,7 +650,7 @@ async fn dynamic_roles_scope_reads_and_mutations_and_persist_json_permission_val
     );
     assert_eq!(
         db.text(
-            "SELECT permission FROM organization_role WHERE id=$1",
+            "SELECT \"permission\" FROM \"organizationRole\" WHERE id=$1",
             &[&role.id]
         )
         .await?,
@@ -698,7 +697,7 @@ async fn independent_stores_enforce_team_capacity_and_one_invitation_acceptance_
     if db.is_postgres() {
         let physical_before = db
             .text(
-                "SELECT row_to_json(t)::text FROM team t WHERE id = $1",
+                "SELECT row_to_json(t)::text FROM \"team\" t WHERE id = $1",
                 &[&team.id],
             )
             .await?;
@@ -714,7 +713,7 @@ async fn independent_stores_enforce_team_capacity_and_one_invitation_acceptance_
             );
             assert_eq!(
                 db.text(
-                    "SELECT row_to_json(t)::text FROM team t WHERE id = $1",
+                    "SELECT row_to_json(t)::text FROM \"team\" t WHERE id = $1",
                     &[&team.id]
                 )
                 .await?,
@@ -722,7 +721,7 @@ async fn independent_stores_enforce_team_capacity_and_one_invitation_acceptance_
             );
             assert_eq!(
                 db.count_where(
-                    "SELECT COUNT(*) FROM team_member WHERE team_id = $1",
+                    "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\" = $1",
                     &[&team.id]
                 )
                 .await?,
@@ -738,7 +737,7 @@ async fn independent_stores_enforce_team_capacity_and_one_invitation_acceptance_
             ));
             assert_eq!(
                 db.text(
-                    "SELECT row_to_json(t)::text FROM team t WHERE id = $1",
+                    "SELECT row_to_json(t)::text FROM \"team\" t WHERE id = $1",
                     &[&team.id]
                 )
                 .await?,

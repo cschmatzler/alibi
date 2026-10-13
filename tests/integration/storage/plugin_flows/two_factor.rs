@@ -70,7 +70,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     let owner = signup(&auth, "factor@example.test").await;
     let user = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let before = db
-        .tables(&["users", "accounts", "sessions", "two_factor"])
+        .tables(&["user", "account", "session", "twoFactor"])
         .await?;
     for (input, cookie, status, code) in [
         (json!({}), Some(cookies(&owner)), 400, "VALIDATION_ERROR"),
@@ -115,7 +115,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         assert_eq!(error.error.status_code(), status);
         assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "two_factor"])
+            db.tables(&["user", "account", "session", "twoFactor"])
                 .await?,
             before
         );
@@ -143,7 +143,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     );
     assert_eq!(enrollment_body["backupCodes"].as_array().unwrap().len(), 10);
     let after = db
-        .tables(&["users", "accounts", "sessions", "two_factor"])
+        .tables(&["user", "account", "session", "twoFactor"])
         .await?;
     assert_eq!(&after[..3], &before[..3]);
     // A separate authenticator implementation consumes the actual otpauth URI.
@@ -151,7 +151,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     let authenticator = totp_rs::Totp::from_url(enrollment_body["totpURI"].as_str().unwrap())?;
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM users WHERE id = $1 AND two_factor_enabled = true",
+            "SELECT COUNT(*) FROM \"user\" WHERE id = $1 AND \"twoFactorEnabled\" = true",
             &[&user]
         )
         .await?,
@@ -165,7 +165,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     authenticated(&auth, &active_cookie, "factor@example.test").await;
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM users WHERE id = $1 AND two_factor_enabled = true",
+            "SELECT COUNT(*) FROM \"user\" WHERE id = $1 AND \"twoFactorEnabled\" = true",
             &[&user]
         )
         .await?,
@@ -173,7 +173,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM two_factor WHERE user_id = $1 AND verified = true",
+            "SELECT COUNT(*) FROM \"twoFactor\" WHERE \"userId\" = $1 AND \"verified\" = true",
             &[&user]
         )
         .await?,
@@ -182,7 +182,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
 
     let remaining = Box::pin(async {
     Box::pin(async {
-    let stable = db.tables(&["users", "accounts", "sessions", "two_factor", "verifications"]).await?;
+    let stable = db.tables(&["user", "account", "session", "twoFactor", "verification"]).await?;
     for (input, cookie, status, code) in [
         (json!({}), Some(active_cookie.clone()), 400, "VALIDATION_ERROR"),
         (json!({"password":42}), Some(active_cookie.clone()), 400, "VALIDATION_ERROR"),
@@ -195,7 +195,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         )).await.unwrap_err();
         assert_eq!(error.error.status_code(), status);
         assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
-        assert_eq!(db.tables(&["users", "accounts", "sessions", "two_factor", "verifications"]).await?,stable);
+        assert_eq!(db.tables(&["user", "account", "session", "twoFactor", "verification"]).await?,stable);
     }
     Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
     }).await?;
@@ -258,11 +258,11 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         Ok::<Value, Box<dyn std::error::Error + Send + Sync>>(remaining)
     }).await?;
 
-    let before_pending = db.table("sessions").await?;
+    let before_pending = db.table("session").await?;
     let pending = signin(&auth, "").await;
     assert_eq!(body(&pending)["twoFactorRedirect"], true);
     assert!(body(&pending).get("token").is_none());
-    assert_eq!(db.table("sessions").await?, before_pending);
+    assert_eq!(db.table("session").await?, before_pending);
     let pending_cookie = cookies(&pending);
     assert_eq!(
         body(&call(&auth, request("/get-session", None, &pending_cookie), 200).await),
@@ -286,7 +286,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     )).await.unwrap_err();
     assert_eq!(denied.error.status_code(),401);
     assert_eq!(denied.error.error_payload().1.as_deref(),Some("INVALID_CODE"));
-    assert_eq!(db.table("sessions").await?, before_pending);
+    assert_eq!(db.table("session").await?, before_pending);
     let completed = Box::pin(auth.dispatch_endpoint(
         TwoFactorPlugin::verify_totp_endpoint(alibi::plugins::two_factor::VerifyTotpInput{code:authenticator.generate_current().to_string(),trust_device:Some(true)}),
         EndpointOptions {headers:Some([("cookie".into(),pending_cookie.clone())].into_iter().collect()),..Default::default()}
@@ -297,16 +297,16 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         .find(|cookie| cookie.starts_with("better-auth.trust_device="))
         .unwrap()
         .to_owned();
-    let sessions = db.table("sessions").await?;
-    let before_replay = db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?;
+    let sessions = db.table("session").await?;
+    let before_replay = db.tables(&["user","account","session","twoFactor","verification"]).await?;
     let replay = Box::pin(auth.dispatch_endpoint(
         TwoFactorPlugin::verify_totp_endpoint(alibi::plugins::two_factor::VerifyTotpInput{code:authenticator.generate_current().to_string(),trust_device:None}),
         EndpointOptions{headers:Some([("cookie".into(),pending_cookie.clone())].into_iter().collect()),..Default::default()}
     )).await.unwrap_err();
     assert_eq!(replay.error.status_code(),401);
     assert_eq!(replay.error.error_payload().1.as_deref(),Some("INVALID_TWO_FACTOR_COOKIE"));
-    assert_eq!(db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?,before_replay);
-    assert_eq!(db.table("sessions").await?,sessions);
+    assert_eq!(db.tables(&["user","account","session","twoFactor","verification"]).await?,before_replay);
+    assert_eq!(db.table("session").await?,sessions);
 
     let trusted = signin(&auth, &trust).await;
     assert!(body(&trusted)["token"].as_str().is_some());
@@ -318,7 +318,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         true,
         "trusted-device proofs rotate once used"
     );
-    let before_uri = db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?;
+    let before_uri = db.tables(&["user","account","session","twoFactor","verification"]).await?;
     for (input,cookie,status,code) in [
         (json!({}),Some(cookies(&trusted)),400,"VALIDATION_ERROR"),
         (json!({"password":42}),Some(cookies(&trusted)),400,"VALIDATION_ERROR"),
@@ -329,7 +329,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         let error = Box::pin(auth.dispatch_endpoint(alibi::endpoint::ServerEndpoint::<Value>::new("two-factor","getTOTPURI").with_body(&input)?,EndpointOptions {headers:cookie.map(|cookie|[("cookie".into(),cookie)].into_iter().collect()),..Default::default()})).await.unwrap_err();
         assert_eq!(error.error.status_code(),status);
         assert_eq!(error.error.error_payload().1.as_deref(),Some(code));
-        assert_eq!(db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?,before_uri);
+        assert_eq!(db.tables(&["user","account","session","twoFactor","verification"]).await?,before_uri);
     }
     let uri = Box::pin(auth.dispatch_endpoint(
         TwoFactorPlugin::get_totp_uri_endpoint(alibi::plugins::two_factor::GetTotpUriInput{password:Some(PASSWORD.into())})
@@ -338,14 +338,14 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     )).await?;
     assert!(!uri.decode()?.totp_uri.is_empty());
     let uri = uri.into_response()?;
-    assert_eq!(db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?,before_uri);
+    assert_eq!(db.tables(&["user","account","session","twoFactor","verification"]).await?,before_uri);
     let recovered = totp_rs::Totp::from_url(body(&uri)["totpURI"].as_str().unwrap())?;
     assert!(
         recovered
             .check_current(&authenticator.generate_current().to_string())
             .is_some()
     );
-    let factors = db.table("two_factor").await?;
+    let factors = db.table("twoFactor").await?;
     let _ = call(
         &auth,
         request(
@@ -356,11 +356,11 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         400,
     )
     .await;
-    assert_eq!(db.table("two_factor").await?, factors);
+    assert_eq!(db.table("twoFactor").await?, factors);
     // OTP and backup codes must complete actual password-authenticated pending
     // logins, consume their proofs, and publish a session the browser can use.
     let pending_otp = cookies(&old_trust);
-    let sessions = db.table("sessions").await?;
+    let sessions = db.table("session").await?;
     let _ = call(
         &auth,
         request("/two-factor/send-otp", Some(json!({})), &pending_otp),
@@ -369,7 +369,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     .await;
     let (delivered_user, code) = mailbox.0.lock().unwrap().pop().unwrap();
     assert_eq!(delivered_user, user);
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("session").await?, sessions);
     let wrong = if code == "000000" { "000001" } else { "000000" };
     let invalid = call(
         &auth,
@@ -382,7 +382,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     )
     .await;
     assert_eq!(body(&invalid)["message"], "Invalid code");
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("session").await?, sessions);
     let completed = call(
         &auth,
         request(
@@ -394,7 +394,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     )
     .await;
     authenticated(&auth, &cookies(&completed), "factor@example.test").await;
-    let sessions = db.table("sessions").await?;
+    let sessions = db.table("session").await?;
     let _ = call(
         &auth,
         request(
@@ -405,7 +405,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         401,
     )
     .await;
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("session").await?, sessions);
     let pending_backup = signin(&auth, "").await;
     let backup = remaining.as_array().unwrap()[0].as_str().unwrap();
     let completed = call(
@@ -420,7 +420,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     .await;
     authenticated(&auth, &cookies(&completed), "factor@example.test").await;
     let next_pending = signin(&auth, "").await;
-    let sessions = db.table("sessions").await?;
+    let sessions = db.table("session").await?;
     let _ = call(
         &auth,
         request(
@@ -431,7 +431,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         401,
     )
     .await;
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("session").await?, sessions);
     // The previous backup-code replay is one failed pending attempt. Two more
     // failures across fresh challenges lock the ACCOUNT, not just one cookie.
     for expected in [2.0, 3.0] {
@@ -453,7 +453,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
             .unwrap();
         assert_eq!(factor.failed_verification_count, Some(expected));
         assert_eq!(factor.locked_until.is_some(), expected == 3.0);
-        assert_eq!(db.table("sessions").await?, sessions);
+        assert_eq!(db.table("session").await?, sessions);
     }
     let locked = signin(&auth, "").await;
     let denied = call(
@@ -467,7 +467,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     )
     .await;
     assert_eq!(body(&denied)["code"], "ACCOUNT_TEMPORARILY_LOCKED");
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("session").await?, sessions);
     let factor = auth
         .store()
         .get_two_factor_by_user_id(&user)
@@ -514,7 +514,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         .build()
         .await?;
     let exhausted = signin(&no_lockout, "").await;
-    let sessions = db.table("sessions").await?;
+    let sessions = db.table("session").await?;
     for _ in 0..5 {
         let _ = call(
             &no_lockout,
@@ -526,7 +526,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
             401,
         )
         .await;
-        assert_eq!(db.table("sessions").await?, sessions);
+        assert_eq!(db.table("session").await?, sessions);
     }
     let rejected = call(
         &no_lockout,
@@ -542,7 +542,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         body(&rejected)["code"],
         "TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE"
     );
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("session").await?, sessions);
     let _ = call(
         &no_lockout,
         request(
@@ -553,13 +553,13 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         401,
     )
     .await;
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("session").await?, sessions);
     let preference = call(&auth,request("/sign-in/email",Some(json!({"email":"factor@example.test","password":PASSWORD,"rememberMe":false})),""),200).await;
     let remember_cookie = cookies(&preference).split("; ").find(|cookie|cookie.starts_with("better-auth.dont_remember=")).unwrap().to_owned();
     let disable_cookie = format!("{}; {remember_cookie}",cookies(&trusted));
     let foreign = call(&auth,request("/sign-up/email",Some(json!({"email":"disable-foreign@example.test","password":"foreign-password123","name":"Foreign owner"})),""),200).await;
-    let before_disable = db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?;
-    let trust_id = db.text("SELECT identifier FROM verifications WHERE identifier LIKE 'trust-device-%' AND value=$1",&[&user]).await?.unwrap();
+    let before_disable = db.tables(&["user","account","session","twoFactor","verification"]).await?;
+    let trust_id = db.text("SELECT \"identifier\" FROM \"verification\" WHERE \"identifier\" LIKE 'trust-device-%' AND \"value\"=$1",&[&user]).await?.unwrap();
     let old_token = body(&trusted)["token"].as_str().unwrap().to_owned();
     for (input,cookie,status,code) in [
         (json!({}),Some(disable_cookie.clone()),400,"VALIDATION_ERROR"),
@@ -575,7 +575,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         )).await.unwrap_err();
         assert_eq!(error.error.status_code(),status);
         assert_eq!(error.error.error_payload().1.as_deref(),Some(code));
-        assert_eq!(db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?,before_disable);
+        assert_eq!(db.tables(&["user","account","session","twoFactor","verification"]).await?,before_disable);
     }
     let disabled = Box::pin(auth.dispatch_endpoint(
         TwoFactorPlugin::disable_two_factor_endpoint(alibi::plugins::two_factor::DisableTwoFactorInput { password:Some(PASSWORD.into()) })
@@ -588,17 +588,17 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     assert!(!session_cookie.to_ascii_lowercase().contains("max-age"));
     assert_eq!(body(&disabled)["status"], true);
     authenticated(&auth,&cookies(&disabled),"factor@example.test").await;
-    assert_eq!(db.count_where("SELECT COUNT(*) FROM sessions WHERE token=$1",&[&old_token]).await?,0);
-    assert_eq!(db.count_where("SELECT COUNT(*) FROM verifications WHERE identifier=$1",&[&trust_id]).await?,0);
-    let after_disable = db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?;
+    assert_eq!(db.count_where("SELECT COUNT(*) FROM \"session\" WHERE \"token\"=$1",&[&old_token]).await?,0);
+    assert_eq!(db.count_where("SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",&[&trust_id]).await?,0);
+    let after_disable = db.tables(&["user","account","session","twoFactor","verification"]).await?;
     let replay = Box::pin(auth.dispatch_endpoint(
         TwoFactorPlugin::disable_two_factor_endpoint(alibi::plugins::two_factor::DisableTwoFactorInput {password:Some(PASSWORD.into())}),
         EndpointOptions{headers:Some([("cookie".into(),cookies(&trusted))].into_iter().collect()),..Default::default()}
     )).await.unwrap_err();
     assert_eq!(replay.error.status_code(),401);
     assert_eq!(replay.error.error_payload().1.as_deref(),Some("UNAUTHORIZED"));
-    assert_eq!(db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?,after_disable);
-    assert_eq!(db.count("two_factor").await?, 0);
+    assert_eq!(db.tables(&["user","account","session","twoFactor","verification"]).await?,after_disable);
+    assert_eq!(db.count("twoFactor").await?, 0);
     let password_only = signin(&auth, "").await;
     authenticated(&auth, &cookies(&password_only), "factor@example.test").await;
     let enabled = call(
@@ -624,13 +624,13 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         .is_null()
     );
     assert_eq!(
-        db.count("two_factor").await?,
+        db.count("twoFactor").await?,
         0,
         "OTP-only enrollment creates no TOTP secret"
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM users WHERE id=$1 AND two_factor_enabled=true",
+            "SELECT COUNT(*) FROM \"user\" WHERE id=$1 AND \"twoFactorEnabled\"=true",
             &[&user]
         )
         .await?,
@@ -715,7 +715,7 @@ async fn renamed_factor_table_owns_the_complete_factor_lifecycle<B: Backend>(db:
     assert_eq!(rows(&user).await, 1);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM sqlite_master WHERE name = 'two_factor'",
+            "SELECT COUNT(*) FROM sqlite_master WHERE \"name\" = 'two_factor'",
             &[]
         )
         .await

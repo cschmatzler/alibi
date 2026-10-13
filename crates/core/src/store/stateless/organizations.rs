@@ -31,7 +31,6 @@ impl OrganizationStore for StatelessStore {
             logo: data.logo,
             metadata: data.metadata,
             created_at: now,
-            updated_at: now,
         };
         _ = self
             .organization_state()?
@@ -91,7 +90,6 @@ impl OrganizationStore for StatelessStore {
             return Ok(None);
         };
         patch(row, update);
-        row.updated_at = Utc::now();
         Ok(Some(row.clone()))
     }
     async fn delete_organization(&self, id: &str) -> AuthResult<()> {

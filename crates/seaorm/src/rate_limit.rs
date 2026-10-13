@@ -1,28 +1,29 @@
 //! Atomic rolling rate limits persisted independently of an application's auth schema.
 
-use alibi_core::middleware::rate_limit::bucket::{self, LongestWindow, Step};
+use alibi_core::middleware::rate_limit::bucket::{self, Step};
 use alibi_core::store::SchemaMigrator;
 use alibi_core::{AuthResult, EndpointRateLimit, RateLimitDecision, RateLimitStorage};
 use async_trait::async_trait;
-use sea_orm::sea_query::{Alias, ColumnDef, DynIden, IntoIden, Table};
+use sea_orm::ConnectionTrait;
+use sea_orm::sea_query::{Alias, DynIden, IntoIden};
 use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::{ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use sea_orm_migration::prelude::{
     DbErr, MigrationName, MigrationTrait, MigratorTrait, SchemaManager,
 };
-use std::sync::Arc;
 
 pub mod entity {
     use sea_orm::entity::prelude::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "rate_limit")]
+    #[sea_orm(table_name = "rateLimit")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
+        pub id: String,
         pub key: String,
-        pub count: f64,
+        pub count: crate::Number,
+        #[sea_orm(column_name = "lastRequest")]
         pub last_request: i64,
-        pub expires_at: Option<i64>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -37,32 +38,12 @@ pub mod entity {
 #[derive(Clone, Debug)]
 pub struct SeaOrmRateLimitStorage {
     database: DatabaseConnection,
-    longest_window: Arc<LongestWindow>,
 }
 
 impl SeaOrmRateLimitStorage {
     #[must_use]
     pub fn new(database: DatabaseConnection) -> Self {
-        Self {
-            database,
-            longest_window: Arc::new(LongestWindow::new()),
-        }
-    }
-    async fn prune(&self, now: i64) {
-        let Some(cutoff) = self.longest_window.prune_cutoff(now) else {
-            return;
-        };
-        // Pruning failures do not undo a successful quota consumption. The
-        // next admitted new/reset bucket retries cleanup without logging keys.
-        if entity::Entity::delete_many()
-            .filter(entity::Column::LastRequest.lt(cutoff))
-            .filter(entity::Column::ExpiresAt.lte(now))
-            .exec(&self.database)
-            .await
-            .is_err()
-        {
-            tracing::warn!("Rate-limit cleanup failed");
-        }
+        Self { database }
     }
 }
 
@@ -79,24 +60,20 @@ impl SchemaMigrator for SeaOrmRateLimitStorage {
 
 #[async_trait]
 impl RateLimitStorage for SeaOrmRateLimitStorage {
-    fn observe_window(&self, window: f64) {
-        self.longest_window.observe(window);
-    }
-
     async fn consume(&self, key: &str, rule: &EndpointRateLimit) -> AuthResult<RateLimitDecision> {
-        self.observe_window(rule.window_seconds);
         loop {
-            let observed = entity::Entity::find_by_id(key)
+            let observed = entity::Entity::find()
+                .filter(entity::Column::Key.eq(key))
                 .one(&self.database)
                 .await
                 .map_err(crate::store::map_db_err)?;
             let now = chrono::Utc::now().timestamp_millis();
             let Some(observed) = observed else {
                 let inserted = entity::Entity::insert(entity::ActiveModel {
+                    id: Set(uuid::Uuid::new_v4().to_string()),
                     key: Set(key.to_owned()),
-                    count: Set(1.0),
+                    count: Set(crate::Number(1.0)),
                     last_request: Set(now),
-                    expires_at: Set(bucket::expires_at(now, rule.window_seconds)),
                 })
                 .on_conflict(
                     OnConflict::column(entity::Column::Key)
@@ -108,25 +85,21 @@ impl RateLimitStorage for SeaOrmRateLimitStorage {
                 .await
                 .map_err(crate::store::map_db_err)?;
                 if matches!(inserted, sea_orm::TryInsertResult::Inserted(_)) {
-                    self.prune(now).await;
                     return Ok(RateLimitDecision::Allowed);
                 }
                 continue;
             };
-            let (next_count, reset) =
-                match bucket::step(observed.count, observed.last_request, now, rule) {
-                    Step::Blocked { retry_after } => {
-                        return Ok(RateLimitDecision::Blocked { retry_after });
-                    }
-                    Step::Allowed { count, reset } => (count, reset),
-                };
+            let next_count = match bucket::step(observed.count.0, observed.last_request, now, rule)
+            {
+                Step::Blocked { retry_after } => {
+                    return Ok(RateLimitDecision::Blocked { retry_after });
+                }
+                Step::Allowed { count, .. } => count,
+            };
+            let next_count = crate::Number(next_count);
             let updated = entity::Entity::update_many()
                 .col_expr(entity::Column::Count, Expr::value(next_count))
                 .col_expr(entity::Column::LastRequest, Expr::value(now))
-                .col_expr(
-                    entity::Column::ExpiresAt,
-                    Expr::value(bucket::expires_at(now, rule.window_seconds)),
-                )
                 .filter(entity::Column::Key.eq(key))
                 .filter(entity::Column::LastRequest.eq(observed.last_request))
                 .filter(entity::Column::Count.eq(observed.count))
@@ -134,9 +107,6 @@ impl RateLimitStorage for SeaOrmRateLimitStorage {
                 .await
                 .map_err(crate::store::map_db_err)?;
             if updated.rows_affected == 1 {
-                if reset {
-                    self.prune(now).await;
-                }
                 return Ok(RateLimitDecision::Allowed);
             }
         }
@@ -160,7 +130,7 @@ impl MigratorTrait for RateLimitMigrator {
 struct RateLimitSchema;
 impl MigrationName for RateLimitSchema {
     fn name(&self) -> &'static str {
-        "m20261002_000001_rate_limit"
+        "m20261013_000003_typescript_rate_limit_schema"
     }
 }
 
@@ -175,29 +145,28 @@ impl MigrationTrait for RateLimitSchema {
         Self: 'future,
     {
         Box::pin(async move {
-            manager
-                .create_table(
-                    Table::create()
-                        .table(Alias::new("rate_limit"))
-                        .if_not_exists()
-                        .col(
-                            ColumnDef::new(Alias::new("key"))
-                                .string()
-                                .not_null()
-                                .primary_key(),
-                        )
-                        .col(ColumnDef::new(Alias::new("count")).double().not_null())
-                        .col(ColumnDef::new(Alias::new("expires_at")).big_integer())
-                        .col(
-                            ColumnDef::new(Alias::new("last_request"))
-                                .big_integer()
-                                .not_null(),
-                        )
-                        .to_owned(),
-                )
-                .await
+            let sql = match manager.get_database_backend() {
+                sea_orm::DbBackend::Postgres => alibi_schema_registry::POSTGRES_RATE_LIMIT_SCHEMA,
+                sea_orm::DbBackend::Sqlite => alibi_schema_registry::SQLITE_RATE_LIMIT_SCHEMA,
+                _ => {
+                    return Err(DbErr::Custom(
+                        "Rate-limit migrations support SQLite and PostgreSQL".into(),
+                    ));
+                }
+            };
+            for statement in sql
+                .split(';')
+                .filter(|statement| !statement.trim().is_empty())
+            {
+                _ = manager
+                    .get_connection()
+                    .execute_unprepared(statement)
+                    .await?;
+            }
+            Ok(())
         })
     }
+
     fn down<'a, 'b, 'future>(
         &'a self,
         manager: &'b SchemaManager<'_>,
@@ -210,9 +179,9 @@ impl MigrationTrait for RateLimitSchema {
         Box::pin(async move {
             manager
                 .drop_table(
-                    Table::drop()
+                    sea_orm::sea_query::Table::drop()
                         .if_exists()
-                        .table(Alias::new("rate_limit"))
+                        .table(Alias::new("rateLimit"))
                         .to_owned(),
                 )
                 .await

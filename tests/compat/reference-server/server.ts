@@ -2970,6 +2970,17 @@ async function resetDatabaseState() {
   }
   const context = await jwtProfiles.get("jwt-default")!.auth.$context;
   await context.adapter.deleteMany({ model: "jwks", where: [] });
+  for (const table of [
+    "oauthAccessToken",
+    "oauthRefreshToken",
+    "oauthClientAssertion",
+    "oauthConsent",
+    "oauthClientResource",
+    "oauthResource",
+    "oauthClient",
+  ]) {
+    database.query(`DELETE FROM "${table}"`).run();
+  }
   // Application-owned keys of the custom-adapter JWT keyring profiles.
   database.query("DELETE FROM fixtureJwtKeyring").run();
   database.query("DELETE FROM application_delete_receipts").run();

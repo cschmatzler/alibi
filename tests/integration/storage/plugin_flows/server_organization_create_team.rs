@@ -41,7 +41,7 @@ async fn server_create_team_without_request_preserves_limits_and_storage<B: Back
     .await;
     let id = body(&organization)["id"].as_str().unwrap().to_owned();
     let before = db
-        .tables(&["users", "sessions", "member", "team_member"])
+        .tables(&["user", "session", "member", "teamMember"])
         .await?;
     for (organization_id, code) in [
         (None, "NO_ACTIVE_ORGANIZATION"),
@@ -97,7 +97,7 @@ async fn server_create_team_without_request_preserves_limits_and_storage<B: Back
     );
     assert_eq!(db.tables(&["team"]).await?, stored);
     assert_eq!(
-        db.tables(&["users", "sessions", "member", "team_member"])
+        db.tables(&["user", "session", "member", "teamMember"])
             .await?,
         before
     );

@@ -61,7 +61,7 @@ async fn server_update_team_enforces_headers_and_organization_scope<B: Backend>(
         teams.push(body(&team)["id"].as_str().unwrap().to_owned());
     }
     let before = db
-        .tables(&["users", "sessions", "member", "team", "team_member"])
+        .tables(&["user", "session", "member", "team", "teamMember"])
         .await?;
     let credentials = |response: &AuthResponse| EndpointOptions {
         headers: Some([("cookie".into(), cookies(response))].into_iter().collect()),
@@ -111,7 +111,7 @@ async fn server_update_team_enforces_headers_and_organization_scope<B: Backend>(
         assert_eq!(body(&error.error.to_auth_response())["code"], code);
     }
     assert_eq!(
-        db.tables(&["users", "sessions", "member", "team", "team_member"])
+        db.tables(&["user", "session", "member", "team", "teamMember"])
             .await?,
         before
     );
@@ -134,7 +134,7 @@ async fn server_update_team_enforces_headers_and_organization_scope<B: Backend>(
         assert_eq!(team.name, name);
     }
     let after = db
-        .tables(&["users", "sessions", "member", "team", "team_member"])
+        .tables(&["user", "session", "member", "team", "teamMember"])
         .await?;
     assert_eq!(&after[..3], &before[..3]);
     assert_eq!(after[4], before[4]);

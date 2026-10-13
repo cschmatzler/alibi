@@ -40,6 +40,6 @@ async fn serial_ids_survive_overlapping_instances_and_deletion<B: Backend>(db: D
         .create_user(CreateUser::new().with_email("reopened@example.test"))
         .await?;
     assert_eq!(user.id(), "4");
-    assert_eq!(db.count("users").await?, 3);
+    assert_eq!(db.count("user").await?, 3);
     B::close(reopened).await
 }

@@ -276,7 +276,7 @@ async fn control(body: Control, state: State, database: DatabaseConnection) -> J
         let _ = database
             .execute_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
-                "UPDATE verifications SET expires_at=? WHERE identifier=?",
+                "UPDATE \"verification\" SET \"expiresAt\"=? WHERE \"identifier\"=?",
                 [
                     "1970-01-01T00:00:00.000Z".into(),
                     body.identifier.unwrap().into(),
@@ -286,12 +286,12 @@ async fn control(body: Control, state: State, database: DatabaseConnection) -> J
             .unwrap();
     }
     let rows = if let Some(user_id) = &body.user_id {
-        database.query_all_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"SELECT * FROM verifications WHERE identifier LIKE ? OR identifier IN(SELECT '2fa-otp-'||identifier FROM verifications WHERE value=? AND identifier LIKE '2fa-%') ORDER BY created_at,id",[format!("2fa-otp-{user_id}!%").into(),user_id.clone().into()])).await.unwrap().into_iter().map(|row|json!({"id":row.try_get::<String>("","id").unwrap(),"identifier":row.try_get::<String>("","identifier").unwrap(),"value":row.try_get::<String>("","value").unwrap(),"expiresAt":row.try_get::<String>("","expires_at").unwrap(),"createdAt":row.try_get::<String>("","created_at").unwrap(),"updatedAt":row.try_get::<String>("","updated_at").unwrap()})).collect::<Vec<_>>()
+        database.query_all_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"SELECT * FROM \"verification\" WHERE \"identifier\" LIKE ? OR \"identifier\" IN(SELECT '2fa-otp-'||\"identifier\" FROM \"verification\" WHERE \"value\"=? AND \"identifier\" LIKE '2fa-%') ORDER BY \"createdAt\",id",[format!("2fa-otp-{user_id}!%").into(),user_id.clone().into()])).await.unwrap().into_iter().map(|row|json!({"id":row.try_get::<String>("","id").unwrap(),"identifier":row.try_get::<String>("","identifier").unwrap(),"value":row.try_get::<String>("","value").unwrap(),"expiresAt":row.try_get::<String>("","expiresAt").unwrap(),"createdAt":row.try_get::<String>("","createdAt").unwrap(),"updatedAt":row.try_get::<String>("","updatedAt").unwrap()})).collect::<Vec<_>>()
     } else {
         Vec::new()
     };
     let challenges = if let Some(user_id) = &body.user_id {
-        database.query_all_raw(Statement::from_sql_and_values(DbBackend::Sqlite, "SELECT * FROM verifications WHERE value=? AND identifier LIKE '2fa-%' ORDER BY created_at,id", [user_id.clone().into()])).await.unwrap().into_iter().map(|row| json!({"id":row.try_get::<String>("","id").unwrap(),"identifier":row.try_get::<String>("","identifier").unwrap(),"value":row.try_get::<String>("","value").unwrap(),"expiresAt":row.try_get::<String>("","expires_at").unwrap(),"createdAt":row.try_get::<String>("","created_at").unwrap(),"updatedAt":row.try_get::<String>("","updated_at").unwrap()})).collect::<Vec<_>>()
+        database.query_all_raw(Statement::from_sql_and_values(DbBackend::Sqlite, "SELECT * FROM \"verification\" WHERE \"value\"=? AND \"identifier\" LIKE '2fa-%' ORDER BY \"createdAt\",id", [user_id.clone().into()])).await.unwrap().into_iter().map(|row| json!({"id":row.try_get::<String>("","id").unwrap(),"identifier":row.try_get::<String>("","identifier").unwrap(),"value":row.try_get::<String>("","value").unwrap(),"expiresAt":row.try_get::<String>("","expiresAt").unwrap(),"createdAt":row.try_get::<String>("","createdAt").unwrap(),"updatedAt":row.try_get::<String>("","updatedAt").unwrap()})).collect::<Vec<_>>()
     } else {
         Vec::new()
     };

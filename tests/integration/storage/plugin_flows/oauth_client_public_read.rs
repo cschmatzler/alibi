@@ -40,12 +40,12 @@ async fn oauth_public_client_read_projects_display_fields_for_non_owner<B: Backe
     let expected = json!({"client_id":client_id,"client_name":"Display client","client_uri":"https://app.fixture.test","logo_uri":"https://app.fixture.test/logo.png","contacts":["support@app.fixture.test"],"tos_uri":"https://app.fixture.test/terms","policy_uri":"https://app.fixture.test/privacy","redirect_uris":[]});
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
+            "oauthClient",
         ])
         .await?;
     for (id, cookie, status) in [
@@ -73,12 +73,12 @@ async fn oauth_public_client_read_projects_display_fields_for_non_owner<B: Backe
         }
         assert_eq!(
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
+                "user",
+                "account",
+                "session",
+                "verification",
                 "jwks",
-                "oauth_client"
+                "oauthClient"
             ])
             .await?,
             before

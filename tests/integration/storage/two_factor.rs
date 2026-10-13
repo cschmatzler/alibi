@@ -27,7 +27,7 @@ async fn independent_factor_connections_increment_nullable_numbers_and_condition
     let primary = B::connect(&db.url, Some(1)).await?;
     let store = B::store(Arc::clone(&config), &primary);
     store.migrate().await?;
-    _ = db.execute("INSERT INTO users(id,name,email,email_verified,metadata,created_at,updated_at) VALUES('owner','Owner','owner@fixture.test',FALSE,'{}','2025-01-02T03:04:05Z','2025-01-02T03:04:05Z')", &[]).await?;
+    _ = db.execute("INSERT INTO \"user\"(id,\"name\",\"email\",\"emailVerified\",\"createdAt\",\"updatedAt\") VALUES('owner','Owner','owner@fixture.test',FALSE,'2025-01-02T03:04:05Z','2025-01-02T03:04:05Z')", &[]).await?;
     let factor = store
         .create_two_factor(CreateTwoFactor {
             user_id: "owner".into(),
@@ -37,8 +37,7 @@ async fn independent_factor_connections_increment_nullable_numbers_and_condition
         })
         .await?;
     assert_eq!(factor.failed_verification_count, Some(0.0));
-    // Custom schemas can contain multiple generations for one owner.
-    _ = db.execute("DROP INDEX idx_two_factor_user_id", &[]).await?;
+    // The source index permits multiple generations for one owner.
     let sibling = store
         .create_two_factor(CreateTwoFactor {
             user_id: "owner".into(),
@@ -69,15 +68,15 @@ async fn independent_factor_connections_increment_nullable_numbers_and_condition
     counts.sort_by(f64::total_cmp);
     assert_eq!(counts, (1..=8).map(f64::from).collect::<Vec<_>>());
     // SQLite keeps INTEGER affinity for integral counts; PostgreSQL stores
-    // the counter as double precision.
+    // the counter as INTEGER.
     let (sql, expected) = if db.is_postgres() {
         (
-            "SELECT CAST(pg_typeof(failed_verification_count) AS TEXT) FROM two_factor WHERE id=$1",
-            "double precision",
+            "SELECT CAST(pg_typeof(\"failedVerificationCount\") AS TEXT) FROM \"twoFactor\" WHERE id=$1",
+            "integer",
         )
     } else {
         (
-            "SELECT typeof(failed_verification_count) FROM two_factor WHERE id=$1",
+            "SELECT typeof(\"failedVerificationCount\") FROM \"twoFactor\" WHERE id=$1",
             "integer",
         )
     };
@@ -135,7 +134,11 @@ async fn independent_factor_connections_increment_nullable_numbers_and_condition
     );
     _ = db
         .execute(
-            "UPDATE two_factor SET failed_verification_count=0.5 WHERE id=$1",
+            if db.is_postgres() {
+                "UPDATE \"twoFactor\" SET \"failedVerificationCount\"=0 WHERE id=$1"
+            } else {
+                "UPDATE \"twoFactor\" SET \"failedVerificationCount\"=0.5 WHERE id=$1"
+            },
             &[&factor.id],
         )
         .await?;
@@ -143,7 +146,10 @@ async fn independent_factor_connections_increment_nullable_numbers_and_condition
         .increment_two_factor_failure(&factor.id)
         .await?
         .unwrap();
-    assert_eq!(incremented.failed_verification_count, Some(1.5));
+    assert_eq!(
+        incremented.failed_verification_count,
+        Some(if db.is_postgres() { 1.0 } else { 1.5 })
+    );
     let updated = store
         .update_two_factor(
             &factor.id,
@@ -155,10 +161,11 @@ async fn independent_factor_connections_increment_nullable_numbers_and_condition
         )
         .await?
         .unwrap();
-    assert_eq!(updated.failed_verification_count, Some(1.5));
+    assert_eq!(
+        updated.failed_verification_count,
+        Some(if db.is_postgres() { 1.0 } else { 1.5 })
+    );
     assert_eq!(updated.verified, Some(false));
-    assert_eq!(updated.created_at, factor.created_at);
-    assert_eq!(updated.updated_at, factor.updated_at);
     let barrier = Arc::new(Barrier::new(8));
     let mut swaps = JoinSet::new();
     for (index, connection) in connections.iter().enumerate() {

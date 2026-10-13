@@ -78,7 +78,7 @@ async fn factor_storage_callbacks_preserve_consumption_and_totp_disable<B: Backe
             .await?;
         let owner = signup(&auth, "otp-factor@example.test").await;
         let cookie = cookies(&owner);
-        let original = db.tables(&["users", "sessions", "two_factor"]).await?;
+        let original = db.tables(&["user", "session", "twoFactor"]).await?;
         for (route, input) in [
             ("/two-factor/enable", json!({"password":PASSWORD})),
             ("/two-factor/get-totp-uri", json!({"password":PASSWORD})),
@@ -87,7 +87,7 @@ async fn factor_storage_callbacks_preserve_consumption_and_totp_disable<B: Backe
             let denied = call(&auth, request(route, Some(input), &cookie), 400).await;
             assert_eq!(body(&denied)["code"], "TOTP_NOT_CONFIGURED");
             assert_eq!(
-                db.tables(&["users", "sessions", "two_factor"]).await?,
+                db.tables(&["user", "session", "twoFactor"]).await?,
                 original
             );
         }
@@ -108,7 +108,7 @@ async fn factor_storage_callbacks_preserve_consumption_and_totp_disable<B: Backe
             200,
         )
         .await;
-        assert_eq!(db.count("two_factor").await?, 0);
+        assert_eq!(db.count("twoFactor").await?, 0);
         authenticated(&auth, &cookies(&enabled), "otp-factor@example.test").await;
         let pending = call(
             &auth,
@@ -122,8 +122,8 @@ async fn factor_storage_callbacks_preserve_consumption_and_totp_disable<B: Backe
         .await;
         assert_eq!(body(&pending)["twoFactorMethods"], json!(["otp"]));
         let cookie = cookies(&pending);
-        let sessions = db.table("sessions").await?;
-        let pending_rows = db.table("verifications").await?;
+        let sessions = db.table("session").await?;
+        let pending_rows = db.table("verification").await?;
         if kind == "custom" {
             *application.failure.lock().unwrap() = "encrypt";
             let _ = call(
@@ -132,7 +132,7 @@ async fn factor_storage_callbacks_preserve_consumption_and_totp_disable<B: Backe
                 500,
             )
             .await;
-            assert_eq!(db.table("verifications").await?, pending_rows);
+            assert_eq!(db.table("verification").await?, pending_rows);
             assert!(application.delivered.lock().unwrap().is_empty());
             *application.failure.lock().unwrap() = "";
         }
@@ -146,7 +146,7 @@ async fn factor_storage_callbacks_preserve_consumption_and_totp_disable<B: Backe
         assert_eq!(recipient, body(&owner)["user"]["id"]);
         let persisted = db
             .text(
-                "SELECT value FROM verifications WHERE identifier LIKE '2fa-otp-%'",
+                "SELECT \"value\" FROM \"verification\" WHERE \"identifier\" LIKE '2fa-otp-%'",
                 &[],
             )
             .await?
@@ -168,8 +168,8 @@ async fn factor_storage_callbacks_preserve_consumption_and_totp_disable<B: Backe
                 500,
             )
             .await;
-            assert_eq!(db.table("sessions").await?, sessions);
-            assert_eq!(db.table("verifications").await?, pending_rows);
+            assert_eq!(db.table("session").await?, sessions);
+            assert_eq!(db.table("verification").await?, pending_rows);
             *application.failure.lock().unwrap() = "";
             let _ = call(
                 &auth,
@@ -196,9 +196,9 @@ async fn factor_storage_callbacks_preserve_consumption_and_totp_disable<B: Backe
         )
         .await;
         authenticated(&auth, &cookies(&completed), "otp-factor@example.test").await;
-        assert_eq!(db.count("verifications").await?, 1);
-        assert_eq!(db.count_where("SELECT COUNT(*) FROM verifications WHERE identifier LIKE '2fa-attempts-%' AND value='0'", &[]).await?, 1);
-        assert_eq!(db.count("sessions").await?, 2);
+        assert_eq!(db.count("verification").await?, 1);
+        assert_eq!(db.count_where("SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\" LIKE '2fa-attempts-%' AND \"value\"='0'", &[]).await?, 1);
+        assert_eq!(db.count("session").await?, 2);
         B::close(connection).await?;
     }
     Ok(())
@@ -243,7 +243,7 @@ async fn passwordless_factor_policy_requires_absent_credential_and_honors_route_
     )
     .await;
     let cookie = cookies(&owner);
-    assert_eq!(db.count("accounts").await?, 0);
+    assert_eq!(db.count("account").await?, 0);
     let enabled = call(
         &initial,
         request("/two-factor/enable", Some(json!({})), &cookie),
@@ -270,7 +270,7 @@ async fn passwordless_factor_policy_requires_absent_credential_and_honors_route_
     let cookie = cookies(&activated);
     authenticated(&initial, &cookie, "passwordless-factor@example.test").await;
     let credential = signup(&initial, "credential-factor@example.test").await;
-    let unchanged = db.tables(&["users", "sessions", "two_factor"]).await?;
+    let unchanged = db.tables(&["user", "session", "twoFactor"]).await?;
     let _ = call(
         &initial,
         request("/two-factor/enable", Some(json!({})), &cookies(&credential)),
@@ -278,7 +278,7 @@ async fn passwordless_factor_policy_requires_absent_credential_and_honors_route_
     )
     .await;
     assert_eq!(
-        db.tables(&["users", "sessions", "two_factor"]).await?,
+        db.tables(&["user", "session", "twoFactor"]).await?,
         unchanged
     );
     for (global, override_value, expected) in [
@@ -300,18 +300,15 @@ async fn passwordless_factor_policy_requires_absent_credential_and_honors_route_
             "/two-factor/get-totp-uri",
             "/two-factor/generate-backup-codes",
         ] {
-            let before = db.tables(&["users", "sessions", "two_factor"]).await?;
+            let before = db.tables(&["user", "session", "twoFactor"]).await?;
             let response = call(&auth, request(route, Some(json!({})), &cookie), expected).await;
             if expected == 400 {
-                assert_eq!(
-                    db.tables(&["users", "sessions", "two_factor"]).await?,
-                    before
-                );
+                assert_eq!(db.tables(&["user", "session", "twoFactor"]).await?, before);
             } else if route.ends_with("get-totp-uri") {
                 assert_eq!(body(&response)["totpURI"], body(&enabled)["totpURI"]);
             } else {
                 assert_eq!(body(&response)["backupCodes"].as_array().unwrap().len(), 10);
-                assert_ne!(db.table("two_factor").await?, before[2]);
+                assert_ne!(db.table("twoFactor").await?, before[2]);
             }
         }
     }
@@ -327,7 +324,7 @@ async fn passwordless_factor_policy_requires_absent_credential_and_honors_route_
         "passwordless-factor@example.test",
     )
     .await;
-    assert_eq!(db.count("two_factor").await?, 0);
+    assert_eq!(db.count("twoFactor").await?, 0);
     B::close(connection).await
 }
 
@@ -345,19 +342,13 @@ async fn two_factor_passwordless_retained_empty_credential<B: Backend>(db: Db) -
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     _ = db
         .execute(
-            "UPDATE accounts SET password='' WHERE user_id=$1 AND provider_id='credential'",
+            "UPDATE \"account\" SET \"password\"='' WHERE \"userId\"=$1 AND \"providerId\"='credential'",
             &[&owner_id],
         )
         .await?;
-    let accounts = db.table("accounts").await?;
+    let accounts = db.table("account").await?;
     let baseline = db
-        .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "two_factor",
-            "verifications",
-        ])
+        .tables(&["user", "account", "session", "twoFactor", "verification"])
         .await?;
     let null = call(
         &auth,
@@ -371,14 +362,8 @@ async fn two_factor_passwordless_retained_empty_credential<B: Backend>(db: Db) -
     .await;
     assert_eq!(body(&null)["code"], "VALIDATION_ERROR");
     assert_eq!(
-        db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "two_factor",
-            "verifications"
-        ])
-        .await?,
+        db.tables(&["user", "account", "session", "twoFactor", "verification"])
+            .await?,
         baseline
     );
     let enabled = call(
@@ -391,7 +376,7 @@ async fn two_factor_passwordless_retained_empty_credential<B: Backend>(db: Db) -
         200,
     )
     .await;
-    assert_eq!(db.count("two_factor").await?, 1);
+    assert_eq!(db.count("twoFactor").await?, 1);
     let uri = body(&enabled)["totpURI"].as_str().unwrap().to_owned();
     let totp = totp_rs::Totp::from_url(&uri)?;
     let verified = call(
@@ -435,11 +420,11 @@ async fn two_factor_passwordless_retained_empty_credential<B: Backend>(db: Db) -
     );
     assert_eq!(current["user"]["id"], owner_id);
     assert_eq!(current["user"]["twoFactorEnabled"], false);
-    assert_eq!(db.count("two_factor").await?, 0);
-    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.count("twoFactor").await?, 0);
+    assert_eq!(db.table("account").await?, accounts);
     assert_eq!(
         db.text(
-            "SELECT password FROM accounts WHERE user_id=$1 AND provider_id='credential'",
+            "SELECT \"password\" FROM \"account\" WHERE \"userId\"=$1 AND \"providerId\"='credential'",
             &[&owner_id]
         )
         .await?
@@ -447,21 +432,21 @@ async fn two_factor_passwordless_retained_empty_credential<B: Backend>(db: Db) -
         Some("")
     );
     let initial_users: Vec<Value> = serde_json::from_str(&baseline[0])?;
-    let final_users: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+    let final_users: Vec<Value> = serde_json::from_str(&db.table("user").await?)?;
     let foreign_id = body(&foreign)["user"]["id"].clone();
     assert_eq!(
         final_users.iter().find(|row| row["id"] == foreign_id),
         initial_users.iter().find(|row| row["id"] == foreign_id)
     );
     let initial_sessions: Vec<Value> = serde_json::from_str(&baseline[2])?;
-    let final_sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let final_sessions: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     assert_eq!(
         final_sessions
             .iter()
-            .find(|row| row["user_id"] == foreign_id),
+            .find(|row| row["userId"] == foreign_id),
         initial_sessions
             .iter()
-            .find(|row| row["user_id"] == foreign_id)
+            .find(|row| row["userId"] == foreign_id)
     );
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await

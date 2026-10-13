@@ -24,7 +24,7 @@ async fn server_sign_up_email_creates_owned_credentials_and_usable_sessions<B: B
     let endpoint = |input: &Value| {
         ServerEndpoint::<Value>::new("email-password", "signUpEmail").with_body(input)
     };
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (input, status) in [
         (json!({}), 400),
         (
@@ -53,7 +53,7 @@ async fn server_sign_up_email_creates_owned_credentials_and_usable_sessions<B: B
                 .await
                 .unwrap_err();
         assert_eq!(denial.error.status_code(), status);
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     }
     for (index, remember) in [None, Some(false), Some(true)].into_iter().enumerate() {
         let email = format!("logical-signup-owner-{index}@example.test");
@@ -111,25 +111,25 @@ async fn server_sign_up_email_creates_owned_credentials_and_usable_sessions<B: B
         assert_eq!(value["user"]["image"], "image-is-a-string");
         assert_ne!(value["user"]["role"], "admin");
         assert!(created.headers().get("location").is_none());
-        let credentials: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+        let credentials: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
         let account = credentials
             .iter()
-            .find(|row| row["user_id"] == user && row["provider_id"] == "credential")
+            .find(|row| row["userId"] == user && row["providerId"] == "credential")
             .unwrap();
-        assert_eq!(account["account_id"], user);
+        assert_eq!(account["accountId"], user);
         assert!(
             account["password"]
                 .as_str()
                 .is_some_and(|hash| !hash.is_empty())
         );
-        let rows: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+        let rows: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
         let session = rows.iter().find(|row| row["token"] == token).unwrap();
-        assert_eq!(session["user_id"], user);
-        assert_eq!(session["ip_address"], "192.0.2.205");
-        assert_eq!(session["user_agent"], "logical-signup-agent");
+        assert_eq!(session["userId"], user);
+        assert_eq!(session["ipAddress"], "192.0.2.205");
+        assert_eq!(session["userAgent"], "logical-signup-agent");
         let seconds =
-            (chrono::DateTime::parse_from_rfc3339(session["expires_at"].as_str().unwrap())?
-                - chrono::DateTime::parse_from_rfc3339(session["created_at"].as_str().unwrap())?)
+            (chrono::DateTime::parse_from_rfc3339(session["expiresAt"].as_str().unwrap())?
+                - chrono::DateTime::parse_from_rfc3339(session["createdAt"].as_str().unwrap())?)
             .num_seconds();
         if remember == Some(false) {
             assert!((86_395..=86_405).contains(&seconds));
@@ -166,13 +166,13 @@ async fn server_sign_up_email_creates_owned_credentials_and_usable_sessions<B: B
             .collect::<Vec<_>>()
             .join("; ");
         authenticated(&auth, &cookie, &email).await;
-        let stable = db.tables(&["users", "accounts", "sessions"]).await?;
+        let stable = db.tables(&["user", "account", "session"]).await?;
         let duplicate =
             Box::pin(auth.dispatch_endpoint(endpoint(&input)?, EndpointOptions::default()))
                 .await
                 .unwrap_err();
         assert_eq!(duplicate.error.status_code(), 422);
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stable);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, stable);
         let login = call(
             &auth,
             request(
@@ -185,11 +185,11 @@ async fn server_sign_up_email_creates_owned_credentials_and_usable_sessions<B: B
         .await;
         assert_eq!(body(&login)["user"]["id"], user);
     }
-    let users: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+    let users: Vec<Value> = serde_json::from_str(&db.table("user").await?)?;
     let original_users: Vec<Value> = serde_json::from_str(&before[0])?;
-    let accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    let accounts: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
     let original_accounts: Vec<Value> = serde_json::from_str(&before[1])?;
-    let sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let sessions: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     let original_sessions: Vec<Value> = serde_json::from_str(&before[2])?;
     assert_eq!(users.len(), original_users.len() + 3);
     assert_eq!(accounts.len(), original_accounts.len() + 3);

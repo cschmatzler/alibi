@@ -160,7 +160,6 @@ pub fn auth_session_impl(
             #impersonated_by_impl
             #active_org_impl
             #active_team_impl
-            fn active(&self) -> bool { self.active }
         }
     }
 }

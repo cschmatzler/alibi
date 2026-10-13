@@ -210,7 +210,7 @@ async fn magic_link_issuance_policies<B: Backend>(db: Db) -> TestResult {
             .map(|sent| sent.token.clone())
             .unwrap_or_default();
         let identifiers = db
-            .text("SELECT identifier FROM verifications", &[])
+            .text("SELECT \"identifier\" FROM \"verification\"", &[])
             .await?
             .map(|identifier| {
                 if token.is_empty() {
@@ -308,7 +308,7 @@ async fn magic_link_redemption_matrix<B: Backend>(db: Db) -> TestResult {
     let _ = verify(&mut probe, "query without token", request).await;
     probe.trace.value(
         "rows",
-        json!([db.count("users").await?, db.count("sessions").await?]),
+        json!([db.count("user").await?, db.count("session").await?]),
     );
     probe.trace.assert("magic-link/redemption-matrix");
     B::close(connection).await
@@ -351,13 +351,13 @@ async fn magic_link_configured_quota_blocks_delivery_and_resets_at_configured_wi
         .await;
     }
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     assert_eq!(outbox.sent.lock().unwrap().len(), 2);
     // Crossing the default window must still respect this plugin's longer window.
     _ = db
         .execute(
-            "UPDATE rate_limit SET last_request = last_request - 61000",
+            "UPDATE \"rateLimit\" SET \"lastRequest\" = \"lastRequest\" - 61000",
             &[],
         )
         .await?;
@@ -375,13 +375,13 @@ async fn magic_link_configured_quota_blocks_delivery_and_resets_at_configured_wi
     assert_eq!(denied.status, 429);
     assert_eq!(outbox.sent.lock().unwrap().len(), 2);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
     _ = db
         .execute(
-            "UPDATE rate_limit SET last_request = last_request - 61000",
+            "UPDATE \"rateLimit\" SET \"lastRequest\" = \"lastRequest\" - 61000",
             &[],
         )
         .await?;
@@ -396,8 +396,8 @@ async fn magic_link_configured_quota_blocks_delivery_and_resets_at_configured_wi
     )
     .await;
     assert_eq!(outbox.sent.lock().unwrap().len(), 3);
-    assert_eq!(db.count("verifications").await?, 3);
-    assert_eq!(db.count("sessions").await?, 0);
+    assert_eq!(db.count("verification").await?, 3);
+    assert_eq!(db.count("session").await?, 0);
     B::close(connection).await
 }
 
@@ -455,8 +455,8 @@ async fn magic_link_returning_verified_owner_retains_credentials_oauth_and_brows
     )
     .await;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let accounts = db.table("accounts").await?;
-    let identities = db.tables(&["users", "accounts", "sessions"]).await?;
+    let accounts = db.table("account").await?;
+    let identities = db.tables(&["user", "account", "session"]).await?;
     let endpoint = |body: &Value| {
         ServerEndpoint::<Value>::new("magic-link", "signInMagicLink").with_body(body)
     };
@@ -504,10 +504,10 @@ async fn magic_link_returning_verified_owner_retains_credentials_oauth_and_brows
         invalid.error.error_payload().1.as_deref(),
         Some("VALIDATION_ERROR")
     );
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     assert!(outbox.sent.lock().unwrap().is_empty());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         identities
     );
     let issued = Box::pin(
@@ -534,7 +534,7 @@ async fn magic_link_returning_verified_owner_retains_credentials_oauth_and_brows
     assert!(issued.decode()?.status);
     assert!(issued.headers().get_all("set-cookie").next().is_none());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         identities
     );
     let delivery = outbox.sent.lock().unwrap().last().unwrap().clone();
@@ -555,8 +555,8 @@ async fn magic_link_returning_verified_owner_retains_credentials_oauth_and_brows
             expected
         );
     }
-    assert_eq!(db.count("verifications").await?, 1);
-    let proofs = db.table("verifications").await?;
+    assert_eq!(db.count("verification").await?, 1);
+    let proofs = db.table("verification").await?;
     let verify = |query: &Value| {
         ServerEndpoint::<Value>::new("magic-link", "magicLinkVerify").with_query(query)
     };
@@ -586,7 +586,7 @@ async fn magic_link_returning_verified_owner_retains_credentials_oauth_and_brows
         request_only_verify.error.error_payload().2,
         "Headers is required"
     );
-    assert_eq!(db.table("verifications").await?, proofs);
+    assert_eq!(db.table("verification").await?, proofs);
     let invalid_query = Box::pin(auth.dispatch_endpoint(
         verify(&json!({"token":42}))?,
         EndpointOptions {
@@ -601,9 +601,9 @@ async fn magic_link_returning_verified_owner_retains_credentials_oauth_and_brows
         invalid_query.error.error_payload().1.as_deref(),
         Some("VALIDATION_ERROR")
     );
-    assert_eq!(db.table("verifications").await?, proofs);
+    assert_eq!(db.table("verification").await?, proofs);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         identities
     );
     let trusted_redirect = Box::pin(auth.dispatch_endpoint(
@@ -636,7 +636,7 @@ async fn magic_link_returning_verified_owner_retains_credentials_oauth_and_brows
         "verified@example.test",
     ))
     .await;
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     let _ = Box::pin(auth.dispatch_endpoint(
         MagicLinkPlugin::sign_in_endpoint(&alibi::plugins::magic_link::MagicLinkSignInInput {
             email: "VERIFIED@EXAMPLE.TEST".into(),
@@ -683,7 +683,7 @@ async fn magic_link_returning_verified_owner_retains_credentials_oauth_and_brows
     assert_eq!(value.session.ip_address.as_deref(), Some("203.0.113.65"));
     let response = verified.into_response()?;
     let completed = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let replay = Box::pin(auth.dispatch_endpoint(
         verify(&json!({"token":delivery.token}))?,
@@ -705,19 +705,19 @@ async fn magic_link_returning_verified_owner_retains_credentials_oauth_and_brows
             .contains("error=INVALID_TOKEN")
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         completed
     );
 
-    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.table("account").await?, accounts);
     assert_eq!(
-        db.text("SELECT name FROM users WHERE id=$1", &[&id])
+        db.text("SELECT \"name\" FROM \"user\" WHERE id=$1", &[&id])
             .await?
             .as_deref(),
         Some("Native owner")
     );
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     for cookie in [cookies(&owner), cookies(&second), cookies(&response)] {
         authenticated(&auth, &cookie, "verified@example.test").await;
     }
@@ -733,7 +733,7 @@ async fn magic_link_returning_verified_owner_retains_credentials_oauth_and_brows
     )
     .await;
     assert_eq!(body(&login)["user"]["id"], id);
-    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.table("account").await?, accounts);
     B::close(connection).await
 }
 
@@ -778,10 +778,10 @@ async fn magic_link_redemption_hasher_failure<B: Backend>(db: Db) -> TestResult 
         .await;
         let delivery = outbox.sent.lock().unwrap().last().unwrap().clone();
         let before = db
-            .tables(&["users", "accounts", "sessions", "verifications"])
+            .tables(&["user", "account", "session", "verification"])
             .await?;
         assert_eq!(
-            db.text("SELECT identifier FROM verifications", &[])
+            db.text("SELECT \"identifier\" FROM \"verification\"", &[])
                 .await?
                 .as_deref(),
             Some(format!("magic-link:application:{}", delivery.token).as_str())
@@ -800,7 +800,7 @@ async fn magic_link_redemption_hasher_failure<B: Backend>(db: Db) -> TestResult 
             assert!(denied.body.is_empty());
         }
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -808,9 +808,9 @@ async fn magic_link_redemption_hasher_failure<B: Backend>(db: Db) -> TestResult 
         let accepted = call(&auth, redeem(&delivery, &[("callbackURL", "")]), 200).await;
         assert_eq!(body(&accepted)["user"]["email"], "hash-retry@example.test");
         authenticated(&auth, &cookies(&accepted), "hash-retry@example.test").await;
-        assert_eq!(db.count("verifications").await?, 0);
-        assert_eq!(db.count("sessions").await?, 1);
-        let after = db.tables(&["users", "accounts", "sessions"]).await?;
+        assert_eq!(db.count("verification").await?, 0);
+        assert_eq!(db.count("session").await?, 1);
+        let after = db.tables(&["user", "account", "session"]).await?;
         let replay = call(&auth, redeem(&delivery, &[("callbackURL", "")]), 302).await;
         let location = url::Url::parse(replay.headers.get("location").unwrap())?;
         assert_eq!(
@@ -821,7 +821,7 @@ async fn magic_link_redemption_hasher_failure<B: Backend>(db: Db) -> TestResult 
                 .1,
             "INVALID_TOKEN"
         );
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, after);
         B::close(connection).await?;
     }
     Ok(())
@@ -868,11 +868,11 @@ async fn magic_link_coded_generator_rejection_is_write_free_and_recoverable<B: B
         .build()
         .await?;
     let email = "generator-owner@example.test";
-    for table in ["users", "accounts", "sessions", "verifications"] {
+    for table in ["user", "account", "session", "verification"] {
         assert_eq!(db.count(table).await?, 0);
     }
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let issue = request("/sign-in/magic-link", Some(json!({"email": email})), "");
     let denied = call(&auth, issue.clone(), 403).await;
@@ -887,7 +887,7 @@ async fn magic_link_coded_generator_rejection_is_write_free_and_recoverable<B: B
     assert_eq!(generator.receipts.lock().unwrap().as_slice(), [email]);
     assert!(outbox.sent.lock().unwrap().is_empty());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -907,24 +907,24 @@ async fn magic_link_coded_generator_rejection_is_write_free_and_recoverable<B: B
     assert_eq!(delivery.email, email);
     assert_eq!(delivery.token, format!("controlled-link-{email}"));
     assert_eq!(
-        db.text("SELECT identifier FROM verifications", &[])
+        db.text("SELECT \"identifier\" FROM \"verification\"", &[])
             .await?
             .as_deref(),
         Some(format!("magic-link:{}", delivery.token).as_str())
     );
-    assert_eq!(db.count("verifications").await?, 1);
-    for table in ["users", "accounts", "sessions"] {
+    assert_eq!(db.count("verification").await?, 1);
+    for table in ["user", "account", "session"] {
         assert_eq!(db.count(table).await?, 0);
     }
     let verified = call(&auth, redeem(&delivery, &[("callbackURL", "")]), 200).await;
     assert_eq!(body(&verified)["user"]["email"], email);
     assert_eq!(body(&verified)["user"]["emailVerified"], true);
-    assert_eq!(db.count("verifications").await?, 0);
-    assert_eq!(db.count("users").await?, 1);
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(db.count("user").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     authenticated(&auth, &cookies(&verified), email).await;
     let after = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let replay = call(&auth, redeem(&delivery, &[("callbackURL", "")]), 302).await;
     let location = url::Url::parse(replay.headers.get("location").unwrap())?;
@@ -937,7 +937,7 @@ async fn magic_link_coded_generator_rejection_is_write_free_and_recoverable<B: B
         "INVALID_TOKEN"
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         after
     );
@@ -966,8 +966,8 @@ async fn magic_link_fresh_empty_callback<B: Backend>(db: Db) -> TestResult {
     )
     .await;
     let delivery = outbox.sent.lock().unwrap().last().unwrap().clone();
-    assert_eq!(db.count("users").await?, 0);
-    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(db.count("user").await?, 0);
+    assert_eq!(db.count("verification").await?, 1);
     let input = redeem(
         &delivery,
         &[("callbackURL", ""), ("newUserCallbackURL", "/welcome")],
@@ -978,9 +978,9 @@ async fn magic_link_fresh_empty_callback<B: Backend>(db: Db) -> TestResult {
     assert_eq!(body(&accepted)["user"]["emailVerified"], true);
     assert!(body(&accepted)["token"].is_string());
     authenticated(&auth, &cookies(&accepted), "fresh-json@example.test").await;
-    assert_eq!(db.count("sessions").await?, 1);
-    assert_eq!(db.count("verifications").await?, 0);
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    assert_eq!(db.count("session").await?, 1);
+    assert_eq!(db.count("verification").await?, 0);
+    let before = db.tables(&["user", "account", "session"]).await?;
     let replay = call(&auth, input, 302).await;
     let location = url::Url::parse(replay.headers.get("location").unwrap())?;
     assert_eq!(
@@ -991,7 +991,7 @@ async fn magic_link_fresh_empty_callback<B: Backend>(db: Db) -> TestResult {
             .1,
         "INVALID_TOKEN"
     );
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     B::close(connection).await
 }
 
@@ -1014,7 +1014,7 @@ async fn magic_link_delivery_request_context<B: Backend>(db: Db) -> TestResult {
             assert_eq!(
                 self.raw
                     .count_where(
-                        "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+                        "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
                         &[&identifier]
                     )
                     .await
@@ -1069,11 +1069,11 @@ async fn magic_link_delivery_request_context<B: Backend>(db: Db) -> TestResult {
     );
     let accepted = call(&auth, redeem(delivery, &[("callbackURL", "")]), 200).await;
     authenticated(&auth, &cookies(&accepted), "delivery-context@example.test").await;
-    assert_eq!(db.count("accounts").await?, 0);
-    assert_eq!(db.count("sessions").await?, 1);
-    assert_eq!(db.count("verifications").await?, 0);
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    assert_eq!(db.count("account").await?, 0);
+    assert_eq!(db.count("session").await?, 1);
+    assert_eq!(db.count("verification").await?, 0);
+    let before = db.tables(&["user", "account", "session"]).await?;
     _ = call(&auth, redeem(delivery, &[("callbackURL", "")]), 302).await;
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     B::close(connection).await
 }

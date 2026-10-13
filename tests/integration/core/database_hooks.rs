@@ -89,7 +89,7 @@ impl ProvisioningService {
         );
         let committed_user = Query::select()
             .column(Alias::new("id"))
-            .from(Alias::new("users"))
+            .from(Alias::new("user"))
             .and_where(Expr::col(Alias::new("id")).eq(user.id().into_owned()))
             .to_owned();
         assert_eq!(

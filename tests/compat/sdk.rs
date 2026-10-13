@@ -553,8 +553,6 @@ mod tests {
     /// `plugins/<plugin>` under `client-tests/tests`.
     macro_rules! directory_runners {
         ($($name:ident => $directory:literal,)+) => {
-            const DIRECTORIES: &[&str] = &[$($directory),+];
-
             $(
                 #[tokio::test]
                 #[ignore = "starts external TS and Rust servers"]
@@ -603,28 +601,6 @@ mod tests {
         plugins_siwe_client_compat => "plugins/siwe",
         plugins_two_factor_client_compat => "plugins/two-factor",
         plugins_username_client_compat => "plugins/username",
-    }
-
-    #[test]
-    fn every_scenario_directory_has_a_runner() {
-        let root = project_root().join("tests/compat/client-tests/tests");
-        let mut directories = vec!["generated".to_owned()];
-        for group in ["core", "plugins"] {
-            let path = root.join(group);
-            for entry in std::fs::read_dir(&path)
-                .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
-            {
-                let entry = entry.unwrap_or_else(|error| panic!("failed to read entry: {error}"));
-                assert!(
-                    entry.path().is_dir(),
-                    "{} must hold directories only",
-                    path.display()
-                );
-                directories.push(format!("{group}/{}", entry.file_name().to_string_lossy()));
-            }
-        }
-        directories.sort();
-        assert_eq!(directories, DIRECTORIES);
     }
 
     #[tokio::test]

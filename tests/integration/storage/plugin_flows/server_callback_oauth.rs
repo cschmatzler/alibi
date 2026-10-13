@@ -97,7 +97,7 @@ async fn server_callback_oauth_redeems_logical_get_and_preserves_post_proofs<B: 
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for (query, body) in [
         (json!(null), None),
@@ -110,7 +110,7 @@ async fn server_callback_oauth_redeems_logical_get_and_preserves_post_proofs<B: 
         let error = callback(&auth, Some(&query), body.as_ref(), None, "").await;
         assert_eq!(error.error.status_code(), 400);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -177,7 +177,7 @@ async fn server_callback_oauth_redeems_logical_get_and_preserves_post_proofs<B: 
             }
         );
         assert!(url.query_pairs().all(|(key, _)| key != "error_description"));
-        let proofs: Vec<Value> = serde_json::from_str(&db.table("verifications").await?)?;
+        let proofs: Vec<Value> = serde_json::from_str(&db.table("verification").await?)?;
         assert!(
             proofs
                 .iter()
@@ -202,7 +202,7 @@ async fn server_callback_oauth_redeems_logical_get_and_preserves_post_proofs<B: 
             .1,
         "state_mismatch"
     );
-    let proofs: Vec<Value> = serde_json::from_str(&db.table("verifications").await?)?;
+    let proofs: Vec<Value> = serde_json::from_str(&db.table("verification").await?)?;
     assert!(
         proofs
             .iter()
@@ -212,10 +212,10 @@ async fn server_callback_oauth_redeems_logical_get_and_preserves_post_proofs<B: 
     assert_eq!(linked.error.status_code(), 302);
     assert_eq!(location(&linked), "/logical-callback-done");
     assert_eq!(
-        db.tables(&["users", "sessions"]).await?,
+        db.tables(&["user", "session"]).await?,
         vec![before[0].clone(), before[2].clone()]
     );
-    let accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    let accounts: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
     let previous: Vec<Value> = serde_json::from_str(&before[1])?;
     assert_eq!(accounts.len(), previous.len() + 1);
     for row in previous {
@@ -224,8 +224,8 @@ async fn server_callback_oauth_redeems_logical_get_and_preserves_post_proofs<B: 
     assert_eq!(
         accounts
             .iter()
-            .find(|a| a["provider_id"] == "generic")
-            .unwrap()["user_id"],
+            .find(|a| a["providerId"] == "generic")
+            .unwrap()["userId"],
         owner_id
     );
     let replay = callback(
@@ -264,13 +264,13 @@ async fn server_callback_oauth_redeems_logical_get_and_preserves_post_proofs<B: 
         .collect::<Vec<_>>()
         .join("; ");
     authenticated(&auth, &cookies, "logical-callback-owner@example.test").await;
-    let sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let sessions: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     let old_sessions: Vec<Value> = serde_json::from_str(&before[2])?;
     assert_eq!(sessions.len(), old_sessions.len() + 1);
     for session in old_sessions {
         assert!(sessions.contains(&session));
     }
-    let users: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+    let users: Vec<Value> = serde_json::from_str(&db.table("user").await?)?;
     let old_users: Vec<Value> = serde_json::from_str(&before[0])?;
     assert_eq!(
         users.iter().find(|u| u["id"] == foreign_id),

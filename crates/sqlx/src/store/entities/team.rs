@@ -7,9 +7,13 @@ use chrono::{DateTime, Utc};
 pub struct Model {
     pub id: String,
     pub name: String,
+    #[sqlx(rename = "organizationId")]
     pub organization_id: String,
+    #[sqlx(rename = "memberCount")]
     pub member_count: i64,
+    #[sqlx(rename = "createdAt")]
     pub created_at: DateTime<Utc>,
+    #[sqlx(rename = "updatedAt")]
     pub updated_at: Option<DateTime<Utc>>,
 }
 

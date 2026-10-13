@@ -25,7 +25,6 @@ fn mutate_record<T: Clone>(
 #[async_trait]
 impl TwoFactorStore for StatelessStore {
     async fn create_two_factor(&self, input: CreateTwoFactor) -> AuthResult<TwoFactor> {
-        let now = Utc::now();
         let record = TwoFactor {
             id: uuid::Uuid::new_v4().to_string(),
             user_id: input.user_id,
@@ -34,8 +33,6 @@ impl TwoFactorStore for StatelessStore {
             verified: input.verified,
             failed_verification_count: input.failed_verification_count,
             locked_until: input.locked_until,
-            created_at: now,
-            updated_at: now,
         };
         _ = self
             .lock()?
@@ -81,7 +78,6 @@ impl TwoFactorStore for StatelessStore {
             .find(|record| record.user_id == user_id)
             .ok_or_else(|| AuthError::not_found("Two-factor settings not found"))?;
         backup_codes.clone_into(&mut record.backup_codes);
-        record.updated_at = Utc::now();
         Ok(record.clone())
     }
     async fn delete_two_factor(&self, user_id: &str) -> AuthResult<()> {
@@ -170,10 +166,9 @@ impl PasskeyStore for StatelessStore {
             device_type: input.device_type,
             backed_up: input.backed_up,
             transports: input.transports,
-            credential: input.credential,
+
             aaguid: input.aaguid,
-            created_at: now,
-            updated_at: now,
+            created_at: Some(now),
         };
         _ = self
             .lock()?
@@ -214,15 +209,14 @@ impl PasskeyStore for StatelessStore {
             record.counter = update.counter;
             record.backed_up = update.backed_up;
             record.device_type = update.device_type;
-            record.credential = update.credential;
-            record.updated_at = Utc::now();
+
             true
         }))
     }
     async fn update_passkey_name(&self, id: &str, name: &str) -> AuthResult<Passkey> {
         mutate_record(&mut self.lock()?.passkeys, id, |record| {
             record.name = Some(name.to_owned());
-            record.updated_at = Utc::now();
+
             true
         })
         .ok_or_else(|| AuthError::not_found("Passkey not found"))

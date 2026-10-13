@@ -33,15 +33,15 @@ async fn oauth_resource_read_decodes_identifier_and_preserves_catalog_policy<B: 
     }
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
-            "oauth_client_resource",
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
+            "oauthClientResource",
         ])
         .await?;
     for (identifier, cookie, index) in [
@@ -119,15 +119,15 @@ async fn oauth_resource_read_decodes_identifier_and_preserves_catalog_policy<B: 
     assert_eq!(
         before,
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
-            "oauth_client_resource"
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
+            "oauthClientResource"
         ])
         .await?
     );

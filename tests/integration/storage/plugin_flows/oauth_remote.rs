@@ -77,19 +77,21 @@ async fn line_delegated_verification_binds_client_and_nonce<B: Backend>(db: Db) 
         assert_eq!(form["nonce"], "browser-nonce");
         if expected == 401 {
             assert_eq!(body(&result)["code"], "INVALID_TOKEN");
-            for table in ["users", "accounts", "sessions"] {
+            for table in ["user", "account", "session"] {
                 assert_eq!(db.count(table).await?, 0);
             }
         } else {
             authenticated(&auth, &cookies(&result), "line@example.test").await;
             assert_eq!(
-                db.text("SELECT account_id FROM accounts", &[])
+                db.text("SELECT \"accountId\" FROM \"account\"", &[])
                     .await?
                     .as_deref(),
                 Some("line-41")
             );
             assert_eq!(
-                db.text("SELECT name FROM users", &[]).await?.as_deref(),
+                db.text("SELECT \"name\" FROM \"user\"", &[])
+                    .await?
+                    .as_deref(),
                 Some("LINE User")
             );
         }
@@ -164,13 +166,15 @@ async fn wechat_get_grants_bind_openid_and_rotate_refresh<B: Backend>(db: Db) ->
             )
             .await;
             assert_eq!(
-                db.text("SELECT account_id FROM accounts", &[])
+                db.text("SELECT \"accountId\" FROM \"account\"", &[])
                     .await?
                     .as_deref(),
                 Some("union-41")
             );
             assert_eq!(
-                db.text("SELECT name FROM users", &[]).await?.as_deref(),
+                db.text("SELECT \"name\" FROM \"user\"", &[])
+                    .await?
+                    .as_deref(),
                 Some("Application display")
             );
             accepted = Some(response);
@@ -182,7 +186,7 @@ async fn wechat_get_grants_bind_openid_and_rotate_refresh<B: Backend>(db: Db) ->
                     .iter()
                     .all(|request| !request.path.starts_with("/profile"))
             );
-            for table in ["users", "accounts", "sessions"] {
+            for table in ["user", "account", "session"] {
                 assert_eq!(db.count(table).await?, 0);
             }
         }
@@ -194,10 +198,12 @@ async fn wechat_get_grants_bind_openid_and_rotate_refresh<B: Backend>(db: Db) ->
         ]
     );
     assert_eq!(
-        db.text("SELECT image FROM users", &[]).await?.as_deref(),
+        db.text("SELECT \"image\" FROM \"user\"", &[])
+            .await?
+            .as_deref(),
         Some("https://images.test/wechat")
     );
-    let original = db.tables(&["users", "accounts", "sessions"]).await?;
+    let original = db.tables(&["user", "account", "session"]).await?;
     remote.respond_at("/profile", 200, json!({"errcode":40003,"openid":"open-41","unionid":"union-41","nickname":"WeChat User","headimgurl":"https://images.test/wechat"}));
     let (authorization, cookie) = super::oauth_profiles::begin(&auth, "wechat").await;
     let denied = super::oauth_profiles::complete(&auth, "wechat", &authorization, &cookie).await;
@@ -205,10 +211,7 @@ async fn wechat_get_grants_bind_openid_and_rotate_refresh<B: Backend>(db: Db) ->
         url::Url::parse(denied.headers.get("location").unwrap())?.path(),
         "/failed"
     );
-    assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
-        original
-    );
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, original);
     remote.respond_at("/profile", 200, json!({"openid":"open-41","unionid":"union-41","nickname":"WeChat User","headimgurl":"https://images.test/wechat"}));
     let failed = provider.with_profile_mapper(Arc::new(super::oauth_profiles::FailedMapper));
     let failed_auth = builder::<B>(&connection)
@@ -223,10 +226,7 @@ async fn wechat_get_grants_bind_openid_and_rotate_refresh<B: Backend>(db: Db) ->
     ]);
     let denied = call(&failed_auth, callback, 500).await;
     assert!(!cookies(&denied).contains("session_token="));
-    assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
-        original
-    );
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, original);
     drop(remote.take());
     let accepted = accepted.unwrap();
     let session = call(
@@ -236,7 +236,7 @@ async fn wechat_get_grants_bind_openid_and_rotate_refresh<B: Backend>(db: Db) ->
     )
     .await;
     let owner = body(&session)["user"]["id"].as_str().unwrap().to_owned();
-    let account = db.text("SELECT id FROM accounts", &[]).await?.unwrap();
+    let account = db.text("SELECT id FROM \"account\"", &[]).await?.unwrap();
     remote.respond_at("/refresh", 200, json!({"access_token":"rotated-access","refresh_token":"rotated-refresh","openid":"open-41","scope":"snsapi_login,profile","expires_in":7200}));
     let tokens = OAuthAccountApi::refresh_token(
         &owner,
@@ -248,7 +248,7 @@ async fn wechat_get_grants_bind_openid_and_rotate_refresh<B: Backend>(db: Db) ->
     assert_eq!(tokens.refresh_token.as_deref(), Some("rotated-refresh"));
     assert_eq!(
         db.text(
-            "SELECT refresh_token FROM accounts WHERE id=$1",
+            "SELECT \"refreshToken\" FROM \"account\" WHERE id=$1",
             &[&account]
         )
         .await?
@@ -314,18 +314,20 @@ async fn facebook_graph_inspection_binds_app_and_profile<B: Backend>(db: Db) -> 
             assert_eq!(target.path(), "/done");
             authenticated(&auth, &cookies(&response), "facebook-graph@example.test").await;
             assert_eq!(
-                db.text("SELECT account_id FROM accounts", &[])
+                db.text("SELECT \"accountId\" FROM \"account\"", &[])
                     .await?
                     .as_deref(),
                 Some("graph-41")
             );
             assert_eq!(
-                db.text("SELECT image FROM users", &[]).await?.as_deref(),
+                db.text("SELECT \"image\" FROM \"user\"", &[])
+                    .await?
+                    .as_deref(),
                 Some("https://images.test/facebook")
             );
         } else {
             assert_eq!(target.path(), "/failed");
-            for table in ["users", "accounts", "sessions"] {
+            for table in ["user", "account", "session"] {
                 assert_eq!(db.count(table).await?, 0);
             }
         }
@@ -404,7 +406,7 @@ async fn access_grant_profile_fallback_preserves_raw_subject<B: Backend>(db: Db)
                 "/failed"
             );
             assert!(profile.is_none());
-            for table in ["users", "accounts", "sessions"] {
+            for table in ["user", "account", "session"] {
                 assert_eq!(db.count(table).await?, 0);
             }
         } else {
@@ -418,13 +420,15 @@ async fn access_grant_profile_fallback_preserves_raw_subject<B: Backend>(db: Db)
             assert_eq!(profile.method, "GET");
             assert_eq!(profile.headers["authorization"], "Bearer fallback-access");
             assert_eq!(
-                db.text("SELECT account_id FROM accounts", &[])
+                db.text("SELECT \"accountId\" FROM \"account\"", &[])
                     .await?
                     .as_deref(),
                 Some("remote-subject")
             );
             assert_eq!(
-                db.text("SELECT name FROM users", &[]).await?.as_deref(),
+                db.text("SELECT \"name\" FROM \"user\"", &[])
+                    .await?
+                    .as_deref(),
                 Some(if mode == "cognito-mapper" {
                     "Mapped remote"
                 } else {

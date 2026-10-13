@@ -639,7 +639,7 @@ fn client_read_metadata(client: alibi_core::store::OAuthClient) -> AuthResult<Va
     _ = output.insert("user_id".into(), json!(client.user_id));
     _ = output.insert(
         "client_id_issued_at".into(),
-        json!(client.created_at.timestamp()),
+        json!(client.created_at.map(|time| time.timestamp())),
     );
     if client.client_secret.is_some() {
         _ = output
@@ -1175,7 +1175,7 @@ impl OAuthProviderPlugin {
         }
         _ = output.insert(
             "client_id_issued_at".into(),
-            json!(client.created_at.timestamp()),
+            json!(client.created_at.map(|time| time.timestamp())),
         );
         if let Some(secret) = plaintext {
             _ = output.insert("client_secret".into(), json!(secret));

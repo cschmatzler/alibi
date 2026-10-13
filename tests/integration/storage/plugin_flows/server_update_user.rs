@@ -78,9 +78,9 @@ async fn server_update_user_is_builtin_and_publishes_owned_profile<B: Backend>(
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
     let token = body(&owner)["token"].as_str().unwrap().to_owned();
-    let sessions = db.tables(&["sessions", "accounts"]).await?;
+    let sessions = db.tables(&["session", "account"]).await?;
     let foreign_before = auth.store().get_user_by_id(&foreign_id).await?.unwrap();
-    let users_before = db.tables(&["users"]).await?;
+    let users_before = db.tables(&["user"]).await?;
     let foreign_physical = physical_user(&users_before, &foreign_id);
     for invalid in [json!([]), json!(null), json!("profile")] {
         let rejection = auth
@@ -106,7 +106,7 @@ async fn server_update_user_is_builtin_and_publishes_owned_profile<B: Backend>(
         .await
         .unwrap_err();
     assert_eq!(denied.error.status_code(), 400);
-    assert_eq!(db.tables(&["users"]).await?, users_before);
+    assert_eq!(db.tables(&["user"]).await?, users_before);
     for (input, expected_image) in [
         (
             json!({"name":"Logical Profile","image":"https://example.test/avatar.png"}),
@@ -160,10 +160,10 @@ async fn server_update_user_is_builtin_and_publishes_owned_profile<B: Backend>(
         let stored = auth.store().get_user_by_id(&owner_id).await?.unwrap();
         assert_eq!(stored.name(), Some("Logical Profile"));
         assert_eq!(stored.image(), expected_image);
-        assert_eq!(db.tables(&["sessions", "accounts"]).await?, sessions);
+        assert_eq!(db.tables(&["session", "account"]).await?, sessions);
     }
     assert_eq!(
-        physical_user(&db.tables(&["users"]).await?, &foreign_id),
+        physical_user(&db.tables(&["user"]).await?, &foreign_id),
         foreign_physical
     );
     let foreign_after = auth.store().get_user_by_id(&foreign_id).await?.unwrap();

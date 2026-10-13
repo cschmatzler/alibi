@@ -42,7 +42,7 @@ async fn server_admin_impersonate_user_publishes_usable_signed_session<B: Backen
         headers: Some([("cookie".into(), cookies(response))].into_iter().collect()),
         ..Default::default()
     };
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (input, headers, status, code) in [
         (None, EndpointOptions::default(), 400, "VALIDATION_ERROR"),
         (
@@ -127,7 +127,7 @@ async fn server_admin_impersonate_user_publishes_usable_signed_session<B: Backen
         .await
         .unwrap_err();
     assert_eq!(error.error.status_code(), 403);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let configured = AuthBuilder::new(config.clone())
         .store(B::store(Arc::new(config), &connection))
         .plugin(SessionManagementPlugin::new())
@@ -231,7 +231,7 @@ async fn server_admin_impersonate_user_publishes_usable_signed_session<B: Backen
         .await;
         assert_eq!(body(&restored)["user"]["id"], admin_id);
         assert_eq!(body(&restored)["session"]["token"], admin_token);
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     }
     B::close(connection).await
 }

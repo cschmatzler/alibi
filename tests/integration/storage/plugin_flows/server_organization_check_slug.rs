@@ -32,7 +32,7 @@ async fn server_slug_checks_admit_headerless_calls_and_authenticate_attached_cre
     )
     .await;
     let before = db
-        .tables(&["users", "organization", "member", "sessions"])
+        .tables(&["user", "organization", "member", "session"])
         .await?;
     for slug in ["available-slug", "", "UPPER/slash space"] {
         let output = auth
@@ -91,7 +91,7 @@ async fn server_slug_checks_admit_headerless_calls_and_authenticate_attached_cre
         );
     }
     assert_eq!(
-        db.tables(&["users", "organization", "member", "sessions"])
+        db.tables(&["user", "organization", "member", "session"])
             .await?,
         before
     );

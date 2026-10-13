@@ -38,12 +38,12 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
     let input = json!({"client_id":id,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","state":"caller-state","code_challenge":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ","code_challenge_method":"S256"});
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
+            "oauthClient",
         ])
         .await?;
     let start = chrono::Utc::now().timestamp_millis();
@@ -178,12 +178,12 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
     assert_eq!(missing.error.status_code(), 401);
     assert_eq!(
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client"
+            "oauthClient"
         ])
         .await?,
         before
@@ -236,6 +236,6 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
         proof.expires_at().timestamp() - proof.created_at().timestamp(),
         600
     );
-    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(db.count("verification").await?, 1);
     Ok(())
 }

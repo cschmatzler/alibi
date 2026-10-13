@@ -326,11 +326,7 @@ async fn build_router(
                     "old" => Some(alibi::ManagedSecrets::new(0, OLD)),
                     "retained" => Some(alibi::ManagedSecrets::new(2, CURRENT).retain(0, OLD)),
                     "retired" => Some(alibi::ManagedSecrets::new(2, CURRENT)),
-                    "legacy" => Some(
-                        alibi::ManagedSecrets::new(2, CURRENT)
-                            .retain(0, OLD)
-                            .legacy(LEGACY),
-                    ),
+                    "legacy" => Some(alibi::ManagedSecrets::new(2, CURRENT).retain(0, OLD)),
                     _ => None,
                 };
             }
@@ -493,7 +489,7 @@ async fn build_router(
     .route(&format!("{control}/control"),post(|State(fixture):State<Fixture>,Json(value):Json<Value>|async move{
         let mode=value.get("mode").and_then(Value::as_str).unwrap_or("none").to_owned();{let mut provider=fixture.provider.lock().await;provider.failure=mode.clone();provider.tracking=true;}let db=&fixture.preview;
         db.execute_raw(Statement::from_string(db.get_database_backend(),"DROP TRIGGER IF EXISTS proxy_delete_veto")).await.map_err(|e|e.to_string())?;
-        if mode=="delete-veto" {db.execute_raw(Statement::from_string(db.get_database_backend(),"CREATE TRIGGER proxy_delete_veto BEFORE DELETE ON verifications BEGIN SELECT RAISE(ABORT, 'proxy delete veto'); END")).await.map_err(|e|e.to_string())?;}
+        if mode=="delete-veto" {db.execute_raw(Statement::from_string(db.get_database_backend(),"CREATE TRIGGER proxy_delete_veto BEFORE DELETE ON \"verification\" BEGIN SELECT RAISE(ABORT, 'proxy delete veto'); END")).await.map_err(|e|e.to_string())?;}
         Ok::<_,String>(Json(json!({"status":true})))
     }))
     .route(&format!("{control}/profile"),post(|State(fixture):State<Fixture>,Json(value):Json<Value>|async move{fixture.provider.lock().await.profile=value;Json(json!({"status":true}))}))

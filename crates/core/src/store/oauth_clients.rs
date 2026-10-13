@@ -10,8 +10,8 @@ pub struct OAuthClient {
     pub user_id: Option<String>,
     pub client_secret: Option<String>,
     pub metadata: Value,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
 }
 #[derive(Clone, Debug)]
 pub struct CreateOAuthClient {
@@ -232,6 +232,124 @@ pub trait OAuthClientStore: Send + Sync {
     }
 }
 
+/// RFC client metadata names mapped to the TypeScript persistence schema.
+const CLIENT_FIELDS: &[(&str, &str)] = &[
+    ("client_discovery_id", "clientDiscoveryId"),
+    ("disabled", "disabled"),
+    ("skip_consent", "skipConsent"),
+    ("enable_end_session", "enableEndSession"),
+    ("subject_type", "subjectType"),
+    ("client_credentials_scopes", "clientCredentialsScopes"),
+    ("contacts", "contacts"),
+    ("software_id", "softwareId"),
+    ("software_version", "softwareVersion"),
+    ("software_statement", "softwareStatement"),
+    ("redirect_uris", "redirectUris"),
+    ("post_logout_redirect_uris", "postLogoutRedirectUris"),
+    ("backchannel_logout_uri", "backchannelLogoutUri"),
+    (
+        "backchannel_logout_session_required",
+        "backchannelLogoutSessionRequired",
+    ),
+    ("token_endpoint_auth_method", "tokenEndpointAuthMethod"),
+    ("application_type", "applicationType"),
+    ("jwks", "jwks"),
+    ("jwks_uri", "jwksUri"),
+    ("grant_types", "grantTypes"),
+    ("response_types", "responseTypes"),
+    ("require_pkce", "requirePKCE"),
+    ("dpop_bound_access_tokens", "dpopBoundAccessTokens"),
+    ("reference_id", "referenceId"),
+    ("client_name", "name"),
+    ("client_uri", "uri"),
+    ("logo_uri", "icon"),
+    ("tos_uri", "tos"),
+    ("policy_uri", "policy"),
+    ("scope", "scopes"),
+];
+
+/// Separate registration fields from application metadata for physical persistence.
+/// # Errors
+/// Rejects metadata that is not an object.
+pub fn metadata_to_columns(metadata: Value) -> AuthResult<Value> {
+    let Value::Object(mut metadata) = metadata else {
+        return Err(AuthError::bad_request(
+            "OAuth client metadata must be an object",
+        ));
+    };
+    let mut fields = serde_json::Map::new();
+    for (rfc, column) in CLIENT_FIELDS {
+        if let Some(mut value) = metadata.remove(*rfc) {
+            if *rfc == "scope"
+                && let Some(scope) = value.as_str()
+            {
+                value = Value::Array(
+                    scope
+                        .split_whitespace()
+                        .map(|scope| Value::String(scope.into()))
+                        .collect(),
+                );
+            }
+            if *rfc == "jwks" && value.is_object() {
+                value = Value::String(serde_json::to_string(&value)?);
+            }
+            _ = fields.insert((*column).into(), value);
+        }
+    }
+    if !fields.contains_key("redirectUris") {
+        _ = fields.insert("redirectUris".into(), serde_json::json!([]));
+    }
+    _ = fields.insert(
+        "metadata".into(),
+        if metadata.is_empty() {
+            Value::Null
+        } else {
+            Value::Object(metadata)
+        },
+    );
+    Ok(Value::Object(fields))
+}
+
+/// Rebuild the registration projection from the TypeScript client columns.
+/// # Errors
+/// Returns an error when a stored client is malformed.
+pub fn metadata_from_columns(fields: &Value) -> AuthResult<Value> {
+    let fields = fields
+        .as_object()
+        .ok_or_else(|| AuthError::internal("Stored OAuth client must be an object"))?;
+    let mut metadata = fields
+        .get("metadata")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    for (rfc, column) in CLIENT_FIELDS {
+        if let Some(mut value) = fields
+            .get(*column)
+            .filter(|value| !value.is_null())
+            .cloned()
+        {
+            if *rfc == "scope"
+                && let Some(scopes) = value.as_array()
+            {
+                value = Value::String(
+                    scopes
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                );
+            }
+            if *rfc == "jwks"
+                && let Some(jwks) = value.as_str()
+            {
+                value = serde_json::from_str(jwks)?;
+            }
+            _ = metadata.insert((*rfc).into(), value);
+        }
+    }
+    Ok(Value::Object(metadata))
+}
+
 /// Durable consent attached to the client and consenting user.
 #[derive(Clone, Debug)]
 pub struct OAuthConsent {
@@ -255,8 +373,8 @@ pub struct OAuthResource {
     pub id: String,
     pub identifier: String,
     pub metadata: Value,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
 }
 #[derive(Clone, Debug)]
 pub struct CreateOAuthResource {

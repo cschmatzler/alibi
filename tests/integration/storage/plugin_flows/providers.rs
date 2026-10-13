@@ -50,7 +50,7 @@ async fn pwned_password_admission_uses_private_range_requests<B: Backend>(db: Db
     )
     .await;
     assert_eq!(body(&denied)["code"], "PASSWORD_COMPROMISED");
-    for table in ["users", "accounts", "sessions"] {
+    for table in ["user", "account", "session"] {
         assert_eq!(db.count(table).await?, 0);
     }
     let exchange = provider.take().pop().unwrap();
@@ -66,7 +66,7 @@ async fn pwned_password_admission_uses_private_range_requests<B: Backend>(db: Db
         500,
     )
     .await;
-    assert_eq!(db.count("users").await?, 0);
+    assert_eq!(db.count("user").await?, 0);
     provider.respond(
         200,
         "text/plain",
@@ -74,7 +74,7 @@ async fn pwned_password_admission_uses_private_range_requests<B: Backend>(db: Db
     );
     let accepted = call(&auth, request("/sign-up/email", Some(input), ""), 200).await;
     authenticated(&auth, &cookies(&accepted), "pwned@example.test").await;
-    assert_eq!(db.count("accounts").await?, 1);
+    assert_eq!(db.count("account").await?, 1);
     B::close(connection).await
 }
 
@@ -132,7 +132,7 @@ async fn captcha_provider_admission_precedes_persistence<B: Backend>(db: Db) -> 
         );
         let rejected = call(&auth, input.clone(), 403).await;
         assert_eq!(body(&rejected)["code"], "VERIFICATION_FAILED");
-        for table in ["users", "accounts", "sessions"] {
+        for table in ["user", "account", "session"] {
             assert_eq!(db.count(table).await?, 0, "{kind}: {table}");
         }
         let exchange = provider.take().pop().unwrap();
@@ -188,7 +188,7 @@ async fn captcha_provider_admission_precedes_persistence<B: Backend>(db: Db) -> 
                     "VERIFICATION_FAILED",
                     "{kind}: {field}"
                 );
-                for table in ["users", "accounts", "sessions"] {
+                for table in ["user", "account", "session"] {
                     assert_eq!(
                         db.count(table).await?,
                         0,
@@ -200,7 +200,7 @@ async fn captcha_provider_admission_precedes_persistence<B: Backend>(db: Db) -> 
         provider.respond(200, "application/json", valid.to_string());
         let accepted = call(&auth, input, 200).await;
         authenticated(&auth, &cookies(&accepted), "captcha@example.test").await;
-        assert_eq!(db.count("sessions").await?, 1);
+        assert_eq!(db.count("session").await?, 1);
         B::close(connection).await?;
     }
     Ok(())
@@ -253,19 +253,19 @@ async fn one_tap_verifies_signed_identity_before_creating_accounts<B: Backend>(
         .await;
         if status == 400 {
             assert_eq!(body(&response)["message"], "invalid id token");
-            for table in ["users", "accounts", "sessions"] {
+            for table in ["user", "account", "session"] {
                 assert_eq!(db.count(table).await?, 0);
             }
         } else {
             authenticated(&auth, &cookies(&response), "google@example.test").await;
             assert_eq!(
-                db.text("SELECT provider_id FROM accounts", &[])
+                db.text("SELECT \"providerId\" FROM \"account\"", &[])
                     .await?
                     .as_deref(),
                 Some("google")
             );
             assert_eq!(
-                db.text("SELECT account_id FROM accounts", &[])
+                db.text("SELECT \"accountId\" FROM \"account\"", &[])
                     .await?
                     .as_deref(),
                 Some("google-user-42")
@@ -313,7 +313,7 @@ async fn popup_delivers_only_to_the_authenticated_opener<B: Backend>(db: Db) -> 
     ]);
     let rejected = call(&auth, start.clone(), 403).await;
     assert_eq!(body(&rejected)["code"], "INVALID_ORIGIN");
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     drop(start.query.insert("popupOrigin".into(), ORIGIN.into()));
     let issued = call(&auth, start.clone(), 302).await;
     let url = url::Url::parse(issued.headers.get("location").unwrap())?;
@@ -323,7 +323,7 @@ async fn popup_delivers_only_to_the_authenticated_opener<B: Backend>(db: Db) -> 
         .unwrap()
         .1
         .into_owned();
-    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(db.count("verification").await?, 1);
     let mut callback = request("/callback/github", None, &cookies(&issued));
     callback.query.extend([
         ("state".into(), state),
@@ -349,8 +349,8 @@ async fn popup_delivers_only_to_the_authenticated_opener<B: Backend>(db: Db) -> 
     assert!(completed.headers.get_all("set-cookie").any(|cookie| {
         cookie.starts_with("better-auth.oauth_popup=") && cookie.contains("Max-Age=0")
     }));
-    assert_eq!(db.count("verifications").await?, 0);
-    assert_eq!(db.count("users").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(db.count("user").await?, 0);
     let issued = call(&auth, start, 302).await;
     let url = url::Url::parse(issued.headers.get("location").unwrap())?;
     let state = url
@@ -385,22 +385,19 @@ async fn popup_delivers_only_to_the_authenticated_opener<B: Backend>(db: Db) -> 
     )
     .await;
     assert_eq!(
-        db.text("SELECT account_id FROM accounts", &[])
+        db.text("SELECT \"accountId\" FROM \"account\"", &[])
             .await?
             .as_deref(),
         Some("471")
     );
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     assert!(completed.headers.get_all("set-cookie").any(|cookie| {
         cookie.starts_with("better-auth.oauth_popup=") && cookie.contains("Max-Age=0")
     }));
-    let original = db.tables(&["users", "accounts", "sessions"]).await?;
+    let original = db.tables(&["user", "account", "session"]).await?;
     let replay = call(&auth, callback, 200).await;
     assert!(!cookies(&replay).contains("session_token="));
-    assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
-        original
-    );
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, original);
     let exchanges = remote.take();
     for path in ["/profile", "/emails"] {
         let exchange = exchanges

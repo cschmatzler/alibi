@@ -104,7 +104,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
     assert_eq!(db.tables(&["organization", "member"]).await?, original);
     assert!(
         db.text(
-            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
             &[body(&owner)["token"].as_str().unwrap()]
         )
         .await?
@@ -113,7 +113,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
     );
     assert_eq!(
         db.text(
-            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
             &[body(&outsider)["token"].as_str().unwrap()]
         )
         .await?
@@ -248,7 +248,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
     )
     .await;
     assert_eq!(
-        db.text("SELECT status FROM invitation WHERE id=$1", &[&id])
+        db.text("SELECT \"status\" FROM \"invitation\" WHERE id=$1", &[&id])
             .await?
             .as_deref(),
         Some("canceled")
@@ -271,7 +271,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
     .await;
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM member WHERE organization_id=$1 AND user_id=$2",
+            "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\"=$1 AND \"userId\"=$2",
             &[&org, &member_id]
         )
         .await?,
@@ -338,9 +338,12 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
     )
     .await;
     assert_eq!(
-        db.text("SELECT status FROM invitation WHERE id=$1", &[&rejected_id])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT \"status\" FROM \"invitation\" WHERE id=$1",
+            &[&rejected_id]
+        )
+        .await?
+        .as_deref(),
         Some("rejected")
     );
     assert_eq!(db.table("member").await?, members_before);
@@ -354,7 +357,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
         .as_str()
         .unwrap()
         .to_owned();
-    let roles = db.table("organization_role").await?;
+    let roles = db.table("organizationRole").await?;
     for (tenant, headers, expected) in [
         (&org, cookie.clone(), &own_role_id),
         (&foreign_id, cookies(&outsider), &foreign_role_id),
@@ -372,7 +375,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
     }
     let membership = db
         .text(
-            "SELECT id FROM member WHERE organization_id=$1 AND user_id=$2",
+            "SELECT id FROM \"member\" WHERE \"organizationId\"=$1 AND \"userId\"=$2",
             &[&org, &member_id],
         )
         .await?
@@ -442,7 +445,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
         body(&denied)["code"],
         "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION"
     );
-    assert_eq!(db.table("organization_role").await?, roles);
+    assert_eq!(db.table("organizationRole").await?, roles);
     let _ = call(
         &auth,
         request(
@@ -454,7 +457,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
     )
     .await;
     let protected = db
-        .tables(&["organization", "member", "invitation", "sessions"])
+        .tables(&["organization", "member", "invitation", "session"])
         .await?;
     for (route, input, status, message) in [
         (
@@ -488,7 +491,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
         .await;
         assert_eq!(body(&denied)["message"], message);
         assert_eq!(
-            db.tables(&["organization", "member", "invitation", "sessions"])
+            db.tables(&["organization", "member", "invitation", "session"])
                 .await?,
             protected
         );
@@ -506,7 +509,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
     assert_eq!(body(&selected)["id"], org);
     assert_eq!(
         db.text(
-            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
             &[body(&invited)["token"].as_str().unwrap()]
         )
         .await?
@@ -614,7 +617,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
         .await;
         let owner_session = db
             .text(
-                "SELECT active_organization_id FROM sessions WHERE token=$1",
+                "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
                 &[body(&invited)["token"].as_str().unwrap()],
             )
             .await?;
@@ -632,7 +635,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
         );
         assert!(
             db.text(
-                "SELECT active_organization_id FROM sessions WHERE token=$1",
+                "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
                 &[body(&outsider)["token"].as_str().unwrap()]
             )
             .await?
@@ -640,7 +643,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
         );
         assert_eq!(
             db.text(
-                "SELECT active_organization_id FROM sessions WHERE token=$1",
+                "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
                 &[body(&invited)["token"].as_str().unwrap()]
             )
             .await?,
@@ -664,7 +667,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
             .insert("organizationId".into(), foreign_id.clone()),
     );
     let _ = call(&auth, teams, 403).await;
-    let before = db.tables(&["team", "team_member", "sessions"]).await?;
+    let before = db.tables(&["team", "teamMember", "session"]).await?;
     let denied = call(
         &auth,
         request(
@@ -714,10 +717,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
     )
     .await;
     assert_eq!(body(&denied)["code"], "TEAM_NOT_FOUND");
-    assert_eq!(
-        db.tables(&["team", "team_member", "sessions"]).await?,
-        before
-    );
+    assert_eq!(db.tables(&["team", "teamMember", "session"]).await?, before);
     let mut roster = request("/organization/list-team-members", None, &member_cookie);
     drop(roster.query.insert("teamId".into(), team_id.clone()));
     let denied = call(&auth, roster.clone(), 400).await;
@@ -746,7 +746,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
     assert_eq!(body(&selected)["id"], team_id);
     assert_eq!(
         db.text(
-            "SELECT active_team_id FROM sessions WHERE token=$1",
+            "SELECT \"activeTeamId\" FROM \"session\" WHERE \"token\"=$1",
             &[body(&invited)["token"].as_str().unwrap()]
         )
         .await?
@@ -793,7 +793,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
     assert!(body(&cleared).is_null());
     assert!(
         db.text(
-            "SELECT active_team_id FROM sessions WHERE token=$1",
+            "SELECT \"activeTeamId\" FROM \"session\" WHERE \"token\"=$1",
             &[body(&invited)["token"].as_str().unwrap()]
         )
         .await?
@@ -811,7 +811,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
     .await;
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM member WHERE organization_id=$1 AND user_id=$2",
+            "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\"=$1 AND \"userId\"=$2",
             &[&org, &member_id]
         )
         .await?,
@@ -819,7 +819,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
     );
     assert!(
         db.text(
-            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
             &[body(&invited)["token"].as_str().unwrap()]
         )
         .await?
@@ -852,7 +852,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
         ..Default::default()
     });
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
-    let sessions = db.table("sessions").await?;
+    let sessions = db.table("session").await?;
     let created = helper
         .create_organization_for_user(
             auth.context(),
@@ -867,8 +867,8 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
         owner_id
     );
     assert_eq!(serde_json::to_value(&created.members)?[0]["role"], "owner");
-    assert_eq!(db.table("sessions").await?, sessions);
-    let unchanged = db.tables(&["organization", "member", "sessions"]).await?;
+    assert_eq!(db.table("session").await?, sessions);
+    let unchanged = db.tables(&["organization", "member", "session"]).await?;
     let denied = helper
         .create_organization_for_user(
             auth.context(),
@@ -880,7 +880,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
     assert_eq!(denied.status_code(), 403);
     assert!(denied.to_string().contains("maximum number"));
     assert_eq!(
-        db.tables(&["organization", "member", "sessions"]).await?,
+        db.tables(&["organization", "member", "session"]).await?,
         unchanged
     );
     let empty = std::collections::HashMap::new();
@@ -940,7 +940,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
         .remove_team_with_headers(auth.context(), &headers, &disposable, &team.id)
         .await?;
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM team WHERE id=$1", &[&team.id])
+        db.count_where("SELECT COUNT(*) FROM \"team\" WHERE id=$1", &[&team.id])
             .await?,
         0
     );
@@ -970,8 +970,11 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
         .remove_member_with_headers(auth.context(), &headers, &removal)
         .await?;
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM member WHERE id=$1", &[&admitted.id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"member\" WHERE id=$1",
+            &[&admitted.id]
+        )
+        .await?,
         0
     );
     let deletion = serde_json::from_value(json!({"organizationId":disposable}))?;
@@ -990,7 +993,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
     assert_eq!(deleted.id, disposable);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM organization WHERE id=$1",
+            "SELECT COUNT(*) FROM \"organization\" WHERE id=$1",
             &[&disposable]
         )
         .await?,
@@ -998,14 +1001,14 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM member WHERE organization_id=$1",
+            "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\"=$1",
             &[&disposable]
         )
         .await?,
         0
     );
     assert_eq!(db.count("organization").await?, 2);
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("session").await?, sessions);
     B::close(connection).await
 }
 
@@ -1088,10 +1091,10 @@ async fn stray_team_membership_without_tenant_membership_cannot_read_roster<B: B
             "organization",
             "member",
             "team",
-            "team_member",
-            "users",
-            "accounts",
-            "sessions",
+            "teamMember",
+            "user",
+            "account",
+            "session",
         ])
         .await?;
     let mut query = request("/organization/list-team-members", None, &cookies(&outsider));
@@ -1111,10 +1114,10 @@ async fn stray_team_membership_without_tenant_membership_cannot_read_roster<B: B
             "organization",
             "member",
             "team",
-            "team_member",
-            "users",
-            "accounts",
-            "sessions"
+            "teamMember",
+            "user",
+            "account",
+            "session"
         ])
         .await?,
         before

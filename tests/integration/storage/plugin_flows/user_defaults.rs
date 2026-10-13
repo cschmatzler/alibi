@@ -67,7 +67,7 @@ async fn registered_adapter_default_fills_omitted_user_fields<B: Backend>(db: Db
     assert_eq!(body(&issued)["user"]["image"], "default.png");
     assert_eq!(
         db.text(
-            "SELECT image FROM users WHERE email = $1",
+            "SELECT \"image\" FROM \"user\" WHERE \"email\" = $1",
             &["defaults@example.test"]
         )
         .await?

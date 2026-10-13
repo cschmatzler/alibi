@@ -14,9 +14,8 @@ use std::time::Duration;
 use url::Url;
 use uuid::Uuid;
 use webauthn_rs::prelude::{
-    Base64UrlSafeData, CreationChallengeResponse, CredentialID, DiscoverableAuthentication,
-    PublicKeyCredential, RegisterPublicKeyCredential, RequestChallengeResponse, Webauthn,
-    WebauthnBuilder,
+    Base64UrlSafeData, CreationChallengeResponse, CredentialID, PublicKeyCredential,
+    RegisterPublicKeyCredential, RequestChallengeResponse, Webauthn, WebauthnBuilder,
 };
 use webauthn_rs_core::{
     WebauthnCore,
@@ -41,7 +40,6 @@ pub(super) struct RegisteredPasskeyMetadata {
 
 #[derive(Debug)]
 pub(super) struct PasskeySnapshot {
-    pub serialized: String,
     pub counter: u64,
     pub backed_up: bool,
     pub backup_eligible: bool,
@@ -67,12 +65,11 @@ pub(crate) struct StoredRegistrationState {
     pub state: StoredRegistrationVerifier,
 }
 
-/// The legacy state shape stays readable for already-issued challenges.
+/// Current registration verification state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum StoredRegistrationVerifier {
     Source(StoredCoreRegistrationState),
-    Legacy(webauthn_rs::prelude::PasskeyRegistration),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,16 +90,6 @@ pub(crate) enum StoredAuthenticationState {
     CoreRaw {
         state: AuthenticationState,
         challenge: String,
-    },
-    /// Source policy for newly issued ceremonies. Older variants remain readable.
-    Core {
-        state: AuthenticationState,
-    },
-    Passkey {
-        state: webauthn_rs::prelude::PasskeyAuthentication,
-    },
-    Discoverable {
-        state: DiscoverableAuthentication,
     },
 }
 
@@ -578,7 +565,6 @@ pub(super) fn snapshot_passkey(passkey: &impl Serialize) -> AuthResult<PasskeySn
     let (counter, backed_up, backup_eligible) = extract_passkey_snapshot_fields(&value)?;
 
     Ok(PasskeySnapshot {
-        serialized,
         counter,
         backed_up,
         backup_eligible,

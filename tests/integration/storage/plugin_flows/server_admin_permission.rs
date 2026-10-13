@@ -42,7 +42,7 @@ async fn server_admin_permission_resolves_selectors_without_mutating_or_forging_
         ..Default::default()
     };
     let checks = json!({"user":["get"]});
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (input, options, status, message) in [
         (None, EndpointOptions::default(), 400, None),
         (Some(json!(null)), EndpointOptions::default(), 400, None),
@@ -270,6 +270,6 @@ async fn server_admin_permission_resolves_selectors_without_mutating_or_forging_
             &JsValue::from(json!({"error":null,"success":allowed}))
         );
     }
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     B::close(connection).await
 }

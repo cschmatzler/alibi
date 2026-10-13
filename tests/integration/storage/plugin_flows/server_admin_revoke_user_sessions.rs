@@ -63,7 +63,7 @@ async fn server_admin_revoke_user_sessions_deletes_all_target_rows<B: Backend>(
     );
     let expired = chrono::DateTime::parse_from_rfc3339("2020-01-01T00:00:00.000Z")?
         .with_timezone(&chrono::Utc);
-    db.set_timestamp("sessions", "expires_at", ("token", &token), expired)
+    db.set_timestamp("session", "expiresAt", ("token", &token), expired)
         .await?;
     assert_eq!(auth.store().get_user_sessions(&id).await?.len(), 2);
     assert_eq!(auth.store().get_user_sessions(&admin_id).await?.len(), 2);
@@ -71,7 +71,7 @@ async fn server_admin_revoke_user_sessions_deletes_all_target_rows<B: Backend>(
         headers: Some([("cookie".into(), cookies(response))].into_iter().collect()),
         ..Default::default()
     };
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (input, headers, status, code) in [
         (None, EndpointOptions::default(), 400, "VALIDATION_ERROR"),
         (
@@ -167,8 +167,8 @@ async fn server_admin_revoke_user_sessions_deletes_all_target_rows<B: Backend>(
             .await?;
         assert_eq!(output.value().get("success"), Some(&JsValue::Bool(true)));
     }
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
-    let immutable = db.tables(&["users", "accounts"]).await?;
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
+    let immutable = db.tables(&["user", "account"]).await?;
     let original_admin = serde_json::to_value(auth.store().get_user_sessions(&admin_id).await?)?;
     let original_foreign =
         serde_json::to_value(auth.store().get_user_sessions(&foreign_id).await?)?;
@@ -196,7 +196,7 @@ async fn server_admin_revoke_user_sessions_deletes_all_target_rows<B: Backend>(
             ]
         );
         assert!(auth.store().get_user_sessions(&id).await?.is_empty());
-        assert_eq!(db.tables(&["users", "accounts"]).await?, immutable);
+        assert_eq!(db.tables(&["user", "account"]).await?, immutable);
         assert_eq!(
             serde_json::to_value(auth.store().get_user_sessions(&admin_id).await?)?,
             original_admin

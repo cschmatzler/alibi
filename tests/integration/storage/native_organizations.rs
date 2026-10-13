@@ -409,15 +409,18 @@ async fn native_organization_workflow<B: Backend>(db: Db) -> TestResult {
         std::any::type_name::<B>().rsplit("::").next().unwrap(),
     )
     .await?;
-    assert_eq!(db.count("sessions").await?, 0);
+    assert_eq!(db.count("session").await?, 0);
     assert_eq!(db.count("organization").await?, 2);
     assert_eq!(db.count("member").await?, 2);
     assert_eq!(db.count("invitation").await?, 2);
-    assert_eq!(db.count("team_member").await?, 0);
-    assert_eq!(db.count("organization_role").await?, 1);
+    assert_eq!(db.count("teamMember").await?, 0);
+    assert_eq!(db.count("organizationRole").await?, 1);
     assert_eq!(
-        db.text("SELECT permission FROM organization_role LIMIT 1", &[])
-            .await?,
+        db.text(
+            "SELECT \"permission\" FROM \"organizationRole\" LIMIT 1",
+            &[]
+        )
+        .await?,
         Some(r#"{"organization":[]}"#.into())
     );
     let restarted =
@@ -461,7 +464,7 @@ async fn native_organization_workflow<B: Backend>(db: Db) -> TestResult {
     );
     assert_ne!(db.table("organization").await?, foreign_before);
     assert_eq!(db.count("invitation").await?, 0);
-    assert_eq!(db.count("organization_role").await?, 1);
+    assert_eq!(db.count("organizationRole").await?, 0);
     B::close(connection).await
 }
 #[tokio::test]

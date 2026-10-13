@@ -1,0 +1,2653 @@
+[
+  {
+    "table": "account",
+    "columns": [
+      {
+        "name": "accessToken",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "accessTokenExpiresAt",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "accountId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "idToken",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "password",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "providerId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "refreshToken",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "refreshTokenExpiresAt",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "scope",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "updatedAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "userId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "account_userId_idx",
+        "unique": 0,
+        "columns": [
+          "userId"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_account_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "table": "user",
+        "from": "userId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      }
+    ]
+  },
+  {
+    "table": "apikey",
+    "columns": [
+      {
+        "name": "configId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "enabled",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "expiresAt",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "key",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "lastRefillAt",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "lastRequest",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "metadata",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "name",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "permissions",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "prefix",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "rateLimitEnabled",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "rateLimitMax",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "rateLimitTimeWindow",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "referenceId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "refillAmount",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "refillInterval",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "remaining",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "requestCount",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "start",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "updatedAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "apikey_configId_idx",
+        "unique": 0,
+        "columns": [
+          "configId"
+        ]
+      },
+      {
+        "name": "apikey_key_idx",
+        "unique": 0,
+        "columns": [
+          "key"
+        ]
+      },
+      {
+        "name": "apikey_referenceId_idx",
+        "unique": 0,
+        "columns": [
+          "referenceId"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_apikey_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "deviceCode",
+    "columns": [
+      {
+        "name": "clientId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "deviceCode",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "expiresAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "lastPolledAt",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "pollingInterval",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "scope",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "status",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "userCode",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "userId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "deviceCode_deviceCode_uidx",
+        "unique": 1,
+        "columns": [
+          "deviceCode"
+        ]
+      },
+      {
+        "name": "deviceCode_userCode_uidx",
+        "unique": 1,
+        "columns": [
+          "userCode"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_deviceCode_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "invitation",
+    "columns": [
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "email",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "expiresAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "inviterId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "organizationId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "role",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "status",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "teamId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "invitation_email_idx",
+        "unique": 0,
+        "columns": [
+          "email"
+        ]
+      },
+      {
+        "name": "invitation_organizationId_idx",
+        "unique": 0,
+        "columns": [
+          "organizationId"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_invitation_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "table": "user",
+        "from": "inviterId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      },
+      {
+        "table": "organization",
+        "from": "organizationId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      }
+    ]
+  },
+  {
+    "table": "jwks",
+    "columns": [
+      {
+        "name": "alg",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "crv",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "expiresAt",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "privateKey",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "publicKey",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sqlite_autoindex_jwks_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "member",
+    "columns": [
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "organizationId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "role",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "userId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "member_organizationId_idx",
+        "unique": 0,
+        "columns": [
+          "organizationId"
+        ]
+      },
+      {
+        "name": "member_userId_idx",
+        "unique": 0,
+        "columns": [
+          "userId"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_member_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "table": "organization",
+        "from": "organizationId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      },
+      {
+        "table": "user",
+        "from": "userId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      }
+    ]
+  },
+  {
+    "table": "oauthAccessToken",
+    "columns": [
+      {
+        "name": "authorizationCodeId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "clientId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "confirmation",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "expiresAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "referenceId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "refreshId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "requestedUserInfoClaims",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "resources",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "revoked",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "scopes",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "sessionId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "token",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "userId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "oauthAccessToken_authorizationCodeId_idx",
+        "unique": 0,
+        "columns": [
+          "authorizationCodeId"
+        ]
+      },
+      {
+        "name": "oauthAccessToken_clientId_idx",
+        "unique": 0,
+        "columns": [
+          "clientId"
+        ]
+      },
+      {
+        "name": "oauthAccessToken_refreshId_idx",
+        "unique": 0,
+        "columns": [
+          "refreshId"
+        ]
+      },
+      {
+        "name": "oauthAccessToken_sessionId_idx",
+        "unique": 0,
+        "columns": [
+          "sessionId"
+        ]
+      },
+      {
+        "name": "oauthAccessToken_userId_idx",
+        "unique": 0,
+        "columns": [
+          "userId"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_oauthAccessToken_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_oauthAccessToken_2",
+        "unique": 1,
+        "columns": [
+          "token"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "table": "oauthClient",
+        "from": "clientId",
+        "to": "clientId",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      },
+      {
+        "table": "oauthRefreshToken",
+        "from": "refreshId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      },
+      {
+        "table": "session",
+        "from": "sessionId",
+        "to": "id",
+        "onDelete": "SET NULL",
+        "onUpdate": "NO ACTION"
+      },
+      {
+        "table": "user",
+        "from": "userId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      }
+    ]
+  },
+  {
+    "table": "oauthClient",
+    "columns": [
+      {
+        "name": "applicationType",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "backchannelLogoutSessionRequired",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "backchannelLogoutUri",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "clientCredentialsScopes",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "clientDiscoveryId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "clientId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "clientSecret",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "contacts",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "disabled",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "dpopBoundAccessTokens",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "enableEndSession",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "grantTypes",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "icon",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "jwks",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "jwksUri",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "metadata",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "name",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "policy",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "postLogoutRedirectUris",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "redirectUris",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "referenceId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "requirePKCE",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "responseTypes",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "scopes",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "skipConsent",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "softwareId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "softwareStatement",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "softwareVersion",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "subjectType",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "tokenEndpointAuthMethod",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "tos",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "updatedAt",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "uri",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "userId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "oauthClient_userId_idx",
+        "unique": 0,
+        "columns": [
+          "userId"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_oauthClient_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_oauthClient_2",
+        "unique": 1,
+        "columns": [
+          "clientId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "table": "user",
+        "from": "userId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      }
+    ]
+  },
+  {
+    "table": "oauthClientAssertion",
+    "columns": [
+      {
+        "name": "expiresAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sqlite_autoindex_oauthClientAssertion_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "oauthClientResource",
+    "columns": [
+      {
+        "name": "clientId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "metadata",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "resourceId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "oauthClientResource_clientId_idx",
+        "unique": 0,
+        "columns": [
+          "clientId"
+        ]
+      },
+      {
+        "name": "oauthClientResource_clientId_resourceId_uidx",
+        "unique": 1,
+        "columns": [
+          "clientId",
+          "resourceId"
+        ]
+      },
+      {
+        "name": "oauthClientResource_resourceId_idx",
+        "unique": 0,
+        "columns": [
+          "resourceId"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_oauthClientResource_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "table": "oauthClient",
+        "from": "clientId",
+        "to": "clientId",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      },
+      {
+        "table": "oauthResource",
+        "from": "resourceId",
+        "to": "identifier",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      }
+    ]
+  },
+  {
+    "table": "oauthConsent",
+    "columns": [
+      {
+        "name": "clientId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "referenceId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "requestedUserInfoClaims",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "resources",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "scopes",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "updatedAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "userId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "oauthConsent_clientId_idx",
+        "unique": 0,
+        "columns": [
+          "clientId"
+        ]
+      },
+      {
+        "name": "oauthConsent_userId_idx",
+        "unique": 0,
+        "columns": [
+          "userId"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_oauthConsent_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "table": "oauthClient",
+        "from": "clientId",
+        "to": "clientId",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      },
+      {
+        "table": "user",
+        "from": "userId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      }
+    ]
+  },
+  {
+    "table": "oauthRefreshToken",
+    "columns": [
+      {
+        "name": "authTime",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "authorizationCodeId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "clientId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "confirmation",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "expiresAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "referenceId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "requestedUserInfoClaims",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "resources",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "revoked",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "rotatedAt",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "rotationReplayExpiresAt",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "rotationReplayResponse",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "scopes",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "sessionId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "token",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "userId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "oauthRefreshToken_authorizationCodeId_idx",
+        "unique": 0,
+        "columns": [
+          "authorizationCodeId"
+        ]
+      },
+      {
+        "name": "oauthRefreshToken_clientId_idx",
+        "unique": 0,
+        "columns": [
+          "clientId"
+        ]
+      },
+      {
+        "name": "oauthRefreshToken_sessionId_idx",
+        "unique": 0,
+        "columns": [
+          "sessionId"
+        ]
+      },
+      {
+        "name": "oauthRefreshToken_userId_idx",
+        "unique": 0,
+        "columns": [
+          "userId"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_oauthRefreshToken_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_oauthRefreshToken_2",
+        "unique": 1,
+        "columns": [
+          "token"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "table": "oauthClient",
+        "from": "clientId",
+        "to": "clientId",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      },
+      {
+        "table": "session",
+        "from": "sessionId",
+        "to": "id",
+        "onDelete": "SET NULL",
+        "onUpdate": "NO ACTION"
+      },
+      {
+        "table": "user",
+        "from": "userId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      }
+    ]
+  },
+  {
+    "table": "oauthResource",
+    "columns": [
+      {
+        "name": "accessTokenTtl",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "allowedScopes",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "customClaims",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "disabled",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "dpopBoundAccessTokensRequired",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "identifier",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "metadata",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "name",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "policyVersion",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "refreshTokenTtl",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "signingAlgorithm",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "signingKeyId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "updatedAt",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sqlite_autoindex_oauthResource_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_oauthResource_2",
+        "unique": 1,
+        "columns": [
+          "identifier"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "organization",
+    "columns": [
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "logo",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "metadata",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "name",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "slug",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sqlite_autoindex_organization_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_organization_2",
+        "unique": 1,
+        "columns": [
+          "slug"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "organizationRole",
+    "columns": [
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "organizationId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "permission",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "role",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "updatedAt",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "organizationRole_organizationId_idx",
+        "unique": 0,
+        "columns": [
+          "organizationId"
+        ]
+      },
+      {
+        "name": "organizationRole_role_idx",
+        "unique": 0,
+        "columns": [
+          "role"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_organizationRole_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "table": "organization",
+        "from": "organizationId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      }
+    ]
+  },
+  {
+    "table": "passkey",
+    "columns": [
+      {
+        "name": "aaguid",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "backedUp",
+        "type": "INTEGER",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "counter",
+        "type": "INTEGER",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "credentialID",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "deviceType",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "name",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "publicKey",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "transports",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "userId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "passkey_credentialID_idx",
+        "unique": 0,
+        "columns": [
+          "credentialID"
+        ]
+      },
+      {
+        "name": "passkey_userId_idx",
+        "unique": 0,
+        "columns": [
+          "userId"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_passkey_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "table": "user",
+        "from": "userId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      }
+    ]
+  },
+  {
+    "table": "rateLimit",
+    "columns": [
+      {
+        "name": "count",
+        "type": "INTEGER",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "key",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "lastRequest",
+        "type": "bigint",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sqlite_autoindex_rateLimit_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_rateLimit_2",
+        "unique": 1,
+        "columns": [
+          "key"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "session",
+    "columns": [
+      {
+        "name": "activeOrganizationId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "activeTeamId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "expiresAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "impersonatedBy",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "ipAddress",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "token",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "updatedAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "userAgent",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "userId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "session_userId_idx",
+        "unique": 0,
+        "columns": [
+          "userId"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_session_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_session_2",
+        "unique": 1,
+        "columns": [
+          "token"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "table": "user",
+        "from": "userId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      }
+    ]
+  },
+  {
+    "table": "team",
+    "columns": [
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "memberCount",
+        "type": "INTEGER",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "name",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "organizationId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "updatedAt",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sqlite_autoindex_team_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "team_organizationId_idx",
+        "unique": 0,
+        "columns": [
+          "organizationId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "table": "organization",
+        "from": "organizationId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      }
+    ]
+  },
+  {
+    "table": "teamMember",
+    "columns": [
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "membershipKey",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "teamId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "userId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sqlite_autoindex_teamMember_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_teamMember_2",
+        "unique": 1,
+        "columns": [
+          "membershipKey"
+        ]
+      },
+      {
+        "name": "teamMember_teamId_idx",
+        "unique": 0,
+        "columns": [
+          "teamId"
+        ]
+      },
+      {
+        "name": "teamMember_userId_idx",
+        "unique": 0,
+        "columns": [
+          "userId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "table": "team",
+        "from": "teamId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      },
+      {
+        "table": "user",
+        "from": "userId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      }
+    ]
+  },
+  {
+    "table": "twoFactor",
+    "columns": [
+      {
+        "name": "backupCodes",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "failedVerificationCount",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "lockedUntil",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "secret",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "userId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "verified",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sqlite_autoindex_twoFactor_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "twoFactor_secret_idx",
+        "unique": 0,
+        "columns": [
+          "secret"
+        ]
+      },
+      {
+        "name": "twoFactor_userId_idx",
+        "unique": 0,
+        "columns": [
+          "userId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "table": "user",
+        "from": "userId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      }
+    ]
+  },
+  {
+    "table": "user",
+    "columns": [
+      {
+        "name": "banExpires",
+        "type": "date",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "banReason",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "banned",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "displayUsername",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "email",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "emailVerified",
+        "type": "INTEGER",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "image",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "isAnonymous",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "lastLoginMethod",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "name",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "phoneNumber",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "phoneNumberVerified",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "role",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "twoFactorEnabled",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "updatedAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "username",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sqlite_autoindex_user_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_user_2",
+        "unique": 1,
+        "columns": [
+          "email"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_user_3",
+        "unique": 1,
+        "columns": [
+          "phoneNumber"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_user_4",
+        "unique": 1,
+        "columns": [
+          "username"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "verification",
+    "columns": [
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "expiresAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "identifier",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "updatedAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "value",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sqlite_autoindex_verification_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "verification_identifier_idx",
+        "unique": 0,
+        "columns": [
+          "identifier"
+        ]
+      }
+    ],
+    "foreignKeys": []
+  },
+  {
+    "table": "walletAddress",
+    "columns": [
+      {
+        "name": "address",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "chainId",
+        "type": "INTEGER",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "createdAt",
+        "type": "date",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "isPrimary",
+        "type": "INTEGER",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "userId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sqlite_autoindex_walletAddress_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "walletAddress_userId_idx",
+        "unique": 0,
+        "columns": [
+          "userId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "table": "user",
+        "from": "userId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      }
+    ]
+  }
+]

@@ -36,7 +36,6 @@ async fn write_timestamp(
     }
     let mut org = org.into_active_model();
     org.created_at = Set(body.created_at);
-    org.updated_at = Set(body.created_at);
     org.update(database).await?;
     let mut member = member.into_active_model();
     member.created_at = Set(body.created_at);

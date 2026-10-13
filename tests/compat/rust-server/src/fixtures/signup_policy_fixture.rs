@@ -196,7 +196,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         "synthetic_note",
     ] {
         _ = database
-            .execute_unprepared(&format!("ALTER TABLE users ADD COLUMN {column} TEXT"))
+            .execute_unprepared(&format!("ALTER TABLE \"user\" ADD COLUMN {column} TEXT"))
             .await
             .map_err(database_error)?;
     }
@@ -544,7 +544,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             let result: AuthResult<Value> = async {
                 use alibi::seaorm::sea_orm::{DbBackend, Statement};
                 let rows = database.query_all_raw(Statement::from_string(DbBackend::Sqlite,
-                    "SELECT id, synthetic_tier AS syntheticTier, synthetic_secret AS syntheticSecret, synthetic_locale AS syntheticLocale, synthetic_note AS syntheticNote FROM users ORDER BY created_at, id")).await.map_err(database_error)?;
+                    "SELECT id, synthetic_tier AS syntheticTier, synthetic_secret AS syntheticSecret, synthetic_locale AS syntheticLocale, synthetic_note AS syntheticNote FROM \"user\" ORDER BY \"createdAt\", id")).await.map_err(database_error)?;
                 let users = rows.iter().map(|row| {
                     let mut user = serde_json::Map::new();
                     _ = user.insert("id".into(), json!(row.try_get::<String>("", "id").map_err(database_error)?));

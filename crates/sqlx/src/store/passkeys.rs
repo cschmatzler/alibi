@@ -26,22 +26,22 @@ where
         let mut active = ActiveRow::new();
         active.set(
             "id",
-            self.generated_id(self.exec(), "passkey", "passkeys", "id")
+            self.generated_id(self.exec(), "passkey", "passkey", "id")
                 .await?
                 .unwrap_or_else(|| Uuid::new_v4().to_string()),
         );
         active.set("name", input.name);
-        active.set("public_key", input.public_key);
-        active.set("user_id", input.user_id);
-        active.set("credential_id", input.credential_id);
+        active.set("publicKey", input.public_key);
+        active.set("userId", input.user_id);
+        active.set("credentialID", input.credential_id);
         active.set("counter", counter);
-        active.set("device_type", input.device_type);
-        active.set("backed_up", input.backed_up);
+        active.set("deviceType", input.device_type);
+        active.set("backedUp", input.backed_up);
         active.set("transports", input.transports);
-        active.set("credential", input.credential);
+
         active.set("aaguid", input.aaguid);
-        active.set("created_at", Utc::now());
-        active.set("updated_at", Utc::now());
+        active.set("createdAt", Utc::now());
+
         model::insert::<Model>(exec, &active)
             .await
             .map(|model| Passkey::from(&model))
@@ -74,7 +74,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SqlxStore<S> {
     ) -> AuthResult<Option<Passkey>> {
         let mut sql = model::select_model::<Model>(self.exec());
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "credential_id", " = ", credential_id);
+        sql.compare(Model::TABLE, "credentialID", " = ", credential_id);
         model::limit_one(&mut sql);
         Ok(self
             .exec()
@@ -86,7 +86,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SqlxStore<S> {
     async fn list_passkeys_by_user(&self, user_id: &str) -> AuthResult<Vec<Passkey>> {
         let mut sql = model::select_model::<Model>(self.exec());
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "user_id", " = ", user_id);
+        sql.compare(Model::TABLE, "userId", " = ", user_id);
         Ok(self
             .exec()
             .fetch_all::<Model>(sql)
@@ -111,10 +111,9 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SqlxStore<S> {
             i64::try_from(update.counter)
                 .map_err(|_error| AuthError::bad_request("Passkey counter exceeds i64 range"))?,
         );
-        active.set("backed_up", update.backed_up);
-        active.set("device_type", update.device_type);
-        active.set("credential", update.credential);
-        active.set("updated_at", Utc::now());
+        active.set("backedUp", update.backed_up);
+        active.set("deviceType", update.device_type);
+
         model::update::<Model>(self.exec(), &active)
             .await?
             .map(|model| Some(Passkey::from(&model)))
@@ -128,7 +127,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SqlxStore<S> {
 
         let mut active = model.into_active();
         active.set("name", Some(name.to_owned()));
-        active.set("updated_at", Utc::now());
+
         model::update::<Model>(self.exec(), &active)
             .await?
             .map(|model| Passkey::from(&model))

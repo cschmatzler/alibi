@@ -199,7 +199,7 @@ async fn generic_oauth_fallback_mapping_and_account_authority<B: Backend>(db: Db
         let destination = url::Url::parse(response.headers.get("location").unwrap())?;
         if matches!(mode, "invalid" | "error") {
             assert_eq!(destination.path(), "/failed", "{mode}");
-            for table in ["users", "accounts", "sessions"] {
+            for table in ["user", "account", "session"] {
                 assert_eq!(db.count(table).await?, 0);
             }
         } else {
@@ -207,7 +207,9 @@ async fn generic_oauth_fallback_mapping_and_account_authority<B: Backend>(db: Db
             authenticated(&auth, &cookies(&response), "mapping@example.test").await;
             if mode == "scalars" {
                 assert_eq!(
-                    db.text("SELECT name FROM users", &[]).await?.as_deref(),
+                    db.text("SELECT \"name\" FROM \"user\"", &[])
+                        .await?
+                        .as_deref(),
                     Some("Initial")
                 );
                 reject_raw.store(1, std::sync::atomic::Ordering::SeqCst);
@@ -216,8 +218,8 @@ async fn generic_oauth_fallback_mapping_and_account_authority<B: Backend>(db: Db
                     super::oauth_profiles::complete(&auth, "generic", &authorization, &cookie)
                         .await;
                 authenticated(&auth, &cookies(&returning), "mapping@example.test").await;
-                assert_eq!(db.count("users").await?, 1);
-                assert_eq!(db.count("accounts").await?, 1);
+                assert_eq!(db.count("user").await?, 1);
+                assert_eq!(db.count("account").await?, 1);
             }
             let expected = match mode {
                 "oidc-subject" => "raw-oidc-subject",
@@ -225,13 +227,15 @@ async fn generic_oauth_fallback_mapping_and_account_authority<B: Backend>(db: Db
                 _ => "raw-oauth-id",
             };
             assert_eq!(
-                db.text("SELECT account_id FROM accounts", &[])
+                db.text("SELECT \"accountId\" FROM \"account\"", &[])
                     .await?
                     .as_deref(),
                 Some(expected)
             );
             assert_eq!(
-                db.text("SELECT name FROM users", &[]).await?.as_deref(),
+                db.text("SELECT \"name\" FROM \"user\"", &[])
+                    .await?
+                    .as_deref(),
                 Some(if mode == "scalars" {
                     "38"
                 } else {
@@ -240,7 +244,9 @@ async fn generic_oauth_fallback_mapping_and_account_authority<B: Backend>(db: Db
             );
             if mode == "scalars" {
                 assert_eq!(
-                    db.text("SELECT image FROM users", &[]).await?.as_deref(),
+                    db.text("SELECT \"image\" FROM \"user\"", &[])
+                        .await?
+                        .as_deref(),
                     Some(if db.is_postgres() { "true" } else { "1" })
                 );
                 let session = call(
@@ -252,7 +258,7 @@ async fn generic_oauth_fallback_mapping_and_account_authority<B: Backend>(db: Db
                 assert_eq!(body(&session)["user"]["emailVerified"], true);
             }
             if mode == "scalars" {
-                let before = db.tables(&["users", "sessions"]).await?;
+                let before = db.tables(&["user", "session"]).await?;
                 reject_raw.store(2, std::sync::atomic::Ordering::SeqCst);
                 let (authorization, cookie) = super::oauth_profiles::begin(&auth, "generic").await;
                 let denied =
@@ -262,7 +268,7 @@ async fn generic_oauth_fallback_mapping_and_account_authority<B: Backend>(db: Db
                     url::Url::parse(denied.headers.get("location").unwrap())?.path(),
                     "/failed"
                 );
-                assert_eq!(db.tables(&["users", "sessions"]).await?, before);
+                assert_eq!(db.tables(&["user", "session"]).await?, before);
             }
             let signed_out = call(
                 &auth,
@@ -272,7 +278,7 @@ async fn generic_oauth_fallback_mapping_and_account_authority<B: Backend>(db: Db
             .await;
             assert!(body(&signed_out).get("url").is_none());
             assert_eq!(
-                db.count("sessions").await?,
+                db.count("session").await?,
                 if mode == "scalars" { 1 } else { 0 }
             );
         }
@@ -324,10 +330,10 @@ async fn configured_oauth_expiry_preserves_zero_negative_and_grant_precedence<B:
             url::Url::parse(response.headers.get("location").unwrap())?.path(),
             "/done"
         );
-        let id = db.text("SELECT id FROM accounts", &[]).await?.unwrap();
+        let id = db.text("SELECT id FROM \"account\"", &[]).await?.unwrap();
         let expiry = db
             .text(
-                "SELECT access_token_expires_at FROM accounts WHERE id=$1",
+                "SELECT \"accessTokenExpiresAt\" FROM \"account\" WHERE id=$1",
                 &[&id],
             )
             .await?;
@@ -342,7 +348,7 @@ async fn configured_oauth_expiry_preserves_zero_negative_and_grant_precedence<B:
             assert!(expiry <= after + Duration::seconds(i64::from(seconds)) + Duration::seconds(1));
         }
         authenticated(&auth, &cookies(&response), "expiry@example.test").await;
-        let stable = db.tables(&["users", "sessions"]).await?;
+        let stable = db.tables(&["user", "session"]).await?;
         let receipts = peer.take();
         assert_eq!(
             receipts
@@ -367,7 +373,7 @@ async fn configured_oauth_expiry_preserves_zero_negative_and_grant_precedence<B:
         assert_eq!(body(&refreshed)["accessToken"], "rotated-access");
         let expiry = db
             .text(
-                "SELECT access_token_expires_at FROM accounts WHERE id=$1",
+                "SELECT \"accessTokenExpiresAt\" FROM \"account\" WHERE id=$1",
                 &[&id],
             )
             .await?
@@ -375,7 +381,7 @@ async fn configured_oauth_expiry_preserves_zero_negative_and_grant_precedence<B:
         let expiry = DateTime::parse_from_rfc3339(&expiry)?.with_timezone(&Utc);
         assert!(expiry >= before + Duration::seconds(3599));
         assert!(expiry <= after + Duration::seconds(3601));
-        assert_eq!(db.tables(&["users", "sessions"]).await?, stable);
+        assert_eq!(db.tables(&["user", "session"]).await?, stable);
         let receipts = peer.take();
         assert_eq!(receipts.len(), 1);
         let fields: std::collections::BTreeMap<_, _> =
@@ -454,7 +460,7 @@ async fn custom_code_handler_owns_transport_and_state_bound_grant_context<B: Bac
             .build()
             .await?;
         let (authorization, cookie) = super::oauth_profiles::begin(&auth, "generic").await;
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         let completed =
             super::oauth_profiles::complete(&auth, "generic", &authorization, &cookie).await;
         let contexts = seen.lock().unwrap().clone();
@@ -470,7 +476,7 @@ async fn custom_code_handler_owns_transport_and_state_bound_grant_context<B: Bac
             URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes())),
             authorization["code_challenge"]
         );
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
         let receipts = peer.take();
         assert!(receipts.iter().all(|receipt| receipt.path != "/token"));
         let destination = url::Url::parse(completed.headers.get("location").unwrap())?;
@@ -484,14 +490,14 @@ async fn custom_code_handler_owns_transport_and_state_bound_grant_context<B: Bac
                     .1,
                 "invalid_code"
             );
-            assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+            assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
             assert!(cookies(&completed).is_empty());
             assert!(receipts.is_empty());
         } else {
             assert_eq!(destination.path(), "/done");
             authenticated(&auth, &cookies(&completed), "custom-code@example.test").await;
             assert_eq!(
-                db.text("SELECT access_token FROM accounts", &[])
+                db.text("SELECT \"accessToken\" FROM \"account\"", &[])
                     .await?
                     .as_deref(),
                 Some("custom-access")
@@ -506,7 +512,7 @@ async fn custom_code_handler_owns_transport_and_state_bound_grant_context<B: Bac
                 Some("Bearer custom-access")
             );
         }
-        let after = db.tables(&["users", "accounts", "sessions"]).await?;
+        let after = db.tables(&["user", "account", "session"]).await?;
         let replay =
             super::oauth_profiles::complete(&auth, "generic", &authorization, &cookie).await;
         let replay = url::Url::parse(replay.headers.get("location").unwrap())?;
@@ -520,7 +526,7 @@ async fn custom_code_handler_owns_transport_and_state_bound_grant_context<B: Bac
         );
         assert_eq!(seen.lock().unwrap().len(), 1);
         assert!(peer.take().is_empty());
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, after);
         B::close(connection).await?;
     }
     Ok(())

@@ -91,13 +91,13 @@ async fn oauth_consent_update_persists_allowed_scopes_without_changing_grant_ide
     }
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
+            "oauthClient",
+            "oauthConsent",
         ])
         .await?;
     for (input, cookie, status, error) in [
@@ -178,13 +178,13 @@ async fn oauth_consent_update_persists_allowed_scopes_without_changing_grant_ide
         assert_eq!(
             before,
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
+                "user",
+                "account",
+                "session",
+                "verification",
                 "jwks",
-                "oauth_client",
-                "oauth_consent"
+                "oauthClient",
+                "oauthConsent"
             ])
             .await?
         );
@@ -201,12 +201,12 @@ async fn oauth_consent_update_persists_allowed_scopes_without_changing_grant_ide
     assert_eq!(body(&loaded), updated);
     let unrelated = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
+            "oauthClient",
         ])
         .await?;
     let cleared = Box::pin(
@@ -238,15 +238,15 @@ async fn oauth_consent_update_persists_allowed_scopes_without_changing_grant_ide
     assert_eq!(
         unrelated,
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client"
+            "oauthClient"
         ])
         .await?
     );
-    assert_eq!(db.count("oauth_consent").await?, 1);
+    assert_eq!(db.count("oauthConsent").await?, 1);
     Ok(())
 }

@@ -92,8 +92,8 @@ async fn native_api_key_workflow<B: Backend>(db: Db) -> TestResult {
         std::any::type_name::<B>().rsplit("::").next().unwrap(),
     )
     .await?;
-    assert_eq!(db.count("sessions").await?, 0);
-    assert_eq!(db.count("api_keys").await?, 0);
+    assert_eq!(db.count("session").await?, 0);
+    assert_eq!(db.count("apikey").await?, 0);
     B::close(connection).await
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -478,6 +478,7 @@ async fn workflow<S: AuthSchema>(auth: &Alibi<S>, backend: &str) -> TestResult {
         )
         .await?
         .decode()?;
+    assert_eq!(limited.api_key.remaining, Some(3.0), "created quota");
     let limited_id = limited.api_key.id.clone();
     let plain = limited.key.clone();
     let verify = |permissions| ApiKeyVerificationInput {

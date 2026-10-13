@@ -72,7 +72,6 @@ pub mod oauth;
 pub mod oauth_popup;
 pub mod oauth_provider;
 pub mod oauth_proxy;
-pub mod oauth_token_conversion;
 pub mod one_tap;
 pub mod one_time_token;
 pub mod open_api;

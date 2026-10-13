@@ -22,9 +22,6 @@ pub struct Organization {
     #[serde(rename = "createdAt")]
     #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub created_at: DateTime<Utc>,
-    #[serde(rename = "updatedAt")]
-    #[serde(serialize_with = "crate::utils::datetime::serialize")]
-    pub updated_at: DateTime<Utc>,
 }
 
 /// Organization member
@@ -230,7 +227,6 @@ impl<T: AuthOrganization> From<&T> for Organization {
             logo: organization.logo().map(str::to_owned),
             metadata: organization.metadata().cloned(),
             created_at: organization.created_at(),
-            updated_at: organization.updated_at(),
         }
     }
 }
@@ -256,9 +252,6 @@ impl AuthOrganization for Organization {
     }
     fn created_at(&self) -> DateTime<Utc> {
         self.created_at
-    }
-    fn updated_at(&self) -> DateTime<Utc> {
-        self.updated_at
     }
 }
 
@@ -375,8 +368,8 @@ pub struct TeamMember {
     pub id: String,
     pub team_id: String,
     pub user_id: String,
-    #[serde(serialize_with = "crate::utils::datetime::serialize")]
-    pub created_at: DateTime<Utc>,
+    #[serde(serialize_with = "crate::utils::datetime::serialize_optional")]
+    pub created_at: Option<DateTime<Utc>>,
     #[serde(skip)]
     pub membership_key: Option<String>,
 }

@@ -16,7 +16,7 @@ async fn server_ok_ignores_input_and_credentials_without_auth_state_changes<B: B
         .await?;
     let owner = signup(&auth, "logical-health-owner@example.test").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for (body, query, options) in [
         (None, None, EndpointOptions::default()),
@@ -53,7 +53,7 @@ async fn server_ok_ignores_input_and_credentials_without_auth_state_changes<B: B
         );
         assert!(result.headers().get_all("set-cookie").next().is_none());
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );

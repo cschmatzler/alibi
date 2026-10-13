@@ -163,7 +163,7 @@ async fn email_otp_issuance_and_request_validation<B: Backend>(db: Db) -> TestRe
         }
         trace.value(
             &format!("{mode}: verifications"),
-            json!(db.count("verifications").await?),
+            json!(db.count("verification").await?),
         );
         if let Some(otp) = delivered.first() {
             for wrong in ["wrong-1", "wrong-2", "wrong-3", "wrong-4"] {
@@ -250,7 +250,7 @@ async fn email_otp_change_email_policy<B: Backend>(db: Db) -> TestResult {
         .await;
         trace.value(
             &format!("{mode}: verifications"),
-            json!(db.count("verifications").await?),
+            json!(db.count("verification").await?),
         );
         B::close(connection).await?;
     }
@@ -335,7 +335,7 @@ async fn email_otp_hooks_and_reset_edges<B: Backend>(db: Db) -> TestResult {
         );
         trace.value(
             &format!("{mode}: email"),
-            json!(db.text("SELECT email FROM users", &[]).await?),
+            json!(db.text("SELECT \"email\" FROM \"user\"", &[]).await?),
         );
         B::close(connection).await?;
     }
@@ -382,13 +382,13 @@ async fn email_otp_configured_quota_blocks_delivery_and_resets_at_configured_win
         .await;
     }
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     assert_eq!(outbox.0.lock().unwrap().len(), 2);
     // Crossing the default window must still respect this plugin's longer window.
     _ = db
         .execute(
-            "UPDATE rate_limit SET last_request = last_request - 61000",
+            "UPDATE \"rateLimit\" SET \"lastRequest\" = \"lastRequest\" - 61000",
             &[],
         )
         .await?;
@@ -406,13 +406,13 @@ async fn email_otp_configured_quota_blocks_delivery_and_resets_at_configured_win
     assert_eq!(denied.status, 429);
     assert_eq!(outbox.0.lock().unwrap().len(), 2);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
     _ = db
         .execute(
-            "UPDATE rate_limit SET last_request = last_request - 61000",
+            "UPDATE \"rateLimit\" SET \"lastRequest\" = \"lastRequest\" - 61000",
             &[],
         )
         .await?;
@@ -427,8 +427,8 @@ async fn email_otp_configured_quota_blocks_delivery_and_resets_at_configured_win
     )
     .await;
     assert_eq!(outbox.0.lock().unwrap().len(), 3);
-    assert_eq!(db.count("verifications").await?, 3);
-    assert_eq!(db.count("sessions").await?, 0);
+    assert_eq!(db.count("verification").await?, 3);
+    assert_eq!(db.count("session").await?, 0);
     B::close(connection).await
 }
 
@@ -482,7 +482,7 @@ async fn disabled_email_change_preserves_live_proofs_for_enabled_instance<B: Bac
     .await;
     let current = mailbox.take();
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let deliveries = mailbox.0.lock().unwrap().len();
     for (path, otp) in [
@@ -512,7 +512,7 @@ async fn disabled_email_change_preserves_live_proofs_for_enabled_instance<B: Bac
         )
         .await;
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -528,10 +528,10 @@ async fn disabled_email_change_preserves_live_proofs_for_enabled_instance<B: Bac
         200,
     )
     .await;
-    assert_eq!(db.count_where("SELECT COUNT(*) FROM verifications WHERE identifier='email-verification-otp-disabled-owner@example.test'",&[]).await?,1);
-    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(db.count_where("SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"='email-verification-otp-disabled-owner@example.test'",&[]).await?,1);
+    assert_eq!(db.count("verification").await?, 1);
     authenticated(&disabled, &cookies(&owner), "disabled-target@example.test").await;
-    let stable = db.tables(&["users", "accounts", "sessions"]).await?;
+    let stable = db.tables(&["user", "account", "session"]).await?;
     _ = call(
         &enabled,
         request(
@@ -542,7 +542,7 @@ async fn disabled_email_change_preserves_live_proofs_for_enabled_instance<B: Bac
         400,
     )
     .await;
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stable);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, stable);
     B::close(connection).await
 }
 
@@ -605,7 +605,7 @@ async fn after_email_change_rejection_retains_verified_owner_and_consumed_proof<
         )
         .await;
         let proof = mailbox.take();
-        let protected = db.tables(&["accounts", "sessions"]).await?;
+        let protected = db.tables(&["account", "session"]).await?;
         let mut input = request(
             "/email-otp/change-email",
             Some(json!({"newEmail":proof.email,"otp":proof.otp})),
@@ -621,8 +621,8 @@ async fn after_email_change_rejection_retains_verified_owner_and_consumed_proof<
         } else {
             assert!(denied.body.is_empty());
         }
-        assert_eq!(db.count("verifications").await?, 0);
-        assert_eq!(db.tables(&["accounts", "sessions"]).await?, protected);
+        assert_eq!(db.count("verification").await?, 0);
+        assert_eq!(db.tables(&["account", "session"]).await?, protected);
         let events = seen.lock().unwrap().clone();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].0["id"], id);
@@ -640,10 +640,10 @@ async fn after_email_change_rejection_retains_verified_owner_and_consumed_proof<
             "after-change-foreign@example.test",
         )
         .await;
-        let stable = db.tables(&["users", "accounts", "sessions"]).await?;
+        let stable = db.tables(&["user", "account", "session"]).await?;
         _ = call(&auth, input, 400).await;
         assert_eq!(seen.lock().unwrap().len(), 1);
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stable);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, stable);
         failure.store(false, std::sync::atomic::Ordering::SeqCst);
         _ = call(
             &auth,
@@ -672,7 +672,7 @@ async fn after_email_change_rejection_retains_verified_owner_and_consumed_proof<
             "after-change-recovered@example.test",
         )
         .await;
-        assert_eq!(db.tables(&["accounts", "sessions"]).await?, protected);
+        assert_eq!(db.tables(&["account", "session"]).await?, protected);
         B::close(connection).await?;
     }
     Ok(())
@@ -712,7 +712,7 @@ async fn verification_otp_transformed_owner<B: Backend>(db: Db) -> TestResult {
             .build()
             .await?;
         let foreign = signup(&auth, "foreign@example.test").await;
-        let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+        let baseline = db.tables(&["user", "account", "session"]).await?;
         let email = "new@example.test";
         let logical = format!("sign-in-otp-{email}");
         let stored = if custom {
@@ -736,7 +736,7 @@ async fn verification_otp_transformed_owner<B: Backend>(db: Db) -> TestResult {
         let initial: Value = serde_json::from_str(&cache.get(&key).await?.unwrap())?;
         assert_eq!(initial["identifier"], stored);
         assert_eq!(initial["value"], format!("{}:0", delivered.otp));
-        assert_eq!(db.count("verifications").await?, i64::from(physical));
+        assert_eq!(db.count("verification").await?, i64::from(physical));
         for (route, target) in [
             ("/sign-in/email-otp", "foreign-mailbox@example.test"),
             ("/email-otp/verify-email", email),
@@ -782,8 +782,8 @@ async fn verification_otp_transformed_owner<B: Backend>(db: Db) -> TestResult {
         assert_eq!(current["user"]["id"], body(&done)["user"]["id"]);
         assert_eq!(current["session"]["token"], body(&done)["token"]);
         assert!(cache.get(&key).await?.is_none());
-        assert_eq!(db.count("verifications").await?, 0);
-        let after = db.tables(&["users", "accounts", "sessions"]).await?;
+        assert_eq!(db.count("verification").await?, 0);
+        let after = db.tables(&["user", "account", "session"]).await?;
         let replay = call(
             &auth,
             request(
@@ -795,7 +795,7 @@ async fn verification_otp_transformed_owner<B: Backend>(db: Db) -> TestResult {
         )
         .await;
         assert_eq!(body(&replay)["code"], "INVALID_OTP");
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, after);
         for (before, now) in baseline.iter().zip(after.iter()) {
             let before: Vec<Value> = serde_json::from_str(before)?;
             let now: Vec<Value> = serde_json::from_str(now)?;
@@ -867,7 +867,7 @@ async fn verification_otp_creation_retry<B: Backend>(db: Db) -> TestResult {
         .build()
         .await?;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+    let baseline = db.tables(&["user", "account", "session"]).await?;
     let email = "retry@example.test";
     _ = call(
         &auth,
@@ -894,7 +894,7 @@ async fn verification_otp_creation_retry<B: Backend>(db: Db) -> TestResult {
     assert_eq!(events[1]["value"], format!("{}:0", delivery.otp));
     assert_eq!(events[0]["identifier"], events[1]["identifier"]);
     assert!(events[1]["expiresAt"].as_str().unwrap() >= events[0]["expiresAt"].as_str().unwrap());
-    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(db.count("verification").await?, 1);
     let proof = auth
         .context()
         .verifications()
@@ -914,8 +914,8 @@ async fn verification_otp_creation_retry<B: Backend>(db: Db) -> TestResult {
     .await;
     assert_eq!(body(&done)["user"]["emailVerified"], true);
     authenticated(&auth, &cookies(&done), email).await;
-    assert_eq!(db.count("verifications").await?, 0);
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    assert_eq!(db.count("verification").await?, 0);
+    let after = db.tables(&["user", "account", "session"]).await?;
     _ = call(
         &auth,
         request(
@@ -926,7 +926,7 @@ async fn verification_otp_creation_retry<B: Backend>(db: Db) -> TestResult {
         400,
     )
     .await;
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, after);
     for (before, now) in baseline.iter().zip(after.iter()) {
         let before: Vec<Value> = serde_json::from_str(before)?;
         let now: Vec<Value> = serde_json::from_str(now)?;
@@ -1028,7 +1028,7 @@ async fn verification_otp_cache_set_failure<B: Backend>(db: Db) -> TestResult {
             .build()
             .await?;
         let foreign = signup(&auth, "foreign@example.test").await;
-        let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+        let baseline = db.tables(&["user", "account", "session"]).await?;
         let failed = call(
             &auth,
             request(
@@ -1042,11 +1042,8 @@ async fn verification_otp_cache_set_failure<B: Backend>(db: Db) -> TestResult {
         assert!(failed.headers.get_all("set-cookie").next().is_none());
         assert!(mailbox.0.lock().unwrap().is_empty());
         assert_eq!(*hook.0.lock().unwrap(), ["before", "before"]);
-        assert_eq!(db.count("verifications").await?, i64::from(physical));
-        assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
-            baseline
-        );
+        assert_eq!(db.count("verification").await?, i64::from(physical));
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, baseline);
         cache.fail_set.store(false, Ordering::SeqCst);
         let denied = call(
             &auth,
@@ -1059,10 +1056,7 @@ async fn verification_otp_cache_set_failure<B: Backend>(db: Db) -> TestResult {
         )
         .await;
         assert_eq!(body(&denied)["code"], "INVALID_OTP");
-        assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
-            baseline
-        );
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, baseline);
         assert!(mailbox.0.lock().unwrap().is_empty());
         authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
         B::close(connection).await?;
@@ -1122,7 +1116,7 @@ async fn verification_otp_creation_veto<B: Backend>(db: Db) -> TestResult {
         .await?;
     let foreign = signup(&auth, "foreign@example.test").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     _ = call(
         &auth,
@@ -1142,7 +1136,7 @@ async fn verification_otp_creation_veto<B: Backend>(db: Db) -> TestResult {
     let key = format!("verification:{}", events[0]["identifier"].as_str().unwrap());
     assert!(cache.get(&key).await?.is_none());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -1160,7 +1154,7 @@ async fn verification_otp_creation_veto<B: Backend>(db: Db) -> TestResult {
         assert_eq!(body(&denied)["code"], "INVALID_OTP");
         assert!(denied.headers.get_all("set-cookie").next().is_none());
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -1243,7 +1237,7 @@ async fn email_otp_returning_owner_ignores_creation_only_username_inputs<B: Back
     .await;
     let proof = mailbox.take();
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let accepted = call(
         &auth,
@@ -1270,7 +1264,7 @@ async fn email_otp_returning_owner_ignores_creation_only_username_inputs<B: Back
     assert_eq!(current["user"], original_user);
     assert_eq!(current["session"]["token"], body(&accepted)["token"]);
     let after = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     assert_eq!(after[0], before[0]);
     assert_eq!(after[1], before[1]);
@@ -1278,7 +1272,7 @@ async fn email_otp_returning_owner_ignores_creation_only_username_inputs<B: Back
     let sessions: Vec<Value> = serde_json::from_str(&after[2])?;
     assert_eq!(sessions.len(), prior_sessions.len() + 1);
     assert!(prior_sessions.iter().all(|row| sessions.contains(row)));
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     assert!(mailbox.0.lock().unwrap().is_empty());
     let replay = call(
         &auth,
@@ -1293,7 +1287,7 @@ async fn email_otp_returning_owner_ignores_creation_only_username_inputs<B: Back
     assert_eq!(body(&replay)["code"], "INVALID_OTP");
     assert!(cookies(&replay).is_empty());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         after
     );
@@ -1342,8 +1336,8 @@ async fn email_otp_new_owner_malformed_username_consumes_proof_before_hook_failu
     )
     .await;
     let proof = mailbox.take();
-    assert_eq!(db.count("verifications").await?, 1);
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    assert_eq!(db.count("verification").await?, 1);
+    let before = db.tables(&["user", "account", "session"]).await?;
     let rejected = call(
         &auth,
         request(
@@ -1356,8 +1350,8 @@ async fn email_otp_new_owner_malformed_username_consumes_proof_before_hook_failu
     .await;
     assert!(rejected.body.is_empty());
     assert!(rejected.headers.get_all("set-cookie").next().is_none());
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
+    assert_eq!(db.count("verification").await?, 0);
     let replay = call(
         &auth,
         request(
@@ -1370,8 +1364,8 @@ async fn email_otp_new_owner_malformed_username_consumes_proof_before_hook_failu
     .await;
     assert_eq!(body(&replay)["code"], "INVALID_OTP");
     assert!(replay.headers.get_all("set-cookie").next().is_none());
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
+    assert_eq!(db.count("verification").await?, 0);
     authenticated(
         &auth,
         &cookies(&foreign),
@@ -1395,10 +1389,10 @@ async fn email_otp_new_owner_malformed_username_consumes_proof_before_hook_failu
     assert_eq!(user["emailVerified"], true);
     assert_eq!(user["username"], "recovered_owner");
     assert_eq!(user["displayUsername"], "Recovered Owner");
-    assert_eq!(db.count("users").await?, 2);
-    assert_eq!(db.count("accounts").await?, 1);
-    assert_eq!(db.count("sessions").await?, 2);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("user").await?, 2);
+    assert_eq!(db.count("account").await?, 1);
+    assert_eq!(db.count("session").await?, 2);
+    assert_eq!(db.count("verification").await?, 0);
     let current = body(
         &call(
             &auth,
@@ -1410,7 +1404,7 @@ async fn email_otp_new_owner_malformed_username_consumes_proof_before_hook_failu
     assert_eq!(current["user"], user);
     assert_eq!(current["session"]["token"], body(&accepted)["token"]);
     let committed = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let replay = call(
         &auth,
@@ -1425,7 +1419,7 @@ async fn email_otp_new_owner_malformed_username_consumes_proof_before_hook_failu
     assert_eq!(body(&replay)["code"], "INVALID_OTP");
     assert!(replay.headers.get_all("set-cookie").next().is_none());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         committed
     );
@@ -1473,7 +1467,7 @@ async fn email_otp_raw_username_creation_preserves_hook_admission_and_scalar_sto
             .build()
             .await?;
         let foreign = signup(&auth, "raw-otp-foreign@example.test").await;
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         let email = format!("raw-{label}@example.test");
         let _ = call(
             &auth,
@@ -1496,11 +1490,11 @@ async fn email_otp_raw_username_creation_preserves_hook_admission_and_scalar_sto
             status,
         )
         .await;
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
         if status == 400 {
             assert_eq!(body(&response)["code"], "INVALID_USERNAME");
             assert!(response.headers.get_all("set-cookie").next().is_none());
-            assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+            assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
         } else {
             let user = body(&response)["user"].clone();
             assert_eq!(user["username"], expected_username);
@@ -1516,11 +1510,11 @@ async fn email_otp_raw_username_creation_preserves_hook_admission_and_scalar_sto
             );
             assert_eq!(current["user"], user);
             assert_eq!(current["session"]["token"], body(&response)["token"]);
-            assert_eq!(db.count("users").await?, 2);
-            assert_eq!(db.count("accounts").await?, 1);
-            assert_eq!(db.count("sessions").await?, 2);
+            assert_eq!(db.count("user").await?, 2);
+            assert_eq!(db.count("account").await?, 1);
+            assert_eq!(db.count("session").await?, 2);
         }
-        let stable = db.tables(&["users", "accounts", "sessions"]).await?;
+        let stable = db.tables(&["user", "account", "session"]).await?;
         let replay = call(
             &auth,
             request(
@@ -1532,7 +1526,7 @@ async fn email_otp_raw_username_creation_preserves_hook_admission_and_scalar_sto
         )
         .await;
         assert_eq!(body(&replay)["code"], "INVALID_OTP");
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stable);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, stable);
         authenticated(&auth, &cookies(&foreign), "raw-otp-foreign@example.test").await;
         B::close(connection).await?;
     }
@@ -1553,8 +1547,8 @@ async fn server_email_otp_sending_preserves_scope_and_delivery_admission<B: Back
     )
     .await?;
     let owner = Box::pin(signup(&auth, "server-otp-owner@example.test")).await;
-    let identities = db.tables(&["users", "accounts", "sessions"]).await?;
-    let before = db.table("verifications").await?;
+    let identities = db.tables(&["user", "account", "session"]).await?;
+    let before = db.table("verification").await?;
     let endpoint = |input: &Value| {
         ServerEndpoint::<Value>::new("email-otp", "sendVerificationOTP").with_body(input)
     };
@@ -1577,7 +1571,7 @@ async fn server_email_otp_sending_preserves_scope_and_delivery_admission<B: Back
             .unwrap_err();
         assert_eq!(error.error.status_code(), 400);
         assert_eq!(body(&error.error.to_auth_response()), expected);
-        assert_eq!(db.table("verifications").await?, before);
+        assert_eq!(db.table("verification").await?, before);
         assert!(mailbox.0.lock().unwrap().is_empty());
     }
     let mut incoming = request("/actual-incoming-message", None, "");
@@ -1601,7 +1595,7 @@ async fn server_email_otp_sending_preserves_scope_and_delivery_admission<B: Back
         denied.error.error_payload().1.as_deref(),
         Some("CROSS_SITE_NAVIGATION_LOGIN_BLOCKED")
     );
-    assert_eq!(db.table("verifications").await?, before);
+    assert_eq!(db.table("verification").await?, before);
     assert!(mailbox.0.lock().unwrap().is_empty());
     for kind in [
         EmailOtpType::EmailVerification,
@@ -1676,7 +1670,7 @@ async fn server_email_otp_sending_preserves_scope_and_delivery_admission<B: Back
     assert_eq!(sent.otp_type, EmailOtpType::SignIn);
     assert!(sent.otp.bytes().all(|byte| byte.is_ascii_digit()));
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         identities
     );
     let signed_in = Box::pin(call(
@@ -1708,7 +1702,7 @@ async fn server_email_otp_sending_preserves_scope_and_delivery_admission<B: Back
             .build(),
     )
     .await?;
-    let proofs = db.table("verifications").await?;
+    let proofs = db.table("verification").await?;
     let error = Box::pin(missing.dispatch_endpoint(
         endpoint(&json!({"email":"not-an-email","type":"sign-in"}))?,
         EndpointOptions::default(),
@@ -1720,7 +1714,7 @@ async fn server_email_otp_sending_preserves_scope_and_delivery_admission<B: Back
         body(&error.error.to_auth_response()),
         json!({"message":"send email verification is not implemented"})
     );
-    assert_eq!(db.table("verifications").await?, proofs);
+    assert_eq!(db.table("verification").await?, proofs);
     Ok(())
 }
 
@@ -1743,7 +1737,7 @@ async fn server_email_otp_reset_request_aliases_preserve_delivery_and_hidden_mai
         .await?;
         let email = "server-otp-reset-owner@example.test";
         let owner = Box::pin(signup(&auth, email)).await;
-        let identities = db.tables(&["users", "accounts", "sessions"]).await?;
+        let identities = db.tables(&["user", "account", "session"]).await?;
         let endpoint =
             |body: &Value| ServerEndpoint::<Value>::new("email-otp", operation).with_body(body);
         let invalid = Box::pin(
@@ -1756,7 +1750,7 @@ async fn server_email_otp_reset_request_aliases_preserve_delivery_and_hidden_mai
             invalid.error.error_payload().1.as_deref(),
             Some("VALIDATION_ERROR")
         );
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
         assert!(mailbox.0.lock().unwrap().is_empty());
         for email in ["not-an-email", "server-otp-reset-absent@example.test"] {
             let hidden = Box::pin(auth.dispatch_endpoint(
@@ -1765,7 +1759,7 @@ async fn server_email_otp_reset_request_aliases_preserve_delivery_and_hidden_mai
             ))
             .await?;
             assert_eq!(hidden.decode()?, json!({"success":true}));
-            assert_eq!(db.count("verifications").await?, 0);
+            assert_eq!(db.count("verification").await?, 0);
             assert!(mailbox.0.lock().unwrap().is_empty());
         }
         let sent = Box::pin(
@@ -1797,11 +1791,11 @@ async fn server_email_otp_reset_request_aliases_preserve_delivery_and_hidden_mai
             format!("{}:0", delivery.otp)
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
+            db.tables(&["user", "account", "session"]).await?,
             identities
         );
         let _=Box::pin(call(&auth,request("/email-otp/reset-password",Some(json!({"email":email,"otp":delivery.otp,"password":"changed-reset-password123"})),""),200)).await;
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
         let rejected = Box::pin(call(
             &auth,
             request(
@@ -1830,7 +1824,7 @@ async fn server_email_otp_reset_request_aliases_preserve_delivery_and_hidden_mai
                 .build(),
         )
         .await?;
-        let identities = db.tables(&["users", "accounts", "sessions"]).await?;
+        let identities = db.tables(&["user", "account", "session"]).await?;
         let failed = Box::pin(missing.dispatch_endpoint(
             endpoint(&json!({"email":email}))?,
             EndpointOptions::default(),
@@ -1846,7 +1840,7 @@ async fn server_email_otp_reset_request_aliases_preserve_delivery_and_hidden_mai
             .unwrap();
         assert!(proof.value().ends_with(":0"));
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
+            db.tables(&["user", "account", "session"]).await?,
             identities
         );
         B::close(connection).await?;
@@ -1899,8 +1893,8 @@ async fn server_email_otp_change_lifecycle_preserves_proof_and_caller_authority<
         .await?
         .decode()?;
         let old_key = format!("email-verification-otp-{email}");
-        let identities = db.tables(&["users", "accounts", "sessions"]).await?;
-        let before = db.table("verifications").await?;
+        let identities = db.tables(&["user", "account", "session"]).await?;
+        let before = db.table("verification").await?;
         let unauthenticated = Box::pin(auth.dispatch_endpoint(
             endpoint(&json!({"newEmail":new_email}))?,
             EndpointOptions::default(),
@@ -1932,7 +1926,7 @@ async fn server_email_otp_change_lifecycle_preserves_proof_and_caller_authority<
             .unwrap_err();
             assert_eq!(error.error.status_code(), 400);
             assert_eq!(error.error.error_payload().2, message);
-            assert_eq!(db.table("verifications").await?, before);
+            assert_eq!(db.table("verification").await?, before);
         }
         if current {
             let required = Box::pin(
@@ -1944,7 +1938,7 @@ async fn server_email_otp_change_lifecycle_preserves_proof_and_caller_authority<
                 required.error.error_payload().2,
                 "OTP is required to verify current email"
             );
-            assert_eq!(db.table("verifications").await?, before);
+            assert_eq!(db.table("verification").await?, before);
             let wrong = Box::pin(auth.dispatch_endpoint(
                 endpoint(&json!({"newEmail":new_email,"otp":"wrong"}))?,
                 credentials(),
@@ -1993,7 +1987,7 @@ async fn server_email_otp_change_lifecycle_preserves_proof_and_caller_authority<
             current
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
+            db.tables(&["user", "account", "session"]).await?,
             identities
         );
         let mut hidden_input = json!({"newEmail":other_email});
@@ -2020,7 +2014,7 @@ async fn server_email_otp_change_lifecycle_preserves_proof_and_caller_authority<
                 .is_none()
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
+            db.tables(&["user", "account", "session"]).await?,
             identities
         );
         let disabled = Box::pin(
@@ -2029,7 +2023,7 @@ async fn server_email_otp_change_lifecycle_preserves_proof_and_caller_authority<
                 .build(),
         )
         .await?;
-        let proofs = db.table("verifications").await?;
+        let proofs = db.table("verification").await?;
         let error = Box::pin(
             disabled.dispatch_endpoint(endpoint(&json!({"newEmail":new_email}))?, credentials()),
         )
@@ -2039,11 +2033,11 @@ async fn server_email_otp_change_lifecycle_preserves_proof_and_caller_authority<
             error.error.error_payload().2,
             "Change email with OTP is disabled"
         );
-        assert_eq!(db.table("verifications").await?, proofs);
+        assert_eq!(db.table("verification").await?, proofs);
         let completion = |input: &Value| {
             ServerEndpoint::<Value>::new("email-otp", "changeEmailEmailOTP").with_body(input)
         };
-        let retained = db.table("verifications").await?;
+        let retained = db.table("verification").await?;
         let invalid = Box::pin(auth.dispatch_endpoint(
             completion(&json!({"newEmail":new_email,"otp":42}))?,
             credentials(),
@@ -2055,7 +2049,7 @@ async fn server_email_otp_change_lifecycle_preserves_proof_and_caller_authority<
             invalid.error.error_payload().1.as_deref(),
             Some("VALIDATION_ERROR")
         );
-        assert_eq!(db.table("verifications").await?, retained);
+        assert_eq!(db.table("verification").await?, retained);
         let unauthenticated = Box::pin(auth.dispatch_endpoint(
             completion(&json!({"newEmail":new_email,"otp":delivery.otp}))?,
             EndpointOptions::default(),
@@ -2063,7 +2057,7 @@ async fn server_email_otp_change_lifecycle_preserves_proof_and_caller_authority<
         .await
         .unwrap_err();
         assert_eq!(unauthenticated.error.status_code(), 401);
-        assert_eq!(db.table("verifications").await?, retained);
+        assert_eq!(db.table("verification").await?, retained);
         let foreign_attempt = Box::pin(auth.dispatch_endpoint(
             completion(&json!({"newEmail":new_email,"otp":delivery.otp}))?,
             EndpointOptions {
@@ -2077,7 +2071,7 @@ async fn server_email_otp_change_lifecycle_preserves_proof_and_caller_authority<
             foreign_attempt.error.error_payload().1.as_deref(),
             Some("INVALID_OTP")
         );
-        assert_eq!(db.table("verifications").await?, retained);
+        assert_eq!(db.table("verification").await?, retained);
         let wrong = Box::pin(auth.dispatch_endpoint(
             completion(&json!({"newEmail":new_email,"otp":"wrong"}))?,
             credentials(),
@@ -2112,7 +2106,7 @@ async fn server_email_otp_change_lifecycle_preserves_proof_and_caller_authority<
         assert!(response.headers.get_all("set-cookie").next().is_some());
         Box::pin(authenticated(&auth, &cookies(&response), new_email)).await;
         let completed = db
-            .tables(&["users", "accounts", "sessions", "verifications"])
+            .tables(&["user", "account", "session", "verification"])
             .await?;
         let replay = Box::pin(auth.dispatch_endpoint(
             completion(&json!({"newEmail":new_email,"otp":delivery.otp}))?,
@@ -2123,7 +2117,7 @@ async fn server_email_otp_change_lifecycle_preserves_proof_and_caller_authority<
         assert_eq!(replay.error.status_code(), 400);
         assert_eq!(replay.error.error_payload().2, "Email is the same");
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             completed
         );

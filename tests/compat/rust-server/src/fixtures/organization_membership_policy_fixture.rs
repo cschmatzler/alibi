@@ -36,17 +36,17 @@ async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
     for (name, sql, columns) in [
         (
             "organizations",
-            "SELECT id,name,slug,logo,metadata FROM organization ORDER BY rowid",
+            "SELECT id,\"name\",\"slug\",\"logo\",\"metadata\" FROM \"organization\" ORDER BY rowid",
             &["id", "name", "slug", "logo", "metadata"][..],
         ),
         (
             "members",
-            "SELECT id,organization_id AS organizationId,user_id AS userId,role,created_at AS createdAt FROM member ORDER BY rowid",
+            "SELECT id,\"organizationId\" AS organizationId,\"userId\" AS userId,\"role\",\"createdAt\" AS createdAt FROM \"member\" ORDER BY rowid",
             &["id", "organizationId", "userId", "role", "createdAt"][..],
         ),
         (
             "invitations",
-            "SELECT id,organization_id AS organizationId,email,role,status,inviter_id AS inviterId,expires_at AS expiresAt,created_at AS createdAt,team_id AS teamId FROM invitation ORDER BY rowid",
+            "SELECT id,\"organizationId\" AS organizationId,\"email\",\"role\",\"status\",\"inviterId\" AS inviterId,\"expiresAt\" AS expiresAt,\"createdAt\" AS createdAt,\"teamId\" AS teamId FROM \"invitation\" ORDER BY rowid",
             &[
                 "id",
                 "organizationId",
@@ -61,7 +61,7 @@ async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
         ),
         (
             "teams",
-            "SELECT id,organization_id AS organizationId,name,member_count AS memberCount,created_at AS createdAt,updated_at AS updatedAt FROM team ORDER BY rowid",
+            "SELECT id,\"organizationId\" AS organizationId,\"name\",\"memberCount\" AS memberCount,\"createdAt\" AS createdAt,\"updatedAt\" AS updatedAt FROM \"team\" ORDER BY rowid",
             &[
                 "id",
                 "organizationId",

@@ -655,7 +655,7 @@ mod tests {
             &[ordinary.token(), committed.token()]
         );
         let _trigger = raw.connection().execute_raw(Statement::from_string(DbBackend::Sqlite,
-        "CREATE TRIGGER reject_lifecycle_user BEFORE INSERT ON users WHEN NEW.email='sql-rejected@lifecycle.fixture.test' BEGIN SELECT RAISE(ABORT,'application rejected insert'); END"
+        "CREATE TRIGGER reject_lifecycle_user BEFORE INSERT ON \"user\" WHEN NEW.\"email\"='sql-rejected@lifecycle.fixture.test' BEGIN SELECT RAISE(ABORT,'application rejected insert'); END"
     )).await.unwrap();
         let before = raw.get_user_sessions(&owner.id()).await.unwrap();
         let owner_id = owner.id().to_string();

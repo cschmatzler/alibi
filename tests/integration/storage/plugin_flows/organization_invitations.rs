@@ -261,7 +261,7 @@ async fn organization_invitation_policy<B: Backend>(db: Db) -> TestResult {
         )
     };
     _ = db
-        .execute("DELETE FROM team WHERE id = $1", &[&second_team])
+        .execute("DELETE FROM \"team\" WHERE id = $1", &[&second_team])
         .await?;
     _ = post(
         &mut trace,
@@ -271,7 +271,7 @@ async fn organization_invitation_policy<B: Backend>(db: Db) -> TestResult {
     .await;
     assert_eq!(
         db.text(
-            "SELECT status FROM invitation WHERE id = $1",
+            "SELECT \"status\" FROM \"invitation\" WHERE id = $1",
             &[&second_invitation]
         )
         .await?
@@ -294,7 +294,7 @@ async fn organization_invitation_policy<B: Backend>(db: Db) -> TestResult {
     assert!(cookies(&accepted).contains("dont_remember"));
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM team_member WHERE team_id = $1",
+            "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\" = $1",
             &[&first_team]
         )
         .await?,
@@ -524,9 +524,12 @@ async fn organization_anonymous_and_failures<B: Backend>(db: Db) -> TestResult {
     assert!(failed.headers.get_all("set-cookie").next().is_none());
     untrigger("fail_member_insert").await;
     assert_eq!(
-        db.text("SELECT status FROM invitation WHERE id = $1", &[&with_team])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT \"status\" FROM \"invitation\" WHERE id = $1",
+            &[&with_team]
+        )
+        .await?
+        .as_deref(),
         Some("pending")
     );
     trace.assert("organization/anonymous-and-failures");
@@ -603,7 +606,7 @@ async fn organization_invitation_stamps<B: Backend>(db: Db) -> TestResult {
     .await;
     assert_eq!(body(&invited)["id"], "stamped-invitation");
     assert!(
-        db.text("SELECT created_at FROM invitation", &[])
+        db.text("SELECT \"createdAt\" FROM \"invitation\"", &[])
             .await?
             .is_some()
     );
@@ -684,7 +687,7 @@ async fn processed_invitation_cancellation_keeps_members_and_original_callback_s
         )
         .await;
         let before = db
-            .tables(&["users", "accounts", "sessions", "organization", "member"])
+            .tables(&["user", "account", "session", "organization", "member"])
             .await?;
         let canceled = body(
             &call(
@@ -701,13 +704,13 @@ async fn processed_invitation_cancellation_keeps_members_and_original_callback_s
         assert_eq!(canceled["id"], id);
         assert_eq!(canceled["status"], "canceled");
         assert_eq!(
-            db.text("SELECT status FROM invitation WHERE id=$1", &[id])
+            db.text("SELECT \"status\" FROM \"invitation\" WHERE id=$1", &[id])
                 .await?
                 .as_deref(),
             Some("canceled")
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "organization", "member"])
+            db.tables(&["user", "account", "session", "organization", "member"])
                 .await?,
             before
         );
@@ -818,13 +821,13 @@ async fn organization_invitation_raw_quota<B: Backend>(db: Db) -> TestResult {
             }
             let before = db
                 .tables(&[
-                    "users",
-                    "accounts",
-                    "sessions",
+                    "user",
+                    "account",
+                    "session",
                     "member",
                     "organization",
                     "team",
-                    "team_member",
+                    "teamMember",
                 ])
                 .await?;
             let (expected, allowed) = match limit {
@@ -842,7 +845,7 @@ async fn organization_invitation_raw_quota<B: Backend>(db: Db) -> TestResult {
             }
             assert_eq!(
                 db.count_where(
-                    "SELECT COUNT(*) FROM invitation WHERE organization_id=$1",
+                    "SELECT COUNT(*) FROM \"invitation\" WHERE \"organizationId\"=$1",
                     &[&org]
                 )
                 .await?,
@@ -851,13 +854,13 @@ async fn organization_invitation_raw_quota<B: Backend>(db: Db) -> TestResult {
             assert_eq!(policy.1.lock().unwrap().len(), if resolved { 3 } else { 0 });
             assert_eq!(
                 db.tables(&[
-                    "users",
-                    "accounts",
-                    "sessions",
+                    "user",
+                    "account",
+                    "session",
                     "member",
                     "organization",
                     "team",
-                    "team_member"
+                    "teamMember"
                 ])
                 .await?,
                 before
@@ -919,14 +922,7 @@ async fn organization_invitation_raw_expiry<B: Backend>(db: Db) -> TestResult {
         let jar = merge(&cookies(&owner), &cookies(&created));
 
         let before = db
-            .tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "member",
-                "team",
-                "team_member",
-            ])
+            .tables(&["user", "account", "session", "member", "team", "teamMember"])
             .await?;
         let start = chrono::Utc::now().timestamp_millis();
         let response=call(&auth,request("/organization/invite-member",Some(json!({"organizationId":org,"email":"invitation-life-target@example.test","role":"member"})),&jar),200).await;
@@ -962,15 +958,8 @@ async fn organization_invitation_raw_expiry<B: Backend>(db: Db) -> TestResult {
             );
         }
         assert_eq!(
-            db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "member",
-                "team",
-                "team_member"
-            ])
-            .await?,
+            db.tables(&["user", "account", "session", "member", "team", "teamMember"])
+                .await?,
             before
         );
         authenticated(
@@ -1097,14 +1086,7 @@ async fn organization_invitation_delivery_await_policy<B: Backend>(db: Db) -> Te
         let jar = merge(&cookies(&owner), &cookies(&created));
 
         let before = db
-            .tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "member",
-                "team",
-                "team_member",
-            ])
+            .tables(&["user", "account", "session", "member", "team", "teamMember"])
             .await?;
         let auth = Arc::new(auth);
         let running = auth.clone();
@@ -1122,7 +1104,7 @@ async fn organization_invitation_delivery_await_policy<B: Backend>(db: Db) -> Te
         }
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM invitation WHERE organization_id=$1",
+                "SELECT COUNT(*) FROM \"invitation\" WHERE \"organizationId\"=$1",
                 &[&org]
             )
             .await?,
@@ -1162,15 +1144,8 @@ async fn organization_invitation_delivery_await_policy<B: Backend>(db: Db) -> Te
             );
         }
         assert_eq!(
-            db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "member",
-                "team",
-                "team_member"
-            ])
-            .await?,
+            db.tables(&["user", "account", "session", "member", "team", "teamMember"])
+                .await?,
             before
         );
         authenticated(
@@ -1233,14 +1208,7 @@ async fn organization_invitation_page_before_expiry<B: Backend>(db: Db) -> TestR
         ))
         .await?;
     let before = db
-        .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "member",
-            "team",
-            "team_member",
-        ])
+        .tables(&["user", "account", "session", "member", "team", "teamMember"])
         .await?;
     let mut ids = vec![expired.id.clone()];
     for _ in 0..2 {
@@ -1251,7 +1219,7 @@ async fn organization_invitation_page_before_expiry<B: Backend>(db: Db) -> TestR
     }
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM invitation WHERE organization_id=$1 AND status='pending'",
+            "SELECT COUNT(*) FROM \"invitation\" WHERE \"organizationId\"=$1 AND \"status\"='pending'",
             &[&org]
         )
         .await?,
@@ -1270,15 +1238,8 @@ async fn organization_invitation_page_before_expiry<B: Backend>(db: Db) -> TestR
     assert_eq!(body(&listed).as_array().unwrap().len(), 1);
     assert_eq!(body(&listed)[0]["id"], expired.id);
     assert_eq!(
-        db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "member",
-            "team",
-            "team_member"
-        ])
-        .await?,
+        db.tables(&["user", "account", "session", "member", "team", "teamMember"])
+            .await?,
         before
     );
     authenticated(
@@ -1345,13 +1306,13 @@ async fn organization_invitation_first_reinvite_cancellation<B: Backend>(db: Db)
     }
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
+            "user",
+            "account",
+            "session",
             "member",
             "organization",
             "team",
-            "team_member",
+            "teamMember",
         ])
         .await?;
     let input =
@@ -1424,13 +1385,13 @@ async fn organization_invitation_first_reinvite_cancellation<B: Backend>(db: Db)
     );
     assert_eq!(
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
+            "user",
+            "account",
+            "session",
             "member",
             "organization",
             "team",
-            "team_member"
+            "teamMember"
         ])
         .await?,
         before
@@ -1553,13 +1514,13 @@ async fn organization_invitation_limit_callback_error<B: Backend>(db: Db) -> Tes
 
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
+            "user",
+            "account",
+            "session",
             "member",
             "organization",
             "team",
-            "team_member",
+            "teamMember",
             "invitation",
         ])
         .await?;
@@ -1575,13 +1536,13 @@ async fn organization_invitation_limit_callback_error<B: Backend>(db: Db) -> Tes
     assert_eq!(*policy.events.lock().unwrap(), vec!["limit"]);
     assert_eq!(
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
+            "user",
+            "account",
+            "session",
             "member",
             "organization",
             "team",
-            "team_member",
+            "teamMember",
             "invitation"
         ])
         .await?,
@@ -1601,13 +1562,13 @@ async fn organization_invitation_limit_callback_error<B: Backend>(db: Db) -> Tes
     assert_eq!(db.count("invitation").await?, 1);
     assert_eq!(
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
+            "user",
+            "account",
+            "session",
             "member",
             "organization",
             "team",
-            "team_member"
+            "teamMember"
         ])
         .await?,
         before[..7]
@@ -1736,7 +1697,7 @@ async fn organization_invitation_existing_member_acceptance<B: Backend>(db: Db) 
                 role: "admin".into(),
             })
             .await?;
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         let accepted = call(
             &auth,
             request(
@@ -1756,14 +1717,14 @@ async fn organization_invitation_existing_member_acceptance<B: Backend>(db: Db) 
             original
         );
         assert_eq!(
-            db.text("SELECT role FROM member WHERE id=$1", &[new_member])
+            db.text("SELECT \"role\" FROM \"member\" WHERE id=$1", &[new_member])
                 .await?
                 .as_deref(),
             Some("member")
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM member WHERE organization_id=$1 AND user_id=$2",
+                "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\"=$1 AND \"userId\"=$2",
                 &[&org, &target_id]
             )
             .await?,
@@ -1775,7 +1736,7 @@ async fn organization_invitation_existing_member_acceptance<B: Backend>(db: Db) 
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM team_member WHERE user_id=$1",
+                "SELECT COUNT(*) FROM \"teamMember\" WHERE \"userId\"=$1",
                 &[&target_id]
             )
             .await?,
@@ -1792,9 +1753,9 @@ async fn organization_invitation_existing_member_acceptance<B: Backend>(db: Db) 
         .await;
         assert!(body(&sibling_current)["session"]["activeOrganizationId"].is_null());
         assert!(body(&sibling_current)["session"]["activeTeamId"].is_null());
-        assert_eq!(db.tables(&["users", "accounts"]).await?, before[..2]);
+        assert_eq!(db.tables(&["user", "account"]).await?, before[..2]);
         let committed = db
-            .tables(&["invitation", "member", "team", "team_member", "sessions"])
+            .tables(&["invitation", "member", "team", "teamMember", "session"])
             .await?;
         let replay = call(
             &auth,
@@ -1809,7 +1770,7 @@ async fn organization_invitation_existing_member_acceptance<B: Backend>(db: Db) 
         assert_eq!(body(&replay)["code"], "INVITATION_NOT_FOUND");
         assert_eq!(receipt.0.lock().unwrap().len(), 1);
         assert_eq!(
-            db.tables(&["invitation", "member", "team", "team_member", "sessions"])
+            db.tables(&["invitation", "member", "team", "teamMember", "session"])
                 .await?,
             committed
         );
@@ -1914,7 +1875,7 @@ async fn organization_invitation_concurrent_admission<B: Backend>(db: Db) -> Tes
         } else {
             first.clone()
         };
-        let before = db.tables(&["users", "accounts"]).await?;
+        let before = db.tables(&["user", "account"]).await?;
         let auth = Arc::new(auth);
         let one = auth.clone();
         let first_id = body(&first)["id"].clone();
@@ -1960,7 +1921,7 @@ async fn organization_invitation_concurrent_admission<B: Backend>(db: Db) -> Tes
         .await?;
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM member WHERE organization_id=$1",
+                "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\"=$1",
                 &[&org]
             )
             .await?,
@@ -1972,7 +1933,7 @@ async fn organization_invitation_concurrent_admission<B: Backend>(db: Db) -> Tes
             .as_str()
             .unwrap()
             .to_owned();
-        let first_state = db.tables(&["invitation", "member", "sessions"]).await?;
+        let first_state = db.tables(&["invitation", "member", "session"]).await?;
         gate.release[1].notify_one();
         let second_result = task_two.await?;
         if different {
@@ -1980,7 +1941,7 @@ async fn organization_invitation_concurrent_admission<B: Backend>(db: Db) -> Tes
             assert_eq!(body(&second_result)["member"]["role"], "admin");
             assert_eq!(
                 db.count_where(
-                    "SELECT COUNT(*) FROM member WHERE organization_id=$1",
+                    "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\"=$1",
                     &[&org]
                 )
                 .await?,
@@ -1990,12 +1951,12 @@ async fn organization_invitation_concurrent_admission<B: Backend>(db: Db) -> Tes
         } else {
             assert_eq!(body(&second_result)["code"], "INVITATION_NOT_FOUND");
             assert_eq!(
-                db.tables(&["invitation", "member", "sessions"]).await?,
+                db.tables(&["invitation", "member", "session"]).await?,
                 first_state
             );
             assert_eq!(*gate.after.lock().unwrap(), vec![first_member]);
         }
-        assert_eq!(db.tables(&["users", "accounts"]).await?, before);
+        assert_eq!(db.tables(&["user", "account"]).await?, before);
         let sibling_current = call(
             &auth,
             request("/get-session", None, &cookies(&sibling)),
@@ -2009,7 +1970,7 @@ async fn organization_invitation_concurrent_admission<B: Backend>(db: Db) -> Tes
             "staged-invitation-foreign@example.test",
         )
         .await;
-        let stable = db.tables(&["invitation", "member", "sessions"]).await?;
+        let stable = db.tables(&["invitation", "member", "session"]).await?;
         let replay = call(
             &auth,
             request(
@@ -2022,7 +1983,7 @@ async fn organization_invitation_concurrent_admission<B: Backend>(db: Db) -> Tes
         .await;
         assert_eq!(body(&replay)["code"], "INVITATION_NOT_FOUND");
         assert_eq!(
-            db.tables(&["invitation", "member", "sessions"]).await?,
+            db.tables(&["invitation", "member", "session"]).await?,
             stable
         );
         B::close(connection).await?;
@@ -2059,7 +2020,7 @@ async fn organization_invitation_replacement_team<B: Backend>(db: Db) -> TestRes
             _ = self
                 .raw
                 .execute(
-                    "UPDATE invitation SET team_id=$1 WHERE id=$2",
+                    "UPDATE \"invitation\" SET \"teamId\"=$1 WHERE id=$2",
                     &[&team, &c.invitation.id],
                 )
                 .await
@@ -2157,7 +2118,7 @@ async fn organization_invitation_replacement_team<B: Backend>(db: Db) -> TestRes
         .unwrap()
         .to_owned();
     *replacement.team.lock().unwrap() = next_team.clone();
-    let before = db.tables(&["users", "accounts"]).await?;
+    let before = db.tables(&["user", "account"]).await?;
     let original = auth
         .store()
         .get_invitation_by_id(&invitation)
@@ -2191,7 +2152,7 @@ async fn organization_invitation_replacement_team<B: Backend>(db: Db) -> TestRes
     );
     assert_eq!(
         db.text(
-            "SELECT team_id FROM team_member WHERE user_id=$1",
+            "SELECT \"teamId\" FROM \"teamMember\" WHERE \"userId\"=$1",
             &[&target_id]
         )
         .await?
@@ -2200,7 +2161,7 @@ async fn organization_invitation_replacement_team<B: Backend>(db: Db) -> TestRes
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM team_member WHERE team_id=$1",
+            "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1",
             &[&team]
         )
         .await?,
@@ -2208,7 +2169,7 @@ async fn organization_invitation_replacement_team<B: Backend>(db: Db) -> TestRes
     );
     assert_eq!(
         db.text(
-            "SELECT CAST(member_count AS TEXT) FROM team WHERE id=$1",
+            "SELECT CAST(\"memberCount\" AS TEXT) FROM \"team\" WHERE id=$1",
             &[&team]
         )
         .await?
@@ -2217,7 +2178,7 @@ async fn organization_invitation_replacement_team<B: Backend>(db: Db) -> TestRes
     );
     assert_eq!(
         db.text(
-            "SELECT CAST(member_count AS TEXT) FROM team WHERE id=$1",
+            "SELECT CAST(\"memberCount\" AS TEXT) FROM \"team\" WHERE id=$1",
             &[&next_team]
         )
         .await?
@@ -2233,7 +2194,7 @@ async fn organization_invitation_replacement_team<B: Backend>(db: Db) -> TestRes
     )
     .await;
     assert!(body(&sibling_current)["session"]["activeTeamId"].is_null());
-    assert_eq!(db.tables(&["users", "accounts"]).await?, before);
+    assert_eq!(db.tables(&["user", "account"]).await?, before);
     authenticated(
         &auth,
         &cookies(&foreign),
@@ -2335,16 +2296,9 @@ async fn organization_invitation_reset_write_failure<B: Backend>(db: Db) -> Test
         }))
         .build()
         .await?;
-    _ = db.execute("CREATE TRIGGER fail_invitation_reset BEFORE UPDATE ON invitation WHEN OLD.status='accepted' AND NEW.status='pending' BEGIN SELECT RAISE(ABORT,'reset denied'); END",&[]).await?;
+    _ = db.execute("CREATE TRIGGER fail_invitation_reset BEFORE UPDATE ON \"invitation\" WHEN OLD.\"status\"='accepted' AND NEW.\"status\"='pending' BEGIN SELECT RAISE(ABORT,'reset denied'); END",&[]).await?;
     let before = db
-        .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "member",
-            "team",
-            "team_member",
-        ])
+        .tables(&["user", "account", "session", "member", "team", "teamMember"])
         .await?;
     let mut expected = auth
         .store()
@@ -2372,15 +2326,8 @@ async fn organization_invitation_reset_write_failure<B: Backend>(db: Db) -> Test
         expected
     );
     assert_eq!(
-        db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "member",
-            "team",
-            "team_member"
-        ])
-        .await?,
+        db.tables(&["user", "account", "session", "member", "team", "teamMember"])
+            .await?,
         before
     );
     assert_eq!(*receipt.0.lock().unwrap(), 1);
@@ -2397,15 +2344,8 @@ async fn organization_invitation_reset_write_failure<B: Backend>(db: Db) -> Test
     assert_eq!(body(&replay)["code"], "INVITATION_NOT_FOUND");
     assert_eq!(*receipt.0.lock().unwrap(), 1);
     assert_eq!(
-        db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "member",
-            "team",
-            "team_member"
-        ])
-        .await?,
+        db.tables(&["user", "account", "session", "member", "team", "teamMember"])
+            .await?,
         before
     );
     _ = db
@@ -2524,7 +2464,7 @@ async fn organization_invitation_after_error_owned_cookies<B: Backend>(db: Db) -
 
         let browser=call(&auth,request("/sign-in/email",Some(json!({"email":"staged-invitation-target@example.test","password":PASSWORD,"rememberMe":false})),""),200).await;
         let token = body(&browser)["token"].as_str().unwrap().to_owned();
-        let before = db.tables(&["users", "accounts"]).await?;
+        let before = db.tables(&["user", "account"]).await?;
         let response = call(
             &auth,
             request(
@@ -2565,7 +2505,7 @@ async fn organization_invitation_after_error_owned_cookies<B: Backend>(db: Db) -
         }
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM member WHERE organization_id=$1 AND user_id=$2",
+                "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\"=$1 AND \"userId\"=$2",
                 &[&org, &target_id]
             )
             .await?,
@@ -2573,7 +2513,7 @@ async fn organization_invitation_after_error_owned_cookies<B: Backend>(db: Db) -
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM team_member WHERE team_id=$1 AND user_id=$2",
+                "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1 AND \"userId\"=$2",
                 &[&team, &target_id]
             )
             .await?,
@@ -2592,7 +2532,7 @@ async fn organization_invitation_after_error_owned_cookies<B: Backend>(db: Db) -
         assert_eq!(seen[0]["invitation"]["status"], "accepted");
         assert_eq!(
             db.text(
-                "SELECT role FROM member WHERE id=$1",
+                "SELECT \"role\" FROM \"member\" WHERE id=$1",
                 &[seen[0]["member"]["id"].as_str().unwrap()]
             )
             .await?
@@ -2615,9 +2555,9 @@ async fn organization_invitation_after_error_owned_cookies<B: Backend>(db: Db) -
         )
         .await;
         assert!(body(&sibling_current)["session"]["activeOrganizationId"].is_null());
-        assert_eq!(db.tables(&["users", "accounts"]).await?, before);
+        assert_eq!(db.tables(&["user", "account"]).await?, before);
         let stable = db
-            .tables(&["invitation", "member", "team", "team_member", "sessions"])
+            .tables(&["invitation", "member", "team", "teamMember", "session"])
             .await?;
         let replay = call(
             &auth,
@@ -2632,7 +2572,7 @@ async fn organization_invitation_after_error_owned_cookies<B: Backend>(db: Db) -
         assert_eq!(body(&replay)["code"], "INVITATION_NOT_FOUND");
         assert_eq!(receipt.seen.lock().unwrap().len(), 1);
         assert_eq!(
-            db.tables(&["invitation", "member", "team", "team_member", "sessions"])
+            db.tables(&["invitation", "member", "team", "teamMember", "session"])
                 .await?,
             stable
         );

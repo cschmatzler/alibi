@@ -215,7 +215,7 @@ pub(crate) async fn router(
                                 let metadata = db
                                     .query_one_raw(Statement::from_sql_and_values(
                                         DbBackend::Sqlite,
-                                        "SELECT metadata FROM organization WHERE id = ?",
+                                        "SELECT \"metadata\" FROM \"organization\" WHERE id = ?",
                                         [org.id.clone().into()],
                                     ))
                                     .await

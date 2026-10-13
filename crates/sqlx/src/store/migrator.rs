@@ -15,33 +15,15 @@ pub(crate) struct Migration {
 }
 
 const AUTH_SCHEMA: Migration = Migration {
-    name: "m20261003_000001_auth_schema",
-    sqlite: include_str!("../../migrations/sqlite.sql"),
-    postgres: include_str!("../../migrations/postgres.sql"),
+    name: "m20261013_000001_typescript_auth_schema",
+    sqlite: alibi_schema_registry::SQLITE_AUTH_SCHEMA,
+    postgres: alibi_schema_registry::POSTGRES_AUTH_SCHEMA,
 };
 
 const OAUTH_CLIENTS: Migration = Migration {
-    name: "m20261013_000002_oauth_clients",
-    sqlite: include_str!("../../migrations/sqlite_oauth_clients.sql"),
-    postgres: include_str!("../../migrations/postgres_oauth_clients.sql"),
-};
-
-const OAUTH_CONSENTS: Migration = Migration {
-    name: "m20261013_000003_oauth_consents",
-    sqlite: include_str!("../../migrations/sqlite_oauth_consents.sql"),
-    postgres: include_str!("../../migrations/postgres_oauth_consents.sql"),
-};
-
-const OAUTH_RESOURCES: Migration = Migration {
-    name: "m20261013_000004_oauth_resources",
-    sqlite: include_str!("../../migrations/sqlite_oauth_resources.sql"),
-    postgres: include_str!("../../migrations/postgres_oauth_resources.sql"),
-};
-
-const OAUTH_TOKENS: Migration = Migration {
-    name: "m20261013_000005_oauth_tokens",
-    sqlite: include_str!("../../migrations/sqlite_oauth_tokens.sql"),
-    postgres: include_str!("../../migrations/postgres_oauth_tokens.sql"),
+    name: "m20261013_000002_typescript_oauth_schema",
+    sqlite: alibi_schema_registry::SQLITE_OAUTH_SCHEMA,
+    postgres: alibi_schema_registry::POSTGRES_OAUTH_SCHEMA,
 };
 
 /// Apply the bundled auth schema.
@@ -53,13 +35,7 @@ pub async fn run_migrations(pool: &SqlxPool) -> AuthResult<()> {
     apply(
         pool,
         "better_auth_migrations",
-        &[
-            AUTH_SCHEMA,
-            OAUTH_CLIENTS,
-            OAUTH_CONSENTS,
-            OAUTH_RESOURCES,
-            OAUTH_TOKENS,
-        ],
+        &[AUTH_SCHEMA, OAUTH_CLIENTS],
     )
     .await
 }
@@ -81,13 +57,7 @@ pub(crate) async fn run_migrations_scoped(
     apply_scoped(
         pool,
         "better_auth_migrations",
-        &[
-            AUTH_SCHEMA,
-            OAUTH_CLIENTS,
-            OAUTH_CONSENTS,
-            OAUTH_RESOURCES,
-            OAUTH_TOKENS,
-        ],
+        &[AUTH_SCHEMA, OAUTH_CLIENTS],
         Some(config),
     )
     .await

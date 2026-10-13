@@ -862,7 +862,7 @@ pub(crate) async fn list_sessions_core(
     let now = chrono::Utc::now();
     let mut sessions: Vec<_> = sessions
         .iter()
-        .filter(|session| session.expires_at() > now && session.active())
+        .filter(|session| session.expires_at() > now)
         .map(|session| ctx.session_view(session))
         .collect();
     if admin_plugin_enabled(ctx) {

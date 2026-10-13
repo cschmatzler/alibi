@@ -54,7 +54,7 @@ async fn server_send_verification_email_delivers_owned_proofs_for_logical_caller
     assert!(cookies(&owner).contains("better-auth.session_data="));
     assert!(inbox.0.lock().unwrap().is_empty());
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for malformed in [
         json!(null),
@@ -120,7 +120,7 @@ async fn server_send_verification_email_delivers_owned_proofs_for_logical_caller
     assert_eq!(mismatch.error.status_code(), 400);
     assert!(mismatch.error.to_string().contains("Email mismatch"));
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -160,21 +160,20 @@ async fn server_send_verification_email_delivers_owned_proofs_for_logical_caller
     assert!(verified.decode()?.status);
     assert!(verified.decode()?.user.is_none());
     let before_users: Vec<Value> = serde_json::from_str(&before[0])?;
-    let after_users: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+    let after_users: Vec<Value> = serde_json::from_str(&db.table("user").await?)?;
     assert_eq!(before_users.len(), after_users.len());
     let owner_id = body(&owner)["user"]["id"].clone();
     assert!(after_users.iter().any(|user| user["id"] == owner_id));
     for (before_user, after_user) in before_users.iter().zip(&after_users) {
         let mut expected = before_user.clone();
         if after_user["id"] == owner_id {
-            expected["email_verified"] = json!(1);
-            expected["updated_at"] = after_user["updated_at"].clone();
+            expected["emailVerified"] = json!(1);
+            expected["updatedAt"] = after_user["updatedAt"].clone();
         }
         assert_eq!(after_user, &expected);
     }
     assert_eq!(
-        db.tables(&["accounts", "sessions", "verifications"])
-            .await?,
+        db.tables(&["account", "session", "verification"]).await?,
         before[1..]
     );
     B::close(connection).await

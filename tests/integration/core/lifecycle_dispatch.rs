@@ -337,7 +337,6 @@ fn virtual_session() -> SessionView {
         active_organization_id: None,
         active_team_id: None,
         extension_fields: std::collections::BTreeMap::default(),
-        active: true,
     }
 }
 

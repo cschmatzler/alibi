@@ -60,13 +60,13 @@ async fn oauth_consent_read_preserves_owned_grant_and_rejects_foreign_owner<B: B
     let consent_id = expected["id"].as_str().unwrap();
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
+            "oauthClient",
+            "oauthConsent",
         ])
         .await?;
     for (query, cookie, status, error, description) in [
@@ -126,13 +126,13 @@ async fn oauth_consent_read_preserves_owned_grant_and_rejects_foreign_owner<B: B
         assert_eq!(
             before,
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
+                "user",
+                "account",
+                "session",
+                "verification",
                 "jwks",
-                "oauth_client",
-                "oauth_consent"
+                "oauthClient",
+                "oauthConsent"
             ])
             .await?
         );

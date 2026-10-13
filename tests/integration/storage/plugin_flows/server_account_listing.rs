@@ -89,7 +89,7 @@ async fn server_account_listing_retains_logical_authority_projection_and_headers
             .await?;
         remote_ids.push(account.id().to_string());
     }
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (response, user_id, remote_id) in [
         (&owner, &owner_id, &remote_ids[0]),
         (&foreign, &foreign_id, &remote_ids[1]),
@@ -186,10 +186,10 @@ async fn server_account_listing_retains_logical_authority_projection_and_headers
             Some("logical")
         );
     }
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     // A real post-auth store failure is not converted into absence or an empty list.
     let _ = db
-        .execute("ALTER TABLE accounts RENAME TO suspended_accounts", &[])
+        .execute("ALTER TABLE \"account\" RENAME TO suspended_accounts", &[])
         .await?;
     let failure = auth
         .dispatch_endpoint(
@@ -203,7 +203,7 @@ async fn server_account_listing_retains_logical_authority_projection_and_headers
         .unwrap_err();
     assert_eq!(failure.error.status_code(), 500);
     let _ = db
-        .execute("ALTER TABLE suspended_accounts RENAME TO accounts", &[])
+        .execute("ALTER TABLE suspended_accounts RENAME TO \"account\"", &[])
         .await?;
     let retried = auth
         .dispatch_endpoint(
@@ -216,7 +216,7 @@ async fn server_account_listing_retains_logical_authority_projection_and_headers
         .await?
         .decode()?;
     assert_eq!(retried.len(), 2);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let events = observer.0.lock().unwrap();
     assert_eq!(events[0], (true, Some(owner_id.clone())));
     assert_eq!(events[1], (true, Some(foreign_id)));

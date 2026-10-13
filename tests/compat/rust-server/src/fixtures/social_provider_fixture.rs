@@ -246,7 +246,7 @@ pub(crate) async fn router(
                     use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
                     db.execute_raw(Statement::from_sql_and_values(
                         DbBackend::Sqlite,
-                        "UPDATE accounts SET created_at = ?, updated_at = ? WHERE id = ?",
+                        "UPDATE \"account\" SET \"createdAt\" = ?, \"updatedAt\" = ? WHERE id = ?",
                         [date.into(), date.into(), created.id.clone().into()],
                     ))
                     .await

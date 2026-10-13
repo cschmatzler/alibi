@@ -310,7 +310,7 @@ async fn set_timestamps(
     let result = crate::backend::database_of(&store)
         .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
-            "UPDATE users SET created_at=?,updated_at=? WHERE id=?",
+            "UPDATE \"user\" SET \"createdAt\"=?,\"updatedAt\"=? WHERE id=?",
             [
                 body.created_at.into(),
                 body.updated_at.into(),
@@ -327,7 +327,7 @@ async fn set_timestamps(
     let row = crate::backend::database_of(&store)
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
-            "SELECT id,created_at,updated_at FROM users WHERE id=?",
+            "SELECT id,\"createdAt\",\"updatedAt\" FROM \"user\" WHERE id=?",
             [body.user_id.into()],
         ))
         .await
@@ -337,8 +337,8 @@ async fn set_timestamps(
         .ok_or(alibi::AuthError::UserNotFound)?;
     Ok(Json(json!({
         "userId": row.try_get::<String>("", "id").map_err(|error| alibi::AuthError::Database(alibi::DatabaseError::Query(error.to_string())))?,
-        "createdAt": row.try_get::<String>("", "created_at").map_err(|error| alibi::AuthError::Database(alibi::DatabaseError::Query(error.to_string())))?,
-        "updatedAt": row.try_get::<String>("", "updated_at").map_err(|error| alibi::AuthError::Database(alibi::DatabaseError::Query(error.to_string())))?,
+        "createdAt": row.try_get::<String>("", "createdAt").map_err(|error| alibi::AuthError::Database(alibi::DatabaseError::Query(error.to_string())))?,
+        "updatedAt": row.try_get::<String>("", "updatedAt").map_err(|error| alibi::AuthError::Database(alibi::DatabaseError::Query(error.to_string())))?,
     })))
 }
 

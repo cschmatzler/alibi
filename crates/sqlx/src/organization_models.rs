@@ -252,22 +252,17 @@ impl<T: SqlxModel> Binding<T> {
                 canonical.unchanged("metadata", SqlValue::Json(None));
             }
         }
-        if T::TABLE == invitation::Model::TABLE {
-            if self.physical("team_id").is_none() {
-                canonical.unchanged("team_id", None::<String>);
-            }
-            // The canonical storage row uses a String. The original nullable
-            // value remains in the loaded row for its public representation.
-            if canonical
-                .get("role")
-                .and_then(crate::ActiveValue::value)
-                .is_some_and(SqlValue::is_null)
-            {
-                canonical.unchanged("role", "");
+        if T::TABLE == invitation::Model::TABLE && self.physical("team_id").is_none() {
+            canonical.unchanged("team_id", None::<String>);
+        }
+        let mut model = ActiveRow::new();
+        for (logical, physical) in T::FIELD_COLUMNS {
+            if let Some(value) = canonical.get(logical).and_then(crate::ActiveValue::value) {
+                model.unchanged(physical, value.clone());
             }
         }
         Ok(Row {
-            value: T::from_active(canonical)?,
+            value: T::from_active(model)?,
             active,
         })
     }

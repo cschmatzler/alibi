@@ -122,18 +122,16 @@ fn certificate_formats_verify_original_bytes_and_configured_trust() {
 }
 
 #[test]
-fn pre_migration_rsa_credential_retains_exponent_and_authenticates() {
+fn rsa_registration_retains_exponent_and_authenticates() {
     let fixture = fixture();
     let verifier = verifier(&fixture, true);
-    // These JSON bytes were serialized by the old fork before removing it.
-    let persisted = &fixture["rsa"]["storedCredential"];
-    assert_eq!(persisted["cred"]["cred"]["key"]["RSA"]["e"], json!([3]));
-    assert!(serde_json::from_value::<webauthn_rs::prelude::Passkey>(persisted.clone()).is_err());
-    let crate::passkey::raw_none::StoredCredential::Core(mut key) =
-        serde_json::from_value(persisted.clone()).unwrap()
-    else {
-        panic!("existing core codec")
-    };
+    let registration: RegisterPublicKeyCredential =
+        serde_json::from_value(fixture["rsa"]["registration"].clone()).unwrap();
+    let mut key = verifier
+        .register_credential(&registration, &registration_state(&fixture, &verifier))
+        .unwrap();
+    let original_key = serde_json::to_value(&key.cred.cred).unwrap();
+    assert_eq!(original_key["key"]["RSA"]["e"], json!([3]));
     let authentication: PublicKeyCredential =
         serde_json::from_value(fixture["rsa"]["authentication"].clone()).unwrap();
     let state = authentication_state(&fixture, &verifier);
@@ -143,7 +141,7 @@ fn pre_migration_rsa_credential_retains_exponent_and_authenticates() {
     assert_eq!(result.cred_id(), key.cred_id());
     assert_eq!(key.update_credential(&result), Some(true));
     let updated = serde_json::to_value(&key).unwrap();
-    assert_eq!(updated["cred"]["cred"], persisted["cred"]["cred"]);
+    assert_eq!(updated["cred"]["cred"], original_key);
     assert_eq!(updated["cred"]["counter"], 1);
     assert!(
         verifier
@@ -168,7 +166,7 @@ fn pre_migration_rsa_credential_retains_exponent_and_authenticates() {
         .unwrap();
     assert_eq!(
         serde_json::to_value(&enrolled.cred.cred).unwrap(),
-        persisted["cred"]["cred"]
+        original_key
     );
     assert_eq!(
         URL_SAFE_NO_PAD.encode(enrolled.cred_id().as_ref()),

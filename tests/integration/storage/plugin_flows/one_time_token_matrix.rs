@@ -131,7 +131,7 @@ async fn one_time_token_issuance_and_redemption_policies<B: Backend>(db: Db) -> 
                 .await;
             probe
                 .trace
-                .value("sessions", json!(db.count("sessions").await?));
+                .value("sessions", json!(db.count("session").await?));
         }
         trace = probe.trace;
         B::close(connection).await?;
@@ -157,13 +157,13 @@ async fn one_time_token_issuance_and_redemption_policies<B: Backend>(db: Db) -> 
         let token = body(&generated)["token"].as_str().unwrap().to_owned();
         match mode {
             "session removed" => {
-                _ = db.execute("DELETE FROM sessions", &[]).await?;
+                _ = db.execute("DELETE FROM \"session\"", &[]).await?;
             }
             "session expired" => {
                 db.set_timestamp(
-                    "sessions",
-                    "expires_at",
-                    ("user_id", body(&owner)["user"]["id"].as_str().unwrap()),
+                    "session",
+                    "expiresAt",
+                    ("userId", body(&owner)["user"]["id"].as_str().unwrap()),
                     chrono::Utc::now() - Duration::hours(1),
                 )
                 .await?;
@@ -317,7 +317,7 @@ async fn ott_new_session_callback_failures_preserve_committed_authentication<B: 
             if !signup_flow {
                 _ = signup(&auth, "owner@example.test").await;
             }
-            let proofs = db.table("verifications").await?;
+            let proofs = db.table("verification").await?;
             callbacks.seen.lock().unwrap().clear();
             *callbacks.mode.lock().unwrap() = mode;
             let path = if signup_flow {
@@ -352,7 +352,7 @@ async fn ott_new_session_callback_failures_preserve_committed_authentication<B: 
             );
             assert_eq!(
                 db.count_where(
-                    "SELECT COUNT(*) FROM sessions WHERE user_id=$1",
+                    "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
                     &[&session.user.id]
                 )
                 .await?,
@@ -360,13 +360,13 @@ async fn ott_new_session_callback_failures_preserve_committed_authentication<B: 
             );
             assert_eq!(
                 db.count_where(
-                    "SELECT COUNT(*) FROM accounts WHERE user_id=$1",
+                    "SELECT COUNT(*) FROM \"account\" WHERE \"userId\"=$1",
                     &[&session.user.id]
                 )
                 .await?,
                 1
             );
-            assert_eq!(db.table("verifications").await?, proofs);
+            assert_eq!(db.table("verification").await?, proofs);
             authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
             *callbacks.mode.lock().unwrap() = "success";
             let restored = call(
@@ -438,11 +438,11 @@ async fn ott_redemption_hasher_retry<B: Backend>(db: Db) -> TestResult {
     .await;
     let token = body(&generated)["token"].as_str().unwrap().to_owned();
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     assert_eq!(
         db.text(
-            "SELECT value FROM verifications WHERE identifier=$1",
+            "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
             &[&format!("one-time-token:digest-{token}")]
         )
         .await?,
@@ -470,7 +470,7 @@ async fn ott_redemption_hasher_retry<B: Backend>(db: Db) -> TestResult {
         }
         assert!(!denied.headers.contains_key("set-cookie"));
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -488,7 +488,7 @@ async fn ott_redemption_hasher_retry<B: Backend>(db: Db) -> TestResult {
     .await;
     assert_eq!(body(&accepted)["session"]["token"], body(&owner)["token"]);
     authenticated(&auth, &cookies(&accepted), "retry-owner@example.test").await;
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     let replay = call(
         &auth,
         request("/one-time-token/verify", Some(json!({"token":token})), ""),
@@ -496,7 +496,7 @@ async fn ott_redemption_hasher_retry<B: Backend>(db: Db) -> TestResult {
     )
     .await;
     assert_eq!(body(&replay)["message"], "Invalid token");
-    assert_eq!(db.table("sessions").await?, before[2]);
+    assert_eq!(db.table("session").await?, before[2]);
     authenticated(&auth, &cookies(&foreign), "retry-foreign@example.test").await;
     B::close(connection).await
 }
@@ -530,7 +530,7 @@ async fn ott_generator_real_endpoint_context<B: Backend>(db: Db) -> TestResult {
         .await?;
     let owner = signup(&auth, "context-owner@example.test").await;
     let foreign = signup(&auth, "context-foreign@example.test").await;
-    let sessions = db.table("sessions").await?;
+    let sessions = db.table("session").await?;
     let mut input =
         request("/one-time-token/generate", None, &cookies(&owner)).with_url(url::Url::parse(
             &format!("{ORIGIN}/api/auth/one-time-token/generate?physical=1"),
@@ -569,7 +569,7 @@ async fn ott_generator_real_endpoint_context<B: Backend>(db: Db) -> TestResult {
     for token in ["physical-transfer", "server-transfer"] {
         assert_eq!(
             db.text(
-                "SELECT value FROM verifications WHERE identifier=$1",
+                "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
                 &[&format!("one-time-token:{token}")]
             )
             .await?
@@ -588,8 +588,8 @@ async fn ott_generator_real_endpoint_context<B: Backend>(db: Db) -> TestResult {
         .await;
         assert_eq!(body(&redeemed)["session"]["token"], body(&owner)["token"]);
     }
-    assert_eq!(db.table("sessions").await?, sessions);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.table("session").await?, sessions);
+    assert_eq!(db.count("verification").await?, 0);
     B::close(connection).await
 }
 
@@ -640,7 +640,7 @@ async fn ott_verification_cancellation_result<B: Backend>(db: Db) -> TestResult 
     let owner = signup(&auth, "cancel-owner@example.test").await;
     let foreign = signup(&auth, "cancel-foreign@example.test").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let issued = call(
         &auth,
@@ -658,7 +658,7 @@ async fn ott_verification_cancellation_result<B: Backend>(db: Db) -> TestResult 
         )]
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -682,7 +682,7 @@ async fn ott_verification_cancellation_result<B: Backend>(db: Db) -> TestResult 
     )
     .await;
     let live = body(&live)["token"].as_str().unwrap().to_owned();
-    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(db.count("verification").await?, 1);
     let accepted = call(
         &auth,
         request("/one-time-token/verify", Some(json!({"token":live})), ""),
@@ -697,7 +697,7 @@ async fn ott_verification_cancellation_result<B: Backend>(db: Db) -> TestResult 
     )
     .await;
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -716,7 +716,7 @@ async fn ott_positive_custom_expiry<B: Backend>(db: Db) -> TestResult {
         .await?;
     let owner = signup(&auth, "ttl-owner@example.test").await;
     let foreign = signup(&auth, "ttl-foreign@example.test").await;
-    let protected = db.tables(&["users", "accounts", "sessions"]).await?;
+    let protected = db.tables(&["user", "account", "session"]).await?;
     let started = chrono::Utc::now();
     let issued = call(
         &auth,
@@ -760,8 +760,8 @@ async fn ott_positive_custom_expiry<B: Backend>(db: Db) -> TestResult {
     )
     .await;
     db.set_timestamp(
-        "verifications",
-        "expires_at",
+        "verification",
+        "expiresAt",
         ("id", proof.id().as_ref()),
         chrono::Utc::now() - Duration::seconds(1),
     )
@@ -778,11 +778,8 @@ async fn ott_positive_custom_expiry<B: Backend>(db: Db) -> TestResult {
         body(&call(&auth, request("/get-session", None, ""), 200).await),
         Value::Null
     );
-    assert_eq!(db.count("verifications").await?, 0);
-    assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
-        protected
-    );
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, protected);
     B::close(connection).await
 }
 
@@ -870,13 +867,13 @@ async fn ott_completed_totp_transfer_publication<B: Backend>(db: Db) -> TestResu
     assert_eq!(session["user"]["id"], body(&owner)["user"]["id"]);
     assert_eq!(
         db.text(
-            "SELECT value FROM verifications WHERE identifier=$1",
+            "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
             &[&format!("one-time-token:{ott}")]
         )
         .await?,
         Some(session["session"]["token"].as_str().unwrap().to_owned())
     );
-    let sessions = db.table("sessions").await?;
+    let sessions = db.table("session").await?;
     let received = call(
         &auth,
         request(
@@ -900,7 +897,7 @@ async fn ott_completed_totp_transfer_publication<B: Backend>(db: Db) -> TestResu
         400,
     )
     .await;
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("session").await?, sessions);
     authenticated(
         &auth,
         &cookies(&foreign),
@@ -943,7 +940,7 @@ async fn ott_existing_session_publication_receipt<B: Backend>(db: Db) -> TestRes
         .await?;
     let owner = signup(&auth, "receipt-owner@example.test").await;
     let foreign = signup(&auth, "receipt-foreign@example.test").await;
-    let sessions = db.table("sessions").await?;
+    let sessions = db.table("session").await?;
     let issued = call(
         &auth,
         request("/one-time-token/generate", None, &cookies(&owner)),
@@ -999,8 +996,8 @@ async fn ott_existing_session_publication_receipt<B: Backend>(db: Db) -> TestRes
         "receipt-foreign@example.test",
     )
     .await;
-    assert_eq!(db.table("sessions").await?, sessions);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.table("session").await?, sessions);
+    assert_eq!(db.count("verification").await?, 0);
     _ = call(
         &auth,
         request("/one-time-token/verify", Some(json!({"token":token})), ""),

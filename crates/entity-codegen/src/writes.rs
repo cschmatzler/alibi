@@ -81,7 +81,6 @@ pub fn insert_values(role: EntityRole, fields: &FieldsNamed) -> Vec<(Ident, Inse
             value("token", quote! { token });
             value("created_at", quote! { now });
             value("updated_at", quote! { now });
-            value("active", quote! { true });
             for name in [
                 "user_id",
                 "expires_at",

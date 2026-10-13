@@ -124,19 +124,19 @@ pub(crate) async fn router(
             async move {
                 let rows = database.query_all_raw(Statement::from_string(
                     DbBackend::Sqlite,
-                    "SELECT id, reference_id, config_id, remaining, request_count, enabled FROM api_keys ORDER BY name",
+                    "SELECT id, \"referenceId\", \"configId\", \"remaining\", \"requestCount\", \"enabled\" FROM \"apikey\" ORDER BY \"name\"",
                 )).await.unwrap();
                 let keys: Vec<Value> = rows.iter().map(|row| json!({
                     "id": row.try_get::<String>("", "id").unwrap(),
-                    "referenceId": row.try_get::<String>("", "reference_id").unwrap(),
-                    "configId": row.try_get::<String>("", "config_id").unwrap(),
-                    "remaining": row.try_get::<Option<f64>>("", "remaining").unwrap(),
-                    "requestCount": row.try_get::<Option<f64>>("", "request_count").unwrap(),
+                    "referenceId": row.try_get::<String>("", "referenceId").unwrap(),
+                    "configId": row.try_get::<String>("", "configId").unwrap(),
+                    "remaining": row.try_get::<Option<alibi::seaorm::Number>>("", "remaining").unwrap(),
+                    "requestCount": row.try_get::<Option<alibi::seaorm::Number>>("", "requestCount").unwrap(),
                     "enabled": row.try_get::<bool>("", "enabled").unwrap(),
                 })).collect();
                 let sessions = database.query_one_raw(Statement::from_sql_and_values(
                     DbBackend::Sqlite,
-                    "SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?",
+                    "SELECT COUNT(*) AS \"count\" FROM \"session\" WHERE \"userId\" = ?",
                     [query.user_id.into()],
                 )).await.unwrap().unwrap();
                 Json(json!({"keys": keys, "sessions": {"count": sessions.try_get::<i64>("", "count").unwrap()}}))

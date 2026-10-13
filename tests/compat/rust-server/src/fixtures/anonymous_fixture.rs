@@ -188,7 +188,7 @@ impl LinkAnonymousAccount for Application {
             self.database
                 .execute_raw(Statement::from_sql_and_values(
                     DbBackend::Sqlite,
-                    "UPDATE users SET cargo_label=? WHERE id=?",
+                    "UPDATE \"user\" SET cargo_label=? WHERE id=?",
                     vec![
                         format!(
                             "Transferred {}",
@@ -266,7 +266,7 @@ impl DatabaseHooks<TestSchema, crate::backend::Backend> for Hooks {
         {
             _ = crate::backend::hook_execute(
                 context.db,
-                "UPDATE users SET name=? WHERE id=?",
+                "UPDATE \"user\" SET \"name\"=? WHERE id=?",
                 vec![
                     "Stored Hook Name".to_owned(),
                     session.user_id().into_owned(),
@@ -276,7 +276,7 @@ impl DatabaseHooks<TestSchema, crate::backend::Backend> for Hooks {
             if self.mode.starts_with("custom") {
                 _ = crate::backend::hook_execute(
                     context.db,
-                    "UPDATE users SET cargo_label=?, cargo_hidden=? WHERE id=?",
+                    "UPDATE \"user\" SET cargo_label=?, cargo_hidden=? WHERE id=?",
                     vec![
                         "Application Stored".into(),
                         "Stored Secret".into(),
@@ -301,7 +301,7 @@ pub(crate) async fn router(
         database
             .execute_raw(Statement::from_string(
                 DbBackend::Sqlite,
-                format!("ALTER TABLE users ADD COLUMN {column} TEXT"),
+                format!("ALTER TABLE \"user\" ADD COLUMN {column} TEXT"),
             ))
             .await
             .map_err(|error| AuthError::internal(error.to_string()))?;
@@ -614,7 +614,7 @@ pub(crate) async fn router(
     let observer = fixture.clone();
     router = router.route("/__test/anonymous/state", get(move || {
         let database = database.clone(); let observer = observer.clone(); async move {
-            let users = crate::backend::rows::<ApplicationUser>(&database, "SELECT * FROM users ORDER BY created_at ASC", vec![]).await;
+            let users = crate::backend::rows::<ApplicationUser>(&database, "SELECT * FROM \"user\" ORDER BY \"createdAt\" ASC", vec![]).await;
             let accounts = account::Entity::find().order_by_asc(account::Column::CreatedAt).all(&database).await;
             let sessions = session::Entity::find().order_by_asc(session::Column::CreatedAt).all(&database).await;
             match (users, accounts, sessions) {

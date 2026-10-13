@@ -156,15 +156,13 @@ async fn api_key_configuration_limits<B: Backend>(db: Db) -> TestResult {
                     let id = key_id.as_deref().unwrap();
                     assert_eq!(
                         db.count_where(
-                            "SELECT COUNT(*) FROM api_keys WHERE id=$1 AND name IS NULL",
+                            "SELECT COUNT(*) FROM \"apikey\" WHERE id=$1 AND \"name\" IS NULL",
                             &[id]
                         )
                         .await?,
                         1
                     );
-                    let before_reads = db
-                        .tables(&["users", "accounts", "sessions", "api_keys"])
-                        .await?;
+                    let before_reads = db.tables(&["user", "account", "session", "apikey"]).await?;
                     let mut read = request("/api-key/get", None, &owner);
                     read.set_query_pairs([("id", id)]);
                     let loaded = body(&call(&auth, read, 200).await);
@@ -182,8 +180,7 @@ async fn api_key_configuration_limits<B: Backend>(db: Db) -> TestResult {
                     assert_eq!(loaded.get("name"), Some(&Value::Null));
                     assert!(loaded.get("key").is_none());
                     assert_eq!(
-                        db.tables(&["users", "accounts", "sessions", "api_keys"])
-                            .await?,
+                        db.tables(&["user", "account", "session", "apikey"]).await?,
                         before_reads
                     );
                 }
@@ -362,7 +359,7 @@ async fn api_key_permission_documents<B: Backend>(db: Db) -> TestResult {
     ];
     for document in stored {
         _ = db
-            .execute("UPDATE api_keys SET permissions = $1", &[document])
+            .execute("UPDATE \"apikey\" SET \"permissions\" = $1", &[document])
             .await?;
         for needed in &required {
             let result = plugin
@@ -590,7 +587,7 @@ async fn api_key_session_callbacks<B: Backend>(db: Db) -> TestResult {
     );
     _ = db
         .execute(
-            "UPDATE api_keys SET expires_at = $1 WHERE id = $2",
+            "UPDATE \"apikey\" SET \"expiresAt\" = $1 WHERE id = $2",
             &[
                 &(chrono::Utc::now() - chrono::Duration::days(1)).to_rfc3339(),
                 &expiring.api_key.id,
@@ -599,7 +596,7 @@ async fn api_key_session_callbacks<B: Backend>(db: Db) -> TestResult {
         .await?;
     _ = db
         .execute(
-            "CREATE TRIGGER fail_key_delete BEFORE DELETE ON api_keys BEGIN SELECT RAISE(ABORT, 'forced'); END",
+            "CREATE TRIGGER fail_key_delete BEFORE DELETE ON \"apikey\" BEGIN SELECT RAISE(ABORT, 'forced'); END",
             &[],
         )
         .await?;
@@ -610,17 +607,17 @@ async fn api_key_session_callbacks<B: Backend>(db: Db) -> TestResult {
     tokio::task::yield_now().await;
     _ = db.execute("DROP TRIGGER fail_key_delete", &[]).await?;
     _ = db
-        .execute("ALTER TABLE api_keys RENAME TO api_keys_unavailable", &[])
+        .execute("ALTER TABLE \"apikey\" RENAME TO api_keys_unavailable", &[])
         .await?;
     trace.response(
         "session with unavailable storage",
         &session(&[("x-application-key", &key)]).await,
     );
     _ = db
-        .execute("ALTER TABLE api_keys_unavailable RENAME TO api_keys", &[])
+        .execute("ALTER TABLE api_keys_unavailable RENAME TO \"apikey\"", &[])
         .await?;
     _ = db
-        .execute("UPDATE api_keys SET expires_at = $1", &["not a date"])
+        .execute("UPDATE \"apikey\" SET \"expiresAt\" = $1", &["not a date"])
         .await?;
     trace.response(
         "session with corrupt expiry",
@@ -762,7 +759,7 @@ async fn api_key_organization_ownership<B: Backend>(db: Db) -> TestResult {
     .await;
     _ = db
         .execute(
-            "UPDATE users SET banned = 1 WHERE email = $1",
+            "UPDATE \"user\" SET \"banned\" = 1 WHERE \"email\" = $1",
             &["key-owner@example.com"],
         )
         .await?;
@@ -775,7 +772,7 @@ async fn api_key_organization_ownership<B: Backend>(db: Db) -> TestResult {
     )
     .await;
     _ = db
-        .execute("ALTER TABLE api_keys RENAME TO api_keys_unavailable", &[])
+        .execute("ALTER TABLE \"apikey\" RENAME TO api_keys_unavailable", &[])
         .await?;
     _ = get(
         &mut trace,
@@ -802,7 +799,7 @@ async fn api_key_organization_ownership<B: Backend>(db: Db) -> TestResult {
     )
     .await;
     _ = db
-        .execute("ALTER TABLE api_keys_unavailable RENAME TO api_keys", &[])
+        .execute("ALTER TABLE api_keys_unavailable RENAME TO \"apikey\"", &[])
         .await?;
     trace.assert("api-key/organization-ownership");
     B::close(connection).await
@@ -903,10 +900,7 @@ async fn api_key_storage_edges<B: Backend>(db: Db) -> TestResult {
     );
     let unknown = verify("not-a-key").await;
     trace.value("unknown", json!({"valid": unknown.valid}));
-    trace.value(
-        "stored after exhaustion",
-        json!(db.count("api_keys").await?),
-    );
+    trace.value("stored after exhaustion", json!(db.count("apikey").await?));
 
     B::close(connection).await?;
 
@@ -942,7 +936,7 @@ async fn api_key_storage_edges<B: Backend>(db: Db) -> TestResult {
         "stored start",
         json!(
             database
-                .text("SELECT HEX(start) FROM api_keys", &[])
+                .text("SELECT HEX(\"start\") FROM \"apikey\"", &[])
                 .await?
         ),
     );
@@ -998,8 +992,8 @@ async fn api_key_storage_edges<B: Backend>(db: Db) -> TestResult {
     }
     database
         .set_timestamp(
-            "api_keys",
-            "last_request",
+            "apikey",
+            "lastRequest",
             ("id", &key_id),
             chrono::Utc::now() - chrono::Duration::seconds(5),
         )
@@ -1127,7 +1121,7 @@ async fn static_org_create_grants_admit_nonowner_and_reject_reader<B: Backend>(
         ))
         .await?;
     let before = db
-        .tables(&["api_keys", "users", "accounts", "sessions", "member"])
+        .tables(&["apikey", "user", "account", "session", "member"])
         .await?;
     let input = json!({"configId":"organization","organizationId":org,"name":"Issued"});
     let denied = call(
@@ -1138,7 +1132,7 @@ async fn static_org_create_grants_admit_nonowner_and_reject_reader<B: Backend>(
     .await;
     assert_eq!(body(&denied)["code"], "INSUFFICIENT_API_KEY_PERMISSIONS");
     assert_eq!(
-        db.tables(&["api_keys", "users", "accounts", "sessions", "member"])
+        db.tables(&["apikey", "user", "account", "session", "member"])
             .await?,
         before
     );
@@ -1310,7 +1304,7 @@ async fn static_org_reader_lists_only_tenant_keys_without_plaintext<B: Backend>(
         200,
     )
     .await;
-    let before = db.tables(&["api_keys", "sessions", "member"]).await?;
+    let before = db.tables(&["apikey", "session", "member"]).await?;
     for explicit in [false, true] {
         let mut query = request("/api-key/list", None, &reader_cookie);
         _ = query.query.insert("organizationId".into(), org.clone());
@@ -1346,10 +1340,7 @@ async fn static_org_reader_lists_only_tenant_keys_without_plaintext<B: Backend>(
     _ = query.query.insert("organizationId".into(), foreign);
     let denied = call(&auth, query, 403).await;
     assert_eq!(body(&denied)["code"], "USER_NOT_MEMBER_OF_ORGANIZATION");
-    assert_eq!(
-        db.tables(&["api_keys", "sessions", "member"]).await?,
-        before
-    );
+    assert_eq!(db.tables(&["apikey", "session", "member"]).await?, before);
     B::close(connection).await
 }
 
@@ -1456,9 +1447,7 @@ async fn static_org_update_requires_update_action_and_preserves_key_identity<B: 
             "updater",
         ))
         .await?;
-    let before = db
-        .tables(&["api_keys", "users", "sessions", "member"])
-        .await?;
+    let before = db.tables(&["apikey", "user", "session", "member"]).await?;
     let input = json!({"configId":"organization","keyId":selected["id"],"name":"Granted update"});
     let denied = call(
         &auth,
@@ -1468,8 +1457,7 @@ async fn static_org_update_requires_update_action_and_preserves_key_identity<B: 
     .await;
     assert_eq!(body(&denied)["code"], "INSUFFICIENT_API_KEY_PERMISSIONS");
     assert_eq!(
-        db.tables(&["api_keys", "users", "sessions", "member"])
-            .await?,
+        db.tables(&["apikey", "user", "session", "member"]).await?,
         before
     );
     let verified = keys
@@ -1633,7 +1621,7 @@ async fn static_org_delete_requires_delete_action_and_revokes_only_selected_key<
             "deleter",
         ))
         .await?;
-    let before = db.tables(&["api_keys", "sessions", "member"]).await?;
+    let before = db.tables(&["apikey", "session", "member"]).await?;
     let input = json!({"configId":"organization","keyId":selected["id"]});
     let denied = call(
         &auth,
@@ -1642,10 +1630,7 @@ async fn static_org_delete_requires_delete_action_and_revokes_only_selected_key<
     )
     .await;
     assert_eq!(body(&denied)["code"], "INSUFFICIENT_API_KEY_PERMISSIONS");
-    assert_eq!(
-        db.tables(&["api_keys", "sessions", "member"]).await?,
-        before
-    );
+    assert_eq!(db.tables(&["apikey", "session", "member"]).await?, before);
     let verified = keys
         .verify_api_key(
             &VerifyApiKey {
@@ -1739,7 +1724,7 @@ async fn disabled_custom_key_expiration_retains_default_lifetime_through_rename<
     )
     .await;
     assert_eq!(body(&rejected)["code"], "KEY_DISABLED_EXPIRATION");
-    assert_eq!(db.count("api_keys").await?, 0);
+    assert_eq!(db.count("apikey").await?, 0);
     let start = chrono::Utc::now();
     let created = body(
         &call(
@@ -1758,7 +1743,7 @@ async fn disabled_custom_key_expiration_retains_default_lifetime_through_rename<
         .with_timezone(&chrono::Utc);
     assert!(expires >= start + chrono::Duration::seconds(120) - chrono::Duration::milliseconds(1));
     assert!(expires <= end + chrono::Duration::seconds(120));
-    let before = db.table("api_keys").await?;
+    let before = db.table("apikey").await?;
     let rejected = call(
         &auth,
         request(
@@ -1770,13 +1755,13 @@ async fn disabled_custom_key_expiration_retains_default_lifetime_through_rename<
     )
     .await;
     assert_eq!(body(&rejected)["code"], "KEY_DISABLED_EXPIRATION");
-    assert_eq!(db.table("api_keys").await?, before);
+    assert_eq!(db.table("apikey").await?, before);
     let id = created["id"].as_str().unwrap();
     let hash = db
-        .text("SELECT key FROM api_keys WHERE id=$1", &[id])
+        .text("SELECT \"key\" FROM \"apikey\" WHERE id=$1", &[id])
         .await?;
     let physical_expiry = db
-        .text("SELECT expires_at FROM api_keys WHERE id=$1", &[id])
+        .text("SELECT \"expiresAt\" FROM \"apikey\" WHERE id=$1", &[id])
         .await?;
     let renamed = body(
         &call(
@@ -1794,16 +1779,16 @@ async fn disabled_custom_key_expiration_retains_default_lifetime_through_rename<
     assert_eq!(renamed["expiresAt"], created["expiresAt"]);
     assert_eq!(renamed["name"], "Renamed");
     assert_eq!(
-        db.text("SELECT key FROM api_keys WHERE id=$1", &[id])
+        db.text("SELECT \"key\" FROM \"apikey\" WHERE id=$1", &[id])
             .await?,
         hash
     );
     assert_eq!(
-        db.text("SELECT expires_at FROM api_keys WHERE id=$1", &[id])
+        db.text("SELECT \"expiresAt\" FROM \"apikey\" WHERE id=$1", &[id])
             .await?,
         physical_expiry
     );
-    assert_eq!(db.count("api_keys").await?, 1);
+    assert_eq!(db.count("apikey").await?, 1);
     authenticated(&auth, &cookie, "owner@example.test").await;
     B::close(connection).await
 }
@@ -1855,7 +1840,7 @@ async fn banned_api_key_owner_can_verify_but_cannot_use_synthetic_deletion_autho
     let secret = created["key"].as_str().unwrap();
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let hash = db
-        .text("SELECT key FROM api_keys WHERE id=$1", &[id])
+        .text("SELECT \"key\" FROM \"apikey\" WHERE id=$1", &[id])
         .await?;
     assert!(
         keys.verify_api_key(
@@ -1924,17 +1909,17 @@ async fn banned_api_key_owner_can_verify_but_cannot_use_synthetic_deletion_autho
     );
 
     assert_eq!(
-        db.text("SELECT key FROM api_keys WHERE id=$1", &[id])
+        db.text("SELECT \"key\" FROM \"apikey\" WHERE id=$1", &[id])
             .await?,
         hash
     );
     assert_eq!(
-        db.text("SELECT reference_id FROM api_keys WHERE id=$1", &[id])
+        db.text("SELECT \"referenceId\" FROM \"apikey\" WHERE id=$1", &[id])
             .await?
             .as_deref(),
         Some(owner_id.as_str())
     );
-    assert_eq!(db.count("sessions").await?, 2);
+    assert_eq!(db.count("session").await?, 2);
     _ = call(
         &auth,
         request(
@@ -1999,9 +1984,7 @@ async fn api_key_builtin_fractional_generation<B: Backend>(db: Db) -> TestResult
             .build()
             .await?;
         let owner = signup(&auth, "builtin@example.test").await;
-        let before = db
-            .tables(&["users", "accounts", "sessions", "api_keys"])
-            .await?;
+        let before = db.tables(&["user", "account", "session", "apikey"]).await?;
         let response = call(
             &auth,
             request(
@@ -2018,7 +2001,9 @@ async fn api_key_builtin_fractional_generation<B: Backend>(db: Db) -> TestResult
             assert_eq!(suffix.len(), expected);
             assert!(suffix.bytes().all(|byte| byte.is_ascii_alphabetic()));
             assert_eq!(
-                db.text("SELECT key FROM api_keys", &[]).await?.as_deref(),
+                db.text("SELECT \"key\" FROM \"apikey\"", &[])
+                    .await?
+                    .as_deref(),
                 Some(
                     URL_SAFE_NO_PAD
                         .encode(Sha256::digest(key.as_bytes()))
@@ -2026,12 +2011,11 @@ async fn api_key_builtin_fractional_generation<B: Backend>(db: Db) -> TestResult
                 )
             );
             assert_eq!(body(&response)["referenceId"], body(&owner)["user"]["id"]);
-            assert_eq!(db.count("api_keys").await?, 1);
+            assert_eq!(db.count("apikey").await?, 1);
         } else {
             assert!(response.body.is_empty());
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "api_keys"])
-                    .await?,
+                db.tables(&["user", "account", "session", "apikey"]).await?,
                 before
             );
         }
@@ -2079,7 +2063,9 @@ async fn api_key_builtin_fractional_generation<B: Backend>(db: Db) -> TestResult
             [(expected.into(), Some("gen_".into()))]
         );
         assert_eq!(
-            db.text("SELECT key FROM api_keys", &[]).await?.as_deref(),
+            db.text("SELECT \"key\" FROM \"apikey\"", &[])
+                .await?
+                .as_deref(),
             Some(
                 URL_SAFE_NO_PAD
                     .encode(Sha256::digest(b"application-owned-secret-material"))
@@ -2125,9 +2111,7 @@ async fn api_key_raw_default_expiration<B: Backend>(db: Db) -> TestResult {
             .build()
             .await?;
         let owner = signup(&auth, "default-expiry@example.test").await;
-        let before = db
-            .tables(&["users", "accounts", "sessions", "api_keys"])
-            .await?;
+        let before = db.tables(&["user", "account", "session", "apikey"]).await?;
         let response = call(
             &auth,
             request("/api-key/create", Some(json!({})), &cookies(&owner)),
@@ -2138,14 +2122,13 @@ async fn api_key_raw_default_expiration<B: Backend>(db: Db) -> TestResult {
         if expiry.is_infinite() {
             assert!(response.body.is_empty());
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "api_keys"])
-                    .await?,
+                db.tables(&["user", "account", "session", "apikey"]).await?,
                 before
             );
         } else if expiry == 0.0 || expiry.is_nan() {
             assert!(body(&response)["expiresAt"].is_null());
             assert!(
-                db.text("SELECT expires_at FROM api_keys", &[])
+                db.text("SELECT \"expiresAt\" FROM \"apikey\"", &[])
                     .await?
                     .is_none()
             );
@@ -2177,7 +2160,7 @@ async fn api_key_raw_default_expiration<B: Backend>(db: Db) -> TestResult {
                     }
                     _ => panic!("expiry must reject as KEY_EXPIRED"),
                 }
-                assert_eq!(db.count("api_keys").await?, 0);
+                assert_eq!(db.count("apikey").await?, 0);
             }
         }
         B::close(connection).await?;
@@ -2239,9 +2222,7 @@ async fn api_key_fractional_policy_bounds<B: Backend>(db: Db) -> TestResult {
         json!({"expiresIn":1}),
         json!({"expiresIn":4}),
     ] {
-        let before = db
-            .tables(&["users", "accounts", "sessions", "api_keys"])
-            .await?;
+        let before = db.tables(&["user", "account", "session", "apikey"]).await?;
         let denied = call(
             &auth,
             request("/api-key/create", Some(input), &cookies(&owner)),
@@ -2251,8 +2232,7 @@ async fn api_key_fractional_policy_bounds<B: Backend>(db: Db) -> TestResult {
         assert!(body(&denied)["code"].is_string());
         assert_eq!(generator.0.load(std::sync::atomic::Ordering::SeqCst), 0);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "api_keys"])
-                .await?,
+            db.tables(&["user", "account", "session", "apikey"]).await?,
             before
         );
     }
@@ -2271,7 +2251,7 @@ async fn api_key_fractional_policy_bounds<B: Backend>(db: Db) -> TestResult {
         assert_eq!(body(&accepted)["referenceId"], body(&owner)["user"]["id"]);
     }
     assert_eq!(generator.0.load(std::sync::atomic::Ordering::SeqCst), 2);
-    assert_eq!(db.count("api_keys").await?, 2);
+    assert_eq!(db.count("apikey").await?, 2);
     B::close(connection).await
 }
 
@@ -2307,15 +2287,18 @@ async fn api_key_start_bytes_through_update<B: Backend>(db: Db) -> TestResult {
     let start = issued["start"].clone();
     assert!(start.is_string());
     assert_eq!(
-        db.text("SELECT HEX(start) FROM api_keys WHERE id=$1", &[id])
+        db.text("SELECT HEX(\"start\") FROM \"apikey\" WHERE id=$1", &[id])
             .await?
             .as_deref(),
         Some("EDA0BD")
     );
     assert_eq!(
-        db.text("SELECT TYPEOF(start) FROM api_keys WHERE id=$1", &[id])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT TYPEOF(\"start\") FROM \"apikey\" WHERE id=$1",
+            &[id]
+        )
+        .await?
+        .as_deref(),
         Some("text")
     );
     let mut get = request("/api-key/get", None, &cookies(&owner));
@@ -2350,18 +2333,21 @@ async fn api_key_start_bytes_through_update<B: Backend>(db: Db) -> TestResult {
         .await?;
     assert_eq!(serde_json::to_value(verified)?["start"], start);
     assert_eq!(
-        db.text("SELECT HEX(start) FROM api_keys WHERE id=$1", &[id])
+        db.text("SELECT HEX(\"start\") FROM \"apikey\" WHERE id=$1", &[id])
             .await?
             .as_deref(),
         Some("EDA0BD")
     );
     assert_eq!(
-        db.text("SELECT TYPEOF(start) FROM api_keys WHERE id=$1", &[id])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT TYPEOF(\"start\") FROM \"apikey\" WHERE id=$1",
+            &[id]
+        )
+        .await?
+        .as_deref(),
         Some("text")
     );
-    assert_eq!(db.count("api_keys").await?, 1);
+    assert_eq!(db.count("apikey").await?, 1);
     authenticated(&auth, &cookies(&owner), "start-bytes@example.test").await;
     B::close(connection).await
 }
@@ -2391,7 +2377,7 @@ async fn api_key_installed_reference_principal<B: Backend>(db: Db) -> TestResult
     ))
     .await?
     .decode()?;
-    let protected = db.tables(&["users", "accounts", "sessions"]).await?;
+    let protected = db.tables(&["user", "account", "session"]).await?;
     for (index, reference) in [
         body(&foreign)["user"]["id"].as_str().unwrap(),
         "installed-missing-user",
@@ -2401,7 +2387,7 @@ async fn api_key_installed_reference_principal<B: Backend>(db: Db) -> TestResult
     {
         _ = db
             .execute(
-                "UPDATE api_keys SET reference_id=$1 WHERE id=$2",
+                "UPDATE \"apikey\" SET \"referenceId\"=$1 WHERE id=$2",
                 &[reference, &created.api_key.id],
             )
             .await?;
@@ -2433,17 +2419,14 @@ async fn api_key_installed_reference_principal<B: Backend>(db: Db) -> TestResult
         }
         assert_eq!(
             db.text(
-                "SELECT CAST(remaining AS TEXT) FROM api_keys WHERE id=$1",
+                "SELECT CAST(\"remaining\" AS TEXT) FROM \"apikey\" WHERE id=$1",
                 &[&created.api_key.id]
             )
             .await?
             .as_deref(),
-            Some(if index == 0 { "6.0" } else { "4.0" })
+            Some(if index == 0 { "6" } else { "4" })
         );
-        assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
-            protected
-        );
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, protected);
     }
     authenticated(&auth, &cookies(&owner), "installed-owner@example.test").await;
     authenticated(&auth, &cookies(&foreign), "installed-foreign@example.test").await;
@@ -2527,9 +2510,7 @@ async fn api_key_public_callback_500_identity<B: Backend>(db: Db) -> TestResult 
         .build()
         .await?;
     let owner = signup(&auth, "public-policy@example.test").await;
-    let before = db
-        .tables(&["users", "accounts", "sessions", "api_keys"])
-        .await?;
+    let before = db.tables(&["user", "account", "session", "apikey"]).await?;
     let response = call(
         &auth,
         request("/api-key/create", Some(json!({})), &cookies(&owner)),
@@ -2541,8 +2522,7 @@ async fn api_key_public_callback_500_identity<B: Backend>(db: Db) -> TestResult 
         json!({"code":"APPLICATION_GENERATOR_FAILED","message":"Application policy failed"})
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "api_keys"])
-            .await?,
+        db.tables(&["user", "account", "session", "apikey"]).await?,
         before
     );
     *application.mode.lock().unwrap() = "accept";
@@ -2553,9 +2533,7 @@ async fn api_key_public_callback_500_identity<B: Backend>(db: Db) -> TestResult 
     )
     .await;
     let key = body(&created)["key"].as_str().unwrap().to_owned();
-    let before = db
-        .tables(&["users", "accounts", "sessions", "api_keys"])
-        .await?;
+    let before = db.tables(&["user", "account", "session", "apikey"]).await?;
     *application.mode.lock().unwrap() = "validator";
     let explicit = Box::pin(auth.dispatch_endpoint(
         ApiKeyPlugin::verify_endpoint(&ApiKeyVerificationInput {
@@ -2618,8 +2596,7 @@ async fn api_key_public_callback_500_identity<B: Backend>(db: Db) -> TestResult 
             if mode == "getter-match" { 1 } else { 2 }
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "api_keys"])
-                .await?,
+            db.tables(&["user", "account", "session", "apikey"]).await?,
             before
         );
     }
@@ -2789,7 +2766,7 @@ async fn api_key_secondary_index_expiration<B: Backend>(db: Db) -> TestResult {
     assert_eq!(list["apiKeys"][0]["id"], expiring["id"]);
     assert_eq!(list["apiKeys"][1]["id"], permanent["id"]);
     assert_eq!(storage.snapshot().await?, snapshot);
-    assert_eq!(db.count("api_keys").await?, 0);
+    assert_eq!(db.count("apikey").await?, 0);
     authenticated(&auth, &cookies(&owner), "index-expiry@example.test").await;
     B::close(connection).await
 }
@@ -2940,7 +2917,7 @@ async fn api_key_secondary_sdk_delete_index_scope<B: Backend>(db: Db) -> TestRes
         )
         .await;
         let before = storage.snapshot().await?;
-        let protected = db.tables(&["users", "accounts", "sessions"]).await?;
+        let protected = db.tables(&["user", "account", "session"]).await?;
         _ = call(
             &auth,
             request(
@@ -2965,18 +2942,15 @@ async fn api_key_secondary_sdk_delete_index_scope<B: Backend>(db: Db) -> TestRes
         }
         if fallback {
             assert!(!after.contains_key(&selected_indices[2]));
-            assert_eq!(db.count("api_keys").await?, 2);
+            assert_eq!(db.count("apikey").await?, 2);
         } else {
             assert_eq!(
                 serde_json::from_str::<Vec<String>>(after.get(&selected_indices[2]).unwrap())?,
                 [sibling["id"].as_str().unwrap()]
             );
-            assert_eq!(db.count("api_keys").await?, 0);
+            assert_eq!(db.count("apikey").await?, 0);
         }
-        assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
-            protected
-        );
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, protected);
         assert!(
             plugin
                 .verify_api_key(
@@ -3142,16 +3116,13 @@ async fn api_key_stale_reference_index_authority<B: Backend>(db: Db) -> TestResu
             )
             .await?;
         let before = storage.snapshot().await?;
-        let protected = db
-            .tables(&["users", "accounts", "sessions", "api_keys"])
-            .await?;
+        let protected = db.tables(&["user", "account", "session", "apikey"]).await?;
         let list = body(&call(&auth, request("/api-key/list", None, &cookies(&owner)), 200).await);
         assert_eq!(list["apiKeys"], json!([]));
         assert_eq!(list["total"], 0);
         assert_eq!(storage.snapshot().await?, before);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "api_keys"])
-                .await?,
+            db.tables(&["user", "account", "session", "apikey"]).await?,
             protected
         );
         let mut get = request("/api-key/get", None, &cookies(&owner));
@@ -3285,9 +3256,7 @@ async fn api_key_selected_list_storage_isolation<B: Backend>(db: Db) -> TestResu
     .await;
     let before = storage.snapshot().await?;
     let other_before = isolated.snapshot().await?;
-    let protected = db
-        .tables(&["users", "accounts", "sessions", "api_keys"])
-        .await?;
+    let protected = db.tables(&["user", "account", "session", "apikey"]).await?;
     *isolated.fail_get.lock().unwrap() = Some("api-key:by-ref:".into());
     let mut input = request("/api-key/list", None, &cookies(&owner));
     input.set_query_pairs([("configId", "default")]);
@@ -3301,8 +3270,7 @@ async fn api_key_selected_list_storage_isolation<B: Backend>(db: Db) -> TestResu
     assert_eq!(storage.snapshot().await?, before);
     assert_eq!(isolated.snapshot().await?, other_before);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "api_keys"])
-            .await?,
+        db.tables(&["user", "account", "session", "apikey"]).await?,
         protected
     );
     *isolated.fail_get.lock().unwrap() = None;
@@ -3423,9 +3391,7 @@ async fn api_key_multistore_sort_pagination<B: Backend>(db: Db) -> TestResult {
     }
     let before = storage.snapshot().await?;
     let other_before = isolated.snapshot().await?;
-    let protected = db
-        .tables(&["users", "accounts", "sessions", "api_keys"])
-        .await?;
+    let protected = db.tables(&["user", "account", "session", "apikey"]).await?;
     for (query, expected, total) in [
         (
             vec![("sortBy", "name"), ("sortDirection", "asc")],
@@ -3470,8 +3436,7 @@ async fn api_key_multistore_sort_pagination<B: Backend>(db: Db) -> TestResult {
         assert_eq!(storage.snapshot().await?, before);
         assert_eq!(isolated.snapshot().await?, other_before);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "api_keys"])
-                .await?,
+            db.tables(&["user", "account", "session", "apikey"]).await?,
             protected
         );
     }
@@ -3522,31 +3487,31 @@ async fn api_key_wire_date_projection<B: Backend>(db: Db) -> TestResult {
     let dates = [
         (
             "createdAt",
-            "created_at",
+            "createdAt",
             "2026-10-01T00:00:00.016562+00:00",
             "2026-10-01T00:00:00.016Z",
         ),
         (
             "updatedAt",
-            "updated_at",
+            "updatedAt",
             "2026-10-01T00:01:00.489730Z",
             "2026-10-01T00:01:00.489Z",
         ),
         (
             "lastRequest",
-            "last_request",
+            "lastRequest",
             "2026-10-01T00:02:00.290730Z",
             "2026-10-01T00:02:00.290Z",
         ),
         (
             "lastRefillAt",
-            "last_refill_at",
+            "lastRefillAt",
             "2026-10-01T05:33:00.123456+05:30",
             "2026-10-01T00:03:00.123Z",
         ),
         (
             "expiresAt",
-            "expires_at",
+            "expiresAt",
             "2099-10-01T00:04:00.456789+00:00",
             "2099-10-01T00:04:00.456Z",
         ),
@@ -3554,13 +3519,13 @@ async fn api_key_wire_date_projection<B: Backend>(db: Db) -> TestResult {
     for (_, column, stored, _) in dates {
         _ = db
             .execute(
-                &format!("UPDATE api_keys SET {column}=$1 WHERE id=$2"),
+                &format!("UPDATE \"apikey\" SET {column}=$1 WHERE id=$2"),
                 &[stored, id],
             )
             .await?;
     }
-    let physical = db.table("api_keys").await?;
-    let principals = db.tables(&["users", "accounts", "sessions"]).await?;
+    let physical = db.table("apikey").await?;
+    let principals = db.tables(&["user", "account", "session"]).await?;
     let mut get = request("/api-key/get", None, &cookies(&owner));
     _ = get.query.insert("id".into(), id.into());
     let projected = body(&call(&auth, get.clone(), 200).await);
@@ -3580,9 +3545,9 @@ async fn api_key_wire_date_projection<B: Backend>(db: Db) -> TestResult {
     _ = get.headers.insert("cookie".into(), cookies(&foreign));
     let denied = call(&auth, get, 404).await;
     assert_eq!(body(&denied)["code"], "KEY_NOT_FOUND");
-    assert_eq!(db.table("api_keys").await?, physical);
+    assert_eq!(db.table("apikey").await?, physical);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         principals
     );
     let verified = Box::pin(auth.dispatch_endpoint(
@@ -3624,20 +3589,23 @@ async fn api_key_wire_date_projection<B: Backend>(db: Db) -> TestResult {
         .filter(|(field, _, _, _)| ["createdAt", "lastRefillAt", "expiresAt"].contains(field))
     {
         assert_eq!(
-            db.text(&format!("SELECT {column} FROM api_keys WHERE id=$1"), &[id])
-                .await?
-                .as_deref(),
+            db.text(
+                &format!("SELECT {column} FROM \"apikey\" WHERE id=$1"),
+                &[id]
+            )
+            .await?
+            .as_deref(),
             Some(*stored)
         );
     }
     let foreign_rows: Vec<Value> = serde_json::from_str(&physical)?;
-    let after: Vec<Value> = serde_json::from_str(&db.table("api_keys").await?)?;
+    let after: Vec<Value> = serde_json::from_str(&db.table("apikey").await?)?;
     assert_eq!(
         after.iter().find(|r| r["id"] == foreign_key["id"]),
         foreign_rows.iter().find(|r| r["id"] == foreign_key["id"])
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         principals
     );
     authenticated(&auth, &cookies(&owner), "key-date-owner@example.test").await;
@@ -3676,10 +3644,10 @@ async fn api_key_permission_date_projection<B: Backend>(db: Db) -> TestResult {
     .await;
     let id = issued["id"].as_str().unwrap();
     let secret = issued["key"].as_str().unwrap();
-    let principals = db.tables(&["users", "accounts", "sessions"]).await?;
-    let physical: Vec<Value> = serde_json::from_str(&db.table("api_keys").await?)?;
+    let principals = db.tables(&["user", "account", "session"]).await?;
+    let physical: Vec<Value> = serde_json::from_str(&db.table("apikey").await?)?;
     let hash = db
-        .text("SELECT key FROM api_keys WHERE id=$1", &[id])
+        .text("SELECT \"key\" FROM \"apikey\" WHERE id=$1", &[id])
         .await?;
     for (action, canonical) in [
         ("2025-02-30T03:04:05Z", Some("2025-03-02T03:04:05.000Z")),
@@ -3696,14 +3664,14 @@ async fn api_key_permission_date_projection<B: Backend>(db: Db) -> TestResult {
         let document = json!({"vault":[action],"literal":{action:"retained"}}).to_string();
         _ = db
             .execute(
-                "UPDATE api_keys SET permissions=$1 WHERE id=$2",
+                "UPDATE \"apikey\" SET \"permissions\"=$1 WHERE id=$2",
                 &[&document, id],
             )
             .await?;
-        let before = db.table("api_keys").await?;
+        let before = db.table("apikey").await?;
         let prior = db
             .count_where(
-                "SELECT CAST(remaining AS INTEGER) FROM api_keys WHERE id=$1",
+                "SELECT CAST(\"remaining\" AS INTEGER) FROM \"apikey\" WHERE id=$1",
                 &[id],
             )
             .await?;
@@ -3724,11 +3692,11 @@ async fn api_key_permission_date_projection<B: Backend>(db: Db) -> TestResult {
                 serde_json::to_value(checked.error)?["code"],
                 "KEY_NOT_FOUND"
             );
-            assert_eq!(db.table("api_keys").await?, before);
+            assert_eq!(db.table("apikey").await?, before);
         }
         assert_eq!(
             db.count_where(
-                "SELECT CAST(remaining AS INTEGER) FROM api_keys WHERE id=$1",
+                "SELECT CAST(\"remaining\" AS INTEGER) FROM \"apikey\" WHERE id=$1",
                 &[id]
             )
             .await?,
@@ -3752,29 +3720,29 @@ async fn api_key_permission_date_projection<B: Backend>(db: Db) -> TestResult {
         );
         assert_eq!(
             db.count_where(
-                "SELECT CAST(remaining AS INTEGER) FROM api_keys WHERE id=$1",
+                "SELECT CAST(\"remaining\" AS INTEGER) FROM \"apikey\" WHERE id=$1",
                 &[id]
             )
             .await?,
             prior - i64::from(canonical.is_none()) - 1
         );
         assert_eq!(
-            db.text("SELECT permissions FROM api_keys WHERE id=$1", &[id])
+            db.text("SELECT \"permissions\" FROM \"apikey\" WHERE id=$1", &[id])
                 .await?
                 .as_deref(),
             Some(document.as_str())
         );
         assert_eq!(
-            db.text("SELECT key FROM api_keys WHERE id=$1", &[id])
+            db.text("SELECT \"key\" FROM \"apikey\" WHERE id=$1", &[id])
                 .await?,
             hash
         );
-        let after: Vec<Value> = serde_json::from_str(&db.table("api_keys").await?)?;
+        let after: Vec<Value> = serde_json::from_str(&db.table("apikey").await?)?;
         for row in physical.iter().filter(|r| r["id"] != id) {
             assert!(after.contains(row));
         }
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
+            db.tables(&["user", "account", "session"]).await?,
             principals
         );
     }
@@ -3798,7 +3766,7 @@ async fn api_key_sql_usage_failure_transport<B: Backend>(db: Db) -> TestResult {
         }
     }
     for defer_updates in [false, true] {
-        for phase in ["request_count", "updated_at"] {
+        for phase in ["requestCount", "updatedAt"] {
             let db = db.fresh().await?;
             let (connection, _) = db.migrated::<B>(SECRET).await?;
             let observer = Arc::new(Observer::default());
@@ -3839,13 +3807,13 @@ async fn api_key_sql_usage_failure_transport<B: Backend>(db: Db) -> TestResult {
             let secret = issued["key"].as_str().unwrap();
             _ = db
                 .execute(
-                    "UPDATE api_keys SET updated_at='2001-01-01T00:00:00Z' WHERE id=$1",
+                    "UPDATE \"apikey\" SET \"updatedAt\"='2001-01-01T00:00:00Z' WHERE id=$1",
                     &[id],
                 )
                 .await?;
-            _=db.execute(&format!("CREATE TRIGGER usage_veto BEFORE UPDATE OF {phase} ON api_keys WHEN NEW.id='{id}' BEGIN SELECT RAISE(ABORT,'native usage veto'); END"),&[]).await?;
-            let principals = db.tables(&["users", "accounts", "sessions"]).await?;
-            let before = db.table("api_keys").await?;
+            _=db.execute(&format!("CREATE TRIGGER usage_veto BEFORE UPDATE OF {phase} ON \"apikey\" WHEN NEW.id='{id}' BEGIN SELECT RAISE(ABORT,'native usage veto'); END"),&[]).await?;
+            let principals = db.tables(&["user", "account", "session"]).await?;
+            let before = db.table("apikey").await?;
             let denied = Box::pin(auth.dispatch_endpoint(
                 ApiKeyPlugin::verify_endpoint(&ApiKeyVerificationInput {
                     key: secret.into(),
@@ -3858,7 +3826,7 @@ async fn api_key_sql_usage_failure_transport<B: Backend>(db: Db) -> TestResult {
             .decode()?;
             assert!(!denied.valid);
             assert_eq!(serde_json::to_value(denied.error)?["code"], "KEY_NOT_FOUND");
-            assert_eq!(db.table("api_keys").await?, before);
+            assert_eq!(db.table("apikey").await?, before);
             let invalid = Box::pin(auth.dispatch_endpoint(
                 ApiKeyPlugin::verify_endpoint(&ApiKeyVerificationInput {
                     key: secret.into(),
@@ -3882,19 +3850,19 @@ async fn api_key_sql_usage_failure_transport<B: Backend>(db: Db) -> TestResult {
             assert!(error.headers.get_all("set-cookie").next().is_none());
             assert_eq!(observer.0.load(std::sync::atomic::Ordering::SeqCst), 0);
             assert_eq!(
-                db.text("SELECT updated_at FROM api_keys WHERE id=$1", &[id])
+                db.text("SELECT \"updatedAt\" FROM \"apikey\" WHERE id=$1", &[id])
                     .await?
                     .as_deref(),
                 Some("2001-01-01T00:00:00Z")
             );
             let rows: Vec<Value> = serde_json::from_str(&before)?;
-            let after: Vec<Value> = serde_json::from_str(&db.table("api_keys").await?)?;
+            let after: Vec<Value> = serde_json::from_str(&db.table("apikey").await?)?;
             assert_eq!(
                 after.iter().find(|r| r["id"] == foreign_key["id"]),
                 rows.iter().find(|r| r["id"] == foreign_key["id"])
             );
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions"]).await?,
+                db.tables(&["user", "account", "session"]).await?,
                 principals
             );
             _ = db.execute("DROP TRIGGER usage_veto", &[]).await?;
@@ -4000,19 +3968,19 @@ async fn api_key_org_loader_failure_denial<B: Backend>(db: Db) -> TestResult {
     for document in ["[\"create\"]", "null", "{\"team\":\"create\"}", "{bad"] {
         _ = db
             .execute(
-                "UPDATE organization_role SET permission=$1 WHERE id=$2",
+                "UPDATE \"organizationRole\" SET \"permission\"=$1 WHERE id=$2",
                 &[document, &role.id],
             )
             .await?;
         let before = db
             .tables(&[
-                "api_keys",
-                "users",
-                "accounts",
-                "sessions",
+                "apikey",
+                "user",
+                "account",
+                "session",
                 "organization",
                 "member",
-                "organization_role",
+                "organizationRole",
             ])
             .await?;
         let mut list = request("/api-key/list", None, &cookies(&owner));
@@ -4040,13 +4008,13 @@ async fn api_key_org_loader_failure_denial<B: Backend>(db: Db) -> TestResult {
             assert!(denied.headers.get_all("set-cookie").next().is_none());
             assert_eq!(
                 db.tables(&[
-                    "api_keys",
-                    "users",
-                    "accounts",
-                    "sessions",
+                    "apikey",
+                    "user",
+                    "account",
+                    "session",
                     "organization",
                     "member",
-                    "organization_role"
+                    "organizationRole"
                 ])
                 .await?,
                 before
@@ -4061,13 +4029,13 @@ async fn api_key_org_loader_failure_denial<B: Backend>(db: Db) -> TestResult {
         assert_eq!(body(&result)["id"], foreign_key["id"]);
         assert_eq!(
             db.tables(&[
-                "api_keys",
-                "users",
-                "accounts",
-                "sessions",
+                "apikey",
+                "user",
+                "account",
+                "session",
                 "organization",
                 "member",
-                "organization_role"
+                "organizationRole"
             ])
             .await?,
             before

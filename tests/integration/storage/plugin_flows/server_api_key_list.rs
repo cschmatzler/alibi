@@ -52,7 +52,7 @@ async fn server_list_api_keys_preserves_configuration_and_coerced_pagination<B: 
         ..Default::default()
     };
     let endpoint = || ServerEndpoint::<JsValue>::new("api-key", "listApiKeys");
-    let before = db.tables(&["users", "sessions", "api_keys"]).await?;
+    let before = db.tables(&["user", "session", "apikey"]).await?;
     for (query, names, total, limit, offset) in [
         (None, vec!["Alpha", "Beta", "Gamma"], 3, None, None),
         (
@@ -195,6 +195,6 @@ async fn server_list_api_keys_preserves_configuration_and_coerced_pagination<B: 
         0
     );
     assert_eq!(empty.value().get("total"), Some(&JsValue::Number(0.0)));
-    assert_eq!(db.tables(&["users", "sessions", "api_keys"]).await?, before);
+    assert_eq!(db.tables(&["user", "session", "apikey"]).await?, before);
     B::close(connection).await
 }

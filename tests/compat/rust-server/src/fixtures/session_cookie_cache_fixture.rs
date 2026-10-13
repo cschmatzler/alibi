@@ -481,7 +481,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                         } else if control.action=="rotate-cache-key" {
                             JwtPlugin::new().create_jwk(None,None,auth.context()).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
                         } else if control.action=="retire-cache-key" {
-                            { use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement}; db.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite, "DELETE FROM jwks WHERE id = ?", [control.token.ok_or(axum::http::StatusCode::BAD_REQUEST)?.into()])).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?; }
+                            { use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement}; db.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite, "DELETE FROM \"jwks\" WHERE id = ?", [control.token.ok_or(axum::http::StatusCode::BAD_REQUEST)?.into()])).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?; }
                         }
                         let keys=auth.store().list_jwks().await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
                         return Ok(Json(json!({"keys":keys.into_iter().map(|key|json!({"id":key.id,"publicKey":key.public_key,"privateKey":key.private_key,"createdAt":key.created_at,"expiresAt":key.expires_at,"alg":key.alg,"crv":key.crv})).collect::<Vec<_>>()})));
@@ -550,10 +550,10 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                     "rows" => {
                         let user_id = control.user_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
                         let failed = |_| axum::http::StatusCode::INTERNAL_SERVER_ERROR;
-                        let users = crate::backend::rows::<user::Model>(&db, "SELECT * FROM users WHERE id = ?", vec![user_id.to_owned()]).await.map_err(failed)?;
-                        let accounts = crate::backend::rows::<account::Model>(&db, "SELECT * FROM accounts WHERE user_id = ?", vec![user_id.to_owned()]).await.map_err(failed)?;
-                        let sessions = crate::backend::rows::<application_session::Model>(&db, "SELECT * FROM sessions WHERE user_id = ? ORDER BY created_at", vec![user_id.to_owned()]).await.map_err(failed)?;
-                        let proofs = crate::backend::rows::<verification::Model>(&db, "SELECT * FROM verifications ORDER BY created_at", vec![]).await.map_err(failed)?;
+                        let users = crate::backend::rows::<user::Model>(&db, "SELECT * FROM \"user\" WHERE id = ?", vec![user_id.to_owned()]).await.map_err(failed)?;
+                        let accounts = crate::backend::rows::<account::Model>(&db, "SELECT * FROM \"account\" WHERE \"userId\" = ?", vec![user_id.to_owned()]).await.map_err(failed)?;
+                        let sessions = crate::backend::rows::<application_session::Model>(&db, "SELECT * FROM \"session\" WHERE \"userId\" = ? ORDER BY \"createdAt\"", vec![user_id.to_owned()]).await.map_err(failed)?;
+                        let proofs = crate::backend::rows::<verification::Model>(&db, "SELECT * FROM \"verification\" ORDER BY \"createdAt\"", vec![]).await.map_err(failed)?;
                         let accounts = accounts.iter().map(|account| { let mut value=serde_json::to_value(alibi::wire::AccountView::from(account)).expect("actual account row"); value["password"]=json!(account.password);value }).collect::<Vec<_>>();
                         let sessions = sessions.iter().map(|session| { let mut value=serde_json::to_value(auth.context().session_view(session)).expect("actual session row");value["hidden"]=json!(session.hidden);value }).collect::<Vec<_>>();
                         return Ok(Json(json!({"users":users.iter().map(|user|auth.context().user_view(user)).collect::<Vec<_>>(),"accounts":accounts,"sessions":sessions,"verifications":proofs.iter().map(alibi::wire::VerificationView::from).collect::<Vec<_>>()})));

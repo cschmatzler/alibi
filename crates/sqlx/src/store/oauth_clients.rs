@@ -51,7 +51,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         let mut lookup =
             model::select_model::<super::entities::oauth_refresh_token::Model>(self.exec());
         lookup.push(" WHERE ");
-        lookup.compare("oauth_refresh_token", "token", " = ", token);
+        lookup.compare("oauthRefreshToken", "token", " = ", token);
         let Some(row) = self
             .exec()
             .fetch_optional::<super::entities::oauth_refresh_token::Model>(lookup)
@@ -59,51 +59,39 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         else {
             return Ok(false);
         };
-        let mut metadata: serde_json::Value = serde_json::from_str(&row.metadata)?;
-        if metadata
-            .get("revoked")
-            .is_some_and(|value| !value.is_null())
-        {
+        if row.revoked.is_some() {
             return Ok(false);
         }
-        _ = metadata
-            .as_object_mut()
-            .ok_or_else(|| alibi_core::AuthError::internal("Invalid refresh metadata"))?
-            .insert("revoked".into(), serde_json::json!(revoked_at));
         let mut sql = crate::sql::Sql::with(self.exec().engine(), "UPDATE ");
-        sql.ident("oauth_refresh_token");
+        sql.ident("oauthRefreshToken");
         sql.push(" SET ");
-        sql.assign("metadata", serde_json::to_string(&metadata)?);
+        sql.assign("revoked", revoked_at);
         sql.push(" WHERE ");
-        sql.compare("oauth_refresh_token", "token", " = ", token);
+        sql.compare("oauthRefreshToken", "token", " = ", token);
         sql.push(" AND ");
-        sql.compare("oauth_refresh_token", "metadata", " = ", row.metadata);
+        sql.ident("revoked");
+        sql.push(" IS NULL");
         Ok(self.exec().execute(sql).await? > 0)
     }
     async fn delete_oauth_access_tokens_for_refresh(&self, refresh_id: &str) -> AuthResult<()> {
         let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
-        sql.ident("oauth_access_token");
+        sql.ident("oauthAccessToken");
         sql.push(" WHERE ");
-        sql.push(match self.exec().engine() {
-            crate::pool::Engine::Sqlite => "json_extract(metadata, '$.refreshId') = ",
-            crate::pool::Engine::Postgres => "metadata::jsonb->>'refreshId' = ",
-        });
-        sql.bind(refresh_id);
+        sql.compare("oauthAccessToken", "refreshId", " = ", refresh_id);
         _ = self.exec().execute(sql).await?;
         Ok(())
     }
     async fn delete_oauth_refresh_family(&self, client_id: &str, user_id: &str) -> AuthResult<()> {
         let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
-        sql.ident("oauth_access_token");
+        sql.ident("oauthAccessToken");
         sql.push(" WHERE ");
-        sql.push(match self.exec().engine() {
-            crate::pool::Engine::Sqlite => "json_extract(metadata, '$.refreshId')",
-            crate::pool::Engine::Postgres => "metadata::jsonb->>'refreshId'",
-        });
-        sql.push(" IN (SELECT id FROM oauth_refresh_token WHERE ");
-        sql.compare("oauth_refresh_token", "client_id", " = ", client_id);
+        sql.ident("refreshId");
+        sql.push(" IN (SELECT id FROM ");
+        sql.ident("oauthRefreshToken");
+        sql.push(" WHERE ");
+        sql.compare("oauthRefreshToken", "clientId", " = ", client_id);
         sql.push(" AND ");
-        sql.compare("oauth_refresh_token", "user_id", " = ", user_id);
+        sql.compare("oauthRefreshToken", "userId", " = ", user_id);
         sql.push(" LIMIT ");
         sql.bind(
             i64::try_from(self.config().advanced.database.default_find_many_limit)
@@ -111,13 +99,12 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         );
         sql.push(")");
         _ = self.exec().execute(sql).await?;
-        let mut sql = crate::sql::Sql::with(
-            self.exec().engine(),
-            "DELETE FROM oauth_refresh_token WHERE ",
-        );
-        sql.compare("oauth_refresh_token", "client_id", " = ", client_id);
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident("oauthRefreshToken");
+        sql.push(" WHERE ");
+        sql.compare("oauthRefreshToken", "clientId", " = ", client_id);
         sql.push(" AND ");
-        sql.compare("oauth_refresh_token", "user_id", " = ", user_id);
+        sql.compare("oauthRefreshToken", "userId", " = ", user_id);
         _ = self.exec().execute(sql).await?;
         Ok(())
     }
@@ -131,18 +118,37 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
                 let mut active = ActiveRow::new();
                 active.set(
                     "id",
-                    self.generated_id(self.exec(), "oauthAccessToken", "oauth_access_token", "id")
+                    self.generated_id(self.exec(), "oauthAccessToken", "oauthAccessToken", "id")
                         .await?
                         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
                 );
                 active.set("token", data.token);
-                active.set("client_id", data.client_id);
-                active.set("user_id", data.user_id);
-                active.set("session_id", data.session_id);
-                active.set("authorization_code_id", data.authorization_code_id);
-                active.set("created_at", data.created_at);
-                active.set("expires_at", data.expires_at);
-                active.set("metadata", serde_json::to_string(&data.metadata)?);
+                active.set("clientId", data.client_id);
+                active.set("userId", data.user_id);
+                active.set("sessionId", data.session_id);
+                active.set("authorizationCodeId", data.authorization_code_id);
+                active.set("createdAt", data.created_at);
+                active.set("expiresAt", data.expires_at);
+                let fields = super::entities::oauth_access_token::Model::columns_from_metadata(
+                    data.metadata,
+                )?
+                .into_active();
+                for (column, value) in fields.present() {
+                    if ![
+                        "id",
+                        "token",
+                        "clientId",
+                        "sessionId",
+                        "userId",
+                        "authorizationCodeId",
+                        "createdAt",
+                        "expiresAt",
+                    ]
+                    .contains(&column)
+                    {
+                        active.set(column, value.clone());
+                    }
+                }
                 model::insert::<super::entities::oauth_access_token::Model>(self.exec(), &active)
                     .await?
                     .try_into()
@@ -151,23 +157,37 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
                 let mut active = ActiveRow::new();
                 active.set(
                     "id",
-                    self.generated_id(
-                        self.exec(),
-                        "oauthRefreshToken",
-                        "oauth_refresh_token",
-                        "id",
-                    )
-                    .await?
-                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                    self.generated_id(self.exec(), "oauthRefreshToken", "oauthRefreshToken", "id")
+                        .await?
+                        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
                 );
                 active.set("token", data.token);
-                active.set("client_id", data.client_id);
-                active.set("user_id", data.user_id);
-                active.set("session_id", data.session_id);
-                active.set("authorization_code_id", data.authorization_code_id);
-                active.set("created_at", data.created_at);
-                active.set("expires_at", data.expires_at);
-                active.set("metadata", serde_json::to_string(&data.metadata)?);
+                active.set("clientId", data.client_id);
+                active.set("userId", data.user_id);
+                active.set("sessionId", data.session_id);
+                active.set("authorizationCodeId", data.authorization_code_id);
+                active.set("createdAt", data.created_at);
+                active.set("expiresAt", data.expires_at);
+                let fields = super::entities::oauth_refresh_token::Model::columns_from_metadata(
+                    data.metadata,
+                )?
+                .into_active();
+                for (column, value) in fields.present() {
+                    if ![
+                        "id",
+                        "token",
+                        "clientId",
+                        "sessionId",
+                        "userId",
+                        "authorizationCodeId",
+                        "createdAt",
+                        "expiresAt",
+                    ]
+                    .contains(&column)
+                    {
+                        active.set(column, value.clone());
+                    }
+                }
                 model::insert::<super::entities::oauth_refresh_token::Model>(self.exec(), &active)
                     .await?
                     .try_into()
@@ -221,7 +241,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
             sql.push(" WHERE ");
             sql.compare(
                 super::entities::oauth_access_token::Model::TABLE,
-                "authorization_code_id",
+                "authorizationCodeId",
                 " = ",
                 code,
             );
@@ -233,7 +253,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
             sql.push(" WHERE ");
             sql.compare(
                 super::entities::oauth_refresh_token::Model::TABLE,
-                "authorization_code_id",
+                "authorizationCodeId",
                 " = ",
                 code,
             );
@@ -251,14 +271,14 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         sql.push(" WHERE ");
         sql.compare(
             super::entities::oauth_client_resource::Model::TABLE,
-            "client_id",
+            "clientId",
             " = ",
             client_id,
         );
         sql.push(" AND ");
         sql.compare(
             super::entities::oauth_client_resource::Model::TABLE,
-            "resource_id",
+            "resourceId",
             " = ",
             resource_id,
         );
@@ -274,21 +294,31 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
             self.generated_id(
                 self.exec(),
                 "oauthClientResource",
-                "oauth_client_resource",
+                "oauthClientResource",
                 "id",
             )
             .await?
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
         );
-        active.set("client_id", data.client_id);
-        active.set("resource_id", data.resource_id);
+        active.set("clientId", data.client_id);
+        active.set("resourceId", data.resource_id);
         active.set("metadata", Option::<String>::None);
-        active.set("created_at", Some(data.created_at));
+        active.set("createdAt", Some(data.created_at));
         model::insert::<super::entities::oauth_client_resource::Model>(self.exec(), &active)
             .await?
             .try_into()
     }
     async fn delete_oauth_resource(&self, identifier: &str) -> AuthResult<()> {
+        let mut links = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+        links.ident(super::entities::oauth_client_resource::Model::TABLE);
+        links.push(" WHERE ");
+        links.compare(
+            super::entities::oauth_client_resource::Model::TABLE,
+            "resourceId",
+            " = ",
+            identifier,
+        );
+        _ = self.exec().execute(links).await?;
         let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
         sql.ident(super::entities::oauth_resource::Model::TABLE);
         sql.push(" WHERE ");
@@ -311,8 +341,14 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         };
         let mut active = ActiveRow::new();
         active.set("id", row.id);
-        active.set("metadata", serde_json::to_string(&metadata)?);
-        active.set("updated_at", updated_at);
+        let fields =
+            super::entities::oauth_resource::Model::columns_from_metadata(metadata)?.into_active();
+        for (column, value) in fields.present() {
+            if !["id", "identifier", "createdAt", "updatedAt"].contains(&column) {
+                active.set(column, value.clone());
+            }
+        }
+        active.set("updatedAt", updated_at);
         model::update::<super::entities::oauth_resource::Model>(self.exec(), &active)
             .await?
             .map(TryInto::try_into)
@@ -338,7 +374,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         sql.push(" WHERE ");
         sql.compare(
             super::entities::oauth_client_resource::Model::TABLE,
-            "client_id",
+            "clientId",
             " = ",
             client_id,
         );
@@ -358,14 +394,20 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         let mut active = ActiveRow::new();
         active.set(
             "id",
-            self.generated_id(self.exec(), "oauthResource", "oauth_resource", "id")
+            self.generated_id(self.exec(), "oauthResource", "oauthResource", "id")
                 .await?
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
         );
         active.set("identifier", data.identifier);
-        active.set("metadata", serde_json::to_string(&data.metadata)?);
-        active.set("created_at", data.created_at);
-        active.set("updated_at", data.created_at);
+        let fields = super::entities::oauth_resource::Model::columns_from_metadata(data.metadata)?
+            .into_active();
+        for (column, value) in fields.present() {
+            if !["id", "identifier", "createdAt", "updatedAt"].contains(&column) {
+                active.set(column, value.clone());
+            }
+        }
+        active.set("createdAt", data.created_at);
+        active.set("updatedAt", data.created_at);
         model::insert::<super::entities::oauth_resource::Model>(self.exec(), &active)
             .await?
             .try_into()
@@ -396,15 +438,21 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         let mut active = ActiveRow::new();
         active.set(
             "id",
-            self.generated_id(self.exec(), "oauthConsent", "oauth_consent", "id")
+            self.generated_id(self.exec(), "oauthConsent", "oauthConsent", "id")
                 .await?
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
         );
-        active.set("client_id", data.client_id);
-        active.set("user_id", data.user_id);
-        active.set("metadata", serde_json::to_string(&data.metadata)?);
-        active.set("created_at", data.created_at);
-        active.set("updated_at", data.created_at);
+        active.set("clientId", data.client_id);
+        active.set("userId", data.user_id);
+        let fields = super::entities::oauth_consent::Model::columns_from_metadata(data.metadata)?
+            .into_active();
+        for (column, value) in fields.present() {
+            if !["id", "clientId", "userId", "createdAt", "updatedAt"].contains(&column) {
+                active.set(column, value.clone());
+            }
+        }
+        active.set("createdAt", data.created_at);
+        active.set("updatedAt", data.created_at);
         model::insert::<super::entities::oauth_consent::Model>(self.exec(), &active)
             .await?
             .try_into()
@@ -417,7 +465,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         sql.push(" WHERE ");
         sql.compare(
             super::entities::oauth_consent::Model::TABLE,
-            "user_id",
+            "userId",
             " = ",
             user_id,
         );
@@ -438,8 +486,14 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
     ) -> AuthResult<Option<alibi_core::store::OAuthConsent>> {
         let mut active = ActiveRow::new();
         active.set("id", id.to_owned());
-        active.set("metadata", serde_json::to_string(&metadata)?);
-        active.set("updated_at", updated_at);
+        let fields =
+            super::entities::oauth_consent::Model::columns_from_metadata(metadata)?.into_active();
+        for (column, value) in fields.present() {
+            if !["id", "clientId", "userId", "createdAt", "updatedAt"].contains(&column) {
+                active.set(column, value.clone());
+            }
+        }
+        active.set("updatedAt", updated_at);
         model::update::<super::entities::oauth_consent::Model>(self.exec(), &active)
             .await?
             .map(TryInto::try_into)
@@ -449,16 +503,30 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         let mut active = ActiveRow::new();
         active.set(
             "id",
-            self.generated_id(self.exec(), "oauthClient", "oauth_client", "id")
+            self.generated_id(self.exec(), "oauthClient", "oauthClient", "id")
                 .await?
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
         );
-        active.set("client_id", data.client_id);
-        active.set("user_id", data.user_id);
-        active.set("client_secret", data.client_secret);
-        active.set("metadata", serde_json::to_string(&data.metadata)?);
-        active.set("created_at", data.created_at);
-        active.set("updated_at", data.created_at);
+        active.set("clientId", data.client_id);
+        active.set("userId", data.user_id);
+        active.set("clientSecret", data.client_secret);
+        let fields = Model::columns_from_metadata(data.metadata)?.into_active();
+        for (column, value) in fields.present() {
+            if ![
+                "id",
+                "clientId",
+                "userId",
+                "clientSecret",
+                "createdAt",
+                "updatedAt",
+            ]
+            .contains(&column)
+            {
+                active.set(column, value.clone());
+            }
+        }
+        active.set("createdAt", data.created_at);
+        active.set("updatedAt", data.created_at);
         model::insert::<Model>(self.exec(), &active)
             .await?
             .try_into()
@@ -485,7 +553,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
     async fn get_oauth_client(&self, client_id: &str) -> AuthResult<Option<OAuthClient>> {
         let mut sql = model::select_model::<Model>(self.exec());
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "client_id", " = ", client_id);
+        sql.compare(Model::TABLE, "clientId", " = ", client_id);
         model::limit_one(&mut sql);
         self.exec()
             .fetch_optional::<Model>(sql)
@@ -496,7 +564,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
     async fn list_oauth_clients_by_user(&self, user_id: &str) -> AuthResult<Vec<OAuthClient>> {
         let mut sql = model::select_model::<Model>(self.exec());
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "user_id", " = ", user_id);
+        sql.compare(Model::TABLE, "userId", " = ", user_id);
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
         self.exec()
@@ -522,7 +590,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
         sql.ident(Model::TABLE);
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "client_id", " = ", client_id);
+        sql.compare(Model::TABLE, "clientId", " = ", client_id);
         self.exec().execute(sql).await.map(|_| ())
     }
     async fn update_oauth_client_secret(
@@ -536,8 +604,8 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         };
         let mut active = ActiveRow::new();
         active.set("id", client.id);
-        active.set("client_secret", Some(secret));
-        active.set("updated_at", updated_at);
+        active.set("clientSecret", Some(secret));
+        active.set("updatedAt", updated_at);
         model::update::<Model>(self.exec(), &active)
             .await?
             .map(TryInto::try_into)
@@ -554,8 +622,22 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         };
         let mut active = ActiveRow::new();
         active.set("id", client.id);
-        active.set("metadata", serde_json::to_string(&metadata)?);
-        active.set("updated_at", updated_at);
+        let fields = Model::columns_from_metadata(metadata)?.into_active();
+        for (column, value) in fields.present() {
+            if ![
+                "id",
+                "clientId",
+                "userId",
+                "clientSecret",
+                "createdAt",
+                "updatedAt",
+            ]
+            .contains(&column)
+            {
+                active.set(column, value.clone());
+            }
+        }
+        active.set("updatedAt", updated_at);
         model::update::<Model>(self.exec(), &active)
             .await?
             .map(TryInto::try_into)

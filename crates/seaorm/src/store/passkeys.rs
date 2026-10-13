@@ -25,21 +25,20 @@ where
 
         ActiveModel {
             id: Set(self
-                .generated_id(&self.db, "passkey", "passkeys", "id")
+                .generated_id(&self.db, "passkey", "passkey", "id")
                 .await?
                 .unwrap_or_else(|| Uuid::new_v4().to_string())),
             name: Set(input.name),
             public_key: Set(input.public_key),
             user_id: Set(input.user_id),
             credential_id: Set(input.credential_id),
-            counter: Set(counter),
+            counter: Set(crate::Integer(counter)),
             device_type: Set(input.device_type),
             backed_up: Set(input.backed_up),
             transports: Set(input.transports),
-            credential: Set(input.credential),
+
             aaguid: Set(input.aaguid),
-            created_at: Set(Utc::now()),
-            updated_at: Set(Utc::now()),
+            created_at: Set(Some(Utc::now())),
         }
         .insert(db)
         .await
@@ -98,12 +97,12 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
         };
 
         let mut active = model.into_active_model();
-        active.counter = Set(i64::try_from(update.counter)
-            .map_err(|_error| AuthError::bad_request("Passkey counter exceeds i64 range"))?);
+        active.counter = Set(crate::Integer(i64::try_from(update.counter).map_err(
+            |_error| AuthError::bad_request("Passkey counter exceeds i64 range"),
+        )?));
         active.backed_up = Set(update.backed_up);
         active.device_type = Set(update.device_type);
-        active.credential = Set(update.credential);
-        active.updated_at = Set(Utc::now());
+
         active
             .update(self.scoped_connection())
             .await
@@ -122,7 +121,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
 
         let mut active = model.into_active_model();
         active.name = Set(Some(name.to_owned()));
-        active.updated_at = Set(Utc::now());
+
         active
             .update(self.scoped_connection())
             .await

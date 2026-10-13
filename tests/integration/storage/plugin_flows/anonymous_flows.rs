@@ -241,19 +241,19 @@ async fn anonymous_creation_failures<B: Backend>(db: Db) -> TestResult {
         &Box::pin(auth.handle_request(anonymous())).await?,
     );
     *cancel.sessions.lock().unwrap() = false;
-    trigger(&db, "fail_user_insert", "INSERT", "users").await?;
+    trigger(&db, "fail_user_insert", "INSERT", "user").await?;
     trace.response(
         "user storage failure",
         &Box::pin(auth.handle_request(anonymous())).await?,
     );
     _ = db.execute("DROP TRIGGER fail_user_insert", &[]).await?;
-    trigger(&db, "fail_session_insert", "INSERT", "sessions").await?;
+    trigger(&db, "fail_session_insert", "INSERT", "session").await?;
     trace.response(
         "session storage failure",
         &Box::pin(auth.handle_request(anonymous())).await?,
     );
     _ = db.execute("DROP TRIGGER fail_session_insert", &[]).await?;
-    trace.value("users left", json!(db.count("users").await?));
+    trace.value("users left", json!(db.count("user").await?));
     trace.assert("anonymous/creation-failures");
     B::close(connection).await
 }
@@ -307,8 +307,11 @@ async fn anonymous_deletion_and_linking<B: Backend>(db: Db) -> TestResult {
     trace.response("upgrade by sign-up", &linked);
     assert_eq!(linker.0.lock().unwrap().len(), 1);
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM users WHERE is_anonymous = 1", &[])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"user\" WHERE \"isAnonymous\" = 1",
+            &[]
+        )
+        .await?,
         0
     );
     let regular = cookies(&linked);
@@ -321,7 +324,7 @@ async fn anonymous_deletion_and_linking<B: Backend>(db: Db) -> TestResult {
         ),
         ("delete without a session", None, 401, "UNAUTHORIZED"),
     ] {
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         let error = Box::pin(enabled.dispatch_endpoint(
             ServerEndpoint::<Value>::new("anonymous", "deleteAnonymousUser"),
             EndpointOptions {
@@ -334,7 +337,7 @@ async fn anonymous_deletion_and_linking<B: Backend>(db: Db) -> TestResult {
         .unwrap_err();
         assert_eq!(error.error.status_code(), status);
         assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
         trace.response(label, &error.error.to_auth_response());
     }
 
@@ -344,7 +347,7 @@ async fn anonymous_deletion_and_linking<B: Backend>(db: Db) -> TestResult {
         200,
     )
     .await;
-    trigger(&db, "fail_session_delete", "DELETE", "sessions").await?;
+    trigger(&db, "fail_session_delete", "DELETE", "session").await?;
     trace.response(
         "session cleanup failure",
         &Box::pin(enabled.handle_request(request(
@@ -361,7 +364,7 @@ async fn anonymous_deletion_and_linking<B: Backend>(db: Db) -> TestResult {
         200,
     )
     .await;
-    trigger(&db, "fail_user_delete", "DELETE", "users").await?;
+    trigger(&db, "fail_user_delete", "DELETE", "user").await?;
     trace.response(
         "user cleanup failure",
         &Box::pin(enabled.handle_request(request(
@@ -385,7 +388,7 @@ async fn anonymous_deletion_and_linking<B: Backend>(db: Db) -> TestResult {
         200,
     )
     .await;
-    let account_rows = db.table("accounts").await?;
+    let account_rows = db.table("account").await?;
     let id = body(&fourth)["user"]["id"].as_str().unwrap().to_owned();
     let token = body(&fourth)["token"].as_str().unwrap().to_owned();
     let deleted = Box::pin(
@@ -404,7 +407,7 @@ async fn anonymous_deletion_and_linking<B: Backend>(db: Db) -> TestResult {
     trace.response("delete anonymous", &deleted);
     assert!(enabled.store().get_user_by_id(&id).await?.is_none());
     assert!(enabled.store().get_session(&token).await?.is_none());
-    assert_eq!(db.table("accounts").await?, account_rows);
+    assert_eq!(db.table("account").await?, account_rows);
     Box::pin(authenticated(&enabled, &regular, "linked@example.test")).await;
     let replay = Box::pin(enabled.dispatch_endpoint(
         ServerEndpoint::<Value>::new("anonymous", "deleteAnonymousUser"),
@@ -471,7 +474,7 @@ async fn anonymous_transfer_uses_original_completed_snapshot<B: Backend>(db: Db)
                 _ = self
                     .0
                     .execute(
-                        "UPDATE users SET name='Stored Hook Name' WHERE id=$1",
+                        "UPDATE \"user\" SET \"name\"='Stored Hook Name' WHERE id=$1",
                         &[session.user_id().as_ref()],
                     )
                     .await
@@ -505,7 +508,7 @@ async fn anonymous_transfer_uses_original_completed_snapshot<B: Backend>(db: Db)
         .build()
         .await?;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+    let baseline = db.tables(&["user", "account", "session"]).await?;
     let anonymous = call(
         &auth,
         request("/sign-in/anonymous", Some(json!({})), ""),
@@ -540,13 +543,16 @@ async fn anonymous_transfer_uses_original_completed_snapshot<B: Backend>(db: Db)
     );
     let old_id = body(&anonymous)["user"]["id"].as_str().unwrap().to_owned();
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM users WHERE id=$1", &[&old_id])
+        db.count_where("SELECT COUNT(*) FROM \"user\" WHERE id=$1", &[&old_id])
             .await?,
         0
     );
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&old_id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+            &[&old_id]
+        )
+        .await?,
         0
     );
     let current = body(
@@ -560,7 +566,7 @@ async fn anonymous_transfer_uses_original_completed_snapshot<B: Backend>(db: Db)
     assert_eq!(current["user"]["id"], body(&upgrade)["user"]["id"]);
     assert_eq!(current["user"]["name"], "Stored Hook Name");
     assert_eq!(current["session"]["token"], body(&upgrade)["token"]);
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     for (before, after) in baseline.iter().zip(after.iter()) {
         let before: Vec<Value> = serde_json::from_str(before)?;
         let after: Vec<Value> = serde_json::from_str(after)?;
@@ -621,7 +627,7 @@ async fn anonymous_transfer_failure_preserves_committed_login<B: Backend>(db: Db
             )
             .await,
         );
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         _ = call(
             &auth,
             request(
@@ -633,7 +639,7 @@ async fn anonymous_transfer_failure_preserves_committed_login<B: Backend>(db: Db
         )
         .await;
         assert!(linker.seen.lock().unwrap().is_empty());
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
         let error = call(
             &auth,
             request(
@@ -659,16 +665,16 @@ async fn anonymous_transfer_failure_preserves_committed_login<B: Backend>(db: Db
         assert_eq!(seen[0]["oldUser"], original["user"]);
         assert_eq!(seen[0]["oldSession"], original["session"]);
         assert_eq!(seen[0]["newUser"]["id"], body(&regular)["user"]["id"]);
-        assert_eq!(db.tables(&["users", "accounts"]).await?, before[..2]);
+        assert_eq!(db.tables(&["user", "account"]).await?, before[..2]);
         let old: Vec<Value> = serde_json::from_str(&before[2])?;
-        let new: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+        let new: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
         assert_eq!(new.len(), old.len() + 1);
         assert!(old.iter().all(|row| new.contains(row)));
         let committed = new
             .iter()
             .find(|row| row["token"] == seen[0]["newSession"]["token"])
             .unwrap();
-        assert_eq!(committed["user_id"], body(&regular)["user"]["id"]);
+        assert_eq!(committed["userId"], body(&regular)["user"]["id"]);
         assert_eq!(
             body(
                 &call(
@@ -739,8 +745,8 @@ async fn anonymous_database_hook_errors_preserve_stage_commit<B: Backend>(db: Db
     let foreign = signup(&auth, "foreign@example.test").await;
     for (stage, label, delta) in [(1, "user", 0), (2, "session", 1)] {
         *mode.lock().unwrap() = stage;
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
-        let before_users = db.count("users").await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
+        let before_users = db.count("user").await?;
         let denied = call(
             &auth,
             request("/sign-in/anonymous", Some(json!({})), ""),
@@ -752,16 +758,16 @@ async fn anonymous_database_hook_errors_preserve_stage_commit<B: Backend>(db: Db
             json!({"message":format!("{label} creation cancelled by database hook")})
         );
         assert_eq!(denied.headers.get_all("set-cookie").count(), 0);
-        assert_eq!(db.count("users").await?, before_users + delta);
-        assert_eq!(db.tables(&["accounts", "sessions"]).await?, before[1..]);
+        assert_eq!(db.count("user").await?, before_users + delta);
+        assert_eq!(db.tables(&["account", "session"]).await?, before[1..]);
         if delta == 0 {
-            assert_eq!(db.table("users").await?, before[0]);
+            assert_eq!(db.table("user").await?, before[0]);
         } else {
             let old: Vec<Value> = serde_json::from_str(&before[0])?;
-            let new: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+            let new: Vec<Value> = serde_json::from_str(&db.table("user").await?)?;
             assert!(old.iter().all(|row| new.contains(row)));
             assert_eq!(
-                new.iter().find(|row| !old.contains(row)).unwrap()["is_anonymous"],
+                new.iter().find(|row| !old.contains(row)).unwrap()["isAnonymous"],
                 1
             );
         }
@@ -797,7 +803,7 @@ async fn anonymous_issuance_ignores_tampered_browser_preference<B: Backend>(db: 
         .find(|pair| pair.starts_with("better-auth.dont_remember="))
         .unwrap()
         .to_owned();
-    let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+    let baseline = db.tables(&["user", "account", "session"]).await?;
     let valid = call(
         &auth,
         request("/sign-in/anonymous", Some(json!({})), &preference),
@@ -843,13 +849,13 @@ async fn anonymous_issuance_ignores_tampered_browser_preference<B: Backend>(db: 
         assert_eq!(current["user"]["id"], body(issued)["user"]["id"]);
         assert_eq!(current["session"]["token"], body(issued)["token"]);
     }
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     for (before, after) in baseline.iter().zip(after.iter()) {
         let before: Vec<Value> = serde_json::from_str(before)?;
         let after: Vec<Value> = serde_json::from_str(after)?;
         assert!(before.iter().all(|row| after.contains(row)));
     }
-    assert_eq!(db.table("accounts").await?, baseline[1]);
+    assert_eq!(db.table("account").await?, baseline[1]);
     authenticated(&auth, &cookies(&owner), "owner@example.test").await;
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
@@ -890,7 +896,7 @@ async fn anonymous_transfer_retains_cached_old_projection_and_new_completed_owne
         .build()
         .await?;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+    let baseline = db.tables(&["user", "account", "session"]).await?;
     let anon = call(
         &auth,
         request("/sign-in/anonymous", Some(json!({})), ""),
@@ -902,7 +908,7 @@ async fn anonymous_transfer_retains_cached_old_projection_and_new_completed_owne
     let old_id = original["user"]["id"].as_str().unwrap();
     assert_eq!(
         db.execute(
-            "UPDATE users SET name='Physical Changed Anonymous' WHERE id=$1",
+            "UPDATE \"user\" SET \"name\"='Physical Changed Anonymous' WHERE id=$1",
             &[old_id]
         )
         .await?,
@@ -917,19 +923,25 @@ async fn anonymous_transfer_retains_cached_old_projection_and_new_completed_owne
     assert_eq!(receipts[0]["newUser"], new["user"]);
     assert_eq!(receipts[0]["newSession"]["token"], new["token"]);
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM users WHERE id=$1", &[old_id])
+        db.count_where("SELECT COUNT(*) FROM \"user\" WHERE id=$1", &[old_id])
             .await?,
         0
     );
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[old_id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+            &[old_id]
+        )
+        .await?,
         0
     );
     let id = new["user"]["id"].as_str().unwrap();
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+            &[id]
+        )
+        .await?,
         1
     );
     assert!(
@@ -948,7 +960,7 @@ async fn anonymous_transfer_retains_cached_old_projection_and_new_completed_owne
     );
     assert_eq!(read["user"], new["user"]);
     assert_eq!(read["session"]["token"], new["token"]);
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     for (before, now) in baseline.iter().zip(after.iter()) {
         let before: Vec<Value> = serde_json::from_str(before)?;
         let now: Vec<Value> = serde_json::from_str(now)?;
@@ -1014,7 +1026,7 @@ async fn anonymous_passwordless_completion_paths_transfer_actual_owner<B: Backen
         let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
         let foreign_token = db
             .text(
-                "SELECT token FROM sessions WHERE user_id=$1",
+                "SELECT \"token\" FROM \"session\" WHERE \"userId\"=$1",
                 &[&foreign_id],
             )
             .await?;
@@ -1081,7 +1093,7 @@ async fn anonymous_passwordless_completion_paths_transfer_actual_owner<B: Backen
         _ = redeem
             .headers
             .insert("x-anonymous-marker".into(), method.into());
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         let mut invalid = redeem.clone();
         if method == "magic" {
             _ = invalid
@@ -1095,7 +1107,7 @@ async fn anonymous_passwordless_completion_paths_transfer_actual_owner<B: Backen
         let denied = call(&auth, invalid, if method == "magic" { 302 } else { 400 }).await;
         assert!(denied.headers.get_all("set-cookie").next().is_none());
         assert!(capture.0.lock().unwrap().is_empty());
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
         let done = call(
             &auth,
             redeem.clone(),
@@ -1124,22 +1136,25 @@ async fn anonymous_passwordless_completion_paths_transfer_actual_owner<B: Backen
                 })
         );
         assert_eq!(
-            db.count_where("SELECT COUNT(*) FROM users WHERE id=$1", &[&old_id])
+            db.count_where("SELECT COUNT(*) FROM \"user\" WHERE id=$1", &[&old_id])
                 .await?,
             0
         );
         assert_eq!(
-            db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&old_id])
-                .await?,
+            db.count_where(
+                "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+                &[&old_id]
+            )
+            .await?,
             0
         );
-        let count = db.count("sessions").await?;
+        let count = db.count("session").await?;
         let _ = call(&auth, redeem, if method == "magic" { 302 } else { 400 }).await;
         assert_eq!(capture.0.lock().unwrap().len(), 1);
-        assert_eq!(db.count("sessions").await?, count);
+        assert_eq!(db.count("session").await?, count);
         assert_eq!(
             db.text(
-                "SELECT token FROM sessions WHERE user_id=$1",
+                "SELECT \"token\" FROM \"session\" WHERE \"userId\"=$1",
                 &[&foreign_id]
             )
             .await?,
@@ -1170,7 +1185,7 @@ async fn anonymous_new_owner_callback_retains_hidden_application_fields() -> Tes
         #[derive(
             Clone, Debug, PartialEq, serde::Serialize, alibi::seaorm::AuthEntity, DeriveEntityModel,
         )]
-        #[sea_orm(table_name = "users")]
+        #[sea_orm(table_name = "user", rename_all = "camelCase")]
         #[auth(role = "user", secondary_storage)]
         #[serde(rename_all = "camelCase")]
         pub struct Model {
@@ -1224,7 +1239,7 @@ async fn anonymous_new_owner_callback_retains_hidden_application_fields() -> Tes
                 .as_ref()
                 .is_some_and(|r| r.path.ends_with("/sign-up/email"))
             {
-                _=self.0.execute("UPDATE users SET name='Stored Hook Name',cargo_label='Application Stored',cargo_hidden='Stored Secret' WHERE id=$1",&[s.user_id().as_ref()]).await.map_err(|e|alibi::AuthError::internal(e.to_string()))?;
+                _=self.0.execute("UPDATE \"user\" SET \"name\"='Stored Hook Name',cargo_label='Application Stored',cargo_hidden='Stored Secret' WHERE id=$1",&[s.user_id().as_ref()]).await.map_err(|e|alibi::AuthError::internal(e.to_string()))?;
             }
             Ok(())
         }
@@ -1242,10 +1257,16 @@ async fn anonymous_new_owner_callback_retains_hidden_application_fields() -> Tes
     let db = Db::sqlite().await?;
     let (connection, _) = db.migrated::<crate::storage::SeaOrm>(SECRET).await?;
     _ = db
-        .execute("ALTER TABLE users ADD COLUMN cargo_label TEXT", &[])
+        .execute(
+            "ALTER TABLE \"user\" ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'",
+            &[],
+        )
         .await?;
     _ = db
-        .execute("ALTER TABLE users ADD COLUMN cargo_hidden TEXT", &[])
+        .execute("ALTER TABLE \"user\" ADD COLUMN cargo_label TEXT", &[])
+        .await?;
+    _ = db
+        .execute("ALTER TABLE \"user\" ADD COLUMN cargo_hidden TEXT", &[])
         .await?;
     let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
     use alibi::field_policy::FieldConfig;
@@ -1280,7 +1301,7 @@ async fn anonymous_new_owner_callback_retains_hidden_application_fields() -> Tes
         .build()
         .await?;
     let foreign = signup(&auth, "hidden-foreign@example.test").await;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let anonymous = call(
         &auth,
         request("/sign-in/anonymous", Some(json!({})), ""),
@@ -1303,13 +1324,13 @@ async fn anonymous_new_owner_callback_retains_hidden_application_fields() -> Tes
     assert_eq!(receipts[0]["newSession"]["token"], public["token"]);
     let id = public["user"]["id"].as_str().unwrap();
     assert_eq!(
-        db.text("SELECT name FROM users WHERE id=$1", &[id])
+        db.text("SELECT \"name\" FROM \"user\" WHERE id=$1", &[id])
             .await?
             .as_deref(),
         Some("Stored Hook Name")
     );
     assert_eq!(
-        db.text("SELECT cargo_hidden FROM users WHERE id=$1", &[id])
+        db.text("SELECT cargo_hidden FROM \"user\" WHERE id=$1", &[id])
             .await?
             .as_deref(),
         Some("Stored Secret")
@@ -1319,11 +1340,11 @@ async fn anonymous_new_owner_callback_retains_hidden_application_fields() -> Tes
     assert_eq!(current["user"]["cargoLabel"], "Application Stored");
     assert!(current["user"].get("cargoHidden").is_none());
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM users WHERE id=$1", &[&old_id])
+        db.count_where("SELECT COUNT(*) FROM \"user\" WHERE id=$1", &[&old_id])
             .await?,
         0
     );
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     for (prior, current) in before.into_iter().zip(after) {
         let prior: Vec<Value> = serde_json::from_str(&prior)?;
         let current: Vec<Value> = serde_json::from_str(&current)?;

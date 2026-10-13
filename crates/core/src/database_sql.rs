@@ -91,10 +91,14 @@ pub fn map_two_factor(
     struct Mapper<'a>(&'a crate::config::TwoFactorDatabaseConfig);
     impl Mapper<'_> {
         fn identifier(&self, identifier: &mut Ident) {
-            let physical = if identifier.value == "two_factor" {
+            let physical = if identifier.value == "twoFactor" {
                 Some(&self.0.table_name)
             } else {
-                self.0.columns.get(&identifier.value)
+                self.0
+                    .columns
+                    .iter()
+                    .find(|(name, _)| crate::config::two_factor_column(name) == identifier.value)
+                    .map(|(_, value)| value)
             };
             if let Some(physical) = physical {
                 *identifier = Ident::with_quote('"', physical);
@@ -181,7 +185,7 @@ pub fn map_two_factor(
         let mut target = false;
         _ = visit_relations(statement, |name| {
             target |= name.0.iter().any(
-                |part| matches!(part, ObjectNamePart::Identifier(id) if id.value == "two_factor"),
+                |part| matches!(part, ObjectNamePart::Identifier(id) if id.value == "twoFactor"),
             );
             ControlFlow::<()>::Continue(())
         });

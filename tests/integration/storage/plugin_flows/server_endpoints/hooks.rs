@@ -205,7 +205,7 @@ async fn logical_endpoint_hooks_preserve_order_failure_and_persistence_contracts
             assert_eq!(unknown.error.status_code(), 404);
             assert!(unknown.to_string().contains("not registered"));
             assert!(events.lock().unwrap().is_empty());
-            assert_eq!(db.count("verifications").await?, 0);
+            assert_eq!(db.count("verification").await?, 0);
         }
         let endpoint = EmailOtpPlugin::create_verification_otp_endpoint(
             "original@example.test",
@@ -236,7 +236,7 @@ async fn logical_endpoint_hooks_preserve_order_failure_and_persistence_contracts
         }
         assert_eq!(*events.lock().unwrap(), expected, "{mode:?}");
         assert_eq!(
-            db.count("verifications").await?,
+            db.count("verification").await?,
             i64::from(persisted),
             "{mode:?}"
         );
@@ -479,7 +479,7 @@ async fn concurrent_nested_typed_calls_isolate_principals_frames_and_headers<B: 
     assert!(slot.set(Arc::downgrade(&auth)).is_ok());
     let left = signup(&auth, "typed-left@example.test").await;
     let right = signup(&auth, "typed-right@example.test").await;
-    let sessions = db.table("sessions").await?;
+    let sessions = db.table("session").await?;
     let options = |tag: &str, owner: &AuthResponse, nested: &AuthResponse| EndpointOptions {
         headers: Some(
             [
@@ -524,7 +524,7 @@ async fn concurrent_nested_typed_calls_isolate_principals_frames_and_headers<B: 
         .claims;
         assert_eq!(claims["sub"], body(owner)["user"]["id"]);
     }
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("session").await?, sessions);
     assert!(alibi::endpoint::current_endpoint_call_context().is_none());
     assert!(alibi::hooks::current_request_hook_context().is_none());
     B::close(connection).await

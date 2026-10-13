@@ -650,10 +650,10 @@ mod tests {
         let user_id = result["user"]["id"].as_str().unwrap();
         let user = ctx.database.get_user_by_id(user_id).await.unwrap().unwrap();
         assert_eq!(
-            user.email.as_deref(),
+            user.email(),
             Some("0x7e5f4552091a69125d5dfcb7b8c2659029395bdf@siwe.placeholder.invalid")
         );
-        assert_eq!(user.name.as_deref(), Some(ADDRESS));
+        assert_eq!(user.name(), Some(ADDRESS));
         assert_eq!(user.image.as_deref(), Some(""));
         assert!(!user.email_verified);
         let wallet = ctx

@@ -277,7 +277,6 @@ pub(crate) fn session_impl(
             fn id_column() -> Self::Column { Column::Id }
             fn token_column() -> Self::Column { Column::Token }
             fn user_id_column() -> Self::Column { Column::UserId }
-            fn active_column() -> Self::Column { Column::Active }
             fn expires_at_column() -> Self::Column { Column::ExpiresAt }
             fn created_at_column() -> Self::Column { Column::CreatedAt }
             fn parse_id(id: &str) -> #core_root::AuthResult<Self::Id> {
@@ -330,9 +329,6 @@ pub(crate) fn account_impl(
     quote! {
         impl #seaorm_root::SeaOrmAccountModel for #ident {
             #additional
-            fn oauth_token_columns() -> Option<[Self::Column; 3]> {
-                Some([Column::AccessToken, Column::RefreshToken, Column::IdToken])
-            }
             type Id = ::std::string::String;
             type UserId = ::std::string::String;
             type Entity = Entity;

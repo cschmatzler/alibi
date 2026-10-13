@@ -41,7 +41,7 @@ where
             .is_some_and(ApiKeyStart::requires_sqlite_cast);
         let model = ActiveModel {
             id: Set(self
-                .generated_id(&self.db, "apikey", "api_keys", "id")
+                .generated_id(&self.db, "apikey", "apikey", "id")
                 .await?
                 .unwrap_or_else(|| Uuid::new_v4().to_string())),
             name: Set(input.name),
@@ -50,15 +50,15 @@ where
             key_hash: Set(input.key_hash),
             reference_id: Set(input.reference_id),
             config_id: Set(input.config_id),
-            refill_interval: Set(input.refill_interval),
-            refill_amount: Set(input.refill_amount),
+            refill_interval: Set(input.refill_interval.map(crate::Number::from)),
+            refill_amount: Set(input.refill_amount.map(crate::Number::from)),
             last_refill_at: Set(None),
-            enabled: Set(input.enabled),
-            rate_limit_enabled: Set(input.rate_limit_enabled),
-            rate_limit_time_window: Set(input.rate_limit_time_window),
-            rate_limit_max: Set(input.rate_limit_max),
-            request_count: Set(Some(0.0)),
-            remaining: Set(input.remaining),
+            enabled: Set(Some(input.enabled)),
+            rate_limit_enabled: Set(Some(input.rate_limit_enabled)),
+            rate_limit_time_window: Set(input.rate_limit_time_window.map(crate::Number::from)),
+            rate_limit_max: Set(input.rate_limit_max.map(crate::Number::from)),
+            request_count: Set(Some(crate::Number(0.0))),
+            remaining: Set(input.remaining.map(crate::Number::from)),
             last_request: Set(None),
             expires_at: Set(parse_optional_rfc3339(
                 input.expires_at.as_deref(),
@@ -167,9 +167,11 @@ where
             let now = Utc::now();
             let mut update = UpdateApiKey::default();
 
-            if let Some(remaining) = model.remaining {
-                if let (Some(interval), Some(amount)) = (model.refill_interval, model.refill_amount)
-                    && interval != 0.0
+            if let Some(remaining) = model.remaining.map(|value| value.0) {
+                if let (Some(interval), Some(amount)) = (
+                    model.refill_interval.map(|value| value.0),
+                    model.refill_amount.map(|value| value.0),
+                ) && interval != 0.0
                     && amount != 0.0
                     && (now.timestamp_millis()
                         - model
@@ -187,16 +189,17 @@ where
                 }
             }
 
-            if global_rate_limit_enabled && model.rate_limit_enabled {
-                if let (Some(window), Some(max)) =
-                    (model.rate_limit_time_window, model.rate_limit_max)
-                {
+            if global_rate_limit_enabled && model.rate_limit_enabled.unwrap_or(false) {
+                if let (Some(window), Some(max)) = (
+                    model.rate_limit_time_window.map(|value| value.0),
+                    model.rate_limit_max.map(|value| value.0),
+                ) {
                     let elapsed = model
                         .last_request
                         .map(|last| (now.timestamp_millis() - last.timestamp_millis()) as f64);
                     if let Some(elapsed) = elapsed
                         && elapsed <= window
-                        && model.request_count.unwrap_or(0.0) >= max
+                        && model.request_count.map_or(0.0, |value| value.0) >= max
                     {
                         // TS consumes quota before rejecting a rate-limited request.
                         // A rejection preserves the rate-limit window and updated_at.
@@ -216,7 +219,7 @@ where
                         Some(if elapsed.is_none_or(|elapsed| elapsed > window) {
                             1.0
                         } else {
-                            model.request_count.unwrap_or(0.0) + 1.0
+                            model.request_count.map_or(0.0, |value| value.0) + 1.0
                         });
                     update.last_request = Some(Some(now.to_rfc3339()));
                 }
@@ -267,25 +270,25 @@ fn apply_update_fields(mut active: ActiveModel, update: UpdateApiKey) -> AuthRes
         active.name = Set(Some(name));
     }
     if let Some(enabled) = update.enabled {
-        active.enabled = Set(enabled);
+        active.enabled = Set(Some(enabled));
     }
     if let Some(remaining) = update.remaining {
-        active.remaining = Set(Some(remaining));
+        active.remaining = Set(Some(crate::Number(remaining)));
     }
     if let Some(rate_limit_enabled) = update.rate_limit_enabled {
-        active.rate_limit_enabled = Set(rate_limit_enabled);
+        active.rate_limit_enabled = Set(Some(rate_limit_enabled));
     }
     if let Some(rate_limit_time_window) = update.rate_limit_time_window {
-        active.rate_limit_time_window = Set(Some(rate_limit_time_window));
+        active.rate_limit_time_window = Set(Some(crate::Number(rate_limit_time_window)));
     }
     if let Some(rate_limit_max) = update.rate_limit_max {
-        active.rate_limit_max = Set(Some(rate_limit_max));
+        active.rate_limit_max = Set(Some(crate::Number(rate_limit_max)));
     }
     if let Some(refill_interval) = update.refill_interval {
-        active.refill_interval = Set(Some(refill_interval));
+        active.refill_interval = Set(Some(crate::Number(refill_interval)));
     }
     if let Some(refill_amount) = update.refill_amount {
-        active.refill_amount = Set(Some(refill_amount));
+        active.refill_amount = Set(Some(crate::Number(refill_amount)));
     }
     if let Some(permissions) = update.permissions {
         active.permissions = Set(Some(permissions));
@@ -303,7 +306,7 @@ fn apply_update_fields(mut active: ActiveModel, update: UpdateApiKey) -> AuthRes
         )?);
     }
     if let Some(request_count) = update.request_count {
-        active.request_count = Set(Some(request_count));
+        active.request_count = Set(Some(crate::Number(request_count)));
     }
     if let Some(last_refill_at) = update.last_refill_at {
         active.last_refill_at = Set(parse_optional_rfc3339(

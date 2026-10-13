@@ -36,7 +36,7 @@ async fn account_views_follow_configured_field_visibility<B: Backend>(db: Db) ->
             .await?;
         let owner = signup(&auth, "fields@example.test").await;
         assert_eq!(
-            db.execute("UPDATE accounts SET scope = 'read, write'", &[])
+            db.execute("UPDATE \"account\" SET \"scope\" = 'read, write'", &[])
                 .await?,
             1
         );

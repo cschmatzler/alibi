@@ -15,9 +15,9 @@ use uuid::Uuid;
 fn team_member_lookup(exec: Exec<'_>, team_id: &str, user_id: &str) -> Sql {
     let mut sql = model::select_model::<team_member::Model>(exec);
     sql.push(" WHERE ");
-    sql.compare(team_member::Model::TABLE, "team_id", " = ", team_id);
+    sql.compare(team_member::Model::TABLE, "teamId", " = ", team_id);
     sql.push(" AND ");
-    sql.compare(team_member::Model::TABLE, "user_id", " = ", user_id);
+    sql.compare(team_member::Model::TABLE, "userId", " = ", user_id);
     model::limit_one(&mut sql);
     sql
 }
@@ -36,7 +36,7 @@ where
         let mut sql = model::by_id::<team::Model>(exec, team_id);
         if let Some(org) = organization_id {
             sql.push(" AND ");
-            sql.compare(team::Model::TABLE, "organization_id", " = ", org);
+            sql.compare(team::Model::TABLE, "organizationId", " = ", org);
         }
         model::limit_one(&mut sql);
         Ok(exec
@@ -75,7 +75,7 @@ where
         let mut count = Sql::with(exec.engine(), "SELECT COUNT(*) FROM ");
         count.ident(team_member::Model::TABLE);
         count.push(" WHERE ");
-        count.compare(team_member::Model::TABLE, "team_id", " = ", team_id);
+        count.compare(team_member::Model::TABLE, "teamId", " = ", team_id);
         let count = u64::try_from(exec.fetch_scalar::<i64>(count).await?.unwrap_or_default())
             .unwrap_or_default();
         // Source only repairs a stale low durable counter before reserving a seat.
@@ -85,7 +85,7 @@ where
             .map_err(|_error| AuthError::internal("Team membership count overflow"))?
             .max(room.member_count);
         let mut active = room.into_active();
-        active.set("member_count", reserved_count);
+        active.set("memberCount", reserved_count);
         _ = model::update::<team::Model>(exec, &active)
             .await?
             .ok_or_else(record_not_updated)?;
@@ -98,12 +98,12 @@ where
             if exec.engine() == Engine::Postgres {
                 // Source's text Number parameter is parsed as the physical
                 // bigint counter, rather than promoting that counter to float8.
-                seat.column(team::Model::TABLE, "member_count");
+                seat.column(team::Model::TABLE, "memberCount");
                 seat.push(" < ");
                 seat.bind(ryu_js::Buffer::new().format(maximum).to_owned());
                 seat.push("::bigint");
             } else {
-                seat.compare(team::Model::TABLE, "member_count", " < ", maximum);
+                seat.compare(team::Model::TABLE, "memberCount", " < ", maximum);
             }
             if exec.fetch_scalar::<i64>(seat).await?.unwrap_or_default() == 0 {
                 return Ok(AddTeamMemberResult::LimitReached);
@@ -113,17 +113,17 @@ where
         let mut member = ActiveRow::new();
         member.set(
             "id",
-            self.generated_id(exec, "teamMember", "team_member", "id")
+            self.generated_id(exec, "teamMember", "teamMember", "id")
                 .await?
                 .unwrap_or_else(|| Uuid::new_v4().to_string()),
         );
-        member.set("team_id", team_id);
-        member.set("user_id", user_id);
-        member.set("membership_key", Some(key));
-        member.set("created_at", Utc::now());
+        member.set("teamId", team_id);
+        member.set("userId", user_id);
+        member.set("membershipKey", Some(key));
+        member.set("createdAt", Utc::now());
         let member = model::insert::<team_member::Model>(exec, &member).await?;
         active.set(
-            "member_count",
+            "memberCount",
             reserved_count
                 .checked_add(1)
                 .ok_or_else(|| AuthError::internal("Team membership count overflow"))?,
@@ -151,10 +151,10 @@ where
                 .unwrap_or_else(|| Uuid::new_v4().to_string()),
         );
         active.set("name", data.name);
-        active.set("organization_id", data.organization_id);
-        active.set("member_count", 0_i64);
-        active.set("created_at", now);
-        active.set("updated_at", data.updated_at);
+        active.set("organizationId", data.organization_id);
+        active.set("memberCount", 0_i64);
+        active.set("createdAt", now);
+        active.set("updatedAt", data.updated_at);
         model::insert::<team::Model>(self.exec(), &active)
             .await
             .map(Into::into)
@@ -170,12 +170,7 @@ where
     async fn list_teams(&self, organization_id: &str) -> AuthResult<Vec<Team>> {
         let mut sql = model::select_model::<team::Model>(self.exec());
         sql.push(" WHERE ");
-        sql.compare(
-            team::Model::TABLE,
-            "organization_id",
-            " = ",
-            organization_id,
-        );
+        sql.compare(team::Model::TABLE, "organizationId", " = ", organization_id);
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
         Ok(self
@@ -194,12 +189,7 @@ where
     ) -> AuthResult<Team> {
         let mut sql = model::by_id::<team::Model>(self.exec(), team_id);
         sql.push(" AND ");
-        sql.compare(
-            team::Model::TABLE,
-            "organization_id",
-            " = ",
-            organization_id,
-        );
+        sql.compare(team::Model::TABLE, "organizationId", " = ", organization_id);
         model::limit_one(&mut sql);
         let model = self
             .exec()
@@ -210,7 +200,7 @@ where
         if let Some(name) = update.name {
             active.set("name", name);
         }
-        active.set("updated_at", Some(Utc::now()));
+        active.set("updatedAt", Some(Utc::now()));
         model::update::<team::Model>(self.exec(), &active)
             .await?
             .map(Into::into)
@@ -227,7 +217,7 @@ where
             delete.push(" AND ");
             delete.compare(
                 team::Model::TABLE,
-                "organization_id",
+                "organizationId",
                 " = ",
                 organization_id.as_str(),
             );
@@ -237,18 +227,13 @@ where
             let mut members = Sql::with(exec.engine(), "DELETE FROM ");
             members.ident(team_member::Model::TABLE);
             members.push(" WHERE ");
-            members.compare(
-                team_member::Model::TABLE,
-                "team_id",
-                " = ",
-                team_id.as_str(),
-            );
+            members.compare(team_member::Model::TABLE, "teamId", " = ", team_id.as_str());
             _ = exec.execute(members).await?;
             let mut pending = self.organization_models.invitation.select(exec);
             pending.push(" WHERE ");
             self.organization_models.invitation.compare(
                 &mut pending,
-                "organization_id",
+                "organizationId",
                 " = ",
                 organization_id.as_str(),
             )?;
@@ -262,7 +247,7 @@ where
             pending.push(" AND ");
             self.organization_models.invitation.compare(
                 &mut pending,
-                "expires_at",
+                "expiresAt",
                 " > ",
                 Utc::now(),
             )?;
@@ -284,7 +269,7 @@ where
                     .collect::<Vec<_>>()
                     .join(",");
                 let mut active = invite.into_active();
-                active.set("team_id", (!remaining.is_empty()).then_some(remaining));
+                active.set("teamId", (!remaining.is_empty()).then_some(remaining));
                 _ = self
                     .organization_models
                     .invitation
@@ -332,19 +317,9 @@ where
                 let mut delete = Sql::with(exec.engine(), "DELETE FROM ");
                 delete.ident(team_member::Model::TABLE);
                 delete.push(" WHERE ");
-                delete.compare(
-                    team_member::Model::TABLE,
-                    "team_id",
-                    " = ",
-                    team_id.as_str(),
-                );
+                delete.compare(team_member::Model::TABLE, "teamId", " = ", team_id.as_str());
                 delete.push(" AND ");
-                delete.compare(
-                    team_member::Model::TABLE,
-                    "user_id",
-                    " = ",
-                    user_id.as_str(),
-                );
+                delete.compare(team_member::Model::TABLE, "userId", " = ", user_id.as_str());
                 let removed = exec.execute(delete).await?;
                 let count = i64::try_from(removed)
                     .map_err(|_error| AuthError::internal("Team membership count overflow"))?;
@@ -360,7 +335,7 @@ where
     async fn list_team_members(&self, team_id: &str) -> AuthResult<Vec<TeamMember>> {
         let mut sql = model::select_model::<team_member::Model>(self.exec());
         sql.push(" WHERE ");
-        sql.compare(team_member::Model::TABLE, "team_id", " = ", team_id);
+        sql.compare(team_member::Model::TABLE, "teamId", " = ", team_id);
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
         Ok(self
@@ -374,7 +349,7 @@ where
     async fn list_user_teams(&self, user_id: &str) -> AuthResult<Vec<Team>> {
         let mut sql = model::select_model::<team_member::Model>(self.exec());
         sql.push(" WHERE ");
-        sql.compare(team_member::Model::TABLE, "user_id", " = ", user_id);
+        sql.compare(team_member::Model::TABLE, "userId", " = ", user_id);
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
         let memberships: Vec<team_member::Model> = self.exec().fetch_all(sql).await?;
@@ -407,15 +382,15 @@ async fn release_seats(exec: Exec<'_>, team_id: &str, count: i64) -> AuthResult<
     let mut sql = Sql::with(exec.engine(), "UPDATE ");
     sql.ident(team::Model::TABLE);
     sql.push(" SET ");
-    sql.ident("member_count");
+    sql.ident("memberCount");
     sql.push(" = ");
-    sql.ident("member_count");
+    sql.ident("memberCount");
     sql.push(" - ");
     sql.bind(count);
     sql.push(" WHERE ");
     sql.compare(team::Model::TABLE, "id", " = ", team_id);
     sql.push(" AND ");
-    sql.compare(team::Model::TABLE, "member_count", " >= ", count);
+    sql.compare(team::Model::TABLE, "memberCount", " >= ", count);
     _ = exec.execute(sql).await?;
     Ok(())
 }
@@ -427,13 +402,13 @@ pub(super) async fn remove_owned_team_members(
     organization_id: Option<&str>,
 ) -> AuthResult<()> {
     let exec = Exec::tx(tx);
-    if !super::migrator::has_table(exec, "team_member").await? {
+    if !super::migrator::has_table(exec, "teamMember").await? {
         return Ok(());
     }
     let mut teams = model::select_model::<team::Model>(exec);
     if let Some(org) = organization_id {
         teams.push(" WHERE ");
-        teams.compare(team::Model::TABLE, "organization_id", " = ", org);
+        teams.compare(team::Model::TABLE, "organizationId", " = ", org);
     }
     teams.push(" ORDER BY ");
     teams.column(team::Model::TABLE, "id");
@@ -454,14 +429,9 @@ pub(super) async fn release_owned_team_members(
         let mut delete = Sql::with(exec.engine(), "DELETE FROM ");
         delete.ident(team_member::Model::TABLE);
         delete.push(" WHERE ");
-        delete.compare(
-            team_member::Model::TABLE,
-            "team_id",
-            " = ",
-            room.id.as_str(),
-        );
+        delete.compare(team_member::Model::TABLE, "teamId", " = ", room.id.as_str());
         delete.push(" AND ");
-        delete.compare(team_member::Model::TABLE, "user_id", " = ", user_id);
+        delete.compare(team_member::Model::TABLE, "userId", " = ", user_id);
         let deleted = exec.execute(delete).await?;
         if deleted > 0 {
             let count = i64::try_from(deleted)

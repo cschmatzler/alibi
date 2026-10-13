@@ -25,14 +25,14 @@ async fn oauth_resource_update_persists_partial_policy_and_changes_authorization
     let start = chrono::Utc::now().timestamp_millis();
     let unrelated = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_client_resource",
+            "oauthClient",
+            "oauthConsent",
+            "oauthClientResource",
         ])
         .await?;
     let result = Box::pin(
@@ -82,28 +82,28 @@ async fn oauth_resource_update_persists_partial_policy_and_changes_authorization
     assert_eq!(
         unrelated,
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_client_resource"
+            "oauthClient",
+            "oauthConsent",
+            "oauthClientResource"
         ])
         .await?
     );
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
-            "oauth_client_resource",
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
+            "oauthClientResource",
         ])
         .await?;
     for (identifier, patch, cookie, status, error) in [
@@ -159,15 +159,15 @@ async fn oauth_resource_update_persists_partial_policy_and_changes_authorization
         assert_eq!(
             before,
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
+                "user",
+                "account",
+                "session",
+                "verification",
                 "jwks",
-                "oauth_client",
-                "oauth_consent",
-                "oauth_resource",
-                "oauth_client_resource"
+                "oauthClient",
+                "oauthConsent",
+                "oauthResource",
+                "oauthClientResource"
             ])
             .await?
         );
@@ -248,6 +248,6 @@ async fn oauth_resource_update_persists_partial_policy_and_changes_authorization
         url.query_pairs().find(|(key, _)| key == "error").unwrap().1,
         "invalid_target"
     );
-    assert_eq!(db.count("oauth_resource").await?, 1);
+    assert_eq!(db.count("oauthResource").await?, 1);
     Ok(())
 }

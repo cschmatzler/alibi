@@ -74,19 +74,23 @@ mod sqlx_numeric {
     use alibi::sqlx::value::SqlValue;
     use alibi::sqlx::{SqlxPool, SqlxStore, SqlxUserModel};
     #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::SqlxModel)]
-    #[auth(table = "users")]
+    #[auth(table = "user")]
     pub struct Model {
         pub id: i64,
         pub email: Option<String>,
         pub name: Option<String>,
         pub role: Option<String>,
         pub banned: bool,
+        #[sqlx(rename = "banReason")]
         pub ban_reason: Option<String>,
+        #[sqlx(rename = "banExpires")]
         pub ban_expires: Option<chrono::DateTime<Utc>>,
         pub score: i64,
         pub reviewed_at: chrono::DateTime<Utc>,
         pub profile: serde_json::Value,
+        #[sqlx(rename = "createdAt")]
         pub created_at: chrono::DateTime<Utc>,
+        #[sqlx(rename = "updatedAt")]
         pub updated_at: chrono::DateTime<Utc>,
     }
     user_contract!();
@@ -101,14 +105,14 @@ mod sqlx_numeric {
             "name"
         }
         fn created_at_column() -> &'static str {
-            "created_at"
+            "createdAt"
         }
         fn list_users_column(field: &str) -> Option<&'static str> {
             match field {
                 "id" => Some("id"),
                 "email" => Some("email"),
                 "name" => Some("name"),
-                "createdAt" => Some("created_at"),
+                "createdAt" => Some("createdAt"),
                 "score" => Some("score"),
                 "reviewedAt" => Some("reviewed_at"),
                 "profile" => Some("profile"),
@@ -133,10 +137,10 @@ mod sqlx_numeric {
             row.set("name", user.name);
             row.set("role", user.role);
             row.set("banned", user.banned.unwrap_or(false));
-            row.set("ban_reason", Option::<String>::None);
-            row.set("ban_expires", Option::<chrono::DateTime<Utc>>::None);
-            row.set("created_at", now);
-            row.set("updated_at", now);
+            row.set("banReason", Option::<String>::None);
+            row.set("banExpires", Option::<chrono::DateTime<Utc>>::None);
+            row.set("createdAt", now);
+            row.set("updatedAt", now);
             row
         }
         fn apply_update(row: &mut ActiveRow, user: UpdateUser, now: chrono::DateTime<Utc>) {
@@ -152,13 +156,13 @@ mod sqlx_numeric {
             if let Some(banned) = user.banned {
                 row.set("banned", banned);
             }
-            row.set("ban_reason", user.ban_reason);
+            row.set("banReason", user.ban_reason);
             if let Some(expiry) = user.ban_expires {
-                row.set("ban_expires", expiry);
+                row.set("banExpires", expiry);
             } else if user.banned == Some(false) {
-                row.set("ban_expires", Option::<chrono::DateTime<Utc>>::None);
+                row.set("banExpires", Option::<chrono::DateTime<Utc>>::None);
             }
-            row.set("updated_at", now);
+            row.set("updatedAt", now);
         }
     }
     struct Schema;
@@ -215,7 +219,7 @@ mod seaorm_numeric {
     use alibi::seaorm::sea_orm::{self, ActiveValue::Set, entity::prelude::*};
     use alibi::seaorm::{SeaOrmStore, SeaOrmUserModel};
     #[derive(Clone, Debug, serde::Serialize, DeriveEntityModel)]
-    #[sea_orm(table_name = "users")]
+    #[sea_orm(table_name = "user")]
     pub struct Model {
         #[sea_orm(primary_key)]
         pub id: i64,
@@ -223,12 +227,16 @@ mod seaorm_numeric {
         pub name: Option<String>,
         pub role: Option<String>,
         pub banned: bool,
+        #[sea_orm(column_name = "banReason")]
         pub ban_reason: Option<String>,
+        #[sea_orm(column_name = "banExpires")]
         pub ban_expires: Option<chrono::DateTime<Utc>>,
         pub score: i64,
         pub reviewed_at: chrono::DateTime<Utc>,
         pub profile: serde_json::Value,
+        #[sea_orm(column_name = "createdAt")]
         pub created_at: chrono::DateTime<Utc>,
+        #[sea_orm(column_name = "updatedAt")]
         pub updated_at: chrono::DateTime<Utc>,
     }
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -390,10 +398,10 @@ fn config() -> AuthConfig {
     config
 }
 async fn install(raw: &sqlx::SqlitePool) -> TestResult {
-    _ = sqlx::query(sqlx::AssertSqlSafe("DROP TABLE users"))
+    _ = sqlx::query(sqlx::AssertSqlSafe("DROP TABLE \"user\""))
         .execute(raw)
         .await?;
-    _ = sqlx::query(sqlx::AssertSqlSafe("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT, name TEXT, role TEXT, banned BOOLEAN NOT NULL DEFAULT 0, ban_reason TEXT, ban_expires TEXT, score INTEGER NOT NULL DEFAULT 0, reviewed_at TEXT NOT NULL DEFAULT '2020-01-01T00:00:00Z', profile TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)")).execute(raw).await?;
+    _ = sqlx::query(sqlx::AssertSqlSafe("CREATE TABLE \"user\" (id INTEGER PRIMARY KEY, \"email\" TEXT, \"name\" TEXT, \"role\" TEXT, \"banned\" BOOLEAN NOT NULL DEFAULT 0, \"banReason\" TEXT, \"banExpires\" TEXT, score INTEGER NOT NULL DEFAULT 0, reviewed_at TEXT NOT NULL DEFAULT '2020-01-01T00:00:00Z', profile TEXT NOT NULL DEFAULT '{}', \"createdAt\" TEXT NOT NULL, \"updatedAt\" TEXT NOT NULL)")).execute(raw).await?;
     for (id, role) in [
         (1, "operator"),
         (2, "operator,elevated"),
@@ -402,7 +410,7 @@ async fn install(raw: &sqlx::SqlitePool) -> TestResult {
         (43, "user"),
     ] {
         _ = sqlx::query(sqlx::AssertSqlSafe(
-            "INSERT INTO users (id,email,name,role,created_at,updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO \"user\" (id,\"email\",\"name\",\"role\",\"createdAt\",\"updatedAt\") VALUES (?, ?, ?, ?, ?, ?)",
         ))
         .bind(id)
         .bind(format!("id-{id}@identity.fixture.test"))
@@ -414,7 +422,7 @@ async fn install(raw: &sqlx::SqlitePool) -> TestResult {
         .await?;
     }
     for id in [1, 2, 3, 42, 43] {
-        _ = sqlx::query(sqlx::AssertSqlSafe("INSERT INTO accounts (id, account_id, provider_id, user_id, password, created_at, updated_at) VALUES (?, ?, 'credential', ?, 'fixture-password', ?, ?)"))
+        _ = sqlx::query(sqlx::AssertSqlSafe("INSERT INTO \"account\" (id, \"accountId\", \"providerId\", \"userId\", \"password\", \"createdAt\", \"updatedAt\") VALUES (?, ?, 'credential', ?, 'fixture-password', ?, ?)"))
             .bind(format!("account-{id}")).bind(id.to_string()).bind(id.to_string()).bind(Utc::now()).bind(Utc::now()).execute(raw).await?;
     }
     Ok(())
@@ -491,10 +499,10 @@ async fn exercise<S: AuthSchema>(
                 active_organization_id: None,
             })
             .await?;
-        let before_users = rows(raw, "users").await?;
-        let before_accounts = rows(raw, "accounts").await?;
-        let before_sessions = rows(raw, "sessions").await?;
-        let count: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe("SELECT COUNT(*) FROM sessions"))
+        let before_users = rows(raw, "user").await?;
+        let before_accounts = rows(raw, "account").await?;
+        let before_sessions = rows(raw, "session").await?;
+        let count: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe("SELECT COUNT(*) FROM \"session\""))
             .fetch_one(raw)
             .await?;
         let cookie = alibi::utils::cookie_utils::sign_cookie_value(
@@ -515,7 +523,7 @@ async fn exercise<S: AuthSchema>(
         request.body = Some(serde_json::to_vec(&serde_json::json!({"userId": target}))?);
         let response = auth.handle_request(request).await?;
         assert_eq!(response.status, status, "actor={actor} selector={target}");
-        let after: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe("SELECT COUNT(*) FROM sessions"))
+        let after: (i64,) = sqlx::query_as(sqlx::AssertSqlSafe("SELECT COUNT(*) FROM \"session\""))
             .fetch_one(raw)
             .await?;
         assert_eq!(after.0, count.0 + i64::from(status == 200));
@@ -566,9 +574,9 @@ async fn exercise<S: AuthSchema>(
                 .id(),
             original.id()
         );
-        let after_users = rows(raw, "users").await?;
-        let after_accounts = rows(raw, "accounts").await?;
-        let after_sessions = rows(raw, "sessions").await?;
+        let after_users = rows(raw, "user").await?;
+        let after_accounts = rows(raw, "account").await?;
+        let after_sessions = rows(raw, "session").await?;
         assert_eq!(before_users, after_users);
         assert_eq!(before_accounts, after_accounts);
         for original_row in &before_sessions {
@@ -614,7 +622,7 @@ async fn exercise<S: AuthSchema>(
         ),
         (serde_json::json!({"name":"Supported mutation"}), 200),
     ] {
-        let before = rows(raw, "users").await?;
+        let before = rows(raw, "user").await?;
         let mut request = AuthRequest::new(alibi::HttpMethod::Post, "/update-user");
         request.headers.extend([
             ("origin".into(), config().base_url.clone()),
@@ -633,7 +641,7 @@ async fn exercise<S: AuthSchema>(
             String::from_utf8_lossy(&response.body)
         );
         if status == 500 {
-            assert_eq!(rows(raw, "users").await?, before);
+            assert_eq!(rows(raw, "user").await?, before);
         } else {
             assert_eq!(
                 store.get_user_by_id("43").await?.unwrap().name(),
@@ -654,7 +662,7 @@ async fn exercise_query<S: AuthSchema>(
         let date = chrono::DateTime::parse_from_rfc3339(&format!("2020-01-{day:02}T00:00:00Z"))?
             .with_timezone(&Utc);
         _ = sqlx::query(sqlx::AssertSqlSafe(
-            "UPDATE users SET created_at = ?, updated_at = ? WHERE id = ?",
+            "UPDATE \"user\" SET \"createdAt\" = ?, \"updatedAt\" = ? WHERE id = ?",
         ))
         .bind(date)
         .bind(date)
@@ -684,9 +692,9 @@ async fn exercise_query<S: AuthSchema>(
         })
         .await?;
     let before = [
-        rows(raw, "users").await?,
-        rows(raw, "accounts").await?,
-        rows(raw, "sessions").await?,
+        rows(raw, "user").await?,
+        rows(raw, "account").await?,
+        rows(raw, "session").await?,
     ];
     for (direction, expected) in [
         (None, vec!["42", "3"]),
@@ -723,7 +731,7 @@ async fn exercise_query<S: AuthSchema>(
         let body: serde_json::Value = serde_json::from_slice(&response.body)?;
         println!(
             "{}",
-            serde_json::json!({"adapter": std::any::type_name::<S>(), "direction": direction, "status": response.status, "body": body, "before": before, "after": [rows(raw, "users").await?, rows(raw, "accounts").await?, rows(raw, "sessions").await?]})
+            serde_json::json!({"adapter": std::any::type_name::<S>(), "direction": direction, "status": response.status, "body": body, "before": before, "after": [rows(raw, "user").await?, rows(raw, "account").await?, rows(raw, "session").await?]})
         );
         assert_eq!(response.status, 200);
         let ids = body
@@ -743,9 +751,9 @@ async fn exercise_query<S: AuthSchema>(
         assert_eq!(body.get("limit"), Some(&serde_json::json!(2)));
     }
     let after = [
-        rows(raw, "users").await?,
-        rows(raw, "accounts").await?,
-        rows(raw, "sessions").await?,
+        rows(raw, "user").await?,
+        rows(raw, "account").await?,
+        rows(raw, "session").await?,
     ];
     println!(
         "{}",
@@ -769,7 +777,7 @@ async fn exercise_custom_query<S: AuthSchema>(
         (43, 2, 2, "a"),
     ] {
         _ = sqlx::query(sqlx::AssertSqlSafe(
-            "UPDATE users SET score=?, reviewed_at=?, profile=?, created_at=?, updated_at=? WHERE id=?",
+            "UPDATE \"user\" SET score=?, reviewed_at=?, profile=?, \"createdAt\"=?, \"updatedAt\"=? WHERE id=?",
         ))
         .bind(score)
         .bind(format!("2020-01-{day:02}T00:00:00Z"))
@@ -802,9 +810,9 @@ async fn exercise_custom_query<S: AuthSchema>(
         })
         .await?;
     let before = [
-        rows(raw, "users").await?,
-        rows(raw, "accounts").await?,
-        rows(raw, "sessions").await?,
+        rows(raw, "user").await?,
+        rows(raw, "account").await?,
+        rows(raw, "session").await?,
     ];
     for (field, operator, value, sort, direction, expected, total) in [
         ("score", "gte", "3", "score", "asc", vec!["3", "2"], 3),
@@ -856,9 +864,9 @@ async fn exercise_custom_query<S: AuthSchema>(
         let response = auth.handle_request(request).await?;
         let body: serde_json::Value = serde_json::from_slice(&response.body)?;
         let after = [
-            rows(raw, "users").await?,
-            rows(raw, "accounts").await?,
-            rows(raw, "sessions").await?,
+            rows(raw, "user").await?,
+            rows(raw, "account").await?,
+            rows(raw, "session").await?,
         ];
         println!(
             "custom observation: {}",
@@ -1097,13 +1105,13 @@ async fn exercise_admission<S: AuthSchema>(
             true,
         ),
     ] {
-        _=sqlx::query(sqlx::AssertSqlSafe("UPDATE users SET banned=1,ban_reason='boundary',ban_expires=?,updated_at=? WHERE id=42")).bind(clock+chrono::Duration::milliseconds(delta)).bind(clock).execute(raw).await?;
+        _=sqlx::query(sqlx::AssertSqlSafe("UPDATE \"user\" SET \"banned\"=1,\"banReason\"='boundary',\"banExpires\"=?,\"updatedAt\"=? WHERE id=42")).bind(clock+chrono::Duration::milliseconds(delta)).bind(clock).execute(raw).await?;
         hooks.events.lock().await.clear();
         hooks.mode.store(mode, std::sync::atomic::Ordering::SeqCst);
         let before = [
-            rows(raw, "users").await?,
-            rows(raw, "accounts").await?,
-            rows(raw, "sessions").await?,
+            rows(raw, "user").await?,
+            rows(raw, "account").await?,
+            rows(raw, "session").await?,
         ];
         let mut request = AuthRequest::new(alibi::HttpMethod::Post, "/admin/impersonate-user");
         _ = request
@@ -1126,9 +1134,9 @@ async fn exercise_admission<S: AuthSchema>(
         let response = auth.handle_request(request).await?;
         let observed = hooks.events.lock().await.clone();
         let after = [
-            rows(raw, "users").await?,
-            rows(raw, "accounts").await?,
-            rows(raw, "sessions").await?,
+            rows(raw, "user").await?,
+            rows(raw, "account").await?,
+            rows(raw, "session").await?,
         ];
         println!(
             "admission observation: {}",
@@ -1420,12 +1428,12 @@ mod postgres_numeric_columns {
         }
     }
     async fn install(raw: &sqlx::PgPool) -> TestResult {
-        _ = sqlx::query("CREATE TABLE app_people (id text PRIMARY KEY, mailbox text UNIQUE, name text, email_verified boolean NOT NULL, image text, created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL, score32 integer NOT NULL DEFAULT 0, score64 bigint NOT NULL DEFAULT 0, real32 real NOT NULL DEFAULT 0, real64 double precision NOT NULL DEFAULT 0)").execute(raw).await?;
+        _ = sqlx::query("CREATE TABLE app_people (id text PRIMARY KEY, mailbox text UNIQUE, \"name\" text, \"emailVerified\" boolean NOT NULL, \"image\" text, \"createdAt\" timestamptz NOT NULL, \"updatedAt\" timestamptz NOT NULL, score32 integer NOT NULL DEFAULT 0, score64 bigint NOT NULL DEFAULT 0, real32 real NOT NULL DEFAULT 0, real64 double precision NOT NULL DEFAULT 0)").execute(raw).await?;
         _ = sqlx::query("INSERT INTO app_people SELECT n::text, n::text || '@numeric.fixture.test', n::text, false, NULL, '2020-01-01Z'::timestamptz, '2020-01-01Z'::timestamptz, n, n, n, n FROM generate_series(1,10000) n").execute(raw).await?;
         _ = sqlx::query("CREATE INDEX app_people_score64_idx ON app_people(score64)")
             .execute(raw)
             .await?;
-        _ = sqlx::query("CREATE TABLE app_dependents (user_id text PRIMARY KEY REFERENCES app_people(id), payload text NOT NULL CHECK (payload <> ''))").execute(raw).await?;
+        _ = sqlx::query("CREATE TABLE app_dependents (\"userId\" text PRIMARY KEY REFERENCES app_people(id), payload text NOT NULL CHECK (payload <> ''))").execute(raw).await?;
         _ = sqlx::query("INSERT INTO app_dependents VALUES ('1', 'retained application data')")
             .execute(raw)
             .await?;
@@ -1438,7 +1446,7 @@ mod postgres_numeric_columns {
     }
     async fn snapshot(raw: &sqlx::PgPool) -> TestResult<String> {
         Ok(
-            sqlx::query_scalar("SELECT json_build_object('users',(SELECT json_agg(r ORDER BY id) FROM app_people r),'dependents',(SELECT json_agg(r ORDER BY user_id) FROM app_dependents r),'constraints',(SELECT json_agg(pg_get_constraintdef(oid) ORDER BY conname) FROM pg_constraint WHERE conrelid IN ('app_people'::regclass,'app_dependents'::regclass)))::text")
+            sqlx::query_scalar("SELECT json_build_object('users',(SELECT json_agg(r ORDER BY id) FROM app_people r),'dependents',(SELECT json_agg(r ORDER BY \"userId\") FROM app_dependents r),'constraints',(SELECT json_agg(pg_get_constraintdef(oid) ORDER BY conname) FROM pg_constraint WHERE conrelid IN ('app_people'::regclass,'app_dependents'::regclass)))::text")
                 .fetch_one(raw)
                 .await?,
         )
@@ -1468,7 +1476,7 @@ mod postgres_numeric_columns {
             )
             .await?;
         assert_eq!(updated.name(), Some("Updated application owner"));
-        let dependent: (String, String) = sqlx::query_as("SELECT p.retained, d.payload FROM app_people p JOIN app_dependents d ON d.user_id=p.id WHERE p.id='1'").fetch_one(raw).await?;
+        let dependent: (String, String) = sqlx::query_as("SELECT p.retained, d.payload FROM app_people p JOIN app_dependents d ON d.\"userId\"=p.id WHERE p.id='1'").fetch_one(raw).await?;
         assert_eq!(
             dependent,
             (
@@ -1598,7 +1606,7 @@ mod postgres_numeric_columns {
         ));
         // Explain the real prepared statement, with the actual bound value,
         // on the same one-connection native pool that executed it.
-        let (name, statement): (String, String) = sqlx::query_as("SELECT name, statement FROM pg_prepared_statements WHERE statement LIKE '%score64% >= %::int8%' ORDER BY prepare_time LIMIT 1").fetch_one(native).await?;
+        let (name, statement): (String, String) = sqlx::query_as("SELECT \"name\", statement FROM pg_prepared_statements WHERE statement LIKE '%score64% >= %::int8%' ORDER BY prepare_time LIMIT 1").fetch_one(native).await?;
         assert!(!statement.contains("CAST(\"app_people\".\"score64\""));
         let plan: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             "EXPLAIN EXECUTE \"{}\"('9998')",

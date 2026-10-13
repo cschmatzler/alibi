@@ -17,6 +17,8 @@ pub(crate) fn options() -> ConnectOptions {
             .filename(name.clone())
             .in_memory(true)
             .shared_cache(true)
+            // Mirror bun:sqlite defaults in the TypeScript fixture.
+            .foreign_keys(false)
     });
     // Closing the final SQLite memory connection destroys every migrated row.
     options
@@ -56,14 +58,14 @@ mod tests {
         writer
             .execute_raw(Statement::from_string(
                 DbBackend::Sqlite,
-                "CREATE TABLE invitation(id TEXT,status TEXT);CREATE TABLE member(id TEXT)",
+                "CREATE TABLE \"invitation\"(id TEXT,\"status\" TEXT);CREATE TABLE \"member\"(id TEXT)",
             ))
             .await
             .unwrap();
         writer
             .execute_raw(Statement::from_string(
                 DbBackend::Sqlite,
-                "INSERT INTO invitation VALUES('issued','accepted')",
+                "INSERT INTO \"invitation\" VALUES('issued','accepted')",
             ))
             .await
             .unwrap();
@@ -71,14 +73,14 @@ mod tests {
         transaction
             .execute_raw(Statement::from_string(
                 DbBackend::Sqlite,
-                "INSERT INTO member VALUES('pending')",
+                "INSERT INTO \"member\" VALUES('pending')",
             ))
             .await
             .unwrap();
         let row = observer
             .query_one_raw(Statement::from_string(
                 DbBackend::Sqlite,
-                "SELECT status FROM invitation WHERE id='issued'",
+                "SELECT \"status\" FROM \"invitation\" WHERE id='issued'",
             ))
             .await
             .unwrap()
@@ -88,7 +90,7 @@ mod tests {
             observer
                 .execute_raw(Statement::from_string(
                     DbBackend::Sqlite,
-                    "UPDATE invitation SET status='pending'"
+                    "UPDATE \"invitation\" SET \"status\"='pending'"
                 ))
                 .await
                 .is_err()
@@ -98,7 +100,7 @@ mod tests {
             writer
                 .query_one_raw(Statement::from_string(
                     DbBackend::Sqlite,
-                    "SELECT id FROM member"
+                    "SELECT id FROM \"member\""
                 ))
                 .await
                 .unwrap()
@@ -146,13 +148,14 @@ mod tests {
             .execute(pool)
             .await
             .unwrap();
-            let before: String =
-                sqlx::query_scalar(sqlx::AssertSqlSafe("SELECT token FROM connection_identity"))
-                    .fetch_one(pool)
-                    .await
-                    .unwrap();
+            let before: String = sqlx::query_scalar(sqlx::AssertSqlSafe(
+                "SELECT \"token\" FROM connection_identity",
+            ))
+            .fetch_one(pool)
+            .await
+            .unwrap();
             let tables_before: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(
-                "SELECT count(*) FROM sqlite_master WHERE type='table'",
+                "SELECT \"count\"(*) FROM sqlite_master WHERE type='table'",
             ))
             .fetch_one(pool)
             .await
@@ -160,13 +163,13 @@ mod tests {
             assert!(tables_before > 0);
             tokio::time::sleep(Duration::from_millis(2200)).await;
             let tables_after: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(
-                "SELECT count(*) FROM sqlite_master WHERE type='table'",
+                "SELECT \"count\"(*) FROM sqlite_master WHERE type='table'",
             ))
             .fetch_one(pool)
             .await
             .unwrap();
             let connection = sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(
-                "SELECT token FROM connection_identity",
+                "SELECT \"token\" FROM connection_identity",
             ))
             .fetch_one(pool)
             .await;

@@ -665,7 +665,7 @@ mod tests {
         assert_eq!(issued.get("providerId"), Some(&json!("google")));
         assert_eq!(issued.get("accountId"), Some(&json!(account.account_id())));
         let before = physical
-            .tables(&["accounts", "users", "sessions"])
+            .tables(&["account", "user", "session"])
             .await
             .unwrap();
         let sequence = Arc::new(std::sync::Mutex::new(vec![(
@@ -704,7 +704,7 @@ mod tests {
         assert_eq!(denied_body.get("code"), Some(&json!("ACCOUNT_NOT_FOUND")));
         assert_eq!(
             physical
-                .tables(&["accounts", "users", "sessions"])
+                .tables(&["account", "user", "session"])
                 .await
                 .unwrap(),
             before
@@ -739,14 +739,14 @@ mod tests {
         );
         // Read physical SQL independently of the production store's getters.
         for (column, expected) in [
-            ("access_token", "rotated-access-token"),
-            ("refresh_token", "rotated-refresh-token"),
-            ("user_id", user_id.as_str()),
+            ("accessToken", "rotated-access-token"),
+            ("refreshToken", "rotated-refresh-token"),
+            ("userId", user_id.as_str()),
         ] {
             assert_eq!(
                 physical
                     .text(
-                        &format!("SELECT {column} FROM accounts WHERE id = $1"),
+                        &format!("SELECT {column} FROM \"account\" WHERE id = $1"),
                         &[account.id().as_ref()]
                     )
                     .await
@@ -759,7 +759,7 @@ mod tests {
             serde_json::from_str(before.first().expect("physical snapshot includes accounts"))
                 .unwrap();
         let updated_accounts: Vec<serde_json::Value> =
-            serde_json::from_str(&physical.table("accounts").await.unwrap()).unwrap();
+            serde_json::from_str(&physical.table("account").await.unwrap()).unwrap();
         assert_eq!(updated_accounts.len(), original_accounts.len());
         let foreign_id = json!(foreign_account.id());
         assert_eq!(
@@ -772,13 +772,13 @@ mod tests {
             "owner refresh must preserve the entire foreign account row"
         );
         assert_eq!(
-            physical.tables(&["users", "sessions"]).await.unwrap(),
+            physical.tables(&["user", "session"]).await.unwrap(),
             before.into_iter().skip(1).collect::<Vec<_>>()
         );
         assert_eq!(
             physical
                 .text(
-                    "SELECT refresh_token FROM accounts WHERE id = $1",
+                    "SELECT \"refreshToken\" FROM \"account\" WHERE id = $1",
                     &[foreign_account.id().as_ref()]
                 )
                 .await
@@ -1626,135 +1626,4 @@ mod tests {
     }
 
     // Upstream reference: packages/better-auth/src/api/routes/account.test.ts :: describe("account") and packages/better-auth/src/oauth2/link-account.test.ts; adapted to the Rust account and OAuth route behavior.
-    #[tokio::test]
-    async fn test_get_access_token_preserves_source_plaintext_import_when_encryption_is_enabled() {
-        let config = Arc::new(test_config_with_encryption());
-        let db = create_test_database().await;
-
-        let (user_id, session_token, account_id) = setup_user_with_account(
-            &db,
-            &config,
-            "plaintext-access@example.com",
-            "google",
-            Some("plain-access-token".to_owned()),
-            Some("plain-refresh-token".to_owned()),
-        )
-        .await;
-
-        let before = serde_json::to_value(db.get_user_accounts(&user_id).await.unwrap()).unwrap();
-        let ctx = AuthContext::new(Arc::clone(&config), Arc::clone(&db));
-        let mut oauth_config = OAuthConfig::default();
-        oauth_config.providers.insert(
-            "google".to_owned(),
-            make_test_provider("http://localhost:65535"),
-        );
-        let oauth_plugin = OAuthPlugin::with_config(oauth_config);
-
-        let mut req = AuthRequest::new(HttpMethod::Post, "/get-access-token");
-        req.body = Some(json!({"accountId": account_id}).to_string().into_bytes());
-        req.headers
-            .insert("content-type".to_owned(), "application/json".to_owned());
-        req.headers.insert(
-            "cookie".to_owned(),
-            format!(
-                "better-auth.session_token={}",
-                alibi::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
-            ),
-        );
-
-        let result = oauth_plugin.on_request(&req, &ctx).await;
-        let response = result.unwrap().unwrap();
-        assert_eq!(response.status, 200);
-        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-        assert_eq!(
-            (*(body)
-                .get("accessToken")
-                .unwrap_or(&serde_json::Value::Null)),
-            "plain-access-token"
-        );
-        assert_eq!(
-            serde_json::to_value(db.get_user_accounts(&user_id).await.unwrap()).unwrap(),
-            before
-        );
-    }
-
-    // Upstream reference: packages/better-auth/src/api/routes/account.test.ts :: describe("account") and packages/better-auth/src/oauth2/link-account.test.ts; adapted to the Rust account and OAuth route behavior.
-    #[tokio::test]
-    async fn test_refresh_token_passes_plaintext_import_to_custom_provider_and_encrypts_rotation() {
-        let config = Arc::new(test_config_with_encryption());
-        let db = create_test_database().await;
-
-        let (user_id, session_token, account_id) = setup_user_with_account(
-            &db,
-            &config,
-            "plaintext-refresh@example.com",
-            "google",
-            Some("plain-access-token".to_owned()),
-            Some("plain-refresh-token".to_owned()),
-        )
-        .await;
-
-        let ctx = AuthContext::new(Arc::clone(&config), Arc::clone(&db));
-        let mut oauth_config = OAuthConfig::default();
-        let sequence = Arc::new(std::sync::Mutex::new(vec![(
-            "plain-refresh-token".to_owned(),
-            OAuthTokenSet {
-                access_token: Some("new-access-token".to_owned()),
-                refresh_token: Some("new-refresh-token".to_owned()),
-                id_token: Some("literal-provider-id-token".to_owned()),
-                ..Default::default()
-            },
-        )]));
-        let mut provider = make_test_provider("http://localhost:65535");
-        provider.refresh_access_token = Some(Arc::new(RotatingRefreshHandler {
-            sequence: Arc::clone(&sequence),
-        }));
-        oauth_config.providers.insert("google".to_owned(), provider);
-        let oauth_plugin = OAuthPlugin::with_config(oauth_config);
-
-        let mut req = AuthRequest::new(HttpMethod::Post, "/refresh-token");
-        req.body = Some(json!({"accountId": account_id}).to_string().into_bytes());
-        req.headers
-            .insert("content-type".to_owned(), "application/json".to_owned());
-        req.headers.insert(
-            "cookie".to_owned(),
-            format!(
-                "better-auth.session_token={}",
-                alibi::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
-            ),
-        );
-
-        let result = oauth_plugin.on_request(&req, &ctx).await;
-        let response = result.unwrap().unwrap();
-        assert_eq!(response.status, 200);
-        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-        assert_eq!(
-            (*(body)
-                .get("accessToken")
-                .unwrap_or(&serde_json::Value::Null)),
-            "new-access-token"
-        );
-        assert_eq!(
-            (*(body)
-                .get("refreshToken")
-                .unwrap_or(&serde_json::Value::Null)),
-            "new-refresh-token"
-        );
-        assert_eq!(
-            (*(body).get("idToken").unwrap_or(&serde_json::Value::Null)),
-            "literal-provider-id-token"
-        );
-        assert!(sequence.lock().unwrap().is_empty());
-        let account = db.get_user_accounts(&user_id).await.unwrap().remove(0);
-        assert_eq!(account.id(), account_id);
-        assert_eq!(
-            decrypt_token(account.access_token().unwrap(), TEST_SECRET).unwrap(),
-            "new-access-token"
-        );
-        assert_eq!(
-            decrypt_token(account.refresh_token().unwrap(), TEST_SECRET).unwrap(),
-            "new-refresh-token"
-        );
-        assert_eq!(account.id_token(), Some("literal-provider-id-token"));
-    }
 }

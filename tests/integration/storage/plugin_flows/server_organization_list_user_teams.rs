@@ -75,7 +75,7 @@ async fn server_list_user_teams_preserves_scope_and_member_authority<B: Backend>
     };
     let endpoint = || ServerEndpoint::<JsValue>::new("organization", "listUserTeams");
     let before = db
-        .tables(&["users", "sessions", "member", "team", "team_member"])
+        .tables(&["user", "session", "member", "team", "teamMember"])
         .await?;
     for (query, options, status, code) in [
         (None, EndpointOptions::default(), 400, "VALIDATION_ERROR"),
@@ -148,7 +148,7 @@ async fn server_list_user_teams_preserves_scope_and_member_authority<B: Backend>
     let other = Box::pin(auth.dispatch_endpoint(endpoint(), credentials(&outsider))).await?;
     assert_eq!(serde_json::to_value(other.value())?, json!([]));
     assert_eq!(
-        db.tables(&["users", "sessions", "member", "team", "team_member"])
+        db.tables(&["user", "session", "member", "team", "teamMember"])
             .await?,
         before
     );

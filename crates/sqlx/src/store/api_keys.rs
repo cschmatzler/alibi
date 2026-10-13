@@ -41,7 +41,7 @@ where
         let mut active = ActiveRow::new();
         active.set(
             "id",
-            self.generated_id(self.exec(), "apikey", "api_keys", "id")
+            self.generated_id(self.exec(), "apikey", "apikey", "id")
                 .await?
                 .unwrap_or_else(|| Uuid::new_v4().to_string()),
         );
@@ -49,24 +49,24 @@ where
         active.set("start", start.into_sql_value());
         active.set("prefix", input.prefix);
         active.set("key", input.key_hash);
-        active.set("reference_id", input.reference_id);
-        active.set("config_id", input.config_id);
-        active.set("refill_interval", input.refill_interval);
-        active.set("refill_amount", input.refill_amount);
-        active.set("last_refill_at", None::<chrono::DateTime<Utc>>);
+        active.set("referenceId", input.reference_id);
+        active.set("configId", input.config_id);
+        active.set("refillInterval", input.refill_interval);
+        active.set("refillAmount", input.refill_amount);
+        active.set("lastRefillAt", None::<chrono::DateTime<Utc>>);
         active.set("enabled", input.enabled);
-        active.set("rate_limit_enabled", input.rate_limit_enabled);
-        active.set("rate_limit_time_window", input.rate_limit_time_window);
-        active.set("rate_limit_max", input.rate_limit_max);
-        active.set("request_count", Some(0.0_f64));
+        active.set("rateLimitEnabled", input.rate_limit_enabled);
+        active.set("rateLimitTimeWindow", input.rate_limit_time_window);
+        active.set("rateLimitMax", input.rate_limit_max);
+        active.set("requestCount", Some(0.0_f64));
         active.set("remaining", input.remaining);
-        active.set("last_request", None::<chrono::DateTime<Utc>>);
+        active.set("lastRequest", None::<chrono::DateTime<Utc>>);
         active.set(
-            "expires_at",
-            parse_optional_rfc3339(input.expires_at.as_deref(), "expires_at")?,
+            "expiresAt",
+            parse_optional_rfc3339(input.expires_at.as_deref(), "expiresAt")?,
         );
-        active.set("created_at", now);
-        active.set("updated_at", now);
+        active.set("createdAt", now);
+        active.set("updatedAt", now);
         active.set("permissions", input.permissions);
         active.set("metadata", input.metadata);
         let inserted = if sqlite_cast {
@@ -126,9 +126,9 @@ where
         // Explicit ASC order matches TS insertion order on every backend.
         let mut sql = model::select_model::<Model>(self.exec());
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "reference_id", " = ", reference_id);
+        sql.compare(Model::TABLE, "referenceId", " = ", reference_id);
         sql.push(" ORDER BY ");
-        sql.column(Model::TABLE, "created_at");
+        sql.column(Model::TABLE, "createdAt");
         sql.push(" ASC");
         Ok(self
             .exec()
@@ -178,9 +178,11 @@ where
             let now = Utc::now();
             let mut update = UpdateApiKey::default();
 
-            if let Some(remaining) = model.remaining {
-                if let (Some(interval), Some(amount)) = (model.refill_interval, model.refill_amount)
-                    && interval != 0.0
+            if let Some(remaining) = model.remaining.map(|value| value.0) {
+                if let (Some(interval), Some(amount)) = (
+                    model.refill_interval.map(|value| value.0),
+                    model.refill_amount.map(|value| value.0),
+                ) && interval != 0.0
                     && amount != 0.0
                     && (now.timestamp_millis()
                         - model
@@ -198,23 +200,24 @@ where
                 }
             }
 
-            if global_rate_limit_enabled && model.rate_limit_enabled {
-                if let (Some(window), Some(max)) =
-                    (model.rate_limit_time_window, model.rate_limit_max)
-                {
+            if global_rate_limit_enabled && model.rate_limit_enabled.unwrap_or(false) {
+                if let (Some(window), Some(max)) = (
+                    model.rate_limit_time_window.map(|value| value.0),
+                    model.rate_limit_max.map(|value| value.0),
+                ) {
                     let elapsed = model
                         .last_request
                         .map(|last| (now.timestamp_millis() - last.timestamp_millis()) as f64);
                     if let Some(elapsed) = elapsed
                         && elapsed <= window
-                        && model.request_count.unwrap_or(0.0) >= max
+                        && model.request_count.map_or(0.0, |value| value.0) >= max
                     {
                         // TS consumes quota before rejecting a rate-limited request.
                         // A rejection preserves the rate-limit window and updated_at.
                         if update.remaining.is_some() {
                             let updated_at = model.updated_at;
                             let mut active = apply_update_fields(model.into_active(), update)?;
-                            active.set("updated_at", updated_at);
+                            active.set("updatedAt", updated_at);
                             _ = model::update::<Model>(exec, &active)
                                 .await?
                                 .ok_or_else(record_not_updated)?;
@@ -228,7 +231,7 @@ where
                         Some(if elapsed.is_none_or(|elapsed| elapsed > window) {
                             1.0
                         } else {
-                            model.request_count.unwrap_or(0.0) + 1.0
+                            model.request_count.map_or(0.0, |value| value.0) + 1.0
                         });
                     update.last_request = Some(Some(now.to_rfc3339()));
                 }
@@ -264,9 +267,9 @@ where
         let mut sql = Sql::with(self.exec().engine(), "DELETE FROM ");
         sql.ident(Model::TABLE);
         sql.push(" WHERE ");
-        sql.column(Model::TABLE, "expires_at");
+        sql.column(Model::TABLE, "expiresAt");
         sql.push(" IS NOT NULL AND ");
-        sql.compare(Model::TABLE, "expires_at", " < ", Utc::now());
+        sql.compare(Model::TABLE, "expiresAt", " < ", Utc::now());
         let deleted = self.exec().execute(sql).await?;
         usize::try_from(deleted)
             .map_err(|_error| AuthError::internal("Affected row count exceeds usize"))
@@ -285,19 +288,19 @@ fn apply_update_fields(mut active: ActiveRow, update: UpdateApiKey) -> AuthResul
         active.set("remaining", Some(remaining));
     }
     if let Some(rate_limit_enabled) = update.rate_limit_enabled {
-        active.set("rate_limit_enabled", rate_limit_enabled);
+        active.set("rateLimitEnabled", rate_limit_enabled);
     }
     if let Some(rate_limit_time_window) = update.rate_limit_time_window {
-        active.set("rate_limit_time_window", Some(rate_limit_time_window));
+        active.set("rateLimitTimeWindow", Some(rate_limit_time_window));
     }
     if let Some(rate_limit_max) = update.rate_limit_max {
-        active.set("rate_limit_max", Some(rate_limit_max));
+        active.set("rateLimitMax", Some(rate_limit_max));
     }
     if let Some(refill_interval) = update.refill_interval {
-        active.set("refill_interval", Some(refill_interval));
+        active.set("refillInterval", Some(refill_interval));
     }
     if let Some(refill_amount) = update.refill_amount {
-        active.set("refill_amount", Some(refill_amount));
+        active.set("refillAmount", Some(refill_amount));
     }
     if let Some(permissions) = update.permissions {
         active.set("permissions", Some(permissions));
@@ -307,25 +310,25 @@ fn apply_update_fields(mut active: ActiveRow, update: UpdateApiKey) -> AuthResul
     }
     if let Some(expires_at) = update.expires_at {
         active.set(
-            "expires_at",
-            parse_optional_rfc3339(expires_at.as_deref(), "expires_at")?,
+            "expiresAt",
+            parse_optional_rfc3339(expires_at.as_deref(), "expiresAt")?,
         );
     }
     if let Some(last_request) = update.last_request {
         active.set(
-            "last_request",
-            parse_optional_rfc3339(last_request.as_deref(), "last_request")?,
+            "lastRequest",
+            parse_optional_rfc3339(last_request.as_deref(), "lastRequest")?,
         );
     }
     if let Some(request_count) = update.request_count {
-        active.set("request_count", Some(request_count));
+        active.set("requestCount", Some(request_count));
     }
     if let Some(last_refill_at) = update.last_refill_at {
         active.set(
-            "last_refill_at",
-            parse_optional_rfc3339(last_refill_at.as_deref(), "last_refill_at")?,
+            "lastRefillAt",
+            parse_optional_rfc3339(last_refill_at.as_deref(), "lastRefillAt")?,
         );
     }
-    active.set("updated_at", Utc::now());
+    active.set("updatedAt", Utc::now());
     Ok(active)
 }

@@ -568,20 +568,29 @@ pub(crate) async fn router(
             let db = db.clone();
             async move {
                 let mut conn = db.get_sqlite_connection_pool().acquire().await.unwrap();
+                conn.close_on_drop();
+                let enabled: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe("PRAGMA foreign_keys"))
+                    .fetch_one(&mut *conn)
+                    .await
+                    .unwrap();
                 sqlx::query(sqlx::AssertSqlSafe("PRAGMA foreign_keys=OFF"))
                     .execute(&mut *conn)
                     .await
                     .unwrap();
                 let result = sqlx::query(sqlx::AssertSqlSafe(
-                    "UPDATE accounts SET user_id='missing-owner' WHERE id=?",
+                    "UPDATE \"account\" SET \"userId\"='missing-owner' WHERE id=?",
                 ))
                 .bind(body["accountId"].as_str().unwrap())
                 .execute(&mut *conn)
                 .await;
-                sqlx::query(sqlx::AssertSqlSafe("PRAGMA foreign_keys=ON"))
-                    .execute(&mut *conn)
-                    .await
-                    .unwrap();
+                sqlx::query(sqlx::AssertSqlSafe(if enabled == 0 {
+                    "PRAGMA foreign_keys=OFF"
+                } else {
+                    "PRAGMA foreign_keys=ON"
+                }))
+                .execute(&mut *conn)
+                .await
+                .unwrap();
                 result.unwrap();
                 Json(json!({"status":true}))
             }

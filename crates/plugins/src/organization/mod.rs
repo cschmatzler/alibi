@@ -1756,7 +1756,7 @@ mod extension_tests {
         for statement in [
             "CREATE TABLE session_refresh_audit (refreshes INTEGER NOT NULL)",
             "INSERT INTO session_refresh_audit (refreshes) VALUES (0)",
-            "CREATE TRIGGER record_session_refresh AFTER UPDATE OF expires_at ON sessions BEGIN UPDATE session_refresh_audit SET refreshes = refreshes + 1; END",
+            "CREATE TRIGGER record_session_refresh AFTER UPDATE OF \"expiresAt\" ON \"session\" BEGIN UPDATE session_refresh_audit SET refreshes = refreshes + 1; END",
         ] {
             database
                 .execute_raw(Statement::from_string(DbBackend::Sqlite, statement))

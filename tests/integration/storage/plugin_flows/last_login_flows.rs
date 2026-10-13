@@ -190,7 +190,7 @@ async fn last_login_tracks_every_sign_in_method<B: Backend>(db: Db) -> TestResul
         "stored methods",
         json!(
             db.text(
-                "SELECT GROUP_CONCAT(email || '=' || COALESCE(last_login_method, 'none'), ',') FROM (SELECT * FROM users ORDER BY email)",
+                "SELECT GROUP_CONCAT(\"email\" || '=' || COALESCE(\"lastLoginMethod\", 'none'), ',') FROM (SELECT * FROM \"user\" ORDER BY \"email\")",
                 &[],
             )
             .await?
@@ -300,7 +300,7 @@ async fn last_login_resolver_and_cookie_policy<B: Backend>(db: Db) -> TestResult
         "stored methods",
         json!(
             db.text(
-                "SELECT GROUP_CONCAT(email || '=' || COALESCE(last_login_method, 'none'), ',') FROM (SELECT * FROM users ORDER BY email)",
+                "SELECT GROUP_CONCAT(\"email\" || '=' || COALESCE(\"lastLoginMethod\", 'none'), ',') FROM (SELECT * FROM \"user\" ORDER BY \"email\")",
                 &[],
             )
             .await?
@@ -377,7 +377,7 @@ async fn last_login_tracks_social_callbacks<B: Backend>(db: Db) -> TestResult {
         Some("better-auth.last_used_login_method=google")
     );
     assert_eq!(
-        db.text("SELECT last_login_method FROM users", &[])
+        db.text("SELECT \"lastLoginMethod\" FROM \"user\"", &[])
             .await?
             .as_deref(),
         Some("google")
@@ -469,7 +469,7 @@ async fn last_login_resolver_receives_transformed_numbers_and_original_http_byte
         Some("better-auth.last_used_login_method=body%3AInfinity%3A-0")
     );
     assert_eq!(
-        db.text("SELECT last_login_method FROM users", &[])
+        db.text("SELECT \"lastLoginMethod\" FROM \"user\"", &[])
             .await?
             .as_deref(),
         Some("body:Infinity:-0")
@@ -492,9 +492,9 @@ async fn last_login_tracking_update_failure_is_best_effort_for_authentication<B:
         .await?;
     let owner = signup(&auth, "owner@example.test").await;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let users = db.table("users").await?;
-    let accounts = db.table("accounts").await?;
-    _ = db.execute("CREATE TRIGGER reject_tracking BEFORE UPDATE OF last_login_method ON users BEGIN SELECT RAISE(ABORT, 'tracking unavailable'); END",&[]).await?;
+    let users = db.table("user").await?;
+    let accounts = db.table("account").await?;
+    _ = db.execute("CREATE TRIGGER reject_tracking BEFORE UPDATE OF \"lastLoginMethod\" ON \"user\" BEGIN SELECT RAISE(ABORT, 'tracking unavailable'); END",&[]).await?;
     let mut input = request(
         "/sign-in/email",
         Some(json!({"email":"owner@example.test","password":PASSWORD})),
@@ -506,9 +506,9 @@ async fn last_login_tracking_update_failure_is_best_effort_for_authentication<B:
         tracked(&issued).as_deref(),
         Some("better-auth.last_used_login_method=custom%20method!(*)'")
     );
-    assert_eq!(db.table("users").await?, users);
-    assert_eq!(db.table("accounts").await?, accounts);
-    assert_eq!(db.count("sessions").await?, 3);
+    assert_eq!(db.table("user").await?, users);
+    assert_eq!(db.table("account").await?, accounts);
+    assert_eq!(db.count("session").await?, 3);
     for cookie in [cookies(&owner), cookies(&issued)] {
         authenticated(&auth, &cookie, "owner@example.test").await;
     }
@@ -584,14 +584,14 @@ async fn last_login_configured_tracking_cookie_receipt<B: Backend>(db: Db) -> Te
         }
         assert_eq!(
             db.text(
-                "SELECT last_login_method FROM users WHERE id=$1",
+                "SELECT \"lastLoginMethod\" FROM \"user\" WHERE id=$1",
                 &[body(&owner)["user"]["id"].as_str().unwrap()]
             )
             .await?
             .as_deref(),
             Some("email")
         );
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         let rejected = call(
             &auth,
             request(
@@ -608,7 +608,7 @@ async fn last_login_configured_tracking_cookie_receipt<B: Backend>(db: Db) -> Te
                 .get_all("set-cookie")
                 .any(|v| v.starts_with("application.last_login="))
         );
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
         B::close(connection).await?;
     }
     Ok(())
@@ -675,11 +675,11 @@ async fn last_login_consent_original_issuance_snapshot<B: Backend>(db: Db) -> Te
     let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
     _ = db
         .execute(
-            "UPDATE users SET last_login_method='prior-owned-method' WHERE id=$1",
+            "UPDATE \"user\" SET \"lastLoginMethod\"='prior-owned-method' WHERE id=$1",
             &[body(&owner)["user"]["id"].as_str().unwrap()],
         )
         .await?;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     consent.0.lock().unwrap().clear();
     let signed = call(
         &auth,
@@ -699,7 +699,7 @@ async fn last_login_consent_original_issuance_snapshot<B: Backend>(db: Db) -> Te
     assert_eq!(seen[0].0["lastLoginMethod"], "prior-owned-method");
     assert_eq!(
         db.text(
-            "SELECT last_login_method FROM users WHERE id=$1",
+            "SELECT \"lastLoginMethod\" FROM \"user\" WHERE id=$1",
             &[body(&owner)["user"]["id"].as_str().unwrap()]
         )
         .await?
@@ -716,7 +716,7 @@ async fn last_login_consent_original_issuance_snapshot<B: Backend>(db: Db) -> Te
         "snapshot-tracking-owner@example.test",
     )
     .await;
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     for index in 0..3 {
         let old: Vec<Value> = serde_json::from_str(&before[index])?;
         let current: Vec<Value> = serde_json::from_str(&after[index])?;

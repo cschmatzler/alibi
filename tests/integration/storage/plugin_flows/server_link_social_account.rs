@@ -28,7 +28,7 @@ async fn server_link_social_account_preserves_owner_and_redeems_bound_pkce<B: Ba
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for (body, options, status) in [
         (
@@ -76,7 +76,7 @@ async fn server_link_social_account_preserves_owner_and_redeems_bound_pkce<B: Ba
         .unwrap_err();
         assert_eq!(denied.error.status_code(), status);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -121,7 +121,7 @@ async fn server_link_social_account_preserves_owner_and_redeems_bound_pkce<B: Ba
         assert_eq!(params["scope"], "profile calendar profile");
         assert_eq!(params["login_hint"], "Owner+link@example.test");
         assert_eq!(params["prompt"], "consent :+&");
-        let proofs: Vec<Value> = serde_json::from_str(&db.table("verifications").await?)?;
+        let proofs: Vec<Value> = serde_json::from_str(&db.table("verification").await?)?;
         let proof = proofs
             .iter()
             .find(|p| p["identifier"] == format!("auth-state:{}", params["state"]))
@@ -154,11 +154,11 @@ async fn server_link_social_account_preserves_owner_and_redeems_bound_pkce<B: Ba
         assert!(window.contains(&payload["expiresAt"].as_i64().unwrap()));
         assert!(
             window.contains(
-                &chrono::DateTime::parse_from_rfc3339(proof["expires_at"].as_str().unwrap())?
+                &chrono::DateTime::parse_from_rfc3339(proof["expiresAt"].as_str().unwrap())?
                     .timestamp_millis()
             )
         );
-        for field in ["created_at", "updated_at"] {
+        for field in ["createdAt", "updatedAt"] {
             let timestamp = chrono::DateTime::parse_from_rfc3339(proof[field].as_str().unwrap())?
                 .timestamp_millis();
             assert!((started_at..=finished_at).contains(&timestamp));
@@ -180,7 +180,7 @@ async fn server_link_social_account_preserves_owner_and_redeems_bound_pkce<B: Ba
             Some(params["state"].as_str())
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
+            db.tables(&["user", "account", "session"]).await?,
             before[..3]
         );
         assert!(remote.take().is_empty());
@@ -202,10 +202,10 @@ async fn server_link_social_account_preserves_owner_and_redeems_bound_pkce<B: Ba
         Some("/linked-logical")
     );
     assert_eq!(
-        db.tables(&["users", "sessions"]).await?,
+        db.tables(&["user", "session"]).await?,
         vec![before[0].clone(), before[2].clone()]
     );
-    let accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    let accounts: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
     let old: Vec<Value> = serde_json::from_str(&before[1])?;
     assert_eq!(accounts.len(), old.len() + 1);
     for prior in old {
@@ -213,12 +213,12 @@ async fn server_link_social_account_preserves_owner_and_redeems_bound_pkce<B: Ba
     }
     let added = accounts
         .iter()
-        .find(|a| a["provider_id"] == "generic")
+        .find(|a| a["providerId"] == "generic")
         .unwrap();
-    assert_eq!(added["user_id"], owner_id);
-    assert_eq!(added["account_id"], "logical-linked-subject");
-    assert_eq!(added["access_token"], "generic-access");
-    assert_eq!(added["refresh_token"], "generic-refresh");
+    assert_eq!(added["userId"], owner_id);
+    assert_eq!(added["accountId"], "logical-linked-subject");
+    assert_eq!(added["accessToken"], "generic-access");
+    assert_eq!(added["refreshToken"], "generic-refresh");
     let sent = remote.take();
     let grant = sent.iter().find(|s| s.path == "/token").unwrap();
     let form = url::form_urlencoded::parse(&grant.body)
@@ -226,9 +226,9 @@ async fn server_link_social_account_preserves_owner_and_redeems_bound_pkce<B: Ba
         .collect::<std::collections::HashMap<_, _>>();
     assert_eq!(form["code"], "logical-link-code");
     assert_eq!(form["code_verifier"], verifier);
-    let stable = db.tables(&["users", "accounts", "sessions"]).await?;
+    let stable = db.tables(&["user", "account", "session"]).await?;
     drop(call(&auth, incoming, 302).await);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stable);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, stable);
     assert!(remote.take().is_empty());
     assert_eq!(
         observer

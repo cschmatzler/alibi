@@ -175,8 +175,6 @@ pub trait SeaOrmSessionModel:
 
     fn user_id_column() -> Self::Column;
 
-    fn active_column() -> Self::Column;
-
     fn expires_at_column() -> Self::Column;
 
     fn created_at_column() -> Self::Column;
@@ -256,12 +254,6 @@ pub trait SeaOrmAccountModel:
     type Entity: EntityTrait<Model = Self>;
     type ActiveModel: ActiveModelTrait<Entity = Self::Entity> + ActiveModelBehavior + Send;
     type Column: ColumnTrait;
-
-    /// Physical access, refresh and ID token columns for operator conversion.
-    /// Handwritten models opt in explicitly; absence fails closed.
-    fn oauth_token_columns() -> Option<[Self::Column; 3]> {
-        None
-    }
 
     fn id_column() -> Self::Column;
     fn provider_id_column() -> Self::Column;

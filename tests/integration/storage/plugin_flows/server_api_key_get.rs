@@ -50,7 +50,7 @@ async fn server_api_key_read_delete_lifecycle_preserves_owner_authority<B: Backe
         ..Default::default()
     };
     let endpoint = || ServerEndpoint::<JsValue>::new("api-key", "getApiKey");
-    let before = db.tables(&["users", "sessions", "api_keys"]).await?;
+    let before = db.tables(&["user", "session", "apikey"]).await?;
     for config_id in [None, Some("default"), Some("unknown-config")] {
         let mut query = json!({"id":key_id,"ignored":{"nested":true}});
         if let Some(config_id) = config_id {
@@ -133,7 +133,7 @@ async fn server_api_key_read_delete_lifecycle_preserves_owner_authority<B: Backe
     .await?;
     assert_eq!(typed.value(), &expected);
     assert_eq!(typed.decode()?.id, key_id);
-    assert_eq!(db.tables(&["users", "sessions", "api_keys"]).await?, before);
+    assert_eq!(db.tables(&["user", "session", "apikey"]).await?, before);
     let deletion = || ServerEndpoint::<JsValue>::new("api-key", "deleteApiKey");
     for (input, options, status, code) in [
         (None, EndpointOptions::default(), 400, "VALIDATION_ERROR"),
@@ -190,7 +190,7 @@ async fn server_api_key_read_delete_lifecycle_preserves_owner_authority<B: Backe
         assert_eq!(error.error.status_code(), status);
         assert_eq!(body(&error.error.to_auth_response())["code"], code);
     }
-    assert_eq!(db.tables(&["users", "sessions", "api_keys"]).await?, before);
+    assert_eq!(db.tables(&["user", "session", "apikey"]).await?, before);
     let removed = Box::pin(
         auth.dispatch_endpoint(
             ApiKeyPlugin::delete_endpoint(&alibi::plugins::api_key::DeleteKeyRequest {
@@ -204,7 +204,7 @@ async fn server_api_key_read_delete_lifecycle_preserves_owner_authority<B: Backe
     .await?;
     assert_eq!(removed.value().get("success"), Some(&JsValue::Bool(true)));
     assert!(removed.decode()?.success);
-    let after = db.tables(&["users", "sessions", "api_keys"]).await?;
+    let after = db.tables(&["user", "session", "apikey"]).await?;
     assert_eq!(&after[..2], &before[..2]);
     assert_eq!(after[2], "[]");
     for call in [
@@ -220,6 +220,6 @@ async fn server_api_key_read_delete_lifecycle_preserves_owner_authority<B: Backe
             "KEY_NOT_FOUND"
         );
     }
-    assert_eq!(db.tables(&["users", "sessions", "api_keys"]).await?, after);
+    assert_eq!(db.tables(&["user", "session", "apikey"]).await?, after);
     B::close(connection).await
 }

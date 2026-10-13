@@ -1,0 +1,1297 @@
+{
+  "version": "1.7.7",
+  "tables": {
+    "user": {
+      "modelName": "user",
+      "fields": {
+        "name": {
+          "type": "string",
+          "required": true,
+          "fieldName": "name"
+        },
+        "email": {
+          "type": "string",
+          "required": true,
+          "fieldName": "email",
+          "unique": true
+        },
+        "emailVerified": {
+          "type": "boolean",
+          "required": true,
+          "fieldName": "emailVerified",
+          "defaultValue": false
+        },
+        "image": {
+          "type": "string",
+          "required": false,
+          "fieldName": "image"
+        },
+        "createdAt": {
+          "type": "date",
+          "required": true,
+          "fieldName": "createdAt",
+          "defaultValue": "runtime"
+        },
+        "updatedAt": {
+          "type": "date",
+          "required": true,
+          "fieldName": "updatedAt",
+          "defaultValue": "runtime"
+        },
+        "role": {
+          "type": "string",
+          "required": false
+        },
+        "banned": {
+          "type": "boolean",
+          "required": false,
+          "defaultValue": false
+        },
+        "banReason": {
+          "type": "string",
+          "required": false
+        },
+        "banExpires": {
+          "type": "date",
+          "required": false
+        },
+        "isAnonymous": {
+          "type": "boolean",
+          "required": false,
+          "defaultValue": false
+        },
+        "phoneNumber": {
+          "type": "string",
+          "required": false,
+          "unique": true
+        },
+        "phoneNumberVerified": {
+          "type": "boolean",
+          "required": false
+        },
+        "lastLoginMethod": {
+          "type": "string",
+          "required": false,
+          "fieldName": "lastLoginMethod"
+        },
+        "username": {
+          "type": "string",
+          "required": false,
+          "unique": true
+        },
+        "displayUsername": {
+          "type": "string",
+          "required": false
+        },
+        "twoFactorEnabled": {
+          "type": "boolean",
+          "required": false,
+          "defaultValue": false
+        }
+      },
+      "indexes": []
+    },
+    "session": {
+      "modelName": "session",
+      "fields": {
+        "expiresAt": {
+          "type": "date",
+          "required": true,
+          "fieldName": "expiresAt"
+        },
+        "token": {
+          "type": "string",
+          "required": true,
+          "fieldName": "token",
+          "unique": true
+        },
+        "createdAt": {
+          "type": "date",
+          "required": true,
+          "fieldName": "createdAt",
+          "defaultValue": "runtime"
+        },
+        "updatedAt": {
+          "type": "date",
+          "required": true,
+          "fieldName": "updatedAt"
+        },
+        "ipAddress": {
+          "type": "string",
+          "required": false,
+          "fieldName": "ipAddress"
+        },
+        "userAgent": {
+          "type": "string",
+          "required": false,
+          "fieldName": "userAgent"
+        },
+        "userId": {
+          "type": "string",
+          "required": true,
+          "fieldName": "userId",
+          "index": true,
+          "references": {
+            "model": "user",
+            "field": "id",
+            "onDelete": "cascade"
+          }
+        },
+        "impersonatedBy": {
+          "type": "string",
+          "required": false
+        },
+        "activeOrganizationId": {
+          "type": "string",
+          "required": false
+        },
+        "activeTeamId": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "indexes": []
+    },
+    "account": {
+      "modelName": "account",
+      "fields": {
+        "accountId": {
+          "type": "string",
+          "required": true,
+          "fieldName": "accountId"
+        },
+        "providerId": {
+          "type": "string",
+          "required": true,
+          "fieldName": "providerId"
+        },
+        "userId": {
+          "type": "string",
+          "required": true,
+          "fieldName": "userId",
+          "index": true,
+          "references": {
+            "model": "user",
+            "field": "id",
+            "onDelete": "cascade"
+          }
+        },
+        "accessToken": {
+          "type": "string",
+          "required": false,
+          "fieldName": "accessToken"
+        },
+        "refreshToken": {
+          "type": "string",
+          "required": false,
+          "fieldName": "refreshToken"
+        },
+        "idToken": {
+          "type": "string",
+          "required": false,
+          "fieldName": "idToken"
+        },
+        "accessTokenExpiresAt": {
+          "type": "date",
+          "required": false,
+          "fieldName": "accessTokenExpiresAt"
+        },
+        "refreshTokenExpiresAt": {
+          "type": "date",
+          "required": false,
+          "fieldName": "refreshTokenExpiresAt"
+        },
+        "scope": {
+          "type": "string",
+          "required": false,
+          "fieldName": "scope"
+        },
+        "password": {
+          "type": "string",
+          "required": false,
+          "fieldName": "password"
+        },
+        "createdAt": {
+          "type": "date",
+          "required": true,
+          "fieldName": "createdAt",
+          "defaultValue": "runtime"
+        },
+        "updatedAt": {
+          "type": "date",
+          "required": true,
+          "fieldName": "updatedAt"
+        }
+      }
+    },
+    "verification": {
+      "modelName": "verification",
+      "fields": {
+        "identifier": {
+          "type": "string",
+          "required": true,
+          "fieldName": "identifier",
+          "index": true
+        },
+        "value": {
+          "type": "string",
+          "required": true,
+          "fieldName": "value"
+        },
+        "expiresAt": {
+          "type": "date",
+          "required": true,
+          "fieldName": "expiresAt"
+        },
+        "createdAt": {
+          "type": "date",
+          "required": true,
+          "fieldName": "createdAt",
+          "defaultValue": "runtime"
+        },
+        "updatedAt": {
+          "type": "date",
+          "required": true,
+          "fieldName": "updatedAt",
+          "defaultValue": "runtime"
+        }
+      }
+    },
+    "organization": {
+      "modelName": "organization",
+      "fields": {
+        "name": {
+          "type": "string",
+          "required": true
+        },
+        "slug": {
+          "type": "string",
+          "required": true,
+          "unique": true,
+          "index": true
+        },
+        "logo": {
+          "type": "string",
+          "required": false
+        },
+        "createdAt": {
+          "type": "date",
+          "required": true
+        },
+        "metadata": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "indexes": []
+    },
+    "organizationRole": {
+      "modelName": "organizationRole",
+      "fields": {
+        "organizationId": {
+          "type": "string",
+          "required": true,
+          "index": true,
+          "references": {
+            "model": "organization",
+            "field": "id"
+          }
+        },
+        "role": {
+          "type": "string",
+          "required": true,
+          "index": true
+        },
+        "permission": {
+          "type": "string",
+          "required": true
+        },
+        "createdAt": {
+          "type": "date",
+          "required": true,
+          "defaultValue": "runtime"
+        },
+        "updatedAt": {
+          "type": "date",
+          "required": false
+        }
+      },
+      "indexes": []
+    },
+    "team": {
+      "modelName": "team",
+      "fields": {
+        "name": {
+          "type": "string",
+          "required": true
+        },
+        "memberCount": {
+          "type": "number",
+          "required": true,
+          "defaultValue": 0
+        },
+        "organizationId": {
+          "type": "string",
+          "required": true,
+          "index": true,
+          "references": {
+            "model": "organization",
+            "field": "id"
+          }
+        },
+        "createdAt": {
+          "type": "date",
+          "required": true
+        },
+        "updatedAt": {
+          "type": "date",
+          "required": false
+        }
+      },
+      "indexes": []
+    },
+    "teamMember": {
+      "modelName": "teamMember",
+      "fields": {
+        "teamId": {
+          "type": "string",
+          "required": true,
+          "index": true,
+          "references": {
+            "model": "team",
+            "field": "id"
+          }
+        },
+        "userId": {
+          "type": "string",
+          "required": true,
+          "index": true,
+          "references": {
+            "model": "user",
+            "field": "id"
+          }
+        },
+        "membershipKey": {
+          "type": "string",
+          "required": false,
+          "unique": true
+        },
+        "createdAt": {
+          "type": "date",
+          "required": false
+        }
+      },
+      "indexes": []
+    },
+    "member": {
+      "modelName": "member",
+      "fields": {
+        "organizationId": {
+          "type": "string",
+          "required": true,
+          "index": true,
+          "references": {
+            "model": "organization",
+            "field": "id"
+          }
+        },
+        "userId": {
+          "type": "string",
+          "required": true,
+          "index": true,
+          "references": {
+            "model": "user",
+            "field": "id"
+          }
+        },
+        "role": {
+          "type": "string",
+          "required": true,
+          "defaultValue": "member"
+        },
+        "createdAt": {
+          "type": "date",
+          "required": true
+        }
+      },
+      "indexes": []
+    },
+    "invitation": {
+      "modelName": "invitation",
+      "fields": {
+        "organizationId": {
+          "type": "string",
+          "required": true,
+          "index": true,
+          "references": {
+            "model": "organization",
+            "field": "id"
+          }
+        },
+        "email": {
+          "type": "string",
+          "required": true,
+          "index": true
+        },
+        "role": {
+          "type": "string",
+          "required": false
+        },
+        "teamId": {
+          "type": "string",
+          "required": false
+        },
+        "status": {
+          "type": "string",
+          "required": true,
+          "defaultValue": "pending"
+        },
+        "expiresAt": {
+          "type": "date",
+          "required": true
+        },
+        "createdAt": {
+          "type": "date",
+          "required": true,
+          "defaultValue": "runtime"
+        },
+        "inviterId": {
+          "type": "string",
+          "required": true,
+          "references": {
+            "model": "user",
+            "field": "id"
+          }
+        }
+      },
+      "indexes": []
+    },
+    "twoFactor": {
+      "modelName": "twoFactor",
+      "fields": {
+        "secret": {
+          "type": "string",
+          "required": true,
+          "index": true
+        },
+        "backupCodes": {
+          "type": "string",
+          "required": true
+        },
+        "userId": {
+          "type": "string",
+          "required": true,
+          "index": true,
+          "references": {
+            "model": "user",
+            "field": "id"
+          }
+        },
+        "verified": {
+          "type": "boolean",
+          "required": false,
+          "defaultValue": true
+        },
+        "failedVerificationCount": {
+          "type": "number",
+          "required": false,
+          "defaultValue": 0
+        },
+        "lockedUntil": {
+          "type": "date",
+          "required": false
+        }
+      },
+      "indexes": []
+    },
+    "deviceCode": {
+      "modelName": "deviceCode",
+      "fields": {
+        "deviceCode": {
+          "type": "string",
+          "required": true
+        },
+        "userCode": {
+          "type": "string",
+          "required": true
+        },
+        "userId": {
+          "type": "string",
+          "required": false
+        },
+        "expiresAt": {
+          "type": "date",
+          "required": true
+        },
+        "status": {
+          "type": "string",
+          "required": true
+        },
+        "lastPolledAt": {
+          "type": "date",
+          "required": false
+        },
+        "pollingInterval": {
+          "type": "number",
+          "required": false
+        },
+        "clientId": {
+          "type": "string",
+          "required": false
+        },
+        "scope": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "indexes": [
+        {
+          "fields": [
+            "deviceCode"
+          ],
+          "unique": true
+        },
+        {
+          "fields": [
+            "userCode"
+          ],
+          "unique": true
+        }
+      ]
+    },
+    "jwks": {
+      "modelName": "jwks",
+      "fields": {
+        "publicKey": {
+          "type": "string",
+          "required": true
+        },
+        "privateKey": {
+          "type": "string",
+          "required": true
+        },
+        "createdAt": {
+          "type": "date",
+          "required": true
+        },
+        "expiresAt": {
+          "type": "date",
+          "required": false
+        },
+        "alg": {
+          "type": "string",
+          "required": false
+        },
+        "crv": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "indexes": []
+    },
+    "walletAddress": {
+      "modelName": "walletAddress",
+      "fields": {
+        "userId": {
+          "type": "string",
+          "required": true,
+          "index": true,
+          "references": {
+            "model": "user",
+            "field": "id"
+          }
+        },
+        "address": {
+          "type": "string",
+          "required": true
+        },
+        "chainId": {
+          "type": "number",
+          "required": true
+        },
+        "isPrimary": {
+          "type": "boolean",
+          "required": true,
+          "defaultValue": false
+        },
+        "createdAt": {
+          "type": "date",
+          "required": true
+        }
+      },
+      "indexes": []
+    },
+    "apikey": {
+      "modelName": "apikey",
+      "fields": {
+        "configId": {
+          "type": "string",
+          "required": true,
+          "defaultValue": "default",
+          "index": true
+        },
+        "name": {
+          "type": "string",
+          "required": false
+        },
+        "start": {
+          "type": "string",
+          "required": false
+        },
+        "referenceId": {
+          "type": "string",
+          "required": true,
+          "index": true
+        },
+        "prefix": {
+          "type": "string",
+          "required": false
+        },
+        "key": {
+          "type": "string",
+          "required": true,
+          "index": true
+        },
+        "refillInterval": {
+          "type": "number",
+          "required": false
+        },
+        "refillAmount": {
+          "type": "number",
+          "required": false
+        },
+        "lastRefillAt": {
+          "type": "date",
+          "required": false
+        },
+        "enabled": {
+          "type": "boolean",
+          "required": false,
+          "defaultValue": true
+        },
+        "rateLimitEnabled": {
+          "type": "boolean",
+          "required": false,
+          "defaultValue": true
+        },
+        "rateLimitTimeWindow": {
+          "type": "number",
+          "required": false,
+          "defaultValue": 86400000
+        },
+        "rateLimitMax": {
+          "type": "number",
+          "required": false,
+          "defaultValue": 10
+        },
+        "requestCount": {
+          "type": "number",
+          "required": false,
+          "defaultValue": 0
+        },
+        "remaining": {
+          "type": "number",
+          "required": false
+        },
+        "lastRequest": {
+          "type": "date",
+          "required": false
+        },
+        "expiresAt": {
+          "type": "date",
+          "required": false
+        },
+        "createdAt": {
+          "type": "date",
+          "required": true
+        },
+        "updatedAt": {
+          "type": "date",
+          "required": true
+        },
+        "permissions": {
+          "type": "string",
+          "required": false
+        },
+        "metadata": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "indexes": []
+    },
+    "passkey": {
+      "modelName": "passkey",
+      "fields": {
+        "name": {
+          "type": "string",
+          "required": false
+        },
+        "publicKey": {
+          "type": "string",
+          "required": true
+        },
+        "userId": {
+          "type": "string",
+          "required": true,
+          "index": true,
+          "references": {
+            "model": "user",
+            "field": "id"
+          }
+        },
+        "credentialID": {
+          "type": "string",
+          "required": true,
+          "index": true
+        },
+        "counter": {
+          "type": "number",
+          "required": true
+        },
+        "deviceType": {
+          "type": "string",
+          "required": true
+        },
+        "backedUp": {
+          "type": "boolean",
+          "required": true
+        },
+        "transports": {
+          "type": "string",
+          "required": false
+        },
+        "createdAt": {
+          "type": "date",
+          "required": false
+        },
+        "aaguid": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "indexes": []
+    },
+    "oauthClient": {
+      "modelName": "oauthClient",
+      "fields": {
+        "clientId": {
+          "type": "string",
+          "required": true,
+          "unique": true
+        },
+        "clientSecret": {
+          "type": "string",
+          "required": false
+        },
+        "clientDiscoveryId": {
+          "type": "string",
+          "required": false
+        },
+        "disabled": {
+          "type": "boolean",
+          "required": false,
+          "defaultValue": false
+        },
+        "skipConsent": {
+          "type": "boolean",
+          "required": false
+        },
+        "enableEndSession": {
+          "type": "boolean",
+          "required": false
+        },
+        "subjectType": {
+          "type": "string",
+          "required": false
+        },
+        "scopes": {
+          "type": "string[]",
+          "required": false
+        },
+        "clientCredentialsScopes": {
+          "type": "string[]",
+          "required": false,
+          "defaultValue": []
+        },
+        "userId": {
+          "type": "string",
+          "required": false,
+          "index": true,
+          "references": {
+            "model": "user",
+            "field": "id"
+          }
+        },
+        "createdAt": {
+          "type": "date",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "date",
+          "required": false
+        },
+        "name": {
+          "type": "string",
+          "required": false
+        },
+        "uri": {
+          "type": "string",
+          "required": false
+        },
+        "icon": {
+          "type": "string",
+          "required": false
+        },
+        "contacts": {
+          "type": "string[]",
+          "required": false
+        },
+        "tos": {
+          "type": "string",
+          "required": false
+        },
+        "policy": {
+          "type": "string",
+          "required": false
+        },
+        "softwareId": {
+          "type": "string",
+          "required": false
+        },
+        "softwareVersion": {
+          "type": "string",
+          "required": false
+        },
+        "softwareStatement": {
+          "type": "string",
+          "required": false
+        },
+        "redirectUris": {
+          "type": "string[]",
+          "required": true
+        },
+        "postLogoutRedirectUris": {
+          "type": "string[]",
+          "required": false
+        },
+        "backchannelLogoutUri": {
+          "type": "string",
+          "required": false
+        },
+        "backchannelLogoutSessionRequired": {
+          "type": "boolean",
+          "required": false
+        },
+        "tokenEndpointAuthMethod": {
+          "type": "string",
+          "required": false
+        },
+        "applicationType": {
+          "type": "string",
+          "required": false
+        },
+        "jwks": {
+          "type": "string",
+          "required": false
+        },
+        "jwksUri": {
+          "type": "string",
+          "required": false
+        },
+        "grantTypes": {
+          "type": "string[]",
+          "required": false
+        },
+        "responseTypes": {
+          "type": "string[]",
+          "required": false
+        },
+        "requirePKCE": {
+          "type": "boolean",
+          "required": false
+        },
+        "dpopBoundAccessTokens": {
+          "type": "boolean",
+          "required": false,
+          "defaultValue": false
+        },
+        "referenceId": {
+          "type": "string",
+          "required": false
+        },
+        "metadata": {
+          "type": "json",
+          "required": false
+        }
+      },
+      "indexes": []
+    },
+    "oauthResource": {
+      "modelName": "oauthResource",
+      "fields": {
+        "identifier": {
+          "type": "string",
+          "required": true,
+          "unique": true
+        },
+        "name": {
+          "type": "string",
+          "required": true
+        },
+        "accessTokenTtl": {
+          "type": "number",
+          "required": false
+        },
+        "refreshTokenTtl": {
+          "type": "number",
+          "required": false
+        },
+        "signingAlgorithm": {
+          "type": "string",
+          "required": false
+        },
+        "signingKeyId": {
+          "type": "string",
+          "required": false
+        },
+        "allowedScopes": {
+          "type": "string[]",
+          "required": false
+        },
+        "customClaims": {
+          "type": "json",
+          "required": false
+        },
+        "dpopBoundAccessTokensRequired": {
+          "type": "boolean",
+          "required": false,
+          "defaultValue": false
+        },
+        "disabled": {
+          "type": "boolean",
+          "required": false,
+          "defaultValue": false
+        },
+        "createdAt": {
+          "type": "date",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "date",
+          "required": false
+        },
+        "policyVersion": {
+          "type": "number",
+          "required": false,
+          "defaultValue": 1
+        },
+        "metadata": {
+          "type": "json",
+          "required": false
+        }
+      },
+      "indexes": []
+    },
+    "oauthClientResource": {
+      "modelName": "oauthClientResource",
+      "fields": {
+        "clientId": {
+          "type": "string",
+          "required": true,
+          "index": true,
+          "references": {
+            "model": "oauthClient",
+            "field": "clientId",
+            "onDelete": "cascade"
+          }
+        },
+        "resourceId": {
+          "type": "string",
+          "required": true,
+          "index": true,
+          "references": {
+            "model": "oauthResource",
+            "field": "identifier",
+            "onDelete": "cascade"
+          }
+        },
+        "metadata": {
+          "type": "json",
+          "required": false
+        },
+        "createdAt": {
+          "type": "date",
+          "required": false
+        }
+      },
+      "indexes": [
+        {
+          "fields": [
+            "clientId",
+            "resourceId"
+          ],
+          "unique": true
+        }
+      ]
+    },
+    "oauthRefreshToken": {
+      "modelName": "oauthRefreshToken",
+      "fields": {
+        "token": {
+          "type": "string",
+          "required": true,
+          "unique": true
+        },
+        "clientId": {
+          "type": "string",
+          "required": true,
+          "index": true,
+          "references": {
+            "model": "oauthClient",
+            "field": "clientId"
+          }
+        },
+        "sessionId": {
+          "type": "string",
+          "required": false,
+          "index": true,
+          "references": {
+            "model": "session",
+            "field": "id",
+            "onDelete": "set null"
+          }
+        },
+        "userId": {
+          "type": "string",
+          "required": true,
+          "index": true,
+          "references": {
+            "model": "user",
+            "field": "id"
+          }
+        },
+        "referenceId": {
+          "type": "string",
+          "required": false
+        },
+        "authorizationCodeId": {
+          "type": "string",
+          "required": false,
+          "index": true
+        },
+        "resources": {
+          "type": "string[]",
+          "required": false
+        },
+        "requestedUserInfoClaims": {
+          "type": "string[]",
+          "required": false
+        },
+        "expiresAt": {
+          "type": "date",
+          "required": true
+        },
+        "createdAt": {
+          "type": "date",
+          "required": true
+        },
+        "revoked": {
+          "type": "date",
+          "required": false
+        },
+        "rotatedAt": {
+          "type": "date",
+          "required": false
+        },
+        "rotationReplayResponse": {
+          "type": "string",
+          "required": false
+        },
+        "rotationReplayExpiresAt": {
+          "type": "date",
+          "required": false
+        },
+        "authTime": {
+          "type": "date",
+          "required": false
+        },
+        "confirmation": {
+          "type": "json",
+          "required": false
+        },
+        "scopes": {
+          "type": "string[]",
+          "required": true
+        }
+      },
+      "indexes": []
+    },
+    "oauthAccessToken": {
+      "modelName": "oauthAccessToken",
+      "fields": {
+        "token": {
+          "type": "string",
+          "required": true,
+          "unique": true
+        },
+        "clientId": {
+          "type": "string",
+          "required": true,
+          "index": true,
+          "references": {
+            "model": "oauthClient",
+            "field": "clientId"
+          }
+        },
+        "sessionId": {
+          "type": "string",
+          "required": false,
+          "index": true,
+          "references": {
+            "model": "session",
+            "field": "id",
+            "onDelete": "set null"
+          }
+        },
+        "userId": {
+          "type": "string",
+          "required": false,
+          "index": true,
+          "references": {
+            "model": "user",
+            "field": "id"
+          }
+        },
+        "referenceId": {
+          "type": "string",
+          "required": false
+        },
+        "authorizationCodeId": {
+          "type": "string",
+          "required": false,
+          "index": true
+        },
+        "resources": {
+          "type": "string[]",
+          "required": false
+        },
+        "requestedUserInfoClaims": {
+          "type": "string[]",
+          "required": false
+        },
+        "refreshId": {
+          "type": "string",
+          "required": false,
+          "index": true,
+          "references": {
+            "model": "oauthRefreshToken",
+            "field": "id"
+          }
+        },
+        "expiresAt": {
+          "type": "date",
+          "required": true
+        },
+        "createdAt": {
+          "type": "date",
+          "required": true
+        },
+        "revoked": {
+          "type": "date",
+          "required": false
+        },
+        "confirmation": {
+          "type": "json",
+          "required": false
+        },
+        "scopes": {
+          "type": "string[]",
+          "required": true
+        }
+      },
+      "indexes": []
+    },
+    "oauthConsent": {
+      "modelName": "oauthConsent",
+      "fields": {
+        "clientId": {
+          "type": "string",
+          "required": true,
+          "index": true,
+          "references": {
+            "model": "oauthClient",
+            "field": "clientId"
+          }
+        },
+        "userId": {
+          "type": "string",
+          "required": false,
+          "index": true,
+          "references": {
+            "model": "user",
+            "field": "id"
+          }
+        },
+        "referenceId": {
+          "type": "string",
+          "required": false
+        },
+        "resources": {
+          "type": "string[]",
+          "required": false
+        },
+        "requestedUserInfoClaims": {
+          "type": "string[]",
+          "required": false
+        },
+        "scopes": {
+          "type": "string[]",
+          "required": true
+        },
+        "createdAt": {
+          "type": "date",
+          "required": true
+        },
+        "updatedAt": {
+          "type": "date",
+          "required": true
+        }
+      },
+      "indexes": []
+    },
+    "oauthClientAssertion": {
+      "modelName": "oauthClientAssertion",
+      "fields": {
+        "expiresAt": {
+          "type": "date",
+          "required": true
+        }
+      },
+      "indexes": []
+    },
+    "rateLimit": {
+      "modelName": "rateLimit",
+      "fields": {
+        "key": {
+          "type": "string",
+          "required": true,
+          "fieldName": "key",
+          "unique": true
+        },
+        "count": {
+          "type": "number",
+          "required": true,
+          "fieldName": "count"
+        },
+        "lastRequest": {
+          "type": "number",
+          "required": true,
+          "bigint": true,
+          "fieldName": "lastRequest",
+          "defaultValue": "runtime"
+        }
+      }
+    }
+  }
+}

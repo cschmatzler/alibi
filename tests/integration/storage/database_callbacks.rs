@@ -225,25 +225,25 @@ async fn database_callback_veto_mutation_missing_and_after_error_effects<B: Back
     let user_id = user.id().into_owned();
     hooks.set("account-create");
     assert!(store.create_account(account(&user_id)).await.is_err());
-    assert_eq!(db.count("accounts").await?, 0);
+    assert_eq!(db.count("account").await?, 0);
     hooks.set("");
     let created = store.create_account(account(&user_id)).await?;
     let id = created.id().into_owned();
     assert_eq!(
-        db.text("SELECT scope FROM accounts WHERE id=$1", &[&id])
+        db.text("SELECT \"scope\" FROM \"account\" WHERE id=$1", &[&id])
             .await?
             .as_deref(),
         Some("hook-created")
     );
     hooks.set("account-update");
-    let original = db.table("accounts").await?;
+    let original = db.table("account").await?;
     assert!(
         store
             .update_account(&id, UpdateAccount::default())
             .await
             .is_err()
     );
-    assert_eq!(db.table("accounts").await?, original);
+    assert_eq!(db.table("account").await?, original);
     assert_eq!(
         *hooks.events.lock().unwrap(),
         json!([["account-update", id]]).as_array().unwrap().clone()
@@ -256,7 +256,7 @@ async fn database_callback_veto_mutation_missing_and_after_error_effects<B: Back
             .is_err()
     );
     assert_eq!(
-        db.text("SELECT scope FROM accounts WHERE id=$1", &[&id])
+        db.text("SELECT \"scope\" FROM \"account\" WHERE id=$1", &[&id])
             .await?
             .as_deref(),
         Some("hook-updated")
@@ -266,16 +266,16 @@ async fn database_callback_veto_mutation_missing_and_after_error_effects<B: Back
         Some(&json!(["account-updated", [id, "hook-updated"]]))
     );
     hooks.set("account-delete");
-    let retained = db.table("accounts").await?;
+    let retained = db.table("account").await?;
     store.delete_account(&id).await?;
-    assert_eq!(db.table("accounts").await?, retained);
+    assert_eq!(db.table("account").await?, retained);
     assert_eq!(
         *hooks.events.lock().unwrap(),
         vec![json!(["account-delete", [id, "hook-updated"]])]
     );
     hooks.set("account-deleted");
     assert!(store.delete_account(&id).await.is_err());
-    assert_eq!(db.count("accounts").await?, 0);
+    assert_eq!(db.count("account").await?, 0);
     assert_eq!(
         *hooks.events.lock().unwrap(),
         vec![
@@ -297,7 +297,7 @@ async fn database_callback_veto_mutation_missing_and_after_error_effects<B: Back
             active_team_id: None,
         })
         .await?;
-    let before_session_update = db.table("sessions").await?;
+    let before_session_update = db.table("session").await?;
     hooks.set("session-update");
     assert!(
         store
@@ -305,7 +305,7 @@ async fn database_callback_veto_mutation_missing_and_after_error_effects<B: Back
             .await?
             .is_none()
     );
-    assert_eq!(db.table("sessions").await?, before_session_update);
+    assert_eq!(db.table("session").await?, before_session_update);
     assert_eq!(
         *hooks.events.lock().unwrap(),
         vec![json!(["session-update", session.token()])]
@@ -318,7 +318,7 @@ async fn database_callback_veto_mutation_missing_and_after_error_effects<B: Back
             .is_err()
     );
     assert_eq!(
-        db.text("SELECT ip_address FROM sessions", &[])
+        db.text("SELECT \"ipAddress\" FROM \"session\"", &[])
             .await?
             .as_deref(),
         Some("198.51.100.77")
@@ -345,9 +345,9 @@ async fn database_callback_veto_mutation_missing_and_after_error_effects<B: Back
         ]
     );
     hooks.set("session-delete");
-    let retained = db.table("sessions").await?;
+    let retained = db.table("session").await?;
     store.delete_session(session.token()).await?;
-    assert_eq!(db.table("sessions").await?, retained);
+    assert_eq!(db.table("session").await?, retained);
     assert_eq!(
         *hooks.events.lock().unwrap(),
         vec![json!([
@@ -357,7 +357,7 @@ async fn database_callback_veto_mutation_missing_and_after_error_effects<B: Back
     );
     hooks.set("session-deleted");
     assert!(store.delete_session(session.token()).await.is_err());
-    assert_eq!(db.count("sessions").await?, 0);
+    assert_eq!(db.count("session").await?, 0);
     assert_eq!(
         *hooks.events.lock().unwrap(),
         vec![
@@ -386,7 +386,7 @@ async fn database_callback_veto_mutation_missing_and_after_error_effects<B: Back
                 .await?
                 .is_none()
         );
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
         assert_eq!(
             hooks.events.lock().unwrap().len(),
             if veto == "verification-create" { 1 } else { 2 }
@@ -400,7 +400,7 @@ async fn database_callback_veto_mutation_missing_and_after_error_effects<B: Back
             .await?
             .is_some()
     );
-    assert_eq!(db.count_where("SELECT COUNT(*) FROM verifications WHERE identifier='mapped-proof' AND value='record-value'",&[]).await?,1);
+    assert_eq!(db.count_where("SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"='mapped-proof' AND \"value\"='record-value'",&[]).await?,1);
     hooks.set("verification-updated");
     assert!(
         store
@@ -415,7 +415,7 @@ async fn database_callback_veto_mutation_missing_and_after_error_effects<B: Back
             .is_err()
     );
     assert_eq!(
-        db.text("SELECT value FROM verifications", &[])
+        db.text("SELECT \"value\" FROM \"verification\"", &[])
             .await?
             .as_deref(),
         Some("updated-value")
@@ -446,7 +446,7 @@ async fn database_callback_veto_mutation_missing_and_after_error_effects<B: Back
     );
     hooks.set("user-deleted");
     assert!(store.delete_user(&user_id).await.is_err());
-    assert_eq!(db.count("users").await?, 0);
+    assert_eq!(db.count("user").await?, 0);
     assert_eq!(
         *hooks.events.lock().unwrap(),
         vec![json!(["user-deleted", [user_id, "callback@example.test"]])]
@@ -485,21 +485,24 @@ async fn bulk_session_delete_hooks<B: Backend>(db: Db) -> TestResult {
             })
             .await?;
     }
-    // Bulk hooks must also see inactive and expired rows, which are deleted too.
+    // Bulk hooks must also see expired rows, which are deleted too.
     _ = db
         .raw
-        .execute("UPDATE sessions SET active=false WHERE token='second'", &[])
+        .execute(
+            "UPDATE \"session\" SET \"expiresAt\"='2000-01-01T00:00:00Z' WHERE \"token\"='second'",
+            &[],
+        )
         .await?;
     hooks.set("session-delete-second");
-    let retained = db.table("sessions").await?;
+    let retained = db.table("session").await?;
     store.delete_user_sessions(&user.id()).await?;
-    assert_eq!(db.table("sessions").await?, retained);
+    assert_eq!(db.table("session").await?, retained);
     let veto_events = hooks.events.lock().unwrap().clone();
     assert!(veto_events.iter().all(|event| event[0] == "session-delete"));
     assert_eq!(veto_events.last().unwrap()[1][0], "second");
     hooks.set("");
     store.delete_user_sessions(&user.id()).await?;
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     assert!(store.get_session("other").await?.is_some());
     let events = hooks.events.lock().unwrap().clone();
     assert_eq!(events.len(), 4);

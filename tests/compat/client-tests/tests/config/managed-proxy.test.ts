@@ -9,21 +9,18 @@ import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 const old = "managed-old-reader-key-at-least-32-characters";
 const current = "compat-test-only-key-not-real-minimum-32chars";
-const legacy = "managed-legacy-reader-key-at-least-32-characters";
 const ring = {
   keys: new Map([
     [2, current],
     [0, old],
   ]),
   currentVersion: 2,
-  legacySecret: legacy,
 };
 const purposeRing = (purpose: Parameters<typeof oauthPurposeSecret>[1]) => ({
   keys: new Map(
     [...ring.keys].map(([version, secret]) => [version, oauthPurposeSecret(secret, purpose)]),
   ),
   currentVersion: ring.currentVersion,
-  legacySecret: oauthPurposeSecret(legacy, purpose),
 });
 const path = authProfilePath("managed-proxy");
 // Both runtimes receive the same independently Source-encrypted wrong-key vector.
@@ -119,7 +116,6 @@ compatScenario(
     const journeys = [];
     for (const [index, write, producer, reader, missing] of [
       [0, "old", "old", "retained", "retired"],
-      [1, "bare", "bare", "legacy", "retained"],
       [2, "old", "retained", "retired", "retired"],
     ] as const) {
       await keys(ctx, write);
@@ -190,8 +186,7 @@ compatScenario(
       expect(bridge.origin).toBe(ctx.baseURL);
       expect(bridge.pathname).toBe(path + "/callback/gitlab/oauth-proxy");
       const token = bridge.searchParams.get("profile")!;
-      if (producer === "bare") expect(token.startsWith("$ba$")).toBe(false);
-      else expect(token.startsWith(producer === "old" ? "$ba$0$" : "$ba$2$")).toBe(true);
+      expect(token.startsWith(producer === "old" ? "$ba$0$" : "$ba$2$")).toBe(true);
       const payload = JSON.parse(
         await symmetricDecrypt({ key: purposeRing("oauth-proxy-profile"), data: token }),
       );
@@ -338,7 +333,6 @@ compatScenario(
         0: oauthPurposeSecret(old, "oauth-proxy-profile"),
         2: oauthPurposeSecret(current, "oauth-proxy-profile"),
       },
-      legacySecret: oauthPurposeSecret(legacy, "oauth-proxy-profile"),
     },
   },
 );

@@ -68,7 +68,7 @@ impl Fixture {
             application
                 .database
                 .execute_unprepared(
-                    "DELETE FROM app_session; DELETE FROM app_account; DELETE FROM verifications; DELETE FROM app_user",
+                    "DELETE FROM app_session; DELETE FROM app_account; DELETE FROM \"verification\"; DELETE FROM app_user",
                 )
                 .await
                 .map_err(db_error)?;
@@ -542,7 +542,7 @@ impl DatabaseHooks<ApplicationSchema, crate::backend::Backend> for Application {
             .push(json!({"phase":"before","entity":"session","fields":fields}));
         let stored = crate::backend::rows::<application_session::Model>(
             &self.database,
-            "SELECT * FROM app_session WHERE token = ? LIMIT 1",
+            "SELECT * FROM app_session WHERE \"token\" = ? LIMIT 1",
             vec![token.to_owned()],
         )
         .await
@@ -569,7 +569,7 @@ impl DatabaseHooks<ApplicationSchema, crate::backend::Backend> for Application {
                 self.database
                     .execute_raw(Statement::from_sql_and_values(
                         DbBackend::Sqlite,
-                        "DELETE FROM app_session WHERE token = ?",
+                        "DELETE FROM app_session WHERE \"token\" = ?",
                         [token.into()],
                     ))
                     .await
@@ -794,7 +794,7 @@ impl Application {
         .map_err(db_error)?;
         let verifications = crate::backend::rows::<verification::Model>(
             &self.database,
-            "SELECT * FROM verifications",
+            "SELECT * FROM \"verification\"",
             vec![],
         )
         .await
@@ -857,7 +857,7 @@ pub(crate) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
                                 .database
                                 .execute_raw(Statement::from_sql_and_values(
                                     DbBackend::Sqlite,
-                                    "UPDATE app_session SET label = ? WHERE token = ?",
+                                    "UPDATE app_session SET label = ? WHERE \"token\" = ?",
                                     [label.into(), input.token.clone().into()],
                                 ))
                                 .await
@@ -872,7 +872,7 @@ pub(crate) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
                                 .database
                                 .execute_raw(Statement::from_sql_and_values(
                                     DbBackend::Sqlite,
-                                    "UPDATE app_session SET omitted = ? WHERE token = ?",
+                                    "UPDATE app_session SET omitted = ? WHERE \"token\" = ?",
                                     [omitted.into(), input.token.clone().into()],
                                 ))
                                 .await
@@ -883,7 +883,7 @@ pub(crate) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
                                 .database
                                 .execute_raw(Statement::from_sql_and_values(
                                     DbBackend::Sqlite,
-                                    "UPDATE app_session SET hidden = ? WHERE token = ?",
+                                    "UPDATE app_session SET hidden = ? WHERE \"token\" = ?",
                                     [hidden.into(), input.token.clone().into()],
                                 ))
                                 .await
@@ -893,7 +893,7 @@ pub(crate) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
                             .database
                             .execute_raw(Statement::from_sql_and_values(
                                 DbBackend::Sqlite,
-                                "UPDATE app_session SET expires_at = ? WHERE token = ?",
+                                "UPDATE app_session SET \"expiresAt\" = ? WHERE \"token\" = ?",
                                 [input.expires_at.into(), input.token.into()],
                             ))
                             .await

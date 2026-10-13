@@ -5,9 +5,13 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
+    #[sea_orm(column_name = "publicKey")]
     pub public_key: String,
+    #[sea_orm(column_name = "privateKey")]
     pub private_key: String,
+    #[sea_orm(column_name = "createdAt")]
     pub created_at: DateTimeUtc,
+    #[sea_orm(column_name = "expiresAt")]
     pub expires_at: Option<DateTimeUtc>,
     pub alg: Option<String>,
     pub crv: Option<String>,

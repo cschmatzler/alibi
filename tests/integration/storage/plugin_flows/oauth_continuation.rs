@@ -46,15 +46,15 @@ async fn oauth_continuation_resumes_signed_authorization_for_authenticated_calle
     let signed = url.query().unwrap();
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
-            "oauth_client_resource",
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
+            "oauthClientResource",
         ])
         .await?;
     for (input, cookie, attach, status, error, description) in [
@@ -204,15 +204,15 @@ async fn oauth_continuation_resumes_signed_authorization_for_authenticated_calle
     assert_eq!(
         before,
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
-            "oauth_resource",
-            "oauth_client_resource"
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
+            "oauthClientResource"
         ])
         .await?
     );
@@ -294,6 +294,6 @@ async fn oauth_continuation_resumes_signed_authorization_for_authenticated_calle
         chrono::DateTime::parse_from_rfc3339(current["session"]["createdAt"].as_str().unwrap())?
             .timestamp_millis()
     );
-    assert_eq!(db.count("verifications").await?, 2);
+    assert_eq!(db.count("verification").await?, 2);
     Ok(())
 }

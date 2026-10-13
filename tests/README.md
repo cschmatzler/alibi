@@ -126,7 +126,7 @@ Both bundled stores must behave identically. Each test in
 `SqlxStore` and once for `SeaOrmStore`, on file-backed SQLite. Tests that avoid
 SQLite-only SQL also have ignored PostgreSQL variants, run with
 `BETTER_AUTH_TEST_POSTGRES_URL=postgres://... cargo nextest run --test integration -E 'test(/^storage::/)' --run-ignored only`.
-Each test gets a fresh schema in that database. To include the SQLx crate's own
+Use a UTF-8 database, for example one created with `createdb --encoding=UTF8 --template=template0 alibi_tests`. Each test gets a fresh schema in that database. To include the SQLx crate's own
 PostgreSQL wire-type test too:
 
 ```bash

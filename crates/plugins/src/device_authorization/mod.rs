@@ -726,7 +726,7 @@ mod tests {
             HttpMethod::Post,
             "/device/code",
             None,
-            Some(serde_json::json!({ "client_id": "client", "scope": "", "user_id": "" })),
+            Some(serde_json::json!({ "client_id": "client", "scope": "", "userId": "" })),
         );
         let response = plugin.handle_device_code(&request, &ctx).await.unwrap();
         assert_eq!(response.status, 200);

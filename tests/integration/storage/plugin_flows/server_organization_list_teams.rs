@@ -75,12 +75,12 @@ async fn server_list_organization_teams_reads_owned_and_active_teams_without_req
     .await;
     let before = db
         .tables(&[
-            "users",
-            "sessions",
+            "user",
+            "session",
             "organization",
             "member",
             "team",
-            "team_member",
+            "teamMember",
         ])
         .await?;
     let options = |response: &AuthResponse| EndpointOptions {
@@ -160,12 +160,12 @@ async fn server_list_organization_teams_reads_owned_and_active_teams_without_req
     );
     assert_eq!(
         db.tables(&[
-            "users",
-            "sessions",
+            "user",
+            "session",
             "organization",
             "member",
             "team",
-            "team_member"
+            "teamMember"
         ])
         .await?,
         before

@@ -51,9 +51,8 @@ pub struct AccountLinkingConfig {
 /// Strategy for persisting OAuth state between the sign-in and callback steps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OAuthStateStrategy {
-    /// Select the deployment default during builder initialization. Initialized
-    /// contexts never retain this variant. Low-level uninitialized contexts
-    /// keep the historical database fallback for compatibility.
+    /// Select the deployment default during initialization. Initialized
+    /// contexts never retain this variant.
     #[default]
     Automatic,
     /// Persist state in an encrypted cookie.

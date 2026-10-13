@@ -84,7 +84,6 @@ pub struct Session {
     pub ip_address: Option<String>,
     pub user_agent: Option<String>,
     pub user_id: String,
-    pub active: bool,
 }
 ```
 

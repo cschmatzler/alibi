@@ -6,9 +6,13 @@ use chrono::{DateTime, Utc};
 #[auth(table = "jwks")]
 pub struct Model {
     pub id: String,
+    #[sqlx(rename = "publicKey")]
     pub public_key: String,
+    #[sqlx(rename = "privateKey")]
     pub private_key: String,
+    #[sqlx(rename = "createdAt")]
     pub created_at: DateTime<Utc>,
+    #[sqlx(rename = "expiresAt")]
     pub expires_at: Option<DateTime<Utc>>,
     pub alg: Option<String>,
     pub crv: Option<String>,

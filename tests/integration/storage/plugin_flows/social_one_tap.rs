@@ -301,7 +301,7 @@ async fn one_tap_token_admission_matrix<B: Backend>(db: Db) -> TestResult {
             None,
         )
         .await?;
-    let created = db.count("users").await?;
+    let created = db.count("user").await?;
     trace.response(
         "sign up disabled",
         &tap(
@@ -311,7 +311,7 @@ async fn one_tap_token_admission_matrix<B: Backend>(db: Db) -> TestResult {
         )
         .await,
     );
-    assert_eq!(db.count("users").await?, created);
+    assert_eq!(db.count("user").await?, created);
 
     let strict = tap_remote
         .auth::<B>(
@@ -347,7 +347,7 @@ async fn one_tap_token_admission_matrix<B: Backend>(db: Db) -> TestResult {
         "accounts",
         json!(
             db.count_where(
-                "SELECT COUNT(*) FROM accounts WHERE provider_id = $1",
+                "SELECT COUNT(*) FROM \"account\" WHERE \"providerId\" = $1",
                 &["google"]
             )
             .await?
@@ -393,7 +393,7 @@ async fn one_tap_identity_outcomes<B: Backend>(db: Db) -> TestResult {
     trace.response("verified later", &promoted);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM users WHERE email = $1 AND email_verified = true",
+            "SELECT COUNT(*) FROM \"user\" WHERE \"email\" = $1 AND \"emailVerified\" = true",
             &["late@example.test"]
         )
         .await?,
@@ -410,7 +410,7 @@ async fn one_tap_identity_outcomes<B: Backend>(db: Db) -> TestResult {
     trace.response("linked to local user", &linked);
     assert_eq!(
         db.text(
-            "SELECT name FROM users WHERE email = $1",
+            "SELECT \"name\" FROM \"user\" WHERE \"email\" = $1",
             &["local@example.test"]
         )
         .await?
@@ -419,7 +419,7 @@ async fn one_tap_identity_outcomes<B: Backend>(db: Db) -> TestResult {
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM users WHERE email = $1 AND email_verified = true",
+            "SELECT COUNT(*) FROM \"user\" WHERE \"email\" = $1 AND \"emailVerified\" = true",
             &["local@example.test"]
         )
         .await?,
@@ -437,7 +437,7 @@ async fn one_tap_identity_outcomes<B: Backend>(db: Db) -> TestResult {
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM users WHERE email = $1",
+            "SELECT COUNT(*) FROM \"user\" WHERE \"email\" = $1",
             &["deny@example.test"]
         )
         .await?,
@@ -446,7 +446,7 @@ async fn one_tap_identity_outcomes<B: Backend>(db: Db) -> TestResult {
 
     _ = db
         .execute(
-            "UPDATE users SET banned = true WHERE email = $1",
+            "UPDATE \"user\" SET \"banned\" = true WHERE \"email\" = $1",
             &["tap@example.test"],
         )
         .await?;
@@ -556,7 +556,7 @@ async fn one_tap_callback_rejection_before_jwks<B: Backend>(db: Db) -> TestResul
     .await?;
     let foreign = signup(&auth, "foreign@example.test").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let signed = token(json!({}));
     for (body, media, status) in [
@@ -584,7 +584,7 @@ async fn one_tap_callback_rejection_before_jwks<B: Backend>(db: Db) -> TestResul
         assert!(denied.headers.get_all("set-cookie").next().is_none());
         assert!(remote.remote.requests.lock().unwrap().is_empty());
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -637,7 +637,7 @@ async fn one_tap_client_id_array_authority<B: Backend>(db: Db) -> TestResult {
     .build()
     .await?;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let missing = tap(&denied, json!({"aud":"provider-client"}), "").await;
     assert_eq!(missing.status, 400);
@@ -648,7 +648,7 @@ async fn one_tap_client_id_array_authority<B: Backend>(db: Db) -> TestResult {
     assert!(missing.headers.get_all("set-cookie").next().is_none());
     assert!(remote.remote.requests.lock().unwrap().is_empty());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -663,9 +663,9 @@ async fn one_tap_client_id_array_authority<B: Backend>(db: Db) -> TestResult {
     let done = tap(&empty, json!({"aud":""}), "").await;
     assert_eq!(done.status, 200);
     authenticated(&empty, &cookies(&done), "tap@example.test").await;
-    assert_eq!(db.count("users").await?, 1);
-    assert_eq!(db.count("accounts").await?, 1);
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("user").await?, 1);
+    assert_eq!(db.count("account").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     let fallback = runtime::<B>(
         &connection,
         AccountConfig::default(),
@@ -677,9 +677,9 @@ async fn one_tap_client_id_array_authority<B: Backend>(db: Db) -> TestResult {
     let returned = tap(&fallback, json!({"aud":"provider-client"}), "").await;
     assert_eq!(returned.status, 200);
     assert_eq!(body(&returned)["user"]["id"], body(&done)["user"]["id"]);
-    assert_eq!(db.count("users").await?, 1);
-    assert_eq!(db.count("accounts").await?, 1);
-    assert_eq!(db.count("sessions").await?, 2);
+    assert_eq!(db.count("user").await?, 1);
+    assert_eq!(db.count("account").await?, 1);
+    assert_eq!(db.count("session").await?, 2);
     B::close(connection).await
 }
 
@@ -722,7 +722,7 @@ async fn one_tap_enabled_two_factor_session<B: Backend>(db: Db) -> TestResult {
     .build()
     .await?;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+    let baseline = db.tables(&["user", "account", "session"]).await?;
     let owner = signup(&auth, "tap@example.test").await;
     let linked = tap(&auth, json!({}), &cookies(&owner)).await;
     assert_eq!(linked.status, 200);
@@ -739,14 +739,14 @@ async fn one_tap_enabled_two_factor_session<B: Backend>(db: Db) -> TestResult {
     .await;
     let factor = body(&enabled);
     assert!(!factor["totpURI"].as_str().unwrap().is_empty());
-    assert_eq!(db.count("two_factor").await?, 1);
+    assert_eq!(db.count("twoFactor").await?, 1);
     _ = call(
         &auth,
         request("/sign-out", Some(json!({})), &cookies(&enabled)),
         200,
     )
     .await;
-    let sessions_before = db.count("sessions").await?;
+    let sessions_before = db.count("session").await?;
     let done = tap(&auth, json!({}), "").await;
     assert_eq!(done.status, 200);
     assert_eq!(body(&done)["user"]["id"], body(&owner)["user"]["id"]);
@@ -758,11 +758,11 @@ async fn one_tap_enabled_two_factor_session<B: Backend>(db: Db) -> TestResult {
             .get_all("set-cookie")
             .any(|r| r.starts_with("better-auth.two_factor="))
     );
-    assert_eq!(db.count("verifications").await?, 0);
-    assert_eq!(db.count("sessions").await?, sessions_before + 1);
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(db.count("session").await?, sessions_before + 1);
     let current = body(&call(&auth, request("/get-session", None, &cookies(&done)), 200).await);
     assert_eq!(current["session"]["token"], body(&done)["token"]);
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     for (before, now) in baseline.iter().zip(after.iter()) {
         let before: Vec<Value> = serde_json::from_str(before)?;
         let now: Vec<Value> = serde_json::from_str(now)?;
@@ -803,7 +803,7 @@ async fn one_tap_required_verification_delivery<B: Backend>(db: Db) -> TestResul
         async fn send(&self, u: &UserView, url: &str, t: &str) -> AuthResult<()> {
             assert_eq!(
                 self.db
-                    .count_where("SELECT COUNT(*) FROM users WHERE id=$1", &[&u.id])
+                    .count_where("SELECT COUNT(*) FROM \"user\" WHERE id=$1", &[&u.id])
                     .await
                     .unwrap(),
                 1
@@ -811,7 +811,7 @@ async fn one_tap_required_verification_delivery<B: Backend>(db: Db) -> TestResul
             assert_eq!(
                 self.db
                     .count_where(
-                        "SELECT COUNT(*) FROM accounts WHERE user_id=$1 AND provider_id='google'",
+                        "SELECT COUNT(*) FROM \"account\" WHERE \"userId\"=$1 AND \"providerId\"='google'",
                         &[&u.id]
                     )
                     .await
@@ -860,9 +860,9 @@ async fn one_tap_required_verification_delivery<B: Backend>(db: Db) -> TestResul
         .await;
         assert_eq!(body(&denied)["code"], "EMAIL_NOT_VERIFIED");
         assert!(denied.headers.get_all("set-cookie").next().is_none());
-        assert_eq!(db.count("users").await?, 1);
-        assert_eq!(db.count("accounts").await?, 1);
-        assert_eq!(db.count("sessions").await?, 0);
+        assert_eq!(db.count("user").await?, 1);
+        assert_eq!(db.count("account").await?, 1);
+        assert_eq!(db.count("session").await?, 0);
         let receipts = inbox.seen.lock().unwrap().clone();
         assert_eq!(receipts.len(), usize::from(send.is_none()));
         if let Some((url, proof)) = receipts.first() {
@@ -884,9 +884,9 @@ async fn one_tap_required_verification_delivery<B: Backend>(db: Db) -> TestResul
             )
             .await;
             assert_eq!(body(&done)["user"]["emailVerified"], true);
-            assert_eq!(db.count("users").await?, 1);
-            assert_eq!(db.count("accounts").await?, 1);
-            assert_eq!(db.count("sessions").await?, 1);
+            assert_eq!(db.count("user").await?, 1);
+            assert_eq!(db.count("account").await?, 1);
+            assert_eq!(db.count("session").await?, 1);
             authenticated(&auth, &cookies(&done), "tap@example.test").await;
         }
         B::close(connection).await?;
@@ -924,7 +924,7 @@ async fn one_tap_returning_profile_and_browser_ownership<B: Backend>(db: Db) -> 
     )
     .build()
     .await?;
-    let before_invalid = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before_invalid = db.tables(&["user", "account", "session"]).await?;
     let error = Box::pin(
         auth.dispatch_endpoint(
             alibi::endpoint::ServerEndpoint::<Value>::new("one-tap", "oneTapCallback")
@@ -940,7 +940,7 @@ async fn one_tap_returning_profile_and_browser_ownership<B: Backend>(db: Db) -> 
         Some("VALIDATION_ERROR")
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         before_invalid
     );
     let input = alibi::plugins::one_tap::OneTapCallbackInput {
@@ -957,7 +957,7 @@ async fn one_tap_returning_profile_and_browser_ownership<B: Backend>(db: Db) -> 
     .await;
     assert_eq!(body(&denied)["code"], "INVALID_CALLBACK_URL");
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         before_invalid
     );
     let (first, first_value) = server_tap(
@@ -990,12 +990,12 @@ async fn one_tap_returning_profile_and_browser_ownership<B: Backend>(db: Db) -> 
     .await?;
     let requestful = requestful.decode()?;
     assert_eq!(requestful.user.id, first_value.user.id);
-    assert_eq!(db.count("users").await?, 1);
-    assert_eq!(db.count("accounts").await?, 1);
-    assert_eq!(db.count("sessions").await?, 2);
+    assert_eq!(db.count("user").await?, 1);
+    assert_eq!(db.count("account").await?, 1);
+    assert_eq!(db.count("session").await?, 2);
     let foreign = signup(&auth, "foreign@example.test").await;
     let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let (returned, returned_value)=server_tap(&auth,json!({"email":"changed@example.test","name":"Provider Replacement","picture":"https://images.example/changed"}),Some(&cookies(&foreign))).await;
     assert_eq!(returned.status, 200);
     assert_eq!(body(&returned)["user"], original);
@@ -1010,22 +1010,22 @@ async fn one_tap_returning_profile_and_browser_ownership<B: Backend>(db: Db) -> 
     );
     assert_eq!(current["user"], original);
     assert_eq!(current["session"]["token"], returned_value.token);
-    assert_eq!(db.table("users").await?, before[0]);
+    assert_eq!(db.table("user").await?, before[0]);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM accounts WHERE provider_id='google'",
+            "SELECT COUNT(*) FROM \"account\" WHERE \"providerId\"='google'",
             &[]
         )
         .await?,
         1
     );
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     for (before, now) in before.iter().zip(after.iter()) {
         let before: Vec<Value> = serde_json::from_str(before)?;
         let now: Vec<Value> = serde_json::from_str(now)?;
         for row in before
             .iter()
-            .filter(|r| r["id"] == foreign_id || r["user_id"] == foreign_id)
+            .filter(|r| r["id"] == foreign_id || r["userId"] == foreign_id)
         {
             assert!(now.contains(row));
         }
@@ -1083,44 +1083,50 @@ async fn one_tap_disabled_signup_existing_account<B: Backend>(db: Db) -> TestRes
     .build()
     .await?;
     let foreign = signup(&enabled, "foreign@example.test").await;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for auth in [&closed, &provider_closed] {
         let denied = tap(auth, json!({}), "").await;
         assert_eq!(denied.status, 401);
         assert_eq!(body(&denied)["message"], "signup disabled");
         assert!(denied.headers.get_all("set-cookie").next().is_none());
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     }
     let registered = tap(&enabled, json!({}), "").await;
     assert_eq!(registered.status, 200);
     let principal = body(&registered)["user"].clone();
-    let established = db.table("users").await?;
+    let established = db.table("user").await?;
     let account_id = db
-        .text("SELECT id FROM accounts WHERE provider_id='google'", &[])
+        .text(
+            "SELECT id FROM \"account\" WHERE \"providerId\"='google'",
+            &[],
+        )
         .await?
         .unwrap();
-    let mut sessions = db.count("sessions").await?;
+    let mut sessions = db.count("session").await?;
     for auth in [&closed, &provider_closed] {
         let done = tap(auth, json!({}), "").await;
         assert_eq!(done.status, 200);
         assert_eq!(body(&done)["user"], principal);
-        assert_eq!(db.table("users").await?, established);
+        assert_eq!(db.table("user").await?, established);
         assert_eq!(
-            db.text("SELECT id FROM accounts WHERE provider_id='google'", &[])
-                .await?
-                .as_deref(),
+            db.text(
+                "SELECT id FROM \"account\" WHERE \"providerId\"='google'",
+                &[]
+            )
+            .await?
+            .as_deref(),
             Some(account_id.as_str())
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM accounts WHERE provider_id='google'",
+                "SELECT COUNT(*) FROM \"account\" WHERE \"providerId\"='google'",
                 &[]
             )
             .await?,
             1
         );
         sessions += 1;
-        assert_eq!(db.count("sessions").await?, sessions);
+        assert_eq!(db.count("session").await?, sessions);
         authenticated(auth, &cookies(&done), "tap@example.test").await;
     }
     authenticated(&enabled, &cookies(&foreign), "foreign@example.test").await;
@@ -1160,26 +1166,32 @@ async fn one_tap_strict_upgrade_admits_only_next_request<B: Backend>(db: Db) -> 
     .build()
     .await?;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let first = tap(&auth, json!({"email_verified":false}), "").await;
     assert_eq!(first.status, 403);
     assert_eq!(body(&first)["code"], "EMAIL_NOT_VERIFIED");
     assert!(first.headers.get_all("set-cookie").next().is_none());
     let id = db
-        .text("SELECT id FROM users WHERE email=$1", &["tap@example.test"])
+        .text(
+            "SELECT id FROM \"user\" WHERE \"email\"=$1",
+            &["tap@example.test"],
+        )
         .await?
         .unwrap();
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM users WHERE id=$1 AND email_verified=false",
+            "SELECT COUNT(*) FROM \"user\" WHERE id=$1 AND \"emailVerified\"=false",
             &[&id]
         )
         .await?,
         1
     );
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+            &[&id]
+        )
+        .await?,
         0
     );
     let second = tap(&auth, json!({"email_verified":true}), "").await;
@@ -1188,15 +1200,18 @@ async fn one_tap_strict_upgrade_admits_only_next_request<B: Backend>(db: Db) -> 
     assert!(second.headers.get_all("set-cookie").next().is_none());
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM users WHERE id=$1 AND email_verified=true",
+            "SELECT COUNT(*) FROM \"user\" WHERE id=$1 AND \"emailVerified\"=true",
             &[&id]
         )
         .await?,
         1
     );
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+            &[&id]
+        )
+        .await?,
         0
     );
     let third = tap(&auth, json!({"email_verified":true}), "").await;
@@ -1204,20 +1219,23 @@ async fn one_tap_strict_upgrade_admits_only_next_request<B: Backend>(db: Db) -> 
     assert_eq!(body(&third)["user"]["id"], id);
     assert_eq!(body(&third)["user"]["emailVerified"], true);
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+            &[&id]
+        )
+        .await?,
         1
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM accounts WHERE provider_id='google' AND user_id=$1",
+            "SELECT COUNT(*) FROM \"account\" WHERE \"providerId\"='google' AND \"userId\"=$1",
             &[&id]
         )
         .await?,
         1
     );
     authenticated(&auth, &cookies(&third), "tap@example.test").await;
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     for (before, now) in before.iter().zip(after.iter()) {
         let before: Vec<Value> = serde_json::from_str(before)?;
         let now: Vec<Value> = serde_json::from_str(now)?;
@@ -1265,7 +1283,7 @@ async fn one_tap_signed_credentials_persist_and_forward_by_account_policy<B: Bac
     .build()
     .await?;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let old = token(json!({"nonce":"original-credential"}));
     let new = token(json!({"nonce":"replacement-credential","name":"Unadopted Profile"}));
     assert_ne!(old, new);
@@ -1277,19 +1295,28 @@ async fn one_tap_signed_credentials_persist_and_forward_by_account_policy<B: Bac
     .await;
     let id = body(&created)["user"]["id"].as_str().unwrap().to_owned();
     let account_id = db
-        .text("SELECT id FROM accounts WHERE provider_id='google'", &[])
+        .text(
+            "SELECT id FROM \"account\" WHERE \"providerId\"='google'",
+            &[],
+        )
         .await?
         .unwrap();
     assert_eq!(
-        db.text("SELECT id_token FROM accounts WHERE id=$1", &[&account_id])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT \"idToken\" FROM \"account\" WHERE id=$1",
+            &[&account_id]
+        )
+        .await?
+        .as_deref(),
         Some(old.as_str())
     );
     assert_eq!(
-        db.text("SELECT scope FROM accounts WHERE id=$1", &[&account_id])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT \"scope\" FROM \"account\" WHERE id=$1",
+            &[&account_id]
+        )
+        .await?
+        .as_deref(),
         Some("openid,profile,email")
     );
     for update in [false, true] {
@@ -1303,7 +1330,7 @@ async fn one_tap_signed_credentials_persist_and_forward_by_account_policy<B: Bac
         )
         .build()
         .await?;
-        let prior = db.table("accounts").await?;
+        let prior = db.table("account").await?;
         let returned = call(
             &runtime,
             request("/one-tap/callback", Some(json!({"idToken":new})), ""),
@@ -1312,13 +1339,16 @@ async fn one_tap_signed_credentials_persist_and_forward_by_account_policy<B: Bac
         .await;
         let expected = if update { new.as_str() } else { old.as_str() };
         assert_eq!(
-            db.text("SELECT id_token FROM accounts WHERE id=$1", &[&account_id])
-                .await?
-                .as_deref(),
+            db.text(
+                "SELECT \"idToken\" FROM \"account\" WHERE id=$1",
+                &[&account_id]
+            )
+            .await?
+            .as_deref(),
             Some(expected)
         );
         if !update {
-            assert_eq!(db.table("accounts").await?, prior);
+            assert_eq!(db.table("account").await?, prior);
         }
         let value = cookies(&returned)
             .split("; ")
@@ -1336,7 +1366,7 @@ async fn one_tap_signed_credentials_persist_and_forward_by_account_policy<B: Bac
         assert_eq!(body(&returned)["user"]["id"], id);
         authenticated(&runtime, &cookies(&returned), "tap@example.test").await;
     }
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     for (before, now) in before.iter().zip(after.iter()) {
         let before: Vec<Value> = serde_json::from_str(before)?;
         let now: Vec<Value> = serde_json::from_str(now)?;

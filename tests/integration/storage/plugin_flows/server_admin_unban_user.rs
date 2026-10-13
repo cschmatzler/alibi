@@ -54,7 +54,7 @@ async fn server_admin_unban_user_clears_ban_fields_without_restoring_sessions<B:
     assert_eq!(body(&banned)["user"]["banned"], true);
     assert!(body(&banned)["user"]["banExpires"].is_string());
     assert!(auth.store().get_user_sessions(&id).await?.is_empty());
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (input, headers, status, code) in [
         (None, EndpointOptions::default(), 400, "VALIDATION_ERROR"),
         (
@@ -151,8 +151,8 @@ async fn server_admin_unban_user_clears_ban_fields_without_restoring_sessions<B:
         .await
         .unwrap_err();
     assert_eq!(error.error.status_code(), 403);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
-    let immutable = db.tables(&["accounts", "sessions"]).await?;
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
+    let immutable = db.tables(&["account", "session"]).await?;
     let original_admin =
         serde_json::to_value(auth.store().get_user_by_id(&admin_id).await?.unwrap())?;
     let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
@@ -192,7 +192,7 @@ async fn server_admin_unban_user_clears_ban_fields_without_restoring_sessions<B:
                 "application_b=second; Path=/; HttpOnly"
             ]
         );
-        assert_eq!(db.tables(&["accounts", "sessions"]).await?, immutable);
+        assert_eq!(db.tables(&["account", "session"]).await?, immutable);
         assert_eq!(
             serde_json::to_value(auth.store().get_user_by_id(&admin_id).await?.unwrap())?,
             original_admin

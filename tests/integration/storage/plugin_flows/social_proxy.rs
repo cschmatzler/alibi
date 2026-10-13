@@ -175,13 +175,13 @@ async fn proxy_forwards_and_completes_provider_flows<B: Backend>(db: Db) -> Test
     let completed = bridge(&auth, &forwarded, &cookie).await;
     trace.value("registered", outcome(&completed));
     assert!(cookies(&completed).contains("session_token="));
-    assert_eq!(db.count("users").await?, 1);
+    assert_eq!(db.count("user").await?, 1);
 
     let (state, cookie) = authorize(&auth, "/sign-in/social", input(), "").await;
     let forwarded = forward(&auth, &state, "grant", &cookie).await;
     let completed = bridge(&auth, &forwarded, &cookie).await;
     trace.value("returning", outcome(&completed));
-    assert_eq!(db.count("users").await?, 1);
+    assert_eq!(db.count("user").await?, 1);
 
     let (state, cookie) = authorize(&auth, "/sign-in/social", input(), "").await;
     let mut posted = request(
@@ -332,7 +332,7 @@ async fn proxy_error_destinations_and_pass_through<B: Backend>(db: Db) -> TestRe
         "profile without email",
         outcome(&forward(&auth, &state, "grant", &cookie).await),
     );
-    assert_eq!(db.count("users").await?, 0);
+    assert_eq!(db.count("user").await?, 0);
     trace.assert("social/proxy-errors");
     B::close(connection).await
 }

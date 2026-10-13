@@ -137,11 +137,11 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
     .await;
     let before = db
         .tables(&[
-            "users",
-            "sessions",
+            "user",
+            "session",
             "organization",
             "member",
-            "organization_role",
+            "organizationRole",
         ])
         .await?;
     let options = |response: &AuthResponse| EndpointOptions {
@@ -326,11 +326,11 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
     assert_eq!(typed.decode()?.role, "firstreader");
     assert_eq!(
         db.tables(&[
-            "users",
-            "sessions",
+            "user",
+            "session",
             "organization",
             "member",
-            "organization_role"
+            "organizationRole"
         ])
         .await?,
         before
@@ -397,11 +397,11 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
     }
     assert_eq!(
         db.tables(&[
-            "users",
-            "sessions",
+            "user",
+            "session",
             "organization",
             "member",
-            "organization_role"
+            "organizationRole"
         ])
         .await?,
         before
@@ -448,11 +448,11 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
     assert_eq!(renamed.role_data.organization_id, second_id);
     let before_deletion = db
         .tables(&[
-            "users",
-            "sessions",
+            "user",
+            "session",
             "organization",
             "member",
-            "organization_role",
+            "organizationRole",
         ])
         .await?;
     assert_eq!(before_deletion[..4], before[..4]);
@@ -518,11 +518,11 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
     }
     assert_eq!(
         db.tables(&[
-            "users",
-            "sessions",
+            "user",
+            "session",
             "organization",
             "member",
-            "organization_role"
+            "organizationRole"
         ])
         .await?,
         before_deletion
@@ -571,11 +571,11 @@ async fn server_org_role_lifecycle_preserves_member_authority<B: Backend>(db: Db
     );
     let final_state = db
         .tables(&[
-            "users",
-            "sessions",
+            "user",
+            "session",
             "organization",
             "member",
-            "organization_role",
+            "organizationRole",
         ])
         .await?;
     assert_eq!(final_state[..4], before[..4]);

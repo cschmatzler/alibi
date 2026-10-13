@@ -30,32 +30,32 @@ async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
     for (name, sql, columns) in [
         (
             "organizations",
-            "SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id",
+            "SELECT id,\"name\",\"slug\",\"logo\",\"metadata\" FROM \"organization\" ORDER BY \"slug\",id",
             &["id", "name", "slug", "logo", "metadata"][..],
         ),
         (
             "members",
-            "SELECT m.id,m.organization_id AS organizationId,m.user_id AS userId,m.role FROM member m JOIN organization o ON o.id=m.organization_id JOIN users u ON u.id=m.user_id ORDER BY o.slug,u.email,m.id",
+            "SELECT m.id,m.\"organizationId\" AS organizationId,m.\"userId\" AS userId,m.\"role\" FROM \"member\" m JOIN \"organization\" o ON o.id=m.\"organizationId\" JOIN \"user\" u ON u.id=m.\"userId\" ORDER BY o.\"slug\",u.\"email\",m.id",
             &["id", "organizationId", "userId", "role"][..],
         ),
         (
             "teams",
-            "SELECT t.id,t.organization_id AS organizationId,t.name FROM team t JOIN organization o ON o.id=t.organization_id ORDER BY o.slug,t.name,t.id",
+            "SELECT t.id,t.\"organizationId\" AS organizationId,t.\"name\" FROM \"team\" t JOIN \"organization\" o ON o.id=t.\"organizationId\" ORDER BY o.\"slug\",t.\"name\",t.id",
             &["id", "organizationId", "name"][..],
         ),
         (
             "teamMembers",
-            "SELECT m.id,m.team_id AS teamId,m.user_id AS userId FROM team_member m JOIN team t ON t.id=m.team_id JOIN organization o ON o.id=t.organization_id JOIN users u ON u.id=m.user_id ORDER BY o.slug,t.name,u.email,m.id",
+            "SELECT m.id,m.\"teamId\" AS teamId,m.\"userId\" AS userId FROM \"teamMember\" m JOIN \"team\" t ON t.id=m.\"teamId\" JOIN \"organization\" o ON o.id=t.\"organizationId\" JOIN \"user\" u ON u.id=m.\"userId\" ORDER BY o.\"slug\",t.\"name\",u.\"email\",m.id",
             &["id", "teamId", "userId"][..],
         ),
         (
             "sessions",
-            "SELECT s.id,s.user_id AS userId,s.active_organization_id AS activeOrganizationId,s.active_team_id AS activeTeamId FROM sessions s JOIN users u ON u.id=s.user_id ORDER BY u.email,s.created_at,s.id",
+            "SELECT s.id,s.\"userId\" AS userId,s.\"activeOrganizationId\" AS activeOrganizationId,s.\"activeTeamId\" AS activeTeamId FROM \"session\" s JOIN \"user\" u ON u.id=s.\"userId\" ORDER BY u.\"email\",s.\"createdAt\",s.id",
             &["id", "userId", "activeOrganizationId", "activeTeamId"][..],
         ),
         (
             "users",
-            "SELECT id,email,name FROM users ORDER BY email,id",
+            "SELECT id,\"email\",\"name\" FROM \"user\" ORDER BY \"email\",id",
             &["id", "email", "name"][..],
         ),
     ] {

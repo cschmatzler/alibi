@@ -103,7 +103,7 @@ pub(super) async fn exercise<B: Backend>(db: &Db) -> TestResult {
         let created = service.create(proof("delivery")).await?.unwrap();
         assert_eq!(created.data().get("id").is_some(), physical);
         assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert_eq!(db.count("verifications").await?, i64::from(physical));
+        assert_eq!(db.count("verification").await?, i64::from(physical));
         let _ = service
             .update(
                 "delivery",
@@ -137,7 +137,7 @@ pub(super) async fn exercise<B: Backend>(db: &Db) -> TestResult {
                 .await?
                 .is_none()
         );
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
         let _ = service.create(proof("atomic")).await?;
         let (left, right) = tokio::join!(service.consume("atomic"), service.consume("atomic"));
         let consumed = left?.into_iter().chain(right?).collect::<Vec<_>>();
@@ -146,7 +146,7 @@ pub(super) async fn exercise<B: Backend>(db: &Db) -> TestResult {
             consumed[0].data().get("value").unwrap().as_str(),
             Some("initial-proof")
         );
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
         // Cache-only mode must not borrow an unrelated persisted proof when its
         // configured authority has no value; dual mode must fall back to SQL.
         let _ = auth
@@ -155,7 +155,7 @@ pub(super) async fn exercise<B: Backend>(db: &Db) -> TestResult {
             .await?;
         assert_eq!(service.find("sql-only").await?.is_some(), physical);
         assert_eq!(service.consume("sql-only").await?.is_some(), physical);
-        assert_eq!(db.count("verifications").await?, i64::from(!physical));
+        assert_eq!(db.count("verification").await?, i64::from(!physical));
         auth.store()
             .delete_verifications_by_identifier("application:sql-only")
             .await?;
@@ -178,7 +178,7 @@ pub(super) async fn exercise<B: Backend>(db: &Db) -> TestResult {
                     .is_none()
             );
         }
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
         // Update with no cache entry must not manufacture a redeemable proof.
         let updated = service
             .update(
@@ -195,7 +195,7 @@ pub(super) async fn exercise<B: Backend>(db: &Db) -> TestResult {
         cache.fail.store(true, Ordering::SeqCst);
         assert!(service.create(proof("failed-outside")).await.is_err());
         assert_eq!(calls.load(Ordering::SeqCst), before_calls);
-        assert_eq!(db.count("verifications").await?, i64::from(physical));
+        assert_eq!(db.count("verification").await?, i64::from(physical));
         assert!(
             cache
                 .get("verification:application:failed-outside")
@@ -222,7 +222,7 @@ pub(super) async fn exercise<B: Backend>(db: &Db) -> TestResult {
             .await;
         assert!(outcome.is_err());
         assert_eq!(calls.load(Ordering::SeqCst), before_calls);
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
         assert!(
             cache
                 .get("verification:application:failed-transaction")

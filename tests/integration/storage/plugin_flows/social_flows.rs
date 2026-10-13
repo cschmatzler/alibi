@@ -284,9 +284,9 @@ async fn redirect_linking_outcomes<B: Backend>(db: Db) -> TestResult {
     social
         .profile
         .set("disabled-first-sub", "disabled-first@example.test", true);
-    let preserved_accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
-    let preserved_users: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
-    let preserved_sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let preserved_accounts: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
+    let preserved_users: Vec<Value> = serde_json::from_str(&db.table("user").await?)?;
+    let preserved_sessions: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     let mut first_account: Option<Value> = None;
     let mut first_user: Option<Value> = None;
     for stage in ["first signup", "exact returning binding"] {
@@ -313,20 +313,20 @@ async fn redirect_linking_outcomes<B: Backend>(db: Db) -> TestResult {
             .await,
         );
         assert_eq!(current["user"]["email"], "disabled-first@example.test");
-        let accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+        let accounts: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
         let binding = accounts
             .iter()
-            .find(|row| row["account_id"] == "disabled-first-sub")
+            .find(|row| row["accountId"] == "disabled-first-sub")
             .unwrap();
-        assert_eq!(binding["user_id"], current["user"]["id"]);
-        assert_eq!(binding["provider_id"], "google");
+        assert_eq!(binding["userId"], current["user"]["id"]);
+        assert_eq!(binding["providerId"], "google");
         if let Some(original) = &first_account {
             for field in [
                 "id",
-                "user_id",
-                "account_id",
-                "provider_id",
-                "created_at",
+                "userId",
+                "accountId",
+                "providerId",
+                "createdAt",
                 "scope",
             ] {
                 assert_eq!(binding[field], original[field], "{stage}/{field}");
@@ -338,16 +338,16 @@ async fn redirect_linking_outcomes<B: Backend>(db: Db) -> TestResult {
         }
         assert_eq!(accounts.len(), preserved_accounts.len() + 1);
         assert!(preserved_accounts.iter().all(|row| accounts.contains(row)));
-        let users: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+        let users: Vec<Value> = serde_json::from_str(&db.table("user").await?)?;
         assert_eq!(users.len(), preserved_users.len() + 1);
         assert!(preserved_users.iter().all(|row| users.contains(row)));
-        let sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+        let sessions: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
         assert_eq!(
             sessions.len(),
             preserved_sessions.len() + if stage == "first signup" { 1 } else { 2 }
         );
         assert!(preserved_sessions.iter().all(|row| sessions.contains(row)));
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
     }
     authenticated(&disabled, &owner, "social@example.com").await;
     authenticated(&disabled, &intruder, "intruder@example.com").await;
@@ -687,7 +687,7 @@ async fn valid_form_post_preserves_issued_state_and_escaped_query_until_get<B: B
         )
         .await;
         let before = db
-            .tables(&["users", "accounts", "sessions", "verifications"])
+            .tables(&["user", "account", "session", "verification"])
             .await?;
         let code = "form :+&=/%é";
         let user = json!({"name":{"firstName":"Élodie &","lastName":"Form <Owner>"},"email":"social@example.com"}).to_string();
@@ -734,7 +734,7 @@ async fn valid_form_post_preserves_issued_state_and_escaped_query_until_get<B: B
             }
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -758,7 +758,7 @@ async fn valid_form_post_preserves_issued_state_and_escaped_query_until_get<B: B
                 }
             );
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "verifications"])
+                db.tables(&["user", "account", "session", "verification"])
                     .await?,
                 before
             );
@@ -777,10 +777,10 @@ async fn valid_form_post_preserves_issued_state_and_escaped_query_until_get<B: B
             Some("/dashboard")
         );
         authenticated(&auth, &cookies(&accepted), "social@example.com").await;
-        for table in ["users", "accounts", "sessions"] {
+        for table in ["user", "account", "session"] {
             assert_eq!(db.count(table).await?, 1, "{mode}: {table}");
         }
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
         let receipts = social.provider.take();
         assert_eq!(receipts.len(), 1);
         let grant: std::collections::BTreeMap<_, _> =
@@ -821,9 +821,9 @@ async fn different_email_opt_in_links_unlinks_and_relinks_original_owner<B: Back
     let owner = signup(&auth, "local-link-owner@example.test").await;
     let foreign = signup(&auth, "local-link-foreign@example.test").await;
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
-    _ = db.execute("INSERT INTO accounts (id,user_id,account_id,provider_id,created_at,updated_at) SELECT 'github-backup',user_id,'local-github','github',created_at,updated_at FROM accounts WHERE user_id=$1", &[&owner_id]).await?;
-    let before = db.tables(&["users", "sessions"]).await?;
-    let before_accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    _ = db.execute("INSERT INTO \"account\" (id,\"userId\",\"accountId\",\"providerId\",\"createdAt\",\"updatedAt\") SELECT 'github-backup',\"userId\",'local-github','github',\"createdAt\",\"updatedAt\" FROM \"account\" WHERE \"userId\"=$1", &[&owner_id]).await?;
+    let before = db.tables(&["user", "session"]).await?;
+    let before_accounts: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
     social
         .profile
         .set("different-email-sub", "provider-link@example.test", true);
@@ -849,15 +849,15 @@ async fn different_email_opt_in_links_unlinks_and_relinks_original_owner<B: Back
             accounts(&auth, &cookies(&owner)).await,
             json!(["credential", "github", "google"])
         );
-        let all: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+        let all: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
         assert_eq!(all.len(), before_accounts.len() + 1);
         assert!(before_accounts.iter().all(|row| all.contains(row)));
         let google = all
             .iter()
-            .find(|row| row["provider_id"] == "google")
+            .find(|row| row["providerId"] == "google")
             .unwrap();
-        assert_eq!(google["user_id"], owner_id);
-        assert_eq!(google["account_id"], "different-email-sub");
+        assert_eq!(google["userId"], owner_id);
+        assert_eq!(google["accountId"], "different-email-sub");
         if destination == "/linked" {
             assert_eq!(
                 body(
@@ -879,11 +879,11 @@ async fn different_email_opt_in_links_unlinks_and_relinks_original_owner<B: Back
                 json!(["credential", "github"])
             );
             assert_eq!(
-                serde_json::from_str::<Vec<Value>>(&db.table("accounts").await?)?,
+                serde_json::from_str::<Vec<Value>>(&db.table("account").await?)?,
                 before_accounts
             );
         }
-        assert_eq!(db.tables(&["users", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "session"]).await?, before);
     }
     authenticated(&auth, &cookies(&foreign), "local-link-foreign@example.test").await;
     B::close(connection).await
@@ -911,14 +911,14 @@ async fn disabled_implicit_linking_preserves_explicit_and_returning_account_auth
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     _ = db
         .execute(
-            "UPDATE users SET email_verified=1 WHERE id=$1",
+            "UPDATE \"user\" SET \"emailVerified\"=1 WHERE id=$1",
             &[&owner_id],
         )
         .await?;
     social
         .profile
         .set("explicit-subject", "explicit-owner@example.test", true);
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let (state, cookie) = authorize(
         &auth,
         "/sign-in/social",
@@ -937,7 +937,7 @@ async fn disabled_implicit_linking_preserves_explicit_and_returning_account_auth
             .1,
         "account_not_linked"
     );
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let (state, cookie) = authorize(
         &auth,
         "/link-social",
@@ -953,12 +953,12 @@ async fn disabled_implicit_linking_preserves_explicit_and_returning_account_auth
             .path(),
         "/settings"
     );
-    assert_eq!(db.count("users").await?, 1);
-    assert_eq!(db.count("sessions").await?, 1);
-    assert_eq!(db.count("accounts").await?, 2);
+    assert_eq!(db.count("user").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
+    assert_eq!(db.count("account").await?, 2);
     assert_eq!(
         db.text(
-            "SELECT user_id FROM accounts WHERE provider_id='google'",
+            "SELECT \"userId\" FROM \"account\" WHERE \"providerId\"='google'",
             &[]
         )
         .await?
@@ -969,12 +969,12 @@ async fn disabled_implicit_linking_preserves_explicit_and_returning_account_auth
         let mut rows = serde_json::from_str::<Vec<Value>>(&rows)?;
         for row in &mut rows {
             let row = row.as_object_mut().unwrap();
-            _ = row.remove("updated_at");
-            _ = row.remove("access_token_expires_at");
+            _ = row.remove("updatedAt");
+            _ = row.remove("accessTokenExpiresAt");
         }
         Ok(rows)
     };
-    let accounts = stable_accounts(db.table("accounts").await?)?;
+    let accounts = stable_accounts(db.table("account").await?)?;
     let (state, cookie) = authorize(
         &auth,
         "/sign-in/social",
@@ -999,10 +999,10 @@ async fn disabled_implicit_linking_preserves_explicit_and_returning_account_auth
         .await,
     );
     assert_eq!(current["user"]["id"], owner_id);
-    assert_eq!(stable_accounts(db.table("accounts").await?)?, accounts);
-    assert_eq!(db.count("users").await?, 1);
-    assert_eq!(db.count("sessions").await?, 2);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(stable_accounts(db.table("account").await?)?, accounts);
+    assert_eq!(db.count("user").await?, 1);
+    assert_eq!(db.count("session").await?, 2);
+    assert_eq!(db.count("verification").await?, 0);
     authenticated(&auth, &cookies(&owner), "explicit-owner@example.test").await;
     B::close(connection).await
 }
@@ -1072,7 +1072,7 @@ async fn oauth_verification_cache_recovery<B: Backend>(db: Db) -> TestResult {
         .await?;
     let foreign = signup(&auth, "foreign@example.test").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let (state, jar) = authorize(
         &auth,
@@ -1090,7 +1090,7 @@ async fn oauth_verification_cache_recovery<B: Backend>(db: Db) -> TestResult {
     let stored = proof.identifier()?.to_owned();
     let key = format!("verification:{stored}");
     let raw = cache.memory.get(&key).await?.unwrap();
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     cache.fail_get.store(true, Ordering::SeqCst);
     let failed = callback(&auth, &[("code", "genuine-grant"), ("state", &state)], &jar).await;
     assert_eq!(failed.status, 302);
@@ -1105,7 +1105,7 @@ async fn oauth_verification_cache_recovery<B: Backend>(db: Db) -> TestResult {
     assert!(social.provider.requests.lock().unwrap().is_empty());
     assert_eq!(cache.memory.get(&key).await?.as_deref(), Some(raw.as_str()));
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -1120,7 +1120,7 @@ async fn oauth_verification_cache_recovery<B: Backend>(db: Db) -> TestResult {
     authenticated(&auth, &cookies(&done), "social@example.com").await;
     assert!(cache.memory.get(&key).await?.is_none());
     let after = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let replay = callback(&auth, &[("code", "genuine-grant"), ("state", &state)], &jar).await;
     assert!(
@@ -1131,7 +1131,7 @@ async fn oauth_verification_cache_recovery<B: Backend>(db: Db) -> TestResult {
             .contains("error=state_mismatch")
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         after
     );
@@ -1162,8 +1162,8 @@ async fn idp_initiated_bounce_requires_fresh_proof_before_accepting_grant<B: Bac
     social
         .profile
         .set("idp-subject", "idp-owner@example.test", true);
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
-    assert_eq!(db.count("verifications").await?, 0);
+    let before = db.tables(&["user", "account", "session"]).await?;
+    assert_eq!(db.count("verification").await?, 0);
     let bounced = callback(&auth, &[("code", "unsolicited-grant")], "").await;
     assert_eq!(bounced.status, 302);
     let authorization = url::Url::parse(bounced.headers.get("location").unwrap())?;
@@ -1182,11 +1182,11 @@ async fn idp_initiated_bounce_requires_fresh_proof_before_accepting_grant<B: Bac
     assert!(fields.get("code_challenge").unwrap().len() > 40);
     let cookie = cookies(&bounced);
     assert!(!cookie.is_empty());
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
-    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
+    assert_eq!(db.count("verification").await?, 1);
     assert!(social.provider.requests.lock().unwrap().is_empty());
     let pending = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let wrong = callback(
         &auth,
@@ -1203,7 +1203,7 @@ async fn idp_initiated_bounce_requires_fresh_proof_before_accepting_grant<B: Bac
             .contains("error=state_mismatch")
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         pending
     );
@@ -1214,19 +1214,19 @@ async fn idp_initiated_bounce_requires_fresh_proof_before_accepting_grant<B: Bac
     assert_eq!(destination.origin().ascii_serialization(), ORIGIN);
     assert_eq!(destination.path(), "/");
     authenticated(&auth, &cookies(&accepted), "idp-owner@example.test").await;
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     let user_id = db
         .text(
-            "SELECT id FROM users WHERE email='idp-owner@example.test'",
+            "SELECT id FROM \"user\" WHERE \"email\"='idp-owner@example.test'",
             &[],
         )
         .await?
         .unwrap();
-    assert_eq!(db.count("users").await?, 2);
-    assert_eq!(db.count("sessions").await?, 2);
+    assert_eq!(db.count("user").await?, 2);
+    assert_eq!(db.count("session").await?, 2);
     assert_eq!(
         db.text(
-            "SELECT user_id FROM accounts WHERE provider_id='google' AND account_id='idp-subject'",
+            "SELECT \"userId\" FROM \"account\" WHERE \"providerId\"='google' AND \"accountId\"='idp-subject'",
             &[]
         )
         .await?
@@ -1247,7 +1247,7 @@ async fn idp_initiated_bounce_requires_fresh_proof_before_accepting_grant<B: Bac
         fields["code_challenge"]
     );
     let after = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for (old, now) in before.iter().zip(after.iter()) {
         let old: Vec<Value> = serde_json::from_str(old)?;
@@ -1269,7 +1269,7 @@ async fn idp_initiated_bounce_requires_fresh_proof_before_accepting_grant<B: Bac
     );
     assert!(social.provider.requests.lock().unwrap().is_empty());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         after
     );
@@ -1325,7 +1325,7 @@ async fn skipping_oauth_cookie_binding_still_requires_and_consumes_issued_state<
                 String::new()
             };
             let before = db
-                .tables(&["users", "accounts", "sessions", "verifications"])
+                .tables(&["user", "account", "session", "verification"])
                 .await?;
             let invalid = callback(
                 &auth,
@@ -1343,7 +1343,7 @@ async fn skipping_oauth_cookie_binding_still_requires_and_consumes_issued_state<
             );
             assert!(invalid.headers.get_all("set-cookie").next().is_none());
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "verifications"])
+                db.tables(&["user", "account", "session", "verification"])
                     .await?,
                 before
             );
@@ -1367,7 +1367,7 @@ async fn skipping_oauth_cookie_binding_still_requires_and_consumes_issued_state<
                 );
                 assert!(received.headers.get_all("set-cookie").next().is_none());
                 assert_eq!(
-                    db.tables(&["users", "accounts", "sessions", "verifications"])
+                    db.tables(&["user", "account", "session", "verification"])
                         .await?,
                     before
                 );
@@ -1385,17 +1385,17 @@ async fn skipping_oauth_cookie_binding_still_requires_and_consumes_issued_state<
                 Some("/state-complete")
             );
             authenticated(&auth, &cookies(&accepted), "skip-cookie-owner@example.test").await;
-            assert_eq!(db.count("users").await?, 2);
-            assert_eq!(db.count("sessions").await?, 2);
-            assert_eq!(db.count("verifications").await?, i64::from(mismatched));
+            assert_eq!(db.count("user").await?, 2);
+            assert_eq!(db.count("session").await?, 2);
+            assert_eq!(db.count("verification").await?, i64::from(mismatched));
             let owner_id = db
                 .text(
-                    "SELECT id FROM users WHERE email='skip-cookie-owner@example.test'",
+                    "SELECT id FROM \"user\" WHERE \"email\"='skip-cookie-owner@example.test'",
                     &[],
                 )
                 .await?
                 .unwrap();
-            assert_eq!(db.text("SELECT user_id FROM accounts WHERE provider_id='google' AND account_id='skip-cookie-subject'", &[]).await?.as_deref(), Some(owner_id.as_str()));
+            assert_eq!(db.text("SELECT \"userId\" FROM \"account\" WHERE \"providerId\"='google' AND \"accountId\"='skip-cookie-subject'", &[]).await?.as_deref(), Some(owner_id.as_str()));
             let receipts = social.provider.take();
             assert_eq!(receipts.len(), 1);
             let grant: std::collections::BTreeMap<_, _> =
@@ -1404,7 +1404,7 @@ async fn skipping_oauth_cookie_binding_still_requires_and_consumes_issued_state<
                     .collect();
             assert_eq!(grant.get("code").map(String::as_str), Some("real-code"));
             let after = db
-                .tables(&["users", "accounts", "sessions", "verifications"])
+                .tables(&["user", "account", "session", "verification"])
                 .await?;
             for (old, now) in before.iter().take(3).zip(after.iter()) {
                 let old: Vec<Value> = serde_json::from_str(old)?;
@@ -1428,7 +1428,7 @@ async fn skipping_oauth_cookie_binding_still_requires_and_consumes_issued_state<
             assert!(replay.headers.get_all("set-cookie").next().is_none());
             assert!(social.provider.requests.lock().unwrap().is_empty());
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "verifications"])
+                db.tables(&["user", "account", "session", "verification"])
                     .await?,
                 after
             );

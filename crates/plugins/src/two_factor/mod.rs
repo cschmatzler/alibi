@@ -65,8 +65,6 @@ use crate::helpers::{
     SessionIssueError, get_credential_password_hash, issue_user_session_record,
     issue_user_session_with_overrides_record,
 };
-use aes_gcm::aead::Aead;
-use aes_gcm::{Aes256Gcm, Key, Nonce};
 use alibi_core::entity::{AuthSession, AuthTwoFactor, AuthUser};
 use alibi_core::utils::cookie_utils::{
     create_clear_cookie, create_session_cookie, create_session_cookie_with_max_age,
@@ -85,13 +83,11 @@ pub use endpoint::{
     BackupCodeVerified, BackupCodesOutput, TotpOutput, TotpVerified, TwoFactorDisabled,
     TwoFactorOtpSent,
 };
-use hkdf::Hkdf;
 use hmac::{Hmac, KeyInit, Mac};
 pub use otp_storage::{TwoFactorOtpCipher, TwoFactorOtpHasher, TwoFactorOtpStorage};
 use rand::RngExt;
 use rand::distr::Alphanumeric;
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
 use std::sync::Arc;
 use validator::Validate;
 
@@ -124,8 +120,6 @@ struct TwoFactorCookiePolicy {
 const DEFAULT_TOTP_PERIOD_SECS: f64 = 30.0;
 
 const DEFAULT_TOTP_DIGITS: f64 = 6.0;
-
-const ENCRYPTION_INFO: &[u8] = b"better-auth-two-factor-encryption";
 
 /// Two-factor authentication plugin providing TOTP, OTP, and backup code flows.
 #[derive(Clone)]
@@ -1627,7 +1621,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(stored_user.two_factor_enabled, Some(true));
-        assert_eq!(stored_user.name.as_deref(), Some("Hook Updated Owner"));
+        assert_eq!(stored_user.name(), Some("Hook Updated Owner"));
         let verified_factor = ctx
             .database
             .get_two_factor_by_user_id(&user.id)
@@ -1651,7 +1645,7 @@ mod tests {
         );
         let (current_user, current_session) = ctx.require_session(&browser).await.unwrap();
         assert_eq!(current_user.id, user.id);
-        assert_eq!(current_user.name.as_deref(), Some("Hook Updated Owner"));
+        assert_eq!(current_user.name(), Some("Hook Updated Owner"));
         assert_eq!(current_session.token, rotated);
         assert_eq!(current_session.ip_address, session.ip_address);
         assert_eq!(current_session.user_agent, session.user_agent);
@@ -2153,176 +2147,6 @@ mod tests {
                 .expect("fixture contains the requested index")
                 .token,
             session.token
-        );
-    }
-
-    #[tokio::test]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
-    )]
-    async fn installed_legacy_factor_reads_authenticates_and_consumes_backups_without_rewriting_secret()
-     {
-        // Fixed independent WebCrypto HKDF/AES-GCM vectors for the previous Rust
-        // persistence format. The producer under test does not generate this row.
-        let legacy_secret =
-            "AAECAwQFBgcICQoL9NYPdhHpe_5gn4m4X_opqjMmxni2EyB3YCXHFEgQIyla3Fd0gf3_j1wgttJLPrPp";
-        let legacy_codes =
-            "DA0ODxAREhMUFRYXMc-xHuks-lR5NpeRiTHkuDgsOlsOZwvsxoEufAsjDonqpW0x_ZMYlL0UMdsH";
-        let plaintext = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef";
-        let plugin = TwoFactorPlugin::new();
-        let (ctx, user, session) =
-            create_test_context_with_credential_user("legacy-factor@fixture.test", true).await;
-        let installed = ctx
-            .database
-            .create_two_factor(CreateTwoFactor {
-                user_id: user.id.clone(),
-                secret: legacy_secret.into(),
-                backup_codes: legacy_codes.into(),
-                ..Default::default()
-            })
-            .await
-            .unwrap();
-        assert_eq!(
-            plugin.view_backup_codes(&user.id, &ctx).await.unwrap(),
-            serde_json::json!(["ABCDE-12345", "FGHIJ-67890"])
-        );
-        let request = |path: &str, body: serde_json::Value| {
-            let mut request = AuthRequest::new(HttpMethod::Post, path);
-            let cookie = create_session_cookie(&session.token, &ctx.config).unwrap();
-            request
-                .headers
-                .insert("cookie".into(), cookie.split(';').next().unwrap().into());
-            request.body = Some(serde_json::to_vec(&body).unwrap());
-            request
-        };
-        let uri = plugin
-            .on_request(
-                &request(
-                    "/two-factor/get-totp-uri",
-                    serde_json::json!({"password":"password123"}),
-                ),
-                &ctx,
-            )
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(uri.status, 200);
-        let verified = plugin
-            .on_request(
-                &request(
-                    "/two-factor/verify-totp",
-                    serde_json::json!({"code": plugin.generate_totp(plaintext).unwrap()}),
-                ),
-                &ctx,
-            )
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(verified.status, 200);
-        let consumed = plugin
-            .on_request(
-                &request(
-                    "/two-factor/verify-backup-code",
-                    serde_json::json!({"code":"ABCDE-12345"}),
-                ),
-                &ctx,
-            )
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(consumed.status, 200);
-        assert_eq!(
-            plugin.view_backup_codes(&user.id, &ctx).await.unwrap(),
-            serde_json::json!(["FGHIJ-67890"])
-        );
-        let after = ctx
-            .database
-            .get_two_factor_by_user_id(&user.id)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(after.id, installed.id);
-        assert_eq!(after.secret, legacy_secret);
-        assert_ne!(after.backup_codes, legacy_codes);
-        assert!(after.backup_codes.len().is_multiple_of(2));
-        assert!(
-            after
-                .backup_codes
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        );
-        let stored = after.backup_codes.clone();
-        let replay = plugin
-            .on_request(
-                &request(
-                    "/two-factor/verify-backup-code",
-                    serde_json::json!({"code":"ABCDE-12345"}),
-                ),
-                &ctx,
-            )
-            .await
-            .unwrap_err();
-        assert_eq!(replay.to_string(), "Invalid backup code");
-        assert_eq!(
-            ctx.database
-                .get_two_factor_by_user_id(&user.id)
-                .await
-                .unwrap()
-                .unwrap()
-                .backup_codes,
-            stored
-        );
-        assert_eq!(
-            ctx.database
-                .get_session(&session.token)
-                .await
-                .unwrap()
-                .unwrap()
-                .user_id,
-            user.id
-        );
-        let tampered = format!(
-            "{}A",
-            (legacy_secret)
-                .get(..legacy_secret.len() - 1)
-                .expect("fixture range is on a UTF-8 boundary")
-        );
-        ctx.database
-            .update_two_factor(
-                &installed.id,
-                UpdateTwoFactor {
-                    secret: Some(tampered.clone()),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-        let rejected = plugin
-            .on_request(
-                &request(
-                    "/two-factor/get-totp-uri",
-                    serde_json::json!({"password":"password123"}),
-                ),
-                &ctx,
-            )
-            .await
-            .unwrap_err();
-        assert!(matches!(rejected, AuthError::Internal(_)));
-        let rejected_row = ctx
-            .database
-            .get_two_factor_by_user_id(&user.id)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(rejected_row.secret, tampered);
-        assert_eq!(rejected_row.backup_codes, stored);
-        assert!(
-            ctx.database
-                .get_session(&session.token)
-                .await
-                .unwrap()
-                .is_some()
         );
     }
 

@@ -89,7 +89,7 @@ impl ApiKeyDefaultPermissions for Permissions {
             .database
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
-                "SELECT name FROM users WHERE id = ?",
+                "SELECT \"name\" FROM \"user\" WHERE id = ?",
                 [reference_id.into()],
             ))
             .await
@@ -232,8 +232,8 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         );
     let state_db = database.clone();
     router=router.route("/__test/api-key-generation/state",get(move||{let database=state_db.clone();async move{
-        let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT id,name,reference_id,config_id,key,start,prefix,permissions,remaining,request_count,expires_at FROM api_keys ORDER BY name")).await.unwrap();
-        let values:Vec<_>=rows.iter().map(|row|value!({"id":row.try_get::<String>("","id").unwrap(),"name":row.try_get::<Option<String>>("","name").unwrap(),"referenceId":row.try_get::<String>("","reference_id").unwrap(),"configId":row.try_get::<String>("","config_id").unwrap(),"key":row.try_get::<String>("","key").unwrap(),"start":row.try_get::<Option<String>>("","start").unwrap(),"prefix":row.try_get::<Option<String>>("","prefix").unwrap(),"permissions":row.try_get::<Option<String>>("","permissions").unwrap(),"remaining":row.try_get::<Option<f64>>("","remaining").unwrap(),"requestCount":row.try_get::<Option<f64>>("","request_count").unwrap(),"expiresAt":row.try_get::<Option<String>>("","expires_at").unwrap()})).collect();Json(values)
+        let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT id,\"name\",\"referenceId\",\"configId\",\"key\",\"start\",\"prefix\",\"permissions\",\"remaining\",\"requestCount\",\"expiresAt\" FROM \"apikey\" ORDER BY \"name\"")).await.unwrap();
+        let values:Vec<_>=rows.iter().map(|row|value!({"id":row.try_get::<String>("","id").unwrap(),"name":row.try_get::<Option<String>>("","name").unwrap(),"referenceId":row.try_get::<String>("","referenceId").unwrap(),"configId":row.try_get::<String>("","configId").unwrap(),"key":row.try_get::<String>("","key").unwrap(),"start":row.try_get::<Option<String>>("","start").unwrap(),"prefix":row.try_get::<Option<String>>("","prefix").unwrap(),"permissions":row.try_get::<Option<String>>("","permissions").unwrap(),"remaining":row.try_get::<Option<alibi::seaorm::Number>>("","remaining").unwrap(),"requestCount":row.try_get::<Option<alibi::seaorm::Number>>("","requestCount").unwrap(),"expiresAt":row.try_get::<Option<String>>("","expiresAt").unwrap()})).collect();Json(values)
     }}));
     router = router.route(
         "/__test/api-key-generation/expire",
@@ -243,7 +243,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 let _ = database
                     .execute_raw(Statement::from_sql_and_values(
                         DbBackend::Sqlite,
-                        "UPDATE api_keys SET expires_at = ? WHERE id = ?",
+                        "UPDATE \"apikey\" SET \"expiresAt\" = ? WHERE id = ?",
                         ["1970-01-01T00:00:00.000Z".into(), input.key_id.into()],
                     ))
                     .await

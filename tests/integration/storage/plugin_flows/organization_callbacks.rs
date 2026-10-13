@@ -200,7 +200,7 @@ async fn organization_lifecycle_callbacks_preserve_patch_authority_and_committed
         let token = body(&owner)["token"].as_str().unwrap().to_owned();
         let active = db
             .text(
-                "SELECT active_organization_id FROM sessions WHERE token=$1",
+                "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
                 &[&token],
             )
             .await?;
@@ -213,20 +213,23 @@ async fn organization_lifecycle_callbacks_preserve_patch_authority_and_committed
         assert_eq!(body(&result)["id"], "hook-organization");
         assert_eq!(body(&result)["name"], "Patched organization");
         assert_eq!(
-            db.text("SELECT slug FROM organization", &[])
+            db.text("SELECT \"slug\" FROM \"organization\"", &[])
                 .await?
                 .as_deref(),
             Some("hook-slug")
         );
         assert!(
-            db.text("SELECT logo FROM organization", &[])
+            db.text("SELECT \"logo\" FROM \"organization\"", &[])
                 .await?
                 .is_none()
         );
         assert!(
-            db.text("SELECT CAST(metadata AS TEXT) FROM organization", &[])
-                .await?
-                .is_none(),
+            db.text(
+                "SELECT CAST(\"metadata\" AS TEXT) FROM \"organization\"",
+                &[]
+            )
+            .await?
+            .is_none(),
             "creation's null patch omits metadata"
         );
         for phase in ["before-update", "after-update", ""] {
@@ -245,15 +248,18 @@ async fn organization_lifecycle_callbacks_preserve_patch_authority_and_committed
                 assert_eq!(db.table("organization").await?, before);
             } else {
                 assert_eq!(
-                    db.text("SELECT name FROM organization", &[])
+                    db.text("SELECT \"name\" FROM \"organization\"", &[])
                         .await?
                         .as_deref(),
                     Some("Hook updated")
                 );
                 assert_eq!(
-                    db.text("SELECT CAST(metadata AS TEXT) FROM organization", &[])
-                        .await?
-                        .as_deref(),
+                    db.text(
+                        "SELECT CAST(\"metadata\" AS TEXT) FROM \"organization\"",
+                        &[]
+                    )
+                    .await?
+                    .as_deref(),
                     Some("null"),
                     "update's null patch persists JSON null"
                 );
@@ -274,7 +280,7 @@ async fn organization_lifecycle_callbacks_preserve_patch_authority_and_committed
         assert_eq!(db.tables(&["organization", "member"]).await?, before);
         assert!(
             db.text(
-                "SELECT active_organization_id FROM sessions WHERE token=$1",
+                "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
                 &[&token]
             )
             .await?
@@ -321,7 +327,7 @@ async fn organization_lifecycle_callbacks_preserve_patch_authority_and_committed
         assert_eq!(db.count("member").await?, 0);
         assert!(
             db.text(
-                "SELECT active_organization_id FROM sessions WHERE token=$1",
+                "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
                 &[&token]
             )
             .await?
@@ -567,11 +573,13 @@ async fn organization_invitation_and_member_callbacks_preserve_actor_and_commit_
         if failure != "before-invite" {
             let delivered = callbacks.delivered.lock().unwrap()[0].clone();
             assert_eq!(
-                db.text("SELECT id FROM invitation", &[]).await?.as_deref(),
+                db.text("SELECT id FROM \"invitation\"", &[])
+                    .await?
+                    .as_deref(),
                 delivered["id"].as_str()
             );
             assert_eq!(
-                db.text("SELECT role FROM invitation", &[])
+                db.text("SELECT \"role\" FROM \"invitation\"", &[])
                     .await?
                     .as_deref(),
                 Some("admin")
@@ -587,7 +595,7 @@ async fn organization_invitation_and_member_callbacks_preserve_actor_and_commit_
         assert_eq!(*callbacks.events.lock().unwrap(), vec!["limit"]);
         assert_eq!(db.count("invitation").await?, 1);
         assert_eq!(
-            db.text("SELECT status FROM invitation WHERE id=$1", &[&id])
+            db.text("SELECT \"status\" FROM \"invitation\" WHERE id=$1", &[&id])
                 .await?
                 .as_deref(),
             Some("canceled"),
@@ -630,7 +638,7 @@ async fn organization_invitation_and_member_callbacks_preserve_actor_and_commit_
                     assert_eq!(*callbacks.events.lock().unwrap(), vec![before_phase]);
                 } else {
                     assert_eq!(
-                        db.text("SELECT status FROM invitation WHERE id=$1", &[&id])
+                        db.text("SELECT \"status\" FROM \"invitation\" WHERE id=$1", &[&id])
                             .await?
                             .as_deref(),
                         Some(status)
@@ -647,7 +655,7 @@ async fn organization_invitation_and_member_callbacks_preserve_actor_and_commit_
         let invited = call(&auth, invite(), 200).await;
         for phase in ["before-accept", "after-accept"] {
             callbacks.reset(phase);
-            let before = db.table("sessions").await?;
+            let before = db.table("session").await?;
             let _ = call(
                 &auth,
                 request(
@@ -661,7 +669,7 @@ async fn organization_invitation_and_member_callbacks_preserve_actor_and_commit_
             let invitation_id = body(&invited)["id"].as_str().unwrap().to_owned();
             assert_eq!(
                 db.text(
-                    "SELECT status FROM invitation WHERE id=$1",
+                    "SELECT \"status\" FROM \"invitation\" WHERE id=$1",
                     &[&invitation_id]
                 )
                 .await?
@@ -677,12 +685,12 @@ async fn organization_invitation_and_member_callbacks_preserve_actor_and_commit_
                 if phase == "before-accept" { 1 } else { 2 }
             );
             if phase == "before-accept" {
-                assert_eq!(db.table("sessions").await?, before);
+                assert_eq!(db.table("session").await?, before);
             } else {
                 let token = body(&target)["token"].as_str().unwrap().to_owned();
                 assert_eq!(
                     db.text(
-                        "SELECT active_organization_id FROM sessions WHERE token=$1",
+                        "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
                         &[&token]
                     )
                     .await?
@@ -701,7 +709,7 @@ async fn organization_invitation_and_member_callbacks_preserve_actor_and_commit_
         }
         let member = db
             .text(
-                "SELECT id FROM member WHERE user_id=$1 AND organization_id=$2",
+                "SELECT id FROM \"member\" WHERE \"userId\"=$1 AND \"organizationId\"=$2",
                 &[&target_id, &org],
             )
             .await?
@@ -723,7 +731,7 @@ async fn organization_invitation_and_member_callbacks_preserve_actor_and_commit_
                 assert_eq!(db.table("member").await?, before);
             } else {
                 assert_eq!(
-                    db.text("SELECT role FROM member WHERE id=$1", &[&member])
+                    db.text("SELECT \"role\" FROM \"member\" WHERE id=$1", &[&member])
                         .await?
                         .as_deref(),
                     Some("admin")
@@ -758,7 +766,7 @@ async fn organization_invitation_and_member_callbacks_preserve_actor_and_commit_
                 assert_eq!(db.table("member").await?, before);
             } else {
                 assert_eq!(
-                    db.count_where("SELECT COUNT(*) FROM member WHERE id=$1", &[&member])
+                    db.count_where("SELECT COUNT(*) FROM \"member\" WHERE id=$1", &[&member])
                         .await?,
                     0
                 );
@@ -846,12 +854,12 @@ async fn organization_role_hook_empty_and_absent_patches_retain_normalized_reque
         .decode()?;
 
     let unchanged = db
-        .tables(&["users", "accounts", "sessions", "organization"])
+        .tables(&["user", "account", "session", "organization"])
         .await?;
     for mode in 0..4 {
         *hooks.mode.lock().unwrap() = mode;
         let previous = db
-            .text("SELECT role FROM member WHERE id=$1", &[&added.id])
+            .text("SELECT \"role\" FROM \"member\" WHERE id=$1", &[&added.id])
             .await?
             .unwrap();
         _=call(&auth,request("/organization/update-member-role",Some(json!({"organizationId":org["id"],"memberId":added.id,"role":[" admin ,member ","admin"]})),&cookies(&owner)),200).await;
@@ -861,7 +869,7 @@ async fn organization_role_hook_empty_and_absent_patches_retain_normalized_reque
             "admin,member,admin"
         };
         assert_eq!(
-            db.text("SELECT role FROM member WHERE id=$1", &[&added.id])
+            db.text("SELECT \"role\" FROM \"member\" WHERE id=$1", &[&added.id])
                 .await?
                 .as_deref(),
             Some(expected)
@@ -874,7 +882,7 @@ async fn organization_role_hook_empty_and_absent_patches_retain_normalized_reque
         assert_eq!(after.previous_role, previous);
         assert_eq!(after.user.id, target_id);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "organization"])
+            db.tables(&["user", "account", "session", "organization"])
                 .await?,
             unchanged
         );
@@ -964,7 +972,7 @@ async fn organization_role_after_hook_retains_original_target_across_independent
         .await?
         .decode()?;
 
-    let sessions = db.table("sessions").await?;
+    let sessions = db.table("session").await?;
     for (role, original_name, previous) in [
         (
             "admin",
@@ -991,18 +999,18 @@ async fn organization_role_after_hook_retains_original_target_across_independent
         assert_eq!(after.previous_role, previous);
         assert_eq!(after.member.role, role);
         assert_eq!(
-            db.text("SELECT name FROM users WHERE id=$1", &[&target_id])
+            db.text("SELECT \"name\" FROM \"user\" WHERE id=$1", &[&target_id])
                 .await?
                 .as_deref(),
             Some("Stored Target Name")
         );
         assert_eq!(
-            db.text("SELECT role FROM member WHERE id=$1", &[&added.id])
+            db.text("SELECT \"role\" FROM \"member\" WHERE id=$1", &[&added.id])
                 .await?
                 .as_deref(),
             Some(role)
         );
-        assert_eq!(db.table("sessions").await?, sessions);
+        assert_eq!(db.table("session").await?, sessions);
     }
     authenticated(&auth, &cookies(&owner), "owner@example.test").await;
     B::close(connection).await
@@ -1074,7 +1082,7 @@ async fn organization_role_hook_target_deletion_rejects_before_after_callback<B:
         .decode()?;
 
     let before = db
-        .tables(&["users", "accounts", "sessions", "organization"])
+        .tables(&["user", "account", "session", "organization"])
         .await?;
     let response = call(
         &auth,
@@ -1089,13 +1097,13 @@ async fn organization_role_hook_target_deletion_rejects_before_after_callback<B:
     assert_eq!(body(&response)["code"], "MEMBER_NOT_FOUND");
     assert_eq!(*hooks.calls.lock().unwrap(), vec!["before"]);
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM member WHERE id=$1", &[&added.id])
+        db.count_where("SELECT COUNT(*) FROM \"member\" WHERE id=$1", &[&added.id])
             .await?,
         0
     );
     assert_eq!(db.count("member").await?, 1);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization"])
+        db.tables(&["user", "account", "session", "organization"])
             .await?,
         before
     );
@@ -1175,7 +1183,7 @@ async fn organization_update_hook_demotion_keeps_original_context_and_rechecks_n
         )
         .await,
     );
-    let sessions = db.table("sessions").await?;
+    let sessions = db.table("session").await?;
     let updated = body(
         &call(
             &auth,
@@ -1197,20 +1205,26 @@ async fn organization_update_hook_demotion_keeps_original_context_and_rechecks_n
     assert_eq!(after.member.role, "owner");
     assert_eq!(after.organization.unwrap().name, "Submitted update");
     assert_eq!(
-        db.text("SELECT name FROM users WHERE id=$1", &[&after.user.id])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT \"name\" FROM \"user\" WHERE id=$1",
+            &[&after.user.id]
+        )
+        .await?
+        .as_deref(),
         Some("Stored New Name")
     );
     assert_eq!(
-        db.text("SELECT role FROM member WHERE id=$1", &[&after.member.id])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT \"role\" FROM \"member\" WHERE id=$1",
+            &[&after.member.id]
+        )
+        .await?
+        .as_deref(),
         Some("member")
     );
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("session").await?, sessions);
     let before = db
-        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .tables(&["user", "account", "session", "organization", "member"])
         .await?;
     let denied = call(
         &auth,
@@ -1229,7 +1243,7 @@ async fn organization_update_hook_demotion_keeps_original_context_and_rechecks_n
     assert_eq!(hooks.before.load(std::sync::atomic::Ordering::SeqCst), 1);
     assert_eq!(hooks.after.lock().unwrap().len(), 1);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization", "member"])
+        db.tables(&["user", "account", "session", "organization", "member"])
             .await?,
         before
     );
@@ -1291,7 +1305,7 @@ async fn organization_update_hook_deleted_row_returns_null_and_original_authorit
         )
         .await,
     );
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let response = call(
         &auth,
         request(
@@ -1310,7 +1324,7 @@ async fn organization_update_hook_deleted_row_returns_null_and_original_authorit
     assert_eq!(after.member.role, "owner");
     assert_eq!(db.count("organization").await?, 0);
     assert_eq!(db.count("member").await?, 0);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
 }
@@ -1371,9 +1385,7 @@ async fn organization_update_hooks_preserve_empty_values_and_input_field_fallbac
         )
         .await,
     );
-    let stable = db
-        .tables(&["users", "accounts", "sessions", "member"])
-        .await?;
+    let stable = db.tables(&["user", "account", "session", "member"]).await?;
     for mode in 0..3 {
         *hooks.mode.lock().unwrap() = mode;
         let result=body(&call(&auth,request("/organization/update",Some(json!({"organizationId":org["id"],"data":{"name":"Submitted","metadata":{"requested":true}}})),&cookies(&owner)),200).await);
@@ -1393,7 +1405,7 @@ async fn organization_update_hooks_preserve_empty_values_and_input_field_fallbac
         assert_eq!(after.organization.unwrap().name, expected_name);
         assert_eq!(
             db.text(
-                "SELECT name FROM organization WHERE id=$1",
+                "SELECT \"name\" FROM \"organization\" WHERE id=$1",
                 &[org["id"].as_str().unwrap()]
             )
             .await?
@@ -1402,15 +1414,14 @@ async fn organization_update_hooks_preserve_empty_values_and_input_field_fallbac
         );
         let stored = db
             .text(
-                "SELECT CAST(metadata AS TEXT) FROM organization WHERE id=$1",
+                "SELECT CAST(\"metadata\" AS TEXT) FROM \"organization\" WHERE id=$1",
                 &[org["id"].as_str().unwrap()],
             )
             .await?
             .unwrap();
         assert_eq!(serde_json::from_str::<Value>(&stored)?, expected_meta);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "member"])
-                .await?,
+            db.tables(&["user", "account", "session", "member"]).await?,
             stable
         );
     }
@@ -1472,7 +1483,7 @@ async fn organization_creation_hooks_preserve_trusted_empty_values_and_omitted_f
     let foreign_token = body(&foreign)["token"].as_str().unwrap().to_owned();
     let foreign_selection = db
         .text(
-            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
             &[&foreign_token],
         )
         .await?;
@@ -1495,7 +1506,7 @@ async fn organization_creation_hooks_preserve_trusted_empty_values_and_omitted_f
         assert_eq!(result["members"][0]["role"], expected_role);
         assert_eq!(
             db.text(
-                "SELECT role FROM member WHERE organization_id=$1",
+                "SELECT \"role\" FROM \"member\" WHERE \"organizationId\"=$1",
                 &[result["id"].as_str().unwrap()]
             )
             .await?
@@ -1504,7 +1515,7 @@ async fn organization_creation_hooks_preserve_trusted_empty_values_and_omitted_f
         );
         assert_eq!(
             db.text(
-                "SELECT name FROM organization WHERE id=$1",
+                "SELECT \"name\" FROM \"organization\" WHERE id=$1",
                 &[result["id"].as_str().unwrap()]
             )
             .await?
@@ -1513,7 +1524,7 @@ async fn organization_creation_hooks_preserve_trusted_empty_values_and_omitted_f
         );
         let stored = db
             .text(
-                "SELECT CAST(metadata AS TEXT) FROM organization WHERE id=$1",
+                "SELECT CAST(\"metadata\" AS TEXT) FROM \"organization\" WHERE id=$1",
                 &[result["id"].as_str().unwrap()],
             )
             .await?
@@ -1521,7 +1532,7 @@ async fn organization_creation_hooks_preserve_trusted_empty_values_and_omitted_f
         assert_eq!(serde_json::from_str::<Value>(&stored)?, expected_meta);
         assert_eq!(
             db.text(
-                "SELECT active_organization_id FROM sessions WHERE token=$1",
+                "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
                 &[&foreign_token]
             )
             .await?,
@@ -1529,7 +1540,7 @@ async fn organization_creation_hooks_preserve_trusted_empty_values_and_omitted_f
         );
     }
     assert_eq!(db.count("member").await?, 4);
-    assert_eq!(db.count("sessions").await?, 2);
+    assert_eq!(db.count("session").await?, 2);
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
 }
@@ -1591,17 +1602,17 @@ async fn organization_creation_retains_original_member_after_independent_role_wr
     assert_eq!(*hooks.roles.lock().unwrap(), vec!["owner", "owner"]);
     let member_id = result["members"][0]["id"].as_str().unwrap();
     assert_eq!(
-        db.text("SELECT role FROM member WHERE id=$1", &[member_id])
+        db.text("SELECT \"role\" FROM \"member\" WHERE id=$1", &[member_id])
             .await?
             .as_deref(),
         Some("admin")
     );
     assert_eq!(db.count("team").await?, 1);
-    assert_eq!(db.count("team_member").await?, 1);
+    assert_eq!(db.count("teamMember").await?, 1);
     let token = body(&owner)["token"].as_str().unwrap().to_owned();
     assert_eq!(
         db.text(
-            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
             &[&token]
         )
         .await?
@@ -1610,13 +1621,13 @@ async fn organization_creation_retains_original_member_after_independent_role_wr
     );
     assert_eq!(
         db.text(
-            "SELECT active_team_id FROM sessions WHERE token=$1",
+            "SELECT \"activeTeamId\" FROM \"session\" WHERE \"token\"=$1",
             &[&token]
         )
         .await?,
-        db.text("SELECT id FROM team", &[]).await?
+        db.text("SELECT id FROM \"team\"", &[]).await?
     );
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     B::close(connection).await
 }
 
@@ -1683,7 +1694,7 @@ async fn organization_creator_patch_retargeting_keeps_team_and_selection_actor<B
     let foreign_token = body(&foreign)["token"].as_str().unwrap().to_owned();
     let before = db
         .text(
-            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
             &[&foreign_token],
         )
         .await?;
@@ -1708,7 +1719,7 @@ async fn organization_creator_patch_retargeting_keeps_team_and_selection_actor<B
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM member WHERE organization_id=$1",
+            "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\"=$1",
             &[id]
         )
         .await?,
@@ -1716,26 +1727,29 @@ async fn organization_creator_patch_retargeting_keeps_team_and_selection_actor<B
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM member WHERE organization_id=$1",
+            "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\"=$1",
             &[&prior_id]
         )
         .await?,
         2
     );
     let team = db
-        .text("SELECT id FROM team WHERE organization_id=$1", &[id])
+        .text("SELECT id FROM \"team\" WHERE \"organizationId\"=$1", &[id])
         .await?
         .unwrap();
     assert_eq!(
-        db.text("SELECT user_id FROM team_member WHERE team_id=$1", &[&team])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT \"userId\" FROM \"teamMember\" WHERE \"teamId\"=$1",
+            &[&team]
+        )
+        .await?
+        .as_deref(),
         Some(actor.as_str())
     );
     let token = body(&owner)["token"].as_str().unwrap().to_owned();
     assert_eq!(
         db.text(
-            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
             &[&token]
         )
         .await?
@@ -1744,7 +1758,7 @@ async fn organization_creator_patch_retargeting_keeps_team_and_selection_actor<B
     );
     assert_eq!(
         db.text(
-            "SELECT active_team_id FROM sessions WHERE token=$1",
+            "SELECT \"activeTeamId\" FROM \"session\" WHERE \"token\"=$1",
             &[&token]
         )
         .await?
@@ -1753,7 +1767,7 @@ async fn organization_creator_patch_retargeting_keeps_team_and_selection_actor<B
     );
     assert_eq!(
         db.text(
-            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
             &[&foreign_token]
         )
         .await?,
@@ -1826,7 +1840,7 @@ async fn organization_addition_after_hook_keeps_original_target_after_user_write
         )
         .await,
     );
-    let stable = db.tables(&["accounts", "sessions", "organization"]).await?;
+    let stable = db.tables(&["account", "session", "organization"]).await?;
     let target_id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
     let result = auth
         .dispatch_endpoint(
@@ -1848,13 +1862,13 @@ async fn organization_addition_after_hook_keeps_original_target_after_user_write
     assert_eq!(after.user.id, target_id);
     assert_eq!(after.member.id, result.id);
     assert_eq!(
-        db.text("SELECT name FROM users WHERE id=$1", &[&target_id])
+        db.text("SELECT \"name\" FROM \"user\" WHERE id=$1", &[&target_id])
             .await?
             .as_deref(),
         Some("Stored Addition Target")
     );
     assert_eq!(
-        db.tables(&["accounts", "sessions", "organization"]).await?,
+        db.tables(&["account", "session", "organization"]).await?,
         stable
     );
     assert_eq!(db.count("member").await?, 2);
@@ -1994,9 +2008,9 @@ async fn organization_self_removal_after_rejection_clears_only_current_org_selec
     let token = body(&target)["token"].as_str().unwrap().to_owned();
     let sibling_token = body(&sibling)["token"].as_str().unwrap().to_owned();
     *hooks.token.lock().unwrap() = token.clone();
-    let stable = db.tables(&["users", "accounts", "organization"]).await?;
+    let stable = db.tables(&["user", "account", "organization"]).await?;
     let mut expected_team: Value = serde_json::from_str(&db.table("team").await?)?;
-    expected_team[0]["member_count"] = json!(0);
+    expected_team[0]["memberCount"] = json!(0);
     let denied = call(
         &auth,
         request(
@@ -2009,13 +2023,13 @@ async fn organization_self_removal_after_rejection_clears_only_current_org_selec
     .await;
     assert_eq!(body(&denied)["code"], "MEMBER_REMOVAL_HOOK_REJECTED");
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM member WHERE id=$1", &[&member.id])
+        db.count_where("SELECT COUNT(*) FROM \"member\" WHERE id=$1", &[&member.id])
             .await?,
         0
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM team_member WHERE user_id=$1",
+            "SELECT COUNT(*) FROM \"teamMember\" WHERE \"userId\"=$1",
             &[&target_id]
         )
         .await?,
@@ -2023,7 +2037,7 @@ async fn organization_self_removal_after_rejection_clears_only_current_org_selec
     );
     assert_eq!(
         db.text(
-            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
             &[&token]
         )
         .await?,
@@ -2031,7 +2045,7 @@ async fn organization_self_removal_after_rejection_clears_only_current_org_selec
     );
     assert_eq!(
         db.text(
-            "SELECT active_team_id FROM sessions WHERE token=$1",
+            "SELECT \"activeTeamId\" FROM \"session\" WHERE \"token\"=$1",
             &[&token]
         )
         .await?
@@ -2040,7 +2054,7 @@ async fn organization_self_removal_after_rejection_clears_only_current_org_selec
     );
     assert_eq!(
         db.text(
-            "SELECT active_organization_id FROM sessions WHERE token=$1",
+            "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
             &[&sibling_token]
         )
         .await?
@@ -2049,7 +2063,7 @@ async fn organization_self_removal_after_rejection_clears_only_current_org_selec
     );
     assert_eq!(
         db.text(
-            "SELECT active_team_id FROM sessions WHERE token=$1",
+            "SELECT \"activeTeamId\" FROM \"session\" WHERE \"token\"=$1",
             &[&sibling_token]
         )
         .await?
@@ -2062,7 +2076,7 @@ async fn organization_self_removal_after_rejection_clears_only_current_org_selec
     );
     assert_eq!(hooks.after.lock().unwrap()[0].user.id, target_id);
     assert_eq!(
-        db.tables(&["users", "accounts", "organization"]).await?,
+        db.tables(&["user", "account", "organization"]).await?,
         stable
     );
     assert_eq!(
@@ -2200,12 +2214,12 @@ async fn organization_team_create_callback_failure<B: Backend>(db: Db) -> TestRe
             .await?;
 
         let before = db
-            .tables(&["users", "accounts", "sessions", "organization", "member"])
+            .tables(&["user", "account", "session", "organization", "member"])
             .await?;
         let foreign_before: Vec<Value> =
             serde_json::from_str::<Vec<Value>>(&db.table("team").await?)?
                 .into_iter()
-                .filter(|row| row["organization_id"] == outside_id)
+                .filter(|row| row["organizationId"] == outside_id)
                 .collect();
         hooks
             .phase
@@ -2233,7 +2247,7 @@ async fn organization_team_create_callback_failure<B: Backend>(db: Db) -> TestRe
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM team WHERE organization_id=$1 AND name=$2",
+                "SELECT COUNT(*) FROM \"team\" WHERE \"organizationId\"=$1 AND \"name\"=$2",
                 &[&org_id, &format!("Independent:{phase}")]
             )
             .await?,
@@ -2242,7 +2256,7 @@ async fn organization_team_create_callback_failure<B: Backend>(db: Db) -> TestRe
 
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM team WHERE organization_id=$1 AND name='Hook:Target'",
+                "SELECT COUNT(*) FROM \"team\" WHERE \"organizationId\"=$1 AND \"name\"='Hook:Target'",
                 &[&org_id]
             )
             .await?,
@@ -2250,14 +2264,14 @@ async fn organization_team_create_callback_failure<B: Backend>(db: Db) -> TestRe
         );
 
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "organization", "member"])
+            db.tables(&["user", "account", "session", "organization", "member"])
                 .await?,
             before
         );
         let foreign_after: Vec<Value> =
             serde_json::from_str::<Vec<Value>>(&db.table("team").await?)?
                 .into_iter()
-                .filter(|row| row["organization_id"] == outside_id)
+                .filter(|row| row["organizationId"] == outside_id)
                 .collect();
         assert_eq!(foreign_after, foreign_before);
         authenticated(&auth, &cookie, "team-callback-owner@example.test").await;
@@ -2410,12 +2424,12 @@ async fn organization_team_update_callback_failure<B: Backend>(db: Db) -> TestRe
         let team_id = body(&target)["id"].as_str().unwrap().to_owned();
 
         let before = db
-            .tables(&["users", "accounts", "sessions", "organization", "member"])
+            .tables(&["user", "account", "session", "organization", "member"])
             .await?;
         let foreign_before: Vec<Value> =
             serde_json::from_str::<Vec<Value>>(&db.table("team").await?)?
                 .into_iter()
-                .filter(|row| row["organization_id"] == outside_id)
+                .filter(|row| row["organizationId"] == outside_id)
                 .collect();
         hooks
             .phase
@@ -2443,7 +2457,7 @@ async fn organization_team_update_callback_failure<B: Backend>(db: Db) -> TestRe
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM team WHERE organization_id=$1 AND name=$2",
+                "SELECT COUNT(*) FROM \"team\" WHERE \"organizationId\"=$1 AND \"name\"=$2",
                 &[&org_id, &format!("Independent:{phase}")]
             )
             .await?,
@@ -2451,21 +2465,21 @@ async fn organization_team_update_callback_failure<B: Backend>(db: Db) -> TestRe
         );
 
         assert_eq!(
-            db.text("SELECT name FROM team WHERE id=$1", &[&team_id])
+            db.text("SELECT \"name\" FROM \"team\" WHERE id=$1", &[&team_id])
                 .await?
                 .as_deref(),
             Some(if phase == 2 { "Hook:Updated" } else { "Target" })
         );
 
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "organization", "member"])
+            db.tables(&["user", "account", "session", "organization", "member"])
                 .await?,
             before
         );
         let foreign_after: Vec<Value> =
             serde_json::from_str::<Vec<Value>>(&db.table("team").await?)?
                 .into_iter()
-                .filter(|row| row["organization_id"] == outside_id)
+                .filter(|row| row["organizationId"] == outside_id)
                 .collect();
         assert_eq!(foreign_after, foreign_before);
         authenticated(&auth, &cookie, "team-callback-owner@example.test").await;
@@ -2616,12 +2630,12 @@ async fn organization_team_delete_callback_failure<B: Backend>(db: Db) -> TestRe
             .await?;
 
         let before = db
-            .tables(&["users", "accounts", "sessions", "organization", "member"])
+            .tables(&["user", "account", "session", "organization", "member"])
             .await?;
         let foreign_before: Vec<Value> =
             serde_json::from_str::<Vec<Value>>(&db.table("team").await?)?
                 .into_iter()
-                .filter(|row| row["organization_id"] == outside_id)
+                .filter(|row| row["organizationId"] == outside_id)
                 .collect();
         hooks
             .phase
@@ -2649,7 +2663,7 @@ async fn organization_team_delete_callback_failure<B: Backend>(db: Db) -> TestRe
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM team WHERE organization_id=$1 AND name=$2",
+                "SELECT COUNT(*) FROM \"team\" WHERE \"organizationId\"=$1 AND \"name\"=$2",
                 &[&org_id, &format!("Independent:{phase}")]
             )
             .await?,
@@ -2657,13 +2671,13 @@ async fn organization_team_delete_callback_failure<B: Backend>(db: Db) -> TestRe
         );
 
         assert_eq!(
-            db.count_where("SELECT COUNT(*) FROM team WHERE id=$1", &[&team_id])
+            db.count_where("SELECT COUNT(*) FROM \"team\" WHERE id=$1", &[&team_id])
                 .await?,
             i64::from(phase == 1)
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM team_member WHERE team_id=$1",
+                "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1",
                 &[&team_id]
             )
             .await?,
@@ -2671,14 +2685,14 @@ async fn organization_team_delete_callback_failure<B: Backend>(db: Db) -> TestRe
         );
 
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "organization", "member"])
+            db.tables(&["user", "account", "session", "organization", "member"])
                 .await?,
             before
         );
         let foreign_after: Vec<Value> =
             serde_json::from_str::<Vec<Value>>(&db.table("team").await?)?
                 .into_iter()
-                .filter(|row| row["organization_id"] == outside_id)
+                .filter(|row| row["organizationId"] == outside_id)
                 .collect();
         assert_eq!(foreign_after, foreign_before);
         authenticated(&auth, &cookie, "team-callback-owner@example.test").await;
@@ -2837,12 +2851,12 @@ async fn organization_team_add_member_callback_failure<B: Backend>(db: Db) -> Te
         let team_id = body(&target)["id"].as_str().unwrap().to_owned();
 
         let before = db
-            .tables(&["users", "accounts", "sessions", "organization", "member"])
+            .tables(&["user", "account", "session", "organization", "member"])
             .await?;
         let foreign_before: Vec<Value> =
             serde_json::from_str::<Vec<Value>>(&db.table("team").await?)?
                 .into_iter()
-                .filter(|row| row["organization_id"] == outside_id)
+                .filter(|row| row["organizationId"] == outside_id)
                 .collect();
         hooks
             .phase
@@ -2870,7 +2884,7 @@ async fn organization_team_add_member_callback_failure<B: Backend>(db: Db) -> Te
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM team WHERE organization_id=$1 AND name=$2",
+                "SELECT COUNT(*) FROM \"team\" WHERE \"organizationId\"=$1 AND \"name\"=$2",
                 &[&org_id, &format!("Independent:{phase}")]
             )
             .await?,
@@ -2879,7 +2893,7 @@ async fn organization_team_add_member_callback_failure<B: Backend>(db: Db) -> Te
 
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM team_member WHERE team_id=$1 AND user_id=$2",
+                "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1 AND \"userId\"=$2",
                 &[&team_id, &owner_id]
             )
             .await?,
@@ -2887,7 +2901,7 @@ async fn organization_team_add_member_callback_failure<B: Backend>(db: Db) -> Te
         );
         assert_eq!(
             db.text(
-                "SELECT CAST(member_count AS TEXT) FROM team WHERE id=$1",
+                "SELECT CAST(\"memberCount\" AS TEXT) FROM \"team\" WHERE id=$1",
                 &[&team_id]
             )
             .await?
@@ -2896,14 +2910,14 @@ async fn organization_team_add_member_callback_failure<B: Backend>(db: Db) -> Te
         );
 
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "organization", "member"])
+            db.tables(&["user", "account", "session", "organization", "member"])
                 .await?,
             before
         );
         let foreign_after: Vec<Value> =
             serde_json::from_str::<Vec<Value>>(&db.table("team").await?)?
                 .into_iter()
-                .filter(|row| row["organization_id"] == outside_id)
+                .filter(|row| row["organizationId"] == outside_id)
                 .collect();
         assert_eq!(foreign_after, foreign_before);
         authenticated(&auth, &cookie, "team-callback-owner@example.test").await;
@@ -3068,12 +3082,12 @@ async fn organization_team_remove_member_callback_failure<B: Backend>(db: Db) ->
             .await?;
 
         let before = db
-            .tables(&["users", "accounts", "sessions", "organization", "member"])
+            .tables(&["user", "account", "session", "organization", "member"])
             .await?;
         let foreign_before: Vec<Value> =
             serde_json::from_str::<Vec<Value>>(&db.table("team").await?)?
                 .into_iter()
-                .filter(|row| row["organization_id"] == outside_id)
+                .filter(|row| row["organizationId"] == outside_id)
                 .collect();
         hooks
             .phase
@@ -3101,7 +3115,7 @@ async fn organization_team_remove_member_callback_failure<B: Backend>(db: Db) ->
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM team WHERE organization_id=$1 AND name=$2",
+                "SELECT COUNT(*) FROM \"team\" WHERE \"organizationId\"=$1 AND \"name\"=$2",
                 &[&org_id, &format!("Independent:{phase}")]
             )
             .await?,
@@ -3110,7 +3124,7 @@ async fn organization_team_remove_member_callback_failure<B: Backend>(db: Db) ->
 
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM team_member WHERE team_id=$1 AND user_id=$2",
+                "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1 AND \"userId\"=$2",
                 &[&team_id, &owner_id]
             )
             .await?,
@@ -3118,7 +3132,7 @@ async fn organization_team_remove_member_callback_failure<B: Backend>(db: Db) ->
         );
         assert_eq!(
             db.text(
-                "SELECT CAST(member_count AS TEXT) FROM team WHERE id=$1",
+                "SELECT CAST(\"memberCount\" AS TEXT) FROM \"team\" WHERE id=$1",
                 &[&team_id]
             )
             .await?
@@ -3127,14 +3141,14 @@ async fn organization_team_remove_member_callback_failure<B: Backend>(db: Db) ->
         );
 
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "organization", "member"])
+            db.tables(&["user", "account", "session", "organization", "member"])
                 .await?,
             before
         );
         let foreign_after: Vec<Value> =
             serde_json::from_str::<Vec<Value>>(&db.table("team").await?)?
                 .into_iter()
-                .filter(|row| row["organization_id"] == outside_id)
+                .filter(|row| row["organizationId"] == outside_id)
                 .collect();
         assert_eq!(foreign_after, foreign_before);
         authenticated(&auth, &cookie, "team-callback-owner@example.test").await;
@@ -3207,7 +3221,7 @@ async fn organization_default_team_factory_failure<B: Backend>(db: Db) -> TestRe
     .await;
     let selected_id = body(&selected)["id"].as_str().unwrap().to_owned();
     let before = db
-        .tables(&["users", "accounts", "sessions", "team_member"])
+        .tables(&["user", "account", "session", "teamMember"])
         .await?;
     factory.0.store(true, std::sync::atomic::Ordering::SeqCst);
     let failed = call(
@@ -3224,37 +3238,37 @@ async fn organization_default_team_factory_failure<B: Backend>(db: Db) -> TestRe
     assert!(cookies(&failed).is_empty());
     let failed_id = db
         .text(
-            "SELECT id FROM organization WHERE slug='factory-error'",
+            "SELECT id FROM \"organization\" WHERE \"slug\"='factory-error'",
             &[],
         )
         .await?
         .unwrap();
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM member WHERE organization_id=$1",
+            "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\"=$1",
             &[&failed_id]
         )
         .await?,
         1
     );
-    assert_eq!(db.count_where("SELECT COUNT(*) FROM team WHERE organization_id=$1 AND name='Factory:Factory error' AND member_count=0",&[&failed_id]).await?,1);
+    assert_eq!(db.count_where("SELECT COUNT(*) FROM \"team\" WHERE \"organizationId\"=$1 AND \"name\"='Factory:Factory error' AND \"memberCount\"=0",&[&failed_id]).await?,1);
     let team_id = db
         .text(
-            "SELECT id FROM team WHERE organization_id=$1",
+            "SELECT id FROM \"team\" WHERE \"organizationId\"=$1",
             &[&failed_id],
         )
         .await?
         .unwrap();
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM team_member WHERE team_id=$1",
+            "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1",
             &[&team_id]
         )
         .await?,
         0
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "team_member"])
+        db.tables(&["user", "account", "session", "teamMember"])
             .await?,
         before
     );
@@ -3311,13 +3325,13 @@ async fn organization_orphan_delete_selection<B: Backend>(db: Db) -> TestResult 
     let token = body(&owner)["token"].as_str().unwrap().to_owned();
     _ = db.execute("PRAGMA foreign_keys=OFF", &[]).await?;
     _ = db
-        .execute("DELETE FROM organization WHERE id=$1", &[&id])
+        .execute("DELETE FROM \"organization\" WHERE id=$1", &[&id])
         .await?;
     _ = db.execute("PRAGMA foreign_keys=ON", &[]).await?;
     let stable = db
-        .tables(&["users", "accounts", "member", "team", "team_member"])
+        .tables(&["user", "account", "member", "team", "teamMember"])
         .await?;
-    let before: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let before: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     let rejected = call(
         &auth,
         request(
@@ -3330,7 +3344,7 @@ async fn organization_orphan_delete_selection<B: Backend>(db: Db) -> TestResult 
     .await;
     assert!(rejected.body.is_empty());
     assert!(cookies(&rejected).is_empty());
-    let after: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let after: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     assert_eq!(after.len(), before.len());
     for row in before {
         let actual = after
@@ -3338,9 +3352,9 @@ async fn organization_orphan_delete_selection<B: Backend>(db: Db) -> TestResult 
             .find(|candidate| candidate["id"] == row["id"])
             .unwrap();
         if row["token"] == token {
-            assert!(actual["active_organization_id"].is_null());
-            assert_eq!(actual["active_team_id"], row["active_team_id"]);
-            for field in ["token", "user_id", "expires_at", "created_at"] {
+            assert!(actual["activeOrganizationId"].is_null());
+            assert_eq!(actual["activeTeamId"], row["activeTeamId"]);
+            for field in ["token", "userId", "expiresAt", "createdAt"] {
                 assert_eq!(actual[field], row[field]);
             }
         } else {
@@ -3348,7 +3362,7 @@ async fn organization_orphan_delete_selection<B: Backend>(db: Db) -> TestResult 
         }
     }
     assert_eq!(
-        db.tables(&["users", "accounts", "member", "team", "team_member"])
+        db.tables(&["user", "account", "member", "team", "teamMember"])
             .await?,
         stable
     );
@@ -3462,7 +3476,7 @@ async fn organization_removal_original_target_snapshots<B: Backend>(db: Db) -> T
         let own_team = teams.first().unwrap()["id"].as_str().unwrap().to_owned();
         let foreign_team = teams.last().unwrap()["id"].as_str().unwrap().to_owned();
 
-        let stable = db.tables(&["accounts", "sessions", "organization"]).await?;
+        let stable = db.tables(&["account", "session", "organization"]).await?;
         let removed = call(
             &auth,
             request(
@@ -3495,13 +3509,16 @@ async fn organization_removal_original_target_snapshots<B: Backend>(db: Db) -> T
         assert_eq!(hooks.before.lock().unwrap().len(), 1);
         assert_eq!(hooks.after.lock().unwrap().len(), 1);
         assert_eq!(
-            db.count_where("SELECT COUNT(*) FROM member WHERE id=$1", &[&original.id])
-                .await?,
+            db.count_where(
+                "SELECT COUNT(*) FROM \"member\" WHERE id=$1",
+                &[&original.id]
+            )
+            .await?,
             0
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM team_member WHERE team_id=$1 AND user_id=$2",
+                "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1 AND \"userId\"=$2",
                 &[&own_team, &target_id]
             )
             .await?,
@@ -3509,31 +3526,34 @@ async fn organization_removal_original_target_snapshots<B: Backend>(db: Db) -> T
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM team_member WHERE team_id=$1 AND user_id=$2",
+                "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1 AND \"userId\"=$2",
                 &[&foreign_team, &target_id]
             )
             .await?,
             1
         );
         assert_eq!(
-            db.count_where("SELECT member_count FROM team WHERE id=$1", &[&own_team])
-                .await?,
+            db.count_where(
+                "SELECT \"memberCount\" FROM \"team\" WHERE id=$1",
+                &[&own_team]
+            )
+            .await?,
             0
         );
         assert_eq!(
             db.count_where(
-                "SELECT member_count FROM team WHERE id=$1",
+                "SELECT \"memberCount\" FROM \"team\" WHERE id=$1",
                 &[&foreign_team]
             )
             .await?,
             1
         );
         assert_eq!(
-            db.tables(&["accounts", "sessions", "organization"]).await?,
+            db.tables(&["account", "session", "organization"]).await?,
             stable
         );
         assert_eq!(
-            db.text("SELECT name FROM users WHERE id=$1", &[&target_id])
+            db.text("SELECT \"name\" FROM \"user\" WHERE id=$1", &[&target_id])
                 .await?,
             if delete {
                 body(&target)["user"]["name"].as_str().map(str::to_owned)
@@ -3633,13 +3653,13 @@ async fn organization_removal_before_await_boundary<B: Backend>(db: Db) -> TestR
 
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
+            "user",
+            "account",
+            "session",
             "organization",
             "member",
             "team",
-            "team_member",
+            "teamMember",
         ])
         .await?;
     let pending = auth.handle_request(request(
@@ -3652,13 +3672,13 @@ async fn organization_removal_before_await_boundary<B: Backend>(db: Db) -> TestR
     assert!(hooks.after.lock().unwrap().is_empty());
     assert_eq!(
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
+            "user",
+            "account",
+            "session",
             "organization",
             "member",
             "team",
-            "team_member"
+            "teamMember"
         ])
         .await?,
         before
@@ -3673,13 +3693,16 @@ async fn organization_removal_before_await_boundary<B: Backend>(db: Db) -> TestR
         target_id
     );
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM member WHERE id=$1", &[&original.id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"member\" WHERE id=$1",
+            &[&original.id]
+        )
+        .await?,
         0
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM team_member WHERE team_id=$1",
+            "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1",
             &[&own_team]
         )
         .await?,
@@ -3687,14 +3710,14 @@ async fn organization_removal_before_await_boundary<B: Backend>(db: Db) -> TestR
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM team_member WHERE team_id=$1",
+            "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1",
             &[&foreign_team]
         )
         .await?,
         1
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization"])
+        db.tables(&["user", "account", "session", "organization"])
             .await?,
         before[..4]
     );
@@ -3821,10 +3844,10 @@ async fn organization_removal_callback_500_identity<B: Backend>(db: Db) -> TestR
             let foreign_team = teams.last().unwrap()["id"].as_str().unwrap().to_owned();
 
             if database {
-                _=db.execute(&format!("CREATE TRIGGER veto_target_name BEFORE UPDATE OF name ON users WHEN NEW.id='{}' BEGIN SELECT RAISE(ABORT,'application callback database failure'); END",target_id),&[]).await?;
+                _=db.execute(&format!("CREATE TRIGGER veto_target_name BEFORE UPDATE OF \"name\" ON \"user\" WHEN NEW.id='{}' BEGIN SELECT RAISE(ABORT,'application callback database failure'); END",target_id),&[]).await?;
             }
             let stable = db
-                .tables(&["users", "accounts", "sessions", "organization"])
+                .tables(&["user", "account", "session", "organization"])
                 .await?;
             let failed = call(
                 &auth,
@@ -3862,33 +3885,39 @@ async fn organization_removal_callback_500_identity<B: Backend>(db: Db) -> TestR
                 }
             );
             assert_eq!(
-                db.count_where("SELECT COUNT(*) FROM member WHERE id=$1", &[&original.id])
-                    .await?,
+                db.count_where(
+                    "SELECT COUNT(*) FROM \"member\" WHERE id=$1",
+                    &[&original.id]
+                )
+                .await?,
                 i64::from(!after)
             );
             assert_eq!(
                 db.count_where(
-                    "SELECT COUNT(*) FROM team_member WHERE team_id=$1",
+                    "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1",
                     &[&own_team]
                 )
                 .await?,
                 i64::from(!after)
             );
             assert_eq!(
-                db.count_where("SELECT member_count FROM team WHERE id=$1", &[&own_team])
-                    .await?,
+                db.count_where(
+                    "SELECT \"memberCount\" FROM \"team\" WHERE id=$1",
+                    &[&own_team]
+                )
+                .await?,
                 i64::from(!after)
             );
             assert_eq!(
                 db.count_where(
-                    "SELECT member_count FROM team WHERE id=$1",
+                    "SELECT \"memberCount\" FROM \"team\" WHERE id=$1",
                     &[&foreign_team]
                 )
                 .await?,
                 1
             );
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "organization"])
+                db.tables(&["user", "account", "session", "organization"])
                     .await?,
                 stable
             );
@@ -4037,7 +4066,7 @@ async fn organization_deletion_original_row_snapshot<B: Backend>(db: Db) -> Test
     let sibling_session = auth.store().get_session(&sibling_token).await?.unwrap();
 
     let stable = db
-        .tables(&["users", "accounts", "team", "team_member"])
+        .tables(&["user", "account", "team", "teamMember"])
         .await?;
     let deleted = call(
         &auth,
@@ -4067,7 +4096,7 @@ async fn organization_deletion_original_row_snapshot<B: Backend>(db: Db) -> Test
     }
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM organization WHERE id=$1",
+            "SELECT COUNT(*) FROM \"organization\" WHERE id=$1",
             &[org["id"].as_str().unwrap()]
         )
         .await?,
@@ -4075,16 +4104,23 @@ async fn organization_deletion_original_row_snapshot<B: Backend>(db: Db) -> Test
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM invitation WHERE organization_id=$1",
+            "SELECT COUNT(*) FROM \"invitation\" WHERE \"organizationId\"=$1",
             &[org["id"].as_str().unwrap()]
         )
         .await?,
         0
     );
+    let after = db
+        .tables(&["user", "account", "team", "teamMember"])
+        .await?;
+    assert_eq!(&after[..2], &stable[..2]);
     assert_eq!(
-        db.tables(&["users", "accounts", "team", "team_member"])
-            .await?,
-        stable
+        after[2], "[]",
+        "source organization foreign keys cascade the selected team"
+    );
+    assert_eq!(
+        after[3], "[]",
+        "source team foreign keys cascade its memberships"
     );
     let current = auth.store().get_session(&token).await?.unwrap();
     assert_eq!(current.active_organization_id(), None);
@@ -4210,13 +4246,13 @@ async fn organization_deletion_before_await_boundary<B: Backend>(db: Db) -> Test
 
     let before = db
         .tables(&[
-            "users",
-            "accounts",
+            "user",
+            "account",
             "organization",
             "member",
             "invitation",
             "team",
-            "team_member",
+            "teamMember",
         ])
         .await?;
     let pending = auth.handle_request(request(
@@ -4229,13 +4265,13 @@ async fn organization_deletion_before_await_boundary<B: Backend>(db: Db) -> Test
     assert_eq!(hooks.contexts.lock().unwrap().len(), 1);
     assert_eq!(
         db.tables(&[
-            "users",
-            "accounts",
+            "user",
+            "account",
             "organization",
             "member",
             "invitation",
             "team",
-            "team_member"
+            "teamMember"
         ])
         .await?,
         before
@@ -4254,7 +4290,7 @@ async fn organization_deletion_before_await_boundary<B: Backend>(db: Db) -> Test
     assert_eq!(hooks.contexts.lock().unwrap().len(), 2);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM organization WHERE id=$1",
+            "SELECT COUNT(*) FROM \"organization\" WHERE id=$1",
             &[org["id"].as_str().unwrap()]
         )
         .await?,
@@ -4262,7 +4298,7 @@ async fn organization_deletion_before_await_boundary<B: Backend>(db: Db) -> Test
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM member WHERE organization_id=$1",
+            "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\"=$1",
             &[org["id"].as_str().unwrap()]
         )
         .await?,
@@ -4270,7 +4306,7 @@ async fn organization_deletion_before_await_boundary<B: Backend>(db: Db) -> Test
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM invitation WHERE organization_id=$1",
+            "SELECT COUNT(*) FROM \"invitation\" WHERE \"organizationId\"=$1",
             &[org["id"].as_str().unwrap()]
         )
         .await?,
@@ -4413,14 +4449,7 @@ async fn organization_signed_team_helper_session_scope<B: Backend>(db: Db) -> Te
     .await;
     hooks.0.lock().unwrap().clear();
     let before = db
-        .tables(&[
-            "sessions",
-            "team",
-            "team_member",
-            "member",
-            "users",
-            "accounts",
-        ])
+        .tables(&["session", "team", "teamMember", "member", "user", "account"])
         .await?;
     let denied = helper
         .remove_team_with_headers(auth.context(), &headers, org_id, &team.id)
@@ -4429,22 +4458,15 @@ async fn organization_signed_team_helper_session_scope<B: Backend>(db: Db) -> Te
     assert_eq!(denied.status_code(), 403);
     assert!(hooks.0.lock().unwrap().is_empty());
     assert_eq!(
-        db.tables(&[
-            "sessions",
-            "team",
-            "team_member",
-            "member",
-            "users",
-            "accounts"
-        ])
-        .await?,
+        db.tables(&["session", "team", "teamMember", "member", "user", "account"])
+            .await?,
         before
     );
     helper
         .remove_team_with_headers(auth.context(), &other_headers, org_id, &team.id)
         .await?;
     assert_eq!(*hooks.0.lock().unwrap(), vec![Some(id.clone()), Some(id)]);
-    assert_eq!(db.table("sessions").await?, *before.first().unwrap());
+    assert_eq!(db.table("session").await?, *before.first().unwrap());
     assert!(
         auth.store()
             .get_team(Some(org_id), &team.id)
@@ -4576,7 +4598,7 @@ async fn organization_member_team_policy_headers<B: Backend>(db: Db) -> TestResu
     hooks.phases.lock().unwrap().clear();
     hooks.contexts.lock().unwrap().clear();
     let stable = db
-        .tables(&["users", "accounts", "sessions", "organization"])
+        .tables(&["user", "account", "session", "organization"])
         .await?;
     let input = serde_json::from_value(
         json!({"organizationId":org["id"],"userId":target_id,"role":"member","teamId":own_team}),
@@ -4590,7 +4612,7 @@ async fn organization_member_team_policy_headers<B: Backend>(db: Db) -> TestResu
     assert!(hooks.contexts.lock().unwrap().is_empty());
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM member WHERE organization_id=$1 AND user_id=$2",
+            "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\"=$1 AND \"userId\"=$2",
             &[org["id"].as_str().unwrap(), &target_id]
         )
         .await?,
@@ -4598,15 +4620,18 @@ async fn organization_member_team_policy_headers<B: Backend>(db: Db) -> TestResu
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM team_member WHERE team_id=$1 AND user_id=$2",
+            "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1 AND \"userId\"=$2",
             &[&own_team, &target_id]
         )
         .await?,
         0
     );
     assert_eq!(
-        db.count_where("SELECT member_count FROM team WHERE id=$1", &[&own_team])
-            .await?,
+        db.count_where(
+            "SELECT \"memberCount\" FROM \"team\" WHERE id=$1",
+            &[&own_team]
+        )
+        .await?,
         0
     );
     let headers = std::collections::HashMap::from([("cookie".into(), cookies(&foreign))]);
@@ -4633,7 +4658,7 @@ async fn organization_member_team_policy_headers<B: Backend>(db: Db) -> TestResu
     drop(contexts);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM team_member WHERE team_id=$1 AND user_id=$2",
+            "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1 AND \"userId\"=$2",
             &[&own_team, &target_id]
         )
         .await?,
@@ -4641,14 +4666,14 @@ async fn organization_member_team_policy_headers<B: Backend>(db: Db) -> TestResu
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM team_member WHERE team_id=$1 AND user_id=$2",
+            "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1 AND \"userId\"=$2",
             &[&foreign_team, &target_id]
         )
         .await?,
         1
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization"])
+        db.tables(&["user", "account", "session", "organization"])
             .await?,
         stable
     );
@@ -4807,7 +4832,7 @@ async fn organization_member_retargeted_team_rollback<B: Backend>(db: Db) -> Tes
     *hooks.after.lock().unwrap() = 0;
     let before_members = db.table("member").await?;
     let stable = db
-        .tables(&["users", "accounts", "sessions", "organization"])
+        .tables(&["user", "account", "session", "organization"])
         .await?;
     let input = serde_json::from_value(
         json!({"organizationId":org["id"],"userId":target_id,"role":"member","teamId":own_team}),
@@ -4832,21 +4857,24 @@ async fn organization_member_retargeted_team_rollback<B: Backend>(db: Db) -> Tes
     drop(contexts);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM team_member WHERE team_id=$1 AND user_id=$2",
+            "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1 AND \"userId\"=$2",
             &[&own_team, &target_id]
         )
         .await?,
         0
     );
     assert_eq!(
-        db.count_where("SELECT member_count FROM team WHERE id=$1", &[&own_team])
-            .await?,
+        db.count_where(
+            "SELECT \"memberCount\" FROM \"team\" WHERE id=$1",
+            &[&own_team]
+        )
+        .await?,
         0
     );
     for user in [&patched_id, &target_id] {
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM team_member WHERE team_id=$1 AND user_id=$2",
+                "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1 AND \"userId\"=$2",
                 &[&foreign_team, user]
             )
             .await?,
@@ -4855,14 +4883,14 @@ async fn organization_member_retargeted_team_rollback<B: Backend>(db: Db) -> Tes
     }
     assert_eq!(
         db.count_where(
-            "SELECT member_count FROM team WHERE id=$1",
+            "SELECT \"memberCount\" FROM \"team\" WHERE id=$1",
             &[&foreign_team]
         )
         .await?,
         2
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization"])
+        db.tables(&["user", "account", "session", "organization"])
             .await?,
         stable
     );
@@ -4966,12 +4994,15 @@ async fn organization_member_cleanup_write_failure<B: Backend>(db: Db) -> TestRe
 
     _ = db
         .execute(
-            "DELETE FROM team_member WHERE team_id=$1 AND user_id=$2",
+            "DELETE FROM \"teamMember\" WHERE \"teamId\"=$1 AND \"userId\"=$2",
             &[&own_team, &target_id],
         )
         .await?;
     _ = db
-        .execute("UPDATE team SET member_count=0 WHERE id=$1", &[&own_team])
+        .execute(
+            "UPDATE \"team\" SET \"memberCount\"=0 WHERE id=$1",
+            &[&own_team],
+        )
         .await?;
     let helper = OrganizationPlugin::with_config(OrganizationConfig {
         member_addition_hooks: Some(hooks.clone()),
@@ -4983,15 +5014,15 @@ async fn organization_member_cleanup_write_failure<B: Backend>(db: Db) -> TestRe
         },
         ..Default::default()
     });
-    _=db.execute(&format!("CREATE TRIGGER veto_member_cleanup BEFORE DELETE ON member WHEN OLD.user_id='{}' AND OLD.organization_id='{}' BEGIN SELECT RAISE(ABORT,'member cleanup veto'); END",target_id,org["id"].as_str().unwrap()),&[]).await?;
+    _=db.execute(&format!("CREATE TRIGGER veto_member_cleanup BEFORE DELETE ON \"member\" WHEN OLD.\"userId\"='{}' AND OLD.\"organizationId\"='{}' BEGIN SELECT RAISE(ABORT,'member cleanup veto'); END",target_id,org["id"].as_str().unwrap()),&[]).await?;
     let stable = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
+            "user",
+            "account",
+            "session",
             "organization",
             "team",
-            "team_member",
+            "teamMember",
         ])
         .await?;
     let count = db.count("member").await?;
@@ -5008,7 +5039,7 @@ async fn organization_member_cleanup_write_failure<B: Backend>(db: Db) -> TestRe
     assert_eq!(db.count("member").await?, count + 1);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM member WHERE organization_id=$1 AND user_id=$2",
+            "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\"=$1 AND \"userId\"=$2",
             &[org["id"].as_str().unwrap(), &target_id]
         )
         .await?,
@@ -5016,12 +5047,12 @@ async fn organization_member_cleanup_write_failure<B: Backend>(db: Db) -> TestRe
     );
     assert_eq!(
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
+            "user",
+            "account",
+            "session",
             "organization",
             "team",
-            "team_member"
+            "teamMember"
         ])
         .await?,
         stable

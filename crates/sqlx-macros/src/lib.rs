@@ -40,10 +40,10 @@ fn try_generate_entity(input: &DeriveInput) -> syn::Result<TokenStream> {
     let ident = &input.ident;
     let table = attributes.table.clone().unwrap_or_else(|| {
         match attributes.role {
-            EntityRole::User => "users",
-            EntityRole::Session => "sessions",
-            EntityRole::Account => "accounts",
-            EntityRole::Verification => "verifications",
+            EntityRole::User => "user",
+            EntityRole::Session => "session",
+            EntityRole::Account => "account",
+            EntityRole::Verification => "verification",
         }
         .to_owned()
     });

@@ -49,13 +49,13 @@ async fn oauth_consent_list_returns_only_current_users_durable_grants<B: Backend
     let other = signup(&auth, "consent-list-other@example.test").await;
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
-            "oauth_consent",
+            "oauthClient",
+            "oauthConsent",
         ])
         .await?;
     for (cookie, count, status) in [
@@ -106,13 +106,13 @@ async fn oauth_consent_list_returns_only_current_users_durable_grants<B: Backend
         assert_eq!(
             before,
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
+                "user",
+                "account",
+                "session",
+                "verification",
                 "jwks",
-                "oauth_client",
-                "oauth_consent"
+                "oauthClient",
+                "oauthConsent"
             ])
             .await?
         );

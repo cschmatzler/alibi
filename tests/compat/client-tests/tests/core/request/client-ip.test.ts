@@ -887,8 +887,11 @@ for (const profile of ["client-ip-trusted", "client-ip-disabled"] as const) {
         "x-forwarded-for": "203.0.113.99, 198.51.100.223, 10.2.3.4",
         "user-agent": "verification-browser",
       };
+      const forgedParts = delivery.token.split(".");
+      const signature = forgedParts[2]!;
+      forgedParts[2] = (signature[0] === "A" ? "B" : "A") + signature.slice(1);
       const forged = await owner.client.verifyEmail(
-        { query: { token: delivery.token.slice(0, -2) + "xx" } },
+        { query: { token: forgedParts.join(".") } },
         { headers },
       );
       expect(forged.error?.status).toBe(401);

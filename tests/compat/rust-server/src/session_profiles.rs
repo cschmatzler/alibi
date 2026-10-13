@@ -205,19 +205,19 @@ pub(super) async fn router(
     router = router.route("/__test/id-strategy/{mode}/state", axum::routing::get(move |axum::extract::Path(mode): axum::extract::Path<String>| {let database = id_databases[&mode].clone(); let events = id_events[&mode].clone(); async move {
         use alibi::seaorm::sea_orm::{ConnectionTrait, Statement};
         let read = async |table: &str, owner: bool| {
-            let columns = if owner {"id, user_id"} else {"id"};
-            let rows = database.query_all_raw(Statement::from_string(database.get_database_backend(), format!("SELECT {columns} FROM {table}"))).await.unwrap();
-            rows.iter().map(|row| {let mut value = json!({"id": row.try_get::<String>("", "id").unwrap()}); if owner {value["userId"] = json!(row.try_get::<String>("", "user_id").unwrap());} value}).collect::<Vec<_>>()
+            let columns = if owner {"id, \"userId\""} else {"id"};
+            let rows = database.query_all_raw(Statement::from_string(database.get_database_backend(), format!("SELECT {columns} FROM \"{table}\""))).await.unwrap();
+            rows.iter().map(|row| {let mut value = json!({"id": row.try_get::<String>("", "id").unwrap()}); if owner {value["userId"] = json!(row.try_get::<String>("", "userId").unwrap());} value}).collect::<Vec<_>>()
         };
-        Json(json!({"users": read("users",false).await, "accounts": read("accounts",true).await, "sessions": read("sessions",true).await, "verification": read("verifications",false).await, "events": *events.lock().unwrap()}))
+        Json(json!({"users": read("user",false).await, "accounts": read("account",true).await, "sessions": read("session",true).await, "verification": read("verification",false).await, "events": *events.lock().unwrap()}))
     }}));
     let casing_database = database.clone();
     router = router.route("/__test/casing/state", axum::routing::get(move |axum::extract::Query(query): axum::extract::Query<HashMap<String,String>>| {let database = casing_database.clone(); async move {
         use alibi::seaorm::sea_orm::{ConnectionTrait, Statement};
         let id = query.get("userId").unwrap();
-        let users = database.query_all_raw(Statement::from_sql_and_values(database.get_database_backend(), "SELECT id, name, email, email_verified FROM users WHERE id = ?", [id.clone().into()])).await.unwrap();
-        let sessions = database.query_all_raw(Statement::from_sql_and_values(database.get_database_backend(), "SELECT user_id FROM sessions WHERE user_id = ?", [id.clone().into()])).await.unwrap();
-        Json(serde_json::json!({"users": users.iter().map(|row| serde_json::json!({"id": row.try_get::<String>("","id").unwrap(), "name": row.try_get::<String>("","name").unwrap(), "email": row.try_get::<String>("","email").unwrap(), "verified": i32::from(row.try_get::<bool>("","email_verified").unwrap())})).collect::<Vec<_>>(), "sessions": sessions.iter().map(|row| serde_json::json!({"owner": row.try_get::<String>("","user_id").unwrap()})).collect::<Vec<_>>()}))
+        let users = database.query_all_raw(Statement::from_sql_and_values(database.get_database_backend(), "SELECT id, \"name\", \"email\", \"emailVerified\" FROM \"user\" WHERE id = ?", [id.clone().into()])).await.unwrap();
+        let sessions = database.query_all_raw(Statement::from_sql_and_values(database.get_database_backend(), "SELECT \"userId\" FROM \"session\" WHERE \"userId\" = ?", [id.clone().into()])).await.unwrap();
+        Json(serde_json::json!({"users": users.iter().map(|row| serde_json::json!({"id": row.try_get::<String>("","id").unwrap(), "name": row.try_get::<String>("","name").unwrap(), "email": row.try_get::<String>("","email").unwrap(), "verified": i32::from(row.try_get::<bool>("","emailVerified").unwrap())})).collect::<Vec<_>>(), "sessions": sessions.iter().map(|row| serde_json::json!({"owner": row.try_get::<String>("","userId").unwrap()})).collect::<Vec<_>>()}))
     }}));
     let caches = Arc::new(caches);
     router = router.route(

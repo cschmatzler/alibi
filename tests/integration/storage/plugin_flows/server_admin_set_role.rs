@@ -42,7 +42,7 @@ async fn server_admin_set_role_validates_and_mutates_only_the_requested_user<B: 
         headers: Some([("cookie".into(), cookie.into())].into_iter().collect()),
         ..Default::default()
     };
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (input, cookie, status) in [
         (None, None, 400),
         (Some(json!(null)), None, 400),
@@ -136,8 +136,8 @@ async fn server_admin_set_role_validates_and_mutates_only_the_requested_user<B: 
             assert!(error.error.to_string().contains("non-existent"));
         }
     }
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
-    let immutable = db.tables(&["accounts", "sessions"]).await?;
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
+    let immutable = db.tables(&["account", "session"]).await?;
     let other_before = [
         auth.store().get_user_by_id(&owner_id).await?.unwrap(),
         auth.store()
@@ -197,12 +197,12 @@ async fn server_admin_set_role_validates_and_mutates_only_the_requested_user<B: 
                 .is_none()
         );
         assert_eq!(
-            db.text("SELECT role FROM users WHERE id = $1", &[&target_id])
+            db.text("SELECT \"role\" FROM \"user\" WHERE id = $1", &[&target_id])
                 .await?
                 .as_deref(),
             Some(stored)
         );
-        assert_eq!(db.tables(&["accounts", "sessions"]).await?, immutable);
+        assert_eq!(db.tables(&["account", "session"]).await?, immutable);
         for other in &other_before {
             assert_eq!(
                 serde_json::to_value(

@@ -35,7 +35,7 @@ async fn account_endpoints_validate_selection_authentication_and_refresh<B: Back
     let signed_in = callback(&auth, &[("code", "grant"), ("state", &state)], &cookie).await;
     assert_eq!(signed_in.status, 302);
     let session = cookies(&signed_in);
-    let id = db.text("SELECT id FROM accounts", &[]).await?.unwrap();
+    let id = db.text("SELECT id FROM \"account\"", &[]).await?.unwrap();
 
     let post = |path: &'static str, input: Value, cookie: String| {
         let auth = &auth;
@@ -105,7 +105,7 @@ async fn account_endpoints_validate_selection_authentication_and_refresh<B: Back
     trace.response("refresh without a new refresh token", &refreshed);
     assert_eq!(body(&refreshed)["refreshToken"], "provider-refresh");
     assert_eq!(
-        db.text("SELECT refresh_token FROM accounts", &[])
+        db.text("SELECT \"refreshToken\" FROM \"account\"", &[])
             .await?
             .as_deref(),
         Some("provider-refresh")
@@ -190,24 +190,24 @@ async fn automatic_refresh_uses_access_expiry_without_refresh_lifetime_veto<B: B
     let owner_id = current["user"]["id"].clone();
     let id = db
         .text(
-            "SELECT id FROM accounts WHERE account_id=$1 AND provider_id='google'",
+            "SELECT id FROM \"account\" WHERE \"accountId\"=$1 AND \"providerId\"='google'",
             &["social-sub"],
         )
         .await?
         .unwrap();
     let past = DateTime::parse_from_rfc3339("2020-01-01T00:00:00Z")?.with_timezone(&Utc);
     let future = DateTime::parse_from_rfc3339("2099-01-01T00:00:00Z")?.with_timezone(&Utc);
-    db.set_timestamp("accounts", "refresh_token_expires_at", ("id", &id), past)
+    db.set_timestamp("account", "refreshTokenExpiresAt", ("id", &id), past)
         .await?;
     social.provider.respond(200,"application/json",json!({"access_token":"rotated-access","refresh_token":"rotated-refresh","token_type":"Bearer","expires_in":3600,"scope":"openid"}).to_string());
     _ = social.provider.take();
     for expiry in [None, Some(future), Some(past)] {
-        _=db.execute("UPDATE accounts SET access_token='old-access',refresh_token='old-refresh',scope='calendar,drive',access_token_expires_at=NULL WHERE id=$1",&[&id]).await?;
+        _=db.execute("UPDATE \"account\" SET \"accessToken\"='old-access',\"refreshToken\"='old-refresh',\"scope\"='calendar,drive',\"accessTokenExpiresAt\"=NULL WHERE id=$1",&[&id]).await?;
         if let Some(expiry) = expiry {
-            db.set_timestamp("accounts", "access_token_expires_at", ("id", &id), expiry)
+            db.set_timestamp("account", "accessTokenExpiresAt", ("id", &id), expiry)
                 .await?;
         }
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         let started = Utc::now();
         let result = body(
             &call(
@@ -219,7 +219,7 @@ async fn automatic_refresh_uses_access_expiry_without_refresh_lifetime_veto<B: B
         );
         let finished = Utc::now();
         let receipts = social.provider.take();
-        let after = db.tables(&["users", "accounts", "sessions"]).await?;
+        let after = db.tables(&["user", "account", "session"]).await?;
         if expiry != Some(past) {
             assert_eq!(result["accessToken"], "old-access");
             assert!(receipts.is_empty());
@@ -249,20 +249,20 @@ async fn automatic_refresh_uses_access_expiry_without_refresh_lifetime_veto<B: B
             let updated_row = updated.iter().find(|row| row["id"] == id).unwrap();
             for field in [
                 "id",
-                "account_id",
-                "provider_id",
-                "user_id",
+                "accountId",
+                "providerId",
+                "userId",
                 "scope",
-                "created_at",
-                "refresh_token_expires_at",
+                "createdAt",
+                "refreshTokenExpiresAt",
             ] {
                 assert_eq!(updated_row[field], original_row[field], "{field}");
             }
-            assert_eq!(updated_row["user_id"], owner_id);
-            assert_eq!(updated_row["access_token"], "rotated-access");
-            assert_eq!(updated_row["refresh_token"], "rotated-refresh");
+            assert_eq!(updated_row["userId"], owner_id);
+            assert_eq!(updated_row["accessToken"], "rotated-access");
+            assert_eq!(updated_row["refreshToken"], "rotated-refresh");
             let expires = DateTime::parse_from_rfc3339(
-                updated_row["access_token_expires_at"].as_str().unwrap(),
+                updated_row["accessTokenExpiresAt"].as_str().unwrap(),
             )?
             .with_timezone(&Utc);
             assert!(expires >= started + chrono::Duration::seconds(3600));
@@ -323,10 +323,10 @@ async fn automatic_refresh_distinguishes_null_empty_response_and_persisted_token
                 .await?;
             let owner = signup(&auth, "refresh-boundary@example.test").await;
             let id = seed(&auth, body(&owner)["user"]["id"].as_str().unwrap()).await?;
-            let protected = db.tables(&["users", "sessions"]).await?;
+            let protected = db.tables(&["user", "session"]).await?;
             let old_refresh_expiry = db
                 .text(
-                    "SELECT refresh_token_expires_at FROM accounts WHERE id=$1",
+                    "SELECT \"refreshTokenExpiresAt\" FROM \"account\" WHERE id=$1",
                     &[&id],
                 )
                 .await?;
@@ -363,37 +363,43 @@ async fn automatic_refresh_distinguishes_null_empty_response_and_persisted_token
                 assert_eq!(body(&response)["code"], "ACCESS_TOKEN_NOT_FOUND");
             }
             assert_eq!(
-                db.text("SELECT access_token FROM accounts WHERE id=$1", &[&id])
-                    .await?,
+                db.text(
+                    "SELECT \"accessToken\" FROM \"account\" WHERE id=$1",
+                    &[&id]
+                )
+                .await?,
                 token.as_str().map(str::to_owned)
             );
             assert_eq!(
-                db.text("SELECT refresh_token FROM accounts WHERE id=$1", &[&id])
-                    .await?
-                    .as_deref(),
+                db.text(
+                    "SELECT \"refreshToken\" FROM \"account\" WHERE id=$1",
+                    &[&id]
+                )
+                .await?
+                .as_deref(),
                 Some("old-refresh")
             );
             assert_eq!(
-                db.text("SELECT id_token FROM accounts WHERE id=$1", &[&id])
+                db.text("SELECT \"idToken\" FROM \"account\" WHERE id=$1", &[&id])
                     .await?
                     .as_deref(),
                 Some("old-id")
             );
             assert_eq!(
                 db.text(
-                    "SELECT refresh_token_expires_at FROM accounts WHERE id=$1",
+                    "SELECT \"refreshTokenExpiresAt\" FROM \"account\" WHERE id=$1",
                     &[&id]
                 )
                 .await?,
                 old_refresh_expiry
             );
             assert_eq!(
-                db.text("SELECT scope FROM accounts WHERE id=$1", &[&id])
+                db.text("SELECT \"scope\" FROM \"account\" WHERE id=$1", &[&id])
                     .await?
                     .as_deref(),
                 Some("calendar,drive")
             );
-            assert_eq!(db.tables(&["users", "sessions"]).await?, protected);
+            assert_eq!(db.tables(&["user", "session"]).await?, protected);
             let exchanges = remote.take();
             assert_eq!(
                 exchanges
@@ -470,8 +476,8 @@ async fn corrupt_imported_oauth_ciphertexts_reject_before_transport_or_writes<B:
     let foreign = signup(&auth, "cipher-foreign@example.test").await;
     let id = seed(&auth, body(&owner)["user"]["id"].as_str().unwrap()).await?;
     db.set_timestamp(
-        "accounts",
-        "access_token_expires_at",
+        "account",
+        "accessTokenExpiresAt",
         ("id", &id),
         chrono::Utc::now() + chrono::Duration::hours(1),
     )
@@ -488,16 +494,16 @@ async fn corrupt_imported_oauth_ciphertexts_reject_before_transport_or_writes<B:
         (wrong.clone(), None),
         (tampered.clone(), None),
         ("00".into(), None),
-        ("legacy-plaintext".into(), Some("legacy-plaintext")),
-        ("abc".into(), Some("abc")),
+        ("old-plaintext".into(), None),
+        ("abc".into(), None),
     ] {
         _ = db
             .execute(
-                "UPDATE accounts SET access_token=$1 WHERE id=$2",
+                "UPDATE \"account\" SET \"accessToken\"=$1 WHERE id=$2",
                 &[&stored, &id],
             )
             .await?;
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         let response = call(
             &auth,
             request(
@@ -514,16 +520,16 @@ async fn corrupt_imported_oauth_ciphertexts_reject_before_transport_or_writes<B:
             assert_eq!(body(&response)["code"], "FAILED_TO_GET_ACCESS_TOKEN");
         }
         assert!(remote.take().is_empty());
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     }
     for stored in [wrong, tampered, "00".into()] {
         _ = db
             .execute(
-                "UPDATE accounts SET access_token=$1,refresh_token=$2 WHERE id=$3",
+                "UPDATE \"account\" SET \"accessToken\"=$1,\"refreshToken\"=$2 WHERE id=$3",
                 &[&valid, &stored, &id],
             )
             .await?;
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         let rejected = call(
             &auth,
             request(
@@ -536,7 +542,7 @@ async fn corrupt_imported_oauth_ciphertexts_reject_before_transport_or_writes<B:
         .await;
         assert_eq!(body(&rejected)["code"], "FAILED_TO_REFRESH_ACCESS_TOKEN");
         assert!(remote.take().is_empty());
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     }
     authenticated(&auth, &cookies(&foreign), "cipher-foreign@example.test").await;
     B::close(connection).await
@@ -590,7 +596,7 @@ async fn server_account_info_authenticates_query_and_fetches_provider_profile<B:
     let endpoint = |input: &Value| {
         alibi::endpoint::ServerEndpoint::<Value>::new("oauth", "accountInfo").with_query(input)
     };
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (input, options, status, absent) in [
         (
             json!({"accountId":account_id}),
@@ -649,7 +655,7 @@ async fn server_account_info_authenticates_query_and_fetches_provider_profile<B:
             .unwrap_err();
         assert_eq!(error.error.status_code(), status);
         assert_eq!(error.body_absent, absent);
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
         assert!(remote.take().is_empty());
     }
     let trusted = Box::pin(
@@ -705,7 +711,7 @@ async fn server_account_info_authenticates_query_and_fetches_provider_profile<B:
         assert_eq!(receipt.path, "/profile");
         assert_eq!(receipt.headers["authorization"], "Bearer current-access");
     }
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     B::close(connection).await
 }
 

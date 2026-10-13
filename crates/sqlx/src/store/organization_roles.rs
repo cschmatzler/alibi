@@ -15,7 +15,7 @@ use uuid::Uuid;
 /// Append the organization scope and role selector.
 fn scope(sql: &mut Sql, organization_id: &str, selector: &OrganizationRoleSelector) {
     sql.push(" WHERE ");
-    sql.compare(Model::TABLE, "organization_id", " = ", organization_id);
+    sql.compare(Model::TABLE, "organizationId", " = ", organization_id);
     sql.push(" AND ");
     match selector {
         OrganizationRoleSelector::Id(id) => {
@@ -36,15 +36,15 @@ impl<S: AuthSchema> OrganizationRoleStore for SqlxStore<S> {
         let mut active = ActiveRow::new();
         active.set(
             "id",
-            self.generated_id(self.exec(), "organizationRole", "organization_role", "id")
+            self.generated_id(self.exec(), "organizationRole", "organizationRole", "id")
                 .await?
                 .unwrap_or_else(|| Uuid::new_v4().to_string()),
         );
-        active.set("organization_id", data.organization_id);
+        active.set("organizationId", data.organization_id);
         active.set("role", data.role);
         active.set("permission", serde_json::to_string(&data.permission)?);
-        active.set("created_at", Utc::now());
-        active.set("updated_at", None::<chrono::DateTime<Utc>>);
+        active.set("createdAt", Utc::now());
+        active.set("updatedAt", None::<chrono::DateTime<Utc>>);
         model::insert::<Model>(self.exec(), &active)
             .await?
             .try_into()
@@ -69,7 +69,7 @@ impl<S: AuthSchema> OrganizationRoleStore for SqlxStore<S> {
     ) -> AuthResult<Vec<OrganizationRole>> {
         let mut sql = model::select_model::<Model>(self.exec());
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "organization_id", " = ", organization_id);
+        sql.compare(Model::TABLE, "organizationId", " = ", organization_id);
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
         self.exec()
@@ -83,7 +83,7 @@ impl<S: AuthSchema> OrganizationRoleStore for SqlxStore<S> {
         let mut sql = Sql::with(self.exec().engine(), "SELECT COUNT(*) FROM ");
         sql.ident(Model::TABLE);
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "organization_id", " = ", organization_id);
+        sql.compare(Model::TABLE, "organizationId", " = ", organization_id);
         let count = self
             .exec()
             .fetch_scalar::<i64>(sql)
@@ -101,7 +101,7 @@ impl<S: AuthSchema> OrganizationRoleStore for SqlxStore<S> {
         sql.push(" WHERE ");
         self.organization_models.member.compare(
             &mut sql,
-            "organization_id",
+            "organizationId",
             " = ",
             organization_id,
         )?;
@@ -142,7 +142,7 @@ impl<S: AuthSchema> OrganizationRoleStore for SqlxStore<S> {
         let mut sql = Sql::with(self.exec().engine(), "UPDATE ");
         sql.ident(Model::TABLE);
         sql.push(" SET ");
-        sql.assign("updated_at", Some(updated_at));
+        sql.assign("updatedAt", Some(updated_at));
         if let Some(role) = update.role {
             sql.push(", ");
             sql.assign("role", role.clone());

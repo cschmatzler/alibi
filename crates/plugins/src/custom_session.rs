@@ -221,6 +221,7 @@ mod tests {
     use crate::test_helpers::{
         create_auth_request_no_query, create_test_context, create_user_and_session,
     };
+    use alibi_core::AuthUser;
     use alibi_core::hooks::with_request_hook_context;
     use alibi_core::{CreateUser, UpdateUser};
     use std::sync::Arc;
@@ -354,8 +355,7 @@ mod tests {
                 .await
                 .expect("read")
                 .expect("stored slow owner")
-                .name
-                .as_deref(),
+                .name(),
             Some("Slow")
         );
         release.notify_one();
@@ -368,8 +368,7 @@ mod tests {
                 .await
                 .expect("read")
                 .expect("stored slow owner")
-                .name
-                .as_deref(),
+                .name(),
             Some("Completed")
         );
         assert_eq!(
@@ -378,8 +377,7 @@ mod tests {
                 .await
                 .expect("read")
                 .expect("stored reject owner")
-                .name
-                .as_deref(),
+                .name(),
             Some("Reject")
         );
     }
