@@ -1,4 +1,5 @@
 mod authentication;
+mod endpoint;
 mod options;
 pub use options::{
     PasskeyAuthenticatorSelection, PasskeyExtensions, PasskeyExtensionsResolver,
@@ -370,6 +371,12 @@ alibi_core::impl_auth_plugin! {
     }
 
  extra {
+    fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
+        endpoint::definitions()
+    }
+    async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        self.list_endpoint(call, ctx).await
+    }
     route_openapi_metadata!(S);
  }
 }
