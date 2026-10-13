@@ -39,6 +39,18 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         }),
       ],
     }),
+    selection: betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          selectAccount: { page: "/select", shouldRedirect: () => false },
+        }),
+      ],
+    }),
     "resources-open": betterAuth({
       ...options,
       plugins: [
@@ -299,6 +311,32 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       return new Response(JSON.stringify(rows), {
         headers: { "content-type": "application/json" },
       });
+    }
+    if (input.action === "continue") {
+      try {
+        return await auth.api.oauth2Continue({
+          body: input.body,
+          headers: new Headers(input.headers ?? {}),
+          asResponse: true,
+          ...(input.attachRequest === false
+            ? {}
+            : {
+                request: new Request(
+                  `${base.baseURL}${base.basePath ?? "/api/auth"}/oauth2/continue`,
+                  { method: "POST", headers: input.headers },
+                ),
+              }),
+        });
+      } catch (error) {
+        const failure = error as { statusCode?: number; body?: unknown };
+        if (!failure.statusCode) {
+          throw error;
+        }
+        return new Response(failure.body ? JSON.stringify(failure.body) : null, {
+          status: failure.statusCode,
+          headers: { "content-type": "application/json" },
+        });
+      }
     }
     if (input.action === "consent") {
       try {

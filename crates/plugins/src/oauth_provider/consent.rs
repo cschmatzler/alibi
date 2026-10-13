@@ -72,25 +72,7 @@ impl OAuthProviderPlugin {
                 "missing oauth query",
             );
         }
-        let mut query = serde_json::Map::new();
-        for (key, value) in url::form_urlencoded::parse(supplied.as_bytes()) {
-            if ["sig", "exp", "ba_iat", "ba_pl"].contains(&key.as_ref()) {
-                continue;
-            }
-            match query.entry(key.into_owned()) {
-                serde_json::map::Entry::Vacant(entry) => {
-                    _ = entry.insert(json!(value));
-                }
-                serde_json::map::Entry::Occupied(mut entry) => {
-                    let previous = entry.get().clone();
-                    if let Some(values) = entry.get_mut().as_array_mut() {
-                        values.push(json!(value));
-                    } else {
-                        _ = entry.insert(json!([previous, value]));
-                    }
-                }
-            }
-        }
+        let mut query = super::continuation::interaction_query(supplied);
         let client_id = query
             .get("client_id")
             .and_then(Value::as_str)
@@ -154,7 +136,7 @@ impl OAuthProviderPlugin {
         let login_satisfied =
             issued.is_some_and(|issued| session.created_at.timestamp_millis() >= issued);
         if prompt.split(' ').any(|prompt| prompt == "login") && !login_satisfied {
-            return Box::pin(self.consent_authorize(query, req, ctx)).await;
+            return Box::pin(self.resume_authorization(query, req, ctx)).await;
         }
         let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| AuthError::internal("Invalid consent timestamp"))?;
@@ -204,9 +186,9 @@ impl OAuthProviderPlugin {
         if login_satisfied {
             _ = query.remove("max_age");
         }
-        Box::pin(self.consent_authorize(query, req, ctx)).await
+        Box::pin(self.resume_authorization(query, req, ctx)).await
     }
-    async fn consent_authorize<S: AuthSchema>(
+    pub(super) async fn resume_authorization<S: AuthSchema>(
         &self,
         query: serde_json::Map<String, Value>,
         req: &impl SessionRequest,
@@ -223,12 +205,13 @@ impl OAuthProviderPlugin {
         _ = request
             .headers
             .insert("accept".into(), "application/json".into());
-        Box::pin(self.authorize(
+        Box::pin(self.authorize_flow(
             Some(alibi_core::utils::json::parse_value(
                 &serde_json::to_string(&query)?,
             )?),
             &request,
             ctx,
+            false,
         ))
         .await
     }

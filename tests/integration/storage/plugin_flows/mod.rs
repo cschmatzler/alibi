@@ -391,3 +391,5 @@ mod oauth_resource_delete;
 mod oauth_resource_link;
 
 mod oauth_resource_unlink;
+
+mod oauth_continuation;

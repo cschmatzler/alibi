@@ -2,6 +2,7 @@
 mod authorization;
 mod clients;
 mod consent;
+mod continuation;
 mod resources;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
@@ -20,6 +21,7 @@ pub struct OAuthProviderConfig {
     pub scopes: Vec<String>,
     pub login_page: String,
     pub consent_page: String,
+    pub select_account_page: Option<String>,
     pub code_expires_in: f64,
     pub allow_public_client_prelogin: bool,
     pub enforce_per_client_resources: bool,
@@ -37,6 +39,7 @@ impl Default for OAuthProviderConfig {
         Self {
             login_page: "/login".into(),
             consent_page: "/consent".into(),
+            select_account_page: None,
             code_expires_in: 600.0,
             allow_public_client_prelogin: false,
             enforce_per_client_resources: true,
@@ -251,6 +254,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             AuthRoute::post("/oauth2/update-client", "updateOAuthClient"),
             AuthRoute::post("/oauth2/register", "registerOAuthClient"),
             AuthRoute::post("/oauth2/consent", "oauth2Consent"),
+            AuthRoute::post("/oauth2/continue", "oauth2Continue"),
             AuthRoute::get("/oauth2/get-consents", "getOAuthConsents"),
             AuthRoute::get("/oauth2/get-consent", "getOAuthConsent"),
             AuthRoute::post("/oauth2/update-consent", "updateOAuthConsent"),
@@ -262,6 +266,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "oauth2Continue",
+                "oauth2Continue",
+                Some("/oauth2/continue"),
+                HttpMethod::Post,
+            ),
             crate::endpoint::definition(
                 "adminUnlinkClientResource",
                 "adminUnlinkClientResource",
@@ -426,7 +436,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
         Ok(EndpointInput {
-            body: if call.operation_id() == "adminUpdateOAuthResource" {
+            body: if call.operation_id() == "oauth2Continue" {
+                Some(continuation::validate(call.body())?)
+            } else if call.operation_id() == "adminUpdateOAuthResource" {
                 Some(resources::validate_update(call.body())?)
             } else if call.operation_id() == "adminCreateOAuthResource" {
                 Some(resources::validate_create(call.body())?)
@@ -471,6 +483,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "oauth2Continue" {
+            return Box::pin(self.continue_authorization(call.body_as()?, call, ctx)).await;
+        }
         if call.operation_id() == "adminUnlinkClientResource" {
             return Box::pin(self.unlink_resource(call.params(), call, ctx)).await;
         }
@@ -634,6 +649,15 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
                 alibi_core::utils::json::from_value(clients::validate_prelogin(Some(&body))?)?;
             return Ok(Some(
                 Box::pin(self.read_prelogin_client(input, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
+        if req.path() == "/oauth2/continue" && *req.method() == HttpMethod::Post {
+            let body = req.body_as_json()?;
+            let input = alibi_core::utils::json::from_value(continuation::validate(Some(&body))?)?;
+            return Ok(Some(
+                Box::pin(self.continue_authorization(input, req, ctx))
                     .await?
                     .to_response()?,
             ));
