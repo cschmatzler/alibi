@@ -1,6 +1,7 @@
 //! Shared validation for genuine logical calls, independent of HTTP decoding.
 use super::authentication_helpers::{JsonField, field_issue, json_type};
 use alibi_core::endpoint::EndpointDefinition;
+use alibi_core::error::codes;
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthError, AuthResponse, AuthResult, HttpMethod};
 
@@ -21,7 +22,7 @@ pub(super) fn definition(
 pub(super) fn validation(message: impl Into<String>) -> AuthError {
     AuthError::Api {
         status: 400,
-        code: Some("VALIDATION_ERROR".into()),
+        code: Some(codes::VALIDATION_ERROR.into()),
         message: message.into(),
     }
 }

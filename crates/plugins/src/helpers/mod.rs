@@ -3,6 +3,7 @@ mod api_key_authorization;
 mod credentials;
 mod sessions;
 
+use alibi_core::error::codes;
 use alibi_core::{AuthContext, AuthError, CreateUser};
 pub use api_key_authorization::{get_owned_api_key, require_org_api_key_permission};
 pub use credentials::{get_credential_account, get_credential_password_hash, user_has_password};
@@ -61,7 +62,7 @@ pub(crate) fn spawn_in_request_context(work: impl Future<Output = ()> + Send + '
 pub(crate) const fn unauthorized() -> AuthError {
     AuthError::Upstream {
         status: 401,
-        code: "UNAUTHORIZED",
+        code: codes::UNAUTHORIZED,
         message: "Unauthorized",
     }
 }

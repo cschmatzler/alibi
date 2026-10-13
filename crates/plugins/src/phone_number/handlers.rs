@@ -12,6 +12,7 @@ use crate::{
     email_password::EmailPasswordConfig,
     password_management::{OnPasswordResetCallback, PasswordManagementConfig},
 };
+use alibi_core::error::codes;
 use alibi_core::field_policy::FieldValues;
 use alibi_core::{
     AuthAccount, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema,
@@ -55,7 +56,7 @@ impl PhoneNumberPlugin {
         {
             return Err(phone_error(
                 400,
-                "INVALID_PHONE_NUMBER",
+                codes::INVALID_PHONE_NUMBER,
                 "Invalid phone number",
             ));
         }
@@ -140,28 +141,36 @@ impl PhoneNumberPlugin {
     ) -> AuthResult<()> {
         let existing = find_verification(ctx, identifier)
             .await?
-            .ok_or_else(|| phone_error(400, "OTP_NOT_FOUND", "OTP not found"))?;
+            .ok_or_else(|| phone_error(400, codes::OTP_NOT_FOUND, "OTP not found"))?;
         if existing.is_expired() {
             ctx.verifications().delete(identifier).await?;
-            return Err(phone_error(400, "OTP_EXPIRED", "OTP expired"));
+            return Err(phone_error(400, codes::OTP_EXPIRED, "OTP expired"));
         }
         let (_, attempts) = split_code(existing.value()?);
         if super::super::passwordless_numeric::attempts_number(attempts)
             >= self.config.allowed_attempts
         {
             ctx.verifications().delete(identifier).await?;
-            return Err(phone_error(403, "TOO_MANY_ATTEMPTS", "Too many attempts"));
+            return Err(phone_error(
+                403,
+                codes::TOO_MANY_ATTEMPTS,
+                "Too many attempts",
+            ));
         }
         let consumed = ctx
             .verifications()
             .consume(identifier)
             .await?
-            .ok_or_else(|| phone_error(400, "OTP_NOT_FOUND", "OTP not found"))?;
+            .ok_or_else(|| phone_error(400, codes::OTP_NOT_FOUND, "OTP not found"))?;
         let (code, attempts_2) = split_code(consumed.value()?);
         if super::super::passwordless_numeric::attempts_number(attempts_2)
             >= self.config.allowed_attempts
         {
-            return Err(phone_error(403, "TOO_MANY_ATTEMPTS", "Too many attempts"));
+            return Err(phone_error(
+                403,
+                codes::TOO_MANY_ATTEMPTS,
+                "Too many attempts",
+            ));
         }
         if code != provided_code {
             _ = ctx
@@ -195,7 +204,11 @@ impl PhoneNumberPlugin {
         body: SendRequest,
     ) -> AuthResult<AuthResponse> {
         let sender = self.config.send_otp.as_ref().ok_or_else(|| {
-            phone_error(501, "SEND_OTP_NOT_IMPLEMENTED", "sendOTP not implemented")
+            phone_error(
+                501,
+                codes::SEND_OTP_NOT_IMPLEMENTED,
+                "sendOTP not implemented",
+            )
         })?;
         self.validate_phone(&body.phone_number).await?;
         let code = match self.issue(ctx, &body.phone_number, true).await {
@@ -268,7 +281,7 @@ impl PhoneNumberPlugin {
             }
             return Err(phone_error(
                 401,
-                "PHONE_NUMBER_NOT_VERIFIED",
+                codes::PHONE_NUMBER_NOT_VERIFIED,
                 "Phone number not verified",
             ));
         }
@@ -278,7 +291,7 @@ impl PhoneNumberPlugin {
         let stored = account
             .password()
             .filter(|hash| !hash.is_empty())
-            .ok_or_else(|| phone_error(401, "UNEXPECTED_ERROR", "Unexpected error"))?;
+            .ok_or_else(|| phone_error(401, codes::UNEXPECTED_ERROR, "Unexpected error"))?;
         alibi_core::utils::password::verify_password(
             settings.hasher.as_ref(),
             &body.password,
@@ -384,7 +397,7 @@ impl PhoneNumberPlugin {
                     .await
                     .map_err(|error| match error {
                         AuthError::Unauthenticated | AuthError::SessionNotFound => {
-                            phone_error(401, "USER_NOT_FOUND", "User not found")
+                            phone_error(401, codes::USER_NOT_FOUND, "User not found")
                         }
                         error @ (AuthError::Api { .. }
                         | AuthError::Upstream { .. }
@@ -424,7 +437,7 @@ impl PhoneNumberPlugin {
             {
                 return Err(phone_error(
                     400,
-                    "PHONE_NUMBER_EXIST",
+                    codes::PHONE_NUMBER_EXIST,
                     "Phone number already exists",
                 ));
             }
@@ -467,7 +480,7 @@ impl PhoneNumberPlugin {
                 .sign_up_on_verification
                 .as_ref()
                 .ok_or_else(|| {
-                    phone_error(500, "FAILED_TO_UPDATE_USER", "Failed to update user")
+                    phone_error(500, codes::FAILED_TO_UPDATE_USER, "Failed to update user")
                 })?;
             reject_verified_input(body.phone_number_verified.as_ref())?;
             let mut user = CreateUser::new()
@@ -602,7 +615,7 @@ impl PhoneNumberPlugin {
             .database
             .get_user_by_phone_number_record(&body.phone_number)
             .await?
-            .ok_or_else(|| phone_error(400, "UNEXPECTED_ERROR", "Unexpected error"))?;
+            .ok_or_else(|| phone_error(400, codes::UNEXPECTED_ERROR, "Unexpected error"))?;
         let settings = password_settings(ctx);
         alibi_core::utils::password::validate_password(
             &body.new_password,
@@ -653,13 +666,13 @@ impl PhoneNumberPlugin {
 }
 
 const fn invalid_otp() -> AuthError {
-    phone_error(400, "INVALID_OTP", "Invalid OTP")
+    phone_error(400, codes::INVALID_OTP, "Invalid OTP")
 }
 
 const fn invalid_credentials() -> AuthError {
     phone_error(
         401,
-        "INVALID_PHONE_NUMBER_OR_PASSWORD",
+        codes::INVALID_PHONE_NUMBER_OR_PASSWORD,
         "Invalid phone number or password",
     )
 }

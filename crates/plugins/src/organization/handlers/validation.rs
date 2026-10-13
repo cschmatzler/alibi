@@ -1,4 +1,5 @@
 //! Wire validation for the organization access-control schemas.
+use alibi_core::error::codes;
 use alibi_core::types::OrganizationPermissions;
 use alibi_core::{AuthRequest, AuthResponse};
 use serde_json::{Map, Value, json};
@@ -36,7 +37,7 @@ impl Issues {
 }
 
 pub(super) fn error(message: impl Into<String>) -> AuthResponse {
-    response("VALIDATION_ERROR", message)
+    response(codes::VALIDATION_ERROR, message)
 }
 
 pub(super) fn issue(message: impl Into<String>) -> Issue {
@@ -92,7 +93,7 @@ pub(super) fn body_object(req: &AuthRequest) -> Result<Map<String, Value>, AuthR
         return Err(expected("body", "object", (chunked && json).then_some(&Value::Null)).into());
     };
     let value = alibi_core::utils::json::from_slice::<Value>(bytes)
-        .map_err(|_error| response("BAD_REQUEST", "Invalid JSON in request body"))?;
+        .map_err(|_error| response(codes::BAD_REQUEST, "Invalid JSON in request body"))?;
     object(Some(&value), "body").cloned().map_err(Into::into)
 }
 

@@ -8,6 +8,7 @@ pub use validation::SiweVerificationInput;
 
 mod crypto;
 
+use alibi_core::error::codes;
 use alibi_core::field_policy::FieldValues;
 use alibi_core::utils::datetime as date;
 
@@ -63,7 +64,7 @@ impl SiwePlugin {
                 500,
                 &json!({
                     "message":"SIWE getNonce must return an ERC-4361 nonce: 8-250 alphanumeric characters.",
-                    "status":500,"code":"SIWE_INVALID_NONCE"
+                    "status":500,"code":codes::SIWE_INVALID_NONCE
                 }),
             )?);
         }
@@ -130,7 +131,7 @@ impl SiwePlugin {
         if consumed.is_none() {
             return Err(endpoint_error(
                 "Unauthorized: Invalid or expired nonce",
-                "UNAUTHORIZED_INVALID_OR_EXPIRED_NONCE",
+                codes::UNAUTHORIZED_INVALID_OR_EXPIRED_NONCE,
             ));
         }
         let address = parsed
@@ -154,7 +155,7 @@ impl SiwePlugin {
         {
             return Err(endpoint_error(
                 "Unauthorized: SIWE message has expired",
-                "UNAUTHORIZED_SIWE_MESSAGE_EXPIRED",
+                codes::UNAUTHORIZED_SIWE_MESSAGE_EXPIRED,
             ));
         }
         if parsed
@@ -164,7 +165,7 @@ impl SiwePlugin {
         {
             return Err(endpoint_error(
                 "Unauthorized: SIWE message is not yet valid",
-                "UNAUTHORIZED_SIWE_MESSAGE_NOT_YET_VALID",
+                codes::UNAUTHORIZED_SIWE_MESSAGE_NOT_YET_VALID,
             ));
         }
         let cacao = Cacao {
@@ -442,7 +443,7 @@ alibi_core::impl_auth_plugin! {
 fn mismatch() -> SiweCallbackError {
     endpoint_error(
         "Unauthorized: SIWE message does not match the expected nonce, domain, address, or chain ID",
-        "UNAUTHORIZED_SIWE_MESSAGE_MISMATCH",
+        codes::UNAUTHORIZED_SIWE_MESSAGE_MISMATCH,
     )
 }
 

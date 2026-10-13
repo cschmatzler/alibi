@@ -1,4 +1,5 @@
 //! Compromised-password policy at initialized password hashing.
+use alibi_core::error::codes;
 use alibi_core::{
     AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,
     AuthRoute, AuthSchema, PasswordHashContext, PasswordHashHook,
@@ -284,7 +285,7 @@ impl PasswordHashHook for HaveIBeenPwnedPlugin {
         if included && self.config.client.is_password_compromised(password).await? {
             return Err(AuthError::Api {
                 status: 400,
-                code: Some("PASSWORD_COMPROMISED".into()),
+                code: Some(codes::PASSWORD_COMPROMISED.into()),
                 message: self
                     .config
                     .custom_password_compromised_message

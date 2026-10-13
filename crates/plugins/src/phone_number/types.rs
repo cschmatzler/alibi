@@ -1,4 +1,5 @@
 use crate::authentication_helpers::{JsonField, JsonFieldKind, RequestBody};
+use alibi_core::error::codes;
 use alibi_core::{AuthError, wire::UserView};
 use serde::{Deserialize, Serialize};
 
@@ -139,7 +140,7 @@ pub(crate) fn reject_verified_input(
     if truthy {
         return Err(phone_error(
             400,
-            "FIELD_NOT_ALLOWED",
+            codes::FIELD_NOT_ALLOWED,
             "phoneNumberVerified is not allowed to be set",
         ));
     }
@@ -182,7 +183,7 @@ pub(crate) async fn parse_signup_phone(
         }
         Some(Value::Array(_) | Value::Object(_)) => Err(phone_error(
             422,
-            "FAILED_TO_CREATE_USER",
+            codes::FAILED_TO_CREATE_USER,
             "Failed to create user",
         )),
     }

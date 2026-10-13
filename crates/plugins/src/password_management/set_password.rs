@@ -1,5 +1,6 @@
 //! Trusted server-only passwordless-to-credential operation.
 use crate::email_password::EmailPasswordConfig;
+use alibi_core::error::codes;
 use alibi_core::{
     AuthAccount, AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, AuthUser,
     CreateAccount, UpdateAccount,
@@ -41,14 +42,14 @@ pub(super) async fn set_password_for_user<S: AuthSchema>(
     if length < minimum {
         return Err(AuthError::Upstream {
             status: 400,
-            code: "PASSWORD_TOO_SHORT",
+            code: codes::PASSWORD_TOO_SHORT,
             message: "Password too short",
         });
     }
     if length > maximum {
         return Err(AuthError::Upstream {
             status: 400,
-            code: "PASSWORD_TOO_LONG",
+            code: codes::PASSWORD_TOO_LONG,
             message: "Password too long",
         });
     }
@@ -78,7 +79,7 @@ pub(super) async fn set_password_for_user<S: AuthSchema>(
         {
             return Err(AuthError::Upstream {
                 status: 400,
-                code: "PASSWORD_ALREADY_SET",
+                code: codes::PASSWORD_ALREADY_SET,
                 message: "User already has a password set",
             });
         }

@@ -10,6 +10,7 @@ use alibi_core::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointDefinition, EndpointHook,
     EndpointInput, EndpointResponse, ServerEndpoint,
 };
+use alibi_core::error::codes;
 use alibi_core::session::SessionRequest;
 use alibi_core::utils::json::JsValue;
 use alibi_core::wire::ApiKeyView;
@@ -439,7 +440,7 @@ impl ApiKeyPlugin {
                     ) {
                         AuthError::Api {
                             status: 401,
-                            code: Some("UNAUTHORIZED".into()),
+                            code: Some(codes::UNAUTHORIZED.into()),
                             message: "Unauthorized".into(),
                         }
                     } else {
@@ -459,7 +460,7 @@ impl ApiKeyPlugin {
                     ) {
                         AuthError::Api {
                             status: 401,
-                            code: Some("UNAUTHORIZED".into()),
+                            code: Some(codes::UNAUTHORIZED.into()),
                             message: "Unauthorized".into(),
                         }
                     } else {
@@ -482,7 +483,7 @@ impl ApiKeyPlugin {
                     ) {
                         AuthError::Api {
                             status: 401,
-                            code: Some("UNAUTHORIZED".into()),
+                            code: Some(codes::UNAUTHORIZED.into()),
                             message: "Unauthorized".into(),
                         }
                     } else {
@@ -527,7 +528,7 @@ impl ApiKeyPlugin {
                             let (_, code, message) = error.error_payload();
                             serde_json::json!({"valid":false,"error":{"code":code,"message":message},"key":null})
                         } else {
-                            serde_json::json!({"valid":false,"error":{"code":"INVALID_API_KEY","message":{"code":"INVALID_API_KEY","message":super::ApiKeyErrorCode::InvalidApiKey.message()}},"key":null})
+                            serde_json::json!({"valid":false,"error":{"code":codes::INVALID_API_KEY,"message":{"code":codes::INVALID_API_KEY,"message":super::ApiKeyErrorCode::InvalidApiKey.message()}},"key":null})
                         }
                     }
                 };

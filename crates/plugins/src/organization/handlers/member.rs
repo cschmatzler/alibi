@@ -8,6 +8,7 @@ use crate::organization::types::{
     RemovedMemberResponse, UpdateMemberRoleRequest,
 };
 use alibi_core::entity::{AuthMember, AuthOrganization, AuthSession, AuthUser};
+use alibi_core::error::codes;
 use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::plugin::AuthContext;
 use alibi_core::store::MemberPageQuery;
@@ -195,13 +196,13 @@ pub(crate) async fn remove_member_core(
         .filter(|id| !id.is_empty())
         .or_else(|| session.active_organization_id())
         .filter(|id| !id.is_empty())
-        .ok_or_else(|| super::extension_common::org_error(400, "NO_ACTIVE_ORGANIZATION"))?;
+        .ok_or_else(|| super::extension_common::org_error(400, codes::NO_ACTIVE_ORGANIZATION))?;
 
     let requester_member = ctx
         .database
         .get_member(org_id, &user.id())
         .await?
-        .ok_or_else(|| super::extension_common::org_error(400, "MEMBER_NOT_FOUND"))?;
+        .ok_or_else(|| super::extension_common::org_error(400, codes::MEMBER_NOT_FOUND))?;
 
     let by_email = body.member_id_or_email.contains('@');
     let target_member = if by_email {
@@ -212,16 +213,16 @@ pub(crate) async fn remove_member_core(
             .filter(|target| {
                 target.email() == Some(body.member_id_or_email.to_lowercase().as_str())
             })
-            .ok_or_else(|| super::extension_common::org_error(400, "MEMBER_NOT_FOUND"))?;
+            .ok_or_else(|| super::extension_common::org_error(400, codes::MEMBER_NOT_FOUND))?;
         ctx.database
             .get_member(org_id, &target_user.id())
             .await?
-            .ok_or_else(|| super::extension_common::org_error(400, "MEMBER_NOT_FOUND"))?
+            .ok_or_else(|| super::extension_common::org_error(400, codes::MEMBER_NOT_FOUND))?
     } else {
         ctx.database
             .get_member_by_id(&body.member_id_or_email)
             .await?
-            .ok_or_else(|| super::extension_common::org_error(400, "MEMBER_NOT_FOUND"))?
+            .ok_or_else(|| super::extension_common::org_error(400, codes::MEMBER_NOT_FOUND))?
     };
 
     let creator_role = config.effective_creator_role();
@@ -238,7 +239,7 @@ pub(crate) async fn remove_member_core(
         {
             return Err(super::extension_common::org_error(
                 400,
-                "YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER",
+                codes::YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER,
             ));
         }
         let page = ctx
@@ -258,7 +259,7 @@ pub(crate) async fn remove_member_core(
         {
             return Err(super::extension_common::org_error(
                 400,
-                "YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER",
+                codes::YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER,
             ));
         }
     }
@@ -274,17 +275,20 @@ pub(crate) async fn remove_member_core(
     {
         return Err(super::extension_common::org_error(
             401,
-            "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_MEMBER",
+            codes::YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_MEMBER,
         ));
     }
     if target_member.organization_id() != org_id {
-        return Err(super::extension_common::org_error(400, "MEMBER_NOT_FOUND"));
+        return Err(super::extension_common::org_error(
+            400,
+            codes::MEMBER_NOT_FOUND,
+        ));
     }
     let organization = ctx
         .database
         .get_organization_by_id(org_id)
         .await?
-        .ok_or_else(|| super::extension_common::org_error(400, "ORGANIZATION_NOT_FOUND"))?;
+        .ok_or_else(|| super::extension_common::org_error(400, codes::ORGANIZATION_NOT_FOUND))?;
     let target_user = ctx
         .database
         .get_user_by_id(&target_member.user_id())
@@ -443,7 +447,9 @@ pub(crate) async fn update_member_role_core(
             .database
             .get_organization_by_id(&org_id)
             .await?
-            .ok_or_else(|| super::extension_common::org_error(400, "ORGANIZATION_NOT_FOUND"))?;
+            .ok_or_else(|| {
+                super::extension_common::org_error(400, codes::ORGANIZATION_NOT_FOUND)
+            })?;
         let target_user = ctx
             .database
             .get_user_by_id(&target_member.user_id)
@@ -471,7 +477,7 @@ pub(crate) async fn update_member_role_core(
             .database
             .update_member_role_if_present(&body.member_id, &role)
             .await?
-            .ok_or_else(|| super::extension_common::org_error(400, "MEMBER_NOT_FOUND"))?;
+            .ok_or_else(|| super::extension_common::org_error(400, codes::MEMBER_NOT_FOUND))?;
         hooks
             .after_update(&super::super::OrganizationMemberRoleUpdatedContext {
                 previous_role: original.member.role,
@@ -563,7 +569,7 @@ pub(crate) async fn handle_update_member_role(
     let (user, session) = match ctx.require_cached_session(req).await {
         Ok(session) => session,
         Err(AuthError::Unauthenticated) => {
-            return Err(super::extension_common::org_error(401, "UNAUTHORIZED"));
+            return Err(super::extension_common::org_error(401, codes::UNAUTHORIZED));
         }
         Err(error) => return Err(error),
     };
@@ -594,7 +600,7 @@ pub(crate) async fn update_member_role_response(
         .filter(|id| !id.is_empty())
         .or_else(|| session.active_organization_id())
         .filter(|id| !id.is_empty())
-        .ok_or_else(|| super::extension_common::org_error(400, "NO_ACTIVE_ORGANIZATION"))?;
+        .ok_or_else(|| super::extension_common::org_error(400, codes::NO_ACTIVE_ORGANIZATION))?;
     if normalized_update_roles(&body.role).is_empty() {
         return Ok(empty());
     }
@@ -602,7 +608,7 @@ pub(crate) async fn update_member_role_response(
         Err(AuthError::BadRequest(message)) if message.starts_with("ROLE_NOT_FOUND: ") => {
             return Ok(AuthResponse::json(
                 400,
-                &serde_json::json!({"code":"ROLE_NOT_FOUND", "message": message}),
+                &serde_json::json!({"code":codes::ROLE_NOT_FOUND, "message": message}),
             )?);
         }
         result => result?,

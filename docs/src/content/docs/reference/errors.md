@@ -53,6 +53,24 @@ In Rust, operations return `AuthResult<T> = Result<T, AuthError>`. Each variant 
 
 Helper constructors: `AuthError::bad_request(msg)`, `forbidden`, `not_found`, `conflict`, `validation`, `internal`, `config`, `not_implemented`.
 
+### Match a plugin error in server code
+
+`alibi::error::codes` exposes public `&'static str` constants shared by core and the built-in plugins, including organization, API key, admin, and two-factor errors. Plugins use the same constants when constructing errors. They are available independently of which plugins your instance installs; statuses and messages remain endpoint-specific.
+
+```rust
+use alibi::AuthError;
+use alibi::error::codes::ORGANIZATION_MEMBERSHIP_LIMIT_REACHED;
+
+fn membership_limit_reached(error: &AuthError) -> bool {
+    matches!(error, AuthError::Upstream {
+        code: ORGANIZATION_MEMBERSHIP_LIMIT_REACHED,
+        ..
+    })
+}
+```
+
+For an `EndpointError` from `dispatch_endpoint`, pass `&error.error`. The constants also compare directly with the `code` in an HTTP error body. This shared Rust namespace serves the same purpose as Better Auth's merged `auth.$ERROR_CODES`; it does not change `AuthError` variants or the HTTP error envelope.
+
 ### Errors from your callbacks
 
 Delivery and policy callbacks return `AuthResult`. What the client sees depends on the variant:

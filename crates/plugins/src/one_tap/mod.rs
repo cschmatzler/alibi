@@ -4,6 +4,7 @@ use crate::oauth::{
     OAuthConfig, OAuthProcessPolicy, OAuthSignInError, OAuthTokenSet, OAuthUserInfo,
     process_oauth_sign_in,
 };
+use alibi_core::error::codes;
 use alibi_core::utils::json::JsValue;
 use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
@@ -116,7 +117,7 @@ impl OneTapPlugin {
             );
             return AuthResponse::json(
                 415,
-                &json!({"code":"UNSUPPORTED_MEDIA_TYPE","message":message}),
+                &json!({"code":codes::UNSUPPORTED_MEDIA_TYPE,"message":message}),
             )
             .map_err(Into::into);
         }
@@ -132,7 +133,7 @@ impl OneTapPlugin {
         {
             return AuthResponse::json(
                 403,
-                &json!({"code":"INVALID_CALLBACK_URL","message":"Invalid callbackURL"}),
+                &json!({"code":codes::INVALID_CALLBACK_URL,"message":"Invalid callbackURL"}),
             )
             .map_err(Into::into);
         }
@@ -280,13 +281,16 @@ impl OneTapPlugin {
             Err(OAuthSignInError::Generic(error)) => return message(401, &error),
             Err(OAuthSignInError::SessionAuth(error)) => return message(401, &error.to_string()),
             Err(OAuthSignInError::Banned(error)) => {
-                return AuthResponse::json(403, &json!({"code":"BANNED_USER","message":error}))
-                    .map_err(Into::into);
+                return AuthResponse::json(
+                    403,
+                    &json!({"code":codes::BANNED_USER,"message":error}),
+                )
+                .map_err(Into::into);
             }
             Err(OAuthSignInError::EmailNotVerified) => {
                 return AuthResponse::json(
                     403,
-                    &json!({"code":"EMAIL_NOT_VERIFIED","message":"Email not verified"}),
+                    &json!({"code":codes::EMAIL_NOT_VERIFIED,"message":"Email not verified"}),
                 )
                 .map_err(Into::into);
             }

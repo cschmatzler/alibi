@@ -4,6 +4,7 @@ use crate::endpoint::{definition, error_response, validate_fields, validation};
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
+use alibi_core::error::codes;
 use alibi_core::session::SessionRequest;
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod};
@@ -206,7 +207,7 @@ impl OrganizationPlugin {
                 let body: types::RemoveMemberRequest = call.body_as()?;
                 let (user, session) = ctx.require_cached_session(call).await.map_err(|error| {
                     if matches!(error, AuthError::Unauthenticated) {
-                        handlers::extension_common::org_error(401, "UNAUTHORIZED")
+                        handlers::extension_common::org_error(401, codes::UNAUTHORIZED)
                     } else {
                         error
                     }
@@ -227,12 +228,12 @@ impl OrganizationPlugin {
                 if self.config.disable_organization_deletion {
                     return Err(handlers::extension_common::org_error(
                         404,
-                        "ORGANIZATION_DELETION_DISABLED",
+                        codes::ORGANIZATION_DELETION_DISABLED,
                     ));
                 }
                 let (user, session) = ctx.require_cached_session(call).await.map_err(|error| {
                     if matches!(error, AuthError::Unauthenticated) {
-                        handlers::extension_common::org_error(401, "UNAUTHORIZED")
+                        handlers::extension_common::org_error(401, codes::UNAUTHORIZED)
                     } else {
                         error
                     }

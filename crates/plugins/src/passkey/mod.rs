@@ -20,6 +20,7 @@ pub(super) mod types;
 
 pub(super) mod webauthn;
 
+use alibi_core::error::codes;
 use alibi_core::utils::cookie_utils::create_session_cookie;
 use alibi_core::{AuthContext, AuthError, AuthResult};
 use alibi_core::{AuthRequest, AuthResponse};
@@ -113,7 +114,7 @@ impl PasskeyPlugin {
             let Some(resolver) = &self.config.registration.resolve_user else {
                 return Ok(AuthResponse::json(
                     400,
-                    &serde_json::json!({"code":"RESOLVE_USER_REQUIRED","message":"Passkey registration requires either an authenticated session or a resolveUser callback when requireSession is false"}),
+                    &serde_json::json!({"code":codes::RESOLVE_USER_REQUIRED,"message":"Passkey registration requires either an authenticated session or a resolveUser callback when requireSession is false"}),
                 )?);
             };
             let context = PasskeyRegistrationContext {
@@ -130,7 +131,7 @@ impl PasskeyPlugin {
                 Ok(_) => {
                     return Ok(AuthResponse::json(
                         400,
-                        &serde_json::json!({"code":"RESOLVED_USER_INVALID","message":"Resolved user is invalid"}),
+                        &serde_json::json!({"code":codes::RESOLVED_USER_INVALID,"message":"Resolved user is invalid"}),
                     )?);
                 }
                 Err(error) if registration::is_application_error(&error) => return Err(error),
@@ -267,7 +268,7 @@ impl PasskeyPlugin {
         {
             return Err(AuthError::Upstream {
                 status: 403,
-                code: "SESSION_NOT_FRESH",
+                code: codes::SESSION_NOT_FRESH,
                 message: "Session is not fresh",
             });
         }

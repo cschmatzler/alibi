@@ -3,6 +3,7 @@ mod callbacks;
 mod claims;
 mod config;
 
+use alibi_core::error::codes;
 pub use callbacks::DefineJwtPayload;
 pub use callbacks::DefineJwtSubject;
 pub use callbacks::JwtKeyring;
@@ -258,7 +259,7 @@ fn public_jwt_error(error: AuthError) -> AuthError {
 const fn unauthorized() -> AuthError {
     AuthError::Upstream {
         status: 401,
-        code: "UNAUTHORIZED",
+        code: codes::UNAUTHORIZED,
         message: "Unauthorized",
     }
 }

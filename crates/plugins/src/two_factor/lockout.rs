@@ -1,6 +1,7 @@
 use super::TwoFactorConfig;
 use alibi_core::TwoFactor;
 use alibi_core::entity::AuthTwoFactor;
+use alibi_core::error::codes;
 use alibi_core::{AuthContext, AuthError, AuthResult};
 use chrono::Utc;
 pub(in crate::two_factor) async fn assert_account_not_locked(
@@ -16,7 +17,7 @@ pub(in crate::two_factor) async fn assert_account_not_locked(
         if until.timestamp_millis() > now.timestamp_millis() {
             return Err(AuthError::Upstream {
                 status: 429,
-                code: "ACCOUNT_TEMPORARILY_LOCKED",
+                code: codes::ACCOUNT_TEMPORARILY_LOCKED,
                 message: "Too many failed verification attempts. Your account is temporarily locked. Please try again later.",
             });
         }

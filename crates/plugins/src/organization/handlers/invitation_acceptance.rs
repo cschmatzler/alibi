@@ -9,6 +9,7 @@ use crate::organization::{
     OrganizationInvitationAcceptedContext,
 };
 use alibi_core::entity::{AuthInvitation, AuthSession, AuthUser};
+use alibi_core::error::codes;
 use alibi_core::session::SessionRequest;
 use alibi_core::store::transaction;
 use alibi_core::types::AddTeamMemberResult;
@@ -96,11 +97,11 @@ impl AcceptanceTransport {
 
 fn acceptance_error(status: u16, code: &'static str) -> AuthError {
     let message = match code {
-        "INVITATION_NOT_FOUND" => "Invitation not found",
-        "YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION" => {
+        codes::INVITATION_NOT_FOUND => "Invitation not found",
+        codes::YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION => {
             "You are not the recipient of the invitation"
         }
-        "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED" => "Organization membership limit reached",
+        codes::ORGANIZATION_MEMBERSHIP_LIMIT_REACHED => "Organization membership limit reached",
         _ => return org_error(status, code),
     };
     AuthError::Upstream {
@@ -132,14 +133,14 @@ pub(in crate::organization) async fn accept<S: AuthSchema>(
         .get_invitation_by_id(&body.invitation_id)
         .await?
         .filter(|invitation| invitation.is_pending() && !invitation.is_expired())
-        .ok_or_else(|| acceptance_error(400, "INVITATION_NOT_FOUND"))?;
+        .ok_or_else(|| acceptance_error(400, codes::INVITATION_NOT_FOUND))?;
     let email = user
         .email()
         .ok_or_else(|| AuthError::bad_request("User has no email"))?;
     if invitation.email().to_lowercase() != email.to_lowercase() {
         return Err(acceptance_error(
             403,
-            "YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION",
+            codes::YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION,
         ));
     }
     require_verified_invitation_email(
@@ -156,7 +157,7 @@ pub(in crate::organization) async fn accept<S: AuthSchema>(
         .database
         .get_organization_by_id(invitation.organization_id().as_ref())
         .await?
-        .ok_or_else(|| acceptance_error(400, "ORGANIZATION_NOT_FOUND"))?;
+        .ok_or_else(|| acceptance_error(400, codes::ORGANIZATION_NOT_FOUND))?;
     let original_user = ctx.user_view(user);
     let original_organization = OrganizationResponse::from_stored_organization(&organization)?;
     let limit = crate::organization::policy::admission_limit(
@@ -168,7 +169,7 @@ pub(in crate::organization) async fn accept<S: AuthSchema>(
     if count as f64 >= limit {
         return Err(acceptance_error(
             403,
-            "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED",
+            codes::ORGANIZATION_MEMBERSHIP_LIMIT_REACHED,
         ));
     }
     if let Some(hooks) = &config.invitation_acceptance_hooks {
@@ -190,7 +191,7 @@ pub(in crate::organization) async fn accept<S: AuthSchema>(
             InvitationStatus::Accepted,
         )
         .await?
-        .ok_or_else(|| acceptance_error(400, "INVITATION_NOT_FOUND"))?;
+        .ok_or_else(|| acceptance_error(400, codes::INVITATION_NOT_FOUND))?;
     let accepted_for_tx = accepted.clone();
     let original_session = ctx.session_view(session);
     let token = session.token().to_owned();
@@ -216,7 +217,7 @@ pub(in crate::organization) async fn accept<S: AuthSchema>(
                     .await?
                     .is_none()
                 {
-                    return Err(acceptance_error(400, "TEAM_NOT_FOUND"));
+                    return Err(acceptance_error(400, codes::TEAM_NOT_FOUND));
                 }
                 let maximum = if let Some(resolver) = &teams.limit_resolver {
                     resolver
@@ -235,7 +236,7 @@ pub(in crate::organization) async fn accept<S: AuthSchema>(
                     tx.add_team_member(team_id, &tx_user.id, maximum).await?,
                     AddTeamMemberResult::LimitReached
                 ) {
-                    return Err(acceptance_error(403, "TEAM_MEMBER_LIMIT_REACHED"));
+                    return Err(acceptance_error(403, codes::TEAM_MEMBER_LIMIT_REACHED));
                 }
             }
             if team_ids.len() == 1 {

@@ -8,6 +8,7 @@ mod lockout;
 mod otp_flow;
 mod totp;
 
+use alibi_core::error::codes;
 use backup_codes::generate_backup_codes;
 use backup_codes::generate_backup_codes_core;
 use backup_codes::generate_numeric_string;
@@ -585,7 +586,7 @@ impl TwoFactorPlugin {
                 // OTP's own code budget does not expire the pending-factor cookie.
                 Err(ExistingSessionFactorError::Auth(
                     error @ AuthError::Upstream {
-                        code: "TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE",
+                        code: codes::TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE,
                         ..
                     },
                 )) => return Err(error),
@@ -751,7 +752,7 @@ const fn require_totp_enabled(config: &TwoFactorConfig) -> AuthResult<()> {
     if config.totp_disabled {
         return Err(AuthError::Upstream {
             status: 400,
-            code: "TOTP_NOT_CONFIGURED",
+            code: codes::TOTP_NOT_CONFIGURED,
             message: "totp isn't configured",
         });
     }

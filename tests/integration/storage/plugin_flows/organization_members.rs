@@ -4,6 +4,7 @@ use super::*;
 use crate::snapshot::Trace;
 use alibi::AuthResult;
 use alibi::endpoint::EndpointOptions;
+use alibi::error::codes::ORGANIZATION_MEMBERSHIP_LIMIT_REACHED;
 use alibi::plugins::organization::{
     DynamicAccessControlConfig, MembershipLimit, OrganizationCreationHooks,
     OrganizationLimitResolver, OrganizationMemberAdditionHooks, OrganizationMemberCreatePatch,
@@ -791,10 +792,14 @@ async fn fractional_organization_membership_limit_uses_actual_physical_count<B: 
     assert!(matches!(
         denied.error,
         alibi::AuthError::Upstream {
-            code: "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED",
+            code: ORGANIZATION_MEMBERSHIP_LIMIT_REACHED,
             ..
         }
     ));
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&denied.error.to_auth_response().body)?,
+        json!({"code": "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED", "message": "Organization membership limit reached"})
+    );
     assert_eq!(
         db.tables(&["user", "account", "session", "organization", "member"])
             .await?,

@@ -4,6 +4,7 @@ use alibi_core::endpoint::{
     EndpointCall, EndpointContextPatch, EndpointDefinition, EndpointInput, EndpointResponse,
     ServerEndpoint,
 };
+use alibi_core::error::codes;
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod};
 
@@ -185,7 +186,7 @@ impl OAuthPlugin {
                 .filter(|user| !user.is_empty())
                 .ok_or(AuthError::Upstream {
                     status: 400,
-                    code: "USER_ID_OR_SESSION_REQUIRED",
+                    code: codes::USER_ID_OR_SESSION_REQUIRED,
                     message: "Either userId or session is required",
                 })?
                 .to_owned()
@@ -393,7 +394,7 @@ impl OAuthPlugin {
                 .await
                 .map_err(|_| AuthError::Upstream {
                     status: 401,
-                    code: "UNAUTHORIZED",
+                    code: codes::UNAUTHORIZED,
                     message: "Unauthorized",
                 })?;
         call.record_authenticated_session(ctx.user_view(&user), session.clone());

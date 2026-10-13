@@ -1,3 +1,4 @@
+use alibi_core::error::codes;
 use alibi_core::types::{MultipartFiles, ParsedRequestBody};
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthError, AuthRequest, AuthResponse, AuthResult};
@@ -39,7 +40,7 @@ pub(crate) fn parse_email(email: &str) -> AuthResult<String> {
     if !is_valid_email(&normalized) {
         return Err(AuthError::Upstream {
             status: 400,
-            code: "INVALID_EMAIL",
+            code: codes::INVALID_EMAIL,
             message: "Invalid email",
         });
     }
@@ -125,7 +126,7 @@ pub(in crate::authentication_helpers) fn parse_body_with_fields_and_ignored<
         req.body_as_json().map_err(|_error| {
             AuthResponse::json(
                 400,
-                &serde_json::json!({"code":"BAD_REQUEST","message":"Invalid JSON in request body"}),
+                &serde_json::json!({"code":codes::BAD_REQUEST,"message":"Invalid JSON in request body"}),
             )
             .unwrap_or_else(|_| AuthResponse::text(400, "Invalid JSON in request body"))
         })?
@@ -233,7 +234,7 @@ pub(crate) const fn json_type(value: Option<&JsValue>) -> &'static str {
 pub(crate) fn validation_response(message: &str) -> AuthResponse {
     AuthResponse::json(
         400,
-        &serde_json::json!({"code":"VALIDATION_ERROR","message":message}),
+        &serde_json::json!({"code":codes::VALIDATION_ERROR,"message":message}),
     )
     .unwrap_or_else(|_| AuthResponse::text(400, "Validation failed"))
 }

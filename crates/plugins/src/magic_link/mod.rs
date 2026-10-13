@@ -6,6 +6,7 @@ use super::authentication_helpers::{
     session_response,
 };
 use super::token_crypto::hash_token;
+use alibi_core::error::codes;
 use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthUser,
     CreateUser, CreateVerification,
@@ -236,7 +237,7 @@ impl MagicLinkPlugin {
     ) -> AuthResult<AuthResponse> {
         let token = req.query.get("token").cloned().ok_or(AuthError::Upstream {
             status: 400,
-            code: "VALIDATION_ERROR",
+            code: codes::VALIDATION_ERROR,
             message: "[query.token] Invalid input: expected string, received undefined",
         })?;
         let query = MagicLinkVerifyInput {
@@ -269,7 +270,7 @@ impl MagicLinkPlugin {
             {
                 return Err(AuthError::Upstream {
                     status: 403,
-                    code: "INVALID_CALLBACK_URL",
+                    code: codes::INVALID_CALLBACK_URL,
                     message: "Invalid callbackURL",
                 });
             }
@@ -297,14 +298,14 @@ impl MagicLinkPlugin {
             .and_then(|row| parse_link_data(row.value().ok()?))
             .is_none()
         {
-            return Ok(error_redirect(error_url, "INVALID_TOKEN", None));
+            return Ok(error_redirect(error_url, codes::INVALID_TOKEN, None));
         }
         let Some(verification) = ctx.verifications().consume(&identifier).await? else {
-            return Ok(error_redirect(error_url, "INVALID_TOKEN", None));
+            return Ok(error_redirect(error_url, codes::INVALID_TOKEN, None));
         };
 
         let Some(data) = parse_link_data(verification.value()?) else {
-            return Ok(error_redirect(error_url, "INVALID_TOKEN", None));
+            return Ok(error_redirect(error_url, codes::INVALID_TOKEN, None));
         };
         let mut is_new_user = false;
         let user = match ctx.database.get_user_by_email_record(&data.email).await? {

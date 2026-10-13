@@ -2,6 +2,7 @@ use super::super::extensions::{TeamHookContext, TeamLimitContext};
 use super::super::{OrganizationConfig, OrganizationPlugin};
 use super::extension_common::{has_action, org_error, session};
 use alibi_core::entity::AuthUser;
+use alibi_core::error::codes;
 use alibi_core::types::{AddTeamMemberResult, CreateTeam, Team, UpdateTeam};
 use alibi_core::wire::{SessionView, UserView};
 use alibi_core::{AuthContext, AuthRequest, AuthResponse, AuthResult, AuthSchema, HttpMethod};
@@ -173,7 +174,7 @@ fn org_id(explicit: Option<&str>, session: Option<&SessionView>) -> AuthResult<S
             s.active_organization_id.as_deref()
         })
         .map(str::to_owned)
-        .ok_or_else(|| org_error(400, "NO_ACTIVE_ORGANIZATION"))
+        .ok_or_else(|| org_error(400, codes::NO_ACTIVE_ORGANIZATION))
 }
 
 async fn hook_context<S: AuthSchema>(
@@ -185,7 +186,7 @@ async fn hook_context<S: AuthSchema>(
         .database
         .get_organization_by_id(org_id)
         .await?
-        .ok_or_else(|| org_error(400, "ORGANIZATION_NOT_FOUND"))?;
+        .ok_or_else(|| org_error(400, codes::ORGANIZATION_NOT_FOUND))?;
     Ok(TeamHookContext { organization, user })
 }
 
@@ -208,7 +209,7 @@ pub(crate) async fn create_team_core<S: AuthSchema>(
             .ok_or_else(|| {
                 org_error(
                     403,
-                    "YOU_ARE_NOT_ALLOWED_TO_INVITE_USERS_TO_THIS_ORGANIZATION",
+                    codes::YOU_ARE_NOT_ALLOWED_TO_INVITE_USERS_TO_THIS_ORGANIZATION,
                 )
             })?;
         if !has_action(
@@ -223,7 +224,7 @@ pub(crate) async fn create_team_core<S: AuthSchema>(
         {
             return Err(org_error(
                 403,
-                "YOU_ARE_NOT_ALLOWED_TO_CREATE_TEAMS_IN_THIS_ORGANIZATION",
+                codes::YOU_ARE_NOT_ALLOWED_TO_CREATE_TEAMS_IN_THIS_ORGANIZATION,
             ));
         }
     }
@@ -244,7 +245,7 @@ pub(crate) async fn create_team_core<S: AuthSchema>(
     {
         return Err(org_error(
             400,
-            "YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_TEAMS",
+            codes::YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_TEAMS,
         ));
     }
     let hooks = hook_context(
@@ -287,14 +288,17 @@ pub(crate) async fn remove_team_core<S: AuthSchema>(
             .database
             .get_member(organization_id, &user.id)
             .await?
-            .ok_or_else(|| org_error(403, "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_TEAM"))?;
+            .ok_or_else(|| org_error(403, codes::YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_TEAM))?;
         if session.active_team_id.as_deref() == Some(team_id) {
-            return Err(org_error(403, "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_TEAM"));
+            return Err(org_error(
+                403,
+                codes::YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_TEAM,
+            ));
         }
         if !has_action(&member.role, "team", "delete", config, ctx, organization_id).await? {
             return Err(org_error(
                 403,
-                "YOU_ARE_NOT_ALLOWED_TO_DELETE_TEAMS_IN_THIS_ORGANIZATION",
+                codes::YOU_ARE_NOT_ALLOWED_TO_DELETE_TEAMS_IN_THIS_ORGANIZATION,
             ));
         }
     }
@@ -302,11 +306,11 @@ pub(crate) async fn remove_team_core<S: AuthSchema>(
         .database
         .get_team(Some(organization_id), team_id)
         .await?
-        .ok_or_else(|| org_error(400, "TEAM_NOT_FOUND"))?;
+        .ok_or_else(|| org_error(400, codes::TEAM_NOT_FOUND))?;
     if !config.teams.allow_removing_all_teams
         && ctx.database.list_teams(organization_id).await?.len() <= 1
     {
-        return Err(org_error(400, "UNABLE_TO_REMOVE_LAST_TEAM"));
+        return Err(org_error(400, codes::UNABLE_TO_REMOVE_LAST_TEAM));
     }
     let hooks = hook_context(ctx, organization_id, actor.map(|(user, _)| user.clone())).await?;
     if let Some(callback) = &config.teams.hooks {
@@ -387,7 +391,7 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
     config: &OrganizationConfig,
 ) -> AuthResult<Option<AuthResponse>> {
     if !config.teams.enabled {
-        return Err(org_error(404, "TEAMS_DISABLED"));
+        return Err(org_error(404, codes::TEAMS_DISABLED));
     }
     let user_view = ctx.user_view(&user);
     macro_rules! body {
@@ -446,7 +450,7 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
             if body.data.name.as_deref() == Some("") {
                 return Ok(Some(AuthResponse::json(
                     400,
-                    &serde_json::json!({"code":"VALIDATION_ERROR","message":"[body.data.name] Too small: expected string to have >=1 characters"}),
+                    &serde_json::json!({"code":codes::VALIDATION_ERROR,"message":"[body.data.name] Too small: expected string to have >=1 characters"}),
                 )?));
             }
             let org = org_id(body.data.organization_id.as_deref(), Some(&current))?;
@@ -454,15 +458,18 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
                 .database
                 .get_member(&org, user.id().as_ref())
                 .await?
-                .ok_or_else(|| org_error(403, "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_TEAM"))?;
+                .ok_or_else(|| org_error(403, codes::YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_TEAM))?;
             if !has_action(&member.role, "team", "update", config, ctx, &org).await? {
-                return Err(org_error(403, "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_TEAM"));
+                return Err(org_error(
+                    403,
+                    codes::YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_TEAM,
+                ));
             }
             let team = ctx
                 .database
                 .get_team(Some(&org), &body.team_id)
                 .await?
-                .ok_or_else(|| org_error(400, "TEAM_NOT_FOUND"))?;
+                .ok_or_else(|| org_error(400, codes::TEAM_NOT_FOUND))?;
             let hooks = hook_context(ctx, &org, Some(user_view)).await?;
             let mut updates = UpdateTeam {
                 name: body.data.name,
@@ -498,7 +505,7 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
             {
                 return Err(org_error(
                     403,
-                    "YOU_ARE_NOT_ALLOWED_TO_ACCESS_THIS_ORGANIZATION",
+                    codes::YOU_ARE_NOT_ALLOWED_TO_ACCESS_THIS_ORGANIZATION,
                 ));
             }
             AuthResponse::json(200, &ctx.database.list_teams(&org).await?)?
@@ -522,13 +529,21 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
                     .database
                     .get_member(org, &user_view.id)
                     .await?
-                    .ok_or_else(|| org_error(403, "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION"))?;
+                    .ok_or_else(|| {
+                        org_error(403, codes::YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION)
+                    })?;
                 if target != user_view.id {
                     if !has_action(&requester.role, "member", "update", config, ctx, org).await? {
-                        return Err(org_error(403, "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_MEMBER"));
+                        return Err(org_error(
+                            403,
+                            codes::YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_MEMBER,
+                        ));
                     }
                     if ctx.database.get_member(org, target).await?.is_none() {
-                        return Err(org_error(400, "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION"));
+                        return Err(org_error(
+                            400,
+                            codes::USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION,
+                        ));
                     }
                 }
             }
@@ -557,12 +572,12 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
                 .filter(|id| !id.is_empty())
                 .map(String::as_str)
                 .or(current.active_team_id.as_deref())
-                .ok_or_else(|| org_error(400, "YOU_DO_NOT_HAVE_AN_ACTIVE_TEAM"))?;
+                .ok_or_else(|| org_error(400, codes::YOU_DO_NOT_HAVE_AN_ACTIVE_TEAM))?;
             let team = ctx
                 .database
                 .get_team(None, team_id)
                 .await?
-                .ok_or_else(|| org_error(400, "TEAM_NOT_FOUND"))?;
+                .ok_or_else(|| org_error(400, codes::TEAM_NOT_FOUND))?;
             if ctx
                 .database
                 .get_member(&team.organization_id, &user_view.id)
@@ -574,7 +589,7 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
                     .await?
                     .is_none()
             {
-                return Err(org_error(400, "USER_IS_NOT_A_MEMBER_OF_THE_TEAM"));
+                return Err(org_error(400, codes::USER_IS_NOT_A_MEMBER_OF_THE_TEAM));
             }
             AuthResponse::json(200, &ctx.database.list_team_members(team_id).await?)?
         }
@@ -611,20 +626,20 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
             } else {
                 let team_id = team_id
                     .as_deref()
-                    .ok_or_else(|| org_error(400, "TEAM_NOT_FOUND"))?;
+                    .ok_or_else(|| org_error(400, codes::TEAM_NOT_FOUND))?;
                 let org = org_id(None, Some(&current))?;
                 let team = ctx
                     .database
                     .get_team(Some(&org), team_id)
                     .await?
-                    .ok_or_else(|| org_error(400, "TEAM_NOT_FOUND"))?;
+                    .ok_or_else(|| org_error(400, codes::TEAM_NOT_FOUND))?;
                 if ctx
                     .database
                     .get_team_member(team_id, &user_view.id)
                     .await?
                     .is_none()
                 {
-                    return Err(org_error(403, "USER_IS_NOT_A_MEMBER_OF_THE_TEAM"));
+                    return Err(org_error(403, codes::USER_IS_NOT_A_MEMBER_OF_THE_TEAM));
                 }
                 let updated = ctx
                     .database
@@ -649,16 +664,16 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
                 .database
                 .get_member(&org, &user_view.id)
                 .await?
-                .ok_or_else(|| org_error(400, "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION"))?;
+                .ok_or_else(|| org_error(400, codes::USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION))?;
             let add = path.ends_with("/add-team-member");
             let action = if add { "update" } else { "delete" };
             if !has_action(&requester.role, "member", action, config, ctx, &org).await? {
                 return Err(org_error(
                     403,
                     if add {
-                        "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_TEAM_MEMBER"
+                        codes::YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_TEAM_MEMBER
                     } else {
-                        "YOU_ARE_NOT_ALLOWED_TO_REMOVE_A_TEAM_MEMBER"
+                        codes::YOU_ARE_NOT_ALLOWED_TO_REMOVE_A_TEAM_MEMBER
                     },
                 ));
             }
@@ -668,13 +683,16 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
                 .await?
                 .is_none()
             {
-                return Err(org_error(400, "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION"));
+                return Err(org_error(
+                    400,
+                    codes::USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION,
+                ));
             }
             let team = ctx
                 .database
                 .get_team(Some(&org), &body.team_id)
                 .await?
-                .ok_or_else(|| org_error(400, "TEAM_NOT_FOUND"))?;
+                .ok_or_else(|| org_error(400, codes::TEAM_NOT_FOUND))?;
             let target = ctx
                 .database
                 .get_user_by_id(&body.user_id)
@@ -709,7 +727,7 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
                         member
                     }
                     AddTeamMemberResult::LimitReached => {
-                        return Err(org_error(403, "TEAM_MEMBER_LIMIT_REACHED"));
+                        return Err(org_error(403, codes::TEAM_MEMBER_LIMIT_REACHED));
                     }
                 };
                 if let Some(callback) = &config.teams.hooks {
@@ -724,7 +742,7 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
                     .database
                     .get_team_member(&team.id, &body.user_id)
                     .await?
-                    .ok_or_else(|| org_error(400, "USER_IS_NOT_A_MEMBER_OF_THE_TEAM"))?;
+                    .ok_or_else(|| org_error(400, codes::USER_IS_NOT_A_MEMBER_OF_THE_TEAM))?;
                 if let Some(callback) = &config.teams.hooks {
                     callback
                         .before_remove_member(&member, &team, &target, &hooks)

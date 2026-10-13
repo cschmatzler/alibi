@@ -29,6 +29,7 @@ mod api_keys;
 mod character_ids;
 mod database_callbacks;
 mod decorated_store;
+mod hook_connection;
 mod http_composition;
 mod id_strategies;
 mod invitations;

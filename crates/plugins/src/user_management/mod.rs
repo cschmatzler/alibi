@@ -2,6 +2,7 @@ pub(super) mod handlers;
 pub(super) mod types;
 mod update;
 
+use alibi_core::error::codes;
 use alibi_core::wire::UserView;
 use alibi_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
@@ -264,7 +265,7 @@ impl UserManagementPlugin {
         if !self.config.delete_user.enabled {
             return Err(AuthError::Upstream {
                 status: 404,
-                code: "NOT_FOUND",
+                code: codes::NOT_FOUND,
                 message: "Not found",
             });
         }
@@ -286,7 +287,7 @@ impl UserManagementPlugin {
             .flatten()
             .ok_or(AuthError::Upstream {
                 status: 404,
-                code: "FAILED_TO_GET_USER_INFO",
+                code: codes::FAILED_TO_GET_USER_INFO,
                 message: "Failed to get user info",
             })?;
         call.record_authenticated_session(ctx.user_view(&read.user), read.session.clone());
@@ -355,7 +356,7 @@ impl UserManagementPlugin {
         if !self.config.delete_user.enabled {
             return Err(AuthError::Api {
                 status: 404,
-                code: Some("NOT_FOUND".into()),
+                code: Some(codes::NOT_FOUND.into()),
                 message: "Not found".into(),
             });
         }
@@ -462,7 +463,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
             .await
             .map_err(|_| AuthError::Upstream {
                 status: 401,
-                code: "UNAUTHORIZED",
+                code: codes::UNAUTHORIZED,
                 message: "Unauthorized",
             })?;
         call.record_authenticated_session(ctx.user_view(&user), session.clone());

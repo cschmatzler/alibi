@@ -15,6 +15,7 @@ mod redemption;
 pub(super) mod types;
 
 use crate::helpers::callback_failure;
+use alibi_core::error::codes;
 use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult};
 use chrono::Duration;
 use rand::distr::{Alphanumeric, SampleString};
@@ -421,7 +422,7 @@ fn validate_device_media(req: &AuthRequest, issuance: bool) -> Result<bool, Auth
         };
         return Err(AuthResponse::json(
             415,
-            &serde_json::json!({"message":message,"code":"UNSUPPORTED_MEDIA_TYPE"}),
+            &serde_json::json!({"message":message,"code":codes::UNSUPPORTED_MEDIA_TYPE}),
         )
         .unwrap_or_else(|_| AuthResponse::text(415, "Unsupported media type")));
     }
@@ -449,7 +450,7 @@ fn parse_device_body(
         req.body_as_json::<serde_json::Value>().map_err(|_error| {
             AuthResponse::json(
                 400,
-                &serde_json::json!({"code":"BAD_REQUEST","message":"Invalid JSON in request body"}),
+                &serde_json::json!({"code":codes::BAD_REQUEST,"message":"Invalid JSON in request body"}),
             )
             .unwrap_or_else(|_| AuthResponse::text(400, "Invalid JSON"))
         })?
@@ -533,7 +534,7 @@ fn validate_device_json_body(
         } else {
             AuthResponse::json(
                 400,
-                &serde_json::json!({ "message": message, "code": "VALIDATION_ERROR" }),
+                &serde_json::json!({ "message": message, "code": codes::VALIDATION_ERROR }),
             )
             .unwrap_or_else(|_| AuthResponse::text(400, "Validation failed"))
         });

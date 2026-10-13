@@ -3,6 +3,7 @@
 mod endpoint;
 use super::authentication_helpers::{JsonField, RequestBody, parse_body};
 use super::helpers::delete_session_cookie_headers;
+use alibi_core::error::codes;
 use alibi_core::utils::cookie_utils::{
     create_derived_session_cookie, create_session_cookie_with_max_age, create_session_like_cookie,
     related_cookie_name, sign_cookie_value, verify_cookie_value,
@@ -463,7 +464,7 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
 const fn invalid_token() -> AuthError {
     AuthError::Upstream {
         status: 401,
-        code: "INVALID_SESSION_TOKEN",
+        code: codes::INVALID_SESSION_TOKEN,
         message: "Invalid session token",
     }
 }

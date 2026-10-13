@@ -1332,9 +1332,12 @@ mod postgres_numeric_columns {
                 #[sqlx(rename = "mailbox")]
                 pub email: Option<String>,
                 pub name: Option<String>,
+                #[sqlx(rename = "emailVerified")]
                 pub email_verified: bool,
                 pub image: Option<String>,
+                #[sqlx(rename = "createdAt")]
                 pub created_at: chrono::DateTime<Utc>,
+                #[sqlx(rename = "updatedAt")]
                 pub updated_at: chrono::DateTime<Utc>,
                 #[sqlx(rename = "score32")]
                 pub small: i32,
@@ -1357,9 +1360,12 @@ mod postgres_numeric_columns {
                 #[sea_orm(column_name = "mailbox")]
                 pub email: Option<String>,
                 pub name: Option<String>,
+                #[sea_orm(column_name = "emailVerified")]
                 pub email_verified: bool,
                 pub image: Option<String>,
+                #[sea_orm(column_name = "createdAt")]
                 pub created_at: chrono::DateTime<Utc>,
+                #[sea_orm(column_name = "updatedAt")]
                 pub updated_at: chrono::DateTime<Utc>,
                 #[sea_orm(column_name = "score32")]
                 pub small: i32,
@@ -1604,10 +1610,10 @@ mod postgres_numeric_columns {
                 .await,
             Err(alibi::AuthError::BadRequest(_))
         ));
-        // Explain the real prepared statement, with the actual bound value,
-        // on the same one-connection native pool that executed it.
-        let (name, statement): (String, String) = sqlx::query_as("SELECT \"name\", statement FROM pg_prepared_statements WHERE statement LIKE '%score64% >= %::int8%' ORDER BY prepare_time LIMIT 1").fetch_one(native).await?;
-        assert!(!statement.contains("CAST(\"app_people\".\"score64\""));
+        // Explain the real one-parameter count query on its native connection.
+        // The paginated row query also binds limit/offset, and may cast selected
+        // output values without affecting the indexed predicate.
+        let name: String = sqlx::query_scalar("SELECT \"name\" FROM pg_prepared_statements WHERE statement LIKE '%score64% >= %::int8%' AND cardinality(parameter_types) = 1 ORDER BY prepare_time LIMIT 1").fetch_one(native).await?;
         let plan: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             "EXPLAIN EXECUTE \"{}\"('9998')",
             name.replace('"', "\"\"")

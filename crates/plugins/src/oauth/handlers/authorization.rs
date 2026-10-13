@@ -31,6 +31,7 @@ use alibi_core::AuthResult;
 use alibi_core::AuthUser;
 use alibi_core::CreateVerification;
 use alibi_core::entity::AuthSession;
+use alibi_core::error::codes;
 use base64::Engine;
 use chrono::Duration;
 use chrono::Utc;
@@ -314,7 +315,7 @@ pub(in crate::oauth) fn validate_authorization_params(
     }) {
         return Err(AuthError::Api {
             status: 400,
-            code: Some("VALIDATION_ERROR".into()),
+            code: Some(codes::VALIDATION_ERROR.into()),
             message: format!(
                 "[body.additionalParams] additionalParams cannot include reserved OAuth parameters: {}",
                 RESERVED_AUTHORIZATION_PARAMS.join(", ")

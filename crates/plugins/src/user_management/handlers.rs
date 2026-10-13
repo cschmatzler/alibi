@@ -6,6 +6,7 @@ use crate::email_verification::EmailVerificationConfig;
 use crate::email_verification::handlers::verification_url;
 use crate::email_verification::token::create_email_verification_token;
 use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
+use alibi_core::error::codes;
 use alibi_core::utils::password as password_utils;
 use alibi_core::wire::{SessionView, UserView};
 use alibi_core::{
@@ -49,7 +50,7 @@ pub(super) async fn authoritative_session<S: alibi_core::AuthSchema>(
         .await
         .map_err(|_| AuthError::Upstream {
             status: 401,
-            code: "UNAUTHORIZED",
+            code: codes::UNAUTHORIZED,
             message: "Unauthorized",
         })
 }
@@ -231,7 +232,7 @@ pub(crate) async fn delete_user_core(
         {
             return Err(AuthError::Upstream {
                 status: 400,
-                code: "PASSWORD_TOO_LONG",
+                code: codes::PASSWORD_TOO_LONG,
                 message: "Password too long",
             });
         }

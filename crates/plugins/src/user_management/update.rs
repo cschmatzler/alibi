@@ -1,4 +1,5 @@
 use alibi_core::entity::AuthUser;
+use alibi_core::error::codes;
 use alibi_core::session::SessionRequest;
 use alibi_core::utils::json::JsValue;
 use alibi_core::utils::username::UsernameConfig;
@@ -189,7 +190,7 @@ async fn update_user_core<S: alibi_core::AuthSchema>(
         return Ok(AuthResponse::json(
             400,
             &ErrorCodeMessageResponse {
-                code: Some("VALIDATION_ERROR".to_owned()),
+                code: Some(codes::VALIDATION_ERROR.to_owned()),
                 message: format!("[body] Invalid input: expected record, received {actual}"),
             },
         )?);
@@ -210,7 +211,7 @@ async fn update_user_core<S: alibi_core::AuthSchema>(
     if body.contains_key("role") {
         return Err(AuthError::Api {
             status: 400,
-            code: Some("FIELD_NOT_ALLOWED".into()),
+            code: Some(codes::FIELD_NOT_ALLOWED.into()),
             message: "role is not allowed to be set".into(),
         });
     }
@@ -238,7 +239,7 @@ async fn update_user_core<S: alibi_core::AuthSchema>(
             {
                 return Err(AuthError::Upstream {
                     status: 400,
-                    code: "USERNAME_IS_IMMUTABLE",
+                    code: codes::USERNAME_IS_IMMUTABLE,
                     message: "Username cannot be updated",
                 });
             }
@@ -247,7 +248,7 @@ async fn update_user_core<S: alibi_core::AuthSchema>(
             {
                 return Err(AuthError::Upstream {
                     status: 400,
-                    code: "USERNAME_IS_ALREADY_TAKEN",
+                    code: codes::USERNAME_IS_ALREADY_TAKEN,
                     message: "Username is already taken. Please try another.",
                 });
             }

@@ -3,6 +3,7 @@ mod set_password;
 pub(super) mod types;
 
 use super::StatusResponse;
+use alibi_core::error::codes;
 use alibi_core::utils::password::PasswordHasher;
 use alibi_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
@@ -251,7 +252,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
             .await
             .map_err(|_| AuthError::Upstream {
                 status: 401,
-                code: "UNAUTHORIZED",
+                code: codes::UNAUTHORIZED,
                 message: "Unauthorized",
             })?;
         call.record_authenticated_session(ctx.user_view(&user), session);
@@ -513,7 +514,7 @@ impl PasswordManagementPlugin {
     ) -> AuthResult<AuthResponse> {
         let callback_url = req.query.get("callbackURL").ok_or(AuthError::Upstream {
             status: 400,
-            code: "VALIDATION_ERROR",
+            code: codes::VALIDATION_ERROR,
             message: "[query.callbackURL] Invalid input: expected string, received undefined",
         })?;
         let query = ResetPasswordTokenQuery {

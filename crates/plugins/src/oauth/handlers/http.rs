@@ -45,6 +45,7 @@ use alibi_core::AuthRequest;
 use alibi_core::AuthResponse;
 use alibi_core::AuthResult;
 use alibi_core::AuthSession;
+use alibi_core::error::codes;
 use std::collections::HashMap;
 
 pub(crate) async fn handle_social_sign_in(
@@ -666,7 +667,7 @@ pub(in crate::oauth) async fn handle_link_social(
         .map_err(|error| match error {
             AuthError::Unauthenticated => AuthError::Api {
                 status: 401,
-                code: Some("UNAUTHORIZED".to_owned()),
+                code: Some(codes::UNAUTHORIZED.to_owned()),
                 message: "Unauthorized".to_owned(),
             },
             error => error,

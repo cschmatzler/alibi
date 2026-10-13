@@ -1,4 +1,5 @@
 use super::ApiKeyPermissions;
+use alibi_core::error::codes;
 use alibi_core::utils::json::JsValue;
 pub(crate) use alibi_core::wire::ApiKeyView;
 use alibi_core::{AuthRequest, AuthResponse};
@@ -454,7 +455,7 @@ fn query_error(field: &str, message: &str) -> AuthResponse {
 
 fn validation_response(location: &str, message: &str) -> AuthResponse {
     let body = serde_json::json!({
-        "code": "VALIDATION_ERROR", "message": format!("[{location}] {message}")
+        "code": codes::VALIDATION_ERROR, "message": format!("[{location}] {message}")
     });
     AuthResponse::text(400, body.to_string()).with_header("content-type", "application/json")
 }

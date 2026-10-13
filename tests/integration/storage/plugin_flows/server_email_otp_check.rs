@@ -1,6 +1,7 @@
 //! Server OTP checks retain live proofs while enforcing scope, user existence and attempts.
 use super::*;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
+use alibi::error::codes::INVALID_OTP;
 use alibi::plugins::email_otp::{EmailOtpConfig, EmailOtpPlugin, EmailOtpStorage, EmailOtpType};
 
 backend_tests!(server_email_otp_checks_preserve_live_proofs_and_retire_exhausted_attempts);
@@ -63,10 +64,13 @@ async fn server_email_otp_checks_preserve_live_proofs_and_retire_exhausted_attem
                 .await
                 .unwrap_err();
                 assert_eq!(wrong.error.status_code(), 400);
-                assert_eq!(
-                    wrong.error.error_payload().1.as_deref(),
-                    Some("INVALID_OTP")
-                );
+                assert!(matches!(
+                    wrong.error,
+                    alibi::AuthError::Upstream {
+                        code: INVALID_OTP,
+                        ..
+                    }
+                ));
                 use alibi::AuthVerification;
                 let stored = auth
                     .store()

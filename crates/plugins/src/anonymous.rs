@@ -4,6 +4,7 @@ use super::helpers::{
     apply_default_role, completed_response_session, delete_session_cookie_headers, get_cookie,
     issue_user_session_record, record_completed_session_record, response_has_session_cookie,
 };
+use alibi_core::error::codes;
 use alibi_core::wire::{SessionView, UserView};
 use alibi_core::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
@@ -116,7 +117,7 @@ impl AnonymousPlugin {
         {
             return Ok(error(
                 400,
-                "ANONYMOUS_USERS_CANNOT_SIGN_IN_AGAIN_ANONYMOUSLY",
+                codes::ANONYMOUS_USERS_CANNOT_SIGN_IN_AGAIN_ANONYMOUSLY,
                 "Anonymous users cannot sign in again anonymously",
             ));
         }
@@ -128,7 +129,7 @@ impl AnonymousPlugin {
             if !super::authentication_helpers::is_valid_email(&email) {
                 return Ok(error(
                     400,
-                    "INVALID_EMAIL_FORMAT",
+                    codes::INVALID_EMAIL_FORMAT,
                     "Email was not generated in a valid format",
                 ));
             }
@@ -167,7 +168,7 @@ impl AnonymousPlugin {
             .map_err(|error| match error {
                 alibi_core::AuthError::UserCreationCancelled => alibi_core::AuthError::Upstream {
                     status: 500,
-                    code: "FAILED_TO_CREATE_USER",
+                    code: codes::FAILED_TO_CREATE_USER,
                     message: "Failed to create user",
                 },
                 error @ (alibi_core::AuthError::Api { .. }
@@ -223,7 +224,7 @@ impl AnonymousPlugin {
                     alibi_core::AuthError::SessionCreationCancelled => {
                         alibi_core::AuthError::Upstream {
                             status: 400,
-                            code: "COULD_NOT_CREATE_SESSION",
+                            code: codes::COULD_NOT_CREATE_SESSION,
                             message: "Could not create session",
                         }
                     }
@@ -315,7 +316,7 @@ impl AnonymousPlugin {
                 .map_err(|error| match error {
                     alibi_core::AuthError::Unauthenticated => alibi_core::AuthError::Upstream {
                         status: 401,
-                        code: "UNAUTHORIZED",
+                        code: codes::UNAUTHORIZED,
                         message: "Unauthorized",
                     },
                     error @ (alibi_core::AuthError::Api { .. }
@@ -352,18 +353,22 @@ impl AnonymousPlugin {
         if self.config.disable_delete_anonymous_user {
             return Ok(error(
                 400,
-                "DELETE_ANONYMOUS_USER_DISABLED",
+                codes::DELETE_ANONYMOUS_USER_DISABLED,
                 "Deleting anonymous users is disabled",
             ));
         }
         if user.is_anonymous() != Some(true) {
-            return Ok(error(403, "USER_IS_NOT_ANONYMOUS", "User is not anonymous"));
+            return Ok(error(
+                403,
+                codes::USER_IS_NOT_ANONYMOUS,
+                "User is not anonymous",
+            ));
         }
         if let Err(cause) = ctx.database.delete_user_sessions(user.id().as_ref()).await {
             tracing::error!(%cause, "Failed to delete anonymous user sessions");
             return Ok(error(
                 500,
-                "FAILED_TO_DELETE_ANONYMOUS_USER_SESSIONS",
+                codes::FAILED_TO_DELETE_ANONYMOUS_USER_SESSIONS,
                 "Failed to delete anonymous user sessions",
             ));
         }
@@ -371,7 +376,7 @@ impl AnonymousPlugin {
             tracing::error!(%cause, "Failed to delete anonymous user");
             return Ok(error(
                 500,
-                "FAILED_TO_DELETE_ANONYMOUS_USER",
+                codes::FAILED_TO_DELETE_ANONYMOUS_USER,
                 "Failed to delete anonymous user",
             ));
         }

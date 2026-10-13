@@ -9,6 +9,7 @@ use crate::organization::types::{
     UpdateOrganizationRequest,
 };
 use alibi_core::entity::{AuthMember, AuthOrganization, AuthSession, AuthUser};
+use alibi_core::error::codes;
 use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::plugin::AuthContext;
 use alibi_core::store::MemberPageQuery;
@@ -48,7 +49,7 @@ pub(crate) async fn create_organization_core(
     if !allowed && !system_action {
         return Err(super::extension_common::org_error(
             403,
-            "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION",
+            codes::YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION,
         ));
     }
 
@@ -72,7 +73,7 @@ pub(crate) async fn create_organization_core(
     if reached {
         return Err(super::extension_common::org_error(
             403,
-            "YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS",
+            codes::YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS,
         ));
     }
 
@@ -84,7 +85,7 @@ pub(crate) async fn create_organization_core(
     {
         return Err(super::extension_common::org_error(
             400,
-            "ORGANIZATION_ALREADY_EXISTS",
+            codes::ORGANIZATION_ALREADY_EXISTS,
         ));
     }
 
@@ -230,7 +231,7 @@ pub(crate) async fn update_organization_core(
         .as_deref()
         .filter(|id| !id.is_empty())
         .or_else(|| session.active_organization_id().filter(|id| !id.is_empty()))
-        .ok_or_else(|| super::extension_common::org_error(400, "ORGANIZATION_NOT_FOUND"))?
+        .ok_or_else(|| super::extension_common::org_error(400, codes::ORGANIZATION_NOT_FOUND))?
         .to_owned();
 
     let member = ctx
@@ -238,7 +239,7 @@ pub(crate) async fn update_organization_core(
         .get_member(&org_id, &user.id())
         .await?
         .ok_or_else(|| {
-            super::extension_common::org_error(400, "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION")
+            super::extension_common::org_error(400, codes::USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION)
         })?;
 
     if !super::extension_common::has_action(
@@ -253,7 +254,7 @@ pub(crate) async fn update_organization_core(
     {
         return Err(super::extension_common::org_error(
             403,
-            "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_ORGANIZATION",
+            codes::YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_ORGANIZATION,
         ));
     }
 
@@ -263,7 +264,7 @@ pub(crate) async fn update_organization_core(
     {
         return Err(super::extension_common::org_error(
             400,
-            "ORGANIZATION_SLUG_ALREADY_TAKEN",
+            codes::ORGANIZATION_SLUG_ALREADY_TAKEN,
         ));
     }
 
@@ -328,14 +329,14 @@ pub(crate) async fn delete_organization_core(
     if config.disable_organization_deletion {
         return Err(super::extension_common::org_error(
             404,
-            "ORGANIZATION_DELETION_DISABLED",
+            codes::ORGANIZATION_DELETION_DISABLED,
         ));
     }
 
     if body.organization_id.is_empty() {
         return Err(super::extension_common::org_error(
             400,
-            "ORGANIZATION_NOT_FOUND",
+            codes::ORGANIZATION_NOT_FOUND,
         ));
     }
 
@@ -344,7 +345,7 @@ pub(crate) async fn delete_organization_core(
         .get_member(&body.organization_id, &user.id())
         .await?
         .ok_or_else(|| {
-            super::extension_common::org_error(400, "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION")
+            super::extension_common::org_error(400, codes::USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION)
         })?;
 
     if !super::extension_common::has_action(
@@ -359,7 +360,7 @@ pub(crate) async fn delete_organization_core(
     {
         return Err(super::extension_common::org_error(
             403,
-            "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_ORGANIZATION",
+            codes::YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_ORGANIZATION,
         ));
     }
 
@@ -606,7 +607,7 @@ pub(crate) async fn set_active_organization_core(
             .await?;
         return Err(super::extension_common::org_error(
             403,
-            "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
+            codes::USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION,
         ));
     }
 
@@ -742,7 +743,7 @@ pub(crate) async fn handle_delete_organization(
     if config.disable_organization_deletion {
         return Err(super::extension_common::org_error(
             404,
-            "ORGANIZATION_DELETION_DISABLED",
+            codes::ORGANIZATION_DELETION_DISABLED,
         ));
     }
     let (user, session) = match ctx.require_cached_session(req).await {
@@ -791,7 +792,7 @@ pub(crate) async fn handle_get_organization(
             return Ok(AuthResponse::json(
                 401,
                 &alibi_core::ErrorCodeMessageResponse {
-                    code: Some("UNAUTHORIZED".into()),
+                    code: Some(codes::UNAUTHORIZED.into()),
                     message: "Unauthorized".into(),
                 },
             )?);
@@ -879,7 +880,7 @@ pub(crate) async fn handle_set_active_organization(
     let (user, session) = match ctx.require_cached_session(req).await {
         Ok(session) => session,
         Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
-            return Err(super::extension_common::org_error(401, "UNAUTHORIZED"));
+            return Err(super::extension_common::org_error(401, codes::UNAUTHORIZED));
         }
         Err(error) => return Err(error),
     };

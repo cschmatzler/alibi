@@ -8,6 +8,7 @@ use super::types::{
 use super::{AdminConfig, target_is_admin};
 use crate::StatusResponse;
 use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
+use alibi_core::error::codes;
 use alibi_core::field_policy::FieldValues;
 use alibi_core::wire::{SessionView, UserView};
 use alibi_core::{AuthContext, AuthError, AuthResult, CreateAccount, CreateSession, UpdateUser};
@@ -194,7 +195,7 @@ pub(crate) async fn create_user_core(
     if !super::validation::valid_email(&email) {
         return Err(AuthError::Api {
             status: 400,
-            code: Some("INVALID_EMAIL".into()),
+            code: Some(codes::INVALID_EMAIL.into()),
             message: "Invalid email".into(),
         });
     }
@@ -207,7 +208,7 @@ pub(crate) async fn create_user_core(
     {
         return Err(AuthError::Api {
             status: 400,
-            code: Some("PASSWORD_TOO_LONG".into()),
+            code: Some(codes::PASSWORD_TOO_LONG.into()),
             message: "Password too long".into(),
         });
     }
@@ -300,7 +301,7 @@ pub(crate) async fn update_user_core(
     if body.data.contains_key("password") {
         return Err(AuthError::Api {
             status: 400,
-            code: Some("PASSWORD_CANNOT_BE_UPDATED_VIA_UPDATE_USER".into()),
+            code: Some(codes::PASSWORD_CANNOT_BE_UPDATED_VIA_UPDATE_USER.into()),
             message: "Password cannot be updated through update-user. Use the set-user-password endpoint instead".into(),
         });
     }
@@ -360,7 +361,7 @@ pub(crate) async fn update_user_core(
         ) {
             return Err(AuthError::Api {
                 status: 403,
-                code: Some("YOU_ARE_NOT_ALLOWED_TO_SET_USERS_EMAIL".into()),
+                code: Some(codes::YOU_ARE_NOT_ALLOWED_TO_SET_USERS_EMAIL.into()),
                 message: "You are not allowed to update users email".into(),
             });
         }
@@ -374,7 +375,7 @@ pub(crate) async fn update_user_core(
         if !super::validation::valid_email(&email) {
             return Err(AuthError::Api {
                 status: 400,
-                code: Some("INVALID_EMAIL".into()),
+                code: Some(codes::INVALID_EMAIL.into()),
                 message: "Invalid email".into(),
             });
         }
@@ -383,7 +384,7 @@ pub(crate) async fn update_user_core(
         {
             return Err(AuthError::Api {
                 status: 400,
-                code: Some("USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL".into()),
+                code: Some(codes::USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL.into()),
                 message: "User already exists. Use another email.".into(),
             });
         }
@@ -465,7 +466,7 @@ pub(crate) async fn update_user_core(
         {
             return Err(AuthError::Upstream {
                 status: 400,
-                code: "USERNAME_IS_ALREADY_TAKEN",
+                code: codes::USERNAME_IS_ALREADY_TAKEN,
                 message: "Username is already taken. Please try another.",
             });
         }
@@ -728,7 +729,7 @@ pub(crate) async fn impersonate_user_core(
         .map_err(|error| match error {
             AuthError::SessionCreationCancelled => AuthError::Upstream {
                 status: 500,
-                code: "FAILED_TO_CREATE_USER",
+                code: codes::FAILED_TO_CREATE_USER,
                 message: "Failed to create user",
             },
             other => other,
@@ -875,7 +876,7 @@ pub(crate) async fn set_user_password_core(
         .await?
         .ok_or(AuthError::Upstream {
             status: 404,
-            code: "USER_NOT_FOUND",
+            code: codes::USER_NOT_FOUND,
             message: MESSAGE_USER_NOT_FOUND,
         })?;
 

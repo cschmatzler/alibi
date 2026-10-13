@@ -39,7 +39,8 @@ pub mod value;
 pub use alibi_core as __private_core;
 pub use alibi_sqlx_macros::{AuthEntity, SqlxModel};
 pub use hooks::{
-    DatabaseHooks, HookControl, SqlxBackend, SqlxHookContext, current_request_hook_context,
+    DatabaseHooks, HookControl, SqlxBackend, SqlxHookConnection, SqlxHookContext,
+    SqlxHookContextExt, current_request_hook_context,
 };
 pub use json_metadata::JsonMetadata;
 pub use model::{ActiveRow, ActiveValue, ColumnDef, SqlxModel};

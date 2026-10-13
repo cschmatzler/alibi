@@ -66,8 +66,47 @@ The `DatabaseHookContext` gives you:
 Semantics worth knowing:
 
 - Writes that belong to a transaction run their **after** hooks only after the commit; a rollback discards them. Errors from after-hooks are returned to the caller **after** the writes committed, so keep them idempotent.
-- Use `tx` (not `db`) for writes that must commit or roll back with the auth write.
+- SQLx hooks can use `ctx.connection().await?` to query inside the active transaction, or through the pool when no transaction is active. Import `SqlxHookContextExt` to enable it.
 - `AdapterAfterHook` observes retained write output (including fields excluded from public responses). Never forward those values to a client.
+
+### Query the current SQLx connection
+
+Import `alibi::sqlx::SqlxHookContextExt` and acquire a guard with `ctx.connection().await?`. Use its `postgres()` or `sqlite()` accessor for your configured engine. Queries see rows written earlier in the auth transaction, and application writes commit or roll back with it. Outside a transaction, including creation after hooks, the same method acquires a pool connection.
+
+This PostgreSQL hook checks the user written earlier during sign-up. It also works when an account is created outside a transaction:
+
+```rust
+use crate::auth_schema::AppAuthSchema;
+use async_trait::async_trait;
+use alibi::sqlx::{sqlx, SqlxBackend, SqlxHookContext, SqlxHookContextExt};
+use alibi::store::{DatabaseHooks, HookControl};
+use alibi::{AuthError, AuthResult, CreateAccount, DatabaseError};
+
+struct CheckAccountOwner;
+
+#[async_trait]
+impl DatabaseHooks<AppAuthSchema, SqlxBackend> for CheckAccountOwner {
+    async fn before_create_account(
+        &self,
+        input: &mut CreateAccount,
+        ctx: &SqlxHookContext<'_>,
+    ) -> AuthResult<HookControl> {
+        let mut guard = ctx.connection().await?;
+        let connection = guard.postgres()
+            .ok_or_else(|| AuthError::config("This hook requires PostgreSQL"))?;
+        let email: Option<String> = sqlx::query_scalar(
+            "SELECT email FROM \"user\" WHERE id = $1"
+        )
+        .bind(&input.user_id)
+        .fetch_optional(connection)
+        .await
+        .map_err(|error| DatabaseError::Query(error.to_string()))?;
+        Ok(if email.is_some() { HookControl::Continue } else { HookControl::Cancel })
+    }
+}
+```
+
+Register this hook with `.hook(CheckAccountOwner)` on your `SqlxStore`. Use your application's physical table and column names in SQL. The guard holds the transaction lock or a pool connection until dropped; drop it before calling another auth operation or acquiring another connection in the same transaction. Dropping it leaves commit and rollback to the auth operation. The existing `db` and `tx` fields remain available for manual access.
 
 ### Read the originating request
 

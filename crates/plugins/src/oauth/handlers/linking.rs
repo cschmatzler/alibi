@@ -28,6 +28,7 @@ use alibi_core::CreateAccount;
 use alibi_core::UpdateAccount;
 use alibi_core::UpdateUser;
 use alibi_core::entity::AuthSession;
+use alibi_core::error::codes;
 use alibi_core::field_policy::FieldValues;
 use alibi_core::user_validation::UserValidationAction;
 use alibi_core::user_validation::UserValidationData;
@@ -176,7 +177,7 @@ pub(in crate::oauth) async fn sign_in_with_id_token_core(
     {
         return Err(AuthError::Upstream {
             status: 404,
-            code: "ID_TOKEN_NOT_SUPPORTED",
+            code: codes::ID_TOKEN_NOT_SUPPORTED,
             message: "id_token not supported",
         });
     }
@@ -189,7 +190,7 @@ pub(in crate::oauth) async fn sign_in_with_id_token_core(
     {
         return Err(AuthError::Upstream {
             status: 401,
-            code: "INVALID_TOKEN",
+            code: codes::INVALID_TOKEN,
             message: "Invalid token",
         });
     }
@@ -211,14 +212,14 @@ pub(in crate::oauth) async fn sign_in_with_id_token_core(
     .await
     .map_err(|_error| AuthError::Upstream {
         status: 401,
-        code: "FAILED_TO_GET_USER_INFO",
+        code: codes::FAILED_TO_GET_USER_INFO,
         message: "Failed to get user info",
     })?;
 
     if user_info.user.email.is_empty() {
         return Err(AuthError::Upstream {
             status: 401,
-            code: "USER_EMAIL_NOT_FOUND",
+            code: codes::USER_EMAIL_NOT_FOUND,
             message: "User email not found",
         });
     }
@@ -240,7 +241,7 @@ pub(in crate::oauth) async fn sign_in_with_id_token_core(
     .await
     .map_err(|_error| AuthError::Upstream {
         status: 401,
-        code: "FAILED_TO_GET_USER_INFO",
+        code: codes::FAILED_TO_GET_USER_INFO,
         message: "Failed to get user info",
     })?;
 
@@ -272,7 +273,7 @@ pub(in crate::oauth) async fn sign_in_with_id_token_core(
         OAuthSignInError::AccountLookup(error) => error,
         OAuthSignInError::EmailNotVerified => AuthError::Upstream {
             status: 403,
-            code: "EMAIL_NOT_VERIFIED",
+            code: codes::EMAIL_NOT_VERIFIED,
             message: "Email not verified",
         },
         OAuthSignInError::Generic(message) | OAuthSignInError::Banned(message) => AuthError::Api {
@@ -312,7 +313,7 @@ pub(in crate::oauth) async fn link_with_id_token_core(
     {
         return Err(AuthError::Upstream {
             status: 404,
-            code: "ID_TOKEN_NOT_SUPPORTED",
+            code: codes::ID_TOKEN_NOT_SUPPORTED,
             message: "id_token not supported",
         });
     }
@@ -325,7 +326,7 @@ pub(in crate::oauth) async fn link_with_id_token_core(
     {
         return Err(AuthError::Upstream {
             status: 401,
-            code: "INVALID_TOKEN",
+            code: codes::INVALID_TOKEN,
             message: "Invalid token",
         });
     }
@@ -347,14 +348,14 @@ pub(in crate::oauth) async fn link_with_id_token_core(
     .await
     .map_err(|_error| AuthError::Upstream {
         status: 401,
-        code: "FAILED_TO_GET_USER_INFO",
+        code: codes::FAILED_TO_GET_USER_INFO,
         message: "Failed to get user info",
     })?;
 
     if response.user.email.is_empty() {
         return Err(AuthError::Upstream {
             status: 401,
-            code: "USER_EMAIL_NOT_FOUND",
+            code: codes::USER_EMAIL_NOT_FOUND,
             message: "User email not found",
         });
     }
@@ -376,7 +377,7 @@ pub(in crate::oauth) async fn link_with_id_token_core(
     .await
     .map_err(|_error| AuthError::Upstream {
         status: 401,
-        code: "FAILED_TO_GET_USER_INFO",
+        code: codes::FAILED_TO_GET_USER_INFO,
         message: "Failed to get user info",
     })?;
 
@@ -390,7 +391,7 @@ pub(in crate::oauth) async fn link_with_id_token_core(
     {
         return Err(AuthError::Upstream {
             status: 409,
-            code: "SOCIAL_ACCOUNT_ALREADY_LINKED",
+            code: codes::SOCIAL_ACCOUNT_ALREADY_LINKED,
             message: "Social account already linked",
         });
     }

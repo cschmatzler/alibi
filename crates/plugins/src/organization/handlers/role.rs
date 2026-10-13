@@ -4,6 +4,7 @@ use super::extension_common::{
 };
 use super::validation;
 use alibi_core::entity::AuthUser;
+use alibi_core::error::codes;
 use alibi_core::types::{
     CreateOrganizationRole, OrganizationPermissions, OrganizationRole, OrganizationRoleSelector,
     UpdateOrganizationRole,
@@ -70,7 +71,7 @@ fn check_predefined_name(name: &str, config: &OrganizationConfig) -> AuthResult<
             .as_ref()
             .is_some_and(|configured_roles| configured_roles.contains_key(name))
     {
-        return Err(org_error(400, "ROLE_NAME_IS_ALREADY_TAKEN"));
+        return Err(org_error(400, codes::ROLE_NAME_IS_ALREADY_TAKEN));
     }
     Ok(())
 }
@@ -88,7 +89,7 @@ async fn check_name<S: AuthSchema>(
         .await?
         .is_some()
     {
-        return Err(org_error(400, "ROLE_NAME_IS_ALREADY_TAKEN"));
+        return Err(org_error(400, codes::ROLE_NAME_IS_ALREADY_TAKEN));
     }
     Ok(())
 }
@@ -102,9 +103,9 @@ fn missing_permissions(
     let ac = config
         .access_control
         .as_ref()
-        .ok_or_else(|| org_error(501, "MISSING_AC_INSTANCE"))?;
+        .ok_or_else(|| org_error(501, codes::MISSING_AC_INSTANCE))?;
     if permissions.keys().any(|key| !ac.contains_key(key)) {
-        return Err(org_error(400, "INVALID_RESOURCE"));
+        return Err(org_error(400, codes::INVALID_RESOURCE));
     }
     let mut missing = Vec::new();
     for (resource, actions) in permissions {
@@ -172,7 +173,7 @@ pub(in crate::organization) async fn role_core<
     config: &OrganizationConfig,
 ) -> AuthResult<Option<AuthResponse>> {
     if !config.dynamic_access_control.enabled {
-        return Err(org_error(404, "DYNAMIC_ACCESS_CONTROL_DISABLED"));
+        return Err(org_error(404, codes::DYNAMIC_ACCESS_CONTROL_DISABLED));
     }
     let mut issues = validation::Issues::default();
     let (explicit, chosen, create, updates) = match (method, path) {
@@ -269,7 +270,7 @@ pub(in crate::organization) async fn role_core<
                 error,
                 AuthError::Unauthenticated | AuthError::SessionNotFound
             ) {
-                org_error(401, "UNAUTHORIZED")
+                org_error(401, codes::UNAUTHORIZED)
             } else {
                 error
             }
@@ -281,14 +282,14 @@ pub(in crate::organization) async fn role_core<
         _ => "read",
     };
     let error_code = match path {
-        "/organization/create-role" => "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_ROLE",
-        "/organization/update-role" => "YOU_ARE_NOT_ALLOWED_TO_UPDATE_A_ROLE",
-        "/organization/delete-role" => "YOU_ARE_NOT_ALLOWED_TO_DELETE_A_ROLE",
-        "/organization/list-roles" => "YOU_ARE_NOT_ALLOWED_TO_LIST_A_ROLE",
-        _ => "YOU_ARE_NOT_ALLOWED_TO_READ_A_ROLE",
+        "/organization/create-role" => codes::YOU_ARE_NOT_ALLOWED_TO_CREATE_A_ROLE,
+        "/organization/update-role" => codes::YOU_ARE_NOT_ALLOWED_TO_UPDATE_A_ROLE,
+        "/organization/delete-role" => codes::YOU_ARE_NOT_ALLOWED_TO_DELETE_A_ROLE,
+        "/organization/list-roles" => codes::YOU_ARE_NOT_ALLOWED_TO_LIST_A_ROLE,
+        _ => codes::YOU_ARE_NOT_ALLOWED_TO_READ_A_ROLE,
     };
     if (action == "create" || action == "update") && config.access_control.is_none() {
-        return Err(org_error(501, "MISSING_AC_INSTANCE"));
+        return Err(org_error(501, codes::MISSING_AC_INSTANCE));
     }
     let org = explicit
         .or(current.active_organization_id)
@@ -297,9 +298,9 @@ pub(in crate::organization) async fn role_core<
             org_error(
                 400,
                 if action == "create" {
-                    "YOU_MUST_BE_IN_AN_ORGANIZATION_TO_CREATE_A_ROLE"
+                    codes::YOU_MUST_BE_IN_AN_ORGANIZATION_TO_CREATE_A_ROLE
                 } else {
-                    "NO_ACTIVE_ORGANIZATION"
+                    codes::NO_ACTIVE_ORGANIZATION
                 },
             )
         })?;
@@ -310,7 +311,7 @@ pub(in crate::organization) async fn role_core<
         .database
         .get_member(&org, user.id().as_ref())
         .await?
-        .ok_or_else(|| org_error(403, "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION"))?;
+        .ok_or_else(|| org_error(403, codes::YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION))?;
     let roles = organization_roles(config, ctx, &org).await?;
     if !role_has_permissions(
         &member.role,
@@ -326,7 +327,7 @@ pub(in crate::organization) async fn role_core<
         }
         .unwrap_or(f64::INFINITY);
         if ctx.database.count_organization_roles(&org).await? as f64 >= maximum {
-            return Err(org_error(400, "TOO_MANY_ROLES"));
+            return Err(org_error(400, codes::TOO_MANY_ROLES));
         }
         let missing = missing_permissions(&member.role, &permission, config, &org)?;
         if !missing.is_empty() {
@@ -357,17 +358,17 @@ pub(in crate::organization) async fn role_core<
             .collect::<AuthResult<Vec<_>>>()?;
         AuthResponse::json(200, &parsed)?
     } else {
-        let chosen = chosen.ok_or_else(|| org_error(400, "ROLE_NOT_FOUND"))?;
+        let chosen = chosen.ok_or_else(|| org_error(400, codes::ROLE_NOT_FOUND))?;
         if action == "delete"
             && matches!(&chosen,OrganizationRoleSelector::Name(name) if (config.roles.is_none() && ["owner","admin","member"].contains(&name.as_str())) || config.roles.as_ref().is_some_and(|configured_roles| configured_roles.contains_key(name)))
         {
-            return Err(org_error(400, "CANNOT_DELETE_A_PRE_DEFINED_ROLE"));
+            return Err(org_error(400, codes::CANNOT_DELETE_A_PRE_DEFINED_ROLE));
         }
         let role = ctx
             .database
             .get_organization_role(&org, &chosen)
             .await?
-            .ok_or_else(|| org_error(400, "ROLE_NOT_FOUND"))?;
+            .ok_or_else(|| org_error(400, codes::ROLE_NOT_FOUND))?;
         // Source's update route skips parsing an empty stored string. Reads and
         // deletes still parse it and fail before returning or deleting the row.
         let mut role_data = if updates.is_some() && role.permission.as_str().is_empty() {
@@ -383,7 +384,7 @@ pub(in crate::organization) async fn role_core<
                 .has_organization_role_members(&org, &role.role)
                 .await?
             {
-                return Err(org_error(400, "ROLE_IS_ASSIGNED_TO_MEMBERS"));
+                return Err(org_error(400, codes::ROLE_IS_ASSIGNED_TO_MEMBERS));
             }
             let _ignored_delete_organization_role =
                 ctx.database.delete_organization_role(&org, &chosen).await?;

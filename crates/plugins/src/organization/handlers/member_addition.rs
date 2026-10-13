@@ -6,6 +6,7 @@ use crate::organization::{
     extensions::TeamLimitContext,
     types::{AddOrganizationMemberRequest, BasicMemberResponse, OrganizationResponse},
 };
+use alibi_core::error::codes;
 use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, CreateMember,
     entity::{AuthSession, AuthUser},
@@ -59,7 +60,7 @@ pub(crate) async fn add_member_with_session<S: AuthSchema>(
             session.active_organization_id()
         })
         .filter(|id| !id.is_empty())
-        .ok_or_else(|| org_error(400, "NO_ACTIVE_ORGANIZATION"))?;
+        .ok_or_else(|| org_error(400, codes::NO_ACTIVE_ORGANIZATION))?;
     let team_id = body.team_id.as_deref().filter(|id| !id.is_empty());
     if team_id.is_some() && !config.teams.enabled {
         return Err(AuthError::Api {
@@ -74,7 +75,7 @@ pub(crate) async fn add_member_with_session<S: AuthSchema>(
         .await?
         .ok_or(AuthError::Upstream {
             status: 400,
-            code: "USER_NOT_FOUND",
+            code: codes::USER_NOT_FOUND,
             message: "User not found",
         })?;
     // Upstream's duplicate lookup resolves the target's lowercased email first.
@@ -93,7 +94,7 @@ pub(crate) async fn add_member_with_session<S: AuthSchema>(
     {
         return Err(AuthError::Upstream {
             status: 400,
-            code: "USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION",
+            code: codes::USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION,
             message: "User is already a member of this organization",
         });
     }
@@ -104,7 +105,7 @@ pub(crate) async fn add_member_with_session<S: AuthSchema>(
             .await?
             .is_none()
     {
-        return Err(org_error(400, "TEAM_NOT_FOUND"));
+        return Err(org_error(400, codes::TEAM_NOT_FOUND));
     }
     let count = ctx
         .database
@@ -114,7 +115,7 @@ pub(crate) async fn add_member_with_session<S: AuthSchema>(
         .database
         .get_organization_by_id(organization_id)
         .await?
-        .ok_or_else(|| org_error(400, "ORGANIZATION_NOT_FOUND"))?;
+        .ok_or_else(|| org_error(400, codes::ORGANIZATION_NOT_FOUND))?;
     let original_user = ctx.user_view(&user);
     let original_organization = OrganizationResponse::from_stored_organization(&organization)?;
     let limit = crate::organization::policy::admission_limit(
@@ -126,7 +127,7 @@ pub(crate) async fn add_member_with_session<S: AuthSchema>(
     if count as f64 >= limit {
         return Err(AuthError::Upstream {
             status: 403,
-            code: "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED",
+            code: codes::ORGANIZATION_MEMBERSHIP_LIMIT_REACHED,
             message: "Organization membership limit reached",
         });
     }
@@ -174,7 +175,7 @@ pub(crate) async fn add_member_with_session<S: AuthSchema>(
             {
                 AddTeamMemberResult::Added(_) | AddTeamMemberResult::Existing(_) => Ok(()),
                 AddTeamMemberResult::LimitReached => {
-                    Err(org_error(403, "TEAM_MEMBER_LIMIT_REACHED"))
+                    Err(org_error(403, codes::TEAM_MEMBER_LIMIT_REACHED))
                 }
             }
         }
