@@ -394,12 +394,28 @@ mod tests {
                 .build()
                 .await
                 .unwrap();
-            let response = handle(
-                &auth,
-                AuthRequest::new(HttpMethod::Get, format!("/identity{path}")),
-            )
-            .await
-            .unwrap();
+            let result = auth
+                .dispatch_endpoint(
+                    OpenApiPlugin::open_api_reference_endpoint(),
+                    alibi::endpoint::EndpointOptions::default(),
+                )
+                .await;
+            let response = if disabled {
+                let error = result.unwrap_err();
+                assert_eq!(error.error.status_code(), 404);
+                assert!(error.body_absent);
+                assert!(error.body.is_none());
+                handle(
+                    &auth,
+                    AuthRequest::new(HttpMethod::Get, format!("/identity{path}")),
+                )
+                .await
+                .unwrap()
+            } else {
+                let output = result.unwrap();
+                assert!(output.http_response().is_some());
+                output.into_response().unwrap()
+            };
             assert_eq!(response.status, if disabled { 404 } else { 200 });
             if disabled {
                 assert!(response.body.is_empty());

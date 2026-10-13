@@ -62,6 +62,21 @@ impl OpenApiPlugin {
         ServerEndpoint::new("open-api", "generateOpenAPISchema")
     }
 
+    /// Return the configured HTML reference as an HTTP response value.
+    #[must_use]
+    pub fn open_api_reference_endpoint() -> ServerEndpoint<serde_json::Value> {
+        ServerEndpoint::new("open-api", "openAPIReference")
+    }
+
+    fn reference<S: AuthSchema>(&self, ctx: &AuthContext<S>) -> AuthResult<AuthResponse> {
+        let spec = Self::generate_schema(ctx, self.config.include_native_extensions)?;
+        let schema = serde_json::to_string(&spec)?;
+        Ok(
+            AuthResponse::html(200, reference_html(&schema, &self.config))
+                .with_header("content-type", "text/html"),
+        )
+    }
+
     fn generate_schema<S: AuthSchema>(
         ctx: &AuthContext<S>,
         include_native_extensions: bool,
@@ -92,19 +107,39 @@ impl<S: AuthSchema> AuthPlugin<S> for OpenApiPlugin {
     }
 
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
-        vec![crate::endpoint::definition(
-            "generateOpenAPISchema",
-            "generateOpenAPISchema",
-            Some("/open-api/generate-schema"),
-            HttpMethod::Get,
-        )]
+        vec![
+            crate::endpoint::definition(
+                "generateOpenAPISchema",
+                "generateOpenAPISchema",
+                Some("/open-api/generate-schema"),
+                HttpMethod::Get,
+            ),
+            crate::endpoint::definition(
+                "openAPIReference",
+                "openAPIReference",
+                Some(self.path()),
+                HttpMethod::Get,
+            ),
+        ]
     }
 
     async fn on_endpoint(
         &self,
-        _call: &EndpointCall,
+        call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "openAPIReference" {
+            if self.config.disable_default_reference {
+                return Ok(EndpointResponse::error(AuthError::Api {
+                    status: 404,
+                    code: None,
+                    message: String::new(),
+                })
+                .without_error_body()
+                .with_header("content-type", "application/json"));
+            }
+            return Ok(EndpointResponse::from_http_response(self.reference(ctx)?));
+        }
         EndpointResponse::json(&Self::generate_schema(
             ctx,
             self.config.include_native_extensions,
@@ -146,18 +181,14 @@ impl<S: AuthSchema> AuthPlugin<S> for OpenApiPlugin {
                 AuthResponse::new(404).with_header("content-type", "application/json"),
             ));
         }
-        let spec = Self::generate_schema(
-            ctx,
-            path != core_paths::OPENAPI_SPEC && self.config.include_native_extensions,
-        )?;
         if is_schema {
+            let spec = Self::generate_schema(
+                ctx,
+                path != core_paths::OPENAPI_SPEC && self.config.include_native_extensions,
+            )?;
             return Ok(Some(AuthResponse::json(200, &spec)?));
         }
-        let schema = serde_json::to_string(&spec)?;
-        Ok(Some(
-            AuthResponse::html(200, reference_html(&schema, &self.config))
-                .with_header("content-type", "text/html"),
-        ))
+        Ok(Some(self.reference(ctx)?))
     }
 }
 fn reference_html(schema: &str, config: &OpenApiConfig) -> String {
