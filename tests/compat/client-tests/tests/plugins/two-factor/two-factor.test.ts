@@ -264,12 +264,49 @@ compatScenario(
     expect(state.sessions[0].token).not.toBe(signup.data!.token);
     await client.signOut();
 
+    let pendingCookie = "";
     const signIn = await client.signIn.email({
       email,
       password,
       rememberMe: false,
+      fetchOptions: {
+        onSuccess({ response }) {
+          pendingCookie = response.headers
+            .getSetCookie()
+            .filter((raw) => Boolean(Cookie.parse(raw)?.value))
+            .map((cookie) => cookie.split(";")[0])
+            .join("; ");
+        },
+      },
     });
-    const sendOtp = await client.twoFactor.sendOtp({});
+    async function serverSend(body: unknown, cookie?: string) {
+      return ctx.actor("primary").fetch(`${ctx.baseURL}/__test/server-api/two-factor-send-otp`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ body, ...(cookie ? { headers: { cookie } } : {}) }),
+      });
+    }
+    const beforeSend = await ctx.readUserState({ userId: signup.data!.user.id });
+    const beforeDelivery = await ctx.readTwoFactorOtp({ email });
+    for (const [body, cookie, status, code] of [
+      [{ trustDevice: 42 }, pendingCookie, 400, "VALIDATION_ERROR"],
+      [{ trustDevice: null }, pendingCookie, 400, "VALIDATION_ERROR"],
+      [{}, undefined, 401, "INVALID_TWO_FACTOR_COOKIE"],
+    ] as const) {
+      const rejected = await serverSend(body, cookie);
+      expect(rejected.status).toBe(status);
+      expect(((await rejected.json()) as any).code).toBe(code);
+      expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(beforeSend);
+      expect(await ctx.readTwoFactorOtp({ email })).toEqual(beforeDelivery);
+    }
+    const sent = await serverSend(
+      { userId: "untrusted-selector", trustDevice: true },
+      pendingCookie,
+    );
+    expect(sent.status).toBe(200);
+    expect(sent.headers.get("set-cookie")).toBeNull();
+    const sendOtp = { data: (await sent.json()) as any, error: null };
+    expect(sendOtp.data).toEqual({ status: true });
     const otpRecord = (await ctx.readTwoFactorOtp({ email })) as { otp: string };
     const verificationStartedAt = Date.now();
     const verifyOtp = await client.twoFactor.verifyOtp({ code: otpRecord.otp });

@@ -36,8 +36,20 @@ pub struct TotpVerified {
     pub user: serde_json::Value,
 }
 
+/// A code was persisted and handed to the configured delivery policy.
+#[derive(Debug, Deserialize)]
+pub struct TwoFactorOtpSent {
+    pub status: bool,
+}
+
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
+        definition(
+            "sendTwoFactorOTP",
+            "sendTwoFactorOTP",
+            Some("/two-factor/send-otp"),
+            HttpMethod::Post,
+        ),
         definition(
             "verifyTOTP",
             "verifyTOTP",
@@ -72,6 +84,20 @@ pub(super) fn validate(
     config: &super::TwoFactorConfig,
 ) -> AuthResult<EndpointInput> {
     let allow_passwordless = config.allow_passwordless;
+    if call.operation_id() == "sendTwoFactorOTP" {
+        return Ok(EndpointInput {
+            body: Some(validate_fields(
+                call.body(),
+                "body",
+                &[JsonField {
+                    name: "trustDevice",
+                    kind: crate::authentication_helpers::JsonFieldKind::Boolean,
+                    required: false,
+                }],
+            )?),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "verifyTOTP" {
         return Ok(EndpointInput {
             body: Some(validate_fields(
@@ -162,6 +188,31 @@ pub(super) fn validate(
 }
 
 impl TwoFactorPlugin {
+    /// Persist and deliver a code for the session owner or pending sign-in challenge.
+    #[must_use]
+    pub fn send_two_factor_otp_endpoint() -> ServerEndpoint<TwoFactorOtpSent> {
+        ServerEndpoint::new("two-factor", "sendTwoFactorOTP")
+            .with_body_value(JsValue::Object(indexmap::IndexMap::new()))
+    }
+
+    async fn send_otp_endpoint_call(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<EndpointResponse> {
+        let output = self.send_otp(call, ctx).await?;
+        let mut response = if output.status >= 400 {
+            EndpointResponse::error(crate::endpoint::error_response(output.clone()))
+                .without_error_body()
+        } else {
+            EndpointResponse::json(&alibi_core::utils::json::from_slice::<JsValue>(
+                &output.body,
+            )?)?
+        };
+        response.merge_headers(output.headers);
+        Ok(response)
+    }
+
     /// Verify an authenticator code for enrollment or a pending sign-in challenge.
     #[must_use]
     pub fn verify_totp_endpoint(input: super::VerifyTotpInput) -> ServerEndpoint<TotpVerified> {
@@ -319,7 +370,9 @@ impl TwoFactorPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
-        if call.operation_id() == "verifyTOTP" {
+        if call.operation_id() == "sendTwoFactorOTP" {
+            Box::pin(self.send_otp_endpoint_call(call, ctx)).await
+        } else if call.operation_id() == "verifyTOTP" {
             Box::pin(self.verify_totp_endpoint_call(call, ctx)).await
         } else if call.operation_id() == "getTOTPURI" {
             Box::pin(self.uri_endpoint(call, ctx)).await

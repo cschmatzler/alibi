@@ -7,7 +7,7 @@ use super::*;
     reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
 )]
 pub(in crate::two_factor) async fn send_otp_core(
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     config: &TwoFactorConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<StatusResponse, SendOtpError> {
@@ -15,7 +15,7 @@ pub(in crate::two_factor) async fn send_otp_core(
         .send_otp
         .as_ref()
         .ok_or_else(|| AuthError::bad_request("otp isn't configured"))?;
-    let state = resolve_two_factor_state(req, ctx).await?;
+    let state = Box::pin(resolve_two_factor_state(req, ctx)).await?;
 
     let otp =
         generate_numeric_string(config.otp_digits, true).ok_or(SendOtpError::InvalidGeneration)?;

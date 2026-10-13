@@ -81,7 +81,9 @@ use async_trait::async_trait;
 pub use backup_storage::{TwoFactorBackupCipher, TwoFactorBackupStorage};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
-pub use endpoint::{BackupCodesOutput, TotpOutput, TotpVerified, TwoFactorDisabled};
+pub use endpoint::{
+    BackupCodesOutput, TotpOutput, TotpVerified, TwoFactorDisabled, TwoFactorOtpSent,
+};
 use hkdf::Hkdf;
 use hmac::{Hmac, KeyInit, Mac};
 pub use otp_storage::{TwoFactorOtpCipher, TwoFactorOtpHasher, TwoFactorOtpStorage};
@@ -534,7 +536,15 @@ impl TwoFactorPlugin {
         if let Err(response) = crate::authentication_helpers::parse_body::<SendOtpRequest>(req) {
             return Ok(response);
         }
-        let response = match send_otp_core(req, &self.config, ctx).await {
+        self.send_otp(req, ctx).await
+    }
+
+    async fn send_otp<S: alibi_core::AuthSchema>(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<AuthResponse> {
+        let response = match Box::pin(send_otp_core(req, &self.config, ctx)).await {
             Ok(response) => response,
             Err(SendOtpError::InvalidGeneration) => return Ok(AuthResponse::new(500)),
             Err(SendOtpError::Auth(error)) => return Err(error),
