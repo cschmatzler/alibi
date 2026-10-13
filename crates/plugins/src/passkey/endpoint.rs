@@ -12,6 +12,12 @@ use serde_json::Value;
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
         crate::endpoint::definition(
+            "verifyPasskeyRegistration",
+            "passkeyVerifyRegistration",
+            Some("/passkey/verify-registration"),
+            HttpMethod::Post,
+        ),
+        crate::endpoint::definition(
             "generatePasskeyAuthenticationOptions",
             "passkeyGenerateAuthenticateOptions",
             Some("/passkey/generate-authenticate-options"),
@@ -56,9 +62,73 @@ pub struct PasskeyUpdated {
     pub passkey: Value,
 }
 
+/// Authenticator response and optional registration preferences.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasskeyRegistrationInput {
+    pub response: alibi_core::utils::json::JsValue,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub create_session: Option<bool>,
+}
+
+fn registration_input(call: &EndpointCall) -> AuthResult<alibi_core::utils::json::JsValue> {
+    use crate::authentication_helpers::{JsonField, JsonFieldKind, field_issue, json_type};
+    use alibi_core::utils::json::JsValue;
+    let Some(object) = call.body().and_then(JsValue::as_object) else {
+        return Err(crate::endpoint::validation(format!(
+            "[body] Invalid input: expected object, received {}",
+            json_type(call.body())
+        )));
+    };
+    let mut issues = Vec::new();
+    if !object.contains_key("response") {
+        issues.push(
+            "[body.response] Invalid input: expected nonoptional, received undefined".to_owned(),
+        );
+    }
+    for field in [
+        JsonField::string("name", false),
+        JsonField {
+            name: "createSession",
+            kind: JsonFieldKind::Boolean,
+            required: false,
+        },
+    ] {
+        if let Some(value) = object.get(field.name)
+            && let Some(issue) = field_issue(field.kind, Some(value), json_type(Some(value)))
+        {
+            issues.push(format!("[body.{}] {issue}", field.name));
+        }
+    }
+    if !issues.is_empty() {
+        return Err(crate::endpoint::validation(issues.join("; ")));
+    }
+    Ok(JsValue::Object(
+        object
+            .iter()
+            .filter(|(name, _)| matches!(name.as_str(), "response" | "name" | "createSession"))
+            .map(|(name, value)| {
+                let value = if name == "name" {
+                    JsValue::String(
+                        super::registration::trim_name(value.as_str().unwrap_or_default())
+                            .to_owned(),
+                    )
+                } else {
+                    value.clone()
+                };
+                (name.clone(), value)
+            })
+            .collect(),
+    ))
+}
+
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
     Ok(EndpointInput {
-        body: if call.operation_id() == "deletePasskey" {
+        body: if call.operation_id() == "passkeyVerifyRegistration" {
+            Some(registration_input(call)?)
+        } else if call.operation_id() == "deletePasskey" {
             Some(crate::endpoint::validate_fields(
                 call.body(),
                 "body",
@@ -122,6 +192,51 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
 }
 
 impl PasskeyPlugin {
+    /// Verify a real registration response against the issued challenge and owner.
+    #[must_use]
+    pub fn verify_passkey_registration_endpoint(
+        input: PasskeyRegistrationInput,
+    ) -> ServerEndpoint<Value> {
+        use alibi_core::utils::json::JsValue;
+        let mut body = [("response".into(), input.response)]
+            .into_iter()
+            .collect::<indexmap::IndexMap<_, _>>();
+        if let Some(name) = input.name {
+            _ = body.insert("name".into(), JsValue::String(name));
+        }
+        if let Some(create_session) = input.create_session {
+            _ = body.insert("createSession".into(), JsValue::Bool(create_session));
+        }
+        ServerEndpoint::new("passkey", "verifyPasskeyRegistration")
+            .with_body_value(JsValue::Object(body))
+    }
+
+    pub(super) async fn verify_registration_endpoint<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let output = self
+            .verify_registration(&call.body_as()?, call, ctx)
+            .await
+            .map_err(crate::helpers::unauthorized_if_unauthenticated)?;
+        let body =
+            alibi_core::utils::json::from_slice::<alibi_core::utils::json::JsValue>(&output.body)
+                .ok();
+        let mut response = if output.status >= 400 {
+            let response = EndpointResponse::error(crate::endpoint::error_response(output.clone()));
+            if let Some(body) = body {
+                response.with_error_body(body)
+            } else {
+                response.without_error_body()
+            }
+        } else {
+            EndpointResponse::json(&body)?
+        };
+        response.merge_headers(output.headers);
+        Ok(response)
+    }
+
     /// Issue an authentication challenge, optionally limiting browser hints to the signed owner.
     #[must_use]
     pub fn generate_passkey_authentication_options_endpoint() -> ServerEndpoint<Value> {

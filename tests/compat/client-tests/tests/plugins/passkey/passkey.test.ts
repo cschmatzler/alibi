@@ -142,14 +142,41 @@ compatScenario(
     expect(options.status).toBe(200);
 
     const response = authenticator.register(options.body, ctx.baseURL);
-    const registration = await ctx.rawRequest({
-      actor: "owner",
-      path: "/api/auth/passkey/verify-registration",
-      method: "POST",
-      json: { response, name: "Laptop" },
-    });
+    const registrationCookie = `${ownerCookie}; ${optionResponse.headers
+      .getSetCookie()
+      .map((cookie) => cookie.split(";")[0])
+      .join("; ")}`;
+    async function serverRegister(body: unknown, cookie?: string) {
+      const result = await owner.fetch(`${ctx.baseURL}/__test/server-api/passkey-register`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          body,
+          ...(cookie ? { headers: { cookie, origin: ctx.baseURL } } : {}),
+        }),
+      });
+      return { status: result.status, body: (await result.json()) as any };
+    }
+    for (const [body, cookie, status, code] of [
+      [{ response, name: 42 }, registrationCookie, 400, "VALIDATION_ERROR"],
+      [{ response, createSession: "true" }, registrationCookie, 400, "VALIDATION_ERROR"],
+      [{}, registrationCookie, 400, "VALIDATION_ERROR"],
+      [{ response }, undefined, 401, "UNAUTHORIZED"],
+      [{ response }, ownerCookie, 400, "CHALLENGE_NOT_FOUND"],
+    ] as const) {
+      const rejected = await serverRegister(body, cookie);
+      expect(rejected.status).toBe(status);
+      expect(rejected.body.code).toBe(code);
+    }
+    const registration = await serverRegister(
+      { response, name: " \uFEFFLaptop\u00A0 " },
+      registrationCookie,
+    );
     expect(registration.status).toBe(200);
 
+    const registrationReplay = await serverRegister({ response }, registrationCookie);
+    expect(registrationReplay.status).toBe(400);
+    expect(registrationReplay.body.code).toBe("CHALLENGE_NOT_FOUND");
     const passkey = z
       .object({ id: z.string(), userId: z.string(), credentialID: z.string(), counter: z.number() })
       .parse(registration.body);
