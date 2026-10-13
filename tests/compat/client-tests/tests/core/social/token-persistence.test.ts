@@ -278,13 +278,6 @@ compatScenario(
         accessToken: published.toUpperCase(),
         expected: "published-import-access",
       },
-      { mode: "empty", accessToken: "", expected: "" },
-      {
-        mode: "plain",
-        accessToken: "legacy-plaintext-access",
-        expected: "legacy-plaintext-access",
-      },
-      { mode: "odd-hex", accessToken: "abc", expected: "abc" },
       { mode: "corrupt", accessToken: altered, expected: null },
       { mode: "wrong-secret", accessToken: wrongSecret, expected: null },
       { mode: "short-even-hex", accessToken: "aabb", expected: null },

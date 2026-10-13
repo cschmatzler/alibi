@@ -130,8 +130,8 @@ pub(crate) async fn router(
                     "id": row.try_get::<String>("", "id").unwrap(),
                     "referenceId": row.try_get::<String>("", "referenceId").unwrap(),
                     "configId": row.try_get::<String>("", "configId").unwrap(),
-                    "remaining": row.try_get::<Option<f64>>("", "remaining").unwrap(),
-                    "requestCount": row.try_get::<Option<f64>>("", "requestCount").unwrap(),
+                    "remaining": row.try_get::<Option<alibi::seaorm::Number>>("", "remaining").unwrap(),
+                    "requestCount": row.try_get::<Option<alibi::seaorm::Number>>("", "requestCount").unwrap(),
                     "enabled": row.try_get::<bool>("", "enabled").unwrap(),
                 })).collect();
                 let sessions = database.query_one_raw(Statement::from_sql_and_values(
