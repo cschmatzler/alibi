@@ -7,6 +7,12 @@ use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema};
 use serde_json::{Value, json};
 const ALGORITHMS: &[&str] = &["EdDSA", "ES256", "ES512", "PS256", "RS256"];
 pub(super) fn validate_create(input: Option<&JsValue>) -> AuthResult<JsValue> {
+    validate_body(input, true)
+}
+pub(super) fn validate_update(input: Option<&JsValue>) -> AuthResult<JsValue> {
+    validate_body(input, false)
+}
+fn validate_body(input: Option<&JsValue>, require_identifier: bool) -> AuthResult<JsValue> {
     use crate::authentication_helpers::{JsonField, JsonFieldKind, field_issue, json_type};
     let mut output = crate::endpoint::validate_fields(
         input,
@@ -14,7 +20,7 @@ pub(super) fn validate_create(input: Option<&JsValue>) -> AuthResult<JsValue> {
         &[JsonField {
             name: "identifier",
             kind: JsonFieldKind::NonEmptyString,
-            required: true,
+            required: require_identifier,
         }],
     )?;
     let mut issues = Vec::new();
@@ -290,6 +296,64 @@ impl OAuthProviderPlugin {
         if let Some(response) = Box::pin(self.resource_admission(req, ctx)).await? {
             return Ok(response);
         }
+        let Some(row) = ctx.database.get_oauth_resource(&identifier).await? else {
+            return super::clients::status_protocol_error(
+                404,
+                "not_found",
+                &format!("resource {identifier} not found"),
+            );
+        };
+        EndpointResponse::json(&resource_value(row)?)
+    }
+}
+
+impl OAuthProviderPlugin {
+    /// Patch the provider's durable resource policy without changing its identifier.
+    pub fn admin_update_oauth_resource_endpoint(
+        identifier: &str,
+        patch: &impl serde::Serialize,
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("oauth-provider", "adminUpdateOAuthResource")
+            .with_params(&json!({"identifier":identifier}))?
+            .with_body(patch)
+    }
+    pub(super) async fn update_resource<S: AuthSchema>(
+        &self,
+        params: Option<&JsValue>,
+        input: Value,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let identifier = decode_parameter(params, "identifier")?;
+        if let Some(response) = Box::pin(self.resource_admission(req, ctx)).await? {
+            return Ok(response);
+        }
+        let Some(row) = ctx.database.get_oauth_resource(&identifier).await? else {
+            return super::clients::status_protocol_error(
+                404,
+                "not_found",
+                &format!("resource {identifier} not found"),
+            );
+        };
+        let mut metadata = row
+            .metadata
+            .as_object()
+            .cloned()
+            .ok_or_else(|| AuthError::internal("Invalid resource metadata"))?;
+        for (name, value) in input
+            .as_object()
+            .ok_or_else(|| AuthError::internal("Invalid resource update"))?
+        {
+            if name != "identifier" {
+                _ = metadata.insert(name.clone(), value.clone());
+            }
+        }
+        let now = chrono::DateTime::from_timestamp_millis(chrono::Utc::now().timestamp_millis())
+            .ok_or_else(|| AuthError::internal("Invalid resource update timestamp"))?;
+        _ = ctx
+            .database
+            .update_oauth_resource(&identifier, Value::Object(metadata), now)
+            .await?;
         let Some(row) = ctx.database.get_oauth_resource(&identifier).await? else {
             return super::clients::status_protocol_error(
                 404,
