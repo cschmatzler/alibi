@@ -601,12 +601,38 @@ where
 
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
         let user_id = <S::Session as SeaOrmSessionModel>::parse_user_id(user_id)?;
-        <S::Session as SeaOrmSessionModel>::Entity::delete_many()
+        let sessions = if self.hooks().is_empty() {
+            Vec::new()
+        } else {
+            <S::Session as SeaOrmSessionModel>::Entity::find()
+                .filter(S::Session::user_id_column().eq(user_id.clone()))
+                .all(self.scoped_connection())
+                .await
+                .map_err(map_db_err)?
+        };
+        let hook_context = self.hook_context(None);
+        for session in &sessions {
+            for hook in self.hooks() {
+                if hook
+                    .before_delete_session(session, &hook_context)
+                    .await?
+                    .is_cancelled()
+                {
+                    return Ok(());
+                }
+            }
+        }
+        _ = <S::Session as SeaOrmSessionModel>::Entity::delete_many()
             .filter(<S::Session as SeaOrmSessionModel>::user_id_column().eq(user_id))
             .exec(self.scoped_connection())
             .await
-            .map(|_| ())
-            .map_err(map_db_err)
+            .map_err(map_db_err)?;
+        for session in &sessions {
+            for hook in self.hooks() {
+                hook.after_delete_session(session, &hook_context).await?;
+            }
+        }
+        Ok(())
     }
 
     async fn delete_expired_sessions(&self) -> AuthResult<usize> {

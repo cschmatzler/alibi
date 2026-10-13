@@ -606,11 +606,42 @@ where
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
         let user_id = <S::Session as SqlxSessionModel>::parse_user_id(user_id)?;
         let table = <S::Session as SqlxModel>::TABLE;
+        let sessions = if self.hooks().is_empty() {
+            Vec::new()
+        } else {
+            let mut query = model::select_model::<S::Session>(self.exec());
+            query.push(" WHERE ");
+            query.compare_model::<S::Session>(
+                table,
+                S::Session::user_id_column(),
+                " = ",
+                user_id.clone(),
+            );
+            self.exec().fetch_all::<S::Session>(query).await?
+        };
+        let hook_context = self.hook_context(None);
+        for session in &sessions {
+            for hook in self.hooks() {
+                if hook
+                    .before_delete_session(session, &hook_context)
+                    .await?
+                    .is_cancelled()
+                {
+                    return Ok(());
+                }
+            }
+        }
         let mut sql = Sql::with(self.exec().engine(), "DELETE FROM ");
         sql.ident(table);
         sql.push(" WHERE ");
         sql.compare_model::<S::Session>(table, S::Session::user_id_column(), " = ", user_id);
-        self.exec().execute(sql).await.map(|_| ())
+        _ = self.exec().execute(sql).await?;
+        for session in &sessions {
+            for hook in self.hooks() {
+                hook.after_delete_session(session, &hook_context).await?;
+            }
+        }
+        Ok(())
     }
 
     async fn delete_expired_sessions(&self) -> AuthResult<usize> {

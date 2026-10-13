@@ -17,8 +17,14 @@ use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
-backend_tests!(database_callback_veto_mutation_missing_and_after_error_effects);
-postgres_tests!(database_callback_veto_mutation_missing_and_after_error_effects);
+backend_tests!(
+    bulk_session_delete_hooks,
+    database_callback_veto_mutation_missing_and_after_error_effects
+);
+postgres_tests!(
+    bulk_session_delete_hooks,
+    database_callback_veto_mutation_missing_and_after_error_effects
+);
 #[derive(Clone, Default)]
 struct Application {
     mode: Arc<Mutex<&'static str>>,
@@ -120,10 +126,14 @@ impl<S: AuthSchema, H: HookBackend> DatabaseHooks<S, H> for Application {
         session: &S::Session,
         _: &DatabaseHookContext<'_, H>,
     ) -> AuthResult<HookControl> {
-        self.before(
+        let control = self.before(
             "session-delete",
             json!([session.token(), session.ip_address()]),
-        )
+        )?;
+        if *self.mode.lock().unwrap() == "session-delete-second" && session.token() == "second" {
+            return Ok(HookControl::Cancel);
+        }
+        Ok(control)
     }
     async fn after_delete_session(
         &self,
@@ -441,5 +451,72 @@ async fn database_callback_veto_mutation_missing_and_after_error_effects<B: Back
         *hooks.events.lock().unwrap(),
         vec![json!(["user-deleted", [user_id, "callback@example.test"]])]
     );
+    B::close(connection).await
+}
+
+async fn bulk_session_delete_hooks<B: Backend>(db: Db) -> TestResult {
+    let (connection, raw) = db
+        .migrated::<B>("bulk-session-hook-secret-32-characters")
+        .await?;
+    let hooks = Application::default();
+    let store = B::hook(raw, hooks.clone());
+    let user = store
+        .create_user(CreateUser::new().with_email("bulk@example.test"))
+        .await?;
+    let other = store
+        .create_user(CreateUser::new().with_email("other@example.test"))
+        .await?;
+    for (token, owner) in [
+        ("first", user.id()),
+        ("second", user.id()),
+        ("other", other.id()),
+    ] {
+        _ = store
+            .create_session(CreateSession {
+                user_id: owner.into_owned(),
+                token: Some(token.into()),
+                expires_at: Utc::now() + Duration::hours(if token == "second" { -1 } else { 1 }),
+                additional_fields: Default::default(),
+                ip_address: None,
+                user_agent: None,
+                impersonated_by: None,
+                active_organization_id: None,
+                active_team_id: None,
+            })
+            .await?;
+    }
+    // Bulk hooks must also see inactive and expired rows, which are deleted too.
+    _ = db
+        .raw
+        .execute("UPDATE sessions SET active=false WHERE token='second'", &[])
+        .await?;
+    hooks.set("session-delete-second");
+    let retained = db.table("sessions").await?;
+    store.delete_user_sessions(&user.id()).await?;
+    assert_eq!(db.table("sessions").await?, retained);
+    let veto_events = hooks.events.lock().unwrap().clone();
+    assert!(veto_events.iter().all(|event| event[0] == "session-delete"));
+    assert_eq!(veto_events.last().unwrap()[1][0], "second");
+    hooks.set("");
+    store.delete_user_sessions(&user.id()).await?;
+    assert_eq!(db.count("sessions").await?, 1);
+    assert!(store.get_session("other").await?.is_some());
+    let events = hooks.events.lock().unwrap().clone();
+    assert_eq!(events.len(), 4);
+    assert!(events[..2].iter().all(|event| event[0] == "session-delete"));
+    assert!(
+        events[2..]
+            .iter()
+            .all(|event| event[0] == "session-deleted")
+    );
+    let mut before: Vec<_> = events[..2].iter().map(|event| event[1].clone()).collect();
+    let mut after: Vec<_> = events[2..].iter().map(|event| event[1].clone()).collect();
+    before.sort_by_key(Value::to_string);
+    after.sort_by_key(Value::to_string);
+    assert_eq!(before, vec![json!(["first", ""]), json!(["second", ""])]);
+    assert_eq!(after, before);
+    hooks.set("");
+    store.delete_user_sessions(&user.id()).await?;
+    assert!(hooks.events.lock().unwrap().is_empty());
     B::close(connection).await
 }
