@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 hickory-proto = "0.26.3"
+uuid = { version = "1", features = ["v4"] }
 alibi = { path = "../../..", features = ["axum", "seaorm", "passkey"] }
 sqlx = { version = "0.9", default-features = false, features = ["sqlite", "chrono", "json", "derive"] }
 tokio = { version = "1", features = ["full"] }

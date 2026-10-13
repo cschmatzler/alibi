@@ -1,4 +1,5 @@
 //! Enterprise single-sign-on provider registration.
+mod callback;
 mod domain_confirmation;
 mod domain_verification;
 mod provider_delete;
@@ -295,6 +296,7 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         let mut routes = vec![
+            AuthRoute::get("/sso/callback/:providerId", "handleSSOCallback"),
             AuthRoute::post("/sign-in/sso", "signInSSO"),
             AuthRoute::post("/sso/register", "registerSSOProvider"),
             AuthRoute::get("/sso/get-provider", "getSSOProvider"),
@@ -313,6 +315,12 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         let mut endpoints = vec![
+            super::endpoint::definition(
+                "callbackSSO",
+                "handleSSOCallback",
+                Some("/sso/callback/:providerId"),
+                HttpMethod::Get,
+            ),
             super::endpoint::definition(
                 "signInSSO",
                 "signInSSO",
@@ -371,6 +379,24 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
+        if call.operation_id() == "handleSSOCallback" {
+            return Ok(EndpointInput {
+                body: None,
+                query: Some(super::endpoint::validate_fields(
+                    call.query(),
+                    "query",
+                    &[
+                        super::authentication_helpers::JsonField::string("code", false),
+                        super::authentication_helpers::JsonField::string("state", false),
+                        super::authentication_helpers::JsonField::string("error", false),
+                        super::authentication_helpers::JsonField::string(
+                            "error_description",
+                            false,
+                        ),
+                    ],
+                )?),
+            });
+        }
         if call.operation_id() == "signInSSO" {
             return Ok(EndpointInput {
                 body: Some(sign_in::validate(call.body())?),
@@ -414,6 +440,23 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "handleSSOCallback" {
+            let provider_id = call
+                .params()
+                .and_then(|params| params.get("providerId"))
+                .and_then(JsValue::as_str)
+                .ok_or_else(|| super::endpoint::validation("Missing providerId"))?;
+            let query = call
+                .query()
+                .map(JsValue::to_json_value)
+                .transpose()?
+                .unwrap_or_else(|| json!({}));
+            let meta = call.request().map_or_else(
+                alibi_core::RequestMeta::default,
+                alibi_core::RequestMeta::from_request,
+            );
+            return self.callback(provider_id, &query, call, &meta, ctx).await;
+        }
         if call.operation_id() == "signInSSO" {
             return self
                 .sign_in(
@@ -489,6 +532,22 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if let Some(provider_id) = req.path().strip_prefix("/sso/callback/")
+            && *req.method() == HttpMethod::Get
+            && !provider_id.contains('/')
+        {
+            return Ok(Some(
+                self.callback(
+                    provider_id,
+                    &serde_json::to_value(&req.query)?,
+                    req,
+                    &alibi_core::RequestMeta::from_request(req),
+                    ctx,
+                )
+                .await?
+                .to_response()?,
+            ));
+        }
         if req.path() == "/sign-in/sso" && *req.method() == HttpMethod::Post {
             let input = alibi_core::utils::json::parse_value(
                 std::str::from_utf8(req.body.as_deref().unwrap_or_default())
