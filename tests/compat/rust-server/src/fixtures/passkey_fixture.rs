@@ -61,6 +61,7 @@ impl alibi::plugins::passkey::PasskeyExtensionsResolver for ExtensionInputs {
         }
         let marker = context
             .request
+            .unwrap()
             .headers
             .get("x-extension-marker")
             .map(String::as_str)
@@ -73,7 +74,7 @@ impl alibi::plugins::passkey::PasskeyExtensionsResolver for ExtensionInputs {
             }
             Ok(json!({"credProps": false, "minPinLength": marker == "registration-marker"}))
         } else {
-            let path = context.request.path().rsplit('/').next().unwrap();
+            let path = context.request.unwrap().path().rsplit('/').next().unwrap();
             Ok(json!({"appid":format!("https://extensions.fixture.test/{marker}/{path}")}))
         }
     }

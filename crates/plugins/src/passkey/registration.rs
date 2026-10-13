@@ -16,7 +16,10 @@ pub struct PasskeyRegistrationUser {
 /// Immutable request and application settings; captures may hold typed services.
 /// A captured store is not automatically rebound to the registration transaction.
 pub struct PasskeyRegistrationContext<'a> {
-    pub request: &'a AuthRequest,
+    /// Original physical request, when one was supplied.
+    pub request: Option<&'a AuthRequest>,
+    /// Genuine logical input for server API calls.
+    pub endpoint: Option<&'a alibi_core::endpoint::EndpointCall>,
     pub auth_config: &'a AuthConfig,
     pub extensions: &'a ContextExtensions,
 }

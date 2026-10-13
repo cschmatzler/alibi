@@ -2277,6 +2277,20 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       asResponse: true,
     });
   }
+  if (url.pathname === "/__test/server-api/passkey-register-options" && request.method === "POST") {
+    const input = await readJson(request);
+    return auth.api.generatePasskeyRegistrationOptions({
+      ...(input?.query !== undefined
+        ? {
+            query: input.query as Parameters<
+              typeof auth.api.generatePasskeyRegistrationOptions
+            >[0]["query"],
+          }
+        : {}),
+      ...(input?.headers ? { headers: new Headers(input.headers as Record<string, string>) } : {}),
+      asResponse: true,
+    });
+  }
   if (url.pathname === "/__test/server-api/passkey-update" && request.method === "POST") {
     const input = await readJson(request);
     return auth.api.updatePasskey({

@@ -83,6 +83,15 @@ impl PasskeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
+        self.generate_register_options(req, &req.query, ctx).await
+    }
+
+    async fn generate_register_options<S: alibi_core::AuthSchema>(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        query: &std::collections::HashMap<String, String>,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<AuthResponse> {
         use alibi_core::AuthUser;
         let session = self.registration_session(req, ctx).await?;
         let projected_user = session.as_ref().map(|(user, _)| ctx.user_view(user));
@@ -106,12 +115,13 @@ impl PasskeyPlugin {
                 )?);
             };
             let context = PasskeyRegistrationContext {
-                request: req,
+                request: req.physical_request(),
+                endpoint: req.endpoint_call(),
                 auth_config: &ctx.config,
                 extensions: &ctx.extensions,
             };
             match resolver
-                .resolve_user(&context, req.query.get("context").map(String::as_str))
+                .resolve_user(&context, query.get("context").map(String::as_str))
                 .await
             {
                 Ok(Some(user)) if !user.id.is_empty() && !user.name.is_empty() => user,
@@ -129,7 +139,8 @@ impl PasskeyPlugin {
             Some(
                 input
                     .resolve(&PasskeyOptionsContext {
-                        request: req,
+                        request: req.physical_request(),
+                        endpoint: req.endpoint_call(),
                         auth_config: &ctx.config,
                         extensions: &ctx.extensions,
                         user: projected_user.as_ref(),
@@ -139,11 +150,11 @@ impl PasskeyPlugin {
         } else {
             None
         };
-        let passkey_name = req.query.get("name").map(String::as_str);
-        let authenticator_attachment = req.query.get("authenticatorAttachment").map(String::as_str);
+        let passkey_name = query.get("name").map(String::as_str);
+        let authenticator_attachment = query.get("authenticatorAttachment").map(String::as_str);
         let (result, cookie_header) = generate_register_options_core(
             &user,
-            req.query.get("context").map(String::as_str),
+            query.get("context").map(String::as_str),
             passkey_name,
             authenticator_attachment,
             extensions,
@@ -222,7 +233,7 @@ impl PasskeyPlugin {
 
     async fn registration_session<S: alibi_core::AuthSchema>(
         &self,
-        req: &AuthRequest,
+        req: &impl alibi_core::session::SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<
         Option<(
@@ -264,7 +275,8 @@ impl PasskeyPlugin {
             Some(
                 input
                     .resolve(&PasskeyOptionsContext {
-                        request: req,
+                        request: Some(req),
+                        endpoint: None,
                         auth_config: &ctx.config,
                         extensions: &ctx.extensions,
                         user: projected_user.as_ref(),
@@ -379,7 +391,7 @@ alibi_core::impl_auth_plugin! {
         endpoint::validate(call)
     }
     async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
-        if call.operation_id() == "deletePasskey" { self.delete_endpoint(call, ctx).await } else if call.operation_id() == "updatePasskey" { self.update_endpoint(call, ctx).await } else { self.list_endpoint(call, ctx).await }
+        if call.operation_id() == "generatePasskeyRegistrationOptions" { self.registration_options_endpoint(call, ctx).await } else if call.operation_id() == "deletePasskey" { self.delete_endpoint(call, ctx).await } else if call.operation_id() == "updatePasskey" { self.update_endpoint(call, ctx).await } else { self.list_endpoint(call, ctx).await }
     }
     route_openapi_metadata!(S);
  }

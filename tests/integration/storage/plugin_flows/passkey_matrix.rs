@@ -120,17 +120,69 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         .build()
         .await?;
     let owner = cookies(&signup(&auth, "passkey-matrix@example.com").await);
+    let before_options = db
+        .tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+        .await?;
+    for (query, cookie, status, code) in [
+        (None, None, 401, "UNAUTHORIZED"),
+        (
+            Some(json!({"name":42})),
+            Some(owner.as_str()),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (
+            Some(json!({"authenticatorAttachment":"invalid"})),
+            Some(owner.as_str()),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (
+            Some(json!({"context":null})),
+            Some(owner.as_str()),
+            400,
+            "VALIDATION_ERROR",
+        ),
+    ] {
+        let mut endpoint = PasskeyPlugin::generate_passkey_registration_options_endpoint();
+        if let Some(query) = query {
+            endpoint = endpoint.with_query(&query)?;
+        }
+        let error = Box::pin(
+            auth.dispatch_endpoint(
+                endpoint,
+                alibi::endpoint::EndpointOptions {
+                    headers: cookie
+                        .map(|cookie| [("cookie".into(), cookie.to_owned())].into_iter().collect()),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.error.status_code(), status);
+        assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                .await?,
+            before_options
+        );
+    }
     let register = async |authenticator: &Authenticator,
                           client: &dyn Fn(&Value) -> Value,
                           flags: u8,
                           curve: i128,
                           padded: bool| {
-        let options = call(
-            &auth,
-            request("/passkey/generate-register-options", None, &owner),
-            200,
-        )
-        .await;
+        let options = Box::pin(auth.dispatch_endpoint(
+            PasskeyPlugin::generate_passkey_registration_options_endpoint()
+                .with_query(&json!({"name":"Matrix credential","context":"native-enrollment","authenticatorAttachment":"platform"})).unwrap(),
+            alibi::endpoint::EndpointOptions { headers: Some([("cookie".to_owned(),owner.clone())].into_iter().collect()), ..Default::default() }
+        )).await.unwrap().into_response().unwrap();
+        assert_eq!(body(&options)["user"]["name"], "Matrix credential");
+        assert_eq!(
+            body(&options)["authenticatorSelection"]["authenticatorAttachment"],
+            "platform"
+        );
         let proof = authenticator.registration(
             &client(&body(&options)["challenge"]),
             &authenticator.attestation("localhost", flags, curve),

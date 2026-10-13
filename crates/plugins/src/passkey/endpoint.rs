@@ -12,6 +12,12 @@ use serde_json::Value;
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
         crate::endpoint::definition(
+            "generatePasskeyRegistrationOptions",
+            "generatePasskeyRegistrationOptions",
+            Some("/passkey/generate-register-options"),
+            HttpMethod::Get,
+        ),
+        crate::endpoint::definition(
             "updatePasskey",
             "updatePasskey",
             Some("/passkey/update-passkey"),
@@ -82,11 +88,75 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
         } else {
             call.body().cloned()
         },
-        query: call.query().cloned(),
+        query: if call.operation_id() == "generatePasskeyRegistrationOptions" {
+            call.query()
+                .map(|query| {
+                    crate::endpoint::validate_fields(
+                        Some(query),
+                        "query",
+                        &[
+                            crate::authentication_helpers::JsonField {
+                                name: "authenticatorAttachment",
+                                kind: crate::authentication_helpers::JsonFieldKind::OneOf(&[
+                                    "platform",
+                                    "cross-platform",
+                                ]),
+                                required: false,
+                            },
+                            crate::authentication_helpers::JsonField::string("name", false),
+                            crate::authentication_helpers::JsonField::string("context", false),
+                        ],
+                    )
+                })
+                .transpose()?
+        } else {
+            call.query().cloned()
+        },
     })
 }
 
 impl PasskeyPlugin {
+    /// Generate a challenge for registering a credential under the current owner.
+    #[must_use]
+    pub fn generate_passkey_registration_options_endpoint() -> ServerEndpoint<Value> {
+        ServerEndpoint::new("passkey", "generatePasskeyRegistrationOptions")
+    }
+
+    pub(super) async fn registration_options_endpoint<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let query = call
+            .query()
+            .and_then(alibi_core::utils::json::JsValue::as_object)
+            .map(|object| {
+                object
+                    .iter()
+                    .filter_map(|(name, value)| {
+                        value.as_str().map(|value| (name.clone(), value.to_owned()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let output = self
+            .generate_register_options(call, &query, ctx)
+            .await
+            .map_err(crate::helpers::unauthorized_if_unauthenticated)?;
+        if output.status >= 400 {
+            let headers = output.headers.clone();
+            let mut response = EndpointResponse::error(crate::endpoint::error_response(output));
+            response.merge_headers(headers);
+            Ok(response)
+        } else {
+            let mut response = EndpointResponse::json(&alibi_core::utils::json::from_slice::<
+                alibi_core::utils::json::JsValue,
+            >(&output.body)?)?;
+            response.merge_headers(output.headers);
+            Ok(response)
+        }
+    }
+
     /// Rename a registered credential under its owner's signed session.
     #[must_use]
     pub fn update_passkey_endpoint(
