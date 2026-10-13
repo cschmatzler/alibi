@@ -11,6 +11,7 @@ mod saml_acs;
 mod saml_crypto;
 mod saml_logout;
 mod saml_sign_in;
+mod saml_slo;
 mod sign_in;
 mod sp_metadata;
 use alibi_core::endpoint::{
@@ -40,6 +41,8 @@ pub struct SsoConfig {
     pub saml_require_timestamps: bool,
     pub saml_max_response_size: usize,
     pub saml_enable_single_logout: bool,
+    pub saml_want_logout_request_signed: bool,
+    pub saml_want_logout_response_signed: bool,
     pub saml_logout_request_ttl: chrono::Duration,
 }
 impl Default for SsoConfig {
@@ -57,6 +60,8 @@ impl Default for SsoConfig {
             saml_require_timestamps: false,
             saml_max_response_size: 262_144,
             saml_enable_single_logout: false,
+            saml_want_logout_request_signed: false,
+            saml_want_logout_response_signed: false,
             saml_logout_request_ttl: chrono::Duration::minutes(5),
         }
     }
@@ -342,7 +347,9 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         vec!["/sso/saml2/sp/acs", "/sso/saml2/sp/slo"]
     }
     fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
-        if route.path.starts_with("/sso/saml2/sp/acs/") {
+        if route.path.starts_with("/sso/saml2/sp/acs/")
+            || route.path.starts_with("/sso/saml2/sp/slo/")
+        {
             vec!["application/x-www-form-urlencoded", "application/json"]
         } else {
             vec!["application/json"]
@@ -350,6 +357,8 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         let mut routes = vec![
+            AuthRoute::get("/sso/saml2/sp/slo/:providerId", "sloEndpoint"),
+            AuthRoute::post("/sso/saml2/sp/slo/:providerId", "sloEndpoint"),
             AuthRoute::post("/sso/saml2/logout/:providerId", "initiateSLO"),
             AuthRoute::get("/sso/callback/:providerId", "handleSSOCallback"),
             AuthRoute::get("/sso/callback", "handleSSOCallbackShared"),
@@ -380,6 +389,12 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         let mut endpoints = vec![
+            super::endpoint::definition(
+                "sloEndpoint",
+                "sloEndpoint",
+                Some("/sso/saml2/sp/slo/:providerId"),
+                HttpMethod::Get,
+            ),
             super::endpoint::definition(
                 "initiateSLO",
                 "initiateSLO",
@@ -468,6 +483,12 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
+        if call.operation_id() == "sloEndpoint" {
+            return Ok(EndpointInput {
+                body: saml_slo::validate(call.body(), "body")?,
+                query: saml_slo::validate(call.query(), "query")?,
+            });
+        }
         if call.operation_id() == "initiateSLO" {
             return Ok(EndpointInput {
                 body: Some(saml_logout::validate(call.body())?),
@@ -547,6 +568,18 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "sloEndpoint" {
+            let provider = call
+                .params()
+                .and_then(|params| params.get("providerId"))
+                .and_then(JsValue::as_str)
+                .ok_or_else(|| crate::endpoint::validation("Missing providerId"))?;
+            let body = call.body().map(JsValue::to_json_value).transpose()?;
+            let query = call.query().map(JsValue::to_json_value).transpose()?;
+            return self
+                .slo(provider, body.as_ref(), query.as_ref(), call, ctx)
+                .await;
+        }
         if call.operation_id() == "initiateSLO" {
             let provider = call
                 .params()
@@ -687,6 +720,38 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if let Some(provider) = req.path().strip_prefix("/sso/saml2/sp/slo/")
+            && matches!(req.method(), HttpMethod::Get | HttpMethod::Post)
+            && !provider.contains('/')
+        {
+            let body = if let Some(bytes) = req.body.as_deref() {
+                if req
+                    .header("content-type")
+                    .is_some_and(|type_| type_.starts_with("application/x-www-form-urlencoded"))
+                {
+                    Some(serde_json::to_value(
+                        url::form_urlencoded::parse(bytes)
+                            .into_owned()
+                            .collect::<std::collections::HashMap<_, _>>(),
+                    )?)
+                } else {
+                    Some(serde_json::from_slice::<Value>(bytes)?)
+                }
+            } else {
+                None
+            };
+            return Ok(Some(
+                self.slo(
+                    provider,
+                    body.as_ref(),
+                    Some(&serde_json::to_value(&req.query)?),
+                    req,
+                    ctx,
+                )
+                .await?
+                .to_response()?,
+            ));
+        }
         if let Some(provider) = req.path().strip_prefix("/sso/saml2/logout/")
             && *req.method() == HttpMethod::Post
             && !provider.contains('/')

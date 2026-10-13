@@ -6,8 +6,20 @@ use alibi::plugins::{SsoConfig, SsoPlugin};
 use alibi::{AuthVerification, store::VerificationStore};
 use base64::Engine as _;
 use std::io::Read as _;
-backend_tests!(sso_logout_uses_acs_session_index_and_retires_session);
+backend_tests!(
+    sso_logout_uses_acs_session_index_and_retires_session,
+    sso_logout_response_retires_proof_and_rejects_external_relay,
+    sso_idp_logout_matches_session_index_before_retiring_session
+);
 async fn sso_logout_uses_acs_session_index_and_retires_session<B: Backend>(db: Db) -> TestResult {
+    logout_flow::<B>(db, false).await
+}
+async fn sso_logout_response_retires_proof_and_rejects_external_relay<B: Backend>(
+    db: Db,
+) -> TestResult {
+    logout_flow::<B>(db, true).await
+}
+async fn logout_flow<B: Backend>(db: Db, complete: bool) -> TestResult {
     let (connection, store) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(SsoPlugin::with_config(SsoConfig {
@@ -167,5 +179,161 @@ async fn sso_logout_uses_acs_session_index_and_retires_session<B: Backend>(db: D
             .any(|cookie| cookie.starts_with("better-auth.session_token=")
                 && cookie.contains("Max-Age=0"))
     );
+    if complete {
+        let response=base64::engine::general_purpose::STANDARD.encode(format!(r#"<samlp:LogoutResponse xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_idp-logout-response" Version="2.0" IssueInstant="{}" InResponseTo="{id}"><saml:Issuer>https://idp.example.test/entity</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status></samlp:LogoutResponse>"#,chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis,true)));
+        let endpoint = ServerEndpoint::<Value>::new("sso", "sloEndpoint")
+            .with_params(&json!({"providerId":"logout-provider"}))?
+            .with_body(
+                &json!({"SAMLResponse":response,"RelayState":"https://attacker.example/steal"}),
+            )?;
+        let completed = Box::pin(auth.dispatch_endpoint(
+            endpoint.clone(),
+            EndpointOptions {
+                method: Some(HttpMethod::Post),
+                ..Default::default()
+            },
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(completed.status, 302);
+        assert_eq!(
+            completed.headers.get("location").map(String::as_str),
+            Some(ORIGIN)
+        );
+        assert!(
+            store
+                .get_latest_verification_by_identifier(&format!("saml-logout-request:{id}"))
+                .await?
+                .is_none()
+        );
+        let repeated = Box::pin(auth.dispatch_endpoint(
+            endpoint,
+            EndpointOptions {
+                method: Some(HttpMethod::Post),
+                ..Default::default()
+            },
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(repeated.status, 302);
+    }
+    B::close(connection).await
+}
+
+async fn sso_idp_logout_matches_session_index_before_retiring_session<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(SsoPlugin::with_config(SsoConfig {
+            saml_enable_single_logout: true,
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "idp-logout-owner@example.test").await;
+    let cert = include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem");
+    let input = json!({"providerId":"idp-logout-provider","issuer":"https://sp.example.test/entity","domain":"company.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":cert,"idpMetadata":{"entityID":"https://idp.example.test/entity","singleLogoutService":[{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST","Location":"https://idp.example.test/logout-post"}]},"wantAssertionsSigned":true}});
+    let created = Box::pin(auth.dispatch_endpoint(
+        SsoPlugin::register_sso_provider_endpoint(&input)?,
+        EndpointOptions {
+            headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(created.status, 200);
+    for matching in [true, false] {
+        let email = if matching {
+            "matched-logout@example.test"
+        } else {
+            "mismatched-logout@example.test"
+        };
+        let started=Box::pin(auth.dispatch_endpoint(SsoPlugin::sign_in_sso_endpoint(&json!({"providerId":"idp-logout-provider","callbackURL":format!("{ORIGIN}/complete")}))?,EndpointOptions::default())).await?.into_response()?;
+        let grant = idp::grant(body(&started)["url"].as_str().unwrap(), email, false)?;
+        let completed = Box::pin(
+            auth.dispatch_endpoint(
+                ServerEndpoint::<Value>::new("sso", "acsEndpoint")
+                    .with_params(&json!({"providerId":"idp-logout-provider"}))?
+                    .with_body(&grant)?,
+                EndpointOptions::default(),
+            ),
+        )
+        .await?
+        .into_response()?;
+        assert_eq!(completed.status, 302);
+        let cookie = cookies(&completed);
+        let session =
+            body(&call(&auth, request("/get-session", None, &cookie), 200).await)["session"]
+                .clone();
+        let request_id = if matching {
+            "_idp-matching-request"
+        } else {
+            "_idp-mismatched-request"
+        };
+        let index = if matching {
+            "session-index"
+        } else {
+            "another-session"
+        };
+        let xml = format!(
+            r#"<samlp:LogoutRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="{request_id}" Version="2.0" IssueInstant="{}"><saml:Issuer>https://idp.example.test/entity</saml:Issuer><saml:NameID>{email}</saml:NameID><samlp:SessionIndex>{index}</samlp:SessionIndex></samlp:LogoutRequest>"#,
+            chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+        );
+        let endpoint=ServerEndpoint::<Value>::new("sso","sloEndpoint").with_params(&json!({"providerId":"idp-logout-provider"}))?.with_body(&json!({"SAMLRequest":base64::engine::general_purpose::STANDARD.encode(xml),"RelayState":"opaque-relay"}))?;
+        let output = Box::pin(auth.dispatch_endpoint(
+            endpoint,
+            EndpointOptions {
+                method: Some(HttpMethod::Post),
+                ..Default::default()
+            },
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(output.status, 200);
+        assert_eq!(
+            output.headers.get("content-type").map(String::as_str),
+            Some("text/html")
+        );
+        let html = std::str::from_utf8(&output.body)?;
+        assert!(html.contains("action=\"https://idp.example.test/logout-post\""));
+        assert!(html.contains("name=\"RelayState\" value=\"opaque-relay\""));
+        let encoded = html
+            .split("name=\"SAMLResponse\" value=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap();
+        let xml = String::from_utf8(base64::engine::general_purpose::STANDARD.decode(encoded)?)?;
+        let doc = bergshamra::xml::uppsala::parse(&xml)?;
+        let root = doc.document_element().unwrap();
+        assert_eq!(doc.get_attribute(root, "InResponseTo"), Some(request_id));
+        assert_eq!(
+            doc.get_attribute(root, "Destination"),
+            Some("https://idp.example.test/logout-post")
+        );
+        let current = call(&auth, request("/get-session", None, &cookie), 200).await;
+        assert_eq!(body(&current).is_null(), matching);
+        assert!(
+            store
+                .get_latest_verification_by_identifier(&format!(
+                    "saml-session:idp-logout-provider:{email}"
+                ))
+                .await?
+                .is_none()
+        );
+        assert_eq!(
+            store
+                .get_latest_verification_by_identifier(&format!(
+                    "saml-session-by-id:{}",
+                    session["id"].as_str().unwrap()
+                ))
+                .await?
+                .is_none(),
+            matching
+        );
+    }
     B::close(connection).await
 }
