@@ -10,22 +10,33 @@ backend_tests!(
     sso_logout_uses_acs_session_index_and_retires_session,
     sso_logout_response_retires_proof_and_rejects_external_relay,
     sso_idp_logout_matches_session_index_before_retiring_session,
-    sso_logout_required_signature_preserves_proof_until_trusted_completion
+    sso_logout_required_signature_preserves_proof_until_trusted_completion,
+    sso_saml_rollover_accepts_later_trusted_certificate_for_login_and_logout
 );
 async fn sso_logout_uses_acs_session_index_and_retires_session<B: Backend>(db: Db) -> TestResult {
-    logout_flow::<B>(db, false, false).await
+    logout_flow::<B>(db, false, false, false).await
 }
 async fn sso_logout_response_retires_proof_and_rejects_external_relay<B: Backend>(
     db: Db,
 ) -> TestResult {
-    logout_flow::<B>(db, true, false).await
+    logout_flow::<B>(db, true, false, false).await
 }
 async fn sso_logout_required_signature_preserves_proof_until_trusted_completion<B: Backend>(
     db: Db,
 ) -> TestResult {
-    logout_flow::<B>(db, true, true).await
+    logout_flow::<B>(db, true, true, false).await
 }
-async fn logout_flow<B: Backend>(db: Db, complete: bool, signed: bool) -> TestResult {
+async fn sso_saml_rollover_accepts_later_trusted_certificate_for_login_and_logout<B: Backend>(
+    db: Db,
+) -> TestResult {
+    logout_flow::<B>(db, true, true, true).await
+}
+async fn logout_flow<B: Backend>(
+    db: Db,
+    complete: bool,
+    signed: bool,
+    rollover: bool,
+) -> TestResult {
     let (connection, store) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(SsoPlugin::with_config(SsoConfig {
@@ -37,7 +48,15 @@ async fn logout_flow<B: Backend>(db: Db, complete: bool, signed: bool) -> TestRe
         .await?;
     let owner = signup(&auth, "saml-logout-owner@example.test").await;
     let cert = include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem");
-    let input = json!({"providerId":"logout-provider","issuer":"https://sp.example.test/entity","domain":"company.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":cert,"idpMetadata":{"entityID":"https://idp.example.test/entity","singleLogoutService":[{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect","Location":"https://idp.example.test/logout"}]},"wantAssertionsSigned":true}});
+    let certs = if rollover {
+        json!([
+            include_str!("../../../compat/fixtures/passkey-attestation/ca.pem"),
+            cert
+        ])
+    } else {
+        json!(cert)
+    };
+    let input = json!({"providerId":"logout-provider","issuer":"https://sp.example.test/entity","domain":"company.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":certs,"idpMetadata":{"entityID":"https://idp.example.test/entity","singleLogoutService":[{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect","Location":"https://idp.example.test/logout"}]},"wantAssertionsSigned":true}});
     let created = Box::pin(auth.dispatch_endpoint(
         SsoPlugin::register_sso_provider_endpoint(&input)?,
         EndpointOptions {
@@ -69,6 +88,10 @@ async fn logout_flow<B: Backend>(db: Db, complete: bool, signed: bool) -> TestRe
     .await?
     .into_response()?;
     assert_eq!(completed.status, 302);
+    assert_eq!(
+        completed.headers.get("location").map(String::as_str),
+        Some(format!("{ORIGIN}/complete").as_str())
+    );
     let cookie = cookies(&completed);
     let session = call(&auth, request("/get-session", None, &cookie), 200).await;
     assert_eq!(body(&session)["user"]["email"], email);
