@@ -387,3 +387,5 @@ mod oauth_resource_read;
 mod oauth_resource_update;
 
 mod oauth_resource_delete;
+
+mod oauth_resource_link;

@@ -29,8 +29,8 @@ pub(crate) use decorated::{
 pub use jwks::JwkStore;
 pub use migrations::SchemaMigrator;
 pub use oauth_clients::{
-    CreateOAuthClient, CreateOAuthConsent, CreateOAuthResource, OAuthClient, OAuthClientResource,
-    OAuthClientStore, OAuthConsent, OAuthResource,
+    CreateOAuthClient, CreateOAuthClientResource, CreateOAuthConsent, CreateOAuthResource,
+    OAuthClient, OAuthClientResource, OAuthClientStore, OAuthConsent, OAuthResource,
 };
 pub use org_extensions::{OrganizationRoleStore, TeamStore, team_membership_key};
 #[cfg(feature = "redis-cache")]

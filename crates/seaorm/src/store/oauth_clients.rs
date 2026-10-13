@@ -14,6 +14,30 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
+    async fn create_oauth_client_resource(
+        &self,
+        data: alibi_core::store::CreateOAuthClientResource,
+    ) -> AuthResult<alibi_core::store::OAuthClientResource> {
+        super::entities::oauth_client_resource::ActiveModel {
+            id: Set(self
+                .generated_id(
+                    &self.db,
+                    "oauthClientResource",
+                    "oauth_client_resource",
+                    "id",
+                )
+                .await?
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
+            client_id: Set(data.client_id),
+            resource_id: Set(data.resource_id),
+            metadata: Set(None),
+            created_at: Set(Some(data.created_at)),
+        }
+        .insert(self.scoped_connection())
+        .await
+        .map_err(map_db_err)?
+        .try_into()
+    }
     async fn delete_oauth_resource(&self, identifier: &str) -> AuthResult<()> {
         super::entities::oauth_resource::Entity::delete_many()
             .filter(super::entities::oauth_resource::Column::Identifier.eq(identifier))

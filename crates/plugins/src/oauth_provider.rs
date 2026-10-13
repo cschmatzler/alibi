@@ -263,6 +263,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
             crate::endpoint::definition(
+                "adminLinkClientResource",
+                "adminLinkClientResource",
+                Some("/admin/oauth2/resources/:identifier/clients/:client_id"),
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
                 "adminDeleteOAuthResource",
                 "adminDeleteOAuthResource",
                 Some("/admin/oauth2/resources/:identifier"),
@@ -459,6 +465,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "adminLinkClientResource" {
+            return Box::pin(self.link_resource(call.params(), call, ctx)).await;
+        }
         if call.operation_id() == "adminDeleteOAuthResource" {
             return Box::pin(self.delete_resource(call.params(), call, ctx)).await;
         }
