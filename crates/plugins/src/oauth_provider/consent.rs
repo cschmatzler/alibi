@@ -266,3 +266,45 @@ fn consent_value(row: alibi_core::store::OAuthConsent) -> AuthResult<Value> {
     _ = value.insert("updatedAt".into(), json!(row.updated_at));
     Ok(Value::Object(value))
 }
+
+#[derive(serde::Deserialize)]
+pub(super) struct ConsentId {
+    id: String,
+}
+pub(super) fn validate_id(input: Option<&JsValue>, location: &str) -> AuthResult<JsValue> {
+    crate::endpoint::validate_fields(
+        input,
+        location,
+        &[crate::authentication_helpers::JsonField::string("id", true)],
+    )
+}
+impl OAuthProviderPlugin {
+    /// Return the current user's durable consent identified by its stored grant ID.
+    pub fn get_oauth_consent_endpoint(id: &str) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("oauth-provider", "getOAuthConsent").with_query(&json!({"id":id}))
+    }
+    pub(super) async fn read_consent<S: AuthSchema>(
+        &self,
+        input: ConsentId,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
+        if input.id.is_empty() {
+            return super::clients::status_protocol_error(404, "not_found", "missing id parameter");
+        }
+        let Some(row) = ctx.database.get_oauth_consent(&input.id).await? else {
+            return super::clients::status_protocol_error(404, "not_found", "no consent");
+        };
+        if row.user_id.as_deref() != Some(user.id().as_ref()) {
+            return Ok(EndpointResponse::error(AuthError::Api {
+                status: 401,
+                code: None,
+                message: String::new(),
+            })
+            .without_error_body()
+            .with_header("Content-Type", "application/json"));
+        }
+        EndpointResponse::json(&consent_value(row)?)
+    }
+}

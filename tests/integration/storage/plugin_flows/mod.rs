@@ -371,3 +371,5 @@ mod oauth_prelogin_client;
 mod oauth_consent;
 
 mod oauth_consent_list;
+
+mod oauth_consent_read;

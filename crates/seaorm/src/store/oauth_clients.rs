@@ -92,6 +92,18 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
         .map_err(map_db_err)?
         .try_into()
     }
+    async fn get_oauth_consent(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<alibi_core::store::OAuthConsent>> {
+        super::entities::oauth_consent::Entity::find()
+            .filter(super::entities::oauth_consent::Column::Id.eq(id))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .map(TryInto::try_into)
+            .transpose()
+    }
     async fn get_oauth_client(&self, client_id: &str) -> AuthResult<Option<OAuthClient>> {
         Entity::find()
             .filter(Column::ClientId.eq(client_id))
