@@ -14,6 +14,14 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
+    async fn delete_oauth_resource(&self, identifier: &str) -> AuthResult<()> {
+        super::entities::oauth_resource::Entity::delete_many()
+            .filter(super::entities::oauth_resource::Column::Identifier.eq(identifier))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)
+            .map(|_| ())
+    }
     async fn update_oauth_resource(
         &self,
         identifier: &str,

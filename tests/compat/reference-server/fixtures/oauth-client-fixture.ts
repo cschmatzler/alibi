@@ -159,6 +159,13 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             }),
       });
     }
+    if (input.action === "resource-delete") {
+      return auth.api.adminDeleteOAuthResource({
+        params: input.params,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
     if (input.action === "resource-update") {
       return auth.api.adminUpdateOAuthResource({
         params: input.params,
@@ -198,14 +205,16 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     if (input.action === "resource-http") {
       const response = await auth.handler(
         new Request(
-          `${base.baseURL}${base.basePath ?? "/api/auth"}/admin/oauth2/resources${["read", "update"].includes(input.operation) ? `/${encodeURIComponent(input.identifier)}` : ""}`,
+          `${base.baseURL}${base.basePath ?? "/api/auth"}/admin/oauth2/resources${["read", "update", "delete"].includes(input.operation) ? `/${encodeURIComponent(input.identifier)}` : ""}`,
           {
             method:
-              input.operation === "update"
-                ? "PATCH"
-                : ["list", "read"].includes(input.operation)
-                  ? "GET"
-                  : "POST",
+              input.operation === "delete"
+                ? "DELETE"
+                : input.operation === "update"
+                  ? "PATCH"
+                  : ["list", "read"].includes(input.operation)
+                    ? "GET"
+                    : "POST",
             headers: { ...input.headers, "content-type": "application/json" },
             ...(["list", "read"].includes(input.operation)
               ? {}
