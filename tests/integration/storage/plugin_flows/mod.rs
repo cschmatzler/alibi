@@ -436,7 +436,11 @@ mod sso_domain_request;
 mod sso_domain_verify;
 
 mod sso_saml_acs;
+mod sso_saml_logout;
 mod sso_saml_sign_in;
 mod sso_sign_in;
 
 mod sso_callback;
+
+#[path = "../../../support/sso_saml_grant.rs"]
+mod saml_idp;
