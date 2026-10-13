@@ -161,7 +161,7 @@ impl<S: AuthSchema> PluginStore<S> {
         Ok(self
             .stored_session(token)
             .await?
-            .filter(|(session, _)| session.expires_at() > Utc::now() && session.active()))
+            .filter(|(session, _)| session.expires_at() > Utc::now()))
     }
 
     pub(super) async fn mirror_session(

@@ -90,7 +90,7 @@ async fn admin_session_switches_publish_fresh_cache_on_sdk_and_http<B: Backend>(
             .await?,
     );
     drop(signup(&auth, "server-cache-switch-foreign@example.test").await);
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let options = |cookie: String| EndpointOptions {
         headers: Some([("cookie".into(), cookie)].into_iter().collect()),
         ..Default::default()
@@ -159,7 +159,7 @@ async fn admin_session_switches_publish_fresh_cache_on_sdk_and_http<B: Backend>(
             )["user"]["id"],
             admin_id
         );
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     }
     B::close(connection).await
 }

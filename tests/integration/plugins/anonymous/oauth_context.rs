@@ -302,7 +302,7 @@ mod tests {
             }
             let edited = db
                 .execute(
-                    "UPDATE verifications SET value=$1 WHERE id=$2",
+                    "UPDATE \"verification\" SET \"value\"=$1 WHERE id=$2",
                     &[&payload.to_string(), row.id().as_ref()],
                 )
                 .await?;

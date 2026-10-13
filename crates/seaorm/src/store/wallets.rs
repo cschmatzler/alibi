@@ -52,7 +52,7 @@ where
         .ok_or(AuthError::UserNotFound)?;
         let created = wallet_address::ActiveModel {
             id: Set(self
-                .generated_id(&self.db, "walletAddress", "wallet_address", "id")
+                .generated_id(&self.db, "walletAddress", "walletAddress", "id")
                 .await?
                 .unwrap_or_else(|| Uuid::new_v4().to_string())),
             user_id: Set(owner.id().into_owned()),
@@ -74,7 +74,7 @@ pub(super) async fn remove_owned_wallets(
     user_id: &str,
 ) -> AuthResult<()> {
     if !transaction
-        .has_table("wallet_address")
+        .has_table("walletAddress")
         .await
         .map_err(map_db_err)?
     {

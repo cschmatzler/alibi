@@ -339,7 +339,7 @@ async fn javascript_only_cache_values_fall_back_without_reconstructing_or_mutati
     ))?;
     let snapshot = db
         .raw
-        .tables(&["users", "sessions", "accounts", "verifications"])
+        .tables(&["user", "session", "account", "verification"])
         .await?;
     let request = |header: &str| {
         let mut request = AuthRequest::new(HttpMethod::Get, "/api/auth/get-session");
@@ -377,7 +377,7 @@ async fn javascript_only_cache_values_fall_back_without_reconstructing_or_mutati
         assert_eq!(read.1.token, session.token());
         assert_eq!(
             db.raw
-                .tables(&["users", "sessions", "accounts", "verifications"])
+                .tables(&["user", "session", "account", "verification"])
                 .await?,
             snapshot
         );
@@ -445,7 +445,17 @@ async fn strict_cached_session_separates_invalid_sessions_from_storage_failures<
         Err(AuthError::Unauthenticated)
     ));
 
-    let _ = db.raw.execute("DROP TABLE sessions", &[]).await?;
+    let _ = db
+        .raw
+        .execute(
+            if db.is_postgres() {
+                "DROP TABLE \"session\" CASCADE"
+            } else {
+                "DROP TABLE \"session\""
+            },
+            &[],
+        )
+        .await?;
     let outage = context
         .require_cached_session_strict(&request(session.token(), ""))
         .await

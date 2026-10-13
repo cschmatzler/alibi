@@ -175,12 +175,6 @@ pub(crate) fn session_impl(
     let id_column = column("id")?;
     let token_column = column("token")?;
     let user_id_column = column("user_id")?;
-    let active_column = if has("active") {
-        let name = column("active")?;
-        quote! { Some(#name) }
-    } else {
-        quote! { None }
-    };
     let expires_at_column = column("expires_at")?;
     let created_at_column = column("created_at")?;
     let set_expires_at = set(
@@ -241,7 +235,6 @@ pub(crate) fn session_impl(
             fn id_column() -> &'static str { #id_column }
             fn token_column() -> &'static str { #token_column }
             fn user_id_column() -> &'static str { #user_id_column }
-            fn active_column() -> Option<&'static str> { #active_column }
             fn expires_at_column() -> &'static str { #expires_at_column }
             fn created_at_column() -> &'static str { #created_at_column }
             fn parse_id(id: &str) -> #core_root::AuthResult<#sqlx_root::value::SqlValue> {

@@ -66,11 +66,11 @@ async fn server_remove_team_without_request_prunes_links_and_preserves_last_team
     let _ = Box::pin(call(&auth, request("/organization/invite-member", Some(json!({"organizationId":id,"email":"trusted-removal-invitee@example.test","role":"member","teamId":teams})), &cookies(&owner)), 200)).await;
     let before = db
         .tables(&[
-            "users",
-            "sessions",
+            "user",
+            "session",
             "member",
             "team",
-            "team_member",
+            "teamMember",
             "invitation",
         ])
         .await?;
@@ -102,11 +102,11 @@ async fn server_remove_team_without_request_prunes_links_and_preserves_last_team
     }
     assert_eq!(
         db.tables(&[
-            "users",
-            "sessions",
+            "user",
+            "session",
             "member",
             "team",
-            "team_member",
+            "teamMember",
             "invitation"
         ])
         .await?,
@@ -126,11 +126,11 @@ async fn server_remove_team_without_request_prunes_links_and_preserves_last_team
     );
     let after = db
         .tables(&[
-            "users",
-            "sessions",
+            "user",
+            "session",
             "member",
             "team",
-            "team_member",
+            "teamMember",
             "invitation",
         ])
         .await?;
@@ -141,7 +141,7 @@ async fn server_remove_team_without_request_prunes_links_and_preserves_last_team
     assert_eq!(after[4], "[]");
     let invitations: Vec<Value> = serde_json::from_str(&after[5])?;
     assert_eq!(invitations.len(), 1);
-    assert_eq!(invitations[0]["team_id"], teams[1]);
+    assert_eq!(invitations[0]["teamId"], teams[1]);
     assert_eq!(invitations[0]["status"], "pending");
     for (team_id, code) in [
         (teams[0].clone(), "TEAM_NOT_FOUND"),
@@ -161,11 +161,11 @@ async fn server_remove_team_without_request_prunes_links_and_preserves_last_team
     }
     assert_eq!(
         db.tables(&[
-            "users",
-            "sessions",
+            "user",
+            "session",
             "member",
             "team",
-            "team_member",
+            "teamMember",
             "invitation"
         ])
         .await?,

@@ -545,13 +545,30 @@ pub(super) async fn build(
     Ok((router, consume_runtimes))
 }
 
-
 struct ConsumeReceipt;
 #[async_trait]
 impl<S: alibi::AuthSchema> alibi::endpoint::EndpointHook<S> for ConsumeReceipt {
-    fn matches_before(&self, _: &alibi::endpoint::EndpointCall, _: &alibi::AuthContext<S>) -> AuthResult<bool> { Ok(false) }
-    fn matches_after(&self, call: &alibi::endpoint::EndpointCall, _: &alibi::AuthContext<S>, _: &alibi::endpoint::EndpointResponse) -> AuthResult<bool> { Ok(call.operation_id() == "consumePhoneNumberOTP") }
-    async fn after(&self, call: &alibi::endpoint::EndpointCall, _: &alibi::AuthContext<S>, response: alibi::endpoint::EndpointResponse) -> AuthResult<alibi::endpoint::EndpointResponse> {
+    fn matches_before(
+        &self,
+        _: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+    ) -> AuthResult<bool> {
+        Ok(false)
+    }
+    fn matches_after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+        _: &alibi::endpoint::EndpointResponse,
+    ) -> AuthResult<bool> {
+        Ok(call.operation_id() == "consumePhoneNumberOTP")
+    }
+    async fn after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+        response: alibi::endpoint::EndpointResponse,
+    ) -> AuthResult<alibi::endpoint::EndpointResponse> {
         assert!(call.request().is_none());
         call.queue_response_header("x-phone-consumed", "application-receipt");
         Ok(response)

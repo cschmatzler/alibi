@@ -168,7 +168,6 @@ pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
     fn active_team_id(&self) -> Option<&str> {
         None
     }
-    fn active(&self) -> bool;
 }
 
 /// Trait representing an account entity (OAuth provider linking).
@@ -261,8 +260,6 @@ pub trait AuthTwoFactor: Clone + Send + Sync + Serialize + std::fmt::Debug + 'st
     fn secret(&self) -> &str;
     fn backup_codes(&self) -> &str;
     fn user_id(&self) -> Cow<'_, str>;
-    fn created_at(&self) -> DateTime<Utc>;
-    fn updated_at(&self) -> DateTime<Utc>;
     /// Legacy records without this field are not explicitly unverified.
     fn verified(&self) -> Option<bool> {
         None
@@ -316,10 +313,8 @@ pub trait AuthPasskey: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
     fn device_type(&self) -> &str;
     fn backed_up(&self) -> bool;
     fn transports(&self) -> Option<&str>;
-    fn created_at(&self) -> DateTime<Utc>;
-    fn updated_at(&self) -> DateTime<Utc>;
+    fn created_at(&self) -> Option<DateTime<Utc>>;
     fn aaguid(&self) -> Option<&str>;
-    fn credential(&self) -> &str;
 }
 
 /// Minimal user info for member-related API responses.

@@ -214,7 +214,7 @@ impl JwtKeyring for Application {
             "createdAt":key.created_at.to_rfc3339_opts(SecondsFormat::Millis,true),"expiresAt":key.expires_at.map(|value|value.to_rfc3339_opts(SecondsFormat::Millis,true)),"alg":key.alg,"crv":key.crv}}))?;
         self.reject("create")?;
         let _writer = self.state.writer.lock().await;
-        let inserted=self.database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"INSERT INTO fixtureJwtKeyring(profile,publicKey,privateKey,createdAt,expiresAt,alg,crv) VALUES(?,?,?,?,?,?,?)",
+        let inserted=self.database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"INSERT INTO fixtureJwtKeyring(profile,publicKey,privateKey,createdAt,expiresAt,\"alg\",\"crv\") VALUES(?,?,?,?,?,?,?)",
             [self.profile.clone().into(),key.public_key.into(),key.private_key.into(),key.created_at.timestamp_millis().into(),key.expires_at.map(|value|value.timestamp_millis()).into(),key.alg.into(),key.crv.into()]))
             .await.map_err(database_error)?;
         let row_id = inserted.last_insert_id();
@@ -335,7 +335,7 @@ fn failure_response(error: AuthError) -> axum::response::Response {
         .into_response()
 }
 pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
-    database.execute_raw(Statement::from_string(DbBackend::Sqlite,"CREATE TABLE IF NOT EXISTS fixtureJwtKeyring(rowId INTEGER PRIMARY KEY AUTOINCREMENT,profile TEXT NOT NULL,id TEXT,publicKey TEXT NOT NULL,privateKey TEXT NOT NULL,createdAt INTEGER NOT NULL,expiresAt INTEGER,alg TEXT,crv TEXT)"))
+    database.execute_raw(Statement::from_string(DbBackend::Sqlite,"CREATE TABLE IF NOT EXISTS fixtureJwtKeyring(rowId INTEGER PRIMARY KEY AUTOINCREMENT,profile TEXT NOT NULL,id TEXT,publicKey TEXT NOT NULL,privateKey TEXT NOT NULL,createdAt INTEGER NOT NULL,expiresAt INTEGER,\"alg\" TEXT,\"crv\" TEXT)"))
         .await.map_err(database_error)?;
     let state = Arc::new(State::default());
     let mut profiles = HashMap::new();
@@ -426,14 +426,14 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 let body:Control=alibi::utils::json::from_slice(&body)?;
                 let (auth,jwt,app)=profiles.get(body.profile.as_deref().unwrap_or("jwt-keyring-standard")).ok_or_else(||AuthError::bad_request("unknown keyring profile"))?;
                 match body.operation.as_str() {
-                    "reset"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"DELETE FROM fixtureJwtKeyring")).await.map_err(database_error)?;database.execute_raw(Statement::from_string(DbBackend::Sqlite,"DELETE FROM sqlite_sequence WHERE name='fixtureJwtKeyring'")).await.map_err(database_error)?;state.events.lock().map_err(database_error)?.clear();*state.failure.lock().map_err(database_error)?=None;*state.race.lock().map_err(database_error)?=None;}
+                    "reset"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"DELETE FROM fixtureJwtKeyring")).await.map_err(database_error)?;database.execute_raw(Statement::from_string(DbBackend::Sqlite,"DELETE FROM sqlite_sequence WHERE \"name\"='fixtureJwtKeyring'")).await.map_err(database_error)?;state.events.lock().map_err(database_error)?.clear();*state.failure.lock().map_err(database_error)?=None;*state.race.lock().map_err(database_error)?=None;}
                     "clear-events"=>state.events.lock().map_err(database_error)?.clear(),
                     "failure"=>*state.failure.lock().map_err(database_error)?=body.failure,
                     "race-arm"=>{*state.race.lock().map_err(database_error)?=Some(Arc::new(Race::new()));return Ok(json!({"armed":true}));},
                     "race-release"=>{if let Some(scheduled)=app.race()? {let _previous=scheduled.second.send_replace(true);}return Ok(json!({"released":true}));},
                     "expire"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE fixtureJwtKeyring SET expiresAt=? WHERE profile=? AND id=?",[body.expires_at.ok_or_else(||AuthError::bad_request("expiresAt"))?.timestamp_millis().into(),app.profile.clone().into(),body.id.into()])).await.map_err(database_error)?;},
                     "corrupt"=>{let (query,value)=if body.field.as_deref()==Some("public") {("UPDATE fixtureJwtKeyring SET publicKey=? WHERE profile=? AND id=?","corrupt")}else{("UPDATE fixtureJwtKeyring SET privateKey=? WHERE profile=? AND id=?","\"corrupt\"")};database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,query,[value.into(),app.profile.clone().into(),body.id.into()])).await.map_err(database_error)?;},
-                    "legacy"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE fixtureJwtKeyring SET alg=NULL,crv=NULL WHERE profile=? AND id=?",[app.profile.clone().into(),body.id.into()])).await.map_err(database_error)?;},
+                    "legacy"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE fixtureJwtKeyring SET \"alg\"=NULL,\"crv\"=NULL WHERE profile=? AND id=?",[app.profile.clone().into(),body.id.into()])).await.map_err(database_error)?;},
                     "delete"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"DELETE FROM fixtureJwtKeyring WHERE profile=? AND id=?",[app.profile.clone().into(),body.id.into()])).await.map_err(database_error)?;},
                     "verify"=>{let mut request=AuthRequest::new(HttpMethod::Post,"/__test/jwt-keyring");request.body=Some(request_body.clone());request.headers=headers.iter().filter_map(|(key,value)|value.to_str().ok().map(|value|(key.to_string(),value.to_owned()))).collect();return Ok(json!({"payload":jwt.verify_jwt(body.token.as_deref().ok_or_else(||AuthError::bad_request("token"))?,body.issuer.as_deref(),(!body.absent_request).then_some(&request),auth.context()).await?}));},
                     "api-sign-overrides" => {

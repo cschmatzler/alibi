@@ -228,8 +228,11 @@ async fn adapter_observers_see_all_committed_record_kinds_and_respect_output_fai
             assert_eq!(result.is_ok(), failure == "none");
             let persisted = !(in_transaction && matches!(failure, "rollback" | "output"));
             assert_eq!(
-                db.count_where("SELECT COUNT(*) FROM users WHERE email=$1", &[&email])
-                    .await?,
+                db.count_where(
+                    "SELECT COUNT(*) FROM \"user\" WHERE \"email\"=$1",
+                    &[&email]
+                )
+                .await?,
                 i64::from(persisted)
             );
             assert_eq!(

@@ -222,7 +222,7 @@ async fn siwe_accepts_each_standard_signature_encoding<B: Backend>(db: Db) -> Te
             String::from_utf8_lossy(&response.body)
         );
     }
-    assert_eq!(db.count("users").await?, 1);
-    assert_eq!(db.count("wallet_address").await?, 1);
+    assert_eq!(db.count("user").await?, 1);
+    assert_eq!(db.count("walletAddress").await?, 1);
     B::close(connection).await
 }

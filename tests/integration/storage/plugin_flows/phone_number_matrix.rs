@@ -193,8 +193,8 @@ async fn phone_number_request_and_proof_matrix<B: Backend>(db: Db) -> TestResult
         .await;
     let code = send_code(&mut probe, &outbox, phone).await;
     db.set_timestamp(
-        "verifications",
-        "expires_at",
+        "verification",
+        "expiresAt",
         ("identifier", phone),
         chrono::Utc::now() - chrono::Duration::seconds(5),
     )
@@ -216,8 +216,8 @@ async fn phone_number_request_and_proof_matrix<B: Backend>(db: Db) -> TestResult
             "",
         )
         .await;
-    assert_eq!(db.count("users").await?, 1);
-    assert_eq!(db.count("sessions").await?, 0);
+    assert_eq!(db.count("user").await?, 1);
+    assert_eq!(db.count("session").await?, 0);
     let code = send_code(&mut probe, &outbox, phone).await;
     let _ = probe
         .post(
@@ -266,7 +266,7 @@ async fn phone_number_request_and_proof_matrix<B: Backend>(db: Db) -> TestResult
             .await;
     }
     _ = db
-        .execute("UPDATE users SET phone_number_verified = false", &[])
+        .execute("UPDATE \"user\" SET \"phoneNumberVerified\" = false", &[])
         .await?;
     let _ = probe
         .post(
@@ -362,7 +362,7 @@ async fn phone_number_provider_and_sender_failures<B: Backend>(db: Db) -> TestRe
         }
         probe
             .trace
-            .value(&format!("{mode}: users"), json!(db.count("users").await?));
+            .value(&format!("{mode}: users"), json!(db.count("user").await?));
         trace = probe.trace;
         B::close(connection).await?;
     }
@@ -375,7 +375,7 @@ type ResetFuture = std::pin::Pin<Box<dyn std::future::Future<Output = AuthResult
 async fn latest_reset_code(db: &Db, phone: &str) -> TestResult<String> {
     Ok(db
         .text(
-            "SELECT value FROM verifications WHERE identifier = $1",
+            "SELECT \"value\" FROM \"verification\" WHERE \"identifier\" = $1",
             &[&format!("{phone}-request-password-reset")],
         )
         .await?
@@ -477,7 +477,7 @@ async fn phone_number_password_reset_effects<B: Backend>(db: Db) -> TestResult {
         }
         let credentials = db
             .count_where(
-                "SELECT COUNT(*) FROM accounts WHERE provider_id = 'credential'",
+                "SELECT COUNT(*) FROM \"account\" WHERE \"providerId\" = 'credential'",
                 &[],
             )
             .await?;
@@ -567,20 +567,20 @@ async fn phone_password_reset_retains_established_sessions_by_default<B: Backend
     .await;
     let foreign = signup(&auth, "retained-phone-foreign@example.test").await;
     let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
-    let principals = db.tables(&["users", "sessions"]).await?;
-    let accounts_before: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    let principals = db.tables(&["user", "session"]).await?;
+    let accounts_before: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
     let credential_before = accounts_before
         .iter()
-        .find(|row| row["user_id"] == owner_id && row["provider_id"] == "credential")
+        .find(|row| row["userId"] == owner_id && row["providerId"] == "credential")
         .unwrap();
     let foreign_accounts_before: Vec<_> = accounts_before
         .iter()
-        .filter(|row| row["user_id"] == foreign_id)
+        .filter(|row| row["userId"] == foreign_id)
         .cloned()
         .collect();
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM sessions WHERE user_id=$1",
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
             &[&owner_id]
         )
         .await?,
@@ -602,7 +602,7 @@ async fn phone_password_reset_retains_established_sessions_by_default<B: Backend
     let identifier = format!("{phone}-request-password-reset");
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+            "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
             &[&identifier]
         )
         .await?,
@@ -617,14 +617,14 @@ async fn phone_password_reset_retains_established_sessions_by_default<B: Backend
     assert!(reset.headers().get_all("set-cookie").next().is_none());
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+            "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
             &[&identifier]
         )
         .await?,
         0
     );
-    assert_eq!(db.tables(&["users", "sessions"]).await?, principals);
-    let accounts_after: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    assert_eq!(db.tables(&["user", "session"]).await?, principals);
+    let accounts_after: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
     assert_eq!(accounts_after.len(), accounts_before.len());
     let credential_after = accounts_after
         .iter()
@@ -634,13 +634,13 @@ async fn phone_password_reset_retains_established_sessions_by_default<B: Backend
     let unchanged = |row: &Value| {
         let mut fields = row.as_object().unwrap().clone();
         _ = fields.remove("password");
-        _ = fields.remove("updated_at");
+        _ = fields.remove("updatedAt");
         fields
     };
     assert_eq!(unchanged(credential_after), unchanged(credential_before));
     let foreign_accounts_after: Vec<_> = accounts_after
         .iter()
-        .filter(|row| row["user_id"] == foreign_id)
+        .filter(|row| row["userId"] == foreign_id)
         .cloned()
         .collect();
     assert_eq!(foreign_accounts_after, foreign_accounts_before);
@@ -671,7 +671,7 @@ async fn phone_password_reset_retains_established_sessions_by_default<B: Backend
     )
     .await;
     assert_eq!(body(&rejected)["code"], "INVALID_EMAIL_OR_PASSWORD");
-    assert_eq!(db.tables(&["users", "sessions"]).await?, principals);
+    assert_eq!(db.tables(&["user", "session"]).await?, principals);
     let accepted = call(
         &auth,
         request(
@@ -684,7 +684,7 @@ async fn phone_password_reset_retains_established_sessions_by_default<B: Backend
     .await;
     assert_eq!(body(&accepted)["user"]["id"], owner_id);
     let after_login = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let replay = Box::pin(auth.dispatch_endpoint(
         ServerEndpoint::<Value>::new("phone-number", "resetPasswordPhoneNumber").with_body(
@@ -700,7 +700,7 @@ async fn phone_password_reset_retains_established_sessions_by_default<B: Backend
         Some("OTP_NOT_FOUND")
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         after_login
     );
@@ -765,7 +765,7 @@ async fn phone_number_signup_and_update_inputs<B: Backend>(db: Db) -> TestResult
             .post(&format!("update {text}"), "/update-user", text, &owner)
             .await;
     }
-    probe.trace.value("rows", json!(db.count("users").await?));
+    probe.trace.value("rows", json!(db.count("user").await?));
     probe.trace.assert("phone-number/signup-and-update-inputs");
     B::close(connection).await
 }
@@ -793,13 +793,13 @@ async fn phone_signin_distinguishes_missing_null_and_empty_credentials<B: Backen
         )
         .await;
         let sql = match state {
-            "missing" => "DELETE FROM accounts WHERE user_id=$1",
-            "null" => "UPDATE accounts SET password=NULL WHERE user_id=$1",
-            _ => "UPDATE accounts SET password='' WHERE user_id=$1",
+            "missing" => "DELETE FROM \"account\" WHERE \"userId\"=$1",
+            "null" => "UPDATE \"account\" SET \"password\"=NULL WHERE \"userId\"=$1",
+            _ => "UPDATE \"account\" SET \"password\"='' WHERE \"userId\"=$1",
         };
         _ = db.execute(sql, &[&id]).await?;
         let before = db
-            .tables(&["users", "accounts", "sessions", "verifications"])
+            .tables(&["user", "account", "session", "verification"])
             .await?;
         let denied = call(
             &auth,
@@ -821,7 +821,7 @@ async fn phone_signin_distinguishes_missing_null_and_empty_credentials<B: Backen
         );
         assert!(!denied.headers.contains_key("set-cookie"));
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -879,7 +879,7 @@ async fn phone_self_update_consumes_proof_without_changing_owner_or_callbacks<B:
         200,
     )
     .await;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     assert_eq!(hook.0.load(std::sync::atomic::Ordering::SeqCst), 1);
     _ = call(
         &auth,
@@ -904,8 +904,8 @@ async fn phone_self_update_consumes_proof_without_changing_owner_or_callbacks<B:
     )
     .await;
     assert_eq!(body(&denied)["code"], "PHONE_NUMBER_EXIST");
-    assert_eq!(db.count("verifications").await?, 0);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     assert_eq!(hook.0.load(std::sync::atomic::Ordering::SeqCst), 1);
     let replay = call(
         &auth,
@@ -939,7 +939,7 @@ async fn phone_self_update_consumes_proof_without_changing_owner_or_callbacks<B:
     assert_eq!(body(&updated)["token"], body(&owner)["token"]);
     assert_eq!(body(&updated)["user"]["phoneNumber"], next);
     assert_eq!(hook.0.load(std::sync::atomic::Ordering::SeqCst), 2);
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     B::close(connection).await
 }
 
@@ -986,7 +986,7 @@ async fn phone_reset_callback_rejection_precedes_configured_session_revocation<B
     )
     .await;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let sessions = db.table("sessions").await?;
+    let sessions = db.table("session").await?;
     _ = call(
         &auth,
         request(
@@ -998,8 +998,8 @@ async fn phone_reset_callback_rejection_precedes_configured_session_revocation<B
     )
     .await;
     _=call(&auth,request("/phone-number/reset-password",Some(json!({"phoneNumber":phone,"otp":outbox.last().code,"newPassword":"committed-phone-password"})),""),403).await;
-    assert_eq!(db.count("verifications").await?, 0);
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(db.table("session").await?, sessions);
     authenticated(&auth, &cookies(&owner), "reset-phone@example.test").await;
     authenticated(&auth, &cookies(&sibling), "reset-phone@example.test").await;
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
@@ -1036,7 +1036,7 @@ async fn phone_reset_callback_rejection_precedes_configured_session_revocation<B
     )
     .await;
     _=call(&auth,request("/phone-number/reset-password",Some(json!({"phoneNumber":phone,"otp":outbox.last().code,"newPassword":"successful-phone-password"})),""),200).await;
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
 }
@@ -1062,7 +1062,7 @@ async fn phone_missing_otp_sender_precedes_application_validation<B: Backend>(
         .build()
         .await?;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let denied = call(
         &auth,
@@ -1078,7 +1078,7 @@ async fn phone_missing_otp_sender_precedes_application_validation<B: Backend>(
     assert_eq!(validator.0.load(std::sync::atomic::Ordering::SeqCst), 0);
     assert!(!denied.headers.contains_key("set-cookie"));
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -1131,7 +1131,7 @@ async fn phone_external_verifier_cannot_authorize_local_password_reset<B: Backen
     )
     .await;
     assert_eq!(provider.0.load(std::sync::atomic::Ordering::SeqCst), 1);
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     _ = call(
         &auth,
         request(
@@ -1146,7 +1146,7 @@ async fn phone_external_verifier_cannot_authorize_local_password_reset<B: Backen
     let identifier = format!("{phone}-request-password-reset");
     let proof = db
         .text(
-            "SELECT expires_at FROM verifications WHERE identifier=$1",
+            "SELECT \"expiresAt\" FROM \"verification\" WHERE \"identifier\"=$1",
             &[&identifier],
         )
         .await?;
@@ -1175,7 +1175,7 @@ async fn phone_external_verifier_cannot_authorize_local_password_reset<B: Backen
     assert_eq!(provider.0.load(std::sync::atomic::Ordering::SeqCst), 1);
     assert_eq!(
         db.text(
-            "SELECT value FROM verifications WHERE identifier=$1",
+            "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
             &[&identifier]
         )
         .await?
@@ -1184,13 +1184,13 @@ async fn phone_external_verifier_cannot_authorize_local_password_reset<B: Backen
     );
     assert_eq!(
         db.text(
-            "SELECT expires_at FROM verifications WHERE identifier=$1",
+            "SELECT \"expiresAt\" FROM \"verification\" WHERE \"identifier\"=$1",
             &[&identifier]
         )
         .await?,
         proof
     );
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     _ = call(
         &auth,
         request(
@@ -1204,7 +1204,7 @@ async fn phone_external_verifier_cannot_authorize_local_password_reset<B: Backen
     assert_eq!(provider.0.load(std::sync::atomic::Ordering::SeqCst), 1);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+            "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
             &[&identifier]
         )
         .await?,
@@ -1212,7 +1212,7 @@ async fn phone_external_verifier_cannot_authorize_local_password_reset<B: Backen
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+            "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
             &[phone]
         )
         .await?,
@@ -1267,7 +1267,7 @@ async fn phone_verifier_rejection_preserves_local_proof_until_successful_retry<B
         .await;
         let code = outbox.last().code;
         let before = db
-            .tables(&["users", "accounts", "sessions", "verifications"])
+            .tables(&["user", "account", "session", "verification"])
             .await?;
         _ = call(
             &auth,
@@ -1280,7 +1280,7 @@ async fn phone_verifier_rejection_preserves_local_proof_until_successful_retry<B
         )
         .await;
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -1297,8 +1297,8 @@ async fn phone_verifier_rejection_preserves_local_proof_until_successful_retry<B
         .await;
         assert_eq!(body(&accepted)["user"]["id"], body(&owner)["user"]["id"]);
         assert_eq!(body(&accepted)["user"]["phoneNumberVerified"], true);
-        assert_eq!(db.count("verifications").await?, 0);
-        assert_eq!(db.count("sessions").await?, 2);
+        assert_eq!(db.count("verification").await?, 0);
+        assert_eq!(db.count("session").await?, 2);
         authenticated(&auth, &cookies(&owner), "retry-phone@example.test").await;
         B::close(connection).await?;
     }
@@ -1323,7 +1323,7 @@ async fn phone_callback_context_preserves_proof_consumption_and_committed_owner<
             let live = self
                 .raw
                 .count_where(
-                    "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+                    "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
                     &[number],
                 )
                 .await
@@ -1365,10 +1365,10 @@ async fn phone_callback_context_preserves_proof_consumption_and_committed_owner<
             c: &CallbackContext,
         ) -> AuthResult<()> {
             assert!(!self.capture("completed", c, &d.phone_number).await?);
-            assert_eq!(self.raw.count_where("SELECT COUNT(*) FROM users WHERE id=$1 AND phone_number=$2 AND phone_number_verified=1",&[&d.user.id,&d.phone_number]).await.map_err(|e| AuthError::internal(e.to_string()))?,1);
+            assert_eq!(self.raw.count_where("SELECT COUNT(*) FROM \"user\" WHERE id=$1 AND \"phoneNumber\"=$2 AND \"phoneNumberVerified\"=1",&[&d.user.id,&d.phone_number]).await.map_err(|e| AuthError::internal(e.to_string()))?,1);
             assert_eq!(
                 self.raw
-                    .count_where("SELECT COUNT(*) FROM sessions", &[])
+                    .count_where("SELECT COUNT(*) FROM \"session\"", &[])
                     .await
                     .map_err(|e| AuthError::internal(e.to_string()))?,
                 0
@@ -1405,7 +1405,7 @@ async fn phone_callback_context_preserves_proof_consumption_and_committed_owner<
     _ = call(&auth, sent.clone(), 200).await;
     let delivery = application.sent.lock().unwrap().last().unwrap().clone();
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     _ = call(
         &auth,
@@ -1417,7 +1417,7 @@ async fn phone_callback_context_preserves_proof_consumption_and_committed_owner<
     )
     .await;
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -1459,12 +1459,12 @@ async fn phone_callback_context_preserves_proof_consumption_and_committed_owner<
     assert_eq!(current["user"]["id"], body(&accepted)["user"]["id"]);
     assert_eq!(current["user"]["phoneNumber"], number);
     assert_eq!(current["user"]["phoneNumberVerified"], true);
-    assert_eq!(db.count("accounts").await?, 0);
-    assert_eq!(db.count("sessions").await?, 1);
-    assert_eq!(db.count("verifications").await?, 0);
-    let stable = db.tables(&["users", "accounts", "sessions"]).await?;
+    assert_eq!(db.count("account").await?, 0);
+    assert_eq!(db.count("session").await?, 1);
+    assert_eq!(db.count("verification").await?, 0);
+    let stable = db.tables(&["user", "account", "session"]).await?;
     _ = call(&auth, verify, 400).await;
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stable);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, stable);
     B::close(connection).await
 }
 
@@ -1510,7 +1510,7 @@ async fn revoked_compact_owner_consumes_local_phone_proof_without_recreating_bro
         .build()
         .await?;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+    let baseline = db.tables(&["user", "account", "session"]).await?;
     let owner = signup(&auth, "owner@example.test").await;
     let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let token = body(&owner)["token"].as_str().unwrap().to_owned();
@@ -1530,7 +1530,7 @@ async fn revoked_compact_owner_consumes_local_phone_proof_without_recreating_bro
     assert_eq!(delivery.phone_number, phone);
     assert_eq!(
         db.text(
-            "SELECT value FROM verifications WHERE identifier=$1",
+            "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
             &[phone]
         )
         .await?
@@ -1538,7 +1538,7 @@ async fn revoked_compact_owner_consumes_local_phone_proof_without_recreating_bro
         Some(format!("{}:0", delivery.code).as_str())
     );
     assert_eq!(
-        db.execute("DELETE FROM sessions WHERE token=$1", &[&token])
+        db.execute("DELETE FROM \"session\" WHERE \"token\"=$1", &[&token])
             .await?,
         1
     );
@@ -1559,27 +1559,30 @@ async fn revoked_compact_owner_consumes_local_phone_proof_without_recreating_bro
             .any(|x| x.starts_with("better-auth.session_token=") && !x.contains("Max-Age=0"))
     );
     assert_eq!(
-        db.text("SELECT phone_number FROM users WHERE id=$1", &[&id])
+        db.text("SELECT \"phoneNumber\" FROM \"user\" WHERE id=$1", &[&id])
             .await?
             .as_deref(),
         Some(phone)
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM users WHERE id=$1 AND phone_number_verified=true",
+            "SELECT COUNT(*) FROM \"user\" WHERE id=$1 AND \"phoneNumberVerified\"=true",
             &[&id]
         )
         .await?,
         1
     );
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+            &[&id]
+        )
+        .await?,
         0
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+            "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
             &[phone]
         )
         .await?,
@@ -1590,7 +1593,7 @@ async fn revoked_compact_owner_consumes_local_phone_proof_without_recreating_bro
     assert_eq!(receipts[0]["user"]["id"], id);
     assert_eq!(receipts[0]["phone"], phone);
     let after = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     _ = call(
         &auth,
@@ -1603,7 +1606,7 @@ async fn revoked_compact_owner_consumes_local_phone_proof_without_recreating_bro
     )
     .await;
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         after
     );
@@ -1741,7 +1744,7 @@ async fn phone_background_notification_lifecycle<B: Backend>(db: Db) -> TestResu
             }
             sender.deliveries.lock().unwrap().clear();
             sender.armed.store(true, Ordering::SeqCst);
-            let before = db.tables(&["users", "accounts", "sessions"]).await?;
+            let before = db.tables(&["user", "account", "session"]).await?;
             let mut input = request(
                 route,
                 Some(json!({"phoneNumber":phone,"password":PASSWORD})),
@@ -1791,10 +1794,10 @@ async fn phone_background_notification_lifecycle<B: Backend>(db: Db) -> TestResu
             } else {
                 phone.to_owned()
             };
-            let proof = db.tables(&["verifications"]).await?;
+            let proof = db.tables(&["verification"]).await?;
             assert_eq!(
                 db.text(
-                    "SELECT value FROM verifications WHERE identifier=$1",
+                    "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
                     &[&identifier]
                 )
                 .await?
@@ -1805,14 +1808,14 @@ async fn phone_background_notification_lifecycle<B: Backend>(db: Db) -> TestResu
                     format!("{}:0", delivery.code)
                 }
             );
-            assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+            assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
             sender.release.notify_one();
             tokio::time::timeout(
                 std::time::Duration::from_secs(10),
                 sender.finished.notified(),
             )
             .await?;
-            assert_eq!(db.tables(&["verifications"]).await?, proof);
+            assert_eq!(db.tables(&["verification"]).await?, proof);
             let (path, input) = if route == "/phone-number/request-password-reset" {
                 (
                     "/phone-number/reset-password",
@@ -1827,7 +1830,7 @@ async fn phone_background_notification_lifecycle<B: Backend>(db: Db) -> TestResu
             let _ = call(&auth, request(path, Some(input.clone()), ""), 200).await;
             assert!(
                 db.text(
-                    "SELECT value FROM verifications WHERE identifier=$1",
+                    "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
                     &[&identifier]
                 )
                 .await?
@@ -1944,10 +1947,10 @@ async fn phone_trusted_device_completion_forwards_rotated_owned_proof<B: Backend
         .find(|h| h.starts_with("better-auth.trust_device="))
         .unwrap()
         .to_owned();
-    let old_key = db.text("SELECT identifier FROM verifications WHERE identifier LIKE 'trust-device-%' AND value=$1",&[&id]).await?.unwrap();
+    let old_key = db.text("SELECT \"identifier\" FROM \"verification\" WHERE \"identifier\" LIKE 'trust-device-%' AND \"value\"=$1",&[&id]).await?.unwrap();
     let foreign_state = db
         .text(
-            "SELECT token FROM sessions WHERE user_id=$1",
+            "SELECT \"token\" FROM \"session\" WHERE \"userId\"=$1",
             &[body(&foreign)["user"]["id"].as_str().unwrap()],
         )
         .await?;
@@ -1976,10 +1979,10 @@ async fn phone_trusted_device_completion_forwards_rotated_owned_proof<B: Backend
             .await?
             .is_none()
     );
-    let next_key = db.text("SELECT identifier FROM verifications WHERE identifier LIKE 'trust-device-%' AND value=$1",&[&id]).await?.unwrap();
+    let next_key = db.text("SELECT \"identifier\" FROM \"verification\" WHERE \"identifier\" LIKE 'trust-device-%' AND \"value\"=$1",&[&id]).await?.unwrap();
     assert_ne!(old_key, next_key);
     authenticated(&auth, &cookies(&trusted), "trusted-phone@example.test").await;
-    let count = db.count("sessions").await?;
+    let count = db.count("session").await?;
     let replay = call(
         &auth,
         request(
@@ -1991,7 +1994,7 @@ async fn phone_trusted_device_completion_forwards_rotated_owned_proof<B: Backend
     )
     .await;
     assert_eq!(body(&replay)["twoFactorRedirect"], true);
-    assert_eq!(db.count("sessions").await?, count);
+    assert_eq!(db.count("session").await?, count);
     assert!(
         auth.store()
             .get_latest_verification_by_identifier(&next_key)
@@ -2013,7 +2016,7 @@ async fn phone_trusted_device_completion_forwards_rotated_owned_proof<B: Backend
     authenticated(&auth, &cookies(&fresh), "trusted-phone@example.test").await;
     assert_eq!(
         db.text(
-            "SELECT token FROM sessions WHERE user_id=$1",
+            "SELECT \"token\" FROM \"session\" WHERE \"userId\"=$1",
             &[body(&foreign)["user"]["id"].as_str().unwrap()]
         )
         .await?,
@@ -2090,9 +2093,9 @@ async fn server_phone_consumption_admits_logical_input_and_preserves_identity<B:
         .await?;
     let owner = signup(&auth, "server-consume-owner@example.test").await;
     let foreign = signup(&auth, "server-consume-foreign@example.test").await;
-    let users = db.table("users").await?;
-    let accounts = db.table("accounts").await?;
-    let sessions = db.table("sessions").await?;
+    let users = db.table("user").await?;
+    let accounts = db.table("account").await?;
+    let sessions = db.table("session").await?;
     let phone = "+15550000177";
     let _ = call(
         &auth,
@@ -2105,7 +2108,7 @@ async fn server_phone_consumption_admits_logical_input_and_preserves_identity<B:
     )
     .await;
     let code = outbox.last().code;
-    let proofs = db.table("verifications").await?;
+    let proofs = db.table("verification").await?;
     let malformed = ServerEndpoint::<Value>::new("phone-number", "consumePhoneNumberOTP")
         .with_body_value(alibi::utils::json::parse_value(
             &json!({"phoneNumber":phone,"code":5}).to_string(),
@@ -2119,7 +2122,7 @@ async fn server_phone_consumption_admits_logical_input_and_preserves_identity<B:
         error.error.error_payload().1.as_deref(),
         Some("VALIDATION_ERROR")
     );
-    assert_eq!(db.table("verifications").await?, proofs);
+    assert_eq!(db.table("verification").await?, proofs);
     assert_eq!(*events.lock().unwrap(), ["matcher", "before", "after"]);
     events.lock().unwrap().clear();
     let wrong = auth
@@ -2130,7 +2133,7 @@ async fn server_phone_consumption_admits_logical_input_and_preserves_identity<B:
         .await
         .unwrap_err();
     assert_eq!(wrong.error.status_code(), 400);
-    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(db.count("verification").await?, 1);
     assert_eq!(*events.lock().unwrap(), ["matcher", "before", "after"]);
     events.lock().unwrap().clear();
     let consume = || PhoneNumberPlugin::consume_otp_endpoint(phone, &code);
@@ -2144,7 +2147,7 @@ async fn server_phone_consumption_admits_logical_input_and_preserves_identity<B:
     );
     assert!(output.headers().get_all("set-cookie").next().is_none());
     assert_eq!(*events.lock().unwrap(), ["matcher", "before", "after"]);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     let replay = auth
         .dispatch_endpoint(consume(), EndpointOptions::default())
         .await
@@ -2175,9 +2178,9 @@ async fn server_phone_consumption_admits_logical_input_and_preserves_identity<B:
         404,
     )
     .await;
-    assert_eq!(db.table("users").await?, users);
-    assert_eq!(db.table("accounts").await?, accounts);
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("user").await?, users);
+    assert_eq!(db.table("account").await?, accounts);
+    assert_eq!(db.table("session").await?, sessions);
     authenticated(&auth, &cookies(&owner), "server-consume-owner@example.test").await;
     authenticated(
         &auth,
@@ -2226,7 +2229,7 @@ async fn server_phone_otp_delivery_persists_consumable_proof_without_browser_aut
         .unwrap();
     use alibi::AuthVerification;
     assert_eq!(proof.value(), format!("{}:0", delivered.code));
-    let stored = db.table("verifications").await?;
+    let stored = db.table("verification").await?;
     for (input, code) in [
         (json!({"phoneNumber":42}), "VALIDATION_ERROR"),
         (json!({"phoneNumber":"+000"}), "INVALID_PHONE_NUMBER"),
@@ -2239,7 +2242,7 @@ async fn server_phone_otp_delivery_persists_consumable_proof_without_browser_aut
         .unwrap_err();
         assert_eq!(error.error.status_code(), 400);
         assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
-        assert_eq!(db.table("verifications").await?, stored);
+        assert_eq!(db.table("verification").await?, stored);
         assert_eq!(outbox.sent.lock().unwrap().len(), 1);
     }
     let _ = Box::pin(auth.dispatch_endpoint(
@@ -2247,8 +2250,8 @@ async fn server_phone_otp_delivery_persists_consumable_proof_without_browser_aut
         EndpointOptions::default(),
     ))
     .await?;
-    assert_eq!(db.count("verifications").await?, 0);
-    for table in ["users", "accounts", "sessions"] {
+    assert_eq!(db.count("verification").await?, 0);
+    for table in ["user", "account", "session"] {
         assert_eq!(db.count(table).await?, 0);
     }
     let missing = Box::pin(
@@ -2274,7 +2277,7 @@ async fn server_phone_otp_delivery_persists_consumable_proof_without_browser_aut
         error.error.error_payload().1.as_deref(),
         Some("SEND_OTP_NOT_IMPLEMENTED")
     );
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     Ok(())
 }
 
@@ -2305,7 +2308,7 @@ async fn server_phone_sign_in_publishes_owned_usable_sessions<B: Backend>(db: Db
     let foreign = Box::pin(signup(&auth, "server-phone-foreign@example.test")).await;
     let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for (input, status, code) in [
         (
@@ -2338,12 +2341,12 @@ async fn server_phone_sign_in_publishes_owned_usable_sessions<B: Backend>(db: Db
         assert_eq!(error.error.status_code(), status);
         assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
     }
-    let identities = db.tables(&["users", "accounts", "verifications"]).await?;
+    let identities = db.tables(&["user", "account", "verification"]).await?;
     for remember in [None, Some(false), Some(true)] {
         let mut input = json!({"phoneNumber":phone,"password":PASSWORD,"userId":foreign_id});
         if let Some(remember) = remember {
@@ -2395,11 +2398,11 @@ async fn server_phone_sign_in_publishes_owned_usable_sessions<B: Backend>(db: Db
         );
         Box::pin(authenticated(&auth, &cookie, email)).await;
         assert_eq!(
-            db.tables(&["users", "accounts", "verifications"]).await?,
+            db.tables(&["user", "account", "verification"]).await?,
             identities
         );
     }
-    assert_eq!(db.count("sessions").await?, 5);
+    assert_eq!(db.count("session").await?, 5);
     Ok(())
 }
 
@@ -2439,8 +2442,8 @@ async fn server_phone_verification_preserves_consumption_and_authority<B: Backen
     ))
     .await;
     let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
-    let initial_sessions = db.table("sessions").await?;
-    let accounts = db.table("accounts").await?;
+    let initial_sessions = db.table("session").await?;
+    let accounts = db.table("account").await?;
     let _ = Box::pin(auth.dispatch_endpoint(
         PhoneNumberPlugin::send_otp_endpoint(phone),
         EndpointOptions::default(),
@@ -2448,7 +2451,7 @@ async fn server_phone_verification_preserves_consumption_and_authority<B: Backen
     .await?;
     let code = outbox.last().code;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let invoke = |input: &Value| {
         ServerEndpoint::<Value>::new("phone-number", "verifyPhoneNumber").with_body(input)
@@ -2465,7 +2468,7 @@ async fn server_phone_verification_preserves_consumption_and_authority<B: Backen
         Some("VALIDATION_ERROR")
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -2506,9 +2509,9 @@ async fn server_phone_verification_preserves_consumption_and_authority<B: Backen
     assert_eq!(value.user.email.as_deref(), Some(email));
     assert!(value.user.username.is_none());
     assert!(value.user.display_username.is_none());
-    assert_eq!(db.table("sessions").await?, initial_sessions);
+    assert_eq!(db.table("session").await?, initial_sessions);
     assert!(verified.headers().get_all("set-cookie").next().is_none());
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     let _ = Box::pin(auth.dispatch_endpoint(
         PhoneNumberPlugin::send_otp_endpoint(phone),
         EndpointOptions::default(),
@@ -2523,14 +2526,14 @@ async fn server_phone_verification_preserves_consumption_and_authority<B: Backen
     assert_eq!(session_value["user"]["id"], owner_id);
     let response = signed_in.into_response()?;
     Box::pin(authenticated(&auth, &cookies(&response), email)).await;
-    assert_eq!(db.count("sessions").await?, 3);
+    assert_eq!(db.count("session").await?, 3);
     let new_phone = "+15550000478";
     let _ = Box::pin(auth.dispatch_endpoint(
         PhoneNumberPlugin::send_otp_endpoint(new_phone),
         EndpointOptions::default(),
     ))
     .await?;
-    let sessions = db.table("sessions").await?;
+    let sessions = db.table("session").await?;
     let updated = Box::pin(auth.dispatch_endpoint(invoke(&json!({"phoneNumber":new_phone,"code":outbox.last().code,"updatePhoneNumber":true,"userId":foreign_id}))?,EndpointOptions {
         headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()), ..Default::default()
     })).await?;
@@ -2539,8 +2542,8 @@ async fn server_phone_verification_preserves_consumption_and_authority<B: Backen
     assert_eq!(value["user"]["phoneNumber"], new_phone);
     assert_eq!(value["token"], body(&owner)["token"]);
     assert!(updated.headers().get_all("set-cookie").next().is_none());
-    assert_eq!(db.table("sessions").await?, sessions);
-    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.table("session").await?, sessions);
+    assert_eq!(db.table("account").await?, accounts);
     Box::pin(authenticated(
         &auth,
         &cookies(&foreign),
@@ -2553,7 +2556,7 @@ async fn server_phone_verification_preserves_consumption_and_authority<B: Backen
         EndpointOptions::default(),
     ))
     .await?;
-    let identities = db.tables(&["users", "accounts", "sessions"]).await?;
+    let identities = db.tables(&["user", "account", "session"]).await?;
     let denied = Box::pin(auth.dispatch_endpoint(
         invoke(
             &json!({"phoneNumber":denied_phone,"code":outbox.last().code,"updatePhoneNumber":true}),
@@ -2567,9 +2570,9 @@ async fn server_phone_verification_preserves_consumption_and_authority<B: Backen
         denied.error.error_payload().1.as_deref(),
         Some("USER_NOT_FOUND")
     );
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         identities
     );
     let replay = Box::pin(auth.dispatch_endpoint(

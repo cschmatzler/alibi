@@ -665,7 +665,7 @@ mod tests {
         assert_eq!(issued.get("providerId"), Some(&json!("google")));
         assert_eq!(issued.get("accountId"), Some(&json!(account.account_id())));
         let before = physical
-            .tables(&["accounts", "users", "sessions"])
+            .tables(&["account", "user", "session"])
             .await
             .unwrap();
         let sequence = Arc::new(std::sync::Mutex::new(vec![(
@@ -704,7 +704,7 @@ mod tests {
         assert_eq!(denied_body.get("code"), Some(&json!("ACCOUNT_NOT_FOUND")));
         assert_eq!(
             physical
-                .tables(&["accounts", "users", "sessions"])
+                .tables(&["account", "user", "session"])
                 .await
                 .unwrap(),
             before
@@ -746,7 +746,7 @@ mod tests {
             assert_eq!(
                 physical
                     .text(
-                        &format!("SELECT {column} FROM accounts WHERE id = $1"),
+                        &format!("SELECT {column} FROM \"account\" WHERE id = $1"),
                         &[account.id().as_ref()]
                     )
                     .await
@@ -759,7 +759,7 @@ mod tests {
             serde_json::from_str(before.first().expect("physical snapshot includes accounts"))
                 .unwrap();
         let updated_accounts: Vec<serde_json::Value> =
-            serde_json::from_str(&physical.table("accounts").await.unwrap()).unwrap();
+            serde_json::from_str(&physical.table("account").await.unwrap()).unwrap();
         assert_eq!(updated_accounts.len(), original_accounts.len());
         let foreign_id = json!(foreign_account.id());
         assert_eq!(
@@ -772,13 +772,13 @@ mod tests {
             "owner refresh must preserve the entire foreign account row"
         );
         assert_eq!(
-            physical.tables(&["users", "sessions"]).await.unwrap(),
+            physical.tables(&["user", "session"]).await.unwrap(),
             before.into_iter().skip(1).collect::<Vec<_>>()
         );
         assert_eq!(
             physical
                 .text(
-                    "SELECT refresh_token FROM accounts WHERE id = $1",
+                    "SELECT \"refreshToken\" FROM \"account\" WHERE id = $1",
                     &[foreign_account.id().as_ref()]
                 )
                 .await

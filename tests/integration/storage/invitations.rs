@@ -116,7 +116,7 @@ async fn staged_claim_survives_real_transaction_abort_and_reset_veto_then_retry_
         .await?
         .ok_or("claim failed")?;
     assert_eq!(claimed.status, InvitationStatus::Accepted);
-    _ = db.execute("CREATE TRIGGER stage_member_veto BEFORE INSERT ON member BEGIN SELECT RAISE(ABORT,'actual staged member veto'); END", &[]).await?;
+    _ = db.execute("CREATE TRIGGER stage_member_veto BEFORE INSERT ON \"member\" BEGIN SELECT RAISE(ABORT,'actual staged member veto'); END", &[]).await?;
     let (tx_user, tx_org, tx_foreign, tx_team, tx_token) = (
         user.clone(),
         org.clone(),
@@ -170,7 +170,7 @@ async fn staged_claim_survives_real_transaction_abort_and_reset_veto_then_retry_
             .status,
         InvitationStatus::Accepted
     );
-    _ = db.execute("CREATE TRIGGER stage_reset_veto BEFORE UPDATE OF status ON invitation WHEN OLD.status='accepted' AND NEW.status='pending' BEGIN SELECT RAISE(ABORT,'actual conditional reset veto'); END", &[]).await?;
+    _ = db.execute("CREATE TRIGGER stage_reset_veto BEFORE UPDATE OF \"status\" ON \"invitation\" WHEN OLD.\"status\"='accepted' AND NEW.\"status\"='pending' BEGIN SELECT RAISE(ABORT,'actual conditional reset veto'); END", &[]).await?;
     assert!(matches!(
         store
             .update_invitation_status_if_status(

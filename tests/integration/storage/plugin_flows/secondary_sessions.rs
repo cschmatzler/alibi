@@ -37,7 +37,7 @@ async fn sign_out_evicts_the_cached_session_and_its_owner_index<B: Backend>(db: 
     )
     .await;
     let other = body(&second)["token"].as_str().unwrap().to_owned();
-    assert_eq!(db.count("sessions").await?, 0);
+    assert_eq!(db.count("session").await?, 0);
     let index = format!("active-sessions-{user_id}");
     let listed = cache.get(&index).await?.unwrap();
     assert!(listed.contains(&token) && listed.contains(&other));

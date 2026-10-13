@@ -20,12 +20,12 @@ async fn oauth_admin_update_replaces_operator_metadata_and_preserves_secret<B: B
     let old = auth.store().get_oauth_client(id).await?.unwrap();
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
+            "oauthClient",
         ])
         .await?;
     for (id, patch, cookie, status) in [
@@ -57,12 +57,12 @@ async fn oauth_admin_update_replaces_operator_metadata_and_preserves_secret<B: B
         }
         assert_eq!(
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
+                "user",
+                "account",
+                "session",
+                "verification",
                 "jwks",
-                "oauth_client"
+                "oauthClient"
             ])
             .await?,
             before
@@ -74,12 +74,12 @@ async fn oauth_admin_update_replaces_operator_metadata_and_preserves_secret<B: B
     assert_eq!(body(&unchanged), expected);
     assert_eq!(
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client"
+            "oauthClient"
         ])
         .await?,
         before
@@ -111,8 +111,10 @@ async fn oauth_admin_update_replaces_operator_metadata_and_preserves_secret<B: B
     assert_eq!(stored.user_id, old.user_id);
     assert_eq!(stored.client_secret, old.client_secret);
     assert_eq!(stored.created_at, old.created_at);
-    assert!(stored.updated_at.timestamp() >= start);
-    assert!(stored.updated_at.timestamp() <= chrono::Utc::now().timestamp());
+    assert!(stored.updated_at.expect("client timestamp").timestamp() >= start);
+    assert!(
+        stored.updated_at.expect("client timestamp").timestamp() <= chrono::Utc::now().timestamp()
+    );
     assert!(stored.metadata.get("old_label").is_none());
     assert_eq!(stored.metadata["new_label"], "new");
     assert_eq!(stored.metadata["skip_consent"], false);
@@ -124,6 +126,6 @@ async fn oauth_admin_update_replaces_operator_metadata_and_preserves_secret<B: B
     physical.method = HttpMethod::Patch;
     let denied = auth.handle_request(physical).await?;
     assert_eq!(denied.status, 404);
-    assert_eq!(db.count("oauth_client").await?, 1);
+    assert_eq!(db.count("oauthClient").await?, 1);
     Ok(())
 }

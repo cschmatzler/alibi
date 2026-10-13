@@ -23,6 +23,7 @@ workspace = true
 
 [dependencies]
 alibi-core = { workspace = true }
+alibi-schema-registry = { workspace = true }
 alibi-sqlx-macros = { version = "0.6.0", path = "../sqlx-macros" }
 
 async-trait = { workspace = true }

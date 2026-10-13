@@ -24,7 +24,7 @@ async fn server_email_otp_verification_consumes_proofs_and_respects_auto_sign_in
         assert_eq!(body(&owner)["user"]["emailVerified"], false);
         let foreign = Box::pin(signup(&auth, "server-verify-foreign@example.test")).await;
         let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
-        let identities = db.tables(&["users", "accounts", "sessions"]).await?;
+        let identities = db.tables(&["user", "account", "session"]).await?;
         let otp = Box::pin(auth.dispatch_endpoint(
             EmailOtpPlugin::create_verification_otp_endpoint(
                 email,
@@ -35,7 +35,7 @@ async fn server_email_otp_verification_consumes_proofs_and_respects_auto_sign_in
         .await?
         .decode()?;
         let key = format!("email-verification-otp-{email}");
-        let proof = db.table("verifications").await?;
+        let proof = db.table("verification").await?;
         let endpoint = |input: &Value| {
             ServerEndpoint::<Value>::new("email-otp", "verifyEmailOTP").with_body(input)
         };
@@ -50,7 +50,7 @@ async fn server_email_otp_verification_consumes_proofs_and_respects_auto_sign_in
             invalid.error.error_payload().1.as_deref(),
             Some("VALIDATION_ERROR")
         );
-        assert_eq!(db.table("verifications").await?, proof);
+        assert_eq!(db.table("verification").await?, proof);
         let wrong = Box::pin(auth.dispatch_endpoint(
             endpoint(&json!({"email":email,"otp":"wrong"}))?,
             EndpointOptions::default(),
@@ -71,7 +71,7 @@ async fn server_email_otp_verification_consumes_proofs_and_respects_auto_sign_in
             format!("{otp}:1")
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
+            db.tables(&["user", "account", "session"]).await?,
             identities
         );
         let output = Box::pin(
@@ -104,7 +104,7 @@ async fn server_email_otp_verification_consumes_proofs_and_respects_auto_sign_in
                 .await?
                 .is_none()
         );
-        assert_eq!(db.count("sessions").await?, if auto { 3 } else { 2 });
+        assert_eq!(db.count("session").await?, if auto { 3 } else { 2 });
         if auto {
             let token = value.token.as_deref().unwrap();
             let session = auth.store().get_session(token).await?.unwrap();
@@ -128,7 +128,7 @@ async fn server_email_otp_verification_consumes_proofs_and_respects_auto_sign_in
         ))
         .await;
         let completed = db
-            .tables(&["users", "accounts", "sessions", "verifications"])
+            .tables(&["user", "account", "session", "verification"])
             .await?;
         let replay = Box::pin(auth.dispatch_endpoint(
             endpoint(&json!({"email":email,"otp":otp}))?,
@@ -141,7 +141,7 @@ async fn server_email_otp_verification_consumes_proofs_and_respects_auto_sign_in
             Some("INVALID_OTP")
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             completed
         );
@@ -167,7 +167,7 @@ async fn server_email_otp_verification_consumes_proofs_and_respects_auto_sign_in
             Some("USER_NOT_FOUND")
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             completed
         );

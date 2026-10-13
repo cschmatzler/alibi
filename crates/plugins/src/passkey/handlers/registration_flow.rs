@@ -314,7 +314,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
             aaguid: Some(Uuid::from_bytes(raw.aaguid()).to_string()),
         };
         (
-            raw.snapshot()?,
+            raw.snapshot(),
             metadata,
             crate::passkey::raw_none::raw_credential_id(&raw),
         )
@@ -435,7 +435,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
         device_type: snapshot.device_type().to_owned(),
         backed_up: snapshot.backed_up,
         transports: None,
-        credential: snapshot.serialized,
+
         aaguid: metadata.aaguid,
     };
     let callback = config.registration.after_verification.clone();
@@ -559,7 +559,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                             AuthError::SessionCreationCancelled => AuthError::Upstream {
                                 status: 500,
                                 code: "UNABLE_TO_CREATE_SESSION",
-                                message: "Unable to create session",
+                                message: "Unable to create \"session\"",
                             },
                             other @ (AuthError::Api { .. }
                             | AuthError::Upstream { .. }

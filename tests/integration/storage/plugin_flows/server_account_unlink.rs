@@ -91,7 +91,7 @@ async fn server_unlink_account_requires_fresh_authority_and_deletes_only_selecte
     let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
     let selected = remote_account(&auth, &owner_id).await?;
     let foreign_target = remote_account(&auth, &foreign_id).await?;
-    let original = db.tables(&["users", "accounts", "sessions"]).await?;
+    let original = db.tables(&["user", "account", "session"]).await?;
     let mut retained_accounts: Vec<Value> = serde_json::from_str(&original[1])?;
     retained_accounts.retain(|row| row["id"] != json!(selected));
     for input in [json!({}), json!({"accountId": 5})] {
@@ -123,10 +123,7 @@ async fn server_unlink_account_requires_fresh_authority_and_deletes_only_selecte
         .unwrap_err();
     assert_eq!(wrong_owner.error.status_code(), 400);
     assert!(wrong_owner.error.to_string().contains("Account not found"));
-    assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
-        original
-    );
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, original);
 
     let token = body(&owner)["token"].as_str().unwrap().to_owned();
     let created_at = auth
@@ -137,9 +134,9 @@ async fn server_unlink_account_requires_fresh_authority_and_deletes_only_selecte
         .created_at();
     let past =
         chrono::DateTime::parse_from_rfc3339("2020-01-01T00:00:00Z")?.with_timezone(&chrono::Utc);
-    db.set_timestamp("sessions", "created_at", ("token", &token), past)
+    db.set_timestamp("session", "createdAt", ("token", &token), past)
         .await?;
-    let stale = db.tables(&["users", "accounts", "sessions"]).await?;
+    let stale = db.tables(&["user", "account", "session"]).await?;
     let denied = auth
         .dispatch_endpoint(
             AccountManagementPlugin::unlink_account_endpoint(&selected),
@@ -155,10 +152,10 @@ async fn server_unlink_account_requires_fresh_authority_and_deletes_only_selecte
             ..
         }
     ));
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stale);
-    db.set_timestamp("sessions", "created_at", ("token", &token), created_at)
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, stale);
+    db.set_timestamp("session", "createdAt", ("token", &token), created_at)
         .await?;
-    let restored = db.tables(&["users", "sessions"]).await?;
+    let restored = db.tables(&["user", "session"]).await?;
     let removed = auth
         .dispatch_endpoint(
             AccountManagementPlugin::unlink_account_endpoint(&selected),
@@ -182,23 +179,26 @@ async fn server_unlink_account_requires_fresh_authority_and_deletes_only_selecte
         ]
     );
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM accounts WHERE id = $1", &[&selected])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"account\" WHERE id = $1",
+            &[&selected]
+        )
+        .await?,
         0
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM accounts WHERE id = $1",
+            "SELECT COUNT(*) FROM \"account\" WHERE id = $1",
             &[&foreign_target]
         )
         .await?,
         1
     );
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
-    assert_eq!(db.tables(&["users", "sessions"]).await?, restored);
-    assert_eq!(db.count("accounts").await?, 3);
+    let after = db.tables(&["user", "account", "session"]).await?;
+    assert_eq!(db.tables(&["user", "session"]).await?, restored);
+    assert_eq!(db.count("account").await?, 3);
     assert_eq!(
-        serde_json::from_str::<Vec<Value>>(&db.table("accounts").await?)?,
+        serde_json::from_str::<Vec<Value>>(&db.table("account").await?)?,
         retained_accounts
     );
     let credential = auth
@@ -221,7 +221,7 @@ async fn server_unlink_account_requires_fresh_authority_and_deletes_only_selecte
         assert_eq!(denied.error.status_code(), 400);
         assert!(denied.error.to_string().contains("last account"));
     }
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, after);
     let _ = call(&auth, request("/get-session", None, &cookies(&owner)), 200).await;
     let _ = call(
         &auth,
@@ -256,9 +256,9 @@ async fn http_unlink_account_rejects_stale_session_before_removing_selected_row<
         .created_at();
     let past =
         chrono::DateTime::parse_from_rfc3339("2020-01-01T00:00:00Z")?.with_timezone(&chrono::Utc);
-    db.set_timestamp("sessions", "created_at", ("token", &token), past)
+    db.set_timestamp("session", "createdAt", ("token", &token), past)
         .await?;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let denied = call(
         &auth,
         request(
@@ -276,14 +276,9 @@ async fn http_unlink_account_rejects_stale_session_before_removing_selected_row<
             .get_all("set-cookie")
             .any(|cookie| cookie.starts_with("better-auth.session_token="))
     );
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
-    db.set_timestamp(
-        "sessions",
-        "created_at",
-        ("token", &token),
-        original_creation,
-    )
-    .await?;
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
+    db.set_timestamp("session", "createdAt", ("token", &token), original_creation)
+        .await?;
     let removed = call(
         &auth,
         request(
@@ -300,8 +295,11 @@ async fn http_unlink_account_rejects_stale_session_before_removing_selected_row<
         assert_eq!(body(&malformed)["code"], "VALIDATION_ERROR");
     }
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM accounts WHERE id = $1", &[&selected])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"account\" WHERE id = $1",
+            &[&selected]
+        )
+        .await?,
         0
     );
     let _ = call(

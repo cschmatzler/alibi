@@ -111,7 +111,7 @@ impl PasskeyAuthenticationAfterVerification for Policy {
             "delete" => {
                 let url = self.url.lock().unwrap().clone();
                 let pool = alibi::sqlx::sqlx::SqlitePool::connect(&url).await.unwrap();
-                _ = alibi::sqlx::sqlx::query("DELETE FROM passkeys")
+                _ = alibi::sqlx::sqlx::query("DELETE FROM \"passkey\"")
                     .execute(&pool)
                     .await
                     .unwrap();
@@ -310,7 +310,7 @@ async fn passkey_registration_ownership<B: Backend>(db: Db) -> TestResult {
     *policy.mode.lock().unwrap() = "";
     _ = db
         .execute(
-            "CREATE TRIGGER fail_session_insert BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'forced'); END",
+            "CREATE TRIGGER fail_session_insert BEFORE INSERT ON \"session\" BEGIN SELECT RAISE(ABORT, 'forced'); END",
             &[],
         )
         .await?;
@@ -476,7 +476,7 @@ async fn passkey_authentication_hooks<B: Backend>(db: Db) -> TestResult {
         "observed",
         json!(policy.authenticated.lock().unwrap().clone()),
     );
-    trace.value("rows left", json!(db.count("passkeys").await?));
+    trace.value("rows left", json!(db.count("passkey").await?));
     trace.assert("passkey/authentication-hooks");
     B::close(connection).await
 }
@@ -497,9 +497,9 @@ async fn passkey_session_freshness<B: Backend>(db: Db) -> TestResult {
     )
     .await;
     db.set_timestamp(
-        "sessions",
-        "created_at",
-        ("user_id", &user_id),
+        "session",
+        "createdAt",
+        ("userId", &user_id),
         chrono::Utc::now() - chrono::Duration::days(3),
     )
     .await?;
@@ -595,7 +595,7 @@ async fn passkey_auth_callback_reassignment_keeps_verified_owner<B: Backend>(db:
             let credential = URL_SAFE_NO_PAD.encode(verification.result.cred_id().as_slice());
             let foreign = self.foreign.lock().unwrap().clone();
             self.seen.lock().unwrap().push(json!({"credential":credential,"counter":verification.result.counter(),"origin":verification.origin,"rpId":verification.rp_id,"path":context.request.unwrap().path}));
-            let changed=self.raw.execute("UPDATE passkeys SET user_id=$1, name='Application updated', backed_up=1, device_type='application-updated' WHERE credential_id=$2",&[&foreign,&credential]).await.map_err(|error|AuthError::internal(error.to_string()))?;
+            let changed=self.raw.execute("UPDATE \"passkey\" SET \"userId\"=$1, \"name\"='Application updated', \"backedUp\"=1, \"deviceType\"='application-updated' WHERE \"credentialID\"=$2",&[&foreign,&credential]).await.map_err(|error|AuthError::internal(error.to_string()))?;
             assert_eq!(changed, 1);
             Ok(())
         }
@@ -629,9 +629,9 @@ async fn passkey_auth_callback_reassignment_keeps_verified_owner<B: Backend>(db:
     )
     .await;
     _=call(&auth,request("/passkey/verify-registration",Some(json!({"response":proof(&key,&shape,&body(&registration)["challenge"]),"name":"Original"})),&format!("{}; {}",cookies(&owner),cookies(&registration))),200).await;
-    let before: Vec<Value> = serde_json::from_str(&db.table("passkeys").await?)?;
-    let before_sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
-    let stable = db.tables(&["users", "accounts"]).await?;
+    let before: Vec<Value> = serde_json::from_str(&db.table("passkey").await?)?;
+    let before_sessions: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
+    let stable = db.tables(&["user", "account"]).await?;
     let options = call(
         &auth,
         request(
@@ -676,16 +676,16 @@ async fn passkey_auth_callback_reassignment_keeps_verified_owner<B: Backend>(db:
         .await,
     );
     assert_eq!(current["user"]["id"], body(&owner)["user"]["id"]);
-    let after: Vec<Value> = serde_json::from_str(&db.table("passkeys").await?)?;
+    let after: Vec<Value> = serde_json::from_str(&db.table("passkey").await?)?;
     assert_eq!(after.len(), 1);
     assert_eq!(after[0]["id"], before[0]["id"]);
-    assert_eq!(after[0]["credential_id"], assertion["id"]);
-    assert_eq!(after[0]["user_id"], foreign_id);
+    assert_eq!(after[0]["credentialID"], assertion["id"]);
+    assert_eq!(after[0]["userId"], foreign_id);
     assert_eq!(after[0]["counter"], 2);
-    assert_eq!(after[0]["backed_up"], 1);
-    assert_eq!(after[0]["device_type"], "application-updated");
+    assert_eq!(after[0]["backedUp"], 1);
+    assert_eq!(after[0]["deviceType"], "application-updated");
     assert_eq!(after[0]["name"], "Application updated");
-    assert_eq!(after[0]["created_at"], before[0]["created_at"]);
+    assert_eq!(after[0]["createdAt"], before[0]["createdAt"]);
     let seen = policy.seen.lock().unwrap().clone();
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0]["credential"], assertion["id"]);
@@ -711,10 +711,10 @@ async fn passkey_auth_callback_reassignment_keeps_verified_owner<B: Backend>(db:
     );
     assert_eq!(foreign_passkeys.as_array().unwrap().len(), 1);
     assert_eq!(foreign_passkeys[0]["userId"], foreign_id);
-    let sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let sessions: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     assert_eq!(sessions.len(), before_sessions.len() + 1);
     assert!(before_sessions.iter().all(|row| sessions.contains(row)));
-    assert_eq!(db.tables(&["users", "accounts"]).await?, stable);
+    assert_eq!(db.tables(&["user", "account"]).await?, stable);
     let replay = call(
         &auth,
         request(
@@ -728,11 +728,11 @@ async fn passkey_auth_callback_reassignment_keeps_verified_owner<B: Backend>(db:
     assert_eq!(body(&replay)["code"], "CHALLENGE_NOT_FOUND");
     assert_eq!(policy.seen.lock().unwrap().len(), 1);
     assert_eq!(
-        serde_json::from_str::<Vec<Value>>(&db.table("passkeys").await?)?,
+        serde_json::from_str::<Vec<Value>>(&db.table("passkey").await?)?,
         after
     );
     assert_eq!(
-        serde_json::from_str::<Vec<Value>>(&db.table("sessions").await?)?,
+        serde_json::from_str::<Vec<Value>>(&db.table("session").await?)?,
         sessions
     );
     authenticated(&auth, &cookies(&owner), "owner@example.test").await;
@@ -802,8 +802,8 @@ async fn passkey_registration_forces_credential_properties_over_static_false<B: 
     );
     assert_eq!(current["user"]["id"], owner_id);
     assert_eq!(current["user"]["email"], "extension-owner@example.test");
-    assert_eq!(db.count("passkeys").await?, 1);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("passkey").await?, 1);
+    assert_eq!(db.count("verification").await?, 0);
     B::close(connection).await
 }
 
@@ -839,14 +839,14 @@ async fn passkey_verification_freshness_retains_issued_proof<B: Backend>(db: Db)
         let challenge = cookies(&options);
         let token = body(&owner)["token"].as_str().unwrap().to_owned();
         db.set_timestamp(
-            "sessions",
-            "created_at",
+            "session",
+            "createdAt",
             ("token", &token),
             chrono::Utc::now() - chrono::Duration::days(3),
         )
         .await?;
         let before = db
-            .tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+            .tables(&["user", "account", "session", "passkey", "verification"])
             .await?;
         let old = request(
             "/passkey/verify-registration",
@@ -860,7 +860,7 @@ async fn passkey_verification_freshness_retains_issued_proof<B: Backend>(db: Db)
             assert_eq!(body(&stale)["code"], "SESSION_NOT_FRESH");
             assert!(stale.headers.get_all("set-cookie").next().is_none());
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                db.tables(&["user", "account", "session", "passkey", "verification"])
                     .await?,
                 before
             );
@@ -888,11 +888,14 @@ async fn passkey_verification_freshness_retains_issued_proof<B: Backend>(db: Db)
         assert_eq!(accepted.status, 200);
         let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
         assert_eq!(
-            db.count_where("SELECT COUNT(*) FROM passkeys WHERE user_id=$1", &[&id])
-                .await?,
+            db.count_where(
+                "SELECT COUNT(*) FROM \"passkey\" WHERE \"userId\"=$1",
+                &[&id]
+            )
+            .await?,
             1
         );
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
         authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
         B::close(connection).await?;
     }

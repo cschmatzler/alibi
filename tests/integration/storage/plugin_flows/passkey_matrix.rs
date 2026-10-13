@@ -147,7 +147,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         .await?;
     let owner = cookies(&signup(&auth, "passkey-matrix@example.com").await);
     let before_options = db
-        .tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+        .tables(&["user", "account", "session", "passkey", "verification"])
         .await?;
     for (query, cookie, status, code) in [
         (None, None, 401, "UNAUTHORIZED"),
@@ -189,7 +189,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         assert_eq!(error.error.status_code(), status);
         assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+            db.tables(&["user", "account", "session", "passkey", "verification"])
                 .await?,
             before_options
         );
@@ -216,7 +216,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         );
         if authenticator.id == b"matrix-key-one" {
             let before = db
-                .tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                .tables(&["user", "account", "session", "passkey", "verification"])
                 .await
                 .unwrap();
             for (input, cookie, status, code) in [
@@ -269,7 +269,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
                 assert_eq!(error.error.status_code(), status);
                 assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
                 assert_eq!(
-                    db.tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                    db.tables(&["user", "account", "session", "passkey", "verification"])
                         .await
                         .unwrap(),
                     before
@@ -306,7 +306,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
             Ok(output) => {
                 if authenticator.id == b"matrix-key-one" {
                     let before = db
-                        .tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                        .tables(&["user", "account", "session", "passkey", "verification"])
                         .await
                         .unwrap();
                     let replay = Box::pin(
@@ -341,7 +341,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
                         Some("CHALLENGE_NOT_FOUND")
                     );
                     assert_eq!(
-                        db.tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                        db.tables(&["user", "account", "session", "passkey", "verification"])
                             .await
                             .unwrap(),
                         before
@@ -428,7 +428,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
     );
     let foreign = cookies(&signup(&auth, "passkey-matrix-foreign@example.com").await);
     let before_list = db
-        .tables(&["users", "accounts", "sessions", "passkeys"])
+        .tables(&["user", "account", "session", "passkey"])
         .await?;
     let guest = Box::pin(auth.dispatch_endpoint(
         PasskeyPlugin::list_passkeys_endpoint(),
@@ -470,7 +470,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
     assert!(!listed.decode()?.is_empty());
     assert!(listed.headers().get("set-cookie").is_none());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "passkeys"])
+        db.tables(&["user", "account", "session", "passkey"])
             .await?,
         before_list
     );
@@ -482,7 +482,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         (None, false),
     ] {
         let before = db
-            .tables(&["users", "accounts", "sessions", "passkeys"])
+            .tables(&["user", "account", "session", "passkey"])
             .await?;
         let output = Box::pin(
             auth.dispatch_endpoint(
@@ -509,7 +509,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
             );
         }
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "passkeys"])
+            db.tables(&["user", "account", "session", "passkey"])
                 .await?,
             before
         );
@@ -542,7 +542,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         let proof = authenticator.assertion(&client, "localhost", flags, counter);
         if authenticator.id == b"matrix-key-one" && flags == USER_PRESENT | USER_VERIFIED {
             let before = db
-                .tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                .tables(&["user", "account", "session", "passkey", "verification"])
                 .await
                 .unwrap();
             for (input, cookie, status, code) in [
@@ -589,7 +589,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
                 assert_eq!(error.error.status_code(), status);
                 assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
                 assert_eq!(
-                    db.tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                    db.tables(&["user", "account", "session", "passkey", "verification"])
                         .await
                         .unwrap(),
                     before
@@ -633,7 +633,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
                     assert_eq!(live.status, 200);
                     assert_eq!(body(&live)["user"]["id"], user["id"]);
                     let before = db
-                        .tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                        .tables(&["user", "account", "session", "passkey", "verification"])
                         .await
                         .unwrap();
                     let replay = Box::pin(
@@ -662,7 +662,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
                         Some("CHALLENGE_NOT_FOUND")
                     );
                     assert_eq!(
-                        db.tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                        db.tables(&["user", "account", "session", "passkey", "verification"])
                             .await
                             .unwrap(),
                         before
@@ -717,7 +717,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         .await?
         .unwrap();
     let before_update = db
-        .tables(&["users", "accounts", "sessions", "passkeys"])
+        .tables(&["user", "account", "session", "passkey"])
         .await?;
     for (input, cookie, status, code) in [
         (
@@ -773,7 +773,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         assert_eq!(error.error.status_code(), status);
         assert_eq!(error.error.error_payload().1.as_deref(), code);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "passkeys"])
+            db.tables(&["user", "account", "session", "passkey"])
                 .await?,
             before_update
         );
@@ -786,20 +786,13 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
     assert_eq!(renamed.decode()?.passkey["name"], "Renamed");
     assert_eq!(renamed.decode()?.passkey["id"], registered.id);
     let after_update = db
-        .tables(&["users", "accounts", "sessions", "passkeys"])
+        .tables(&["user", "account", "session", "passkey"])
         .await?;
     assert_eq!(&after_update[..3], &before_update[..3]);
     let mut expected: Vec<Value> = serde_json::from_str(&before_update[3])?;
     for row in &mut expected {
         if row["id"] == registered.id {
             row["name"] = json!("Renamed");
-            let actual: Vec<Value> = serde_json::from_str(&after_update[3])?;
-            let updated = actual
-                .iter()
-                .find(|value| value["id"] == registered.id)
-                .unwrap();
-            assert!(updated["updated_at"].as_str().unwrap() >= row["updated_at"].as_str().unwrap());
-            row["updated_at"] = updated["updated_at"].clone();
         }
     }
     assert_eq!(
@@ -807,7 +800,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         expected
     );
     let before_delete = db
-        .tables(&["users", "accounts", "sessions", "passkeys"])
+        .tables(&["user", "account", "session", "passkey"])
         .await?;
     for (input, cookie, status, code, absent) in [
         (
@@ -860,7 +853,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         assert_eq!(error.error.error_payload().1.as_deref(), code);
         assert_eq!(error.body_absent, absent);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "passkeys"])
+            db.tables(&["user", "account", "session", "passkey"])
                 .await?,
             before_delete
         );
@@ -876,7 +869,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         json!({"message":"Missing required parameter: id"})
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "passkeys"])
+        db.tables(&["user", "account", "session", "passkey"])
             .await?,
         before_delete
     );
@@ -899,7 +892,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
             .is_none()
     );
     let after_delete = db
-        .tables(&["users", "accounts", "sessions", "passkeys"])
+        .tables(&["user", "account", "session", "passkey"])
         .await?;
     assert_eq!(&after_delete[..3], &before_delete[..3]);
     let expected: Vec<Value> = serde_json::from_str::<Vec<Value>>(&before_delete[3])?
@@ -925,7 +918,7 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         Some("PASSKEY_NOT_FOUND")
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "passkeys"])
+        db.tables(&["user", "account", "session", "passkey"])
             .await?,
         after_delete
     );
@@ -992,7 +985,7 @@ async fn passkey_signed_backup_changes_preserve_registration_snapshots<B: Backen
     assert_eq!(initial[0]["counter"], 1);
     assert_eq!(initial[0]["deviceType"], "multiDevice");
     assert_eq!(initial[0]["backedUp"], false);
-    let initial_physical: Vec<Value> = serde_json::from_str(&db.table("passkeys").await?)?;
+    let initial_physical: Vec<Value> = serde_json::from_str(&db.table("passkey").await?)?;
     assert_eq!(initial_physical.len(), 1);
     _ = call(
         &auth,
@@ -1000,11 +993,11 @@ async fn passkey_signed_backup_changes_preserve_registration_snapshots<B: Backen
         200,
     )
     .await;
-    let stable_identity = db.tables(&["users", "accounts"]).await?;
-    let sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let stable_identity = db.tables(&["user", "account"]).await?;
+    let sessions: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     let foreign_session = sessions
         .iter()
-        .find(|row| row["user_id"] == foreign_id)
+        .find(|row| row["userId"] == foreign_id)
         .unwrap()
         .clone();
 
@@ -1053,31 +1046,30 @@ async fn passkey_signed_backup_changes_preserve_registration_snapshots<B: Backen
         let mut expected = initial.clone();
         expected[0]["counter"] = json!(counter);
         assert_eq!(listed, expected);
-        let physical: Vec<Value> = serde_json::from_str(&db.table("passkeys").await?)?;
+        let physical: Vec<Value> = serde_json::from_str(&db.table("passkey").await?)?;
         assert_eq!(physical.len(), 1);
         for field in [
             "id",
-            "user_id",
-            "credential_id",
-            "backed_up",
-            "device_type",
+            "userId",
+            "credentialID",
+            "backedUp",
+            "deviceType",
             "name",
-            "created_at",
+            "createdAt",
         ] {
             assert_eq!(physical[0][field], initial_physical[0][field], "{field}");
         }
         assert_eq!(physical[0]["counter"], counter);
-        assert_ne!(physical[0]["credential"], initial_physical[0]["credential"]);
-        assert_eq!(db.tables(&["users", "accounts"]).await?, stable_identity);
-        let sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+        assert_eq!(db.tables(&["user", "account"]).await?, stable_identity);
+        let sessions: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
         assert_eq!(sessions.len(), 2);
         assert_eq!(
-            sessions.iter().find(|row| row["user_id"] == foreign_id),
+            sessions.iter().find(|row| row["userId"] == foreign_id),
             Some(&foreign_session)
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM sessions WHERE user_id=$1",
+                "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
                 &[&owner_id]
             )
             .await?,
@@ -1105,7 +1097,7 @@ async fn passkey_concurrent_real_ceremonies_single_owner<B: Backend>(db: Db) -> 
     let owner = signup(&auth, "owner@example.test").await;
     let foreign = signup(&auth, "foreign@example.test").await;
     let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
-    let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+    let baseline = db.tables(&["user", "account", "session"]).await?;
     let jar = cookies(&owner);
     let key = Authenticator::new(109, "raced-genuine-key");
     let options = call(
@@ -1136,11 +1128,8 @@ async fn passkey_concurrent_real_ceremonies_single_owner<B: Backend>(db: Db) -> 
     assert_eq!(body(&results[1])["code"], "CHALLENGE_NOT_FOUND");
     let rejected = call(&auth, submit, 400).await;
     assert_eq!(body(&rejected)["code"], "CHALLENGE_NOT_FOUND");
-    assert_eq!(db.count("passkeys").await?, 1);
-    assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
-        baseline
-    );
+    assert_eq!(db.count("passkey").await?, 1);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, baseline);
     _ = call(&auth, request("/sign-out", Some(json!({})), &jar), 200).await;
     let options = call(
         &auth,
@@ -1171,24 +1160,27 @@ async fn passkey_concurrent_real_ceremonies_single_owner<B: Backend>(db: Db) -> 
     assert_eq!(body(&results[0])["user"]["id"], id);
     authenticated(&auth, &cookies(&results[0]), "owner@example.test").await;
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+            &[&id]
+        )
+        .await?,
         1
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM passkeys WHERE user_id=$1 AND counter=2",
+            "SELECT COUNT(*) FROM \"passkey\" WHERE \"userId\"=$1 AND \"counter\"=2",
             &[&id]
         )
         .await?,
         1
     );
     let after = db
-        .tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+        .tables(&["user", "account", "session", "passkey", "verification"])
         .await?;
     _ = call(&auth, submit, 400).await;
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+        db.tables(&["user", "account", "session", "passkey", "verification"])
             .await?,
         after
     );

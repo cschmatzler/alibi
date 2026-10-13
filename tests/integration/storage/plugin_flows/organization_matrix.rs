@@ -389,7 +389,7 @@ async fn organization_mixed_selectors_only_update_current_token_selection<B: Bac
     let sibling_token = body(&sibling)["token"].as_str().unwrap().to_owned();
     let token = body(&owner)["token"].as_str().unwrap().to_owned();
     let before = db
-        .tables(&["organization", "member", "users", "accounts"])
+        .tables(&["organization", "member", "user", "account"])
         .await?;
     for (input, selected) in [
         (
@@ -418,7 +418,7 @@ async fn organization_mixed_selectors_only_update_current_token_selection<B: Bac
         }
         assert_eq!(
             db.text(
-                "SELECT active_organization_id FROM sessions WHERE token=$1",
+                "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
                 &[&token]
             )
             .await?
@@ -427,7 +427,7 @@ async fn organization_mixed_selectors_only_update_current_token_selection<B: Bac
         );
         assert_eq!(
             db.text(
-                "SELECT active_organization_id FROM sessions WHERE token=$1",
+                "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
                 &[&sibling_token]
             )
             .await?
@@ -435,12 +435,12 @@ async fn organization_mixed_selectors_only_update_current_token_selection<B: Bac
             second["id"].as_str()
         );
         assert_eq!(
-            db.tables(&["organization", "member", "users", "accounts"])
+            db.tables(&["organization", "member", "user", "account"])
                 .await?,
             before
         );
     }
-    let sessions = db.table("sessions").await?;
+    let sessions = db.table("session").await?;
     let denied = call(
         &auth,
         request(
@@ -452,7 +452,7 @@ async fn organization_mixed_selectors_only_update_current_token_selection<B: Bac
     )
     .await;
     assert!(!denied.headers.contains_key("set-cookie"));
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("session").await?, sessions);
     _ = call(
         &auth,
         request(
@@ -512,7 +512,7 @@ async fn organization_selection_returns_stored_metadata_text_without_rewriting_r
         .await,
     );
     let before = db
-        .tables(&["organization", "member", "users", "accounts"])
+        .tables(&["organization", "member", "user", "account"])
         .await?;
     let sibling_token = body(&sibling)["token"].as_str().unwrap().to_owned();
     for (input, id) in [
@@ -536,7 +536,7 @@ async fn organization_selection_returns_stored_metadata_text_without_rewriting_r
         assert_eq!(
             selected["metadata"].as_str(),
             db.text(
-                "SELECT CAST(metadata AS TEXT) FROM organization WHERE id=$1",
+                "SELECT CAST(\"metadata\" AS TEXT) FROM \"organization\" WHERE id=$1",
                 &[id]
             )
             .await?
@@ -545,13 +545,13 @@ async fn organization_selection_returns_stored_metadata_text_without_rewriting_r
         assert!(selected.get("members").is_none());
         assert!(selected.get("invitations").is_none());
         assert_eq!(
-            db.tables(&["organization", "member", "users", "accounts"])
+            db.tables(&["organization", "member", "user", "account"])
                 .await?,
             before
         );
         assert_eq!(
             db.text(
-                "SELECT active_organization_id FROM sessions WHERE token=$1",
+                "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
                 &[&sibling_token]
             )
             .await?
@@ -621,12 +621,12 @@ async fn revoked_cache_identity_retains_physical_organization_membership_checks<
     let other_id = body(&other)["id"].as_str().unwrap().to_owned();
     _ = db
         .execute(
-            "DELETE FROM sessions WHERE token=$1",
+            "DELETE FROM \"session\" WHERE \"token\"=$1",
             &[body(&owner)["token"].as_str().unwrap()],
         )
         .await?;
     let before = db
-        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .tables(&["user", "account", "session", "organization", "member"])
         .await?;
     let policy = json!({"organizationId":id,"permissions":{"organization":["update"]}});
     let retained = call(
@@ -681,7 +681,7 @@ async fn revoked_cache_identity_retains_physical_organization_membership_checks<
         );
     }
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization", "member"])
+        db.tables(&["user", "account", "session", "organization", "member"])
             .await?,
         before
     );
@@ -735,7 +735,7 @@ async fn organization_empty_update_storage_error<B: Backend>(db: Db) -> TestResu
     .await;
     let sibling_jar = [cookies(&sibling), cookies(&selected)].join("; ");
     let before = db
-        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .tables(&["user", "account", "session", "organization", "member"])
         .await?;
     for (jar, status) in [
         (String::new(), 401),
@@ -759,7 +759,7 @@ async fn organization_empty_update_storage_error<B: Backend>(db: Db) -> TestResu
         }
         assert!(!failed.headers.contains_key("set-cookie"));
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "organization", "member"])
+            db.tables(&["user", "account", "session", "organization", "member"])
                 .await?,
             before
         );
@@ -778,15 +778,15 @@ async fn organization_empty_update_storage_error<B: Backend>(db: Db) -> TestResu
     assert_eq!(body(&retry)["name"], "Recovered");
     assert_eq!(body(&retry)["logo"], Value::Null);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         before[..3]
     );
     assert_eq!(db.table("member").await?, before[4]);
     let after = db
-        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .tables(&["user", "account", "session", "organization", "member"])
         .await?;
     let trigger = format!(
-        "CREATE TRIGGER organization_update_veto BEFORE UPDATE ON organization WHEN OLD.id='{}' BEGIN SELECT RAISE(ABORT,'actual update unavailable'); END",
+        "CREATE TRIGGER organization_update_veto BEFORE UPDATE ON \"organization\" WHEN OLD.id='{}' BEGIN SELECT RAISE(ABORT,'actual update unavailable'); END",
         id.replace('\'', "''")
     );
     _ = db.execute(&trigger, &[]).await?;
@@ -803,7 +803,7 @@ async fn organization_empty_update_storage_error<B: Backend>(db: Db) -> TestResu
     assert!(veto.body.is_empty());
     assert!(!veto.headers.contains_key("content-type"));
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization", "member"])
+        db.tables(&["user", "account", "session", "organization", "member"])
             .await?,
         after
     );
@@ -838,12 +838,12 @@ async fn organization_ignored_default_patch_null_result<B: Backend>(db: Db) -> T
         }
     }
     let before = db
-        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .tables(&["user", "account", "session", "organization", "member"])
         .await?;
     for disappear in [false, true] {
         let action = if disappear {
             format!(
-                "DELETE FROM member WHERE organization_id='{}'; DELETE FROM organization WHERE id='{}';",
+                "DELETE FROM \"member\" WHERE \"organizationId\"='{}'; DELETE FROM \"organization\" WHERE id='{}';",
                 id.replace('\'', "''"),
                 id.replace('\'', "''")
             )
@@ -851,7 +851,7 @@ async fn organization_ignored_default_patch_null_result<B: Backend>(db: Db) -> T
             String::new()
         };
         let trigger = format!(
-            "CREATE TRIGGER organization_update_ignore BEFORE UPDATE ON organization WHEN OLD.id='{}' BEGIN {} SELECT RAISE(IGNORE); END",
+            "CREATE TRIGGER organization_update_ignore BEFORE UPDATE ON \"organization\" WHEN OLD.id='{}' BEGIN {} SELECT RAISE(IGNORE); END",
             id.replace('\'', "''"),
             action
         );
@@ -873,14 +873,14 @@ async fn organization_ignored_default_patch_null_result<B: Backend>(db: Db) -> T
         );
         assert!(!response.headers.contains_key("set-cookie"));
         let after = db
-            .tables(&["users", "accounts", "sessions", "organization", "member"])
+            .tables(&["user", "account", "session", "organization", "member"])
             .await?;
         if !disappear {
             assert_eq!(after, before);
         } else {
             assert_eq!(after[..3], before[..3]);
             for (table, index, foreign_key) in
-                [("organization", 3, "id"), ("member", 4, "organization_id")]
+                [("organization", 3, "id"), ("member", 4, "organizationId")]
             {
                 let old: Vec<Value> = serde_json::from_str(&before[index])?;
                 let current: Vec<Value> = serde_json::from_str(&db.table(table).await?)?;
@@ -893,7 +893,7 @@ async fn organization_ignored_default_patch_null_result<B: Backend>(db: Db) -> T
             }
             assert_eq!(
                 db.text(
-                    "SELECT active_organization_id FROM sessions WHERE token=$1",
+                    "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
                     &[body(&owner)["token"].as_str().unwrap()]
                 )
                 .await?
@@ -939,7 +939,7 @@ async fn organization_fractional_timestamps_project_without_rewriting_owned_rows
     let expected = "2001-02-03T04:05:06.227Z";
     assert_eq!(
         db.execute(
-            "UPDATE organization SET created_at=$1 WHERE id=$2",
+            "UPDATE \"organization\" SET \"createdAt\"=$1 WHERE id=$2",
             &[source, organization_id]
         )
         .await?,
@@ -947,7 +947,7 @@ async fn organization_fractional_timestamps_project_without_rewriting_owned_rows
     );
     assert_eq!(
         db.execute(
-            "UPDATE member SET created_at=$1 WHERE id=$2",
+            "UPDATE \"member\" SET \"createdAt\"=$1 WHERE id=$2",
             &[source, member_id]
         )
         .await?,
@@ -957,10 +957,10 @@ async fn organization_fractional_timestamps_project_without_rewriting_owned_rows
         .tables(&[
             "organization",
             "member",
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
         ])
         .await?;
     let cookie = cookies(&owner);
@@ -1000,16 +1000,16 @@ async fn organization_fractional_timestamps_project_without_rewriting_owned_rows
         db.tables(&[
             "organization",
             "member",
-            "users",
-            "accounts",
-            "sessions",
-            "verifications"
+            "user",
+            "account",
+            "session",
+            "verification"
         ])
         .await?,
         before
     );
     for (table, id) in [("organization", organization_id), ("member", member_id)] {
-        let sql = format!("SELECT CAST(created_at AS TEXT) FROM {table} WHERE id=$1");
+        let sql = format!("SELECT CAST(\"createdAt\" AS TEXT) FROM {table} WHERE id=$1");
         let persisted = db
             .text(&sql, &[id])
             .await?
@@ -1062,7 +1062,7 @@ async fn organization_null_metadata_keeps_storage_and_response_distinctions<B: B
         if literal {
             assert_eq!(
                 db.execute(
-                    "UPDATE organization SET metadata=$1 WHERE id=$2",
+                    "UPDATE \"organization\" SET \"metadata\"=$1 WHERE id=$2",
                     &["null", id]
                 )
                 .await?,
@@ -1073,10 +1073,10 @@ async fn organization_null_metadata_keeps_storage_and_response_distinctions<B: B
         let tables = [
             "organization",
             "member",
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
         ];
         let before = db.tables(&tables).await?;
         for path in [
@@ -1175,13 +1175,13 @@ async fn organization_null_metadata_keeps_storage_and_response_distinctions<B: B
                     .unwrap()
                     .as_object_mut()
                     .unwrap()
-                    .remove("updated_at");
+                    .remove("updatedAt");
             }
             assert_eq!(current_sessions, prior_sessions);
         }
         assert_eq!(
             db.text(
-                "SELECT CAST(metadata AS TEXT) FROM organization WHERE id=$1",
+                "SELECT CAST(\"metadata\" AS TEXT) FROM \"organization\" WHERE id=$1",
                 &[id]
             )
             .await?,
@@ -1262,18 +1262,18 @@ async fn organization_selection_verifies_first_cookie_without_rotating_authority
     )
     .await;
     let tables = [
-        "users",
-        "accounts",
+        "user",
+        "account",
         "organization",
         "member",
-        "sessions",
-        "verifications",
+        "session",
+        "verification",
     ];
     let before = db.tables(&tables).await?;
     let prior: Vec<Value> = serde_json::from_str(&before[4])?;
     let original = prior.iter().find(|row| row["token"] == token).unwrap();
-    assert_eq!(original["user_id"], owner_id);
-    assert_eq!(original["active_organization_id"], id);
+    assert_eq!(original["userId"], owner_id);
+    assert_eq!(original["activeOrganizationId"], id);
     let initial = body(&call(&auth, request("/get-session", None, &valid), 200).await);
     let issued_expiry =
         chrono::DateTime::parse_from_rfc3339(initial["session"]["expiresAt"].as_str().unwrap())?;
@@ -1338,8 +1338,8 @@ async fn organization_selection_verifies_first_cookie_without_rotating_authority
         let mut actual: Vec<Value> = serde_json::from_str(&current[4])?;
         let active = actual.iter().find(|row| row["token"] == token).unwrap();
         if browser == Some(false) && persistent_expiry.is_none() {
-            assert_ne!(active["expires_at"], original["expires_at"]);
-            persistent_expiry = Some(active["expires_at"].clone());
+            assert_ne!(active["expiresAt"], original["expiresAt"]);
+            persistent_expiry = Some(active["expiresAt"].clone());
             let state = body(&call(&auth, request("/get-session", None, &valid), 200).await);
             let extended = chrono::DateTime::parse_from_rfc3339(
                 state["session"]["expiresAt"].as_str().unwrap(),
@@ -1351,9 +1351,9 @@ async fn organization_selection_verifies_first_cookie_without_rotating_authority
             .iter_mut()
             .find(|row| row["token"] == token)
             .unwrap();
-        expected_owner["active_organization_id"] = if selected { json!(id) } else { Value::Null };
+        expected_owner["activeOrganizationId"] = if selected { json!(id) } else { Value::Null };
         if let Some(expiry) = &persistent_expiry {
-            expected_owner["expires_at"] = expiry.clone();
+            expected_owner["expiresAt"] = expiry.clone();
         }
         for rows in [&mut expected, &mut actual] {
             _ = rows
@@ -1362,7 +1362,7 @@ async fn organization_selection_verifies_first_cookie_without_rotating_authority
                 .unwrap()
                 .as_object_mut()
                 .unwrap()
-                .remove("updated_at");
+                .remove("updatedAt");
         }
         assert_eq!(actual, expected);
         let state = body(&call(&auth, request("/get-session", None, &valid), 200).await);

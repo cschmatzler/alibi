@@ -159,7 +159,7 @@ async fn api_key_session_outcomes<B: Backend>(db: Db) -> TestResult {
     );
     _ = db
         .execute(
-            "UPDATE api_keys SET expires_at = $1",
+            "UPDATE \"apikey\" SET \"expiresAt\" = $1",
             &[&(chrono::Utc::now() - chrono::Duration::days(1)).to_rfc3339()],
         )
         .await;

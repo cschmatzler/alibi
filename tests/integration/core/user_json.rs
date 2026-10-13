@@ -102,7 +102,6 @@ mod tests {
             logo: Set(None),
             metadata: Set(Some(prepared_2)),
             created_at: Set(chrono::Utc::now()),
-            updated_at: Set(chrono::Utc::now()),
         }
         .insert(&db)
         .await
@@ -126,7 +125,7 @@ mod tests {
         let row = db
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
-                "SELECT metadata FROM organization WHERE id = ?",
+                "SELECT \"metadata\" FROM \"organization\" WHERE id = ?",
                 ["prepared-metadata".into()],
             ))
             .await
@@ -196,7 +195,7 @@ mod tests {
         let row = db
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
-                "SELECT metadata FROM users WHERE id = ?",
+                "SELECT \"metadata\" FROM \"user\" WHERE id = ?",
                 [id.clone().into()],
             ))
             .await
@@ -232,7 +231,7 @@ mod tests {
         let row_2 = db
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
-                "SELECT metadata FROM users WHERE id = ?",
+                "SELECT \"metadata\" FROM \"user\" WHERE id = ?",
                 [id.into()],
             ))
             .await
@@ -303,7 +302,7 @@ mod tests {
         let row = db
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
-                "SELECT metadata, tenant FROM custom_metadata_users WHERE id = ?",
+                "SELECT \"metadata\", tenant FROM custom_metadata_users WHERE id = ?",
                 [id.into()],
             ))
             .await

@@ -292,7 +292,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     router=router.route("/__test/api-key-background/state",get(move |Query(query):Query<HashMap<String,String>>| {
         let database=state_db.clone();
         async move {
-            let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT id,name,reference_id,config_id,key,remaining,request_count,expires_at,created_at,updated_at,last_request,last_refill_at,refill_amount,refill_interval,rate_limit_enabled,rate_limit_time_window,rate_limit_max FROM api_keys ORDER BY name")).await.unwrap();
+            let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT id,\"name\",\"referenceId\",\"configId\",\"key\",\"remaining\",\"requestCount\",\"expiresAt\",\"createdAt\",\"updatedAt\",\"lastRequest\",\"lastRefillAt\",\"refillAmount\",\"refillInterval\",\"rateLimitEnabled\",\"rateLimitTimeWindow\",\"rateLimitMax\" FROM \"apikey\" ORDER BY \"name\"")).await.unwrap();
             let values:Vec<_>=rows.iter().map(|row|json!({"id":row.try_get::<String>("","id").unwrap(),"name":row.try_get::<Option<String>>("","name").unwrap(),"referenceId":row.try_get::<String>("","reference_id").unwrap(),"configId":row.try_get::<String>("","config_id").unwrap(),"key":row.try_get::<String>("","key").unwrap(),"remaining":row.try_get::<Option<f64>>("","remaining").unwrap(),"requestCount":row.try_get::<Option<f64>>("","request_count").unwrap(),"expiresAt":row.try_get::<Option<String>>("","expires_at").unwrap(),"createdAt":row.try_get::<String>("","created_at").unwrap(),"updatedAt":row.try_get::<String>("","updated_at").unwrap(),"lastRequest":row.try_get::<Option<String>>("","last_request").unwrap(),"lastRefillAt":row.try_get::<Option<String>>("","last_refill_at").unwrap()})).collect();
             let mut values=values;
             if query.get("usage").map(String::as_str)==Some("true") {
@@ -341,19 +341,19 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     let anchor=application.state.lock().unwrap().last_admission.expect("actual cleanup receipt required");
                     tokio::time::sleep_until(tokio::time::Instant::from_std(anchor+Duration::from_millis(10020))).await;
                 },
-                "remaining"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET remaining=11 WHERE id=?",[input.key_id.unwrap().into()])).await.unwrap();},
-                "quota"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET remaining=? WHERE id=?",[input.remaining.unwrap().into(),input.key_id.unwrap().into()])).await.unwrap();},
-                "refill"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET remaining=0,refill_amount=3,refill_interval=60000,last_refill_at=? WHERE id=?",[chrono::DateTime::<chrono::Utc>::UNIX_EPOCH.into(),input.key_id.unwrap().into()])).await.unwrap();},
-                "phase-refill"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET remaining=0,refill_amount=3,refill_interval=60000,last_refill_at=?,last_request=NULL,request_count=0,rate_limit_enabled=1,rate_limit_max=3,rate_limit_time_window=60000 WHERE id=?",[chrono::DateTime::<chrono::Utc>::UNIX_EPOCH.into(),input.key_id.unwrap().into()])).await.unwrap();},
+                "remaining"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE \"apikey\" SET \"remaining\"=11 WHERE id=?",[input.key_id.unwrap().into()])).await.unwrap();},
+                "quota"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE \"apikey\" SET \"remaining\"=? WHERE id=?",[input.remaining.unwrap().into(),input.key_id.unwrap().into()])).await.unwrap();},
+                "refill"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE \"apikey\" SET \"remaining\"=0,\"refillAmount\"=3,\"refillInterval\"=60000,\"lastRefillAt\"=? WHERE id=?",[chrono::DateTime::<chrono::Utc>::UNIX_EPOCH.into(),input.key_id.unwrap().into()])).await.unwrap();},
+                "phase-refill"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE \"apikey\" SET \"remaining\"=0,\"refillAmount\"=3,\"refillInterval\"=60000,\"lastRefillAt\"=?,\"lastRequest\"=NULL,\"requestCount\"=0,\"rateLimitEnabled\"=1,\"rateLimitMax\"=3,\"rateLimitTimeWindow\"=60000 WHERE id=?",[chrono::DateTime::<chrono::Utc>::UNIX_EPOCH.into(),input.key_id.unwrap().into()])).await.unwrap();},
                 "usage-veto"=>{
                     let condition=match input.phase.as_deref(){Some("rate")=>"NEW.request_count<>OLD.request_count",Some("final")=>"NEW.remaining IS OLD.remaining AND NEW.request_count IS OLD.request_count AND NEW.last_request IS OLD.last_request AND NEW.last_refill_at IS OLD.last_refill_at",_=>panic!("actual phase required")};
-                    database.execute_raw(Statement::from_string(DbBackend::Sqlite,format!("CREATE TRIGGER usage_phase_veto BEFORE UPDATE ON api_keys WHEN OLD.name='phase-target' AND ({condition}) BEGIN SELECT RAISE(ABORT,'actual phase storage veto'); END"))).await.unwrap();
+                    database.execute_raw(Statement::from_string(DbBackend::Sqlite,format!("CREATE TRIGGER usage_phase_veto BEFORE UPDATE ON \"apikey\" WHEN OLD.\"name\"='phase-target' AND ({condition}) BEGIN SELECT RAISE(ABORT,'actual phase storage veto'); END"))).await.unwrap();
                 },
                 "usage-restore"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"DROP TRIGGER IF EXISTS usage_phase_veto")).await.unwrap();database.execute_raw(Statement::from_string(DbBackend::Sqlite,"DROP TRIGGER IF EXISTS usage_current_read")).await.unwrap();},
-                "usage-current-read"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"CREATE TRIGGER usage_current_read AFTER UPDATE ON api_keys WHEN OLD.name='phase-target' AND NEW.last_request IS NOT OLD.last_request AND NEW.updated_at IS OLD.updated_at BEGIN UPDATE api_keys SET remaining=77,name='current-row' WHERE id=NEW.id; END")).await.unwrap();},
+                "usage-current-read"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"CREATE TRIGGER usage_current_read AFTER UPDATE ON \"apikey\" WHEN OLD.\"name\"='phase-target' AND NEW.\"lastRequest\" IS NOT OLD.\"lastRequest\" AND NEW.\"updatedAt\" IS OLD.\"updatedAt\" BEGIN UPDATE \"apikey\" SET \"remaining\"=77,\"name\"='current-row' WHERE id=NEW.id; END")).await.unwrap();},
                 "timestamps"=>{
                     let key_id=input.key_id.unwrap();
-                    assert!(database.query_one_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"SELECT id FROM api_keys WHERE id=?",[key_id.clone().into()])).await.unwrap().is_some(),"actual API key required");
+                    assert!(database.query_one_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"SELECT id FROM \"apikey\" WHERE id=?",[key_id.clone().into()])).await.unwrap().is_some(),"actual API key required");
                     let dates=input.dates.unwrap();
                     let mut values=Vec::new();
                     for field in ["createdAt","updatedAt","lastRequest","lastRefillAt","expiresAt"] {
@@ -362,10 +362,10 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                         values.push(date.clone().into());
                     }
                     values.push(key_id.into());
-                    database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET created_at=?,updated_at=?,last_request=?,last_refill_at=?,expires_at=? WHERE id=?",values)).await.unwrap();
+                    database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE \"apikey\" SET \"createdAt\"=?,\"updatedAt\"=?,\"lastRequest\"=?,\"lastRefillAt\"=?,\"expiresAt\"=? WHERE id=?",values)).await.unwrap();
                 },
-                "expire"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET expires_at=? WHERE id=?",["1970-01-01T00:00:00.000Z".into(),input.key_id.unwrap().into()])).await.unwrap();},
-                "veto"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"CREATE TRIGGER automatic_cleanup_veto BEFORE DELETE ON api_keys BEGIN SELECT RAISE(ABORT,'actual cleanup storage veto'); END")).await.unwrap();},
+                "expire"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE \"apikey\" SET \"expiresAt\"=? WHERE id=?",["1970-01-01T00:00:00.000Z".into(),input.key_id.unwrap().into()])).await.unwrap();},
+                "veto"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"CREATE TRIGGER automatic_cleanup_veto BEFORE DELETE ON \"apikey\" BEGIN SELECT RAISE(ABORT,'actual cleanup storage veto'); END")).await.unwrap();},
                 "restore"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"DROP TRIGGER IF EXISTS automatic_cleanup_veto")).await.unwrap();},
                 _=>panic!("unknown application control"),
             }

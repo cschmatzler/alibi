@@ -34,7 +34,7 @@ pub(super) async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value>
     for (name, sql, columns) in [
         (
             "invitations",
-            "SELECT id,organization_id AS organizationId,email,role,team_id AS teamId,status,expires_at AS expiresAt,created_at AS createdAt,inviter_id AS inviterId FROM invitation ORDER BY rowid",
+            "SELECT id,\"organizationId\" AS organizationId,\"email\",\"role\",\"teamId\" AS teamId,\"status\",\"expiresAt\" AS expiresAt,\"createdAt\" AS createdAt,\"inviterId\" AS inviterId FROM \"invitation\" ORDER BY rowid",
             &[
                 "id",
                 "organizationId",
@@ -49,12 +49,12 @@ pub(super) async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value>
         ),
         (
             "members",
-            "SELECT id,organization_id AS organizationId,user_id AS userId,role,created_at AS createdAt FROM member ORDER BY rowid",
+            "SELECT id,\"organizationId\" AS organizationId,\"userId\" AS userId,\"role\",\"createdAt\" AS createdAt FROM \"member\" ORDER BY rowid",
             &["id", "organizationId", "userId", "role", "createdAt"][..],
         ),
         (
             "teams",
-            "SELECT id,name,organization_id AS organizationId,member_count AS memberCount,created_at AS createdAt,updated_at AS updatedAt FROM team ORDER BY rowid",
+            "SELECT id,\"name\",\"organizationId\" AS organizationId,\"memberCount\" AS memberCount,\"createdAt\" AS createdAt,\"updatedAt\" AS updatedAt FROM \"team\" ORDER BY rowid",
             &[
                 "id",
                 "name",
@@ -66,12 +66,12 @@ pub(super) async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value>
         ),
         (
             "teamMembers",
-            "SELECT id,team_id AS teamId,user_id AS userId,membership_key AS membershipKey,created_at AS createdAt FROM team_member ORDER BY rowid",
+            "SELECT id,\"teamId\" AS teamId,\"userId\" AS userId,\"membershipKey\" AS membershipKey,\"createdAt\" AS createdAt FROM \"teamMember\" ORDER BY rowid",
             &["id", "teamId", "userId", "membershipKey", "createdAt"][..],
         ),
         (
             "sessions",
-            "SELECT id,user_id AS userId,token,expires_at AS expiresAt,created_at AS createdAt,updated_at AS updatedAt,ip_address AS ipAddress,user_agent AS userAgent,impersonated_by AS impersonatedBy,active_organization_id AS activeOrganizationId,active_team_id AS activeTeamId FROM sessions ORDER BY rowid",
+            "SELECT id,\"userId\" AS userId,\"token\",\"expiresAt\" AS expiresAt,\"createdAt\" AS createdAt,\"updatedAt\" AS updatedAt,\"ipAddress\" AS ipAddress,\"userAgent\" AS userAgent,\"impersonatedBy\" AS impersonatedBy,\"activeOrganizationId\" AS activeOrganizationId,\"activeTeamId\" AS activeTeamId FROM \"session\" ORDER BY rowid",
             &[
                 "id",
                 "userId",
@@ -88,7 +88,7 @@ pub(super) async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value>
         ),
         (
             "organizations",
-            "SELECT id,name,slug,logo,metadata,created_at AS createdAt FROM organization ORDER BY rowid",
+            "SELECT id,\"name\",\"slug\",\"logo\",\"metadata\",\"createdAt\" AS createdAt FROM \"organization\" ORDER BY rowid",
             &["id", "name", "slug", "logo", "metadata", "createdAt"][..],
         ),
     ] {
@@ -227,7 +227,7 @@ impl Application {
             let user = input["userId"]
                 .as_str()
                 .ok_or_else(|| AuthError::bad_request("Actual user required"))?;
-            let actual=self.database.query_one_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"SELECT invitation.id FROM invitation JOIN users ON users.id=? WHERE invitation.id=?",[user.into(),invitation.into()])).await.map_err(|e|AuthError::internal(e.to_string()))?;
+            let actual=self.database.query_one_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"SELECT \"invitation\".id FROM \"invitation\" JOIN \"user\" ON \"user\".id=? WHERE \"invitation\".id=?",[user.into(),invitation.into()])).await.map_err(|e|AuthError::internal(e.to_string()))?;
             if actual.is_none() {
                 return Err(AuthError::bad_request(
                     "Guard requires actual invitation and user",
@@ -244,16 +244,16 @@ impl Application {
                 .map_err(|e| AuthError::internal(e.to_string()))?;
             let mut sql = Vec::new();
             if mode == "sql-member" || mode == "sql-reset" {
-                sql.push("CREATE TRIGGER invitation_stage_member BEFORE INSERT ON member WHEN NEW.user_id=(SELECT userId FROM __test_invitation_stage_guard) BEGIN SELECT RAISE(ABORT,'actual acceptance member veto'); END");
+                sql.push("CREATE TRIGGER invitation_stage_member BEFORE INSERT ON \"member\" WHEN NEW.\"userId\"=(SELECT userId FROM __test_invitation_stage_guard) BEGIN SELECT RAISE(ABORT,'actual acceptance member veto'); END");
             }
             if mode == "sql-team" {
-                sql.push("CREATE TRIGGER invitation_stage_team BEFORE INSERT ON team_member WHEN NEW.user_id=(SELECT userId FROM __test_invitation_stage_guard) BEGIN SELECT RAISE(ABORT,'actual acceptance team veto'); END");
+                sql.push("CREATE TRIGGER invitation_stage_team BEFORE INSERT ON \"teamMember\" WHEN NEW.\"userId\"=(SELECT userId FROM __test_invitation_stage_guard) BEGIN SELECT RAISE(ABORT,'actual acceptance team veto'); END");
             }
             if mode == "sql-session" {
-                sql.push("CREATE TRIGGER invitation_stage_session BEFORE UPDATE OF active_organization_id ON sessions WHEN OLD.user_id=(SELECT userId FROM __test_invitation_stage_guard) AND NEW.active_organization_id IS NOT NULL BEGIN SELECT RAISE(ABORT,'actual acceptance session veto'); END");
+                sql.push("CREATE TRIGGER invitation_stage_session BEFORE UPDATE OF \"activeOrganizationId\" ON \"session\" WHEN OLD.\"userId\"=(SELECT userId FROM __test_invitation_stage_guard) AND NEW.\"activeOrganizationId\" IS NOT NULL BEGIN SELECT RAISE(ABORT,'actual acceptance session veto'); END");
             }
             if mode == "sql-reset" || mode == "sql-reset-api" {
-                sql.push("CREATE TRIGGER invitation_stage_reset BEFORE UPDATE OF status ON invitation WHEN OLD.id=(SELECT invitationId FROM __test_invitation_stage_guard) AND OLD.status='accepted' AND NEW.status='pending' BEGIN SELECT RAISE(ABORT,'actual pending restoration veto'); END");
+                sql.push("CREATE TRIGGER invitation_stage_reset BEFORE UPDATE OF \"status\" ON \"invitation\" WHEN OLD.id=(SELECT invitationId FROM __test_invitation_stage_guard) AND OLD.\"status\"='accepted' AND NEW.\"status\"='pending' BEGIN SELECT RAISE(ABORT,'actual pending restoration veto'); END");
             }
             for query in sql {
                 let _ = self
@@ -286,7 +286,7 @@ impl OrganizationInvitationAcceptanceHooks for Application {
             self.database
                 .execute_raw(Statement::from_sql_and_values(
                     DbBackend::Sqlite,
-                    "UPDATE invitation SET team_id=? WHERE id=?",
+                    "UPDATE \"invitation\" SET \"teamId\"=? WHERE id=?",
                     vec![team_id.into(), context.invitation.id.clone().into()],
                 ))
                 .await
@@ -321,7 +321,7 @@ impl OrganizationLimitResolver for Application {
                 .and_then(|user| user.email.as_deref())
                 .ok_or_else(|| AuthError::internal("Authenticated callback user email required"))?
                 .to_lowercase();
-            let rows=self.invitation_status_observer.query_all_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"SELECT id,status FROM invitation WHERE organization_id=? AND email=? ORDER BY rowid",[context.organization_id.clone().into(),email.into()])).await.map_err(|error|AuthError::internal(error.to_string()))?;
+            let rows=self.invitation_status_observer.query_all_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"SELECT id,\"status\" FROM \"invitation\" WHERE \"organizationId\"=? AND \"email\"=? ORDER BY rowid",[context.organization_id.clone().into(),email.into()])).await.map_err(|error|AuthError::internal(error.to_string()))?;
             let mut statuses = Vec::new();
             for row in rows {
                 statuses.push(json!({"id":row.try_get::<String>("","id").map_err(|error|AuthError::internal(error.to_string()))?,"status":row.try_get::<String>("","status").map_err(|error|AuthError::internal(error.to_string()))?}));

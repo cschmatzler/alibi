@@ -16,7 +16,7 @@ use sqlx::error::BoxDynError;
 use sqlx::postgres::{PgArgumentBuffer, PgTypeInfo, PgValueRef, Postgres};
 #[cfg(feature = "sqlite")]
 use sqlx::sqlite::{Sqlite, SqliteArgumentsBuffer, SqliteTypeInfo, SqliteValueRef};
-use sqlx::{Decode, Encode, Type};
+use sqlx::{Decode, Encode, Type, ValueRef};
 
 /// JSON storage preserving every application object key.
 ///
@@ -146,13 +146,19 @@ impl Type<Postgres> for JsonMetadata {
     }
     fn compatible(ty: &PgTypeInfo) -> bool {
         <sqlx::types::Json<Self> as Type<Postgres>>::compatible(ty)
+            || <String as Type<Postgres>>::compatible(ty)
     }
 }
 
 #[cfg(feature = "postgres")]
 impl<'r> Decode<'r, Postgres> for JsonMetadata {
     fn decode(value: PgValueRef<'r>) -> Result<Self, BoxDynError> {
-        <sqlx::types::Json<Self> as Decode<'r, Postgres>>::decode(value).map(|json| json.0)
+        if <String as Type<Postgres>>::compatible(&value.type_info()) {
+            let text = <String as Decode<'r, Postgres>>::decode(value)?;
+            Ok(alibi_core::utils::json::from_slice(text.as_bytes())?)
+        } else {
+            <sqlx::types::Json<Self> as Decode<'r, Postgres>>::decode(value).map(|json| json.0)
+        }
     }
 }
 

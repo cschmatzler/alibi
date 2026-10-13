@@ -54,7 +54,7 @@ async fn server_admin_revoke_user_session_deletes_token_and_preserves_peers<B: B
         headers: Some([("cookie".into(), cookies(response))].into_iter().collect()),
         ..Default::default()
     };
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (input, headers, status, code) in [
         (None, EndpointOptions::default(), 400, "VALIDATION_ERROR"),
         (
@@ -133,8 +133,8 @@ async fn server_admin_revoke_user_session_deletes_token_and_preserves_peers<B: B
         .await
         .unwrap_err();
     assert_eq!(error.error.status_code(), 403);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
-    let immutable = db.tables(&["users", "accounts"]).await?;
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
+    let immutable = db.tables(&["user", "account"]).await?;
     let original_target = serde_json::to_value(auth.store().get_user_sessions(&id).await?)?;
     let original_admin = serde_json::to_value(auth.store().get_user_sessions(&admin_id).await?)?;
     let original_foreign =
@@ -194,7 +194,7 @@ async fn server_admin_revoke_user_session_deletes_token_and_preserves_peers<B: B
             serde_json::to_value(auth.store().get_user_sessions(&id).await?)?,
             expected
         );
-        assert_eq!(db.tables(&["users", "accounts"]).await?, immutable);
+        assert_eq!(db.tables(&["user", "account"]).await?, immutable);
         assert_eq!(
             serde_json::to_value(auth.store().get_user_sessions(&admin_id).await?)?,
             original_admin

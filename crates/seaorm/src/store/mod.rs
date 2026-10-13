@@ -225,7 +225,7 @@ impl<S: AuthSchema> SchemaMigrator for SeaOrmStore<S> {
             let commands = mapping.migration_statements()?;
             let transaction = self.db.begin().await.map_err(map_db_err)?;
             if transaction
-                .has_table("two_factor")
+                .has_table("twoFactor")
                 .await
                 .map_err(map_db_err)?
             {

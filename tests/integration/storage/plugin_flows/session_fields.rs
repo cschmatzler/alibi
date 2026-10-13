@@ -15,17 +15,22 @@ use chrono::{DateTime, Utc};
 mod sqlx_model {
     use super::*;
     #[derive(alibi::sqlx::AuthEntity, Clone, Debug, serde::Serialize, sqlx::FromRow)]
-    #[auth(role = "session", table = "sessions", secondary_storage)]
+    #[auth(role = "session", table = "session", secondary_storage)]
     pub struct Model {
         pub id: String,
+        #[sqlx(rename = "userId")]
         pub user_id: String,
         pub token: String,
+        #[sqlx(rename = "expiresAt")]
         pub expires_at: DateTime<Utc>,
+        #[sqlx(rename = "createdAt")]
         pub created_at: DateTime<Utc>,
+        #[sqlx(rename = "updatedAt")]
         pub updated_at: DateTime<Utc>,
+        #[sqlx(rename = "ipAddress")]
         pub ip_address: Option<String>,
+        #[sqlx(rename = "userAgent")]
         pub user_agent: Option<String>,
-        pub active: bool,
         pub label: Option<String>,
         pub hidden: Option<String>,
         pub transformed: Option<String>,
@@ -51,18 +56,23 @@ mod seaorm_model {
     use chrono::DateTime;
     #[derive(alibi::seaorm::AuthEntity, Clone, Debug, serde::Serialize, DeriveEntityModel)]
     #[auth(role = "session", secondary_storage)]
-    #[sea_orm(table_name = "sessions")]
+    #[sea_orm(table_name = "session")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
+        #[sea_orm(column_name = "userId")]
         pub user_id: String,
         pub token: String,
+        #[sea_orm(column_name = "expiresAt")]
         pub expires_at: DateTime<Utc>,
+        #[sea_orm(column_name = "createdAt")]
         pub created_at: DateTime<Utc>,
+        #[sea_orm(column_name = "updatedAt")]
         pub updated_at: DateTime<Utc>,
+        #[sea_orm(column_name = "ipAddress")]
         pub ip_address: Option<String>,
+        #[sea_orm(column_name = "userAgent")]
         pub user_agent: Option<String>,
-        pub active: bool,
         pub label: Option<String>,
         pub hidden: Option<String>,
         pub transformed: Option<String>,
@@ -197,7 +207,7 @@ async fn columns(db: &Db) -> TestResult {
     ] {
         let _ = db
             .execute(
-                &format!("ALTER TABLE sessions ADD COLUMN {column} {kind}"),
+                &format!("ALTER TABLE \"session\" ADD COLUMN {column} {kind}"),
                 &[],
             )
             .await?;
@@ -212,7 +222,7 @@ async fn columns(db: &Db) -> TestResult {
     ] {
         let _ = db
             .execute(
-                &format!("ALTER TABLE sessions ADD COLUMN {column} TEXT"),
+                &format!("ALTER TABLE \"session\" ADD COLUMN {column} TEXT"),
                 &[],
             )
             .await?;
@@ -281,9 +291,12 @@ async fn exercise<S: AuthSchema>(
     let foreign_token = body(&foreign)["token"].as_str().unwrap().to_owned();
     let cookie = cookies(&owner);
     assert_eq!(
-        db.text("SELECT label FROM sessions WHERE token=$1", &[&token])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT label FROM \"session\" WHERE \"token\"=$1",
+            &[&token]
+        )
+        .await?
+        .as_deref(),
         Some("initial")
     );
     // Generated bindings must preserve rich values through the actual adapter,
@@ -320,7 +333,7 @@ async fn exercise<S: AuthSchema>(
         assert_eq!(session["flag"], flag);
         let physical = db
             .text(
-                "SELECT CAST(payload AS TEXT) FROM sessions WHERE token=$1",
+                "SELECT CAST(payload AS TEXT) FROM \"session\" WHERE \"token\"=$1",
                 &[&token],
             )
             .await?;
@@ -333,7 +346,7 @@ async fn exercise<S: AuthSchema>(
         for column in ["fraction", "narrow"] {
             let physical = db
                 .text(
-                    &format!("SELECT CAST({column} AS TEXT) FROM sessions WHERE token=$1"),
+                    &format!("SELECT CAST({column} AS TEXT) FROM \"session\" WHERE \"token\"=$1"),
                     &[&token],
                 )
                 .await?;
@@ -341,7 +354,7 @@ async fn exercise<S: AuthSchema>(
         }
         let physical = db
             .text(
-                "SELECT CAST(flag AS TEXT) FROM sessions WHERE token=$1",
+                "SELECT CAST(flag AS TEXT) FROM \"session\" WHERE \"token\"=$1",
                 &[&token],
             )
             .await?;
@@ -357,14 +370,14 @@ async fn exercise<S: AuthSchema>(
         );
         let foreign = db
             .text(
-                "SELECT CAST(payload AS TEXT) FROM sessions WHERE token=$1",
+                "SELECT CAST(payload AS TEXT) FROM \"session\" WHERE \"token\"=$1",
                 &[&foreign_token],
             )
             .await?;
         assert!(foreign.is_none());
     }
     // A structured value cannot bind to TEXT; failed binding is atomic.
-    let before = db.table("sessions").await?;
+    let before = db.table("session").await?;
     let _ = call(
         &auth,
         request(
@@ -375,8 +388,8 @@ async fn exercise<S: AuthSchema>(
         500,
     )
     .await;
-    assert_eq!(db.table("sessions").await?, before);
-    let original = db.table("sessions").await?;
+    assert_eq!(db.table("session").await?, before);
+    let original = db.table("session").await?;
     for (input, status) in [
         (json!({}), 400),
         (json!({"unknown":"value"}), 400),
@@ -403,7 +416,7 @@ async fn exercise<S: AuthSchema>(
         )
         .await;
         assert!(!cookies(&denied).contains("session_data="));
-        assert_eq!(db.table("sessions").await?, original);
+        assert_eq!(db.table("session").await?, original);
     }
     let _ = call(
         &auth,
@@ -415,7 +428,7 @@ async fn exercise<S: AuthSchema>(
         401,
     )
     .await;
-    assert_eq!(db.table("sessions").await?, original);
+    assert_eq!(db.table("session").await?, original);
     for (mode, preference, temporary) in [
         ("persistent", String::new(), false),
         (
@@ -444,25 +457,34 @@ async fn exercise<S: AuthSchema>(
         assert_eq!(projection["session"]["userId"], body(&owner)["user"]["id"]);
         assert!(projection["session"].get("hidden").is_none());
         assert_eq!(
-            db.text("SELECT label FROM sessions WHERE token=$1", &[&token])
-                .await?
-                .as_deref(),
+            db.text(
+                "SELECT label FROM \"session\" WHERE \"token\"=$1",
+                &[&token]
+            )
+            .await?
+            .as_deref(),
             Some(mode)
         );
         assert_eq!(
-            db.text("SELECT transformed FROM sessions WHERE token=$1", &[&token])
-                .await?,
+            db.text(
+                "SELECT transformed FROM \"session\" WHERE \"token\"=$1",
+                &[&token]
+            )
+            .await?,
             Some(format!("stored:stored:{mode}"))
         );
         assert_eq!(
-            db.text("SELECT hidden FROM sessions WHERE token=$1", &[&token])
-                .await?
-                .as_deref(),
+            db.text(
+                "SELECT hidden FROM \"session\" WHERE \"token\"=$1",
+                &[&token]
+            )
+            .await?
+            .as_deref(),
             Some("server-secret")
         );
         assert_eq!(
             db.text(
-                "SELECT label FROM sessions WHERE token=$1",
+                "SELECT label FROM \"session\" WHERE \"token\"=$1",
                 &[&foreign_token]
             )
             .await?
@@ -480,7 +502,7 @@ async fn exercise<S: AuthSchema>(
         // must actually come from the newly published signed cookie cache.
         let _ = db
             .execute(
-                "UPDATE sessions SET label='physical-sentinel' WHERE token=$1",
+                "UPDATE \"session\" SET label='physical-sentinel' WHERE \"token\"=$1",
                 &[&token],
             )
             .await?;
@@ -497,7 +519,7 @@ async fn exercise<S: AuthSchema>(
         );
         let _ = db
             .execute(
-                "UPDATE sessions SET label=$1 WHERE token=$2",
+                "UPDATE \"session\" SET label=$1 WHERE \"token\"=$2",
                 &[mode, &token],
             )
             .await?;
@@ -520,7 +542,7 @@ async fn exercise<S: AuthSchema>(
     );
     assert_eq!(
         db.text(
-            "SELECT adapter_value FROM sessions WHERE token=$1",
+            "SELECT adapter_value FROM \"session\" WHERE \"token\"=$1",
             &[&token]
         )
         .await?
@@ -532,12 +554,15 @@ async fn exercise<S: AuthSchema>(
         "application-update-default"
     );
     assert_eq!(
-        db.text("SELECT label FROM sessions WHERE token=$1", &[&token])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT label FROM \"session\" WHERE \"token\"=$1",
+            &[&token]
+        )
+        .await?
+        .as_deref(),
         Some("application-update-default")
     );
-    let _ = db.execute("UPDATE sessions SET label='physical-sentinel', adapter_value='physical-sentinel' WHERE token=$1", &[&token]).await?;
+    let _ = db.execute("UPDATE \"session\" SET label='physical-sentinel', adapter_value='physical-sentinel' WHERE \"token\"=$1", &[&token]).await?;
     let cached = call(
         &auth,
         request("/get-session", None, &cookies(&updated)),
@@ -602,7 +627,7 @@ async fn secondary_exercise<S: AuthSchema>(
 ) -> TestResult {
     use std::sync::atomic::Ordering::SeqCst;
     let owner = signup(&auth, "secondary-fields@example.test").await;
-    assert_eq!(db.count("sessions").await?, 0);
+    assert_eq!(db.count("session").await?, 0);
     let cookie = cookies(&owner);
     let updated = call(
         &auth,
@@ -841,7 +866,7 @@ async fn rejected_session_update<S: AuthSchema>(
     let token = body(&owner)["token"].as_str().unwrap().to_owned();
     let cookie = cookies(&owner);
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for (label, status) in [("ordinary-error", 500), ("api-error", 403)] {
         hooks.receipts.lock().unwrap().clear();
@@ -870,7 +895,7 @@ async fn rejected_session_update<S: AuthSchema>(
         );
         assert_eq!(hooks.after.load(std::sync::atomic::Ordering::SeqCst), 0);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -885,7 +910,7 @@ async fn rejected_session_update<S: AuthSchema>(
             assert_eq!(body(&read)["user"]["id"], body(established)["user"]["id"]);
         }
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -905,9 +930,12 @@ async fn rejected_session_update<S: AuthSchema>(
     assert_eq!(body(&accepted)["session"]["token"], token);
     assert_eq!(body(&accepted)["session"]["label"], "accepted");
     assert_eq!(
-        db.text("SELECT label FROM sessions WHERE token=$1", &[&token])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT label FROM \"session\" WHERE \"token\"=$1",
+            &[&token]
+        )
+        .await?
+        .as_deref(),
         Some("accepted")
     );
     assert_eq!(hooks.after.load(std::sync::atomic::Ordering::SeqCst), 1);
@@ -915,8 +943,8 @@ async fn rejected_session_update<S: AuthSchema>(
     // Compat owner: core/session/update-projection.test.ts configured update
     // after-error. A postcommit callback failure must not roll back the row or
     // publish a successful replacement cookie; store-only proofs miss framing.
-    let stable_principals = db.tables(&["users", "accounts", "verifications"]).await?;
-    let prior_sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let stable_principals = db.tables(&["user", "account", "verification"]).await?;
+    let prior_sessions: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     let unaffected: Vec<_> = prior_sessions
         .iter()
         .filter(|row| row["token"] != token)
@@ -951,7 +979,7 @@ async fn rejected_session_update<S: AuthSchema>(
     assert_eq!(observed[0]["record"]["user_id"], body(&owner)["user"]["id"]);
     assert_eq!(observed[0]["record"]["label"], "after-error");
     assert_eq!(hooks.after.load(std::sync::atomic::Ordering::SeqCst), 2);
-    let committed: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let committed: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     assert_eq!(committed.len(), prior_sessions.len());
     assert_eq!(
         committed
@@ -966,7 +994,7 @@ async fn rejected_session_update<S: AuthSchema>(
         "after-error"
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "verifications"]).await?,
+        db.tables(&["user", "account", "verification"]).await?,
         stable_principals
     );
     let mut physical_read = request("/get-session", None, &cookie);
@@ -988,18 +1016,18 @@ async fn rejected_session_update<S: AuthSchema>(
         assert_eq!(body(&read)["user"]["id"], body(established)["user"]["id"]);
     }
     assert_eq!(
-        serde_json::from_str::<Vec<Value>>(&db.table("sessions").await?)?,
+        serde_json::from_str::<Vec<Value>>(&db.table("session").await?)?,
         committed
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "verifications"]).await?,
+        db.tables(&["user", "account", "verification"]).await?,
         stable_principals
     );
     // Compat owner: core/session/update-projection.test.ts configured cancel.
     // Unlike a before-hook error, cancellation reports a missing updated row
     // and clears browser authority while leaving the original physical token.
     let before_cancel = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     hooks.receipts.lock().unwrap().clear();
     hooks.after_records.lock().unwrap().clear();
@@ -1024,7 +1052,7 @@ async fn rejected_session_update<S: AuthSchema>(
     assert_eq!(hooks.after.load(std::sync::atomic::Ordering::SeqCst), 2);
     assert!(hooks.after_records.lock().unwrap().is_empty());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before_cancel
     );
@@ -1080,7 +1108,7 @@ async fn rejected_session_update<S: AuthSchema>(
         assert_eq!(body(&read)["user"]["id"], body(established)["user"]["id"]);
     }
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before_cancel
     );
@@ -1089,7 +1117,7 @@ async fn rejected_session_update<S: AuthSchema>(
     // Physical adapter callbacks run before output conversion; the public
     // after observer must remain silent when conversion fails after commit.
     let prior = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     hooks.receipts.lock().unwrap().clear();
     hooks.after_records.lock().unwrap().clear();
@@ -1122,7 +1150,7 @@ async fn rejected_session_update<S: AuthSchema>(
     assert_eq!(physical_after[0]["record"]["label"], "throw");
     assert!(hooks.projected_updates.lock().unwrap().is_empty());
     let committed = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     assert_eq!(committed[0], prior[0]);
     assert_eq!(committed[1], prior[1]);
@@ -1164,7 +1192,7 @@ async fn rejected_session_update<S: AuthSchema>(
         assert_eq!(body(&cached)["user"]["id"], body(established)["user"]["id"]);
     }
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         committed
     );
@@ -1206,15 +1234,15 @@ async fn renewal_callback_cases<S: AuthSchema>(
         let cookie = cookies(&owner);
         // Operator setup bypasses callbacks to make only this owner's real row due.
         db.set_timestamp(
-            "sessions",
-            "expires_at",
+            "session",
+            "expiresAt",
             ("token", &token),
             Utc::now() + chrono::Duration::hours(1),
         )
         .await?;
         assert_eq!(
             db.execute(
-                "UPDATE sessions SET hidden=$1 WHERE token=$2",
+                "UPDATE \"session\" SET hidden=$1 WHERE \"token\"=$2",
                 &[command, &token]
             )
             .await?,
@@ -1226,7 +1254,7 @@ async fn renewal_callback_cases<S: AuthSchema>(
         hooks.after_records.lock().unwrap().clear();
         let after_before = hooks.after.load(SeqCst);
         let before = db
-            .tables(&["users", "accounts", "sessions", "verifications"])
+            .tables(&["user", "account", "session", "verification"])
             .await?;
         let mut due_read = request("/get-session", None, &cookie);
         let _ = due_read
@@ -1258,7 +1286,7 @@ async fn renewal_callback_cases<S: AuthSchema>(
             assert_eq!(observed[0]["record"]["user_id"], body(&owner)["user"]["id"]);
             assert_eq!(observed[0]["record"]["label"], "after-error");
             let committed = db
-                .tables(&["users", "accounts", "sessions", "verifications"])
+                .tables(&["user", "account", "session", "verification"])
                 .await?;
             assert_eq!(committed[0], before[0]);
             assert_eq!(committed[1], before[1]);
@@ -1303,7 +1331,7 @@ async fn renewal_callback_cases<S: AuthSchema>(
                 assert_eq!(body(&read)["user"]["id"], body(established)["user"]["id"]);
             }
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "verifications"])
+                db.tables(&["user", "account", "session", "verification"])
                     .await?,
                 committed
             );
@@ -1321,7 +1349,7 @@ async fn renewal_callback_cases<S: AuthSchema>(
             assert_eq!(observed[0]["record"]["token"], token);
             assert_eq!(observed[0]["record"]["label"], "hook-updated");
             let after = db
-                .tables(&["users", "accounts", "sessions", "verifications"])
+                .tables(&["user", "account", "session", "verification"])
                 .await?;
             assert_eq!(after[0], before[0]);
             assert_eq!(after[1], before[1]);
@@ -1355,7 +1383,7 @@ async fn renewal_callback_cases<S: AuthSchema>(
             // the freshly published transformed cache, rather than another DB read.
             assert_eq!(
                 db.execute(
-                    "UPDATE sessions SET label='renewal-physical-sentinel' WHERE token=$1",
+                    "UPDATE \"session\" SET label='renewal-physical-sentinel' WHERE \"token\"=$1",
                     &[&token]
                 )
                 .await?,
@@ -1372,7 +1400,7 @@ async fn renewal_callback_cases<S: AuthSchema>(
             assert_eq!(body(&cached)["user"]["id"], body(&owner)["user"]["id"]);
             assert_eq!(
                 db.execute(
-                    "UPDATE sessions SET label='hook-updated' WHERE token=$1",
+                    "UPDATE \"session\" SET label='hook-updated' WHERE \"token\"=$1",
                     &[&token]
                 )
                 .await?,
@@ -1389,7 +1417,7 @@ async fn renewal_callback_cases<S: AuthSchema>(
                 assert_eq!(body(&read)["user"]["id"], body(established)["user"]["id"]);
             }
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "verifications"])
+                db.tables(&["user", "account", "session", "verification"])
                     .await?,
                 after
             );
@@ -1463,7 +1491,7 @@ async fn renewal_callback_cases<S: AuthSchema>(
         assert_eq!(hooks.after.load(SeqCst), after_before);
         assert!(hooks.after_records.lock().unwrap().is_empty());
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -1489,7 +1517,7 @@ async fn renewal_callback_cases<S: AuthSchema>(
             assert_eq!(body(&read)["user"]["id"], body(established)["user"]["id"]);
         }
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -1552,7 +1580,7 @@ impl<S: AuthSchema> alibi::store::DatabaseHooks<S, alibi::sqlx::SqlxBackend> for
         let transaction = ctx.tx.expect("signup writes inside one transaction");
         let mut guard = transaction.lock().await;
         let connection = guard.sqlite().expect("SQLite transaction");
-        _ = alibi::sqlx::sqlx::query("UPDATE users SET name = 'rewritten-by-hook'")
+        _ = alibi::sqlx::sqlx::query("UPDATE \"user\" SET \"name\" = 'rewritten-by-hook'")
             .execute(connection)
             .await
             .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
@@ -1576,7 +1604,9 @@ async fn sqlx_hooks_run_statements_inside_the_auth_transaction() -> TestResult {
         .await?;
     let _ = signup(&auth, "probe@example.test").await;
     assert_eq!(
-        db.text("SELECT name FROM users", &[]).await?.as_deref(),
+        db.text("SELECT \"name\" FROM \"user\"", &[])
+            .await?
+            .as_deref(),
         Some("rewritten-by-hook")
     );
     Sqlx::close(connection).await
@@ -1664,14 +1694,14 @@ async fn logical_session_update<S: AuthSchema>(
             .filter(|row| row["token"] != token)
             .collect::<Vec<_>>()
     };
-    let before: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let before: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     let original = before
         .iter()
         .find(|row| row["token"] == token)
         .unwrap()
         .clone();
     let others = current(before);
-    let principals = db.tables(&["users", "accounts"]).await?;
+    let principals = db.tables(&["user", "account"]).await?;
     let input = json!({
         "label":"logical-update", "hidden":"logical-private",
         "token":body(&foreign)["token"], "userId":body(&foreign)["user"]["id"],
@@ -1700,27 +1730,33 @@ async fn logical_session_update<S: AuthSchema>(
     assert_eq!(output.session.user_id, body(&owner)["user"]["id"]);
     assert!(!output.session.extension_fields.contains_key("hidden"));
     assert_eq!(
-        db.text("SELECT label FROM sessions WHERE token=$1", &[&token])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT label FROM \"session\" WHERE \"token\"=$1",
+            &[&token]
+        )
+        .await?
+        .as_deref(),
         Some("logical-update")
     );
     assert_eq!(
-        db.text("SELECT hidden FROM sessions WHERE token=$1", &[&token])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT hidden FROM \"session\" WHERE \"token\"=$1",
+            &[&token]
+        )
+        .await?
+        .as_deref(),
         Some("logical-private")
     );
-    let after: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let after: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     let actual = after.iter().find(|row| row["token"] == token).unwrap();
-    for field in ["id", "user_id", "token", "expires_at", "created_at"] {
+    for field in ["id", "userId", "token", "expiresAt", "createdAt"] {
         assert_eq!(
             actual[field], original[field],
             "immutable session field {field}"
         );
     }
     assert_eq!(current(after), others);
-    assert_eq!(db.tables(&["users", "accounts"]).await?, principals);
+    assert_eq!(db.tables(&["user", "account"]).await?, principals);
     let clears: Vec<_> = updated.headers().get_all("set-cookie").cloned().collect();
     assert!(
         clears

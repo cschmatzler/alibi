@@ -97,12 +97,12 @@ async fn fixture(
     _ = db
         .execute_raw(Statement::from_string(
             DbBackend::Sqlite,
-            "CREATE TABLE expiry_writes (token TEXT NOT NULL)".to_owned(),
+            "CREATE TABLE expiry_writes (\"token\" TEXT NOT NULL)".to_owned(),
         ))
         .await
         .unwrap();
     _ = db.execute_raw(Statement::from_string(DbBackend::Sqlite,
-        "CREATE TRIGGER observe_expiry_write AFTER UPDATE OF expires_at ON sessions BEGIN INSERT INTO expiry_writes(token) VALUES(new.token); END".to_owned())).await.unwrap();
+        "CREATE TRIGGER observe_expiry_write AFTER UPDATE OF \"expiresAt\" ON \"session\" BEGIN INSERT INTO expiry_writes(\"token\") VALUES(new.\"token\"); END".to_owned())).await.unwrap();
     let observed = Arc::new(ObservedClaims::default());
     let jwt = JwtPlugin::with_config(JwtPluginConfig {
         define_payload: Some(Arc::<ObservedClaims>::clone(&observed)),
@@ -177,7 +177,7 @@ async fn age(auth: &Alibi<Schema>, db: &DatabaseConnection, token: &str, expired
 async fn writes(db: &DatabaseConnection) -> i64 {
     db.query_one_raw(Statement::from_string(
         DbBackend::Sqlite,
-        "SELECT COUNT(*) AS count FROM expiry_writes".to_owned(),
+        "SELECT COUNT(*) AS \"count\" FROM expiry_writes".to_owned(),
     ))
     .await
     .unwrap()
@@ -597,7 +597,7 @@ mod tests {
                 issued(&auth, "failed-refresh@jwt-session.fixture.test").await;
             let before = age(&auth, &db, &token, false).await;
             _ = db.execute_raw(Statement::from_string(DbBackend::Sqlite,
-            format!("CREATE TRIGGER reject_refresh BEFORE UPDATE OF expires_at ON sessions BEGIN SELECT RAISE({action}); END")))
+            format!("CREATE TRIGGER reject_refresh BEFORE UPDATE OF \"expiresAt\" ON \"session\" BEGIN SELECT RAISE({action}); END")))
             .await.unwrap();
             let response = auth
                 .handle_request(request("/get-session", &cookie))

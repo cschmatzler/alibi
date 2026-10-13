@@ -107,7 +107,7 @@ impl OrganizationLimitResolver for NumericLimits {
                     id: Set(alibi::utils::id::generate_id(32)),
                     organization_id: Set(context.organization_id.clone()),
                     name: Set(format!("Callback team {i}")),
-                    member_count: Set(0),
+                    member_count: Set(alibi::seaorm::Integer(0)),
                     created_at: Set(Utc::now()),
                     updated_at: Set(Some(Utc::now())),
                 }
@@ -181,7 +181,7 @@ impl alibi::plugins::organization::OrganizationTeamHooks for NumericHooks {
             self.0
                 .execute_raw(Statement::from_sql_and_values(
                     DbBackend::Sqlite,
-                    "UPDATE team SET member_count=5 WHERE id=?",
+                    "UPDATE \"team\" SET \"memberCount\"=5 WHERE id=?",
                     [team.id.clone().into()],
                 ))
                 .await
@@ -887,7 +887,7 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                                 .execute(&mut *connection).await
                                 .map_err(|error| AuthError::internal(error.to_string()))?;
                             let result = alibi::seaorm::sea_orm::sqlx::query(
-                                "DELETE FROM organization WHERE id=?",
+                                "DELETE FROM \"organization\" WHERE id=?",
                             ).bind(&organization_id).execute(&mut *connection).await;
                             let _ = alibi::seaorm::sea_orm::sqlx::query(
                                 if enabled == 0 { "PRAGMA foreign_keys=OFF" } else { "PRAGMA foreign_keys=ON" },
@@ -1015,7 +1015,7 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                     }
                     Ok::<_, alibi::seaorm::sea_orm::DbErr>(json!({
                         "teams":teams.into_iter().map(|team|json!({"id":team.id,"name":team.name,"organizationId":team.organization_id,"createdAt":timestamp(team.created_at),"updatedAt":team.updated_at.map(timestamp),"memberCount":team.member_count})).collect::<Vec<_>>(),
-                        "teamMembers":team_members.into_iter().map(|member|json!({"id":member.id,"teamId":member.team_id,"userId":member.user_id,"createdAt":timestamp(member.created_at)})).collect::<Vec<_>>(),
+                        "teamMembers":team_members.into_iter().map(|member|json!({"id":member.id,"teamId":member.team_id,"userId":member.user_id,"createdAt":member.created_at.map(timestamp)})).collect::<Vec<_>>(),
                         "roles":roles.into_iter().map(|role|json!({"id":role.id,"organizationId":role.organization_id,"role":role.role,"permission":role.permission,"createdAt":timestamp(role.created_at),"updatedAt":role.updated_at.map(timestamp)})).collect::<Vec<_>>(),
                         "members":members.into_iter().map(|member|json!({"id":member.id,"organizationId":member.organization_id,"userId":member.user_id,"role":member.role,"createdAt":timestamp(member.created_at)})).collect::<Vec<_>>(),
                         "invitations":invitations.into_iter().map(|invitation|json!({"id":invitation.id,"organizationId":invitation.organization_id,"email":invitation.email,"role":invitation.role,"status":invitation.status,"teamId":invitation.team_id,"inviterId":invitation.inviter_id,"expiresAt":timestamp(invitation.expires_at),"createdAt":timestamp(invitation.created_at)})).collect::<Vec<_>>(),

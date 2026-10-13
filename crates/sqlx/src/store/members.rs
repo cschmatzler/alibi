@@ -329,12 +329,7 @@ where
             if remove_team_members {
                 let mut rooms = model::select_model::<team::Model>(exec);
                 rooms.push(" WHERE ");
-                rooms.compare(
-                    team::Model::TABLE,
-                    "organization_id",
-                    " = ",
-                    organization_id,
-                );
+                rooms.compare(team::Model::TABLE, "organizationId", " = ", organization_id);
                 rooms.push(" LIMIT ");
                 rooms.bind(limit);
                 lock_exclusive(&mut rooms);

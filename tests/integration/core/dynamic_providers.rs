@@ -195,7 +195,7 @@ async fn physical_account(db: &Db, id: &str) -> TestResult<Value> {
     use alibi::sqlx::sqlx::{self, Row};
     Ok(crate::storage::on_raw!(&db.raw, |pool| {
         let row = sqlx::query(sqlx::AssertSqlSafe(String::from(
-            "SELECT id, user_id, account_id, access_token, scope FROM accounts WHERE id=$1",
+            "SELECT id, \"userId\", \"accountId\", \"accessToken\", \"scope\" FROM \"account\" WHERE id=$1",
         )))
         .bind(id)
         .fetch_one(pool)
@@ -298,7 +298,7 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM accounts WHERE provider_id='gitlab' AND account_id=$1",
+                "SELECT COUNT(*) FROM \"account\" WHERE \"providerId\"='gitlab' AND \"accountId\"=$1",
                 &[code]
             )
             .await?,
@@ -333,11 +333,11 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
         allowed?.headers.get("location").unwrap(),
         "https://a.example.test/done"
     );
-    assert_eq!(db.count("accounts").await?, 2);
-    assert_eq!(db.count("sessions").await?, 2);
+    assert_eq!(db.count("account").await?, 2);
+    assert_eq!(db.count("session").await?, 2);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM accounts WHERE account_id='parallel-deny'",
+            "SELECT COUNT(*) FROM \"account\" WHERE \"accountId\"='parallel-deny'",
             &[]
         )
         .await?,
@@ -398,7 +398,7 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
     assert_eq!(foreign_before, foreign_after);
     receipts.push(json!({"case":"foreign","start":start,"callbackLocation":foreign_result.headers.get("location"),"physicalBefore":foreign_before,"physicalAfter":foreign_after}));
     assert_eq!(db.count_where(
-        "SELECT COUNT(*) FROM accounts WHERE id=$1 AND user_id=$2 AND access_token='foreign-token' AND scope='foreign-scope'",
+        "SELECT COUNT(*) FROM \"account\" WHERE id=$1 AND \"userId\"=$2 AND \"accessToken\"='foreign-token' AND \"scope\"='foreign-scope'",
         &[foreign_account.id().as_ref(), foreign.id().as_ref()],
     ).await?, 1);
     for mode in ["error", "api-error"] {
@@ -418,9 +418,9 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
         assert!(failed.body.is_empty());
         assert_eq!(policy.calls.lock().unwrap().len(), calls_before + 1);
     }
-    assert_eq!(db.count("accounts").await?, 3);
-    assert_eq!(db.count("sessions").await?, 3);
-    assert_eq!(db.count("users").await?, 6);
+    assert_eq!(db.count("account").await?, 3);
+    assert_eq!(db.count("session").await?, 3);
+    assert_eq!(db.count("user").await?, 6);
     assert_eq!(
         auth.config().account.account_linking.trusted_providers,
         vec!["init-only"]
@@ -432,7 +432,7 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
                 std::any::type_name::<B>().rsplit("::").next().unwrap()
             ),
             serde_json::to_vec_pretty(
-                &json!({"callbacks":receipts,"policyCalls":*policy.calls.lock().unwrap(),"providerHTTP":*provider_receipts.lock().unwrap(),"physical":{"users":db.count("users").await?,"accounts":db.count("accounts").await?,"sessions":db.count("sessions").await?}}),
+                &json!({"callbacks":receipts,"policyCalls":*policy.calls.lock().unwrap(),"providerHTTP":*provider_receipts.lock().unwrap(),"physical":{"users":db.count("user").await?,"accounts":db.count("account").await?,"sessions":db.count("session").await?}}),
             )?,
         )?;
     }

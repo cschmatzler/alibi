@@ -345,7 +345,7 @@ async fn database_residue(
         .query_all_raw(Statement::from_string(
             DbBackend::Sqlite,
             // Migration bookkeeping is schema, not scenario state.
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('better_auth_migrations', 'better_auth_rate_limit_migrations') ORDER BY name",
+            "SELECT \"name\" FROM sqlite_master WHERE type = 'table' AND \"name\" NOT LIKE 'sqlite_%' AND \"name\" NOT IN ('better_auth_migrations', 'better_auth_rate_limit_migrations') ORDER BY \"name\"",
         ))
         .await?;
     let mut residue = serde_json::Map::new();
@@ -355,7 +355,7 @@ async fn database_residue(
             .query_one_raw(Statement::from_string(
                 DbBackend::Sqlite,
                 format!(
-                    "SELECT count(*) AS n FROM \"{}\"",
+                    "SELECT \"count\"(*) AS n FROM \"{}\"",
                     name.replace('"', "\"\"")
                 ),
             ))
@@ -879,16 +879,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         outbox: reset_outbox.clone(),
         mode: reset_password_mode.clone(),
     });
-    let dispatch_verification_sender: Arc<dyn SendVerificationEmail> = Arc::new(CompatVerificationSender {
-        outbox: verification_outbox.clone(),
-    });
+    let dispatch_verification_sender: Arc<dyn SendVerificationEmail> =
+        Arc::new(CompatVerificationSender {
+            outbox: verification_outbox.clone(),
+        });
     let server_error_router = fixtures::server_error_fixture::router(&config).await?;
-    let server_endpoint_router =
-        server_endpoint_fixture::router(&config, database.clone(), "server-dispatch", false, dispatch_reset_sender.clone(), dispatch_verification_sender.clone())
-            .await?;
-    let server_endpoint_cache_router =
-        server_endpoint_fixture::router(&config, database.clone(), "server-dispatch-cache", true, dispatch_reset_sender.clone(), dispatch_verification_sender.clone())
-            .await?;
+    let server_endpoint_router = server_endpoint_fixture::router(
+        &config,
+        database.clone(),
+        "server-dispatch",
+        false,
+        dispatch_reset_sender.clone(),
+        dispatch_verification_sender.clone(),
+    )
+    .await?;
+    let server_endpoint_cache_router = server_endpoint_fixture::router(
+        &config,
+        database.clone(),
+        "server-dispatch-cache",
+        true,
+        dispatch_reset_sender.clone(),
+        dispatch_verification_sender.clone(),
+    )
+    .await?;
     let server_endpoint_version_router = server_endpoint_fixture::router(
         &config,
         database.clone(),
@@ -1270,7 +1283,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         two_factor_delivery_fixture::router(&config, reset_database.clone()).await?;
     let ott_router = one_time_token_fixture::router(&config, reset_database.clone()).await?;
     let open_api_router = open_api_fixture::router(&config, reset_database.clone()).await?;
-    let oauth_provider_router=fixtures::oauth_provider_fixture::router(&config,reset_database.clone()).await?;
+    let oauth_provider_router =
+        fixtures::oauth_provider_fixture::router(&config, reset_database.clone()).await?;
 
     let database_delete_hooks_router =
         fixtures::delete_hooks_fixture::router(&config, reset_database.clone()).await?;
@@ -2472,9 +2486,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
                         let result: AuthResult<serde_json::Value> = async {
                             db_for_oauth_seed.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,
-                                "UPDATE accounts SET created_at=?,updated_at=? WHERE id=?", [created.into(),updated.into(),account.id().into()])).await.map_err(|error| AuthError::Internal(error.to_string()))?;
+                                "UPDATE \"account\" SET \"createdAt\"=?,\"updatedAt\"=? WHERE id=?", [created.into(),updated.into(),account.id().into()])).await.map_err(|error| AuthError::Internal(error.to_string()))?;
                             let row = db_for_oauth_seed.query_one_raw(Statement::from_sql_and_values(DbBackend::Sqlite,
-                                "SELECT created_at AS createdAt,updated_at AS updatedAt FROM accounts WHERE id=?", [account.id().into()])).await.map_err(|error|AuthError::Internal(error.to_string()))?.ok_or_else(||AuthError::Internal("Seeded account missing".into()))?;
+                                "SELECT \"createdAt\" AS createdAt,\"updatedAt\" AS updatedAt FROM \"account\" WHERE id=?", [account.id().into()])).await.map_err(|error|AuthError::Internal(error.to_string()))?.ok_or_else(||AuthError::Internal("Seeded account missing".into()))?;
                             Ok(serde_json::json!({"createdAt":row.try_get::<String>("","createdAt").map_err(|error|AuthError::Internal(error.to_string()))?,"updatedAt":row.try_get::<String>("","updatedAt").map_err(|error|AuthError::Internal(error.to_string()))?}))
                         }.await;
                         return match result {

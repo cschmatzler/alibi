@@ -174,10 +174,6 @@ where
                 " = ",
                 S::Session::parse_user_id(user_id)?,
             );
-            if let Some(column) = S::Session::active_column() {
-                session.push(" AND ");
-                session.compare(session_table, column, " = ", true);
-            }
             model::limit_one(&mut session);
             lock_exclusive(&mut session);
             let session = exec
@@ -230,7 +226,7 @@ where
                 room.push(" AND ");
                 room.compare(
                     team::Model::TABLE,
-                    "organization_id",
+                    "organizationId",
                     " = ",
                     invitation.organization_id.as_str(),
                 );

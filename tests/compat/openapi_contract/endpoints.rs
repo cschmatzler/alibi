@@ -80,7 +80,7 @@ mod tests {
             .as_array()
             .expect("list-sessions must return an array");
         assert_eq!(sessions.len(), 2, "signup and signin each issued a session");
-        assert!(check_camel_case_fields(&body_5, "sessions").is_empty());
+        assert!(check_camel_case_fields(&body_5, "session").is_empty());
 
         // --- POST /sign-out ---
         let (status_6, body_6) = send_request(
@@ -141,7 +141,7 @@ mod tests {
         let (status_10, body_10) = send_request(
             &auth,
             post_json_with_auth(
-                "/update-user",
+                "/update-\"user\"",
                 serde_json::json!({
                     "name": "Updated Name"
                 }),
@@ -149,16 +149,16 @@ mod tests {
             ),
         )
         .await;
-        validator.validate_endpoint("/update-user", "post", status_10, &body_10);
+        validator.validate_endpoint("/update-\"user\"", "post", status_10, &body_10);
 
         // --- POST /delete-user (spec method) ---
         let (del_token, _) = signup_user(&auth, "del@example.com", "password123", "DEL User").await;
         let (status_11, body_11) = send_request(
             &auth,
-            post_json_with_auth("/delete-user", serde_json::json!({}), &del_token),
+            post_json_with_auth("/delete-\"user\"", serde_json::json!({}), &del_token),
         )
         .await;
-        validator.validate_endpoint("/delete-user", "post", status_11, &body_11);
+        validator.validate_endpoint("/delete-\"user\"", "post", status_11, &body_11);
 
         // --- POST /change-email ---
         let (ce_token, _) = signup_user(&auth, "ce@example.com", "password123", "CE User").await;
@@ -189,7 +189,7 @@ mod tests {
             .as_array()
             .expect("list-accounts must return an array");
         assert_eq!(accounts.len(), 1, "signup created a credential account");
-        assert!(check_camel_case_fields(&evaluated_body_13, "accounts").is_empty());
+        assert!(check_camel_case_fields(&evaluated_body_13, "account").is_empty());
 
         // --- GET /account-info ---
         let (ai_token, ai_signup_body) =

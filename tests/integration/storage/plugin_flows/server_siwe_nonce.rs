@@ -56,11 +56,11 @@ async fn server_siwe_nonce_aliases_preserve_validation_and_consumable_proofs<B: 
     .await?;
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "wallet_address",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "walletAddress",
+            "verification",
         ])
         .await?;
     for operation in ["getSiweNonce", "getNonce"] {
@@ -87,11 +87,11 @@ async fn server_siwe_nonce_aliases_preserve_validation_and_consumable_proofs<B: 
     assert_eq!(provider.counter.load(Ordering::SeqCst), 0);
     assert_eq!(
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "wallet_address",
-            "verifications"
+            "user",
+            "account",
+            "session",
+            "walletAddress",
+            "verification"
         ])
         .await?,
         before
@@ -122,7 +122,7 @@ async fn server_siwe_nonce_aliases_preserve_validation_and_consumable_proofs<B: 
         assert_eq!(proof.value(), nonce);
         assert!(proof.expires_at() >= start + chrono::Duration::seconds(899));
         assert!(proof.expires_at() <= chrono::Utc::now() + chrono::Duration::seconds(901));
-        assert_eq!(db.count("verifications").await?, 1);
+        assert_eq!(db.count("verification").await?, 1);
         let message = format!(
             "wrong.example wants you to sign in with your Ethereum account:\n0x7e5f4552091a69125d5dfcb7b8c2659029395bdf\n\nSign in\n\nURI: https://wrong.example/siwe\nVersion: 1\nChain ID: 1\nNonce: {nonce}\nIssued At: 2026-01-01T00:00:00Z"
         );
@@ -142,11 +142,11 @@ async fn server_siwe_nonce_aliases_preserve_validation_and_consumable_proofs<B: 
         );
         assert_eq!(
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "wallet_address",
-                "verifications"
+                "user",
+                "account",
+                "session",
+                "walletAddress",
+                "verification"
             ])
             .await?,
             before
@@ -172,11 +172,11 @@ async fn server_siwe_nonce_aliases_preserve_validation_and_consumable_proofs<B: 
         );
         assert_eq!(
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "wallet_address",
-                "verifications"
+                "user",
+                "account",
+                "session",
+                "walletAddress",
+                "verification"
             ])
             .await?,
             before

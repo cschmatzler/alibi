@@ -65,7 +65,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             .get_user_sessions(user_id)
             .await?
             .into_iter()
-            .filter(|session| session.expires_at() > now && session.active())
+            .filter(|session| session.expires_at() > now)
             .collect();
         self.session_records(models).await
     }

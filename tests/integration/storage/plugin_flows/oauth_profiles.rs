@@ -771,7 +771,7 @@ async fn provider_profile_protocols_preserve_raw_identity<B: Backend>(db: Db) ->
                 remote.take().is_empty(),
                 "form-post callback must redirect before exchanging a grant"
             );
-            assert_eq!(db.count("users").await?, 0);
+            assert_eq!(db.count("user").await?, 0);
             let url = url::Url::parse(redirected.headers.get("location").unwrap())?;
             assert_eq!(url.path(), format!("/api/auth/callback/{}", case.name));
             let query: HashMap<String, String> = url.query_pairs().into_owned().collect();
@@ -792,10 +792,10 @@ async fn provider_profile_protocols_preserve_raw_identity<B: Backend>(db: Db) ->
             accepted.headers
         );
         authenticated(&auth, &cookies(&accepted), case.email).await;
-        assert_eq!(db.count("users").await?, 1, "{}", case.name);
+        assert_eq!(db.count("user").await?, 1, "{}", case.name);
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM accounts WHERE provider_id = $1 AND account_id = $2",
+                "SELECT COUNT(*) FROM \"account\" WHERE \"providerId\" = $1 AND \"accountId\" = $2",
                 &[case.name, case.account]
             )
             .await?,
@@ -804,7 +804,9 @@ async fn provider_profile_protocols_preserve_raw_identity<B: Backend>(db: Db) ->
             case.name
         );
         assert_eq!(
-            db.text("SELECT name FROM users", &[]).await?.as_deref(),
+            db.text("SELECT \"name\" FROM \"user\"", &[])
+                .await?
+                .as_deref(),
             Some(if mapping && case.name != "tiktok" {
                 "Application display"
             } else {
@@ -814,13 +816,13 @@ async fn provider_profile_protocols_preserve_raw_identity<B: Backend>(db: Db) ->
             case.name
         );
         let actual_image = db
-            .text("SELECT image FROM users", &[])
+            .text("SELECT \"image\" FROM \"user\"", &[])
             .await?
             .unwrap_or_default();
         assert_eq!(actual_image, case.image, "{}", case.name);
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM users WHERE email_verified = true",
+                "SELECT COUNT(*) FROM \"user\" WHERE \"emailVerified\" = true",
                 &[]
             )
             .await?,
@@ -901,13 +903,10 @@ async fn provider_profile_protocols_preserve_raw_identity<B: Backend>(db: Db) ->
         }
         if case.method == "JWT" {
             assert!(exchanges.iter().all(|exchange| exchange.path == "/token"));
-            let original = db.tables(&["users", "accounts", "sessions"]).await?;
+            let original = db.tables(&["user", "account", "session"]).await?;
             let denied = call(&auth, request("/sign-in/social", Some(json!({"provider":case.name,"idToken":{"token":grant_response(Some(&case.profile))["id_token"]}})), ""), 404).await;
             assert_eq!(body(&denied)["code"], "ID_TOKEN_NOT_SUPPORTED");
-            assert_eq!(
-                db.tables(&["users", "accounts", "sessions"]).await?,
-                original
-            );
+            assert_eq!(db.tables(&["user", "account", "session"]).await?, original);
         } else {
             let profile = exchanges
                 .iter()
@@ -983,7 +982,7 @@ async fn provider_profile_protocols_preserve_raw_identity<B: Backend>(db: Db) ->
                 assert_eq!(received, vec![expected], "{} mapper input", case.name);
             }
             if matches!(case.name, "railway" | "paypal") {
-                let original = db.tables(&["users", "accounts", "sessions"]).await?;
+                let original = db.tables(&["user", "account", "session"]).await?;
                 let mut failed = (case.factory)(remote.url.join("profile")?.as_str())
                     .with_profile_mapper(Arc::new(FailedMapper));
                 failed.token_url = remote.url.join("token")?.into();
@@ -1010,10 +1009,7 @@ async fn provider_profile_protocols_preserve_raw_identity<B: Backend>(db: Db) ->
                     );
                 }
                 assert!(!cookies(&denied).contains("session_token="));
-                assert_eq!(
-                    db.tables(&["users", "accounts", "sessions"]).await?,
-                    original
-                );
+                assert_eq!(db.tables(&["user", "account", "session"]).await?, original);
                 drop(remote.take());
                 if case.name == "railway" {
                     // A later application handler supersedes the installed
@@ -1028,7 +1024,7 @@ async fn provider_profile_protocols_preserve_raw_identity<B: Backend>(db: Db) ->
                     authenticated(&custom, &cookies(&accepted), "custom@example.test").await;
                     assert_eq!(
                         db.count_where(
-                            "SELECT COUNT(*) FROM accounts WHERE account_id=$1",
+                            "SELECT COUNT(*) FROM \"account\" WHERE \"accountId\"=$1",
                             &["custom-raw-subject"]
                         )
                         .await?,
@@ -1036,7 +1032,7 @@ async fn provider_profile_protocols_preserve_raw_identity<B: Backend>(db: Db) ->
                     );
                     assert_eq!(
                         db.text(
-                            "SELECT name FROM users WHERE email=$1",
+                            "SELECT \"name\" FROM \"user\" WHERE \"email\"=$1",
                             &["custom@example.test"]
                         )
                         .await?
@@ -1055,7 +1051,7 @@ async fn provider_profile_protocols_preserve_raw_identity<B: Backend>(db: Db) ->
             continue;
         }
         if matches!(case.name, "cloudflare" | "naver" | "paypal") {
-            let original = db.tables(&["users", "accounts", "sessions"]).await?;
+            let original = db.tables(&["user", "account", "session"]).await?;
             let controls = if case.name == "paypal" {
                 vec![json!("foreign-subject"), json!(41)]
             } else {
@@ -1087,17 +1083,14 @@ async fn provider_profile_protocols_preserve_raw_identity<B: Backend>(db: Db) ->
                     "/failed"
                 );
                 assert!(!cookies(&denied).contains("session_token="));
-                assert_eq!(
-                    db.tables(&["users", "accounts", "sessions"]).await?,
-                    original
-                );
+                assert_eq!(db.tables(&["user", "account", "session"]).await?, original);
                 assert!(!remote.take().is_empty());
             }
             remote.respond_at("/profile", 200, case.profile.clone());
         }
         if matches!(case.name, "notion" | "vercel") {
-            let original = db.table("accounts").await?;
-            let account = db.text("SELECT id FROM accounts", &[]).await?.unwrap();
+            let original = db.table("account").await?;
+            let account = db.text("SELECT id FROM \"account\"", &[]).await?.unwrap();
             remote.respond_at("/token",200,json!({"access_token":"refresh-access","refresh_token":"refresh-rotated","expires_in":3600}));
             let response = call(
                 &auth,
@@ -1112,7 +1105,7 @@ async fn provider_profile_protocols_preserve_raw_identity<B: Backend>(db: Db) ->
             if case.name == "vercel" {
                 assert_eq!(body(&response)["code"], "TOKEN_REFRESH_NOT_SUPPORTED");
                 assert!(remote.take().is_empty());
-                assert_eq!(db.table("accounts").await?, original);
+                assert_eq!(db.table("account").await?, original);
             } else {
                 let exchanges = remote.take();
                 assert_eq!(exchanges.len(), 1);
@@ -1127,7 +1120,7 @@ async fn provider_profile_protocols_preserve_raw_identity<B: Backend>(db: Db) ->
                 assert_eq!(form["client_secret"], "native-secret");
                 assert_eq!(body(&response)["accessToken"], "refresh-access");
                 assert_eq!(
-                    db.text("SELECT refresh_token FROM accounts", &[])
+                    db.text("SELECT \"refreshToken\" FROM \"account\"", &[])
                         .await?
                         .as_deref(),
                     Some("refresh-rotated")
@@ -1143,7 +1136,7 @@ async fn provider_profile_protocols_preserve_raw_identity<B: Backend>(db: Db) ->
         } else {
             remote.respond_at("/profile", 200, invalid);
         }
-        let original = db.tables(&["users", "accounts", "sessions"]).await?;
+        let original = db.tables(&["user", "account", "session"]).await?;
         let (authorization, state_cookie) = begin(&auth, case.name).await;
         let denied = complete(&auth, case.name, &authorization, &state_cookie).await;
         let target = url::Url::parse(denied.headers.get("location").unwrap())?;
@@ -1159,7 +1152,7 @@ async fn provider_profile_protocols_preserve_raw_identity<B: Backend>(db: Db) ->
             case.name
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
+            db.tables(&["user", "account", "session"]).await?,
             original,
             "{}",
             case.name

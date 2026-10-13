@@ -41,7 +41,7 @@ async fn server_admin_update_user_preserves_authority_and_targets_mutations<B: B
         headers: Some([("cookie".into(), cookies(response))].into_iter().collect()),
         ..Default::default()
     };
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (input, headers, status, code) in [
         (None, EndpointOptions::default(), 400, "VALIDATION_ERROR"),
         (
@@ -164,8 +164,8 @@ async fn server_admin_update_user_preserves_authority_and_targets_mutations<B: B
         assert_eq!(error.error.status_code(), status);
         assert_eq!(body(&error.error.to_auth_response())["code"], code);
     }
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
-    let immutable_accounts_sessions = db.tables(&["accounts", "sessions"]).await?;
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
+    let immutable_accounts_sessions = db.tables(&["account", "session"]).await?;
     let original_admin =
         serde_json::to_value(auth.store().get_user_by_id(&admin_id).await?.unwrap())?;
     let original_foreign =
@@ -213,7 +213,7 @@ async fn server_admin_update_user_preserves_authority_and_targets_mutations<B: B
             ]
         );
         assert_eq!(
-            db.tables(&["accounts", "sessions"]).await?,
+            db.tables(&["account", "session"]).await?,
             immutable_accounts_sessions
         );
         assert_eq!(
@@ -225,7 +225,7 @@ async fn server_admin_update_user_preserves_authority_and_targets_mutations<B: B
             original_foreign
         );
     }
-    let unchanged = db.tables(&["users", "accounts", "sessions"]).await?;
+    let unchanged = db.tables(&["user", "account", "session"]).await?;
     let duplicate = auth
         .dispatch_endpoint(
             ServerEndpoint::<JsValue>::new("admin", "adminUpdateUser").with_body(
@@ -239,10 +239,7 @@ async fn server_admin_update_user_preserves_authority_and_targets_mutations<B: B
         body(&duplicate.error.to_auth_response())["code"],
         "USERNAME_IS_ALREADY_TAKEN"
     );
-    assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
-        unchanged
-    );
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, unchanged);
     let login = call(
         &auth,
         request(
@@ -255,7 +252,7 @@ async fn server_admin_update_user_preserves_authority_and_targets_mutations<B: B
     .await;
     assert_eq!(body(&login)["user"]["id"], id);
     assert_eq!(auth.store().get_user_sessions(&id).await?.len(), 2);
-    let accounts = db.tables(&["accounts"]).await?;
+    let accounts = db.tables(&["account"]).await?;
     let owner_sessions = serde_json::to_value(auth.store().get_user_sessions(&admin_id).await?)?;
     let foreign_sessions =
         serde_json::to_value(auth.store().get_user_sessions(&foreign_id).await?)?;
@@ -269,7 +266,7 @@ async fn server_admin_update_user_preserves_authority_and_targets_mutations<B: B
     assert_eq!(banned.value().get("banned"), Some(&JsValue::Bool(true)));
     assert!(auth.store().get_user_by_id(&id).await?.unwrap().banned());
     assert!(auth.store().get_user_sessions(&id).await?.is_empty());
-    assert_eq!(db.tables(&["accounts"]).await?, accounts);
+    assert_eq!(db.tables(&["account"]).await?, accounts);
     assert_eq!(
         serde_json::to_value(auth.store().get_user_sessions(&admin_id).await?)?,
         owner_sessions

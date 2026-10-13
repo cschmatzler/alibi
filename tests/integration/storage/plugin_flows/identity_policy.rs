@@ -107,7 +107,7 @@ async fn identity_policy_admits_mutations_and_isolates_concurrent_requests<B: Ba
         let denied = call(&auth, signup_request(mode), 403).await;
         assert_eq!(body(&denied), json!({"code":code,"message":message}));
         assert!(cookies(&denied).is_empty());
-        for table in ["users", "accounts", "sessions"] {
+        for table in ["user", "account", "session"] {
             assert_eq!(db.count(table).await?, 0);
         }
     }
@@ -120,7 +120,7 @@ async fn identity_policy_admits_mutations_and_isolates_concurrent_requests<B: Ba
         authenticated(&auth, &cookies(response), &format!("{mode}@policy.test")).await;
         assert_eq!(
             db.text(
-                "SELECT name FROM users WHERE email=$1",
+                "SELECT \"name\" FROM \"user\" WHERE \"email\"=$1",
                 &[&format!("{mode}@policy.test")]
             )
             .await?
@@ -152,7 +152,7 @@ async fn identity_policy_admits_mutations_and_isolates_concurrent_requests<B: Ba
             .await
             .is_err()
     );
-    assert_eq!(db.count("users").await?, 3);
+    assert_eq!(db.count("user").await?, 3);
     assert!(alibi::hooks::current_request_hook_context().is_none());
     B::close(connection).await
 }
@@ -214,7 +214,7 @@ async fn verification_identifier_policy_preserves_logical_access_and_failure_ato
         let _ = values.create(proof(logical)).await?;
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+                "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
                 &[&physical]
             )
             .await?,
@@ -232,7 +232,7 @@ async fn verification_identifier_policy_preserves_logical_access_and_failure_ato
             .await?;
         assert_eq!(
             db.text(
-                "SELECT value FROM verifications WHERE identifier=$1",
+                "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
                 &[&physical]
             )
             .await?
@@ -246,10 +246,10 @@ async fn verification_identifier_policy_preserves_logical_access_and_failure_ato
     let _ = auth.store().create_verification(proof("legacy-id")).await?;
     assert!(values.find("legacy-id").await?.is_some());
     assert!(values.consume("legacy-id").await?.is_some());
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     assert!(values.reserve(proof("custom:reservation")).await?);
     assert!(!values.reserve(proof("custom:reservation")).await?);
-    let original = db.table("verifications").await?;
+    let original = db.table("verification").await?;
     failed.store(true, Ordering::SeqCst);
     assert!(values.create(proof("custom:reservation")).await.is_err());
     assert!(values.find("custom:reservation").await.is_err());
@@ -268,10 +268,10 @@ async fn verification_identifier_policy_preserves_logical_access_and_failure_ato
             .is_err()
     );
     assert!(values.reserve(proof("custom:reservation")).await.is_err());
-    assert_eq!(db.table("verifications").await?, original);
+    assert_eq!(db.table("verification").await?, original);
     failed.store(false, Ordering::SeqCst);
     values.delete("custom:reservation").await?;
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     verification_modes::exercise::<B>(&db).await?;
     B::close(connection).await
 }
@@ -356,13 +356,13 @@ async fn provider_admission_distinguishes_creation_returning_and_linking<B: Back
     authenticated(&auth, &cookies(&created), "provider-created@example.test").await;
     let created_id = db
         .text(
-            "SELECT id FROM users WHERE email=$1",
+            "SELECT id FROM \"user\" WHERE \"email\"=$1",
             &["provider-created@example.test"],
         )
         .await?
         .unwrap();
     assert_eq!(
-        db.text("SELECT name FROM users WHERE id=$1", &[&created_id])
+        db.text("SELECT \"name\" FROM \"user\" WHERE id=$1", &[&created_id])
             .await?
             .as_deref(),
         Some("Policy accepted creation")
@@ -418,7 +418,7 @@ async fn provider_admission_distinguishes_creation_returning_and_linking<B: Back
                 200,
                 json!({"id":remote_id,"email":email,"email_verified":true,"name":profile_name}),
             );
-            let before = db.tables(&["users", "accounts", "sessions"]).await?;
+            let before = db.tables(&["user", "account", "session"]).await?;
             let (authorization, cookie) = if explicit {
                 let start=call(&auth,request("/link-social",Some(json!({"provider":"policy-provider","callbackURL":format!("{ORIGIN}/done"),"errorCallbackURL":format!("{ORIGIN}/failed"),"disableRedirect":true})),&cookies(&local)),200).await;
                 let url = url::Url::parse(body(&start)["url"].as_str().unwrap())?;
@@ -441,19 +441,19 @@ async fn provider_admission_distinguishes_creation_returning_and_linking<B: Back
                         .query_pairs()
                         .any(|(k, v)| k == "error" && v == "PROVIDER_POLICY_DENIED")
                 );
-                assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+                assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
                 assert!(!cookies(&completed).contains("session_token="));
             } else {
                 assert_eq!(target.path(), "/done");
-                assert_eq!(db.text("SELECT user_id FROM accounts WHERE provider_id='policy-provider' AND account_id=$1",&[remote_id]).await?.as_deref(),Some(owner.as_str()));
-                assert_eq!(db.text("SELECT access_token FROM accounts WHERE provider_id='policy-provider' AND account_id=$1",&[remote_id]).await?.as_deref(),Some(access.as_str()));
+                assert_eq!(db.text("SELECT \"userId\" FROM \"account\" WHERE \"providerId\"='policy-provider' AND \"accountId\"=$1",&[remote_id]).await?.as_deref(),Some(owner.as_str()));
+                assert_eq!(db.text("SELECT \"accessToken\" FROM \"account\" WHERE \"providerId\"='policy-provider' AND \"accountId\"=$1",&[remote_id]).await?.as_deref(),Some(access.as_str()));
                 assert_eq!(
-                    db.table("users").await?,
+                    db.table("user").await?,
                     before[0],
                     "signin/link validation mutates only a copy"
                 );
                 if explicit {
-                    assert_eq!(db.table("sessions").await?, before[2]);
+                    assert_eq!(db.table("session").await?, before[2]);
                 } else {
                     authenticated(&auth, &cookies(&completed), email).await;
                 }
@@ -568,7 +568,7 @@ async fn verification_trusted_create_cache_key<B: Backend>(db: Db) -> TestResult
     assert_eq!(actual["updatedAt"], "2011-01-01T00:00:00.000Z");
     assert_eq!(
         db.text(
-            "SELECT identifier FROM verifications WHERE id=$1",
+            "SELECT \"identifier\" FROM \"verification\" WHERE id=$1",
             &["trusted-storage-primary"]
         )
         .await?
@@ -577,14 +577,14 @@ async fn verification_trusted_create_cache_key<B: Backend>(db: Db) -> TestResult
     );
     assert_eq!(
         db.text(
-            "SELECT value FROM verifications WHERE id=$1",
+            "SELECT \"value\" FROM \"verification\" WHERE id=$1",
             &["trusted-storage-primary"]
         )
         .await?
         .as_deref(),
         Some("trusted-proof")
     );
-    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(db.count("verification").await?, 1);
     assert_eq!(
         serde_json::from_str::<Value>(&cache.get(&key).await?.unwrap())?,
         actual
@@ -681,7 +681,7 @@ async fn verification_expired_transformed_fallback<B: Backend>(db: Db) -> TestRe
                 .is_none()
         );
         assert_eq!(
-            db.count("verifications").await?,
+            db.count("verification").await?,
             if mode == 2 { 1 } else { 2 }
         );
         if mode == 2 {
@@ -695,7 +695,7 @@ async fn verification_expired_transformed_fallback<B: Backend>(db: Db) -> TestRe
         } else {
             assert_eq!(
                 db.text(
-                    "SELECT value FROM verifications WHERE identifier=$1",
+                    "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
                     &["fallback-owner"]
                 )
                 .await?
@@ -713,10 +713,10 @@ async fn verification_expired_transformed_fallback<B: Backend>(db: Db) -> TestRe
         } else {
             assert_eq!(next.unwrap().value()?, "live-plain");
         }
-        assert_eq!(db.count("verifications").await?, 1);
+        assert_eq!(db.count("verification").await?, 1);
         assert_eq!(
             db.text(
-                "SELECT value FROM verifications WHERE id=$1",
+                "SELECT \"value\" FROM \"verification\" WHERE id=$1",
                 &[&foreign_id]
             )
             .await?
@@ -807,7 +807,7 @@ async fn verification_cache_before_veto<B: Backend>(db: Db) -> TestResult {
             expires_at: chrono::Utc::now() + chrono::Duration::minutes(5),
         })
         .await?;
-    let before = db.table("verifications").await?;
+    let before = db.table("verification").await?;
     assert!(
         auth.context()
             .verifications()
@@ -821,9 +821,9 @@ async fn verification_cache_before_veto<B: Backend>(db: Db) -> TestResult {
             .await?
             .is_none()
     );
-    assert_eq!(db.table("verifications").await?, before);
+    assert_eq!(db.table("verification").await?, before);
     auth.context().verifications().delete("owner").await?;
-    assert_eq!(db.table("verifications").await?, before);
+    assert_eq!(db.table("verification").await?, before);
     assert!(cache.get("verification:application:owner").await?.is_none());
     assert_eq!(*events.lock().unwrap(), ["update", "delete"]);
     B::close(connection).await
@@ -895,10 +895,13 @@ async fn verification_reservation_logical_primary<B: Backend>(db: Db) -> TestRes
     );
     let id = URL_SAFE_NO_PAD.encode(Sha256::digest(b"reserve:logical-reservation"));
     let identifier = URL_SAFE_NO_PAD.encode(Sha256::digest(b"logical-reservation"));
-    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(db.count("verification").await?, 1);
     assert_eq!(
-        db.text("SELECT identifier FROM verifications WHERE id=$1", &[&id])
-            .await?,
+        db.text(
+            "SELECT \"identifier\" FROM \"verification\" WHERE id=$1",
+            &[&id]
+        )
+        .await?,
         Some(identifier.clone())
     );
     let key = format!("verification:{identifier}");
@@ -909,7 +912,7 @@ async fn verification_reservation_logical_primary<B: Backend>(db: Db) -> TestRes
         json!({"id":id,"identifier":identifier,"value":"reservation-proof","expiresAt":expiry.to_rfc3339_opts(chrono::SecondsFormat::Millis,true)})
     );
     assert_eq!(calls.load(Ordering::SeqCst), 0);
-    let before = db.table("verifications").await?;
+    let before = db.table("verification").await?;
     config.verification.store_in_database = false;
     let cache_only = AuthBuilder::new(config.clone())
         .store(B::store(Arc::new(config), &connection))
@@ -923,7 +926,7 @@ async fn verification_reservation_logical_primary<B: Backend>(db: Db) -> TestRes
             .await
             .is_err()
     );
-    assert_eq!(db.table("verifications").await?, before);
+    assert_eq!(db.table("verification").await?, before);
     assert_eq!(cache.get(&key).await?.unwrap(), raw);
     B::close(connection).await
 }
@@ -999,7 +1002,7 @@ async fn verification_find_cleanup_snapshot<B: Backend>(db: Db) -> TestResult {
                 expires_at: chrono::Utc::now() + chrono::Duration::minutes(10),
             })
             .await?;
-        let before = db.table("verifications").await?;
+        let before = db.table("verification").await?;
         let selected = auth
             .context()
             .verifications()
@@ -1010,11 +1013,11 @@ async fn verification_find_cleanup_snapshot<B: Backend>(db: Db) -> TestResult {
         assert_eq!(selected.value()?, "proof-1");
         assert!(selected.is_expired());
         assert_eq!(
-            db.count("verifications").await?,
+            db.count("verification").await?,
             if mode == 1 { 5 } else { 1 }
         );
         if mode == 1 {
-            assert_eq!(db.table("verifications").await?, before);
+            assert_eq!(db.table("verification").await?, before);
             assert!(events.lock().unwrap().is_empty());
         } else {
             let receipts = events.lock().unwrap().clone();
@@ -1024,7 +1027,7 @@ async fn verification_find_cleanup_snapshot<B: Backend>(db: Db) -> TestResult {
         }
         assert_eq!(
             db.text(
-                "SELECT value FROM verifications WHERE identifier=$1",
+                "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
                 &["live-other"]
             )
             .await?
@@ -1111,7 +1114,7 @@ async fn verification_update_sibling_authority<B: Backend>(db: Db) -> TestResult
             expires_at: chrono::Utc::now() + chrono::Duration::minutes(10),
         })
         .await?;
-    let before = db.table("verifications").await?;
+    let before = db.table("verification").await?;
     let changed = auth
         .context()
         .verifications()
@@ -1127,7 +1130,7 @@ async fn verification_update_sibling_authority<B: Backend>(db: Db) -> TestResult
     assert_eq!(changed.value()?, "trusted-update");
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM verifications WHERE identifier=$1 AND value=$2",
+            "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1 AND \"value\"=$2",
             &["application:owner", "trusted-update"]
         )
         .await?,
@@ -1142,14 +1145,14 @@ async fn verification_update_sibling_authority<B: Backend>(db: Db) -> TestResult
         use alibi::AuthVerification;
         assert!(row.updated_at() > old);
         assert_eq!(
-            db.text("SELECT value FROM verifications WHERE id=$1", &[id])
+            db.text("SELECT \"value\" FROM \"verification\" WHERE id=$1", &[id])
                 .await?
                 .as_deref(),
             Some("trusted-update")
         );
     }
     let before: Value = serde_json::from_str(&before)?;
-    let after: Value = serde_json::from_str(&db.table("verifications").await?)?;
+    let after: Value = serde_json::from_str(&db.table("verification").await?)?;
     assert_eq!(
         before
             .as_array()
@@ -1188,7 +1191,7 @@ async fn verification_update_sibling_authority<B: Backend>(db: Db) -> TestResult
     );
     assert_eq!(receipts[1]["after"]["value"], "trusted-update");
     assert_eq!(receipts[3], json!({"after":null}));
-    assert_eq!(db.count("verifications").await?, 3);
+    assert_eq!(db.count("verification").await?, 3);
     assert!(
         cache
             .get("verification:application:absent")
@@ -1276,7 +1279,7 @@ async fn verification_publication_transaction_rollback<B: Backend>(db: Db) -> Te
             }))
             .await;
         assert_eq!(result.is_err(), rollback);
-        assert_eq!(db.count("verifications").await?, i64::from(!rollback));
+        assert_eq!(db.count("verification").await?, i64::from(!rollback));
         assert_eq!(after.load(Ordering::SeqCst), usize::from(!rollback));
         assert_eq!(
             cache
@@ -1290,7 +1293,7 @@ async fn verification_publication_transaction_rollback<B: Backend>(db: Db) -> Te
             .consume("transaction-owner")
             .await?;
         assert_eq!(replay.is_some(), !rollback);
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
         if rollback {
             assert!(
                 cache
@@ -1355,7 +1358,7 @@ async fn verification_retirement_cache_delete_failure<B: Backend>(db: Db) -> Tes
             let count = self
                 .raw
                 .count_where(
-                    "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+                    "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
                     &["application:retire-owner"],
                 )
                 .await
@@ -1422,7 +1425,7 @@ async fn verification_retirement_cache_delete_failure<B: Backend>(db: Db) -> Tes
             .await
             .is_err()
     );
-    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(db.count("verification").await?, 1);
     assert_eq!(*events.lock().unwrap(), ["retired"]);
     assert_eq!(cache.get(key).await?.as_deref(), Some(raw.as_str()));
     assert_eq!(
@@ -1450,7 +1453,7 @@ async fn verification_retirement_cache_delete_failure<B: Backend>(db: Db) -> Tes
     assert_eq!(cache.deleted.lock().unwrap().len(), 2);
     assert_eq!(
         db.text(
-            "SELECT value FROM verifications WHERE identifier=$1",
+            "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
             &["foreign"]
         )
         .await?

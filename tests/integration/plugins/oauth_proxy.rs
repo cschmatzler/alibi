@@ -139,7 +139,7 @@ impl<B: Backend> Fixture<B> {
         let raw = self
             .preview_db
             .text(
-                "SELECT value FROM verifications WHERE identifier LIKE 'auth-state:%'",
+                "SELECT \"value\" FROM \"verification\" WHERE \"identifier\" LIKE 'auth-state:%'",
                 &[],
             )
             .await
@@ -268,7 +268,7 @@ fn target(url: &url::Url) -> String {
 
 async fn rows(database: &Db) -> Value {
     let mut value = serde_json::Map::new();
-    for table in ["users", "accounts", "sessions", "verifications"] {
+    for table in ["user", "account", "session", "verification"] {
         drop(value.insert(
             table.into(),
             serde_json::from_str(&database.table(table).await.unwrap()).unwrap(),
@@ -416,10 +416,10 @@ async fn restored_cookie_state_replays_create_sessions_without_rebinding_owner<B
         request(&fixture.preview, &path, None, Some(&browser))
     );
     assert_eq!((a.status, b.status), (302, 302));
-    assert_eq!(fixture.preview_db.count("users").await?, 1);
-    assert_eq!(fixture.preview_db.count("accounts").await?, 1);
-    assert_eq!(fixture.preview_db.count("sessions").await?, 4);
-    assert_eq!(fixture.preview_db.count("verifications").await?, 0);
+    assert_eq!(fixture.preview_db.count("user").await?, 1);
+    assert_eq!(fixture.preview_db.count("account").await?, 1);
+    assert_eq!(fixture.preview_db.count("session").await?, 4);
+    assert_eq!(fixture.preview_db.count("verification").await?, 0);
     for response in [&first, &second, &a, &b] {
         let read = request(
             &fixture.preview,
@@ -500,18 +500,18 @@ async fn cookie_state_link_restores_initiating_owner_across_session_change<B: Ba
             .any(|x| x.starts_with("better-auth.session_token="))
     );
     assert_eq!(
-        serde_json::from_str::<Value>(&fixture.preview_db.table("users").await?)?,
+        serde_json::from_str::<Value>(&fixture.preview_db.table("user").await?)?,
         before.get("users").unwrap().clone()
     );
     assert_eq!(
-        serde_json::from_str::<Value>(&fixture.preview_db.table("sessions").await?)?,
+        serde_json::from_str::<Value>(&fixture.preview_db.table("session").await?)?,
         before.get("sessions").unwrap().clone()
     );
     assert_eq!(
         fixture
             .preview_db
             .text(
-                "SELECT user_id FROM accounts WHERE provider_id='gitlab'",
+                "SELECT \"userId\" FROM \"account\" WHERE \"providerId\"='gitlab'",
                 &[]
             )
             .await?
@@ -620,7 +620,7 @@ async fn cookie_state_expiry_clears_only_authenticated_matching_proof<B: Backend
         location(&recovered).as_str(),
         format!("{PREVIEW}/new-owner")
     );
-    assert_eq!(fixture.preview_db.count("sessions").await?, 1);
+    assert_eq!(fixture.preview_db.count("session").await?, 1);
     Ok(())
 }
 
@@ -683,8 +683,8 @@ async fn raw_profile_max_age_controls_admission_before_state_consumption<B: Back
         let result = request(&fixture.preview, &target(&bridge), None, None).await;
         if accepts {
             assert_eq!(location(&result).as_str(), format!("{PREVIEW}/new-owner"));
-            assert_eq!(fixture.preview_db.count("sessions").await?, 1);
-            assert_eq!(fixture.preview_db.count("verifications").await?, 0);
+            assert_eq!(fixture.preview_db.count("session").await?, 1);
+            assert_eq!(fixture.preview_db.count("verification").await?, 0);
         } else {
             assert!(location(&result).as_str().contains("error=payload_expired"));
             assert_eq!(result.headers.get_all("set-cookie").count(), 0);
@@ -753,21 +753,21 @@ async fn proxy_cache_publication_failure_retains_commit_and_discards_all_cookies
         }))
         .build()
         .await?;
-    let users = fixture.preview_db.table("users").await?;
+    let users = fixture.preview_db.table("user").await?;
     let production = rows(&fixture.production_db).await;
-    let count = fixture.preview_db.count("sessions").await?;
+    let count = fixture.preview_db.count("session").await?;
     let failed = request(&fixture.preview, &target(&bridge), None, Some(&browser)).await;
     assert_eq!(failed.status, 500);
     assert!(failed.body.is_empty());
     assert!(failed.headers.get("location").is_none());
     assert_eq!(failed.headers.get_all("set-cookie").count(), 0);
-    assert_eq!(fixture.preview_db.table("users").await?, users);
-    assert_eq!(fixture.preview_db.count("sessions").await?, count + 1);
-    assert_eq!(fixture.preview_db.count("verifications").await?, 0);
+    assert_eq!(fixture.preview_db.table("user").await?, users);
+    assert_eq!(fixture.preview_db.count("session").await?, count + 1);
+    assert_eq!(fixture.preview_db.count("verification").await?, 0);
     let id = fixture
         .preview_db
         .text(
-            "SELECT id FROM users WHERE email='proxy-owner@fixture.test'",
+            "SELECT id FROM \"user\" WHERE \"email\"='proxy-owner@fixture.test'",
             &[],
         )
         .await?
@@ -775,7 +775,10 @@ async fn proxy_cache_publication_failure_retains_commit_and_discards_all_cookies
     assert_eq!(
         fixture
             .preview_db
-            .count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&id])
+            .count_where(
+                "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+                &[&id]
+            )
             .await?,
         2
     );
@@ -874,7 +877,7 @@ async fn proxy_loose_profile_retains_resolved_account_key_authority<B: Backend>(
         fixture
             .preview_db
             .text(
-                "SELECT account_id FROM accounts WHERE provider_id='gitlab'",
+                "SELECT \"accountId\" FROM \"account\" WHERE \"providerId\"='gitlab'",
                 &[]
             )
             .await?
@@ -885,7 +888,7 @@ async fn proxy_loose_profile_retains_resolved_account_key_authority<B: Backend>(
         fixture
             .preview_db
             .count_where(
-                "SELECT COUNT(*) FROM accounts WHERE account_id='display-only-id'",
+                "SELECT COUNT(*) FROM \"account\" WHERE \"accountId\"='display-only-id'",
                 &[]
             )
             .await?,
@@ -907,7 +910,7 @@ async fn proxy_loose_profile_retains_resolved_account_key_authority<B: Backend>(
         fixture
             .preview_db
             .text(
-                "SELECT user_id FROM accounts WHERE provider_id='gitlab'",
+                "SELECT \"userId\" FROM \"account\" WHERE \"providerId\"='gitlab'",
                 &[]
             )
             .await?
@@ -971,7 +974,7 @@ async fn empty_query_code_prevents_body_grant_fallback_and_preserves_pending_sta
             .as_str(),
         Some(code.as_str())
     );
-    assert_eq!(fixture.preview_db.count("sessions").await?, 1);
+    assert_eq!(fixture.preview_db.count("session").await?, 1);
     assert_eq!(rows(&fixture.production_db).await, production);
     Ok(())
 }
@@ -1401,7 +1404,10 @@ mod tests {
         *expired.get_mut("expiresAt").unwrap() = json!(chrono::Utc::now().timestamp_millis() - 1);
         _ = fixture
             .preview_db
-            .execute("UPDATE verifications SET value=$1", &[&expired.to_string()])
+            .execute(
+                "UPDATE \"verification\" SET \"value\"=$1",
+                &[&expired.to_string()],
+            )
             .await?;
         let denied_4 = request(&fixture.preview, &target(&bridge), None, None).await;
         assert!(
@@ -1593,7 +1599,7 @@ mod tests {
             location(&linked).as_str(),
             &format!("{PREVIEW}/complete?application=kept")
         );
-        let accounts: Value = serde_json::from_str(&fixture.preview_db.table("accounts").await?)?;
+        let accounts: Value = serde_json::from_str(&fixture.preview_db.table("account").await?)?;
         let providers = accounts
             .as_array()
             .unwrap()

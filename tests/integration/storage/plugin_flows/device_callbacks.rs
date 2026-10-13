@@ -100,7 +100,7 @@ async fn device_callback_errors_stop_at_the_failing_phase_and_preserve_pending_c
             } else {
                 assert!(denied.body.is_empty());
             }
-            assert_eq!(db.count("device_code").await?, 0);
+            assert_eq!(db.count("deviceCode").await?, 0);
         }
     }
     *callbacks.mode.lock().unwrap() = ("", false);
@@ -118,9 +118,9 @@ async fn device_callback_errors_stop_at_the_failing_phase_and_preserve_pending_c
     assert_eq!(body(&issued)["device_code"], "configured-device-proof");
     assert_eq!(*callbacks.events.lock().unwrap(), phases);
     assert_eq!(body(&issued)["user_code"], "NATIVE-CODE");
-    assert_eq!(db.count("device_code").await?, 1);
-    assert_eq!(db.count_where("SELECT COUNT(*) FROM device_code WHERE device_code=$1 AND user_code=$2 AND client_id=$3 AND scope=$4", &["configured-device-proof", "NATIVE-CODE", "native-client", "profile"]).await?, 1);
-    let pending = db.table("device_code").await?;
+    assert_eq!(db.count("deviceCode").await?, 1);
+    assert_eq!(db.count_where("SELECT COUNT(*) FROM \"deviceCode\" WHERE \"deviceCode\"=$1 AND \"userCode\"=$2 AND \"clientId\"=$3 AND \"scope\"=$4", &["configured-device-proof", "NATIVE-CODE", "native-client", "profile"]).await?, 1);
+    let pending = db.table("deviceCode").await?;
     for (phase, explicit, status) in [
         ("false", false, 400),
         ("validate", false, 500),
@@ -133,8 +133,8 @@ async fn device_callback_errors_stop_at_the_failing_phase_and_preserve_pending_c
         if phase == "false" {
             assert_eq!(body(&denied)["error"], "invalid_grant");
         }
-        assert_eq!(db.table("device_code").await?, pending);
-        assert_eq!(db.count("sessions").await?, 0);
+        assert_eq!(db.table("deviceCode").await?, pending);
+        assert_eq!(db.count("session").await?, 0);
     }
     B::close(connection).await
 }

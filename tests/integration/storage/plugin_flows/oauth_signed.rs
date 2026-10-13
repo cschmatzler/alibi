@@ -263,7 +263,7 @@ async fn signed_provider_identity_requires_its_configured_authority<B: Backend>(
             .await;
             assert_eq!(body(&denied)["code"], "INVALID_TOKEN", "{name}/{control}");
             assert!(cookies(&denied).is_empty(), "{name}/{control}");
-            for table in ["users", "accounts", "sessions"] {
+            for table in ["user", "account", "session"] {
                 assert_eq!(db.count(table).await?, 0, "{name}/{control}/{table}");
             }
         }
@@ -284,7 +284,7 @@ async fn signed_provider_identity_requires_its_configured_authority<B: Backend>(
             )
             .await;
             assert_eq!(body(&denied)["code"], "INVALID_TOKEN", "{name}/kid");
-            assert_eq!(db.count("users").await?, 0);
+            assert_eq!(db.count("user").await?, 0);
         }
         if name == "microsoft" {
             let mut consumer = claims.clone();
@@ -306,7 +306,7 @@ async fn signed_provider_identity_requires_its_configured_authority<B: Backend>(
             )
             .await;
             assert_eq!(body(&denied)["code"], "INVALID_TOKEN");
-            assert_eq!(db.count("accounts").await?, 0);
+            assert_eq!(db.count("account").await?, 0);
         }
         let document: Value =
             serde_json::from_str(include_str!("../../../fixtures/one-tap/jwks.json"))?;
@@ -326,9 +326,9 @@ async fn signed_provider_identity_requires_its_configured_authority<B: Backend>(
                 let proof = token(&claims, false, "one-tap-local-rs256")?;
                 let denied = call(&auth,request("/sign-in/social",Some(json!({"provider":name,"idToken":{"token":proof,"nonce":"browser-nonce"}})),""),401).await;
                 assert_eq!(body(&denied)["code"], "INVALID_TOKEN");
-                assert_eq!(db.count("users").await?, 0);
-                assert_eq!(db.count("accounts").await?, 0);
-                assert_eq!(db.count("sessions").await?, 0);
+                assert_eq!(db.count("user").await?, 0);
+                assert_eq!(db.count("account").await?, 0);
+                assert_eq!(db.count("session").await?, 0);
             }
         }
         remote.respond_at("/keys", 200, document.clone());
@@ -348,7 +348,7 @@ async fn signed_provider_identity_requires_its_configured_authority<B: Backend>(
         )
         .await;
         assert_eq!(body(&denied)["code"], "INVALID_TOKEN");
-        assert_eq!(db.count("sessions").await?, 0);
+        assert_eq!(db.count("session").await?, 0);
         if name == "facebook" {
             let mut encryption = wrong_public_key()?;
             encryption["use"] = json!("enc");
@@ -375,7 +375,7 @@ async fn signed_provider_identity_requires_its_configured_authority<B: Backend>(
         authenticated(&auth, &cookies(&accepted), &email).await;
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM accounts WHERE provider_id = $1 AND account_id = $2",
+                "SELECT COUNT(*) FROM \"account\" WHERE \"providerId\" = $1 AND \"accountId\" = $2",
                 &[name, subject]
             )
             .await?,
@@ -383,13 +383,15 @@ async fn signed_provider_identity_requires_its_configured_authority<B: Backend>(
             "{name}"
         );
         assert_eq!(
-            db.text("SELECT name FROM users", &[]).await?.as_deref(),
+            db.text("SELECT \"name\" FROM \"user\"", &[])
+                .await?
+                .as_deref(),
             Some("Signed User"),
             "{name}"
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM users WHERE email_verified = true",
+                "SELECT COUNT(*) FROM \"user\" WHERE \"emailVerified\" = true",
                 &[]
             )
             .await?,
@@ -407,7 +409,9 @@ async fn signed_provider_identity_requires_its_configured_authority<B: Backend>(
                 assert_eq!(photo.headers["authorization"], "Bearer photo-access");
             }
             assert_eq!(
-                db.text("SELECT image FROM users", &[]).await?.as_deref(),
+                db.text("SELECT \"image\" FROM \"user\"", &[])
+                    .await?
+                    .as_deref(),
                 Some(if name == "microsoft-photo" {
                     "data:image/jpeg;base64, InBob3RvLWJ5dGVzIg=="
                 } else {
@@ -416,7 +420,7 @@ async fn signed_provider_identity_requires_its_configured_authority<B: Backend>(
             );
         }
         if name == "apple" {
-            let before = db.tables(&["users", "accounts", "sessions"]).await?;
+            let before = db.tables(&["user", "account", "session"]).await?;
             let proof = protected_token(&claims, json!({"alg":"RS256"}))?;
             let mut key = document["keys"][0].clone();
             key["kid"] = Value::Null;
@@ -434,7 +438,7 @@ async fn signed_provider_identity_requires_its_configured_authority<B: Backend>(
             )
             .await;
             assert_eq!(body(&denied)["code"], "INVALID_TOKEN");
-            assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+            assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
             drop(key.as_object_mut().unwrap().remove("kid"));
             remote.respond_at("/keys", 200, json!({"keys":[key]}));
             let accepted = call(
@@ -450,7 +454,7 @@ async fn signed_provider_identity_requires_its_configured_authority<B: Backend>(
             )
             .await;
             authenticated(&auth, &cookies(&accepted), &email).await;
-            assert_eq!(db.count("accounts").await?, 1);
+            assert_eq!(db.count("account").await?, 1);
             remote.respond_at("/keys", 200, document);
             let mut hashed = claims.clone();
             hashed["nonce"] = json!(
@@ -473,7 +477,7 @@ async fn signed_provider_identity_requires_its_configured_authority<B: Backend>(
             )
             .await;
             authenticated(&auth, &cookies(&accepted), &email).await;
-            assert_eq!(db.count("accounts").await?, 1);
+            assert_eq!(db.count("account").await?, 1);
         }
         let requests = remote.take();
         assert!(!requests.is_empty());

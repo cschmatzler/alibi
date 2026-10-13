@@ -39,14 +39,52 @@ pub(super) enum StoredCredential {
     Core(Passkey),
 }
 
+impl StoredCredential {
+    /// Construct the disposable verifier state from the TypeScript row columns.
+    pub(super) fn from_columns<P: alibi_core::AuthPasskey>(row: &P) -> Result<Self, WebauthnError> {
+        use base64::engine::general_purpose::STANDARD;
+        let public_key = STANDARD.decode(row.public_key()).map_err(|_| malformed())?;
+        let credential_id = URL_SAFE_NO_PAD
+            .decode(row.credential_id())
+            .map_err(|_| malformed())?;
+        let counter = u32::try_from(row.counter()).map_err(|_| malformed())?;
+        let (key, _) = decode_first(&public_key)?;
+        if let Ok(key) = super::source::crypto::COSEKey::try_from(&key) {
+            return Ok(Self::Core(super::source::credential::Passkey {
+                cred: super::source::credential::Credential {
+                    cred_id: credential_id.into(),
+                    cred: key,
+                    counter,
+                    transports: None,
+                    user_verified: false,
+                    backup_eligible: row.device_type() == "multiDevice",
+                    backup_state: row.backed_up(),
+                    registration_policy: webauthn_rs_core::proto::UserVerificationPolicy::Preferred,
+                    extensions: webauthn_rs_core::proto::RegisteredExtensions::default(),
+                    attestation: webauthn_rs_core::proto::ParsedAttestation::default(),
+                    attestation_format: webauthn_rs_core::proto::AttestationFormat::None,
+                },
+            }));
+        }
+        Ok(Self::Raw(RawCredential::SourceRawKey {
+            credential_id,
+            public_key,
+            counter,
+            backup_eligible: row.device_type() == "multiDevice",
+            backup_state: row.backed_up(),
+            aaguid: row
+                .aaguid()
+                .and_then(|value| uuid::Uuid::parse_str(value).ok())
+                .map_or([0; 16], |value| *value.as_bytes()),
+            transports: row.transports().map(super::webauthn::parse_transports_csv),
+        }))
+    }
+}
+
 impl RawCredential {
     pub(super) fn credential_id(&self) -> &[u8] {
         let Self::SourceRawKey { credential_id, .. } = self;
         credential_id
-    }
-    pub(super) fn replace_public_key(&mut self, bytes: Vec<u8>) {
-        let Self::SourceRawKey { public_key, .. } = self;
-        *public_key = bytes;
     }
     pub(super) fn public_key(&self) -> &[u8] {
         let Self::SourceRawKey { public_key, .. } = self;
@@ -56,19 +94,18 @@ impl RawCredential {
         let Self::SourceRawKey { aaguid, .. } = self;
         *aaguid
     }
-    pub(super) fn snapshot(&self) -> alibi_core::AuthResult<PasskeySnapshot> {
+    pub(super) fn snapshot(&self) -> PasskeySnapshot {
         let Self::SourceRawKey {
             counter,
             backup_eligible,
             backup_state,
             ..
         } = self;
-        Ok(PasskeySnapshot {
-            serialized: serde_json::to_string(self)?,
+        PasskeySnapshot {
             counter: u64::from(*counter),
             backed_up: *backup_state,
             backup_eligible: *backup_eligible,
-        })
+        }
     }
 }
 

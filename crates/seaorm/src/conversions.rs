@@ -14,7 +14,7 @@ impl From<&entities::organization::Model> for Organization {
             logo: model.logo.clone(),
             metadata: model.metadata.as_ref().map(|metadata| (**metadata).clone()),
             created_at: model.created_at,
-            updated_at: model.updated_at,
+            updated_at: model.created_at,
         }
     }
 }
@@ -37,7 +37,7 @@ impl From<&entities::invitation::Model> for Invitation {
             id: model.id.clone(),
             organization_id: model.organization_id.clone(),
             email: model.email.clone(),
-            role: Some(model.role.clone()),
+            role: model.role.clone(),
             team_id: model.team_id.clone(),
             status: InvitationStatus::from(model.status.clone()),
             inviter_id: model.inviter_id.clone(),
@@ -55,10 +55,8 @@ impl From<&entities::two_factor::Model> for TwoFactor {
             backup_codes: model.backup_codes.clone(),
             user_id: model.user_id.clone(),
             verified: model.verified,
-            failed_verification_count: model.failed_verification_count,
+            failed_verification_count: model.failed_verification_count.map(|value| value.0),
             locked_until: model.locked_until,
-            created_at: model.created_at,
-            updated_at: model.updated_at,
         }
     }
 }
@@ -73,15 +71,15 @@ impl From<&entities::api_key::Model> for ApiKey {
             key_hash: model.key_hash.clone(),
             reference_id: model.reference_id.clone(),
             config_id: model.config_id.clone(),
-            refill_interval: model.refill_interval,
-            refill_amount: model.refill_amount,
+            refill_interval: model.refill_interval.map(|value| value.0),
+            refill_amount: model.refill_amount.map(|value| value.0),
             last_refill_at: model.last_refill_at.map(to_rfc3339),
-            enabled: model.enabled,
-            rate_limit_enabled: model.rate_limit_enabled,
-            rate_limit_time_window: model.rate_limit_time_window,
-            rate_limit_max: model.rate_limit_max,
-            request_count: model.request_count,
-            remaining: model.remaining,
+            enabled: model.enabled.unwrap_or(false),
+            rate_limit_enabled: model.rate_limit_enabled.unwrap_or(false),
+            rate_limit_time_window: model.rate_limit_time_window.map(|value| value.0),
+            rate_limit_max: model.rate_limit_max.map(|value| value.0),
+            request_count: model.request_count.map(|value| value.0),
+            remaining: model.remaining.map(|value| value.0),
             last_request: model.last_request.map(to_rfc3339),
             expires_at: model.expires_at.map(to_rfc3339),
             created_at: to_rfc3339(model.created_at),
@@ -100,14 +98,13 @@ impl From<&entities::passkey::Model> for Passkey {
             public_key: model.public_key.clone(),
             user_id: model.user_id.clone(),
             credential_id: model.credential_id.clone(),
-            counter: u64::try_from(model.counter).unwrap_or_default(),
+            counter: u64::try_from(model.counter.0).unwrap_or_default(),
             device_type: model.device_type.clone(),
             backed_up: model.backed_up,
             transports: model.transports.clone(),
             created_at: model.created_at,
-            updated_at: model.updated_at,
+
             aaguid: model.aaguid.clone(),
-            credential: model.credential.clone(),
         }
     }
 }
@@ -122,7 +119,7 @@ impl From<&entities::device_code::Model> for DeviceCode {
             expires_at: model.expires_at,
             status: model.status.clone(),
             last_polled_at: model.last_polled_at,
-            polling_interval: model.polling_interval,
+            polling_interval: model.polling_interval.map(|value| value.0),
             client_id: model.client_id.clone(),
             scope: model.scope.clone(),
         }

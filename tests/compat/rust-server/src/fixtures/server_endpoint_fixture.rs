@@ -18,7 +18,8 @@ use alibi::plugins::jwt::JwtPlugin;
 use alibi::plugins::one_time_token::OneTimeTokenPlugin;
 use alibi::plugins::two_factor::TwoFactorConfig;
 use alibi::plugins::{
-    AccountManagementPlugin, ApiKeyPlugin, EmailPasswordPlugin, OrganizationPlugin, PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin,
+    AccountManagementPlugin, ApiKeyPlugin, EmailPasswordPlugin, OrganizationPlugin,
+    PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
 use alibi::seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use alibi::utils::json::{self, JsValue};
@@ -65,15 +66,21 @@ fn input_snapshot(call: &EndpointCall) -> Value {
     let observed_session = call.session().map(|(user, session)| {
         let mut snapshot = value!({"user":user,"session":session});
         if call.operation_id() == "get_session" {
-            if let Some(metadata) = alibi::session::cookie_cache::runtime::session_hook_cache_metadata(call) {
+            if let Some(metadata) =
+                alibi::session::cookie_cache::runtime::session_hook_cache_metadata(call)
+            {
                 snapshot["updatedAt"] = value!(metadata.updated_at);
-                if let Some(version) = metadata.version { snapshot["version"] = value!(version); }
+                if let Some(version) = metadata.version {
+                    snapshot["version"] = value!(version);
+                }
             }
         }
         snapshot
     });
     let mut snapshot = value!({"pathPresent":true,"path":call.path(),"methodPresent":call.has_method(),"method":call.method().map(|method|format!("{method:?}").to_uppercase()),"bodyPresent":call.has_body(),"body":call.body(),"queryPresent":call.has_query(),"query":call.query(),"headers":call.headers(),"request":call.request().map(|request|value!({"url":request.url().map(|url|url.as_str()),"method":format!("{:?}",request.method()).to_uppercase(),"headers":request.headers,"query":request.query,"body":request.body.as_ref().map(|body|String::from_utf8_lossy(body).into_owned())})),"session":observed_session});
-    if let Some(params) = call.params() { snapshot["params"] = serde_json::to_value(params).unwrap(); }
+    if let Some(params) = call.params() {
+        snapshot["params"] = serde_json::to_value(params).unwrap();
+    }
     snapshot
 }
 fn snapshot(call: &EndpointCall, response: Option<&EndpointResponse>) -> Value {
@@ -162,10 +169,15 @@ impl EndpointHook<TestSchema> for Observer {
             self.app.hash_at("before", context).await?;
         }
         if self.id == "user" && mode == "callback-params" {
-            return Ok(Some(BeforeEndpointAction::Patch(Box::new(EndpointContextPatch {
-                params: Some(json::parse_value(&value!({"token":call.body().and_then(|body|body.get("token"))}).to_string())?),
-                ..Default::default()
-            }))));
+            return Ok(Some(BeforeEndpointAction::Patch(Box::new(
+                EndpointContextPatch {
+                    params: Some(json::parse_value(
+                        &value!({"token":call.body().and_then(|body|body.get("token"))})
+                            .to_string(),
+                    )?),
+                    ..Default::default()
+                },
+            ))));
         }
         if self.id == "user" && mode == "reset-app" {
             self.app
@@ -387,7 +399,9 @@ impl ApiKeyValidator for Application {
         Ok(true)
     }
 }
-fn present_input<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<JsValue>, D::Error> {
+fn present_input<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<JsValue>, D::Error> {
     JsValue::deserialize(deserializer).map(Some)
 }
 #[derive(Deserialize)]
@@ -421,8 +435,7 @@ fn header_snapshot(headers: &alibi::Headers) -> HashMap<String, String> {
 fn outcome(result: Result<alibi::endpoint::EndpointOutput<JsValue>, EndpointError>) -> Value {
     match result {
         Ok(output) => {
-            let mut result =
-                value!({"headers":header_snapshot(output.headers()),"cookies":output.headers().get_all("set-cookie").cloned().collect::<Vec<_>>(),"response":output.value()});
+            let mut result = value!({"headers":header_snapshot(output.headers()),"cookies":output.headers().get_all("set-cookie").cloned().collect::<Vec<_>>(),"response":output.value()});
             if let Some(status) = output.status() {
                 result["status"] = value!(status);
             }
@@ -514,13 +527,24 @@ pub(crate) async fn router(
                 },
             ))
             .plugin(SessionManagementPlugin::new())
-            .plugin(alibi::plugins::EmailVerificationPlugin::new()
-                .custom_send_verification_email(verification_sender).send_on_sign_up(false))
-            .plugin(alibi::plugins::UserManagementPlugin::new().delete_user_enabled(true).change_email_enabled(true))
+            .plugin(
+                alibi::plugins::EmailVerificationPlugin::new()
+                    .custom_send_verification_email(verification_sender)
+                    .send_on_sign_up(false),
+            )
+            .plugin(
+                alibi::plugins::UserManagementPlugin::new()
+                    .delete_user_enabled(true)
+                    .change_email_enabled(true),
+            )
             .plugin(AccountManagementPlugin::new())
-            .plugin(PasswordManagementPlugin::with_config(alibi::plugins::PasswordManagementConfig {
-                password_hasher: Some(Arc::new(app.clone())), send_reset_password: Some(reset_sender), ..Default::default()
-            }))
+            .plugin(PasswordManagementPlugin::with_config(
+                alibi::plugins::PasswordManagementConfig {
+                    password_hasher: Some(Arc::new(app.clone())),
+                    send_reset_password: Some(reset_sender),
+                    ..Default::default()
+                },
+            ))
             .plugin(Observer {
                 id: "first",
                 app: app.clone(),
@@ -710,11 +734,11 @@ pub(crate) async fn router(
     router=router.route(&format!("{control_path}/state"),get(move||{let database=database.clone();async move{
         let mut state=serde_json::Map::new();
         for (name,sql) in [
-            ("verification","SELECT json_object('id',id,'identifier',identifier,'value',value,'expiresAt',expires_at,'createdAt',created_at,'updatedAt',updated_at) AS data FROM verifications ORDER BY identifier,id"),
-            ("apikey","SELECT json_object('id',id,'name',name,'start',start,'prefix',prefix,'key',key,'referenceId',reference_id,'configId',config_id,'refillInterval',refill_interval,'refillAmount',refill_amount,'lastRefillAt',last_refill_at,'enabled',json(CASE enabled WHEN 1 THEN 'true' ELSE 'false' END),'rateLimitEnabled',json(CASE rate_limit_enabled WHEN 1 THEN 'true' ELSE 'false' END),'rateLimitTimeWindow',rate_limit_time_window,'rateLimitMax',rate_limit_max,'requestCount',request_count,'remaining',remaining,'lastRequest',last_request,'expiresAt',expires_at,'createdAt',created_at,'updatedAt',updated_at,'permissions',permissions,'metadata',metadata,'startHex',hex(CAST(start AS BLOB)),'startType',typeof(start)) AS data FROM api_keys ORDER BY name,id"),
-            ("organization","SELECT json_object('id',id,'name',name,'slug',slug,'logo',logo,'createdAt',created_at,'metadata',metadata) AS data FROM organization ORDER BY slug,id"),
-            ("member","SELECT json_object('id',id,'organizationId',organization_id,'userId',user_id,'role',role,'createdAt',created_at) AS data FROM member ORDER BY role,id"),
-            ("session","SELECT json_object('id',id,'expiresAt',expires_at,'token',token,'createdAt',created_at,'updatedAt',updated_at,'ipAddress',ip_address,'userAgent',user_agent,'userId',user_id,'impersonatedBy',impersonated_by,'activeOrganizationId',active_organization_id,'activeTeamId',active_team_id) AS data FROM sessions ORDER BY created_at,id")
+            ("verification","SELECT json_object('id',id,'identifier',\"identifier\",'value',\"value\",'expiresAt',\"expiresAt\",'createdAt',\"createdAt\",'updatedAt',\"updatedAt\") AS data FROM \"verification\" ORDER BY \"identifier\",id"),
+            ("apikey","SELECT json_object('id',id,'name',\"name\",'start',\"start\",'prefix',\"prefix\",'key',\"key\",'referenceId',\"referenceId\",'configId',\"configId\",'refillInterval',\"refillInterval\",'refillAmount',\"refillAmount\",'lastRefillAt',\"lastRefillAt\",'enabled',json(CASE \"enabled\" WHEN 1 THEN 'true' ELSE 'false' END),'rateLimitEnabled',json(CASE \"rateLimitEnabled\" WHEN 1 THEN 'true' ELSE 'false' END),'rateLimitTimeWindow',\"rateLimitTimeWindow\",'rateLimitMax',\"rateLimitMax\",'requestCount',\"requestCount\",'remaining',\"remaining\",'lastRequest',\"lastRequest\",'expiresAt',\"expiresAt\",'createdAt',\"createdAt\",'updatedAt',\"updatedAt\",'permissions',\"permissions\",'metadata',\"metadata\",'startHex',hex(CAST(\"start\" AS BLOB)),'startType',typeof(\"start\")) AS data FROM \"apikey\" ORDER BY \"name\",id"),
+            ("organization","SELECT json_object('id',id,'name',\"name\",'slug',\"slug\",'logo',\"logo\",'createdAt',\"createdAt\",'metadata',\"metadata\") AS data FROM \"organization\" ORDER BY \"slug\",id"),
+            ("member","SELECT json_object('id',id,'organizationId',\"organizationId\",'userId',\"userId\",'role',\"role\",'createdAt',\"createdAt\") AS data FROM \"member\" ORDER BY \"role\",id"),
+            ("session","SELECT json_object('id',id,'expiresAt',\"expiresAt\",'token',\"token\",'createdAt',\"createdAt\",'updatedAt',\"updatedAt\",'ipAddress',\"ipAddress\",'userAgent',\"userAgent\",'userId',\"userId\",'impersonatedBy',\"impersonatedBy\",'activeOrganizationId',\"activeOrganizationId\",'activeTeamId',\"activeTeamId\") AS data FROM \"session\" ORDER BY \"createdAt\",id")
         ] {let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,sql)).await.unwrap();let rows:Vec<Value>=rows.iter().map(|row|serde_json::from_str(&row.try_get::<String>("","data").unwrap()).unwrap()).collect();drop(state.insert(name.into(),value!(rows)));}
         Json(Value::Object(state))
     }}));

@@ -59,7 +59,7 @@ async fn server_sign_out_clears_cookies_without_authenticating_cache_authority<B
     .await;
     let foreign = signup(&auth, "logical-signout-foreign@example.test").await;
     let token = |response: &AuthResponse| body(response)["token"].as_str().unwrap().to_owned();
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for input in [
         json!(null),
         json!([]),
@@ -97,7 +97,7 @@ async fn server_sign_out_clears_cookies_without_authenticating_cache_authority<B
         .await?;
     assert!(guest.decode()?.success);
     assert_cleared(guest.headers(), false);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let cache_only = cookies(&owner)
         .split("; ")
         .filter(|raw| !raw.starts_with("better-auth.session_token="))
@@ -115,15 +115,15 @@ async fn server_sign_out_clears_cookies_without_authenticating_cache_authority<B
         .await?;
     assert!(detached.decode()?.success);
     assert_cleared(detached.headers(), true);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     db.set_timestamp(
-        "sessions",
-        "expires_at",
+        "session",
+        "expiresAt",
         ("token", &token(&owner)),
         chrono::DateTime::from_timestamp(1_577_836_800, 0).unwrap(),
     )
     .await?;
-    let expired = db.tables(&["users", "accounts", "sessions"]).await?;
+    let expired = db.tables(&["user", "account", "session"]).await?;
     let retired=auth.dispatch_endpoint(endpoint().with_body(&json!({"callbackURL":"/bye","disableRedirect":true,"state":"client","token":token(&foreign)}))?,options(&owner)).await?;
     let decoded = retired.decode()?;
     assert!(decoded.success);
@@ -144,7 +144,7 @@ async fn server_sign_out_clears_cookies_without_authenticating_cache_authority<B
     assert!(auth.store().get_session(&token(&owner)).await?.is_none());
     assert!(auth.store().get_session(&token(&other)).await?.is_some());
     assert!(auth.store().get_session(&token(&foreign)).await?.is_some());
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     assert_eq!(after[..2], expired[..2]);
     let rows: Vec<Value> = serde_json::from_str(&expired[2])?;
     let retained: Vec<_> = rows
@@ -160,7 +160,7 @@ async fn server_sign_out_clears_cookies_without_authenticating_cache_authority<B
         .await?;
     assert!(repeated.decode()?.success);
     assert_cleared(repeated.headers(), true);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, after);
     assert!(observer.0.lock().unwrap().iter().all(Option::is_none));
     B::close(connection).await
 }

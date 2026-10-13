@@ -47,7 +47,7 @@ async fn server_create_org_role_persists_normalized_permissions_without_request<
     let permission = json!({"team":["create","update"],"member":["update"]});
     let input = json!({"organizationId":organization_id,"role":"TeamEditor","permission":permission,"id":"forged-role","createdAt":"2000-01-01"});
     let before = db
-        .tables(&["users", "sessions", "organization", "member"])
+        .tables(&["user", "session", "organization", "member"])
         .await?;
     let endpoint = || ServerEndpoint::<JsValue>::new("organization", "createOrgRole");
     let output = auth
@@ -73,7 +73,7 @@ async fn server_create_org_role_persists_normalized_permissions_without_request<
         serde_json::from_str::<Value>(stored.permission.as_str())?,
         permission
     );
-    let after = db.tables(&["organization_role"]).await?;
+    let after = db.tables(&["organizationRole"]).await?;
     for (input, credentials, status, code) in [
         (
             json!({"role":"missing-headers","permission":permission}),
@@ -122,9 +122,9 @@ async fn server_create_org_role_persists_normalized_permissions_without_request<
         assert_eq!(error.error.status_code(), status);
         assert_eq!(body(&error.error.to_auth_response())["code"], code);
     }
-    assert_eq!(db.tables(&["organization_role"]).await?, after);
+    assert_eq!(db.tables(&["organizationRole"]).await?, after);
     assert_eq!(
-        db.tables(&["users", "sessions", "organization", "member"])
+        db.tables(&["user", "session", "organization", "member"])
             .await?,
         before
     );

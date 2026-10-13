@@ -54,7 +54,7 @@ async fn server_admin_ban_user_applies_policy_and_revokes_target_sessions<B: Bac
         headers: Some([("cookie".into(), cookies(response))].into_iter().collect()),
         ..Default::default()
     };
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (input, headers, status, code) in [
         (None, EndpointOptions::default(), 400, "VALIDATION_ERROR"),
         (
@@ -140,8 +140,8 @@ async fn server_admin_ban_user_applies_policy_and_revokes_target_sessions<B: Bac
         .unwrap_err();
     assert_eq!(invalid.error.status_code(), 500);
     assert!(invalid.body_absent);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
-    let accounts = db.tables(&["accounts"]).await?;
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
+    let accounts = db.tables(&["account"]).await?;
     let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
     let admin_sessions = auth.store().get_user_sessions(&admin_id).await?;
     let foreign_sessions = auth.store().get_user_sessions(&foreign_id).await?;
@@ -208,7 +208,7 @@ async fn server_admin_ban_user_applies_policy_and_revokes_target_sessions<B: Bac
             ]
         );
         assert!(auth.store().get_user_sessions(&id).await?.is_empty());
-        assert_eq!(db.tables(&["accounts"]).await?, accounts);
+        assert_eq!(db.tables(&["account"]).await?, accounts);
         assert_eq!(
             serde_json::to_value(auth.store().get_user_sessions(&admin_id).await?)?,
             serde_json::to_value(&admin_sessions)?

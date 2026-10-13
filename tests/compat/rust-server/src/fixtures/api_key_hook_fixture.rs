@@ -124,7 +124,7 @@ pub(crate) async fn router(
             async move {
                 let rows = database.query_all_raw(Statement::from_string(
                     DbBackend::Sqlite,
-                    "SELECT id, reference_id, config_id, remaining, request_count, enabled FROM api_keys ORDER BY name",
+                    "SELECT id, \"referenceId\", \"configId\", \"remaining\", \"requestCount\", \"enabled\" FROM \"apikey\" ORDER BY \"name\"",
                 )).await.unwrap();
                 let keys: Vec<Value> = rows.iter().map(|row| json!({
                     "id": row.try_get::<String>("", "id").unwrap(),
@@ -136,7 +136,7 @@ pub(crate) async fn router(
                 })).collect();
                 let sessions = database.query_one_raw(Statement::from_sql_and_values(
                     DbBackend::Sqlite,
-                    "SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?",
+                    "SELECT COUNT(*) AS \"count\" FROM \"session\" WHERE \"userId\" = ?",
                     [query.user_id.into()],
                 )).await.unwrap().unwrap();
                 Json(json!({"keys": keys, "sessions": {"count": sessions.try_get::<i64>("", "count").unwrap()}}))

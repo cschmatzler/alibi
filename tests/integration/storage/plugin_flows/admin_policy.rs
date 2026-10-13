@@ -252,7 +252,7 @@ async fn admin_remember_me_impersonation<B: Backend>(db: Db) -> TestResult {
     assert!(impersonating.contains("admin_session"));
     // Compat owner: admin/invalid-restoration.test.ts. Rejection must not
     // consume the active impersonation before restoration authority is valid.
-    let preserved_tables = ["users", "accounts", "sessions", "verifications"];
+    let preserved_tables = ["user", "account", "session", "verification"];
     let original_target_token = body(&impersonate)["session"]["token"]
         .as_str()
         .unwrap()
@@ -318,7 +318,10 @@ async fn admin_remember_me_impersonation<B: Backend>(db: Db) -> TestResult {
     assert_eq!(live["user"]["id"], member_id);
     trace.response("admin cookie of another administrator", &denied);
     _ = db
-        .execute("DELETE FROM sessions WHERE user_id = $1", &[&second_id])
+        .execute(
+            "DELETE FROM \"session\" WHERE \"userId\" = $1",
+            &[&second_id],
+        )
         .await?;
     let before = db.tables(&preserved_tables).await?;
     let denied = call(
@@ -485,7 +488,7 @@ async fn admin_failure_modes<B: Backend>(db: Db) -> TestResult {
     }
     _ = db
         .execute(
-            "CREATE TRIGGER fail_session_insert BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'forced'); END",
+            "CREATE TRIGGER fail_session_insert BEFORE INSERT ON \"session\" BEGIN SELECT RAISE(ABORT, 'forced'); END",
             &[],
         )
         .await?;
@@ -598,7 +601,7 @@ async fn zero_admin_durations_and_empty_reason_use_effective_defaults<B: Backend
     let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let foreign = signup(&auth, "foreign@example.test").await;
     let foreign_token = body(&foreign)["token"].as_str().unwrap().to_owned();
-    let original_accounts = db.table("accounts").await?;
+    let original_accounts = db.table("account").await?;
     let banned = call(
         &auth,
         request(
@@ -612,8 +615,11 @@ async fn zero_admin_durations_and_empty_reason_use_effective_defaults<B: Backend
     assert_eq!(body(&banned)["user"]["banReason"], "No reason");
     assert!(body(&banned)["user"]["banExpires"].is_null());
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+            &[&id]
+        )
+        .await?,
         0
     );
     assert!(auth.store().get_session(&foreign_token).await?.is_some());
@@ -646,7 +652,7 @@ async fn zero_admin_durations_and_empty_reason_use_effective_defaults<B: Backend
             .abs()
             < 100
     );
-    assert_eq!(db.table("accounts").await?, original_accounts);
+    assert_eq!(db.table("account").await?, original_accounts);
     authenticated(&auth, &admin, "admin@example.test").await;
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
@@ -670,7 +676,7 @@ async fn fractional_and_negative_admin_bans_preserve_milliseconds_and_ownership<
         let owner = signup(&auth, "owner@example.test").await;
         let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
         let foreign = signup(&auth, "foreign@example.test").await;
-        let accounts = db.table("accounts").await?;
+        let accounts = db.table("account").await?;
         let banned = call(
             &auth,
             request(
@@ -692,8 +698,11 @@ async fn fractional_and_negative_admin_bans_preserve_milliseconds_and_ownership<
             assert!(user.ban_expires().is_none());
         }
         assert_eq!(
-            db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&id])
-                .await?,
+            db.count_where(
+                "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+                &[&id]
+            )
+            .await?,
             0
         );
         let login = call(
@@ -710,7 +719,7 @@ async fn fractional_and_negative_admin_bans_preserve_milliseconds_and_ownership<
             assert_eq!(body(&login)["user"]["id"], id);
             assert!(!auth.store().get_user_by_id(&id).await?.unwrap().banned());
         }
-        assert_eq!(db.table("accounts").await?, accounts);
+        assert_eq!(db.table("account").await?, accounts);
         authenticated(&auth, &admin, "admin@example.test").await;
         authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
         B::close(connection).await?;
@@ -736,7 +745,7 @@ async fn configured_impersonation_durations_preserve_milliseconds_and_authority<
         let owner = signup(&auth, "owner@example.test").await;
         let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
         let foreign = signup(&auth, "foreign@example.test").await;
-        let before: Value = serde_json::from_str(&db.table("sessions").await?)?;
+        let before: Value = serde_json::from_str(&db.table("session").await?)?;
         let issued = call(
             &auth,
             request(
@@ -758,7 +767,7 @@ async fn configured_impersonation_durations_preserve_milliseconds_and_authority<
             ((session.expires_at() - session.created_at()).num_milliseconds() - milliseconds).abs()
                 < 100
         );
-        let after: Value = serde_json::from_str(&db.table("sessions").await?)?;
+        let after: Value = serde_json::from_str(&db.table("session").await?)?;
         for old in before.as_array().unwrap() {
             assert!(after.as_array().unwrap().contains(old));
         }

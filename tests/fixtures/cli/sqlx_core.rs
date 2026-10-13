@@ -2,60 +2,81 @@ use alibi::AuthSchema;
 use alibi::sqlx::{Engine, SqlxPool};
 pub mod user {
     #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
-    #[auth(role = "user", table = "users")]
+    #[auth(role = "user", table = "user")]
     pub struct Model {
         pub id: String,
-        pub name: Option<String>,
-        pub email: Option<String>,
+        pub name: String,
+        pub email: String,
+        #[sqlx(rename = "emailVerified")]
         pub email_verified: bool,
         pub image: Option<String>,
+        #[sqlx(rename = "createdAt")]
         pub created_at: chrono::DateTime<chrono::Utc>,
+        #[sqlx(rename = "updatedAt")]
         pub updated_at: chrono::DateTime<chrono::Utc>,
     }
 }
 pub mod session {
     #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
-    #[auth(role = "session", table = "sessions")]
+    #[auth(role = "session", table = "session")]
     pub struct Model {
         pub id: String,
+        #[sqlx(rename = "expiresAt")]
         pub expires_at: chrono::DateTime<chrono::Utc>,
         pub token: String,
+        #[sqlx(rename = "createdAt")]
         pub created_at: chrono::DateTime<chrono::Utc>,
+        #[sqlx(rename = "updatedAt")]
         pub updated_at: chrono::DateTime<chrono::Utc>,
+        #[sqlx(rename = "ipAddress")]
         pub ip_address: Option<String>,
+        #[sqlx(rename = "userAgent")]
         pub user_agent: Option<String>,
+        #[sqlx(rename = "userId")]
         pub user_id: String,
-        pub active: bool,
     }
 }
 pub mod account {
     #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
-    #[auth(role = "account", table = "accounts")]
+    #[auth(role = "account", table = "account")]
     pub struct Model {
         pub id: String,
+        #[sqlx(rename = "accountId")]
         pub account_id: String,
+        #[sqlx(rename = "providerId")]
         pub provider_id: String,
+        #[sqlx(rename = "userId")]
         pub user_id: String,
+        #[sqlx(rename = "accessToken")]
         pub access_token: Option<String>,
+        #[sqlx(rename = "refreshToken")]
         pub refresh_token: Option<String>,
+        #[sqlx(rename = "idToken")]
         pub id_token: Option<String>,
+        #[sqlx(rename = "accessTokenExpiresAt")]
         pub access_token_expires_at: Option<chrono::DateTime<chrono::Utc>>,
+        #[sqlx(rename = "refreshTokenExpiresAt")]
         pub refresh_token_expires_at: Option<chrono::DateTime<chrono::Utc>>,
         pub scope: Option<String>,
         pub password: Option<String>,
+        #[sqlx(rename = "createdAt")]
         pub created_at: chrono::DateTime<chrono::Utc>,
+        #[sqlx(rename = "updatedAt")]
         pub updated_at: chrono::DateTime<chrono::Utc>,
     }
 }
 pub mod verification {
     #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
-    #[auth(role = "verification", table = "verifications")]
+    #[auth(role = "verification", table = "verification")]
     pub struct Model {
         pub id: String,
         pub identifier: String,
         pub value: String,
+        #[sqlx(rename = "expiresAt")]
         pub expires_at: chrono::DateTime<chrono::Utc>,
+        #[sqlx(rename = "createdAt")]
         pub created_at: chrono::DateTime<chrono::Utc>,
+        #[sqlx(rename = "updatedAt")]
         pub updated_at: chrono::DateTime<chrono::Utc>,
     }
 }
@@ -67,16 +88,22 @@ impl AuthSchema for AppAuthSchema {
     type Verification = verification::Model;
 }
 const SQLITE_TABLES: &[&str] = &[
-    "CREATE TABLE IF NOT EXISTS \"users\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"name\" TEXT, \"email\" TEXT, \"email_verified\" BOOLEAN NOT NULL, \"image\" TEXT, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS \"sessions\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"expires_at\" TEXT NOT NULL, \"token\" TEXT NOT NULL, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL, \"ip_address\" TEXT, \"user_agent\" TEXT, \"user_id\" TEXT NOT NULL, \"active\" BOOLEAN NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS \"accounts\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"account_id\" TEXT NOT NULL, \"provider_id\" TEXT NOT NULL, \"user_id\" TEXT NOT NULL, \"access_token\" TEXT, \"refresh_token\" TEXT, \"id_token\" TEXT, \"access_token_expires_at\" TEXT, \"refresh_token_expires_at\" TEXT, \"scope\" TEXT, \"password\" TEXT, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS \"verifications\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"identifier\" TEXT NOT NULL, \"value\" TEXT NOT NULL, \"expires_at\" TEXT NOT NULL, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS \"user\" (\"id\" text not null primary key, \"name\" text not null, \"email\" text not null unique, \"emailVerified\" integer not null, \"image\" text, \"createdAt\" date not null, \"updatedAt\" date not null)",
+    "CREATE TABLE IF NOT EXISTS \"session\" (\"id\" text not null primary key, \"expiresAt\" date not null, \"token\" text not null unique, \"createdAt\" date not null, \"updatedAt\" date not null, \"ipAddress\" text, \"userAgent\" text, \"userId\" text not null references \"user\" (\"id\") on delete cascade)",
+    "create index IF NOT EXISTS \"session_userId_idx\" on \"session\" (\"userId\")",
+    "CREATE TABLE IF NOT EXISTS \"account\" (\"id\" text not null primary key, \"accountId\" text not null, \"providerId\" text not null, \"userId\" text not null references \"user\" (\"id\") on delete cascade, \"accessToken\" text, \"refreshToken\" text, \"idToken\" text, \"accessTokenExpiresAt\" date, \"refreshTokenExpiresAt\" date, \"scope\" text, \"password\" text, \"createdAt\" date not null, \"updatedAt\" date not null)",
+    "create index IF NOT EXISTS \"account_userId_idx\" on \"account\" (\"userId\")",
+    "CREATE TABLE IF NOT EXISTS \"verification\" (\"id\" text not null primary key, \"identifier\" text not null, \"value\" text not null, \"expiresAt\" date not null, \"createdAt\" date not null, \"updatedAt\" date not null)",
+    "create index IF NOT EXISTS \"verification_identifier_idx\" on \"verification\" (\"identifier\")",
 ];
 const POSTGRES_TABLES: &[&str] = &[
-    "CREATE TABLE IF NOT EXISTS \"users\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"name\" TEXT, \"email\" TEXT, \"email_verified\" BOOLEAN NOT NULL, \"image\" TEXT, \"created_at\" TIMESTAMPTZ NOT NULL, \"updated_at\" TIMESTAMPTZ NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS \"sessions\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"expires_at\" TIMESTAMPTZ NOT NULL, \"token\" TEXT NOT NULL, \"created_at\" TIMESTAMPTZ NOT NULL, \"updated_at\" TIMESTAMPTZ NOT NULL, \"ip_address\" TEXT, \"user_agent\" TEXT, \"user_id\" TEXT NOT NULL, \"active\" BOOLEAN NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS \"accounts\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"account_id\" TEXT NOT NULL, \"provider_id\" TEXT NOT NULL, \"user_id\" TEXT NOT NULL, \"access_token\" TEXT, \"refresh_token\" TEXT, \"id_token\" TEXT, \"access_token_expires_at\" TIMESTAMPTZ, \"refresh_token_expires_at\" TIMESTAMPTZ, \"scope\" TEXT, \"password\" TEXT, \"created_at\" TIMESTAMPTZ NOT NULL, \"updated_at\" TIMESTAMPTZ NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS \"verifications\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"identifier\" TEXT NOT NULL, \"value\" TEXT NOT NULL, \"expires_at\" TIMESTAMPTZ NOT NULL, \"created_at\" TIMESTAMPTZ NOT NULL, \"updated_at\" TIMESTAMPTZ NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS \"user\" (\"id\" text not null primary key, \"name\" text not null, \"email\" text not null unique, \"emailVerified\" boolean not null, \"image\" text, \"createdAt\" timestamptz default CURRENT_TIMESTAMP not null, \"updatedAt\" timestamptz default CURRENT_TIMESTAMP not null)",
+    "CREATE TABLE IF NOT EXISTS \"session\" (\"id\" text not null primary key, \"expiresAt\" timestamptz not null, \"token\" text not null unique, \"createdAt\" timestamptz default CURRENT_TIMESTAMP not null, \"updatedAt\" timestamptz not null, \"ipAddress\" text, \"userAgent\" text, \"userId\" text not null references \"user\" (\"id\") on delete cascade)",
+    "create index IF NOT EXISTS \"session_userId_idx\" on \"session\" (\"userId\")",
+    "CREATE TABLE IF NOT EXISTS \"account\" (\"id\" text not null primary key, \"accountId\" text not null, \"providerId\" text not null, \"userId\" text not null references \"user\" (\"id\") on delete cascade, \"accessToken\" text, \"refreshToken\" text, \"idToken\" text, \"accessTokenExpiresAt\" timestamptz, \"refreshTokenExpiresAt\" timestamptz, \"scope\" text, \"password\" text, \"createdAt\" timestamptz default CURRENT_TIMESTAMP not null, \"updatedAt\" timestamptz not null)",
+    "create index IF NOT EXISTS \"account_userId_idx\" on \"account\" (\"userId\")",
+    "CREATE TABLE IF NOT EXISTS \"verification\" (\"id\" text not null primary key, \"identifier\" text not null, \"value\" text not null, \"expiresAt\" timestamptz not null, \"createdAt\" timestamptz default CURRENT_TIMESTAMP not null, \"updatedAt\" timestamptz default CURRENT_TIMESTAMP not null)",
+    "create index IF NOT EXISTS \"verification_identifier_idx\" on \"verification\" (\"identifier\")",
 ];
 pub async fn run_app_migrations(
     pool: &SqlxPool,

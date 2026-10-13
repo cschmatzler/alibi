@@ -21,16 +21,12 @@ where
         value.map_or_else(|| Some(String::new()), Some)
     }
 
-    /// Look up a token, filtering the legacy active flag when declared.
+    /// Look up a session by token.
     fn active_session_by_token(exec: Exec<'_>, token: &str) -> Sql {
         let table = <S::Session as SqlxModel>::TABLE;
         let mut sql = model::select_model::<S::Session>(exec);
         sql.push(" WHERE ");
         sql.compare_model::<S::Session>(table, S::Session::token_column(), " = ", token);
-        if let Some(column) = S::Session::active_column() {
-            sql.push(" AND ");
-            sql.compare_model::<S::Session>(table, column, " = ", true);
-        }
         sql.push(" LIMIT 1");
         sql
     }
@@ -271,12 +267,6 @@ where
         let mut query = model::select_model::<S::Session>(self.exec());
         query.push(" WHERE ");
         query.compare_model::<S::Session>(table, S::Session::token_column(), " = ", token);
-        if expires_at.is_some()
-            && let Some(column) = S::Session::active_column()
-        {
-            query.push(" AND ");
-            query.compare_model::<S::Session>(table, column, " = ", true);
-        }
         query.push(" LIMIT 1");
         let Some(model) = self.exec().fetch_optional::<S::Session>(query).await? else {
             for hook in self.hooks() {
@@ -520,10 +510,6 @@ where
                 }),
             );
         }
-        if let Some(column) = S::Session::active_column() {
-            sql.push(" AND ");
-            sql.compare_model::<S::Session>(table, column, " = ", true);
-        }
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
         self.exec().fetch_all(sql).await
@@ -535,10 +521,6 @@ where
         let mut sql = model::select_model::<S::Session>(self.exec());
         sql.push(" WHERE ");
         sql.compare_model::<S::Session>(table, S::Session::user_id_column(), " = ", user_id);
-        if let Some(column) = S::Session::active_column() {
-            sql.push(" AND ");
-            sql.compare_model::<S::Session>(table, column, " = ", true);
-        }
         sql.push(" ORDER BY ");
         sql.column(table, S::Session::created_at_column());
         sql.push(" ASC");
@@ -632,10 +614,6 @@ where
             " < ",
             S::Session::timestamp_value(S::Session::expires_at_column(), Utc::now()),
         );
-        if let Some(column) = S::Session::active_column() {
-            sql.push(" OR ");
-            sql.compare_model::<S::Session>(table, column, " = ", false);
-        }
         let deleted = self.exec().execute(sql).await?;
         usize::try_from(deleted)
             .map_err(|_error| AuthError::internal("Affected row count exceeds usize"))

@@ -51,13 +51,13 @@ async fn server_admin_list_user_sessions_preserves_expired_target_rows_and_autho
     let expired = body(&target)["token"].as_str().unwrap().to_owned();
     let old = chrono::DateTime::parse_from_rfc3339("2020-01-01T00:00:00.000Z")?
         .with_timezone(&chrono::Utc);
-    db.set_timestamp("sessions", "expires_at", ("token", &expired), old)
+    db.set_timestamp("session", "expiresAt", ("token", &expired), old)
         .await?;
     let options = |response: &AuthResponse| EndpointOptions {
         headers: Some([("cookie".into(), cookies(response))].into_iter().collect()),
         ..Default::default()
     };
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (input, headers, status) in [
         (None, EndpointOptions::default(), 400),
         (Some(json!(null)), EndpointOptions::default(), 400),
@@ -181,6 +181,6 @@ async fn server_admin_list_user_sessions_preserves_expired_target_rows_and_autho
             ]
         );
     }
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     B::close(connection).await
 }

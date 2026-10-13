@@ -148,18 +148,21 @@ async fn delete_user_policy_matrix<B: Backend>(db: Db) -> TestResult {
         .await;
         if mode == "stale-session" {
             db.set_timestamp(
-                "sessions",
-                "created_at",
-                ("user_id", &user_id(&owner)),
+                "session",
+                "createdAt",
+                ("userId", &user_id(&owner)),
                 chrono::Utc::now() - Duration::hours(1),
             )
             .await?;
         }
         respond!("delete", raw("/delete-user", "{}", &cookie)).await;
-        trace.value(&format!("{mode}: users"), json!(db.count("users").await?));
+        trace.value(&format!("{mode}: users"), json!(db.count("user").await?));
         if mode == "zero-expiry" {
             let expires = db
-                .text("SELECT CAST(expires_at AS TEXT) FROM verifications", &[])
+                .text(
+                    "SELECT CAST(\"expiresAt\" AS TEXT) FROM \"verification\"",
+                    &[],
+                )
                 .await?;
             assert!(expires.is_some());
             assert_eq!(mail.0.lock().unwrap().len(), 1);
@@ -228,7 +231,7 @@ async fn change_email_policy_matrix<B: Backend>(db: Db) -> TestResult {
         let cookie = cookies(&owner);
         if mode == "confirmation" {
             _ = db
-                .execute("UPDATE users SET email_verified = true", &[])
+                .execute("UPDATE \"user\" SET \"emailVerified\" = true", &[])
                 .await?;
         }
         macro_rules! respond {
@@ -253,7 +256,7 @@ async fn change_email_policy_matrix<B: Backend>(db: Db) -> TestResult {
         trace.value(
             &format!("{mode}: emails"),
             json!(
-                db.text("SELECT email FROM users WHERE name = 'Native owner' ORDER BY created_at LIMIT 1", &[])
+                db.text("SELECT \"email\" FROM \"user\" WHERE \"name\" = 'Native owner' ORDER BY \"createdAt\" LIMIT 1", &[])
                     .await?
             ),
         );
@@ -300,7 +303,10 @@ async fn update_user_input_matrix<B: Backend>(db: Db) -> TestResult {
             &Box::pin(auth.handle_request(raw("/update-user", text, &cookie))).await?,
         );
     }
-    trace.value("name", json!(db.text("SELECT name FROM users", &[]).await?));
+    trace.value(
+        "name",
+        json!(db.text("SELECT \"name\" FROM \"user\"", &[]).await?),
+    );
     trace.assert("user-management/update-user-inputs");
     B::close(connection).await
 }

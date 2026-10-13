@@ -216,7 +216,7 @@ impl Application {
     ) -> AuthResult<()> {
         let rows = crate::backend::hook_rows::<verification::Model>(
             context,
-            "SELECT * FROM verifications ORDER BY created_at",
+            "SELECT * FROM \"verification\" ORDER BY \"createdAt\"",
         )
         .await?;
         self.events.lock().unwrap().push(json!({"stage":stage,"data":data,"cache":self.cache_state(),"verifications":rows.iter().map(VerificationView::from).collect::<Vec<_>>()}));
@@ -557,28 +557,28 @@ fn creation(body: &Value) -> AuthResult<VerificationCreation> {
 async fn sql_state(auth: &Alibi<TestSchema>, database: &DatabaseConnection) -> AuthResult<Value> {
     let users = crate::backend::rows::<user::Model>(
         database,
-        "SELECT * FROM users ORDER BY created_at",
+        "SELECT * FROM \"user\" ORDER BY \"createdAt\"",
         vec![],
     )
     .await
     .map_err(error)?;
     let accounts = crate::backend::rows::<account::Model>(
         database,
-        "SELECT * FROM accounts ORDER BY created_at",
+        "SELECT * FROM \"account\" ORDER BY \"createdAt\"",
         vec![],
     )
     .await
     .map_err(error)?;
     let sessions = crate::backend::rows::<session::Model>(
         database,
-        "SELECT * FROM sessions ORDER BY created_at",
+        "SELECT * FROM \"session\" ORDER BY \"createdAt\"",
         vec![],
     )
     .await
     .map_err(error)?;
     let verifications = crate::backend::rows::<verification::Model>(
         database,
-        "SELECT * FROM verifications ORDER BY created_at",
+        "SELECT * FROM \"verification\" ORDER BY \"createdAt\"",
         vec![],
     )
     .await
@@ -813,7 +813,7 @@ pub(crate) async fn router(
                             .map_err(error)?;
                             let model = crate::backend::rows::<verification::Model>(
                                 &database,
-                                "SELECT * FROM verifications WHERE id = ?",
+                                "SELECT * FROM \"verification\" WHERE id = ?",
                                 vec![seeded.id],
                             )
                             .await

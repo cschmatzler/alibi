@@ -871,7 +871,7 @@ async fn passkey_stored_credential_failures<B: Backend>(db: Db) -> TestResult {
         "stored counters",
         json!(
             db.text(
-                "SELECT GROUP_CONCAT(CAST(counter AS TEXT), ',') FROM passkeys",
+                "SELECT GROUP_CONCAT(CAST(\"counter\" AS TEXT), ',') FROM \"passkey\"",
                 &[]
             )
             .await?
@@ -1001,7 +1001,7 @@ async fn passkey_extension_rejection_before_challenge_write<B: Backend>(db: Db) 
     let owner = signup(&auth, "owner@example.test").await;
     let jar = cookies(&owner);
     let before = db
-        .tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+        .tables(&["user", "account", "session", "passkey", "verification"])
         .await?;
     for mode in ["internal", "coded"] {
         *resolver.0.lock().unwrap() = mode;
@@ -1022,7 +1022,7 @@ async fn passkey_extension_rejection_before_challenge_write<B: Backend>(db: Db) 
             }
             assert!(denied.headers.get_all("set-cookie").next().is_none());
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "passkeys", "verifications"])
+                db.tables(&["user", "account", "session", "passkey", "verification"])
                     .await?,
                 before
             );
@@ -1054,7 +1054,7 @@ async fn passkey_extension_rejection_before_challenge_write<B: Backend>(db: Db) 
         200,
     )
     .await;
-    assert_eq!(db.count("passkeys").await?, 1);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("passkey").await?, 1);
+    assert_eq!(db.count("verification").await?, 0);
     B::close(connection).await
 }

@@ -30,7 +30,7 @@ impl DatabaseHooks<ApplicationSchema, crate::backend::Backend> for Callbacks {
         if fields.get("label").and_then(JsValue::as_str) == Some("delete-before") {
             _ = crate::backend::hook_execute(
                 ctx.db,
-                "DELETE FROM sessions WHERE token=?",
+                "DELETE FROM \"session\" WHERE \"token\"=?",
                 vec![token.to_owned()],
             )
             .await?;
@@ -56,14 +56,14 @@ struct StateQuery {
 }
 pub(crate) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthResult<Router> {
     for sql in [
-        "ALTER TABLE sessions ADD COLUMN label TEXT",
-        "ALTER TABLE sessions ADD COLUMN hidden TEXT",
-        "ALTER TABLE sessions ADD COLUMN server_only TEXT",
-        "ALTER TABLE sessions ADD COLUMN transformed TEXT",
-        "ALTER TABLE sessions ADD COLUMN validated TEXT",
-        "ALTER TABLE sessions ADD COLUMN callback TEXT",
-        "ALTER TABLE sessions ADD COLUMN number REAL",
-        "ALTER TABLE sessions ADD COLUMN payload JSON NOT NULL DEFAULT '{}'",
+        "ALTER TABLE \"session\" ADD COLUMN label TEXT",
+        "ALTER TABLE \"session\" ADD COLUMN hidden TEXT",
+        "ALTER TABLE \"session\" ADD COLUMN server_only TEXT",
+        "ALTER TABLE \"session\" ADD COLUMN transformed TEXT",
+        "ALTER TABLE \"session\" ADD COLUMN validated TEXT",
+        "ALTER TABLE \"session\" ADD COLUMN callback TEXT",
+        "ALTER TABLE \"session\" ADD COLUMN number REAL",
+        "ALTER TABLE \"session\" ADD COLUMN payload JSON NOT NULL DEFAULT '{}'",
     ] {
         _ = db
             .execute_raw(Statement::from_string(db.get_database_backend(), sql))
@@ -207,7 +207,7 @@ pub(crate) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthR
     Ok(router.route("/__test/session-field-state",get(move|Query(query):Query<StateQuery>|{
         let db=db.clone();async move {
             let user=user::Entity::find().filter(user::Column::Email.eq(query.email)).one(&db).await.unwrap();
-            let rows=if let Some(user)=user {crate::backend::rows::<application_session::Model>(&db,"SELECT * FROM sessions WHERE user_id = ?",vec![user.id]).await.unwrap()}else{Vec::new()};
+            let rows=if let Some(user)=user {crate::backend::rows::<application_session::Model>(&db,"SELECT * FROM \"session\" WHERE \"userId\" = ?",vec![user.id]).await.unwrap()}else{Vec::new()};
             Json(Value::Array(rows.into_iter().map(|row|json!({"id":row.id,"token":row.token,"userId":row.user_id,"updatedAt":row.updated_at,"label":row.label,"hidden":row.hidden,"serverOnly":row.server_only,"transformed":row.transformed,"validated":row.validated,"callback":row.callback,"number":row.number,"payload":row.payload,"activeOrganizationId":row.active_organization_id,"activeTeamId":row.active_team_id,"impersonatedBy":row.impersonated_by})).collect()))
         }
     })))

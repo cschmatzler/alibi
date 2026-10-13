@@ -486,7 +486,7 @@ pub(crate) fn parse_payload(original_payload: &JsValue, expires_at: f64) -> Opti
     reason = "Preserve JavaScript Number rounding at the compatibility boundary"
 )]
 pub async fn validate_compact(
-    mut cache: CompactCache,
+    cache: CompactCache,
     token: &str,
     policy: Option<&CookieCacheVersion>,
     now_ms: i64,
@@ -516,7 +516,6 @@ pub async fn validate_compact(
     {
         return Ok(CacheValidation::Invalid);
     }
-    cache.session.active = true;
     Ok(CacheValidation::Hit(Box::new(cache)))
 }
 

@@ -57,8 +57,8 @@ async fn wallet_owner_lookup_and_user_deletion_keep_state_atomic<B: Backend>(db:
             .await,
         Err(AuthError::UserNotFound)
     ));
-    assert_eq!(db.count("wallet_address").await?, 3);
-    _ = db.execute("CREATE TRIGGER wallet_user_delete_abort BEFORE DELETE ON users BEGIN SELECT RAISE(ABORT,'wallet deletion veto'); END", &[]).await?;
+    assert_eq!(db.count("walletAddress").await?, 3);
+    _ = db.execute("CREATE TRIGGER wallet_user_delete_abort BEFORE DELETE ON \"user\" BEGIN SELECT RAISE(ABORT,'wallet deletion veto'); END", &[]).await?;
     assert!(store.delete_user(&owner).await.is_err());
     assert!(store.get_user_by_id(&owner).await?.is_some());
     assert_eq!(
@@ -92,6 +92,6 @@ async fn wallet_owner_lookup_and_user_deletion_keep_state_atomic<B: Backend>(db:
     );
     assert_eq!(store.get_wallet_address(address, None).await?, Some(second));
     assert!(store.get_user_by_id(&other).await?.is_some());
-    assert_eq!(db.count("wallet_address").await?, 1);
+    assert_eq!(db.count("walletAddress").await?, 1);
     B::close(connection).await
 }

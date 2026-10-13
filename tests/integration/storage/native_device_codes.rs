@@ -181,8 +181,8 @@ async fn native_device_workflow<B: Backend>(db: Db) -> TestResult {
         ))
         .await?,
     );
-    assert_eq!(db.count("device_code").await?, 0);
-    assert_eq!(db.count("sessions").await?, 0);
+    assert_eq!(db.count("deviceCode").await?, 0);
+    assert_eq!(db.count("session").await?, 0);
     B::close(connection).await
 }
 #[tokio::test]
@@ -634,8 +634,8 @@ async fn delayed_device_decisions<B: Backend>(db: Db) -> TestResult {
         .next()
         .unwrap()
         .to_owned();
-    let original_users = db.raw.table("users").await?;
-    let original_accounts = db.raw.table("accounts").await?;
+    let original_users = db.raw.table("user").await?;
+    let original_accounts = db.raw.table("account").await?;
     let mut effects = Vec::new();
     for reverse in [false, true] {
         let issued = call(
@@ -658,9 +658,9 @@ async fn delayed_device_decisions<B: Backend>(db: Db) -> TestResult {
         );
         let before = db
             .raw
-            .tables(&["device_code", "users", "accounts", "sessions"])
+            .tables(&["deviceCode", "user", "account", "session"])
             .await?;
-        let session_count = db.count("sessions").await?;
+        let session_count = db.count("session").await?;
         let super::Raw::Sqlite(pool) = &db.raw else {
             return Err("delayed writer probe requires SQLite".into());
         };
@@ -715,7 +715,7 @@ async fn delayed_device_decisions<B: Backend>(db: Db) -> TestResult {
         trace.extend(deny_trace);
         let decided = db
             .raw
-            .tables(&["device_code", "users", "accounts", "sessions"])
+            .tables(&["deviceCode", "user", "account", "session"])
             .await?;
         effects.push(json!({"reverse":reverse,"heldMillis":250,"before":before,"decided":decided,"approve":approve.status,"deny":deny.status}));
         if let Ok(directory) = std::env::var("DEVICE_213_EVIDENCE") {
@@ -802,12 +802,12 @@ async fn delayed_device_decisions<B: Backend>(db: Db) -> TestResult {
             assert_eq!(body(&redeemed)["error"], "access_denied");
         }
         assert_eq!(
-            db.count("sessions").await?,
+            db.count("session").await?,
             session_count + i64::from(row.status == "approved")
         );
-        assert_eq!(db.count("device_code").await?, 0);
-        assert_eq!(db.raw.table("users").await?, original_users);
-        assert_eq!(db.raw.table("accounts").await?, original_accounts);
+        assert_eq!(db.count("deviceCode").await?, 0);
+        assert_eq!(db.raw.table("user").await?, original_users);
+        assert_eq!(db.raw.table("account").await?, original_accounts);
         assert_eq!(
             body(
                 &call(
@@ -823,7 +823,7 @@ async fn delayed_device_decisions<B: Backend>(db: Db) -> TestResult {
             "invalid_grant"
         );
         effects.push(
-            json!({"after":db.raw.tables(&["device_code","users","accounts","sessions"]).await?}),
+            json!({"after":db.raw.tables(&["deviceCode","user","account","session"]).await?}),
         );
     }
     if let Ok(directory) = std::env::var("DEVICE_213_EVIDENCE") {
@@ -1033,14 +1033,14 @@ async fn concurrent_device_redemption_issues_exactly_one_owned_session<B: Backen
         user
     );
     assert_eq!(
-        db.count("sessions").await?,
+        db.count("session").await?,
         2,
         "signup plus exactly one redeemed session"
     );
-    assert_eq!(db.count("device_code").await?, 0);
-    let persisted = db.table("sessions").await?;
+    assert_eq!(db.count("deviceCode").await?, 0);
+    let persisted = db.table("session").await?;
     let replay = Box::pin(auth.handle_request(req)).await?;
     assert_eq!(body(&replay)["error"], "invalid_grant");
-    assert_eq!(db.table("sessions").await?, persisted);
+    assert_eq!(db.table("session").await?, persisted);
     B::close(connection).await
 }

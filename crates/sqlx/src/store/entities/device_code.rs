@@ -3,16 +3,23 @@ use alibi_core::DeviceCode;
 use chrono::{DateTime, Utc};
 
 #[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, SqlxModel)]
-#[auth(table = "device_code")]
+#[auth(table = "deviceCode")]
 pub struct Model {
     pub id: String,
+    #[sqlx(rename = "deviceCode")]
     pub device_code: String,
+    #[sqlx(rename = "userCode")]
     pub user_code: String,
+    #[sqlx(rename = "userId")]
     pub user_id: Option<String>,
+    #[sqlx(rename = "expiresAt")]
     pub expires_at: DateTime<Utc>,
     pub status: String,
+    #[sqlx(rename = "lastPolledAt")]
     pub last_polled_at: Option<DateTime<Utc>>,
+    #[sqlx(rename = "pollingInterval")]
     pub polling_interval: Option<i64>,
+    #[sqlx(rename = "clientId")]
     pub client_id: Option<String>,
     pub scope: Option<String>,
 }

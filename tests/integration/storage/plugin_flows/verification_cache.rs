@@ -145,7 +145,7 @@ async fn cached_updates_patch_value_and_expiry_without_a_database_row<B: Backend
         .await?
         .unwrap();
     assert_eq!(created.value()?, "first");
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
 
     let later = Utc::now() + Duration::minutes(20);
     let updated = values
@@ -203,6 +203,6 @@ async fn cached_updates_patch_value_and_expiry_without_a_database_row<B: Backend
         .await?
         .unwrap();
     assert_eq!(spread.data().get("1").and_then(|v| v.as_str()), Some("b"));
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     Ok(())
 }

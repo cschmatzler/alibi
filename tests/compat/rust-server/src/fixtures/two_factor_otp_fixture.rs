@@ -208,7 +208,7 @@ async fn control(
     state: State,
 ) -> Result<Json<Value>, axum::http::StatusCode> {
     let delivery = state.deliveries.lock().await.get(&body.email).cloned();
-    let row=if let Some(identifier)=body.identifier.clone(){database.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Sqlite,"SELECT id,identifier,value,expires_at AS expiresAt FROM verifications WHERE identifier=? ORDER BY created_at DESC",[identifier.into()])).await}else if let Some(user)=delivery.as_ref().and_then(|value|value.get("userId")).and_then(Value::as_str){database.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Sqlite,"SELECT id,identifier,value,expires_at AS expiresAt FROM verifications WHERE identifier LIKE ? OR identifier IN(SELECT '2fa-otp-'||identifier FROM verifications WHERE value=? AND identifier LIKE '2fa-%') ORDER BY created_at DESC",[format!("2fa-otp-{user}!%").into(),user.into()])).await}else{Ok(None)}.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+    let row=if let Some(identifier)=body.identifier.clone(){database.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Sqlite,"SELECT id,\"identifier\",\"value\",\"expiresAt\" AS expiresAt FROM \"verification\" WHERE \"identifier\"=? ORDER BY \"createdAt\" DESC",[identifier.into()])).await}else if let Some(user)=delivery.as_ref().and_then(|value|value.get("userId")).and_then(Value::as_str){database.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Sqlite,"SELECT id,\"identifier\",\"value\",\"expiresAt\" AS expiresAt FROM \"verification\" WHERE \"identifier\" LIKE ? OR \"identifier\" IN(SELECT '2fa-otp-'||\"identifier\" FROM \"verification\" WHERE \"value\"=? AND \"identifier\" LIKE '2fa-%') ORDER BY \"createdAt\" DESC",[format!("2fa-otp-{user}!%").into(),user.into()])).await}else{Ok(None)}.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
     let current = if let Some(row) = row {
         let identifier: String = row
             .try_get("", "identifier")
@@ -220,7 +220,7 @@ async fn control(
             database
                 .execute_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Sqlite,
-                    "UPDATE verifications SET value=? WHERE identifier=?",
+                    "UPDATE \"verification\" SET \"value\"=? WHERE \"identifier\"=?",
                     [
                         format!("{}:{counter}", value.split(':').next().unwrap_or("")).into(),
                         identifier.clone().into(),
@@ -233,7 +233,7 @@ async fn control(
             database
                 .execute_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Sqlite,
-                    "UPDATE verifications SET expires_at=? WHERE identifier=?",
+                    "UPDATE \"verification\" SET \"expiresAt\"=? WHERE \"identifier\"=?",
                     [
                         (Utc::now() - chrono::Duration::seconds(1)).into(),
                         identifier.clone().into(),
@@ -242,7 +242,7 @@ async fn control(
                 .await
                 .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
         }
-        let row=database.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Sqlite,"SELECT id,identifier,value,expires_at AS expiresAt FROM verifications WHERE identifier=? ORDER BY created_at DESC",[identifier.into()])).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?.ok_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+        let row=database.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Sqlite,"SELECT id,\"identifier\",\"value\",\"expiresAt\" AS expiresAt FROM \"verification\" WHERE \"identifier\"=? ORDER BY \"createdAt\" DESC",[identifier.into()])).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?.ok_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
         Some(
             json!({"id":row.try_get::<String>("","id").map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?,"identifier":row.try_get::<String>("","identifier").map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?,"value":row.try_get::<String>("","value").map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?,"expiresAt":row.try_get::<chrono::DateTime<Utc>>("","expiresAt").map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?}),
         )
@@ -259,7 +259,7 @@ async fn control(
         database
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Sqlite,
-                "SELECT COUNT(*) AS total FROM verifications WHERE identifier=?",
+                "SELECT COUNT(*) AS total FROM \"verification\" WHERE \"identifier\"=?",
                 [identifier.into()],
             ))
             .await

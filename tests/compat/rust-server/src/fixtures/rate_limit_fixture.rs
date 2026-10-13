@@ -207,7 +207,7 @@ pub(crate) async fn router(
     let mut router = Router::new().route("/__test/rate-database-state", get(move || {
         let database = read_database.clone();
         async move {
-            let rows = database.query_all_raw(Statement::from_string(DbBackend::Sqlite, "SELECT key,count,last_request FROM rate_limit ORDER BY key")).await.unwrap();
+            let rows = database.query_all_raw(Statement::from_string(DbBackend::Sqlite, "SELECT \"key\",\"count\",\"lastRequest\" FROM \"rateLimit\" ORDER BY \"key\"")).await.unwrap();
             Json(rows.into_iter().map(|row| json!({"key": row.try_get::<String>("", "key").unwrap(), "count": row.try_get::<f64>("", "count").unwrap(), "lastRequest": row.try_get::<i64>("", "last_request").unwrap()})).collect::<Vec<_>>())
         }
     }));
@@ -217,9 +217,9 @@ pub(crate) async fn router(
             let database = control_database.clone();
             async move {
                 let sql = if body["action"] == "disable" {
-                    "ALTER TABLE rate_limit RENAME TO fixtureRateLimitHeld"
+                    "ALTER TABLE \"rateLimit\" RENAME TO fixtureRateLimitHeld"
                 } else {
-                    "ALTER TABLE fixtureRateLimitHeld RENAME TO rate_limit"
+                    "ALTER TABLE fixtureRateLimitHeld RENAME TO \"rateLimit\""
                 };
                 database
                     .execute_raw(Statement::from_string(DbBackend::Sqlite, sql))

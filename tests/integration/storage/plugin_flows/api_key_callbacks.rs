@@ -100,7 +100,7 @@ async fn application_api_key_callbacks_preserve_delivery_authority_and_failure_e
     for mode in ["generate-error", "permissions-error", "explicit", "default"] {
         *callbacks.mode.lock().unwrap() = mode;
         callbacks.events.lock().unwrap().clear();
-        let original = db.table("api_keys").await?;
+        let original = db.table("apikey").await?;
         let mut input = json!({"name":"Application key"});
         if mode == "explicit" {
             input["permissions"] = json!({"reports":["write"]});
@@ -134,7 +134,7 @@ async fn application_api_key_callbacks_preserve_delivery_authority_and_failure_e
             String::from_utf8_lossy(&result.body)
         );
         if denied {
-            assert_eq!(db.table("api_keys").await?, original);
+            assert_eq!(db.table("apikey").await?, original);
         } else {
             key = body(&result)["key"].as_str().unwrap().to_owned();
             key_id = body(&result)["id"].as_str().unwrap().to_owned();
@@ -152,8 +152,8 @@ async fn application_api_key_callbacks_preserve_delivery_authority_and_failure_e
             );
         }
     }
-    let sessions = db.table("sessions").await?;
-    let before = db.table("api_keys").await?;
+    let sessions = db.table("session").await?;
+    let before = db.table("apikey").await?;
     let mut configured_header = request("/get-session", None, "");
     drop(
         configured_header
@@ -161,7 +161,7 @@ async fn application_api_key_callbacks_preserve_delivery_authority_and_failure_e
             .insert("x-api-key".into(), key.clone()),
     );
     assert!(body(&call(&auth, configured_header, 200).await).is_null());
-    assert_eq!(db.table("api_keys").await?, before);
+    assert_eq!(db.table("apikey").await?, before);
     authenticated(&auth, &cookies(&owner), "custom-key@example.test").await;
     for (mode, status) in [("matching", 500), ("handling", 403)] {
         callbacks.lookups.store(0, Ordering::SeqCst);
@@ -174,7 +174,7 @@ async fn application_api_key_callbacks_preserve_delivery_authority_and_failure_e
         if mode == "handling" {
             assert_eq!(body(&response)["message"], "application lookup veto");
         }
-        assert_eq!(db.table("api_keys").await?, before);
+        assert_eq!(db.table("apikey").await?, before);
     }
     let mut req = request("/get-session", None, "");
     drop(req.headers.insert("x-application-key".into(), key));
@@ -188,6 +188,6 @@ async fn application_api_key_callbacks_preserve_delivery_authority_and_failure_e
             .request_count,
         Some(1.0)
     );
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("session").await?, sessions);
     B::close(connection).await
 }

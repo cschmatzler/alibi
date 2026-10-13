@@ -604,6 +604,7 @@ fn related_cookie_name(config: &alibi_core::AuthConfig, suffix: &str) -> String 
 mod tests {
     use super::*;
     use crate::test_helpers;
+    use alibi_core::AuthUser;
     use alibi_core::{AccountConfig, CreateUser};
     use async_trait::async_trait;
     use chrono::Duration;
@@ -726,7 +727,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(updated_user.email.as_deref(), Some("new@example.com"));
+        assert_eq!(updated_user.email(), Some("new@example.com"));
         // email_verified should be false (no verification was performed)
         assert!(!updated_user.email_verified);
 
@@ -1095,7 +1096,7 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap();
-            assert_eq!(stored.email, user.email);
+            assert_eq!(Some(stored.email), user.email);
             assert!(
                 ctx.database
                     .get_session(&session.token)

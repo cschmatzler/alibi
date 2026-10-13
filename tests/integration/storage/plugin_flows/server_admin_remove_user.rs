@@ -66,7 +66,7 @@ async fn server_admin_remove_user_deletes_only_target_rows<B: Backend>(db: Db) -
     );
     let expired = chrono::DateTime::parse_from_rfc3339("2020-01-01T00:00:00.000Z")?
         .with_timezone(&chrono::Utc);
-    db.set_timestamp("sessions", "expires_at", ("token", &token), expired)
+    db.set_timestamp("session", "expiresAt", ("token", &token), expired)
         .await?;
     assert_eq!(auth.store().get_user_accounts(&id).await?.len(), 2);
     assert_eq!(auth.store().get_user_sessions(&id).await?.len(), 2);
@@ -74,7 +74,7 @@ async fn server_admin_remove_user_deletes_only_target_rows<B: Backend>(db: Db) -
         headers: Some([("cookie".into(), cookies(response))].into_iter().collect()),
         ..Default::default()
     };
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (input, headers, status, code) in [
         (None, EndpointOptions::default(), 400, "VALIDATION_ERROR"),
         (
@@ -189,7 +189,7 @@ async fn server_admin_remove_user_deletes_only_target_rows<B: Backend>(db: Db) -
         .await
         .unwrap_err();
     assert_eq!(error.error.status_code(), 403);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let output = auth
         .dispatch_endpoint(
             AdminPlugin::remove_user_endpoint(id.clone())
@@ -216,12 +216,12 @@ async fn server_admin_remove_user_deletes_only_target_rows<B: Backend>(db: Db) -
         .iter()
         .map(|snapshot| {
             let mut rows: Vec<Value> = serde_json::from_str(snapshot)?;
-            rows.retain(|row| row["id"] != id && row["user_id"] != id);
+            rows.retain(|row| row["id"] != id && row["userId"] != id);
             Ok(Value::Array(rows))
         })
         .collect::<serde_json::Result<Vec<_>>>()?;
     let actual = db
-        .tables(&["users", "accounts", "sessions"])
+        .tables(&["user", "account", "session"])
         .await?
         .iter()
         .map(|snapshot| serde_json::from_str::<Value>(snapshot))

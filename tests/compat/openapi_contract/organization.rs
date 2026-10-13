@@ -36,7 +36,7 @@ mod tests {
         let (status, body) = send_request(
             &auth,
             post_json_with_auth(
-                "/organization/create",
+                "/\"organization\"/create",
                 serde_json::json!({
                     "name": "Test Org",
                     "slug": "test-org"
@@ -46,7 +46,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, 200, "create org failed: {body}");
-        validator.validate_endpoint("/organization/create", "post", status, &body);
+        validator.validate_endpoint("/\"organization\"/create", "post", status, &body);
 
         // --- POST /organization/check-slug (taken) ---
         let (status_2, body_2) = send_request(
@@ -103,7 +103,7 @@ mod tests {
         let (status_4, body_4) = send_request(
             &auth,
             post_json_with_auth(
-                "/organization/update",
+                "/\"organization\"/update",
                 serde_json::json!({
                     "organizationId": org_id,
                     "data": {
@@ -115,7 +115,7 @@ mod tests {
         )
         .await;
         assert_eq!(status_4, 200, "update org failed: {body_4}");
-        validator.validate_endpoint("/organization/update", "post", status_4, &body_4);
+        validator.validate_endpoint("/\"organization\"/update", "post", status_4, &body_4);
 
         // --- POST /organization/set-active ---
         let (status_5, body_5) = send_request(
@@ -203,7 +203,7 @@ mod tests {
         let (status, _create_body) = send_request(
             &auth,
             post_json_with_auth(
-                "/organization/create",
+                "/\"organization\"/create",
                 serde_json::json!({
                     "name": "Invite Org",
                     "slug": "invite-org"
@@ -387,7 +387,7 @@ mod tests {
             send_request(
                 &auth,
                 post_json_with_auth(
-                    "/organization/create",
+                    "/\"organization\"/create",
                     serde_json::json!({
                         "name": "Member Test Org",
                         "slug": "member-test-org"
@@ -459,7 +459,7 @@ mod tests {
         let (status, body) = send_request(
             &auth,
             post_json_with_auth(
-                "/organization/update-member-role",
+                "/\"organization\"/update-\"member\"-\"role\"",
                 serde_json::json!({
                     "memberId": member_id,
                     "role": "admin"
@@ -468,7 +468,7 @@ mod tests {
             ),
         )
         .await;
-        assert_eq!(status, 200, "update-member-role failed: {body}");
+        assert_eq!(status, 200, "update-\"member\"-\"role\" failed: {body}");
 
         // --- POST /organization/leave (member leaves) ---
         // Set active org for member first
@@ -590,14 +590,14 @@ mod tests {
         let (status_4, body_4) = send_request(
             &auth,
             post_json_with_auth(
-                "/organization/delete",
+                "/\"organization\"/delete",
                 serde_json::json!({ "organizationId": org_id }),
                 &owner_token,
             ),
         )
         .await;
         assert_eq!(status_4, 200, "delete org failed: {body_4}");
-        validator.validate_endpoint("/organization/delete", "post", status_4, &body_4);
+        validator.validate_endpoint("/\"organization\"/delete", "post", status_4, &body_4);
 
         // Print report
         let report = validator.report();
@@ -625,7 +625,7 @@ mod tests {
         let (status, create_body) = send_request(
             &auth,
             post_json_with_auth(
-                "/organization/create",
+                "/\"organization\"/create",
                 serde_json::json!({
                     "name": "Founder Org",
                     "slug": "founder-org"
@@ -690,7 +690,7 @@ mod tests {
         let (status, create_body) = send_request(
             &auth,
             post_json_with_auth(
-                "/organization/create",
+                "/\"organization\"/create",
                 serde_json::json!({
                     "name": "Role Org",
                     "slug": "role-org"

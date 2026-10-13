@@ -27,6 +27,7 @@ macro_rules! auth_model {
             use super::*;
             #[derive(alibi::sqlx::AuthEntity, Clone, Debug, serde::Serialize, sqlx::FromRow)]
             #[auth(role = $role, table = $table, id_generator = "super::super::new_id")]
+            #[sqlx(rename_all = "camelCase")]
             pub struct Model {
                 #[auth(column_type = "bpchar")]
                 pub id: String,
@@ -41,7 +42,7 @@ macro_rules! auth_model {
             use alibi::seaorm::sea_orm::{self, entity::prelude::*};
             #[derive(alibi::seaorm::AuthEntity, Clone, Debug, serde::Serialize, DeriveEntityModel)]
             #[auth(role = $role, id_generator = "super::super::new_id")]
-            #[sea_orm(table_name = $table)]
+            #[sea_orm(table_name = $table, rename_all = "camelCase")]
             pub struct Model {
                 #[sea_orm(primary_key, auto_increment = false, column_type = "Char(Some(30))", save_as = "bpchar")]
                 pub id: String,
@@ -57,7 +58,7 @@ macro_rules! auth_model {
 
 macro_rules! auth_models {
     ($backend:ident, $date:ty) => {
-        auth_model!($backend, user, "user", "users", [linked_id: Option<String>], {
+        auth_model!($backend, user, "user", "user", [linked_id: Option<String>], {
             pub email: String,
             pub name: String,
             pub email_verified: bool,
@@ -65,16 +66,15 @@ macro_rules! auth_models {
             pub created_at: $date,
             pub updated_at: $date,
         });
-        auth_model!($backend, session, "session", "sessions", [user_id: String], {
+        auth_model!($backend, session, "session", "session", [user_id: String], {
             pub token: String,
             pub expires_at: $date,
             pub created_at: $date,
             pub updated_at: $date,
             pub ip_address: Option<String>,
             pub user_agent: Option<String>,
-            pub active: bool,
         });
-        auth_model!($backend, account, "account", "accounts", [user_id: String], {
+        auth_model!($backend, account, "account", "account", [user_id: String], {
             pub account_id: String,
             pub provider_id: String,
             pub access_token: Option<String>,
@@ -87,7 +87,7 @@ macro_rules! auth_models {
             pub created_at: $date,
             pub updated_at: $date,
         });
-        auth_model!($backend, verification, "verification", "verifications", [], {
+        auth_model!($backend, verification, "verification", "verification", [], {
             pub identifier: String,
             pub value: String,
             pub expires_at: $date,
@@ -184,7 +184,8 @@ mod seaorm_char {
 mod baseline_model {
     use super::*;
     #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
-    #[auth(role = "user", table = "users")]
+    #[auth(role = "user", table = "user")]
+    #[sqlx(rename_all = "camelCase")]
     pub struct User {
         pub id: String,
         pub name: Option<String>,
@@ -218,7 +219,7 @@ async fn baseline(db: &Db) -> TestResult {
     Ok(())
 }
 async fn native_plan(pool: &sqlx::PgPool, wire_type: &str, id: &str, indexed: bool) -> TestResult {
-    let rows = sqlx::query(r#"SELECT name, statement, parameter_types::text AS types, (SELECT typname FROM pg_type WHERE oid = parameter_types[1]) AS first_type, cardinality(parameter_types) AS parameters FROM pg_prepared_statements WHERE statement NOT LIKE '%pg_prepared_statements%' AND statement LIKE 'SELECT %FROM "users" WHERE %"id" = %'"#).fetch_all(pool).await?;
+    let rows = sqlx::query(r#"SELECT "name", statement, parameter_types::text AS types, (SELECT typname FROM pg_type WHERE oid = parameter_types[1]) AS first_type, cardinality(parameter_types) AS parameters FROM pg_prepared_statements WHERE statement NOT LIKE '%pg_prepared_statements%' AND statement LIKE 'SELECT %FROM "users" WHERE %"id" = %'"#).fetch_all(pool).await?;
     assert_eq!(rows.len(), 1, "must inspect the native user ID query");
     let row = &rows[0];
     let name: String = row.try_get("name")?;
@@ -252,7 +253,7 @@ async fn native_plan(pool: &sqlx::PgPool, wire_type: &str, id: &str, indexed: bo
     Ok(())
 }
 async fn typed_null(pool: &sqlx::PgPool, wire_type: &str) -> TestResult {
-    let rows = sqlx::query(r#"SELECT parameter_types::text AS types, statement FROM pg_prepared_statements WHERE statement LIKE 'INSERT INTO "users" (%"linked_id"%VALUES%'"#).fetch_all(pool).await?;
+    let rows = sqlx::query(r#"SELECT parameter_types::text AS types, statement FROM pg_prepared_statements WHERE statement LIKE 'INSERT INTO "user" (%"linkedId"%VALUES%'"#).fetch_all(pool).await?;
     assert!(!rows.is_empty());
     for row in rows {
         let statement: String = row.try_get("statement")?;
@@ -285,29 +286,29 @@ async fn install_as(db: &Db, char_type: &str, seed: bool, required_text: bool) -
     let nullable_text = if required_text { "NOT NULL" } else { "" };
     for statement in [
         format!(
-            "CREATE TABLE users (id {char_type} PRIMARY KEY, linked_id {char_type}, email TEXT {nullable_text}, name TEXT {nullable_text}, email_verified BOOLEAN NOT NULL, image TEXT, created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL)"
+            "CREATE TABLE \"user\" (id {char_type} PRIMARY KEY, \"linkedId\" {char_type}, \"email\" TEXT {nullable_text}, \"name\" TEXT {nullable_text}, \"emailVerified\" BOOLEAN NOT NULL, \"image\" TEXT, \"createdAt\" TIMESTAMP NOT NULL, \"updatedAt\" TIMESTAMP NOT NULL)"
         ),
         format!(
-            "CREATE TABLE sessions (id {char_type} PRIMARY KEY, user_id {char_type} NOT NULL REFERENCES users(id), token TEXT NOT NULL, expires_at TIMESTAMP NOT NULL, created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL, ip_address TEXT, user_agent TEXT, active BOOLEAN NOT NULL)"
+            "CREATE TABLE \"session\" (id {char_type} PRIMARY KEY, \"userId\" {char_type} NOT NULL REFERENCES \"user\"(id), \"token\" TEXT NOT NULL, \"expiresAt\" TIMESTAMP NOT NULL, \"createdAt\" TIMESTAMP NOT NULL, \"updatedAt\" TIMESTAMP NOT NULL, \"ipAddress\" TEXT, \"userAgent\" TEXT)"
         ),
         format!(
-            "CREATE TABLE accounts (id {char_type} PRIMARY KEY, user_id {char_type} NOT NULL REFERENCES users(id), account_id TEXT NOT NULL, provider_id TEXT NOT NULL, access_token TEXT, refresh_token TEXT, id_token TEXT, access_token_expires_at TIMESTAMP, refresh_token_expires_at TIMESTAMP, scope TEXT, password TEXT, created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL)"
+            "CREATE TABLE \"account\" (id {char_type} PRIMARY KEY, \"userId\" {char_type} NOT NULL REFERENCES \"user\"(id), \"accountId\" TEXT NOT NULL, \"providerId\" TEXT NOT NULL, \"accessToken\" TEXT, \"refreshToken\" TEXT, \"idToken\" TEXT, \"accessTokenExpiresAt\" TIMESTAMP, \"refreshTokenExpiresAt\" TIMESTAMP, \"scope\" TEXT, \"password\" TEXT, \"createdAt\" TIMESTAMP NOT NULL, \"updatedAt\" TIMESTAMP NOT NULL)"
         ),
         format!(
-            "CREATE TABLE verifications (id {char_type} PRIMARY KEY, identifier TEXT NOT NULL, value TEXT NOT NULL, expires_at TIMESTAMP NOT NULL, created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL)"
+            "CREATE TABLE \"verification\" (id {char_type} PRIMARY KEY, \"identifier\" TEXT NOT NULL, \"value\" TEXT NOT NULL, \"expiresAt\" TIMESTAMP NOT NULL, \"createdAt\" TIMESTAMP NOT NULL, \"updatedAt\" TIMESTAMP NOT NULL)"
         ),
     ] {
         _ = db.execute(&statement, &[]).await?;
     }
     _ = db
         .execute(
-            "CREATE TABLE api_keys (id TEXT PRIMARY KEY, reference_id TEXT NOT NULL)",
+            "CREATE TABLE \"apikey\" (id TEXT PRIMARY KEY, \"referenceId\" TEXT NOT NULL)",
             &[],
         )
         .await?;
     if db.is_postgres() && seed {
-        _ = db.execute("INSERT INTO users SELECT 'usr_' || lpad(i::text, 26, '0'), NULL, 'synthetic-' || i || '@example.invalid', 'Synthetic', TRUE, NULL, '2026-01-01', '2026-01-01' FROM generate_series(1, 10000) i", &[]).await?;
-        _ = db.execute("ANALYZE users", &[]).await?;
+        _ = db.execute("INSERT INTO \"user\" SELECT 'usr_' || lpad(i::text, 26, '0'), NULL, 'synthetic-' || i || '@example.invalid', 'Synthetic', TRUE, NULL, '2026-01-01', '2026-01-01' FROM generate_series(1, 10000) i", &[]).await?;
+        _ = db.execute("ANALYZE \"user\"", &[]).await?;
     }
     Ok(())
 }
@@ -331,14 +332,14 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>) -> TestRes
     }
     assert!(store.get_user_by_id(absent).await?.is_none());
     let actual: String = on_raw!(raw, |pool| sqlx::query_scalar(
-        "SELECT id FROM users WHERE id = $1"
+        "SELECT id FROM \"user\" WHERE id = $1"
     )
     .bind(id)
     .fetch_one(pool)
     .await?);
     assert_eq!(actual, id);
     let null: Option<String> = on_raw!(raw, |pool| sqlx::query_scalar(
-        "SELECT linked_id FROM users WHERE id = $1"
+        "SELECT \"linkedId\" FROM \"user\" WHERE id = $1"
     )
     .bind(id)
     .fetch_one(pool)
@@ -408,7 +409,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>) -> TestRes
         let updated = store.update_user(id, update).await?;
         assert_eq!(updated.id(), id);
         let actual: Option<String> = on_raw!(raw, |pool| sqlx::query_scalar(
-            "SELECT linked_id FROM users WHERE id = $1"
+            "SELECT \"linkedId\" FROM \"user\" WHERE id = $1"
         )
         .bind(id)
         .fetch_one(pool)
@@ -535,9 +536,9 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>) -> TestRes
         verification.id()
     );
     for (table, expected) in [
-        ("accounts", account.id()),
-        ("sessions", session.id()),
-        ("verifications", verification.id()),
+        ("account", account.id()),
+        ("session", session.id()),
+        ("verification", verification.id()),
     ] {
         let actual: String = on_raw!(raw, |pool| sqlx::query_scalar(sqlx::AssertSqlSafe(
             format!("SELECT id FROM {table} WHERE id = $1")
@@ -568,9 +569,9 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>) -> TestRes
 }
 
 async fn native_ownership_bindings(pool: &sqlx::PgPool, wire_type: &str) -> TestResult {
-    for table in ["accounts", "sessions"] {
+    for table in ["account", "session"] {
         let rows = sqlx::query("SELECT statement, parameter_types::text AS types, (SELECT typname FROM pg_type WHERE oid = parameter_types[1]) AS first_type FROM pg_prepared_statements WHERE statement NOT LIKE '%pg_prepared_statements%' AND statement LIKE $1")
-            .bind(format!("SELECT %FROM \"{table}\" WHERE %\"user_id\" = %"))
+            .bind(format!("SELECT %FROM \"{table}\" WHERE %\"userId\" = %"))
             .fetch_all(pool).await?;
         assert!(!rows.is_empty(), "missing native {table} owner predicates");
         for row in rows {
@@ -590,7 +591,7 @@ mod seaorm_text {
     use super::*;
     use alibi::seaorm::sea_orm::{self, entity::prelude::*};
     #[derive(Clone, Debug, serde::Serialize, DeriveEntityModel, alibi::seaorm::AuthEntity)]
-    #[sea_orm(table_name = "users")]
+    #[sea_orm(table_name = "user")]
     #[auth(role = "user")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
@@ -681,7 +682,7 @@ async fn native_mutation_bindings(pool: &sqlx::PgPool, wire_type: &str) -> TestR
         if wire_type == "text" {
             assert!(predicate.starts_with("CAST("), "{statement}");
         }
-        for table in ["users", "accounts", "sessions", "verifications"] {
+        for table in ["user", "account", "session", "verification"] {
             if statement.contains(&format!("\"{table}\"")) {
                 _ = tables.insert(table);
             }
@@ -690,7 +691,7 @@ async fn native_mutation_bindings(pool: &sqlx::PgPool, wire_type: &str) -> TestR
     }
     assert_eq!(
         tables,
-        std::collections::BTreeSet::from(["users", "accounts", "sessions", "verifications"])
+        std::collections::BTreeSet::from(["user", "account", "session", "verification"])
     );
     Ok(())
 }

@@ -35,12 +35,12 @@ async fn oauth_client_deletion_enforces_owner_and_removes_only_selected_client<B
     }
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
+            "oauthClient",
         ])
         .await?;
     for (id, cookie, status) in [
@@ -62,19 +62,19 @@ async fn oauth_client_deletion_enforces_owner_and_removes_only_selected_client<B
         assert_eq!(error.error.status_code(), status);
         assert_eq!(
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
+                "user",
+                "account",
+                "session",
+                "verification",
                 "jwks",
-                "oauth_client"
+                "oauthClient"
             ])
             .await?,
             before
         );
     }
     let unrelated = db
-        .tables(&["users", "accounts", "sessions", "verifications", "jwks"])
+        .tables(&["user", "account", "session", "verification", "jwks"])
         .await?;
     let response = auth
         .dispatch_endpoint(
@@ -93,9 +93,9 @@ async fn oauth_client_deletion_enforces_owner_and_removes_only_selected_client<B
     for id in &ids[1..] {
         assert!(auth.store().get_oauth_client(id).await?.is_some());
     }
-    assert_eq!(db.count("oauth_client").await?, 2);
+    assert_eq!(db.count("oauthClient").await?, 2);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications", "jwks"])
+        db.tables(&["user", "account", "session", "verification", "jwks"])
             .await?,
         unrelated
     );
@@ -111,6 +111,6 @@ async fn oauth_client_deletion_enforces_owner_and_removes_only_selected_client<B
         .await
         .unwrap_err();
     assert_eq!(replay.error.status_code(), 404);
-    assert_eq!(db.count("oauth_client").await?, 2);
+    assert_eq!(db.count("oauthClient").await?, 2);
     Ok(())
 }

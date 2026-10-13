@@ -42,25 +42,29 @@ pub(crate) async fn router(
         );
         instances.insert(mode.to_owned(), auth);
     }
-    let mut client_instances=HashMap::new();
-    for mode in ["default","dynamic","public"] {
-        let provider=OAuthProviderConfig {allow_dynamic_client_registration:mode!="default",allow_unauthenticated_client_registration:mode=="public",..Default::default()};
+    let mut client_instances = HashMap::new();
+    for mode in ["default", "dynamic", "public"] {
+        let provider = OAuthProviderConfig {
+            allow_dynamic_client_registration: mode != "default",
+            allow_unauthenticated_client_registration: mode == "public",
+            ..Default::default()
+        };
         let auth = Arc::new(
-        AuthBuilder::<TestSchema>::new(config.clone())
-            .store(crate::backend::store::<TestSchema>(
-                config.clone(),
-                database.clone(),
-            ))
-            .plugin(alibi::plugins::EmailPasswordPlugin::new())
-            .plugin(alibi::plugins::SessionManagementPlugin::new())
-            .plugin(JwtPlugin::new())
-            .plugin(OAuthProviderPlugin::with_config(provider))
-            .build()
-            .await?,
-    );
-        client_instances.insert(mode.to_owned(),auth);
+            AuthBuilder::<TestSchema>::new(config.clone())
+                .store(crate::backend::store::<TestSchema>(
+                    config.clone(),
+                    database.clone(),
+                ))
+                .plugin(alibi::plugins::EmailPasswordPlugin::new())
+                .plugin(alibi::plugins::SessionManagementPlugin::new())
+                .plugin(JwtPlugin::new())
+                .plugin(OAuthProviderPlugin::with_config(provider))
+                .build()
+                .await?,
+        );
+        client_instances.insert(mode.to_owned(), auth);
     }
-    let admin_path=format!("{}/admin/oauth2/create-client",config.base_path);
+    let admin_path = format!("{}/admin/oauth2/create-client", config.base_path);
     Ok(Router::new().route("/__test/server-api/oauth-provider-clients",axum::routing::post(move |axum::Json(input):axum::Json<serde_json::Value>| {
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
@@ -80,7 +84,8 @@ pub(crate) async fn router(
             let endpoint=if input["action"]=="get" || input["action"]=="public" {alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(plugin,operation).with_query(&input["query"]).unwrap()} else {alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(plugin,operation).with_body(&input["body"]).unwrap()};
             match auth.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),..Default::default()}).await {
                 Ok(output)=>output.into_response().unwrap().into_response(),
-                Err(error)=>{let mut response=if error.body_absent{alibi::AuthResponse::new(error.error.status_code())}else{error.error.to_auth_response()};if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}if let Some(headers)=error.headers {for(name,value)in headers.iter(){if name.eq_ignore_ascii_case("set-cookie"){response.headers.append(name,value);}else{response.headers.insert(name,value);}}}response.into_response()}
+                Err(error)=>{let mut response=if error.body_absent{alibi::AuthResponse::new(error.error.status_code())}else{error.error.to_auth_response()};if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}
+                if let Some(headers)=error.headers {for(name,value)in headers.iter(){if name.eq_ignore_ascii_case("set-cookie"){response.headers.append(name,value);}else{response.headers.insert(name,value);}}}response.into_response()}
             }
         }
     })).route(

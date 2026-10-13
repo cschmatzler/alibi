@@ -203,8 +203,6 @@ impl TwoFactorDatabaseConfig {
             "verified",
             "failed_verification_count",
             "locked_until",
-            "created_at",
-            "updated_at",
         ];
         if self.table_name.is_empty()
             || self
@@ -217,22 +215,33 @@ impl TwoFactorDatabaseConfig {
         let quote = |name: &str| format!("\"{}\"", name.replace('"', "\"\""));
         let table = quote(&self.table_name);
         let mut sql = Vec::new();
-        if self.table_name != "two_factor" {
-            sql.push(format!("ALTER TABLE \"two_factor\" RENAME TO {table}"));
+        if self.table_name != "twoFactor" {
+            sql.push(format!("ALTER TABLE \"twoFactor\" RENAME TO {table}"));
         }
         for name in COLUMNS {
             if let Some(column) = self
                 .columns
                 .get(*name)
-                .filter(|column| column.as_str() != *name)
+                .filter(|column| column.as_str() != two_factor_column(name))
             {
                 sql.push(format!(
                     "ALTER TABLE {table} RENAME COLUMN {} TO {}",
-                    quote(name),
+                    quote(two_factor_column(name)),
                     quote(column)
                 ));
             }
         }
         Ok(sql)
+    }
+}
+
+/// Physical column name in Better Auth's default two-factor table.
+pub(crate) fn two_factor_column(name: &str) -> &str {
+    match name {
+        "backup_codes" => "backupCodes",
+        "user_id" => "userId",
+        "failed_verification_count" => "failedVerificationCount",
+        "locked_until" => "lockedUntil",
+        name => name,
     }
 }

@@ -44,7 +44,7 @@ async fn username_availability_utf16_bounds_precede_default_character_validation
     )
     .await;
     let before_login = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let login_endpoint = |body: &Value| {
         ServerEndpoint::<Value>::new("email-password", "signInUsername").with_body(body)
@@ -74,7 +74,7 @@ async fn username_availability_utf16_bounds_precede_default_character_validation
         assert_eq!(denied.error.error_payload().1.as_deref(), Some(code));
     }
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before_login
     );
@@ -112,7 +112,7 @@ async fn username_availability_utf16_bounds_precede_default_character_validation
     );
     assert_eq!(
         db.text(
-            "SELECT user_agent FROM sessions WHERE token=$1",
+            "SELECT \"userAgent\" FROM \"session\" WHERE \"token\"=$1",
             &[&session.token]
         )
         .await?
@@ -121,7 +121,7 @@ async fn username_availability_utf16_bounds_precede_default_character_validation
     );
     assert_eq!(
         db.text(
-            "SELECT ip_address FROM sessions WHERE token=$1",
+            "SELECT \"ipAddress\" FROM \"session\" WHERE \"token\"=$1",
             &[&session.token]
         )
         .await?
@@ -141,10 +141,10 @@ async fn username_availability_utf16_bounds_precede_default_character_validation
         "availability-owner@example.test",
     ))
     .await;
-    assert_eq!(db.count("sessions").await?, 2);
-    assert_eq!(db.table("accounts").await?, before_login[1]);
+    assert_eq!(db.count("session").await?, 2);
+    assert_eq!(db.table("account").await?, before_login[1]);
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let endpoint = |body: &Value| {
         ServerEndpoint::<Value>::new("email-password", "isUsernameAvailable").with_body(body)
@@ -161,7 +161,7 @@ async fn username_availability_utf16_bounds_precede_default_character_validation
         Some("VALIDATION_ERROR")
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -189,7 +189,7 @@ async fn username_availability_utf16_bounds_precede_default_character_validation
                 .is_none_or(|headers| headers.get_all("set-cookie").next().is_none())
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -203,14 +203,14 @@ async fn username_availability_utf16_bounds_precede_default_character_validation
         assert_eq!(result.decode()?.available, available);
         assert!(result.headers().get_all("set-cookie").next().is_none());
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
     }
     authenticated(&auth, &cookies(&owner), "availability-owner@example.test").await;
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -273,7 +273,7 @@ async fn username_display_projection_survives_session_lookup<B: Backend>(db: Db)
                 assert!(user.get("displayUsername").is_none());
             }
         }
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         let wrong = call(
             &auth,
             request(
@@ -285,7 +285,7 @@ async fn username_display_projection_survives_session_lookup<B: Backend>(db: Db)
         )
         .await;
         assert_eq!(body(&wrong)["code"], "INVALID_USERNAME_OR_PASSWORD");
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
         B::close(connection).await?;
     }
     Ok(())
@@ -402,7 +402,10 @@ async fn email_password_switches_and_sign_in_guards<B: Backend>(db: Db) -> TestR
             )
             .await;
             _ = db
-                .execute("DELETE FROM accounts WHERE provider_id = 'credential'", &[])
+                .execute(
+                    "DELETE FROM \"account\" WHERE \"providerId\" = 'credential'",
+                    &[],
+                )
                 .await?;
             let _ = send(
                 "after credential removal",
@@ -455,9 +458,9 @@ async fn email_password_signup_without_session_hides_rejections<B: Backend>(db: 
         trace.value(
             &format!("{mode}: rows"),
             json!([
-                db.count("users").await?,
-                db.count("accounts").await?,
-                db.count("sessions").await?
+                db.count("user").await?,
+                db.count("account").await?,
+                db.count("session").await?
             ]),
         );
         B::close(connection).await?;
@@ -610,11 +613,11 @@ async fn signup_and_signin_crypto_errors_precede_principal_publication<B: Backen
     let owner = signup(&auth, "crypto-fail-owner@example.test").await;
     let foreign = signup(&auth, "crypto-fail-foreign@example.test").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let physical_hash = db
         .text(
-            "SELECT password FROM accounts WHERE user_id=$1 AND provider_id=$2",
+            "SELECT \"password\" FROM \"account\" WHERE \"userId\"=$1 AND \"providerId\"=$2",
             &[body(&owner)["user"]["id"].as_str().unwrap(), "credential"],
         )
         .await?
@@ -646,7 +649,7 @@ async fn signup_and_signin_crypto_errors_precede_principal_publication<B: Backen
                 )]
             );
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "verifications"])
+                db.tables(&["user", "account", "session", "verification"])
                     .await?,
                 before
             );
@@ -706,23 +709,29 @@ async fn missing_credential_signin_hashes_once_without_verifier_or_session<B: Ba
         match mode {
             "null" => {
                 _ = db
-                    .execute("UPDATE accounts SET password=NULL WHERE user_id=$1", &[&id])
+                    .execute(
+                        "UPDATE \"account\" SET \"password\"=NULL WHERE \"userId\"=$1",
+                        &[&id],
+                    )
                     .await?;
             }
             "empty" => {
                 _ = db
-                    .execute("UPDATE accounts SET password='' WHERE user_id=$1", &[&id])
+                    .execute(
+                        "UPDATE \"account\" SET \"password\"='' WHERE \"userId\"=$1",
+                        &[&id],
+                    )
                     .await?;
             }
             "removed" => {
                 _ = db
-                    .execute("DELETE FROM accounts WHERE user_id=$1", &[&id])
+                    .execute("DELETE FROM \"account\" WHERE \"userId\"=$1", &[&id])
                     .await?;
             }
             _ => {}
         }
         let before = db
-            .tables(&["users", "accounts", "sessions", "verifications"])
+            .tables(&["user", "account", "session", "verification"])
             .await?;
         crypto.0.lock().unwrap().clear();
         let denied=call(&auth,request("/sign-in/email",Some(json!({"email":if mode=="unknown"{"dummy-missing@example.test"}else{"dummy-owner@example.test"},"password":"short"})),""),401).await;
@@ -730,7 +739,7 @@ async fn missing_credential_signin_hashes_once_without_verifier_or_session<B: Ba
         assert!(!denied.headers.contains_key("set-cookie"));
         assert_eq!(*crypto.0.lock().unwrap(), [(false, "short".into())]);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -780,7 +789,7 @@ async fn explicit_null_username_does_not_derive_login_alias_from_display<B: Back
     )
     .await;
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
-    let tables = ["users", "accounts", "sessions", "verifications"];
+    let tables = ["user", "account", "session", "verification"];
     let before = db.tables(&tables).await?;
     for response in [
         &owner,
@@ -794,7 +803,7 @@ async fn explicit_null_username_does_not_derive_login_alias_from_display<B: Back
     let users: Vec<Value> = serde_json::from_str(&before[0])?;
     let stored = users.iter().find(|row| row["id"] == owner_id).unwrap();
     assert_eq!(stored.get("username"), Some(&Value::Null));
-    assert_eq!(stored["display_username"], display);
+    assert_eq!(stored["displayUsername"], display);
     let omitted = call(
         &auth,
         request(

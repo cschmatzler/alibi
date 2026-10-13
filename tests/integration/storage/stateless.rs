@@ -109,7 +109,7 @@ async fn stateless_session_lifecycle<B: Backend>(db: Db) -> TestResult {
     assert_eq!(signup.status, 200, "{}", body(&signup));
     let cookie = cookies(&signup);
     let issued = body(&signup)["token"].as_str().unwrap().to_owned();
-    assert_eq!(db.count("sessions").await?, 0);
+    assert_eq!(db.count("session").await?, 0);
     let mut get = request("/get-session", None, &cookie);
     drop(get.query.insert("disableRefresh".into(), "true".into()));
     let first = Box::pin(auth.handle_request(get)).await?;
@@ -156,7 +156,7 @@ async fn stateless_session_lifecycle<B: Backend>(db: Db) -> TestResult {
     assert_eq!(logout.status, 200);
     let replay = Box::pin(auth.handle_request(request("/get-session", None, &cookie))).await?;
     assert_eq!(body(&replay), snapshot);
-    assert_eq!(db.count("sessions").await?, 0);
+    assert_eq!(db.count("session").await?, 0);
     let mut bypass = request("/get-session", None, &cookie);
     drop(
         bypass
@@ -192,7 +192,7 @@ async fn stateless_session_lifecycle<B: Backend>(db: Db) -> TestResult {
     )))
     .await?;
     assert_eq!(login.status, 200, "{}", body(&login));
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     let durable_cookie = cookies(&login);
     assert!(
         body(
@@ -205,7 +205,7 @@ async fn stateless_session_lifecycle<B: Backend>(db: Db) -> TestResult {
         Box::pin(durable.handle_request(request("/sign-out", Some(json!({})), &durable_cookie)))
             .await?;
     assert_eq!(logout.status, 200);
-    assert_eq!(db.count("sessions").await?, 0);
+    assert_eq!(db.count("session").await?, 0);
     assert_eq!(
         body(
             &Box::pin(durable.handle_request(request("/get-session", None, &durable_cookie)))
@@ -425,7 +425,7 @@ async fn stateless_policy_boundaries<B: Backend>(db: Db) -> TestResult {
             body(&Box::pin(auth.handle_request(request("/get-session", None, &mismatch))).await?),
             Value::Null
         );
-        assert_eq!(db.count("sessions").await?, 0);
+        assert_eq!(db.count("session").await?, 0);
     }
     let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
     config.session = config.session.stateless();
@@ -620,7 +620,7 @@ async fn stateless_ephemeral_mutation_and_deferred_refresh<B: Backend>(db: Db) -
             .await?
             .is_empty()
     );
-    assert_eq!(db.count("sessions").await?, 0);
+    assert_eq!(db.count("session").await?, 0);
     B::close(connection).await?;
     Ok(())
 }

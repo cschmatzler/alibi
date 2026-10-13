@@ -66,7 +66,7 @@ pub(crate) async fn router(base: &AuthConfig, _database: DatabaseConnection) -> 
     );
     let routes = auth.clone().axum_router().with_state(auth);
     Ok(Router::new().nest("/__test/profiles/two-factor-custom-table/api/auth",routes).route("/__test/two-factor-custom-table/otp",get(move |Query(query):Query<HashMap<String,String>>|{let delivery=delivery.clone();async move {Json(json!({"otp":delivery.0.lock().unwrap().get(query.get("email").unwrap())}))}})).route("/__test/two-factor-custom-table/state",get(move |Query(query):Query<HashMap<String,String>>|{let database=database.clone();async move {
- let rows=database.query_all_raw(Statement::from_string(database.get_database_backend(),"SELECT name FROM sqlite_master WHERE type='table'")).await.unwrap();
+ let rows=database.query_all_raw(Statement::from_string(database.get_database_backend(),"SELECT \"name\" FROM sqlite_master WHERE type='table'")).await.unwrap();
  let tables=rows.iter().map(|row|row.try_get::<String>("","name").unwrap()).collect::<Vec<_>>();
  let custom_exists=tables.iter().any(|name|name=="application_second_factor");
  let physical=if custom_exists {database.query_all_raw(Statement::from_sql_and_values(database.get_database_backend(),"SELECT id,application_owner,application_secret,application_backups FROM application_second_factor WHERE application_owner = ?",[query.get("userId").unwrap().clone().into()])).await.unwrap()}else{Vec::new()};

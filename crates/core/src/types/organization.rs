@@ -375,8 +375,8 @@ pub struct TeamMember {
     pub id: String,
     pub team_id: String,
     pub user_id: String,
-    #[serde(serialize_with = "crate::utils::datetime::serialize")]
-    pub created_at: DateTime<Utc>,
+    #[serde(serialize_with = "crate::utils::datetime::serialize_optional")]
+    pub created_at: Option<DateTime<Utc>>,
     #[serde(skip)]
     pub membership_key: Option<String>,
 }

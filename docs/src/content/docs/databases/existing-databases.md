@@ -112,4 +112,6 @@ The function must return a unique `String` and runs only when no explicit id is 
 4. Generate plugin tables with `alibi generate --plugins …` and review the DDL against yours.
 5. Keep application migrations in charge of the schema; do not call `run_app_migrations` against production data.
 
-Session models may omit `active`, matching Better Auth’s core session schema. Session validity uses `expires_at`; revocation that preserves a row updates its expiry. If you declare an `active: bool` field, the adapters also filter inactive rows and remove them during expired-session cleanup.
+The bundled and CLI-generated schemas match Better Auth TypeScript 1.7.7 defaults, including singular and camelCase physical names (`user`, `session`, `expiresAt`) and field nullability. Sessions have no `active` column; validity uses `expiresAt`, and revocation deletes a session or expires it.
+
+This changes the previous Alibi schema. Existing databases need an explicit migration before adopting the new bundled models. Rename tables and columns, supply required user names and emails, and reconcile plugin columns and constraints with the pinned schema. The bundled migrators reject an old migration ledger rather than silently rewriting or discarding existing data. Application-owned models can still describe an explicitly customized schema.

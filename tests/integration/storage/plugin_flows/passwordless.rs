@@ -85,8 +85,8 @@ async fn magic_link_delivery_is_redeemable_once<B: Backend>(db: Db) -> TestResul
         200,
     )
     .await;
-    assert_eq!(db.count("users").await?, 0);
-    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(db.count("user").await?, 0);
+    assert_eq!(db.count("verification").await?, 1);
     let delivery = mailbox.take();
     assert_eq!(delivery.email, "magic@example.test");
     let link = url::Url::parse(&delivery.url)?;
@@ -95,8 +95,8 @@ async fn magic_link_delivery_is_redeemable_once<B: Backend>(db: Db) -> TestResul
     redeem.query.extend(link.query_pairs().into_owned());
     let accepted = call(&auth, redeem.clone(), 302).await;
     authenticated(&auth, &cookies(&accepted), "magic@example.test").await;
-    assert_eq!(db.count("sessions").await?, 1);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("session").await?, 1);
+    assert_eq!(db.count("verification").await?, 0);
     let replay = call(&auth, redeem, 302).await;
     let redirect = url::Url::parse(replay.headers.get("location").unwrap())?;
     assert!(
@@ -104,7 +104,7 @@ async fn magic_link_delivery_is_redeemable_once<B: Backend>(db: Db) -> TestResul
             .query_pairs()
             .any(|(key, value)| key == "error" && value == "INVALID_TOKEN")
     );
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     B::close(connection).await
 }
 
@@ -131,7 +131,7 @@ async fn email_otp_delivery_creates_one_verified_session<B: Backend>(db: Db) -> 
     let delivery = mailbox.take();
     assert_eq!(delivery.email, "otp@example.test");
     assert_eq!(delivery.otp_type, EmailOtpType::SignIn);
-    assert_eq!(db.count("users").await?, 0);
+    assert_eq!(db.count("user").await?, 0);
     let input = request(
         "/sign-in/email-otp",
         Some(json!({"email":delivery.email,"otp":delivery.otp})),
@@ -142,7 +142,7 @@ async fn email_otp_delivery_creates_one_verified_session<B: Backend>(db: Db) -> 
     authenticated(&auth, &cookies(&accepted), "otp@example.test").await;
     let replay = call(&auth, input, 400).await;
     assert_eq!(body(&replay)["code"], "INVALID_OTP");
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     B::close(connection).await
 }
 
@@ -177,7 +177,7 @@ async fn phone_otp_delivery_binds_verified_identity<B: Backend>(db: Db) -> TestR
     .await;
     let delivery = mailbox.take();
     assert_eq!(delivery.phone_number, phone);
-    assert_eq!(db.count("users").await?, 0);
+    assert_eq!(db.count("user").await?, 0);
     let input = request(
         "/phone-number/verify",
         Some(json!({"phoneNumber":phone,"code":delivery.code})),
@@ -189,7 +189,7 @@ async fn phone_otp_delivery_binds_verified_identity<B: Backend>(db: Db) -> TestR
     authenticated(&auth, &cookies(&accepted), "15551234567@phone.example.test").await;
     let replay = call(&auth, input, 400).await;
     assert_eq!(body(&replay)["code"], "OTP_NOT_FOUND");
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     B::close(connection).await
 }
 
@@ -200,7 +200,7 @@ async fn one_time_token_republishes_only_its_original_session<B: Backend>(db: Db
         .build()
         .await?;
     let _ = call(&auth, request("/one-time-token/generate", None, ""), 401).await;
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     let issued = signup(&auth, "ott@example.test").await;
     let generated = call(
         &auth,
@@ -216,7 +216,7 @@ async fn one_time_token_republishes_only_its_original_session<B: Backend>(db: Db
     let replay = call(&auth, input, 400).await;
     assert_eq!(body(&replay)["message"], "Invalid token");
     assert_eq!(
-        db.count("sessions").await?,
+        db.count("session").await?,
         1,
         "redemption reuses the original session"
     );
@@ -260,7 +260,7 @@ async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
     let owner = call(&auth, request("/sign-up/email", Some(json!({"email":"phone-password@example.test", "name":"Phone Owner", "password":PASSWORD, "phoneNumber":phone})), ""), 200).await;
     let user = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let original = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for (mode, status) in [(1, 400), (2, 500)] {
         admission.0.store(mode, std::sync::atomic::Ordering::SeqCst);
@@ -273,7 +273,7 @@ async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
         ] {
             let _ = call(&auth, request(path, Some(input), ""), status).await;
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "verifications"])
+                db.tables(&["user", "account", "session", "verification"])
                     .await?,
                 original
             );
@@ -281,7 +281,7 @@ async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
         }
     }
     admission.0.store(0, std::sync::atomic::Ordering::SeqCst);
-    let original_sessions = db.table("sessions").await?;
+    let original_sessions = db.table("session").await?;
     let rejected = call(
         &auth,
         request(
@@ -293,12 +293,12 @@ async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
     )
     .await;
     assert_eq!(body(&rejected)["code"], "PHONE_NUMBER_NOT_VERIFIED");
-    assert_eq!(db.table("sessions").await?, original_sessions);
+    assert_eq!(db.table("session").await?, original_sessions);
     let delivered = codes.take();
     assert_eq!(delivered.phone_number, phone);
     assert_eq!(
         db.text(
-            "SELECT value FROM verifications WHERE identifier=$1",
+            "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
             &[phone]
         )
         .await?
@@ -316,7 +316,7 @@ async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
     )
     .await;
     assert_eq!(body(&verified)["token"], Value::Null);
-    assert_eq!(db.table("sessions").await?, original_sessions);
+    assert_eq!(db.table("session").await?, original_sessions);
     let _ = call(
         &auth,
         request(
@@ -356,7 +356,7 @@ async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
             .abs()
             <= 2
     );
-    let accounts = db.table("accounts").await?;
+    let accounts = db.table("account").await?;
     let _ = call(
         &auth,
         request(
@@ -381,14 +381,14 @@ async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
     .await;
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+            "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
             &[&format!("{phone}-request-password-reset")]
         )
         .await?,
         0
     );
     let _ = call(&auth, request("/phone-number/reset-password", Some(json!({"phoneNumber":phone,"otp":code.code,"newPassword":"replacement-password123"})), ""), 400).await;
-    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.table("account").await?, accounts);
     let _ = call(
         &auth,
         request(
@@ -422,7 +422,7 @@ async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
     )
     .await;
     authenticated(&auth, &cookies(&login), "phone-password@example.test").await;
-    assert_eq!(db.count("accounts").await?, 1);
+    assert_eq!(db.count("account").await?, 1);
     assert!(
         !auth
             .store()
@@ -444,7 +444,7 @@ async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
     .await;
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+            "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
             &[&format!("{missing}-request-password-reset")]
         )
         .await?,

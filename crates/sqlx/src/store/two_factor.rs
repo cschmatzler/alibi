@@ -24,14 +24,14 @@ fn factor_columns(sql: &mut Sql, qualified: bool) {
         if index > 0 {
             sql.push(", ");
         }
-        if column == "failed_verification_count" {
+        if column == "failedVerificationCount" {
             if qualified {
                 sql.push("CAST(");
                 sql.column(Model::TABLE, column);
                 sql.push(" AS DOUBLE PRECISION) AS ");
                 sql.ident(column);
             } else {
-                sql.push("CAST(\"failed_verification_count\" AS DOUBLE PRECISION) AS \"failed_verification_count\"");
+                sql.push("CAST(\"failedVerificationCount\" AS DOUBLE PRECISION) AS \"failedVerificationCount\"");
             }
         } else if qualified {
             sql.column(Model::TABLE, column);
@@ -72,8 +72,8 @@ impl<S: AuthSchema + Send + Sync> SqlxStore<S> {
                     sql.assign(column, value);
                 }
                 Assignment::Increment => {
-                    sql.ident("failed_verification_count");
-                    sql.push(" = \"failed_verification_count\" + 1");
+                    sql.ident("failedVerificationCount");
+                    sql.push(" = \"failedVerificationCount\" + 1");
                 }
             }
         }
@@ -108,25 +108,23 @@ where
     S: AuthSchema + Send + Sync,
 {
     async fn create_two_factor(&self, two_factor: CreateTwoFactor) -> AuthResult<TwoFactor> {
-        let now = Utc::now();
         let mut active = ActiveRow::new();
         active.set(
             "id",
-            self.generated_id(self.exec(), "twoFactor", "two_factor", "id")
+            self.generated_id(self.exec(), "twoFactor", "twoFactor", "id")
                 .await?
                 .unwrap_or_else(|| Uuid::new_v4().to_string()),
         );
         active.set("secret", two_factor.secret);
-        active.set("backup_codes", two_factor.backup_codes);
-        active.set("user_id", two_factor.user_id);
+        active.set("backupCodes", two_factor.backup_codes);
+        active.set("userId", two_factor.user_id);
         active.set("verified", two_factor.verified);
         active.set(
-            "failed_verification_count",
+            "failedVerificationCount",
             two_factor.failed_verification_count,
         );
-        active.set("locked_until", two_factor.locked_until);
-        active.set("created_at", now);
-        active.set("updated_at", now);
+        active.set("lockedUntil", two_factor.locked_until);
+
         let mut sql = Sql::with(self.exec().engine(), "INSERT INTO ");
         sql.ident(Model::TABLE);
         sql.push(" (");
@@ -147,7 +145,7 @@ where
 
     async fn get_two_factor_by_user_id(&self, user_id: &str) -> AuthResult<Option<TwoFactor>> {
         Ok(self
-            .find_factor("user_id", user_id)
+            .find_factor("userId", user_id)
             .await?
             .map(|model| TwoFactor::from(&model)))
     }
@@ -164,7 +162,7 @@ where
             assignments.push(Assignment::Value("secret", secret.into()));
         }
         if let Some(codes) = update.backup_codes {
-            assignments.push(Assignment::Value("backup_codes", codes.into()));
+            assignments.push(Assignment::Value("backupCodes", codes.into()));
         }
         if let Some(verified) = update.verified {
             assignments.push(Assignment::Value("verified", verified.into()));
@@ -191,10 +189,10 @@ where
         until: DateTime<Utc>,
     ) -> AuthResult<Option<TwoFactor>> {
         self.apply_factor_update(
-            vec![Assignment::Value("locked_until", until.into())],
+            vec![Assignment::Value("lockedUntil", until.into())],
             vec![
                 ("id", " = ", id.into()),
-                ("failed_verification_count", " >= ", threshold.into()),
+                ("failedVerificationCount", " >= ", threshold.into()),
             ],
         )
         .await
@@ -207,12 +205,12 @@ where
     ) -> AuthResult<Option<TwoFactor>> {
         self.apply_factor_update(
             vec![
-                Assignment::Value("failed_verification_count", 0.0_f64.into()),
-                Assignment::Value("locked_until", None::<DateTime<Utc>>.into()),
+                Assignment::Value("failedVerificationCount", 0.0_f64.into()),
+                Assignment::Value("lockedUntil", None::<DateTime<Utc>>.into()),
             ],
             vec![
                 ("id", " = ", id.into()),
-                ("locked_until", " <= ", now.into()),
+                ("lockedUntil", " <= ", now.into()),
             ],
         )
         .await
@@ -222,8 +220,8 @@ where
         _ = self
             .apply_factor_update(
                 vec![
-                    Assignment::Value("failed_verification_count", 0.0_f64.into()),
-                    Assignment::Value("locked_until", None::<DateTime<Utc>>.into()),
+                    Assignment::Value("failedVerificationCount", 0.0_f64.into()),
+                    Assignment::Value("lockedUntil", None::<DateTime<Utc>>.into()),
                 ],
                 vec![("id", " = ", id.into())],
             )
@@ -238,10 +236,10 @@ where
         replacement: &str,
     ) -> AuthResult<bool> {
         self.apply_factor_update(
-            vec![Assignment::Value("backup_codes", replacement.into())],
+            vec![Assignment::Value("backupCodes", replacement.into())],
             vec![
                 ("id", " = ", id.into()),
-                ("backup_codes", " = ", expected.into()),
+                ("backupCodes", " = ", expected.into()),
             ],
         )
         .await
@@ -253,17 +251,14 @@ where
         user_id: &str,
         backup_codes: &str,
     ) -> AuthResult<TwoFactor> {
-        let Some(model) = self.find_factor("user_id", user_id).await? else {
+        let Some(model) = self.find_factor("userId", user_id).await? else {
             return Err(alibi_core::error::AuthError::not_found(
                 "Two-factor settings not found",
             ));
         };
 
         self.apply_factor_update(
-            vec![
-                Assignment::Value("backup_codes", backup_codes.into()),
-                Assignment::Value("updated_at", Utc::now().into()),
-            ],
+            vec![Assignment::Value("backupCodes", backup_codes.into())],
             vec![("id", " = ", model.id.into())],
         )
         .await?
@@ -274,7 +269,7 @@ where
         let mut sql = Sql::with(self.exec().engine(), "DELETE FROM ");
         sql.ident(Model::TABLE);
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "user_id", " = ", user_id);
+        sql.compare(Model::TABLE, "userId", " = ", user_id);
         self.exec().execute(sql).await.map(|_| ())
     }
 }

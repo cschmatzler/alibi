@@ -20,7 +20,6 @@ use crate::passkey::webauthn::challenge_cookie_name;
 use crate::passkey::webauthn::create_challenge_cookie;
 use crate::passkey::webauthn::credential_id_from_authentication;
 use crate::passkey::webauthn::decode_challenge_cookie;
-use crate::passkey::webauthn::decode_credential_id;
 use crate::passkey::webauthn::finish_core_authentication;
 use crate::passkey::webauthn::get_cookie_value;
 use crate::passkey::webauthn::parse_transports_csv;
@@ -185,41 +184,12 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
         return passkey_not_found();
     };
 
-    let Ok(mut stored) =
-        serde_json::from_str::<crate::passkey::raw_none::StoredCredential>(passkey.credential())
-    else {
+    let Ok(mut stored) = crate::passkey::raw_none::StoredCredential::from_columns(&passkey) else {
         return passkey_authentication_failure();
     };
     let Ok(counter) = u32::try_from(passkey.counter()) else {
         return passkey_authentication_failure();
     };
-    if matches!(
-        &stored_state,
-        StoredAuthenticationState::Core { .. } | StoredAuthenticationState::CoreRaw { .. }
-    ) {
-        let Ok(public_key) = base64::engine::general_purpose::STANDARD.decode(passkey.public_key())
-        else {
-            return passkey_authentication_failure();
-        };
-        match &mut stored {
-            crate::passkey::raw_none::StoredCredential::Raw(raw) => {
-                raw.replace_public_key(public_key);
-            }
-            crate::passkey::raw_none::StoredCredential::Core(saved) => {
-                let Ok((key, _)) = crate::passkey::raw_none::decode_first(&public_key) else {
-                    return passkey_authentication_failure();
-                };
-                let Ok(key) = crate::passkey::source::crypto::COSEKey::try_from(&key) else {
-                    return passkey_authentication_failure();
-                };
-                let mut current = saved.cred.clone();
-                current.cred = key;
-                current.cred_id = decode_credential_id(passkey.credential_id())?;
-                saved.cred = current;
-            }
-        }
-    }
-
     let authentication_result = match (&mut stored, stored_state) {
         (
             crate::passkey::raw_none::StoredCredential::Raw(raw),
@@ -340,7 +310,7 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
             crate::passkey::authentication::AuthenticationResult::Raw(result),
         ) => {
             raw.apply_authentication(result);
-            raw.snapshot()
+            Ok(raw.snapshot())
         }
         _ => return passkey_authentication_failure(),
     };
@@ -352,11 +322,10 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
         .update_passkey_authentication(
             passkey.id().as_ref(),
             UpdatePasskeyAuthentication {
-                credential: snapshot.serialized,
                 counter: snapshot.counter,
                 // Pinned authentication persists only the new counter. Keep
                 // current public snapshots, including callback writes, while
-                // updating the opaque verifier credential's real backup state.
+                // matching the persisted TypeScript fields.
                 backed_up: public_backed_up,
                 device_type: public_device_type,
             },

@@ -103,7 +103,7 @@ mod tests {
                 [user.id.clone().into()],
             ))
             .await?;
-        let _ignored_execute_unprepared_2=database.execute_unprepared("CREATE TRIGGER native_admission_veto BEFORE INSERT ON member WHEN NEW.user_id=(SELECT userId FROM __test_admission_guard) BEGIN SELECT RAISE(ABORT,'native admission veto'); END").await?;
+        let _ignored_execute_unprepared_2=database.execute_unprepared("CREATE TRIGGER native_admission_veto BEFORE INSERT ON \"member\" WHEN NEW.\"userId\"=(SELECT userId FROM __test_admission_guard) BEGIN SELECT RAISE(ABORT,'native admission veto'); END").await?;
         let error = OrganizationPlugin::new()
             .add_member_with_headers(&context, &HashMap::new(), &body)
             .await

@@ -7,8 +7,8 @@ type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
 // This application insert intentionally omits config_id so the generated database
 // default is exercised independently of the plugin, which supplies it explicitly.
-const DEFAULT_KEY_INSERT: &str = r#"INSERT INTO api_keys
-    (id, key, reference_id, enabled, rate_limit_enabled, created_at, updated_at)
+const DEFAULT_KEY_INSERT: &str = r#"INSERT INTO "apikey"
+    (id, "key", "referenceId", "enabled", "rateLimitEnabled", "createdAt", "updatedAt")
     VALUES ('application-key', 'application-hash', 'application-owner', TRUE, FALSE,
             '2026-10-04T00:00:00Z', '2026-10-04T00:00:00Z')"#;
 

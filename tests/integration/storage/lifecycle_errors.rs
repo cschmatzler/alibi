@@ -123,7 +123,7 @@ async fn endpoint_callback_errors_drop_headers_without_reversing_writes<B: Backe
         if mode != "success" {
             assert_eq!(
                 db.count_where(
-                    "SELECT COUNT(*) FROM users WHERE email = $1",
+                    "SELECT COUNT(*) FROM \"user\" WHERE \"email\" = $1",
                     &[&format!("{mode}@lifecycle.fixture.test")]
                 )
                 .await?,
@@ -136,7 +136,7 @@ async fn endpoint_callback_errors_drop_headers_without_reversing_writes<B: Backe
             serde_json::json!({
                 "backend": std::any::type_name::<B>(), "mode": mode,
                 "status": response.status, "headers": response.headers.clone().into_iter().collect::<Vec<_>>(),
-                "body": String::from_utf8_lossy(&response.body), "users": db.count("users").await?,
+                "body": String::from_utf8_lossy(&response.body), "users": db.count("user").await?,
                 "after": *observed.lock().expect("observer mutex"),
             })
         );
@@ -245,7 +245,7 @@ async fn configured_endpoint_hooks_apply_to_http_before_plugin_hooks<B: Backend>
         stopped.status, 200,
         "configured global before must prevent the endpoint write"
     );
-    assert_eq!(db.count("users").await?, 0);
+    assert_eq!(db.count("user").await?, 0);
     assert!(observed.lock().expect("observer mutex").is_empty());
     let response = auth
         .handle_request(AuthRequest::new(HttpMethod::Get, "/api/auth/ok"))
@@ -277,9 +277,9 @@ async fn configured_endpoint_hooks_apply_to_http_before_plugin_hooks<B: Backend>
         .into_iter()
         .enumerate()
     {
-        let users_before = db.table("users").await?;
-        let sessions_before = db.table("sessions").await?;
-        let accounts_before = db.table("accounts").await?;
+        let users_before = db.table("user").await?;
+        let sessions_before = db.table("session").await?;
+        let accounts_before = db.table("account").await?;
         let after_before = observed.lock().expect("observer mutex").clone();
         let mut req = AuthRequest::new(HttpMethod::Post, "/api/auth/sign-up/email");
         req.headers = std::collections::HashMap::from([
@@ -305,13 +305,13 @@ async fn configured_endpoint_hooks_apply_to_http_before_plugin_hooks<B: Backend>
                 "status":response.status, "headers":response.headers.clone().into_iter().collect::<Vec<_>>(),
                 "body":String::from_utf8_lossy(&response.body), "callbacks":*versions.lock().expect("cache receipts"),
                 "before":{"users":users_before,"sessions":sessions_before,"accounts":accounts_before},
-                "after":{"users":db.table("users").await?,"sessions":db.table("sessions").await?,"accounts":db.table("accounts").await?},
+                "after":{"users":db.table("user").await?,"sessions":db.table("session").await?,"accounts":db.table("account").await?},
             })
         );
         if mode == "cache-ordinary" || mode == "cache-api" {
-            assert_eq!(db.table("users").await?, users_before);
-            assert_eq!(db.table("sessions").await?, sessions_before);
-            assert_eq!(db.table("accounts").await?, accounts_before);
+            assert_eq!(db.table("user").await?, users_before);
+            assert_eq!(db.table("session").await?, sessions_before);
+            assert_eq!(db.table("account").await?, accounts_before);
             if mode == "cache-ordinary" {
                 assert_eq!(response.status, 500);
                 assert!(response.body.is_empty());
@@ -340,15 +340,18 @@ async fn configured_endpoint_hooks_apply_to_http_before_plugin_hooks<B: Backend>
             let id = payload["user"]["id"].as_str().expect("actual signup user");
             let token = payload["token"].as_str().expect("actual signup token");
             assert_eq!(
-                db.text("SELECT user_id FROM sessions WHERE token = $1", &[token])
-                    .await?
-                    .as_deref(),
+                db.text(
+                    "SELECT \"userId\" FROM \"session\" WHERE \"token\" = $1",
+                    &[token]
+                )
+                .await?
+                .as_deref(),
                 Some(id)
             );
             for (table, before) in [
-                ("users", users_before),
-                ("sessions", sessions_before),
-                ("accounts", accounts_before),
+                ("user", users_before),
+                ("session", sessions_before),
+                ("account", accounts_before),
             ] {
                 let before: Vec<serde_json::Value> = serde_json::from_str(&before)?;
                 let after: Vec<serde_json::Value> = serde_json::from_str(&db.table(table).await?)?;

@@ -35,7 +35,7 @@ async fn server_sign_in_social_issues_owned_state_and_pkce_without_fabricating_a
     let endpoint =
         |body: &Value| ServerEndpoint::<Value>::new("oauth", "signInSocial").with_body(body);
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for (body, status) in [
         (json!({}), 400),
@@ -62,7 +62,7 @@ async fn server_sign_in_social_issues_owned_state_and_pkce_without_fabricating_a
             assert_eq!(error["message"], "[body.provider] Invalid input");
         }
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -110,7 +110,7 @@ async fn server_sign_in_social_issues_owned_state_and_pkce_without_fabricating_a
         assert_eq!(params["login_hint"], "Owner+hint@example.test");
         assert_eq!(params["prompt"], "consent :+&");
         assert_eq!(params["code_challenge_method"], "S256");
-        let rows: Vec<Value> = serde_json::from_str(&db.table("verifications").await?)?;
+        let rows: Vec<Value> = serde_json::from_str(&db.table("verification").await?)?;
         let proof = rows
             .iter()
             .find(|row| row["identifier"] == format!("auth-state:{}", params["state"]))
@@ -135,7 +135,7 @@ async fn server_sign_in_social_issues_owned_state_and_pkce_without_fabricating_a
         let expires_at = payload["expiresAt"].as_i64().unwrap();
         assert!((started_at + 600_000..=finished_at + 600_000).contains(&expires_at));
         let stored_expiry =
-            chrono::DateTime::parse_from_rfc3339(proof["expires_at"].as_str().unwrap())?
+            chrono::DateTime::parse_from_rfc3339(proof["expiresAt"].as_str().unwrap())?
                 .timestamp_millis();
         assert!((started_at + 600_000..=finished_at + 600_000).contains(&stored_expiry));
         let fields = result
@@ -160,7 +160,7 @@ async fn server_sign_in_social_issues_owned_state_and_pkce_without_fabricating_a
             Some(params["state"].as_str())
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
+            db.tables(&["user", "account", "session"]).await?,
             before[..3]
         );
         assert!(remote.take().is_empty());

@@ -95,9 +95,9 @@ async fn native_jwk_workflow<B: Backend>(db: Db) -> TestResult {
     )
     .await?;
     assert_eq!(db.count("jwks").await?, 2);
-    assert_eq!(db.count("sessions").await?, 0);
+    assert_eq!(db.count("session").await?, 0);
     let stored = db
-        .text("SELECT private_key FROM jwks LIMIT 1", &[])
+        .text("SELECT \"privateKey\" FROM \"jwks\" LIMIT 1", &[])
         .await?
         .unwrap();
     assert!(serde_json::from_str::<String>(&stored).is_ok());

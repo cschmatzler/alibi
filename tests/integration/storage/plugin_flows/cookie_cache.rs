@@ -92,7 +92,7 @@ async fn every_strategy_serves_reads_from_the_cookie_and_rejects_tampering<B: Ba
         let issued = signup(&auth, &email).await;
         assert!(names(&issued).contains(&"better-auth.session_data".to_owned()));
         let jar = cookies(&issued);
-        assert_eq!(db.execute("DELETE FROM sessions", &[]).await?, 1);
+        assert_eq!(db.execute("DELETE FROM \"session\"", &[]).await?, 1);
         let cached_read = call(&auth, request("/get-session", None, &jar), 200).await;
         assert_eq!(body(&cached_read)["user"]["email"], email, "{strategy:?}");
 
@@ -136,7 +136,7 @@ async fn oversized_cache_is_chunked_and_cleared_on_sign_out<B: Backend>(db: Db) 
     assert!(chunk_names.len() >= 2, "{chunk_names:?}");
     assert!(!names(&issued).contains(&"better-auth.session_data".to_owned()));
     let jar = cookies(&issued);
-    assert_eq!(db.execute("DELETE FROM sessions", &[]).await?, 1);
+    assert_eq!(db.execute("DELETE FROM \"session\"", &[]).await?, 1);
     let read = call(&auth, request("/get-session", None, &jar), 200).await;
     assert_eq!(body(&read)["user"]["name"], name);
 
@@ -273,7 +273,7 @@ async fn managed_jwt_signer_issues_and_verifies_cache_tokens<B: Backend>(db: Db)
     )?)?;
     assert_eq!(header["typ"], "better-auth.session-cache+jwt");
     assert_eq!(db.count("jwks").await?, 1);
-    assert_eq!(db.execute("DELETE FROM sessions", &[]).await?, 1);
+    assert_eq!(db.execute("DELETE FROM \"session\"", &[]).await?, 1);
     let read = call(&auth, request("/get-session", None, &jar), 200).await;
     assert_eq!(body(&read)["user"]["email"], "managed@example.test");
 
@@ -356,7 +356,7 @@ async fn update_user_refreshes_the_cache_and_invalid_sessions_clear_every_cookie
     let read = call(&auth, request("/get-session", None, &refreshed), 200).await;
     assert_eq!(body(&read)["user"]["name"], "Renamed");
 
-    assert_eq!(db.execute("DELETE FROM sessions", &[]).await?, 1);
+    assert_eq!(db.execute("DELETE FROM \"session\"", &[]).await?, 1);
     let orphan = without(&jar, "better-auth.session_data");
     let rejected = call(&auth, request("/get-session", None, &orphan), 200).await;
     assert_eq!(body(&rejected), Value::Null);
@@ -571,8 +571,11 @@ async fn scoped_cache_chunks_obey_wire_capacity_and_retirement<B: Backend>(db: D
     assert_eq!(body(&read)["user"]["name"], name);
     let token = body(&issued)["token"].as_str().unwrap().to_owned();
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE token=$1", &[&token])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"token\"=$1",
+            &[&token]
+        )
+        .await?,
         1
     );
     let logout = call(&auth, request("/sign-out", Some(json!({})), &jar), 200).await;
@@ -594,11 +597,14 @@ async fn scoped_cache_chunks_obey_wire_capacity_and_retirement<B: Backend>(db: D
         );
     }
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE token=$1", &[&token])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"token\"=$1",
+            &[&token]
+        )
+        .await?,
         0
     );
-    assert_eq!(db.count("users").await?, 1);
+    assert_eq!(db.count("user").await?, 1);
     B::close(connection).await
 }
 
@@ -677,7 +683,7 @@ async fn cache_version_issuance_failure_preserves_anonymous_principal<B: Backend
         .await;
         let jar = cookies(&anonymous);
         let before = db
-            .tables(&["users", "accounts", "sessions", "verifications"])
+            .tables(&["user", "account", "session", "verification"])
             .await?;
         version.armed.store(true, Ordering::SeqCst);
         let rejected=call(&auth,request("/sign-up/email",Some(json!({"email":"cache-denied-replacement@example.test","password":PASSWORD,"name":"Replacement"})),&jar),500).await;
@@ -704,13 +710,13 @@ async fn cache_version_issuance_failure_preserves_anonymous_principal<B: Backend
         );
         assert_eq!(link.0.load(Ordering::SeqCst), 0);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM users WHERE email=$1",
+                "SELECT COUNT(*) FROM \"user\" WHERE \"email\"=$1",
                 &["cache-denied-replacement@example.test"]
             )
             .await?,
@@ -731,7 +737,7 @@ async fn cache_version_issuance_failure_preserves_anonymous_principal<B: Backend
             assert_eq!(body(&actual)["user"]["id"], body(&anonymous)["user"]["id"]);
         }
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -802,7 +808,7 @@ async fn browser_cache_ttl_requires_authenticated_preference<B: Backend>(db: Db)
     let mut mac = Hmac::<sha2::Sha256>::new_from_slice(SECRET.as_bytes())?;
     mac.update(b"true");
     mac.verify_slice(&STANDARD.decode(signature)?)?;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let token = jar
         .split("; ")
         .find(|v| v.starts_with("better-auth.session_token="))
@@ -827,9 +833,9 @@ async fn browser_cache_ttl_requires_authenticated_preference<B: Backend>(db: Db)
     let ttl = envelope["expiresAt"].as_f64().unwrap()
         - envelope["session"]["updatedAt"].as_f64().unwrap();
     assert!((300_000.0..=300_010.0).contains(&ttl));
-    assert_eq!(db.tables(&["users", "accounts"]).await?, before[..2]);
+    assert_eq!(db.tables(&["user", "account"]).await?, before[..2]);
     let before_sessions: Vec<Value> = serde_json::from_str(&before[2])?;
-    let after_sessions: Vec<Value> = serde_json::from_str(&db.table("sessions").await?)?;
+    let after_sessions: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
     assert_eq!(before_sessions.len(), after_sessions.len());
     for mut old in before_sessions {
         let mut current = after_sessions
@@ -839,11 +845,11 @@ async fn browser_cache_ttl_requires_authenticated_preference<B: Backend>(db: Db)
             .clone();
         if old["token"] == body(&signed)["token"] {
             let old_expiry: chrono::DateTime<chrono::Utc> =
-                old["expires_at"].as_str().unwrap().parse()?;
+                old["expiresAt"].as_str().unwrap().parse()?;
             let renewed_expiry: chrono::DateTime<chrono::Utc> =
-                current["expires_at"].as_str().unwrap().parse()?;
+                current["expiresAt"].as_str().unwrap().parse()?;
             assert!(renewed_expiry > old_expiry + chrono::Duration::days(5));
-            for key in ["expires_at", "updated_at"] {
+            for key in ["expiresAt", "updatedAt"] {
                 _ = old.as_object_mut().unwrap().remove(key);
                 _ = current.as_object_mut().unwrap().remove(key);
             }
@@ -919,9 +925,9 @@ async fn cache_raw_and_specific_max_age_keep_distinct_lifetimes<B: Backend>(db: 
             .find(|v| v.starts_with("better-auth.session_token="))
             .unwrap();
         assert!(token.contains("; Max-Age=604800;"));
-        assert_eq!(db.count("users").await?, 1);
-        assert_eq!(db.count("accounts").await?, 1);
-        assert_eq!(db.count("sessions").await?, 1);
+        assert_eq!(db.count("user").await?, 1);
+        assert_eq!(db.count("account").await?, 1);
+        assert_eq!(db.count("session").await?, 1);
         B::close(connection).await?;
     }
     Ok(())
@@ -1013,7 +1019,7 @@ async fn verification_renews_original_cached_snapshot_and_publishes_it_to_later_
         .build()
         .await?;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+    let baseline = db.tables(&["user", "account", "session"]).await?;
     let owner=call(&auth,request("/sign-up/email",Some(json!({"email":"owner@example.test","name":"Original Cached Name","password":PASSWORD})),""),200).await;
     let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let jar = cookies(&owner)
@@ -1037,13 +1043,13 @@ async fn verification_renews_original_cached_snapshot_and_publishes_it_to_later_
     let token = inbox.0.lock().unwrap().clone().unwrap();
     assert_eq!(
         db.execute(
-            "UPDATE users SET name='Physical Later Name' WHERE id=$1",
+            "UPDATE \"user\" SET \"name\"='Physical Later Name' WHERE id=$1",
             &[&id]
         )
         .await?,
         1
     );
-    let before = db.tables(&["accounts", "sessions"]).await?;
+    let before = db.tables(&["account", "session"]).await?;
     let mut proof = request("/verify-email", None, &jar);
     proof.set_query_pairs([("token", token.as_str())]);
     let verified = call(&auth, proof, 200).await;
@@ -1070,21 +1076,21 @@ async fn verification_renews_original_cached_snapshot_and_publishes_it_to_later_
     assert_eq!(receipts[0]["user"], expected);
     assert_eq!(receipts[0]["session"], original["session"]);
     assert_eq!(
-        db.text("SELECT name FROM users WHERE id=$1", &[&id])
+        db.text("SELECT \"name\" FROM \"user\" WHERE id=$1", &[&id])
             .await?
             .as_deref(),
         Some("Physical Later Name")
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM users WHERE id=$1 AND email_verified=true",
+            "SELECT COUNT(*) FROM \"user\" WHERE id=$1 AND \"emailVerified\"=true",
             &[&id]
         )
         .await?,
         1
     );
-    assert_eq!(db.tables(&["accounts", "sessions"]).await?, before);
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    assert_eq!(db.tables(&["account", "session"]).await?, before);
+    let after = db.tables(&["user", "account", "session"]).await?;
     for (before, now) in baseline.iter().zip(after.iter()) {
         let before: Vec<Value> = serde_json::from_str(before)?;
         let now: Vec<Value> = serde_json::from_str(now)?;
@@ -1161,7 +1167,7 @@ async fn pending_factor_discards_completed_cache_authority_until_genuine_otp<B: 
     .build()
     .await?;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+    let baseline = db.tables(&["user", "account", "session"]).await?;
     let owner = signup(&auth, "owner@example.test").await;
     let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let enabled = call(
@@ -1211,8 +1217,11 @@ async fn pending_factor_discards_completed_cache_authority_until_genuine_otp<B: 
     assert_eq!(transient[0]["user"]["twoFactorEnabled"], true);
     assert_eq!(transient[0]["session"]["userId"], id);
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+            &[&id]
+        )
+        .await?,
         0
     );
     let jar = cookies(&pending);
@@ -1236,19 +1245,28 @@ async fn pending_factor_discards_completed_cache_authority_until_genuine_otp<B: 
     let value = body(&verified);
     assert_eq!(value["user"]["id"], id);
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+            &[&id]
+        )
+        .await?,
         1
     );
     assert_eq!(
-        db.text("SELECT token FROM sessions WHERE user_id=$1", &[&id])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT \"token\" FROM \"session\" WHERE \"userId\"=$1",
+            &[&id]
+        )
+        .await?
+        .as_deref(),
         value["token"].as_str()
     );
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM verifications WHERE value=$1", &[&id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"verification\" WHERE \"value\"=$1",
+            &[&id]
+        )
+        .await?,
         0
     );
     assert!(
@@ -1276,7 +1294,7 @@ async fn pending_factor_discards_completed_cache_authority_until_genuine_otp<B: 
         .await,
     );
     assert_eq!(active["session"]["token"], value["token"]);
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     for (before, now) in baseline.iter().zip(after.iter()) {
         let before: Vec<Value> = serde_json::from_str(before)?;
         let now: Vec<Value> = serde_json::from_str(now)?;
@@ -1331,12 +1349,12 @@ async fn factor_ordinary_cache_survives_revocation_while_disable_requires_physic
         .build()
         .await?;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+    let baseline = db.tables(&["user", "account", "session"]).await?;
     let owner = signup(&auth, "owner@example.test").await;
     let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let old = body(&owner)["token"].as_str().unwrap().to_owned();
     assert_eq!(
-        db.execute("DELETE FROM sessions WHERE token=$1", &[&old])
+        db.execute("DELETE FROM \"session\" WHERE \"token\"=$1", &[&old])
             .await?,
         1
     );
@@ -1356,7 +1374,7 @@ async fn factor_ordinary_cache_survives_revocation_while_disable_requires_physic
     assert_ne!(replacement, old);
     assert_eq!(current["user"]["twoFactorEnabled"], true);
     assert_eq!(
-        db.execute("DELETE FROM sessions WHERE token=$1", &[replacement])
+        db.execute("DELETE FROM \"session\" WHERE \"token\"=$1", &[replacement])
             .await?,
         1
     );
@@ -1376,18 +1394,15 @@ async fn factor_ordinary_cache_survives_revocation_while_disable_requires_physic
     assert_eq!(body(&verified)["token"], replacement);
     assert_eq!(body(&verified)["user"]["id"], id);
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+            &[&id]
+        )
+        .await?,
         0
     );
     let after = db
-        .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "two_factor",
-            "verifications",
-        ])
+        .tables(&["user", "account", "session", "twoFactor", "verification"])
         .await?;
     _ = call(
         &auth,
@@ -1400,19 +1415,13 @@ async fn factor_ordinary_cache_survives_revocation_while_disable_requires_physic
     )
     .await;
     assert_eq!(
-        db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "two_factor",
-            "verifications"
-        ])
-        .await?,
+        db.tables(&["user", "account", "session", "twoFactor", "verification"])
+            .await?,
         after
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM users WHERE id=$1 AND two_factor_enabled=true",
+            "SELECT COUNT(*) FROM \"user\" WHERE id=$1 AND \"twoFactorEnabled\"=true",
             &[&id]
         )
         .await?,
@@ -1425,14 +1434,8 @@ async fn factor_ordinary_cache_survives_revocation_while_disable_requires_physic
     )
     .await;
     assert_eq!(
-        db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "two_factor",
-            "verifications"
-        ])
-        .await?,
+        db.tables(&["user", "account", "session", "twoFactor", "verification"])
+            .await?,
         after
     );
     for (before, now) in baseline.iter().zip(after.iter()) {
@@ -1493,8 +1496,8 @@ async fn revoked_compact_ordinary_consumers_keep_their_query_admission_contract<
         200,
     )
     .await;
-    let baseline = db.tables(&["users", "accounts", "api_keys"]).await?;
-    assert_eq!(db.execute("DELETE FROM sessions", &[]).await?, 3);
+    let baseline = db.tables(&["user", "account", "apikey"]).await?;
+    assert_eq!(db.execute("DELETE FROM \"session\"", &[]).await?, 3);
     let jar = cookies(&owner);
     let foreign_token = cookies(&foreign)
         .split("; ")
@@ -1541,11 +1544,8 @@ async fn revoked_compact_ordinary_consumers_keep_their_query_admission_contract<
         }
         _ = call(&auth, request(route, None, &cookies(&past)), 401).await;
         _ = call(&auth, request(route, None, &graft), 401).await;
-        assert_eq!(
-            db.tables(&["users", "accounts", "api_keys"]).await?,
-            baseline
-        );
-        assert_eq!(db.count("sessions").await?, 0);
+        assert_eq!(db.tables(&["user", "account", "apikey"]).await?, baseline);
+        assert_eq!(db.count("session").await?, 0);
     }
     B::close(connection).await
 }

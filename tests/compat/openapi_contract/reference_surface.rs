@@ -84,9 +84,9 @@ fn reference_profile_reference_surface(
         "/reset-password/{token}",
         "/change-password",
         "/verify-password",
-        "/update-user",
-        "/delete-user",
-        "/delete-user/callback",
+        "/update-\"user\"",
+        "/delete-\"user\"",
+        "/delete-\"user\"/callback",
         "/change-email",
         "/send-verification-email",
         "/verify-email",
@@ -100,11 +100,11 @@ fn reference_profile_reference_surface(
         "/device",
         "/device/approve",
         "/device/deny",
-        "/api-key/create",
+        "/api-\"key\"/create",
         "/api-key/get",
         "/api-key/list",
-        "/api-key/update",
-        "/api-key/delete",
+        "/api-\"key\"/update",
+        "/api-\"key\"/delete",
     ]
     .into_iter()
     .map(|path| {
@@ -183,7 +183,11 @@ fn collect_implemented_routes(auth: &Alibi<TestSchema>) -> BTreeMap<String, Hash
     let mut routes: BTreeMap<String, HashSet<String>> = BTreeMap::new();
 
     // Core routes (from handle_core_request)
-    let core = vec![("/ok", "get"), ("/error", "get"), ("/update-user", "post")];
+    let core = vec![
+        ("/ok", "get"),
+        ("/error", "get"),
+        ("/update-\"user\"", "post"),
+    ];
     for (path, method) in core {
         let _ignored_to_owned = routes
             .entry(path.to_owned())
@@ -432,8 +436,8 @@ mod tests {
             ("post", "/is-username-available"),
             ("get", "/get-session"),
             ("post", "/sign-out"),
-            ("post", "/update-user"),
-            ("post", "/delete-user"),
+            ("post", "/update-\"user\""),
+            ("post", "/delete-\"user\""),
             ("post", "/request-password-reset"),
             ("post", "/reset-password"),
             ("post", "/change-password"),
@@ -452,17 +456,17 @@ mod tests {
             ("post", "/unlink-account"),
             ("get", "/account-info"),
             ("post", "/change-email"),
-            ("get", "/delete-user/callback"),
+            ("get", "/delete-\"user\"/callback"),
             ("post", "/device/code"),
             ("post", "/device/token"),
             ("get", "/device"),
             ("post", "/device/approve"),
             ("post", "/device/deny"),
-            ("post", "/api-key/create"),
+            ("post", "/api-\"key\"/create"),
             ("get", "/api-key/get"),
             ("get", "/api-key/list"),
-            ("post", "/api-key/update"),
-            ("post", "/api-key/delete"),
+            ("post", "/api-\"key\"/update"),
+            ("post", "/api-\"key\"/delete"),
         ];
 
         let mut missing = Vec::new();
@@ -494,12 +498,12 @@ mod tests {
             "OpenAPI spec missing /error"
         );
         assert!(
-            spec.paths.contains_key("/update-user"),
-            "OpenAPI spec missing /update-user"
+            spec.paths.contains_key("/update-\"user\""),
+            "OpenAPI spec missing /update-\"user\""
         );
         assert!(
-            spec.paths.contains_key("/delete-user"),
-            "OpenAPI spec missing /delete-user"
+            spec.paths.contains_key("/delete-\"user\""),
+            "OpenAPI spec missing /delete-\"user\""
         );
         assert!(
             spec.paths.contains_key("/sign-up/email"),

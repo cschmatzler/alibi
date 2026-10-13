@@ -10,9 +10,10 @@ pub struct Model {
     pub name: String,
     pub slug: String,
     pub logo: Option<String>,
+    #[auth(column_type = "text")]
     pub metadata: Option<JsonMetadata>,
+    #[sqlx(rename = "createdAt")]
     pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
 }
 
 impl From<&Model> for Organization {
@@ -25,7 +26,7 @@ impl From<&Model> for Organization {
             logo: model.logo.clone(),
             metadata: model.metadata.as_ref().map(|metadata| (**metadata).clone()),
             created_at: model.created_at,
-            updated_at: model.updated_at,
+            updated_at: model.created_at,
         }
     }
 }

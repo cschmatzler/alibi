@@ -1627,7 +1627,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(stored_user.two_factor_enabled, Some(true));
-        assert_eq!(stored_user.name.as_deref(), Some("Hook Updated Owner"));
+        assert_eq!(stored_user.name(), Some("Hook Updated Owner"));
         let verified_factor = ctx
             .database
             .get_two_factor_by_user_id(&user.id)
@@ -1651,7 +1651,7 @@ mod tests {
         );
         let (current_user, current_session) = ctx.require_session(&browser).await.unwrap();
         assert_eq!(current_user.id, user.id);
-        assert_eq!(current_user.name.as_deref(), Some("Hook Updated Owner"));
+        assert_eq!(current_user.name(), Some("Hook Updated Owner"));
         assert_eq!(current_session.token, rotated);
         assert_eq!(current_session.ip_address, session.ip_address);
         assert_eq!(current_session.user_agent, session.user_agent);

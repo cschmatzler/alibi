@@ -152,7 +152,6 @@ impl MultiSessionPlugin {
         let mut listed = Vec::new();
         for session in ctx.database.get_sessions_by_tokens_record(&tokens).await? {
             if session.expires_at() > now
-                && session.active()
                 && let Some(user) = ctx.session_user(&session).await?
                 && seen_users.insert(user.id().to_string())
             {

@@ -28,7 +28,7 @@ where
         sql.compare(wallet_address::Model::TABLE, "address", " = ", address);
         if let Some(chain_id) = chain_id {
             sql.push(" AND ");
-            sql.compare(wallet_address::Model::TABLE, "chain_id", " = ", chain_id);
+            sql.compare(wallet_address::Model::TABLE, "chainId", " = ", chain_id);
         }
         model::limit_one(&mut sql);
         // The upstream adapter uses findOne without ordering. In SQLite this
@@ -57,18 +57,18 @@ where
             let mut active = ActiveRow::new();
             active.set(
                 "id",
-                self.generated_id(self.exec(), "walletAddress", "wallet_address", "id")
+                self.generated_id(self.exec(), "walletAddress", "walletAddress", "id")
                     .await?
                     .unwrap_or_else(|| Uuid::new_v4().to_string()),
             );
-            active.set("user_id", owner.id().into_owned());
+            active.set("userId", owner.id().into_owned());
             active.set("address", data.address);
             active.set(
-                "chain_id",
+                "chainId",
                 WalletChainId::from(data.chain_id).into_sql_value(),
             );
-            active.set("is_primary", data.is_primary);
-            active.set("created_at", Utc::now());
+            active.set("isPrimary", data.is_primary);
+            active.set("createdAt", Utc::now());
             let created = model::insert::<wallet_address::Model>(exec, &active).await?;
             Ok(created.into())
         })
@@ -78,13 +78,13 @@ where
 
 pub(super) async fn remove_owned_wallets(tx: &SqlxTransaction, user_id: &str) -> AuthResult<()> {
     let exec = Exec::tx(tx);
-    if !super::migrator::has_table(exec, "wallet_address").await? {
+    if !super::migrator::has_table(exec, "walletAddress").await? {
         return Ok(());
     }
     let mut sql = Sql::with(exec.engine(), "DELETE FROM ");
     sql.ident(wallet_address::Model::TABLE);
     sql.push(" WHERE ");
-    sql.compare(wallet_address::Model::TABLE, "user_id", " = ", user_id);
+    sql.compare(wallet_address::Model::TABLE, "userId", " = ", user_id);
     _ = exec.execute(sql).await?;
     Ok(())
 }

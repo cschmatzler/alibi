@@ -22,8 +22,11 @@ backend_tests!(
 postgres_tests!(organization_database_patch_retains_unrequested_native_columns,);
 
 async fn raw_metadata(db: &Db, id: &str) -> TestResult<Option<String>> {
-    db.text("SELECT metadata FROM organization WHERE id = $1", &[id])
-        .await
+    db.text(
+        "SELECT \"metadata\" FROM \"organization\" WHERE id = $1",
+        &[id],
+    )
+    .await
 }
 
 async fn public_store_distinguishes_omitted_and_literal_null_metadata<B: Backend>(
@@ -134,7 +137,7 @@ async fn optional_organization_update_distinguishes_absence_from_database_write_
         serde_json::to_value(store.get_organization_by_id(&target.id).await?)?,
         serde_json::to_value(Some(&updated))?
     );
-    _ = db.execute("CREATE TRIGGER veto_optional_organization BEFORE UPDATE ON organization WHEN OLD.slug='optional-target' BEGIN SELECT RAISE(ABORT,'optional organization storage veto'); END", &[]).await?;
+    _ = db.execute("CREATE TRIGGER veto_optional_organization BEFORE UPDATE ON \"organization\" WHEN OLD.\"slug\"='optional-target' BEGIN SELECT RAISE(ABORT,'optional organization storage veto'); END", &[]).await?;
     let veto = store
         .update_organization_if_present(
             &target.id,
@@ -152,7 +155,7 @@ async fn optional_organization_update_distinguishes_absence_from_database_write_
     _ = db
         .execute("DROP TRIGGER veto_optional_organization", &[])
         .await?;
-    _ = db.execute("CREATE TRIGGER ignore_optional_organization BEFORE UPDATE ON organization WHEN OLD.slug='optional-target' BEGIN SELECT RAISE(IGNORE); END", &[]).await?;
+    _ = db.execute("CREATE TRIGGER ignore_optional_organization BEFORE UPDATE ON \"organization\" WHEN OLD.\"slug\"='optional-target' BEGIN SELECT RAISE(IGNORE); END", &[]).await?;
     assert!(
         store
             .update_organization_if_present(
@@ -256,14 +259,14 @@ async fn organization_database_patch_retains_unrequested_native_columns<B: Backe
 }
 
 const DELETION_TABLES: [&str; 8] = [
-    "users",
+    "user",
     "organization",
     "member",
     "invitation",
     "team",
-    "team_member",
-    "organization_role",
-    "api_keys",
+    "teamMember",
+    "organizationRole",
+    "apikey",
 ];
 
 async fn public_organization_delete_retains_extensions_and_rolls_back_all_scoped_writes<
@@ -342,7 +345,7 @@ async fn public_organization_delete_retains_extensions_and_rolls_back_all_scoped
     }
     let (target, unrelated) = (&records[0], &records[1]);
     let before = db.tables(&DELETION_TABLES).await?;
-    _ = db.execute("CREATE TRIGGER app_refuse_organization_delete BEFORE DELETE ON organization WHEN OLD.slug='target' BEGIN SELECT RAISE(ABORT,'application deletion denied'); END", &[]).await?;
+    _ = db.execute("CREATE TRIGGER app_refuse_organization_delete BEFORE DELETE ON \"organization\" WHEN OLD.\"slug\"='target' BEGIN SELECT RAISE(ABORT,'application deletion denied'); END", &[]).await?;
     assert!(store.delete_organization(&target.0.id).await.is_err());
     assert_eq!(
         db.tables(&DELETION_TABLES).await?,
@@ -366,19 +369,27 @@ async fn public_organization_delete_retains_extensions_and_rolls_back_all_scoped
     assert!(store.get_member_by_id(&unrelated.1.id).await?.is_some());
     assert!(store.get_invitation_by_id(&unrelated.2.id).await?.is_some());
     let after = db.tables(&DELETION_TABLES).await?;
+    let original_teams: Vec<serde_json::Value> = serde_json::from_str(&before[4])?;
+    let owned_team_ids: Vec<_> = original_teams
+        .iter()
+        .filter(|row| row["organizationId"] == target.0.id)
+        .map(|row| row["id"].clone())
+        .collect();
     for (index, table) in DELETION_TABLES.iter().enumerate() {
-        if [
-            "users",
-            "team",
-            "team_member",
-            "organization_role",
-            "api_keys",
-        ]
-        .contains(table)
-        {
+        if ["user", "apikey", "team", "teamMember", "organizationRole"].contains(table) {
+            let original: Vec<serde_json::Value> = serde_json::from_str(&before[index])?;
+            let expected: Vec<_> = original
+                .into_iter()
+                .filter(|row| match *table {
+                    "team" | "organizationRole" => row["organizationId"] != target.0.id,
+                    "teamMember" => !owned_team_ids.contains(&row["teamId"]),
+                    _ => true,
+                })
+                .collect();
+            let actual: Vec<serde_json::Value> = serde_json::from_str(&after[index])?;
             assert_eq!(
-                after[index], before[index],
-                "retained {table} rows must preserve all physical fields"
+                actual, expected,
+                "source cascades remove owned children and preserve unrelated {table} rows"
             );
         }
     }

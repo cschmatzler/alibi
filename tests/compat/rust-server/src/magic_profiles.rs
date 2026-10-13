@@ -227,7 +227,7 @@ pub(super) async fn router(
             let mut state = state.lock().await;
             if let Some(mode) = body["mode"].as_str() { state.mode = mode.to_owned(); }
             if body["clear"].as_bool() == Some(true) { state.receipts.clear(); }
-            let counts: (i64, i64, i64) = sqlx::query_as(sqlx::AssertSqlSafe("SELECT (SELECT COUNT(*) FROM verifications), (SELECT COUNT(*) FROM users), (SELECT COUNT(*) FROM sessions)"))
+            let counts: (i64, i64, i64) = sqlx::query_as(sqlx::AssertSqlSafe("SELECT (SELECT COUNT(*) FROM \"verification\"), (SELECT COUNT(*) FROM \"user\"), (SELECT COUNT(*) FROM \"session\")"))
                 .fetch_one(database.get_sqlite_connection_pool()).await.unwrap();
             Json(json!({"mode":state.mode,"receipts":state.receipts,"proofCount":counts.0,"userCount":counts.1,"sessionCount":counts.2}))
         }

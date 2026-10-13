@@ -51,7 +51,7 @@ async fn account_listing_and_unlinking_preserve_other_owners<B: Backend>(db: Db)
                 .await?;
             inserted.push(account.id().to_string());
         }
-        let original = db.tables(&["users", "accounts", "sessions"]).await?;
+        let original = db.tables(&["user", "account", "session"]).await?;
         let _ = call(&auth, request("/list-accounts", None, ""), 401).await;
         let listed = call(&auth, request("/list-accounts", None, &cookie), 200).await;
         let listed = body(&listed);
@@ -95,10 +95,7 @@ async fn account_listing_and_unlinking_preserve_other_owners<B: Backend>(db: Db)
             401,
         )
         .await;
-        assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
-            original
-        );
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, original);
         let removed = call(
             &auth,
             request(
@@ -111,11 +108,14 @@ async fn account_listing_and_unlinking_preserve_other_owners<B: Backend>(db: Db)
         .await;
         assert_eq!(body(&removed)["status"], true);
         assert_eq!(
-            db.count_where("SELECT COUNT(*) FROM accounts WHERE id=$1", &[&inserted[0]])
-                .await?,
+            db.count_where(
+                "SELECT COUNT(*) FROM \"account\" WHERE id=$1",
+                &[&inserted[0]]
+            )
+            .await?,
             0
         );
-        let foreign_before = db.table("accounts").await?;
+        let foreign_before = db.table("account").await?;
         let credential = accounts
             .iter()
             .find(|account| account["providerId"] == "credential")
@@ -136,7 +136,7 @@ async fn account_listing_and_unlinking_preserve_other_owners<B: Backend>(db: Db)
             assert_eq!(body(&result)["status"], true);
             assert_eq!(
                 db.count_where(
-                    "SELECT COUNT(*) FROM accounts WHERE user_id=$1",
+                    "SELECT COUNT(*) FROM \"account\" WHERE \"userId\"=$1",
                     &[&owner_id]
                 )
                 .await?,
@@ -147,7 +147,7 @@ async fn account_listing_and_unlinking_preserve_other_owners<B: Backend>(db: Db)
                 body(&result)["message"],
                 "You can't unlink your last account"
             );
-            assert_eq!(db.table("accounts").await?, foreign_before);
+            assert_eq!(db.table("account").await?, foreign_before);
         }
         let foreign_accounts = call(
             &auth,
@@ -163,8 +163,8 @@ async fn account_listing_and_unlinking_preserve_other_owners<B: Backend>(db: Db)
                 .iter()
                 .any(|account| account["id"] == inserted[1])
         );
-        assert_eq!(db.table("users").await?, original[0]);
-        assert_eq!(db.table("sessions").await?, original[2]);
+        assert_eq!(db.table("user").await?, original[0]);
+        assert_eq!(db.table("session").await?, original[2]);
         B::close(connection).await?;
     }
     Ok(())
@@ -195,8 +195,8 @@ async fn session_listing_and_revocation_preserve_other_owners<B: Backend>(db: Db
     // An expired physical row must neither leak into the active listing nor
     // prevent revocation of the caller's remaining active sessions.
     db.set_timestamp(
-        "sessions",
-        "expires_at",
+        "session",
+        "expiresAt",
         ("token", &token(&peers[2])),
         chrono::Utc::now() - chrono::Duration::days(1),
     )
@@ -212,7 +212,7 @@ async fn session_listing_and_revocation_preserve_other_owners<B: Backend>(db: Db
         actual,
         BTreeSet::from([token(&owner), token(&peers[0]), token(&peers[1])])
     );
-    let initial = db.table("sessions").await?;
+    let initial = db.table("session").await?;
     for target in [token(&foreign), "unknown-session-token".into()] {
         let response = call(
             &auth,
@@ -221,7 +221,7 @@ async fn session_listing_and_revocation_preserve_other_owners<B: Backend>(db: Db
         )
         .await;
         assert_eq!(body(&response)["status"], true);
-        assert_eq!(db.table("sessions").await?, initial);
+        assert_eq!(db.table("session").await?, initial);
     }
     for route in [
         "/revoke-session",
@@ -234,7 +234,7 @@ async fn session_listing_and_revocation_preserve_other_owners<B: Backend>(db: Db
             401,
         )
         .await;
-        assert_eq!(db.table("sessions").await?, initial);
+        assert_eq!(db.table("session").await?, initial);
     }
     let _ = call(
         &auth,
@@ -248,7 +248,7 @@ async fn session_listing_and_revocation_preserve_other_owners<B: Backend>(db: Db
     .await;
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM sessions WHERE token=$1",
+            "SELECT COUNT(*) FROM \"session\" WHERE \"token\"=$1",
             &[&token(&peers[0])]
         )
         .await?,
@@ -274,7 +274,7 @@ async fn session_listing_and_revocation_preserve_other_owners<B: Backend>(db: Db
     .await;
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM sessions WHERE user_id=$1",
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
             &[body(&owner)["user"]["id"].as_str().unwrap()]
         )
         .await?,
@@ -282,7 +282,7 @@ async fn session_listing_and_revocation_preserve_other_owners<B: Backend>(db: Db
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM sessions WHERE token=$1",
+            "SELECT COUNT(*) FROM \"session\" WHERE \"token\"=$1",
             &[&token(&peers[2])]
         )
         .await?,
@@ -299,9 +299,9 @@ async fn session_listing_and_revocation_preserve_other_owners<B: Backend>(db: Db
     )
     .await;
     assert!(body(&call(&auth, request("/get-session", None, &cookie), 200).await).is_null());
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     assert_eq!(
-        db.text("SELECT token FROM sessions", &[]).await?,
+        db.text("SELECT \"token\" FROM \"session\"", &[]).await?,
         Some(token(&foreign))
     );
     authenticated(&auth, &cookies(&foreign), "session-foreign@example.test").await;

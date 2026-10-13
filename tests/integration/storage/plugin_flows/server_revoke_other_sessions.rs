@@ -45,20 +45,20 @@ async fn server_revoke_other_sessions_preserves_current_and_expired_authority<B:
     let token = |response: &AuthResponse| body(response)["token"].as_str().unwrap().to_owned();
     assert!(cookies(&peers[0]).contains("better-auth.session_data="));
     db.set_timestamp(
-        "sessions",
-        "expires_at",
+        "session",
+        "expiresAt",
         ("token", &token(&peers[1])),
         chrono::DateTime::from_timestamp(1_577_836_800, 0).unwrap(),
     )
     .await?;
     db.set_timestamp(
-        "sessions",
-        "expires_at",
+        "session",
+        "expiresAt",
         ("token", &token(&owner)),
         chrono::Utc::now() + chrono::Duration::hours(1),
     )
     .await?;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let missing = auth
         .dispatch_endpoint(endpoint()?, EndpointOptions::default())
         .await
@@ -76,7 +76,7 @@ async fn server_revoke_other_sessions_preserves_current_and_expired_authority<B:
         .await
         .unwrap_err();
     assert_eq!(guest.error.status_code(), 401);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let revoked = auth.dispatch_endpoint(endpoint()?, options(&owner)).await?;
     assert!(revoked.decode()?.status);
     assert_eq!(
@@ -87,7 +87,7 @@ async fn server_revoke_other_sessions_preserves_current_and_expired_authority<B:
         Some("logical")
     );
     assert!(revoked.headers().get_all("set-cookie").next().is_none());
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     assert_eq!(after[..2], before[..2]);
     assert!(auth.store().get_session(&token(&peers[0])).await?.is_none());
     for retained in [&owner, &peers[1], &foreign] {
@@ -104,11 +104,11 @@ async fn server_revoke_other_sessions_preserves_current_and_expired_authority<B:
         .await
         .unwrap_err();
     assert_eq!(stale.error.status_code(), 401);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, after);
     let repeat = auth.dispatch_endpoint(endpoint()?, options(&owner)).await?;
     assert!(repeat.decode()?.status);
     assert!(repeat.headers().get_all("set-cookie").next().is_none());
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, after);
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     assert_eq!(
         observer

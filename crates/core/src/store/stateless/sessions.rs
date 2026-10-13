@@ -44,7 +44,6 @@ impl SessionStore<StatelessSchema> for StatelessStore {
                 .into_iter()
                 .map(|(key, value)| value.to_json_value().map(|value| (key, value)))
                 .collect::<Result<_, _>>()?,
-            active: true,
             omitted_fields: std::collections::BTreeSet::default(),
         })
     }

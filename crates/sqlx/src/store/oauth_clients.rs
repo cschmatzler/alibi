@@ -14,16 +14,30 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         let mut active = ActiveRow::new();
         active.set(
             "id",
-            self.generated_id(self.exec(), "oauthClient", "oauth_client", "id")
+            self.generated_id(self.exec(), "oauthClient", "oauthClient", "id")
                 .await?
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
         );
-        active.set("client_id", data.client_id);
-        active.set("user_id", data.user_id);
-        active.set("client_secret", data.client_secret);
-        active.set("metadata", serde_json::to_string(&data.metadata)?);
-        active.set("created_at", data.created_at);
-        active.set("updated_at", data.created_at);
+        active.set("clientId", data.client_id);
+        active.set("userId", data.user_id);
+        active.set("clientSecret", data.client_secret);
+        let fields = Model::columns_from_metadata(data.metadata)?.into_active();
+        for (column, value) in fields.present() {
+            if ![
+                "id",
+                "clientId",
+                "userId",
+                "clientSecret",
+                "createdAt",
+                "updatedAt",
+            ]
+            .contains(&column)
+            {
+                active.set(column, value.clone());
+            }
+        }
+        active.set("createdAt", data.created_at);
+        active.set("updatedAt", data.created_at);
         model::insert::<Model>(self.exec(), &active)
             .await?
             .try_into()
@@ -31,7 +45,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
     async fn get_oauth_client(&self, client_id: &str) -> AuthResult<Option<OAuthClient>> {
         let mut sql = model::select_model::<Model>(self.exec());
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "client_id", " = ", client_id);
+        sql.compare(Model::TABLE, "clientId", " = ", client_id);
         model::limit_one(&mut sql);
         self.exec()
             .fetch_optional::<Model>(sql)
@@ -42,7 +56,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
     async fn list_oauth_clients_by_user(&self, user_id: &str) -> AuthResult<Vec<OAuthClient>> {
         let mut sql = model::select_model::<Model>(self.exec());
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "user_id", " = ", user_id);
+        sql.compare(Model::TABLE, "userId", " = ", user_id);
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
         self.exec()
@@ -56,7 +70,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
         sql.ident(Model::TABLE);
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "client_id", " = ", client_id);
+        sql.compare(Model::TABLE, "clientId", " = ", client_id);
         self.exec().execute(sql).await.map(|_| ())
     }
     async fn update_oauth_client_secret(
@@ -70,8 +84,8 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         };
         let mut active = ActiveRow::new();
         active.set("id", client.id);
-        active.set("client_secret", Some(secret));
-        active.set("updated_at", updated_at);
+        active.set("clientSecret", Some(secret));
+        active.set("updatedAt", updated_at);
         model::update::<Model>(self.exec(), &active)
             .await?
             .map(TryInto::try_into)
@@ -88,8 +102,22 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         };
         let mut active = ActiveRow::new();
         active.set("id", client.id);
-        active.set("metadata", serde_json::to_string(&metadata)?);
-        active.set("updated_at", updated_at);
+        let fields = Model::columns_from_metadata(metadata)?.into_active();
+        for (column, value) in fields.present() {
+            if ![
+                "id",
+                "clientId",
+                "userId",
+                "clientSecret",
+                "createdAt",
+                "updatedAt",
+            ]
+            .contains(&column)
+            {
+                active.set(column, value.clone());
+            }
+        }
+        active.set("updatedAt", updated_at);
         model::update::<Model>(self.exec(), &active)
             .await?
             .map(TryInto::try_into)

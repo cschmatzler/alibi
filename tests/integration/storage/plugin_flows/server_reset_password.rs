@@ -44,7 +44,7 @@ async fn server_reset_password_consumes_owned_proof_without_session<B: Backend>(
     }
     let proofs = delivery.0.lock().unwrap().clone();
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for (input, query) in [
         (json!({}), json!({})),
@@ -83,20 +83,20 @@ async fn server_reset_password_consumes_owned_proof_without_session<B: Backend>(
         assert_eq!(rejected.error.status_code(), 400);
     }
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
-    let users = db.table("users").await?;
-    let sessions = db.table("sessions").await?;
+    let users = db.table("user").await?;
+    let sessions = db.table("session").await?;
     let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
-    let proof_rows: Vec<Value> = serde_json::from_str(&db.table("verifications").await?)?;
+    let proof_rows: Vec<Value> = serde_json::from_str(&db.table("verification").await?)?;
     let foreign_proof: Vec<_> = proof_rows
         .into_iter()
         .filter(|row| row["identifier"] == format!("reset-password:{}", proofs[1]))
         .collect();
     assert_eq!(foreign_proof.len(), 1);
-    let accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    let accounts: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
     let reset = auth.dispatch_endpoint(PasswordManagementPlugin::reset_password_endpoint(&ResetPasswordRequest { new_password: "logical-replacement-205".into(), token: Some(proofs[0].clone()) })?
         .with_body(&json!({"newPassword":"logical-replacement-205","token":proofs[0],"userId":foreign_id}))?
         .with_query(&json!({"token":proofs[1]}))?, EndpointOptions::default()).await?;
@@ -109,23 +109,23 @@ async fn server_reset_password_consumes_owned_proof_without_session<B: Backend>(
         Some("logical")
     );
     assert!(reset.headers().get_all("set-cookie").next().is_none());
-    assert_eq!(db.table("users").await?, users);
-    assert_eq!(db.table("sessions").await?, sessions);
-    let after_accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    assert_eq!(db.table("user").await?, users);
+    assert_eq!(db.table("session").await?, sessions);
+    let after_accounts: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
     assert_eq!(
         after_accounts
             .into_iter()
-            .filter(|r| r["user_id"] == foreign_id)
+            .filter(|r| r["userId"] == foreign_id)
             .collect::<Vec<_>>(),
         accounts
             .into_iter()
-            .filter(|r| r["user_id"] == foreign_id)
+            .filter(|r| r["userId"] == foreign_id)
             .collect::<Vec<_>>()
     );
-    let remaining: Vec<Value> = serde_json::from_str(&db.table("verifications").await?)?;
+    let remaining: Vec<Value> = serde_json::from_str(&db.table("verification").await?)?;
     assert_eq!(remaining, foreign_proof);
     let after = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let replay = auth
         .dispatch_endpoint(
@@ -137,7 +137,7 @@ async fn server_reset_password_consumes_owned_proof_without_session<B: Backend>(
         .unwrap_err();
     assert_eq!(replay.error.status_code(), 400);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         after
     );
@@ -164,7 +164,7 @@ async fn server_reset_password_consumes_owned_proof_without_session<B: Backend>(
         )
         .await?;
     assert!(fallback.decode()?.status);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     assert!(observer.0.lock().unwrap().iter().all(Option::is_none));
     B::close(connection).await
 }

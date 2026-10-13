@@ -161,10 +161,6 @@ where
             fields.apply_adapter_transforms_async().await?;
             let Some(current) = <S::Session as SeaOrmSessionModel>::Entity::find()
                 .filter(S::Session::token_column().eq(session.token()))
-                .filter(
-                    sea_orm::Condition::all()
-                        .add_option(S::Session::active_column().map(|column| column.eq(true))),
-                )
                 .one(db)
                 .await
                 .map_err(map_db_err)?
@@ -262,14 +258,8 @@ where
             }
         }
         fields.apply_adapter_transforms_async().await?;
-        let mut query = <S::Session as SeaOrmSessionModel>::Entity::find()
+        let query = <S::Session as SeaOrmSessionModel>::Entity::find()
             .filter(S::Session::token_column().eq(token));
-        if expires_at.is_some() {
-            query = query.filter(
-                sea_orm::Condition::all()
-                    .add_option(S::Session::active_column().map(|column| column.eq(true))),
-            );
-        }
         let Some(model) = query
             .one(self.scoped_connection())
             .await
@@ -319,10 +309,6 @@ where
     ) -> AuthResult<S::Session> {
         let model = <S::Session as SeaOrmSessionModel>::Entity::find()
             .filter(S::Session::token_column().eq(token))
-            .filter(
-                sea_orm::Condition::all()
-                    .add_option(S::Session::active_column().map(|column| column.eq(true))),
-            )
             .one(connection)
             .await
             .map_err(map_db_err)?
@@ -514,9 +500,6 @@ where
     async fn get_session(&self, token: &str) -> AuthResult<Option<S::Session>> {
         <S::Session as SeaOrmSessionModel>::Entity::find()
             .filter(<S::Session as SeaOrmSessionModel>::token_column().eq(token))
-            .filter(sea_orm::Condition::all().add_option(
-                <S::Session as SeaOrmSessionModel>::active_column().map(|column| column.eq(true)),
-            ))
             .one(self.scoped_connection())
             .await
             .map_err(map_db_err)
@@ -527,9 +510,6 @@ where
             .filter(
                 <S::Session as SeaOrmSessionModel>::token_column().is_in(tokens.iter().cloned()),
             )
-            .filter(sea_orm::Condition::all().add_option(
-                <S::Session as SeaOrmSessionModel>::active_column().map(|column| column.eq(true)),
-            ))
             .limit(self.config().advanced.database.default_find_many_limit as u64)
             .all(self.scoped_connection())
             .await
@@ -540,9 +520,6 @@ where
         let user_id = <S::Session as SeaOrmSessionModel>::parse_user_id(user_id)?;
         <S::Session as SeaOrmSessionModel>::Entity::find()
             .filter(<S::Session as SeaOrmSessionModel>::user_id_column().eq(user_id))
-            .filter(sea_orm::Condition::all().add_option(
-                <S::Session as SeaOrmSessionModel>::active_column().map(|column| column.eq(true)),
-            ))
             .order_by_asc(<S::Session as SeaOrmSessionModel>::created_at_column())
             .all(self.scoped_connection())
             .await
@@ -627,11 +604,10 @@ where
     async fn delete_expired_sessions(&self) -> AuthResult<usize> {
         <S::Session as SeaOrmSessionModel>::Entity::delete_many()
             .filter(
-                sea_orm::Condition::any()
-                    .add(<S::Session as SeaOrmSessionModel>::expires_at_column().lt(
-                        crate::schema::timestamp_value(S::Session::expires_at_column(), Utc::now()),
-                    ))
-                    .add_option(S::Session::active_column().map(|column| column.eq(false))),
+                S::Session::expires_at_column().lt(crate::schema::timestamp_value(
+                    S::Session::expires_at_column(),
+                    Utc::now(),
+                )),
             )
             .exec(self.scoped_connection())
             .await
@@ -649,9 +625,6 @@ where
     ) -> AuthResult<S::Session> {
         let Some(model) = <S::Session as SeaOrmSessionModel>::Entity::find()
             .filter(<S::Session as SeaOrmSessionModel>::token_column().eq(token))
-            .filter(sea_orm::Condition::all().add_option(
-                <S::Session as SeaOrmSessionModel>::active_column().map(|column| column.eq(true)),
-            ))
             .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?

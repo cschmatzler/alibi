@@ -163,7 +163,7 @@ mod tests {
         let (status_2, body_2) = send_request(
             &auth,
             post_json_with_auth(
-                "/passkey/delete-passkey",
+                "/\"passkey\"/delete-\"passkey\"",
                 serde_json::json!({ "id": "non-existent-id" }),
                 &token,
             ),
@@ -182,7 +182,7 @@ mod tests {
         let (status_3, body_3) = send_request(
             &auth,
             post_json_with_auth(
-                "/passkey/update-passkey",
+                "/\"passkey\"/update-\"passkey\"",
                 serde_json::json!({
                     "id": "non-existent-id",
                     "name": "My Passkey"

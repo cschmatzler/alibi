@@ -46,7 +46,7 @@ async fn last_login_consent_controls_tracking_cookie_without_changing_authentica
         let issued = signup(&auth, "last-login@example.test").await;
         authenticated(&auth, &cookies(&issued), "last-login@example.test").await;
         assert_eq!(
-            db.text("SELECT last_login_method FROM users", &[])
+            db.text("SELECT \"lastLoginMethod\" FROM \"user\"", &[])
                 .await?
                 .as_deref(),
             Some("email")
@@ -75,7 +75,7 @@ async fn last_login_consent_controls_tracking_cookie_without_changing_authentica
                 .get_all("set-cookie")
                 .any(|cookie| cookie.starts_with("better-auth.last_used_login_method="))
         );
-        assert_eq!(db.count("sessions").await?, 1);
+        assert_eq!(db.count("session").await?, 1);
         B::close(connection).await?;
     }
     Ok(())
@@ -173,7 +173,7 @@ async fn multiple_sessions_require_delivered_device_proofs<B: Backend>(db: Db) -
     retain(&jar, &revoked);
     authenticated(&auth, &browser_cookie(&jar), "bob-device@example.test").await;
     authenticated(&auth, &cookies(&foreign), "foreign-device@example.test").await;
-    assert_eq!(db.count("sessions").await?, 2);
+    assert_eq!(db.count("session").await?, 2);
     assert!(
         auth.store()
             .get_session(body(&alice)["token"].as_str().unwrap())
@@ -224,7 +224,9 @@ async fn custom_session_projection_cannot_replace_bearer_authority<B: Backend>(
     assert_eq!(body(&listed).as_array().unwrap().len(), 1);
     assert_eq!(body(&listed)[0]["userId"], body(&issued)["user"]["id"]);
     assert_eq!(
-        db.text("SELECT email FROM users", &[]).await?.as_deref(),
+        db.text("SELECT \"email\" FROM \"user\"", &[])
+            .await?
+            .as_deref(),
         Some("authority@example.test")
     );
     let anonymous = call(&auth, request("/get-session", None, ""), 200).await;
@@ -277,14 +279,17 @@ async fn last_login_consent_error_keeps_database_tracking_and_issued_authority<B
         );
         authenticated(&auth, &cookies(&response), "owner@example.test").await;
         assert_eq!(
-            db.text("SELECT last_login_method FROM users WHERE id=$1", &[&id])
-                .await?
-                .as_deref(),
+            db.text(
+                "SELECT \"lastLoginMethod\" FROM \"user\" WHERE id=$1",
+                &[&id]
+            )
+            .await?
+            .as_deref(),
             Some("email")
         );
     }
-    assert_eq!(db.count("sessions").await?, 2);
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    assert_eq!(db.count("session").await?, 2);
+    let before = db.tables(&["user", "account", "session"]).await?;
     _ = call(
         &auth,
         request(
@@ -295,6 +300,6 @@ async fn last_login_consent_error_keeps_database_tracking_and_issued_authority<B
         401,
     )
     .await;
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     B::close(connection).await
 }

@@ -104,7 +104,6 @@ mod tests {
             .unwrap()
             .into_active_model();
         org.created_at = Set(source);
-        org.updated_at = Set(source);
         drop(org.update(&database).await.unwrap());
         let mut owner = member::Entity::find_by_id(member_id)
             .one(&database)

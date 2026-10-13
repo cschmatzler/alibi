@@ -106,7 +106,7 @@ pub struct PasskeyView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transports: Option<String>,
     #[serde(rename = "createdAt")]
-    pub created_at: String,
+    pub created_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aaguid: Option<String>,
 }
@@ -125,7 +125,7 @@ impl<T: AuthPasskey> From<&T> for PasskeyView {
             transports: pk.transports().map(str::to_owned),
             created_at: pk
                 .created_at()
-                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                .map(|time| time.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
             aaguid: pk.aaguid().map(str::to_owned),
         }
     }

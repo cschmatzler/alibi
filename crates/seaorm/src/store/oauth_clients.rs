@@ -15,22 +15,25 @@ use sea_orm::{
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
     async fn create_oauth_client(&self, data: CreateOAuthClient) -> AuthResult<OAuthClient> {
-        oauth_client::ActiveModel {
+        let fields = oauth_client::Model::columns_from_metadata(data.metadata)?;
+        let mut active = oauth_client::ActiveModel {
             id: Set(self
-                .generated_id(&self.db, "oauthClient", "oauth_client", "id")
+                .generated_id(&self.db, "oauthClient", "oauthClient", "id")
                 .await?
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
             client_id: Set(data.client_id),
             user_id: Set(data.user_id),
             client_secret: Set(data.client_secret),
-            metadata: Set(serde_json::to_string(&data.metadata)?),
-            created_at: Set(data.created_at),
-            updated_at: Set(data.created_at),
-        }
-        .insert(self.scoped_connection())
-        .await
-        .map_err(map_db_err)?
-        .try_into()
+            created_at: Set(Some(data.created_at)),
+            updated_at: Set(Some(data.created_at)),
+            ..Default::default()
+        };
+        fields.stage_metadata(&mut active);
+        active
+            .insert(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .try_into()
     }
     async fn get_oauth_client(&self, client_id: &str) -> AuthResult<Option<OAuthClient>> {
         Entity::find()
@@ -79,7 +82,7 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
         };
         let mut active = model.into_active_model();
         active.client_secret = Set(Some(secret));
-        active.updated_at = Set(updated_at);
+        active.updated_at = Set(Some(updated_at));
         active
             .update(self.scoped_connection())
             .await
@@ -102,8 +105,8 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             return Ok(None);
         };
         let mut active = model.into_active_model();
-        active.metadata = Set(serde_json::to_string(&metadata)?);
-        active.updated_at = Set(updated_at);
+        oauth_client::Model::columns_from_metadata(metadata)?.stage_metadata(&mut active);
+        active.updated_at = Set(Some(updated_at));
         active
             .update(self.scoped_connection())
             .await

@@ -62,7 +62,7 @@ async fn server_change_email_delivers_and_redeems_only_authenticated_owner_chall
     let foreign = signup(&auth, "logical-mailbox-foreign@example.test").await;
     let owner_id = body(&owner)["user"]["id"].clone();
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for malformed in [
         json!(null),
@@ -112,7 +112,7 @@ async fn server_change_email_delivers_and_redeems_only_authenticated_owner_chall
         owner_id.as_str()
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -155,24 +155,23 @@ async fn server_change_email_delivers_and_redeems_only_authenticated_owner_chall
     assert_eq!(verified.email.as_deref(), Some(new));
     assert!(verified.email_verified);
     let original: Vec<Value> = serde_json::from_str(&before[0])?;
-    let actual: Vec<Value> = serde_json::from_str(&db.table("users").await?)?;
+    let actual: Vec<Value> = serde_json::from_str(&db.table("user").await?)?;
     assert_eq!(actual.len(), original.len());
     for (original, actual) in original.iter().zip(&actual) {
         let mut expected = original.clone();
         if actual["id"] == owner_id {
             expected["email"] = json!(new);
-            expected["email_verified"] = json!(1);
-            expected["updated_at"] = actual["updated_at"].clone();
+            expected["emailVerified"] = json!(1);
+            expected["updatedAt"] = actual["updatedAt"].clone();
         }
         assert_eq!(actual, &expected);
     }
     assert_eq!(
-        db.tables(&["accounts", "sessions", "verifications"])
-            .await?,
+        db.tables(&["account", "session", "verification"]).await?,
         before[1..]
     );
     let after = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let replay = auth
         .dispatch_endpoint(
@@ -189,7 +188,7 @@ async fn server_change_email_delivers_and_redeems_only_authenticated_owner_chall
     assert_eq!(replay.error.status_code(), 401);
     assert!(replay.error.to_string().contains("User not found"));
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         after
     );

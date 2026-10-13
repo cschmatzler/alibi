@@ -7,6 +7,10 @@
 extern crate self as alibi_sqlx;
 
 mod error;
+mod integer;
+pub use integer::Integer;
+mod number;
+pub use number::Number;
 
 pub mod hooks;
 

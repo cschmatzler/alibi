@@ -107,13 +107,7 @@ async fn two_factor_input_and_enrollment_matrix<B: Backend>(db: Db) -> TestResul
     let mut trace = Trace::default();
     let owner = cookies(&signup(&auth, "matrix@example.test").await);
     let before_uri = db
-        .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "two_factor",
-            "verifications",
-        ])
+        .tables(&["user", "account", "session", "twoFactor", "verification"])
         .await?;
     let missing_uri = Box::pin(auth.dispatch_endpoint(
         TwoFactorPlugin::get_totp_uri_endpoint(alibi::plugins::two_factor::GetTotpUriInput {
@@ -132,14 +126,8 @@ async fn two_factor_input_and_enrollment_matrix<B: Backend>(db: Db) -> TestResul
         Some("TOTP_NOT_ENABLED")
     );
     assert_eq!(
-        db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "two_factor",
-            "verifications"
-        ])
-        .await?,
+        db.tables(&["user", "account", "session", "twoFactor", "verification"])
+            .await?,
         before_uri
     );
     for input in [
@@ -165,14 +153,8 @@ async fn two_factor_input_and_enrollment_matrix<B: Backend>(db: Db) -> TestResul
             Some("VALIDATION_ERROR")
         );
         assert_eq!(
-            db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "two_factor",
-                "verifications"
-            ])
-            .await?,
+            db.tables(&["user", "account", "session", "twoFactor", "verification"])
+                .await?,
             before_uri
         );
     }
@@ -232,7 +214,7 @@ async fn two_factor_input_and_enrollment_matrix<B: Backend>(db: Db) -> TestResul
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM users WHERE two_factor_enabled = true",
+            "SELECT COUNT(*) FROM \"user\" WHERE \"twoFactorEnabled\" = true",
             &[]
         )
         .await?,
@@ -251,7 +233,7 @@ async fn two_factor_input_and_enrollment_matrix<B: Backend>(db: Db) -> TestResul
     let (second, second_body, _) = enroll(&auth, &owner).await;
     assert_ne!(first_body["totpURI"], second_body["totpURI"]);
     assert_ne!(first_body["backupCodes"], second_body["backupCodes"]);
-    assert_eq!(db.count("two_factor").await?, 1);
+    assert_eq!(db.count("twoFactor").await?, 1);
     let stale = first.generate_current().to_string();
     let wrong = if stale == second.generate_current().to_string() {
         "x"
@@ -316,13 +298,13 @@ async fn two_factor_stored_backup_code_damage<B: Backend>(db: Db) -> TestResult 
     let (_, enrolled, owner) = enroll(&auth, &owner).await;
     let user = db
         .text(
-            "SELECT id FROM users WHERE email = 'damage@example.test'",
+            "SELECT id FROM \"user\" WHERE \"email\" = 'damage@example.test'",
             &[],
         )
         .await?
         .unwrap();
     let stored = db
-        .text("SELECT backup_codes FROM two_factor", &[])
+        .text("SELECT \"backupCodes\" FROM \"twoFactor\"", &[])
         .await?
         .unwrap();
     assert_eq!(
@@ -339,7 +321,7 @@ async fn two_factor_stored_backup_code_damage<B: Backend>(db: Db) -> TestResult 
         ("dated codes", r#"["2020-01-01T00:00:00Z","12345-67890"]"#),
     ] {
         _ = db
-            .execute("UPDATE two_factor SET backup_codes = $1", &[damaged])
+            .execute("UPDATE \"twoFactor\" SET \"backupCodes\" = $1", &[damaged])
             .await?;
         let pending = call(
             &auth,
@@ -378,16 +360,16 @@ async fn two_factor_stored_backup_code_damage<B: Backend>(db: Db) -> TestResult 
             }),
         );
     }
-    trace.value("sessions", json!(db.count("sessions").await?));
+    trace.value("sessions", json!(db.count("session").await?));
 
     _ = db
         .execute(
-            "UPDATE two_factor SET backup_codes = $1",
+            "UPDATE \"twoFactor\" SET \"backupCodes\" = $1",
             &[r#"["11111-22222","33333-44444"]"#],
         )
         .await?;
     let pending = cookies(&sign_in(&auth, "damage@example.test", json!({}), "").await);
-    let before = db.table("sessions").await?;
+    let before = db.table("session").await?;
     let skipped = call(
         &auth,
         request(
@@ -399,7 +381,7 @@ async fn two_factor_stored_backup_code_damage<B: Backend>(db: Db) -> TestResult 
     )
     .await;
     assert!(body(&skipped).get("token").is_none_or(Value::is_null));
-    assert_eq!(db.table("sessions").await?, before);
+    assert_eq!(db.table("session").await?, before);
     let session = call(
         &auth,
         request(
@@ -411,9 +393,9 @@ async fn two_factor_stored_backup_code_damage<B: Backend>(db: Db) -> TestResult 
     )
     .await;
     assert!(body(&session)["token"].as_str().is_some());
-    assert_eq!(db.table("sessions").await?, before);
+    assert_eq!(db.table("session").await?, before);
     assert_eq!(
-        db.text("SELECT backup_codes FROM two_factor", &[])
+        db.text("SELECT \"backupCodes\" FROM \"twoFactor\"", &[])
             .await?
             .as_deref(),
         Some("[]")
@@ -433,12 +415,12 @@ async fn two_factor_forged_trust_proofs<B: Backend>(db: Db) -> TestResult {
     let totp = enabled_user(&auth, email).await;
     let other = enabled_user(&auth, "other@example.test").await;
     let user = db
-        .text("SELECT id FROM users WHERE email = $1", &[email])
+        .text("SELECT id FROM \"user\" WHERE \"email\" = $1", &[email])
         .await?
         .unwrap();
     let other_user = db
         .text(
-            "SELECT id FROM users WHERE email = 'other@example.test'",
+            "SELECT id FROM \"user\" WHERE \"email\" = 'other@example.test'",
             &[],
         )
         .await?
@@ -481,7 +463,7 @@ async fn two_factor_forged_trust_proofs<B: Backend>(db: Db) -> TestResult {
     let real = trusted_cookie().await?;
     _ = db
         .execute(
-            "DELETE FROM verifications WHERE identifier LIKE 'trust-device-%'",
+            "DELETE FROM \"verification\" WHERE \"identifier\" LIKE 'trust-device-%'",
             &[],
         )
         .await?;
@@ -493,7 +475,7 @@ async fn two_factor_forged_trust_proofs<B: Backend>(db: Db) -> TestResult {
     let real = trusted_cookie().await?;
     _ = db
         .execute(
-            "UPDATE verifications SET value = $1 WHERE identifier LIKE 'trust-device-%'",
+            "UPDATE \"verification\" SET \"value\" = $1 WHERE \"identifier\" LIKE 'trust-device-%'",
             &[other_user.as_str()],
         )
         .await?;
@@ -503,7 +485,7 @@ async fn two_factor_forged_trust_proofs<B: Backend>(db: Db) -> TestResult {
     );
     _ = db
         .execute(
-            "DELETE FROM verifications WHERE identifier LIKE 'trust-device-%'",
+            "DELETE FROM \"verification\" WHERE \"identifier\" LIKE 'trust-device-%'",
             &[],
         )
         .await?;
@@ -511,14 +493,14 @@ async fn two_factor_forged_trust_proofs<B: Backend>(db: Db) -> TestResult {
     let real = trusted_cookie().await?;
     let identifier = db
         .text(
-            "SELECT identifier FROM verifications WHERE identifier LIKE 'trust-device-%' AND value = $1",
+            "SELECT \"identifier\" FROM \"verification\" WHERE \"identifier\" LIKE 'trust-device-%' AND \"value\" = $1",
             &[user.as_str()],
         )
         .await?
         .unwrap();
     db.set_timestamp(
-        "verifications",
-        "expires_at",
+        "verification",
+        "expiresAt",
         ("identifier", &identifier),
         chrono::Utc::now() - chrono::Duration::seconds(5),
     )
@@ -546,13 +528,7 @@ async fn two_factor_otp_budget_and_session_choices<B: Backend>(db: Db) -> TestRe
     let _totp = enabled_user(&auth, email).await;
     let pending = cookies(&sign_in(&auth, email, json!({}), "").await);
     let before_send = db
-        .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "two_factor",
-            "verifications",
-        ])
+        .tables(&["user", "account", "session", "twoFactor", "verification"])
         .await?;
     for (input, cookie, status, code) in [
         (
@@ -584,14 +560,8 @@ async fn two_factor_otp_budget_and_session_choices<B: Backend>(db: Db) -> TestRe
         assert_eq!(error.error.status_code(), status);
         assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
         assert_eq!(
-            db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "two_factor",
-                "verifications"
-            ])
-            .await?,
+            db.tables(&["user", "account", "session", "twoFactor", "verification"])
+                .await?,
             before_send
         );
         assert!(outbox.0.lock().unwrap().is_empty());
@@ -610,7 +580,7 @@ async fn two_factor_otp_budget_and_session_choices<B: Backend>(db: Db) -> TestRe
     assert!(sent.decode()?.status);
     assert!(sent.headers().get_all("set-cookie").next().is_none());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "two_factor"])
+        db.tables(&["user", "account", "session", "twoFactor"])
             .await?,
         before_send[..4]
     );
@@ -656,7 +626,7 @@ async fn two_factor_otp_budget_and_session_choices<B: Backend>(db: Db) -> TestRe
         exhausted.error.error_payload().1.as_deref(),
         Some("TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE")
     );
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
 
     let remembered = sign_in(&auth, email, json!({"rememberMe":false}), "").await;
     let pending = cookies(&remembered);
@@ -672,13 +642,7 @@ async fn two_factor_otp_budget_and_session_choices<B: Backend>(db: Db) -> TestRe
     assert!(sent.decode()?.status);
     let delivered = outbox.0.lock().unwrap().pop().unwrap();
     let before_verify = db
-        .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "two_factor",
-            "verifications",
-        ])
+        .tables(&["user", "account", "session", "twoFactor", "verification"])
         .await?;
     for (input, cookie, status, code) in [
         (json!({}), Some(pending.clone()), 400, "VALIDATION_ERROR"),
@@ -716,14 +680,8 @@ async fn two_factor_otp_budget_and_session_choices<B: Backend>(db: Db) -> TestRe
         assert_eq!(error.error.status_code(), status);
         assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
         assert_eq!(
-            db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "two_factor",
-                "verifications"
-            ])
-            .await?,
+            db.tables(&["user", "account", "session", "twoFactor", "verification"])
+                .await?,
             before_verify
         );
     }
@@ -748,7 +706,7 @@ async fn two_factor_otp_budget_and_session_choices<B: Backend>(db: Db) -> TestRe
     let token = body(&done)["token"].as_str().unwrap().to_owned();
     let expires = db
         .text(
-            "SELECT CAST(expires_at AS TEXT) FROM sessions WHERE token = $1",
+            "SELECT CAST(\"expiresAt\" AS TEXT) FROM \"session\" WHERE \"token\" = $1",
             &[&token],
         )
         .await?
@@ -757,13 +715,7 @@ async fn two_factor_otp_budget_and_session_choices<B: Backend>(db: Db) -> TestRe
     let active = call(&auth, request("/get-session", None, &cookies(&done)), 200).await;
     assert_eq!(body(&active)["session"]["token"], token);
     let before_replay = db
-        .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "two_factor",
-            "verifications",
-        ])
+        .tables(&["user", "account", "session", "twoFactor", "verification"])
         .await?;
     let replay = Box::pin(auth.dispatch_endpoint(
         TwoFactorPlugin::verify_two_factor_otp_endpoint(
@@ -785,14 +737,8 @@ async fn two_factor_otp_budget_and_session_choices<B: Backend>(db: Db) -> TestRe
         Some("INVALID_TWO_FACTOR_COOKIE")
     );
     assert_eq!(
-        db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "two_factor",
-            "verifications"
-        ])
-        .await?,
+        db.tables(&["user", "account", "session", "twoFactor", "verification"])
+            .await?,
         before_replay
     );
     let plain = call(
@@ -892,10 +838,10 @@ async fn two_factor_numeric_options_and_damaged_factor<B: Backend>(db: Db) -> Te
         trace.response(&format!("{label}: enable"), &enable);
         if label != "unbounded backup codes" {
             _ = db
-                .execute("UPDATE users SET two_factor_enabled = true", &[])
+                .execute("UPDATE \"user\" SET \"twoFactorEnabled\" = true", &[])
                 .await?;
             _ = db
-                .execute("UPDATE two_factor SET verified = false", &[])
+                .execute("UPDATE \"twoFactor\" SET \"verified\" = false", &[])
                 .await?;
             let pending = cookies(&sign_in(&auth, "numeric@example.test", json!({}), "").await);
             for path in [
@@ -911,7 +857,7 @@ async fn two_factor_numeric_options_and_damaged_factor<B: Backend>(db: Db) -> Te
             }
             _ = db
                 .execute(
-                    "UPDATE two_factor SET verified = true, secret = 'damaged'",
+                    "UPDATE \"twoFactor\" SET \"verified\" = true, \"secret\" = 'damaged'",
                     &[],
                 )
                 .await?;
@@ -958,20 +904,14 @@ async fn two_factor_nonpositive_otp_generation_preserves_admission_and_authority
         assert_eq!(body(&guest)["code"], "INVALID_TWO_FACTOR_COOKIE");
         assert!(guest.headers.get_all("set-cookie").next().is_none());
         assert!(outbox.0.lock().unwrap().is_empty());
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
         let owner = signup(&auth, "nonpositive-otp-owner@example.test").await;
         let cookie = cookies(&owner);
         let before = db
-            .tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
-                "two_factor",
-            ])
+            .tables(&["user", "account", "session", "verification", "twoFactor"])
             .await?;
-        assert_eq!(db.count("two_factor").await?, 0);
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("twoFactor").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
         let malformed = call(
             &auth,
             request(
@@ -986,14 +926,8 @@ async fn two_factor_nonpositive_otp_generation_preserves_admission_and_authority
         assert!(malformed.headers.get_all("set-cookie").next().is_none());
         assert!(outbox.0.lock().unwrap().is_empty());
         assert_eq!(
-            db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
-                "two_factor"
-            ])
-            .await?,
+            db.tables(&["user", "account", "session", "verification", "twoFactor"])
+                .await?,
             before
         );
         let failed = call(
@@ -1006,14 +940,8 @@ async fn two_factor_nonpositive_otp_generation_preserves_admission_and_authority
         assert!(failed.headers.get_all("set-cookie").next().is_none());
         assert!(outbox.0.lock().unwrap().is_empty());
         assert_eq!(
-            db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
-                "two_factor"
-            ])
-            .await?,
+            db.tables(&["user", "account", "session", "verification", "twoFactor"])
+                .await?,
             before
         );
         let current = call(&auth, request("/get-session", None, &cookie), 200).await;
@@ -1021,14 +949,8 @@ async fn two_factor_nonpositive_otp_generation_preserves_admission_and_authority
         assert_eq!(body(&current)["user"]["twoFactorEnabled"], false);
         assert_eq!(body(&current)["session"]["token"], body(&owner)["token"]);
         assert_eq!(
-            db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
-                "two_factor"
-            ])
-            .await?,
+            db.tables(&["user", "account", "session", "verification", "twoFactor"])
+                .await?,
             before
         );
         B::close(connection).await?;
@@ -1064,17 +986,17 @@ async fn two_factor_otp_resends_are_consumed_once_across_real_requests<B: Backen
     let cookie = cookies(&enabled);
     let current = body(&call(&auth, request("/get-session", None, &cookie), 200).await);
     let token = current["session"]["token"].as_str().unwrap().to_owned();
-    assert_eq!(db.count("two_factor").await?, 0);
+    assert_eq!(db.count("twoFactor").await?, 0);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM sessions WHERE user_id=$1",
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
             &[&owner_id]
         )
         .await?,
         1
     );
     let stable = db
-        .tables(&["users", "accounts", "sessions", "two_factor"])
+        .tables(&["user", "account", "session", "twoFactor"])
         .await?;
     _ = call(
         &auth,
@@ -1082,7 +1004,7 @@ async fn two_factor_otp_resends_are_consumed_once_across_real_requests<B: Backen
         200,
     )
     .await;
-    let first: Vec<Value> = serde_json::from_str(&db.table("verifications").await?)?;
+    let first: Vec<Value> = serde_json::from_str(&db.table("verification").await?)?;
     assert_eq!(first.len(), 1);
     let identifier = first[0]["identifier"].as_str().unwrap().to_owned();
     _ = call(
@@ -1091,7 +1013,7 @@ async fn two_factor_otp_resends_are_consumed_once_across_real_requests<B: Backen
         200,
     )
     .await;
-    let generations: Vec<Value> = serde_json::from_str(&db.table("verifications").await?)?;
+    let generations: Vec<Value> = serde_json::from_str(&db.table("verification").await?)?;
     assert_eq!(generations.len(), 2);
     assert!(generations.contains(&first[0]));
     assert!(
@@ -1119,15 +1041,15 @@ async fn two_factor_otp_resends_are_consumed_once_across_real_requests<B: Backen
     assert_eq!(body(&responses[1])["code"], "OTP_HAS_EXPIRED");
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+            "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
             &[&identifier]
         )
         .await?,
         0
     );
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "two_factor"])
+        db.tables(&["user", "account", "session", "twoFactor"])
             .await?,
         stable
     );
@@ -1143,7 +1065,7 @@ async fn two_factor_otp_resends_are_consumed_once_across_real_requests<B: Backen
     .await;
     assert_eq!(body(&replay)["code"], "OTP_HAS_EXPIRED");
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "two_factor"])
+        db.tables(&["user", "account", "session", "twoFactor"])
             .await?,
         stable
     );
@@ -1164,12 +1086,12 @@ async fn two_factor_reenrollment_retains_row_policy<B: Backend>(db: Db) -> TestR
     let (_, first, _) = enroll(&auth, &jar).await;
     _ = db
         .execute(
-            "UPDATE two_factor SET failed_verification_count = 0.5 WHERE user_id = $1",
+            "UPDATE \"twoFactor\" SET \"failedVerificationCount\" = 0.5 WHERE \"userId\" = $1",
             &[&id],
         )
         .await?;
     let original = auth.store().get_two_factor_by_user_id(&id).await?.unwrap();
-    let principals = db.tables(&["users", "accounts", "sessions"]).await?;
+    let principals = db.tables(&["user", "account", "session"]).await?;
     let (totp, second, _) = enroll(&auth, &jar).await;
     let next = auth.store().get_two_factor_by_user_id(&id).await?.unwrap();
     assert_eq!(next.id, original.id);
@@ -1179,7 +1101,7 @@ async fn two_factor_reenrollment_retains_row_policy<B: Backend>(db: Db) -> TestR
     assert_ne!(next.secret, original.secret);
     assert_ne!(first["backupCodes"], second["backupCodes"]);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         principals
     );
     let activated = call(
@@ -1198,7 +1120,7 @@ async fn two_factor_reenrollment_retains_row_policy<B: Backend>(db: Db) -> TestR
     assert_eq!(verified.backup_codes, next.backup_codes);
     assert_eq!(verified.failed_verification_count, Some(0.5));
     assert_eq!(verified.verified, Some(true));
-    let before = db.table("two_factor").await?;
+    let before = db.table("twoFactor").await?;
     let denied = call(
         &auth,
         request(
@@ -1210,7 +1132,7 @@ async fn two_factor_reenrollment_retains_row_policy<B: Backend>(db: Db) -> TestR
     )
     .await;
     assert_eq!(body(&denied)["code"], "TOTP_ALREADY_ENABLED");
-    assert_eq!(db.table("two_factor").await?, before);
+    assert_eq!(db.table("twoFactor").await?, before);
     B::close(connection).await
 }
 
@@ -1237,17 +1159,11 @@ async fn two_factor_pending_unverified_totp_backup_recovery<B: Backend>(db: Db) 
         200,
     )
     .await;
-    _ = db.execute("UPDATE two_factor SET verified = false, failed_verification_count = 2.5 WHERE user_id = $1", &[&id]).await?;
+    _ = db.execute("UPDATE \"twoFactor\" SET \"verified\" = false, \"failedVerificationCount\" = 2.5 WHERE \"userId\" = $1", &[&id]).await?;
     let pending = sign_in(&auth, "unverified@example.test", json!({}), "").await;
     assert_eq!(body(&pending)["twoFactorMethods"], json!(["otp"]));
     let before = db
-        .tables(&[
-            "two_factor",
-            "verifications",
-            "sessions",
-            "users",
-            "accounts",
-        ])
+        .tables(&["twoFactor", "verification", "session", "user", "account"])
         .await?;
     let denied = call(
         &auth,
@@ -1261,14 +1177,8 @@ async fn two_factor_pending_unverified_totp_backup_recovery<B: Backend>(db: Db) 
     .await;
     assert_eq!(body(&denied)["code"], "TOTP_NOT_ENABLED");
     assert_eq!(
-        db.tables(&[
-            "two_factor",
-            "verifications",
-            "sessions",
-            "users",
-            "accounts"
-        ])
-        .await?,
+        db.tables(&["twoFactor", "verification", "session", "user", "account"])
+            .await?,
         before
     );
     for (input, cookie, status, code) in [
@@ -1313,18 +1223,12 @@ async fn two_factor_pending_unverified_totp_backup_recovery<B: Backend>(db: Db) 
         assert_eq!(error.error.status_code(), status);
         assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
         assert_eq!(
-            db.tables(&[
-                "two_factor",
-                "verifications",
-                "sessions",
-                "users",
-                "accounts"
-            ])
-            .await?,
+            db.tables(&["twoFactor", "verification", "session", "user", "account"])
+                .await?,
             before
         );
     }
-    let before_unpublished = db.tables(&["sessions", "users", "accounts"]).await?;
+    let before_unpublished = db.tables(&["session", "user", "account"]).await?;
     let unpublished = Box::pin(auth.dispatch_endpoint(
         TwoFactorPlugin::verify_backup_code_endpoint(
             alibi::plugins::two_factor::VerifyBackupCodeInput {
@@ -1344,7 +1248,7 @@ async fn two_factor_pending_unverified_totp_backup_recovery<B: Backend>(db: Db) 
     assert!(body(&unpublished).get("token").is_none());
     assert!(cookies(&unpublished).is_empty());
     assert_eq!(
-        db.tables(&["sessions", "users", "accounts"]).await?,
+        db.tables(&["session", "user", "account"]).await?,
         before_unpublished
     );
     let retired = Box::pin(
@@ -1390,9 +1294,7 @@ async fn two_factor_pending_unverified_totp_backup_recovery<B: Backend>(db: Db) 
     let factor = auth.store().get_two_factor_by_user_id(&id).await?.unwrap();
     assert_eq!(factor.verified, Some(false));
     assert_eq!(factor.failed_verification_count, Some(0.0));
-    let stable = db
-        .tables(&["two_factor", "verifications", "sessions"])
-        .await?;
+    let stable = db.tables(&["twoFactor", "verification", "session"]).await?;
     let _ = call(
         &auth,
         request(
@@ -1404,8 +1306,7 @@ async fn two_factor_pending_unverified_totp_backup_recovery<B: Backend>(db: Db) 
     )
     .await;
     assert_eq!(
-        db.tables(&["two_factor", "verifications", "sessions"])
-            .await?,
+        db.tables(&["twoFactor", "verification", "session"]).await?,
         stable
     );
     B::close(connection).await
@@ -1445,7 +1346,7 @@ async fn two_factor_account_lock_pending_only_scope<B: Backend>(db: Db) -> TestR
     let pending = sign_in(&auth, "locked@example.test", json!({}), "").await;
     _ = db
         .execute(
-            "UPDATE two_factor SET failed_verification_count = 10 WHERE user_id = $1",
+            "UPDATE \"twoFactor\" SET \"failedVerificationCount\" = 10 WHERE \"userId\" = $1",
             &[&id],
         )
         .await?;
@@ -1459,13 +1360,7 @@ async fn two_factor_account_lock_pending_only_scope<B: Backend>(db: Db) -> TestR
         )
         .await?;
     let before = db
-        .tables(&[
-            "two_factor",
-            "verifications",
-            "sessions",
-            "users",
-            "accounts",
-        ])
+        .tables(&["twoFactor", "verification", "session", "user", "account"])
         .await?;
     for (path, code) in [
         (
@@ -1485,14 +1380,8 @@ async fn two_factor_account_lock_pending_only_scope<B: Backend>(db: Db) -> TestR
         .await;
         assert_eq!(body(&denied)["code"], "ACCOUNT_TEMPORARILY_LOCKED");
         assert_eq!(
-            db.tables(&[
-                "two_factor",
-                "verifications",
-                "sessions",
-                "users",
-                "accounts"
-            ])
-            .await?,
+            db.tables(&["twoFactor", "verification", "session", "user", "account"])
+                .await?,
             before
         );
     }
@@ -1512,14 +1401,8 @@ async fn two_factor_account_lock_pending_only_scope<B: Backend>(db: Db) -> TestR
             ["token"]
     );
     assert_eq!(
-        db.tables(&[
-            "two_factor",
-            "verifications",
-            "sessions",
-            "users",
-            "accounts"
-        ])
-        .await?,
+        db.tables(&["twoFactor", "verification", "session", "user", "account"])
+            .await?,
         before
     );
     let independent = sign_in(&auth, "unlocked@example.test", json!({}), "").await;
@@ -1534,7 +1417,7 @@ async fn two_factor_account_lock_pending_only_scope<B: Backend>(db: Db) -> TestR
     )
     .await;
     authenticated(&auth, &cookies(&completed), "unlocked@example.test").await;
-    assert_eq!(db.table("two_factor").await?, *before.first().unwrap());
+    assert_eq!(db.table("twoFactor").await?, *before.first().unwrap());
     // The foreign completion cannot spend the locked owner's pending proof.
     let denied = call(
         &auth,
@@ -1584,9 +1467,9 @@ async fn two_factor_configured_account_lock_policy<B: Backend>(db: Db) -> TestRe
         _ = db
             .execute(
                 if mode == 1 {
-                    "UPDATE two_factor SET failed_verification_count = NULL"
+                    "UPDATE \"twoFactor\" SET \"failedVerificationCount\" = NULL"
                 } else {
-                    "UPDATE two_factor SET failed_verification_count = 0.5"
+                    "UPDATE \"twoFactor\" SET \"failedVerificationCount\" = 0.5"
                 },
                 &[],
             )
@@ -1622,9 +1505,7 @@ async fn two_factor_configured_account_lock_policy<B: Backend>(db: Db) -> TestRe
                 (started.timestamp_millis() + 600_250..=finished.timestamp_millis() + 600_250)
                     .contains(&until)
             );
-            let before = db
-                .tables(&["two_factor", "verifications", "sessions"])
-                .await?;
+            let before = db.tables(&["twoFactor", "verification", "session"]).await?;
             let _ = call(
                 &auth,
                 request(
@@ -1636,8 +1517,7 @@ async fn two_factor_configured_account_lock_policy<B: Backend>(db: Db) -> TestRe
             )
             .await;
             assert_eq!(
-                db.tables(&["two_factor", "verifications", "sessions"])
-                    .await?,
+                db.tables(&["twoFactor", "verification", "session"]).await?,
                 before
             );
             _ = auth
@@ -1741,9 +1621,12 @@ async fn two_factor_otp_account_budget_coupling<B: Backend>(db: Db) -> TestResul
     )
     .await;
     _ = db
-        .execute("UPDATE two_factor SET failed_verification_count=1.5", &[])
+        .execute(
+            "UPDATE \"twoFactor\" SET \"failedVerificationCount\"=1.5",
+            &[],
+        )
         .await?;
-    let original = db.table("two_factor").await?;
+    let original = db.table("twoFactor").await?;
     let _ = call(
         &auth,
         request("/two-factor/send-otp", Some(json!({})), &cookies(&active)),
@@ -1760,7 +1643,7 @@ async fn two_factor_otp_account_budget_coupling<B: Backend>(db: Db) -> TestResul
         401,
     )
     .await;
-    assert_eq!(db.table("two_factor").await?, original);
+    assert_eq!(db.table("twoFactor").await?, original);
     let pending = sign_in(&auth, "coupled@example.test", json!({}), "").await;
     let _ = call(
         &auth,
@@ -1782,9 +1665,7 @@ async fn two_factor_otp_account_budget_coupling<B: Backend>(db: Db) -> TestResul
     let factor = auth.store().get_two_factor_by_user_id(&id).await?.unwrap();
     assert_eq!(factor.failed_verification_count, Some(2.5));
     assert!(factor.locked_until.unwrap() > chrono::Utc::now());
-    let before = db
-        .tables(&["two_factor", "verifications", "sessions"])
-        .await?;
+    let before = db.tables(&["twoFactor", "verification", "session"]).await?;
     for (path, code) in [
         ("/two-factor/verify-otp", actual.clone()),
         (
@@ -1800,8 +1681,7 @@ async fn two_factor_otp_account_budget_coupling<B: Backend>(db: Db) -> TestResul
         .await;
         assert_eq!(body(&denied)["code"], "ACCOUNT_TEMPORARILY_LOCKED");
         assert_eq!(
-            db.tables(&["two_factor", "verifications", "sessions"])
-                .await?,
+            db.tables(&["twoFactor", "verification", "session"]).await?,
             before
         );
     }
@@ -1861,21 +1741,15 @@ async fn two_factor_pending_orphan_owner_proof_retention<B: Backend>(db: Db) -> 
     let id = body(&signed)["user"]["id"].as_str().unwrap().to_owned();
     let (_, enrollment, _) = enroll(&auth, &cookies(&signed)).await;
     let pending = sign_in(&auth, "orphan@example.test", json!({}), "").await;
-    let key=db.text("SELECT identifier FROM verifications WHERE value=$1 AND identifier LIKE '2fa-%' AND identifier NOT LIKE '2fa-attempts-%'",&[&id]).await?.unwrap();
+    let key=db.text("SELECT \"identifier\" FROM \"verification\" WHERE \"value\"=$1 AND \"identifier\" LIKE '2fa-%' AND \"identifier\" NOT LIKE '2fa-attempts-%'",&[&id]).await?.unwrap();
     _ = db
         .execute(
-            "UPDATE verifications SET value='missing-physical-owner' WHERE identifier=$1",
+            "UPDATE \"verification\" SET \"value\"='missing-physical-owner' WHERE \"identifier\"=$1",
             &[&key],
         )
         .await?;
     let before = db
-        .tables(&[
-            "two_factor",
-            "verifications",
-            "users",
-            "accounts",
-            "sessions",
-        ])
+        .tables(&["twoFactor", "verification", "user", "account", "session"])
         .await?;
     let denied = call(
         &auth,
@@ -1889,19 +1763,13 @@ async fn two_factor_pending_orphan_owner_proof_retention<B: Backend>(db: Db) -> 
     .await;
     assert_eq!(body(&denied)["code"], "INVALID_TWO_FACTOR_COOKIE");
     assert_eq!(
-        db.tables(&[
-            "two_factor",
-            "verifications",
-            "users",
-            "accounts",
-            "sessions"
-        ])
-        .await?,
+        db.tables(&["twoFactor", "verification", "user", "account", "session"])
+            .await?,
         before
     );
     _ = db
         .execute(
-            "UPDATE verifications SET value=$1 WHERE identifier=$2",
+            "UPDATE \"verification\" SET \"value\"=$1 WHERE \"identifier\"=$2",
             &[&id, &key],
         )
         .await?;
@@ -1918,13 +1786,7 @@ async fn two_factor_pending_orphan_owner_proof_retention<B: Backend>(db: Db) -> 
     assert_eq!(body(&done)["user"]["id"], id);
     authenticated(&auth, &cookies(&done), "orphan@example.test").await;
     let stable = db
-        .tables(&[
-            "two_factor",
-            "verifications",
-            "users",
-            "accounts",
-            "sessions",
-        ])
+        .tables(&["twoFactor", "verification", "user", "account", "session"])
         .await?;
     let _ = call(
         &auth,
@@ -1937,14 +1799,8 @@ async fn two_factor_pending_orphan_owner_proof_retention<B: Backend>(db: Db) -> 
     )
     .await;
     assert_eq!(
-        db.tables(&[
-            "two_factor",
-            "verifications",
-            "users",
-            "accounts",
-            "sessions"
-        ])
-        .await?,
+        db.tables(&["twoFactor", "verification", "user", "account", "session"])
+            .await?,
         stable
     );
     B::close(connection).await
@@ -1971,7 +1827,7 @@ async fn two_factor_pending_newest_expired_snapshot<B: Backend>(db: Db) -> TestR
         let id = body(&signed)["user"]["id"].as_str().unwrap().to_owned();
         let (_, enrollment, _) = enroll(&auth, &cookies(&signed)).await;
         let pending = sign_in(&auth, "shadow@example.test", json!({}), "").await;
-        let key=db.text("SELECT identifier FROM verifications WHERE value=$1 AND identifier LIKE '2fa-%' AND identifier NOT LIKE '2fa-attempts-%'",&[&id]).await?.unwrap();
+        let key=db.text("SELECT \"identifier\" FROM \"verification\" WHERE \"value\"=$1 AND \"identifier\" LIKE '2fa-%' AND \"identifier\" NOT LIKE '2fa-attempts-%'",&[&id]).await?.unwrap();
         let shadow = auth
             .store()
             .create_verification(alibi::CreateVerification {
@@ -1981,14 +1837,14 @@ async fn two_factor_pending_newest_expired_snapshot<B: Backend>(db: Db) -> TestR
             })
             .await?;
         db.set_timestamp(
-            "verifications",
-            "created_at",
+            "verification",
+            "createdAt",
             ("id", shadow.id().as_ref()),
             "2030-01-01T00:00:00Z".parse()?,
         )
         .await?;
         let principals = db
-            .tables(&["two_factor", "users", "accounts", "sessions"])
+            .tables(&["twoFactor", "user", "account", "session"])
             .await?;
         let denied = call(
             &auth,
@@ -2002,13 +1858,13 @@ async fn two_factor_pending_newest_expired_snapshot<B: Backend>(db: Db) -> TestR
         .await;
         assert_eq!(body(&denied)["code"], "INVALID_TWO_FACTOR_COOKIE");
         assert_eq!(
-            db.tables(&["two_factor", "users", "accounts", "sessions"])
+            db.tables(&["twoFactor", "user", "account", "session"])
                 .await?,
             principals
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM verifications WHERE id=$1",
+                "SELECT COUNT(*) FROM \"verification\" WHERE id=$1",
                 &[shadow.id().as_ref()]
             )
             .await?,
@@ -2016,7 +1872,7 @@ async fn two_factor_pending_newest_expired_snapshot<B: Backend>(db: Db) -> TestR
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM verifications WHERE identifier=$1 AND value=$2",
+                "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1 AND \"value\"=$2",
                 &[&key, &id]
             )
             .await?,
@@ -2024,7 +1880,7 @@ async fn two_factor_pending_newest_expired_snapshot<B: Backend>(db: Db) -> TestR
         );
         assert_eq!(
             db.text(
-                "SELECT value FROM verifications WHERE identifier=$1",
+                "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
                 &[&format!("2fa-attempts-{key}")]
             )
             .await?
@@ -2032,7 +1888,7 @@ async fn two_factor_pending_newest_expired_snapshot<B: Backend>(db: Db) -> TestR
             Some("0")
         );
         if disabled {
-            let before = db.table("verifications").await?;
+            let before = db.table("verification").await?;
             let _ = call(
                 &auth,
                 request(
@@ -2043,10 +1899,10 @@ async fn two_factor_pending_newest_expired_snapshot<B: Backend>(db: Db) -> TestR
                 401,
             )
             .await;
-            assert_eq!(db.table("verifications").await?, before);
+            assert_eq!(db.table("verification").await?, before);
             _ = db
                 .execute(
-                    "DELETE FROM verifications WHERE id=$1",
+                    "DELETE FROM \"verification\" WHERE id=$1",
                     &[shadow.id().as_ref()],
                 )
                 .await?;
@@ -2104,12 +1960,12 @@ async fn two_factor_backup_view_exact_truthy_projection<B: Backend>(db: Db) -> T
     ] {
         _ = db
             .execute(
-                "UPDATE two_factor SET backup_codes=$1 WHERE user_id=$2",
+                "UPDATE \"twoFactor\" SET \"backupCodes\"=$1 WHERE \"userId\"=$2",
                 &[stored, &id],
             )
             .await?;
         let before = db
-            .tables(&["two_factor", "users", "accounts", "sessions"])
+            .tables(&["twoFactor", "user", "account", "session"])
             .await?;
         let view = auth
             .dispatch_endpoint(
@@ -2121,7 +1977,7 @@ async fn two_factor_backup_view_exact_truthy_projection<B: Backend>(db: Db) -> T
         assert!(view.status);
         assert_eq!(view.backup_codes, expected);
         assert_eq!(
-            db.tables(&["two_factor", "users", "accounts", "sessions"])
+            db.tables(&["twoFactor", "user", "account", "session"])
                 .await?,
             before
         );
@@ -2129,12 +1985,12 @@ async fn two_factor_backup_view_exact_truthy_projection<B: Backend>(db: Db) -> T
     for stored in ["[", "null", "false", "0", "-0", r#""""#] {
         _ = db
             .execute(
-                "UPDATE two_factor SET backup_codes=$1 WHERE user_id=$2",
+                "UPDATE \"twoFactor\" SET \"backupCodes\"=$1 WHERE \"userId\"=$2",
                 &[stored, &id],
             )
             .await?;
         let before = db
-            .tables(&["two_factor", "users", "accounts", "sessions"])
+            .tables(&["twoFactor", "user", "account", "session"])
             .await?;
         let error = auth
             .dispatch_endpoint(
@@ -2145,7 +2001,7 @@ async fn two_factor_backup_view_exact_truthy_projection<B: Backend>(db: Db) -> T
             .unwrap_err();
         assert!(error.to_string().contains("Invalid backup code"));
         assert_eq!(
-            db.tables(&["two_factor", "users", "accounts", "sessions"])
+            db.tables(&["twoFactor", "user", "account", "session"])
                 .await?,
             before
         );
@@ -2174,13 +2030,13 @@ async fn two_factor_backup_remainder_json_normalization<B: Backend>(db: Db) -> T
     );
     _ = db
         .execute(
-            "UPDATE two_factor SET backup_codes=$1 WHERE user_id=$2",
+            "UPDATE \"twoFactor\" SET \"backupCodes\"=$1 WHERE \"userId\"=$2",
             &[&stored, &id],
         )
         .await?;
     let factor = auth.store().get_two_factor_by_user_id(&id).await?.unwrap();
-    let principals = db.tables(&["users", "accounts", "sessions"]).await?;
-    let before = db.table("two_factor").await?;
+    let principals = db.tables(&["user", "account", "session"]).await?;
+    let before = db.table("twoFactor").await?;
     let _ = call(
         &auth,
         request(
@@ -2191,7 +2047,7 @@ async fn two_factor_backup_remainder_json_normalization<B: Backend>(db: Db) -> T
         401,
     )
     .await;
-    assert_eq!(db.table("two_factor").await?, before);
+    assert_eq!(db.table("twoFactor").await?, before);
     let done = call(
         &auth,
         request(
@@ -2223,7 +2079,7 @@ async fn two_factor_backup_remainder_json_normalization<B: Backend>(db: Db) -> T
         )
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         principals
     );
     let _ = call(
@@ -2256,7 +2112,7 @@ async fn two_factor_backup_remainder_json_normalization<B: Backend>(db: Db) -> T
         r#"[{"keep":"2025-03-02T00:00:00.000Z"},"+010000-01-01T00:00:00.000Z","2025-01-02T03:04:05.123Z",null,null,9007199254740992,"2025-02-32T00:00:00Z","2025-01-02T03:04:60Z"]"#
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         principals
     );
     B::close(connection).await
@@ -2325,13 +2181,13 @@ async fn two_factor_pending_session_cancellation_retirement<B: Backend>(db: Db) 
             let _ = call(&auth, request("/sign-out", Some(json!({})), &active), 200).await;
             _ = db
                 .execute(
-                    "UPDATE two_factor SET failed_verification_count=0.5 WHERE user_id=$1",
+                    "UPDATE \"twoFactor\" SET \"failedVerificationCount\"=0.5 WHERE \"userId\"=$1",
                     &[&id],
                 )
                 .await?;
             let initial = auth.store().get_two_factor_by_user_id(&id).await?.unwrap();
             let pending = sign_in(&auth, "cancel@example.test", json!({}), "").await;
-            let key=db.text("SELECT identifier FROM verifications WHERE value=$1 AND identifier LIKE '2fa-%' AND identifier NOT LIKE '2fa-attempts-%'",&[&id]).await?.unwrap();
+            let key=db.text("SELECT \"identifier\" FROM \"verification\" WHERE \"value\"=$1 AND \"identifier\" LIKE '2fa-%' AND \"identifier\" NOT LIKE '2fa-attempts-%'",&[&id]).await?.unwrap();
             let code = match kind {
                 "totp" => totp.generate_current().to_string(),
                 "backup" => enrollment["backupCodes"][0].as_str().unwrap().to_owned(),
@@ -2353,8 +2209,8 @@ async fn two_factor_pending_session_cancellation_retirement<B: Backend>(db: Db) 
                     kind
                 }
             );
-            let before_sessions = db.table("sessions").await?;
-            let principals = db.tables(&["users", "accounts"]).await?;
+            let before_sessions = db.table("session").await?;
+            let principals = db.tables(&["user", "account"]).await?;
             gate.store(mode, Ordering::SeqCst);
             let denied = call(
                 &auth,
@@ -2379,11 +2235,11 @@ async fn two_factor_pending_session_cancellation_retirement<B: Backend>(db: Db) 
                     json!({"message":"session creation cancelled by database hook"})
                 );
             }
-            assert_eq!(db.table("sessions").await?, before_sessions);
-            assert_eq!(db.tables(&["users", "accounts"]).await?, principals);
+            assert_eq!(db.table("session").await?, before_sessions);
+            assert_eq!(db.tables(&["user", "account"]).await?, principals);
             assert_eq!(
                 db.count_where(
-                    "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+                    "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
                     &[&key]
                 )
                 .await?,
@@ -2391,7 +2247,7 @@ async fn two_factor_pending_session_cancellation_retirement<B: Backend>(db: Db) 
             );
             assert_eq!(
                 db.count_where(
-                    "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+                    "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
                     &[&format!("2fa-attempts-{key}")]
                 )
                 .await?,
@@ -2399,7 +2255,7 @@ async fn two_factor_pending_session_cancellation_retirement<B: Backend>(db: Db) 
             );
             assert_eq!(
                 db.count_where(
-                    "SELECT COUNT(*) FROM verifications WHERE identifier LIKE 'trust-device-%'",
+                    "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\" LIKE 'trust-device-%'",
                     &[]
                 )
                 .await?,
@@ -2417,13 +2273,7 @@ async fn two_factor_pending_session_cancellation_retirement<B: Backend>(db: Db) 
                 assert_eq!(factor.backup_codes, initial.backup_codes);
             }
             let stable = db
-                .tables(&[
-                    "two_factor",
-                    "verifications",
-                    "users",
-                    "accounts",
-                    "sessions",
-                ])
+                .tables(&["twoFactor", "verification", "user", "account", "session"])
                 .await?;
             let replay = call(
                 &auth,
@@ -2438,19 +2288,13 @@ async fn two_factor_pending_session_cancellation_retirement<B: Backend>(db: Db) 
             assert_eq!(body(&replay)["code"], "INVALID_TWO_FACTOR_COOKIE");
             assert_eq!(calls.load(Ordering::SeqCst), 1);
             assert_eq!(
-                db.tables(&[
-                    "two_factor",
-                    "verifications",
-                    "users",
-                    "accounts",
-                    "sessions"
-                ])
-                .await?,
+                db.tables(&["twoFactor", "verification", "user", "account", "session"])
+                    .await?,
                 stable
             );
             assert_eq!(
                 db.count_where(
-                    "SELECT COUNT(*) FROM sessions WHERE user_id=$1",
+                    "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
                     &[&foreign_id]
                 )
                 .await?,
@@ -2515,8 +2359,8 @@ async fn two_factor_authenticated_totp_failed_rotation_retry<B: Backend>(db: Db)
         let id = body(&signed)["user"]["id"].as_str().unwrap().to_owned();
         let jar = cookies(&signed);
         let (totp, _, _) = enroll(&auth, &jar).await;
-        let original = db.table("two_factor").await?;
-        let sessions = db.table("sessions").await?;
+        let original = db.table("twoFactor").await?;
+        let sessions = db.table("session").await?;
         gate.store(mode, Ordering::SeqCst);
         let _ = call(
             &auth,
@@ -2529,7 +2373,7 @@ async fn two_factor_authenticated_totp_failed_rotation_retry<B: Backend>(db: Db)
         )
         .await;
         assert_eq!(calls.load(Ordering::SeqCst), 0);
-        assert_eq!(db.table("two_factor").await?, original);
+        assert_eq!(db.table("twoFactor").await?, original);
         let denied = call(
             &auth,
             request(
@@ -2550,11 +2394,11 @@ async fn two_factor_authenticated_totp_failed_rotation_retry<B: Backend>(db: Db)
                 "session creation cancelled by database hook"
             );
         }
-        assert_eq!(db.table("two_factor").await?, original);
-        assert_eq!(db.table("sessions").await?, sessions);
+        assert_eq!(db.table("twoFactor").await?, original);
+        assert_eq!(db.table("session").await?, sessions);
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM users WHERE id=$1 AND two_factor_enabled=true",
+                "SELECT COUNT(*) FROM \"user\" WHERE id=$1 AND \"twoFactorEnabled\"=true",
                 &[&id]
             )
             .await?,
@@ -2562,7 +2406,7 @@ async fn two_factor_authenticated_totp_failed_rotation_retry<B: Backend>(db: Db)
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM verifications WHERE identifier LIKE 'trust-device-%'",
+                "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\" LIKE 'trust-device-%'",
                 &[]
             )
             .await?,
@@ -2583,7 +2427,7 @@ async fn two_factor_authenticated_totp_failed_rotation_retry<B: Backend>(db: Db)
         assert_eq!(done.headers.get_all("set-cookie").count(), 0);
         let factor = auth.store().get_two_factor_by_user_id(&id).await?.unwrap();
         assert_eq!(factor.verified, Some(true));
-        assert_eq!(db.table("sessions").await?, sessions);
+        assert_eq!(db.table("session").await?, sessions);
         authenticated(&auth, &jar, "retry@example.test").await;
         B::close(connection).await?;
     }
@@ -2613,22 +2457,25 @@ async fn two_factor_expired_pending_factor_stage_policy<B: Backend>(db: Db) -> T
             let id = body(&signed)["user"]["id"].as_str().unwrap().to_owned();
             let (totp, enrollment, _) = enroll(&auth, &cookies(&signed)).await;
             let pending = sign_in(&auth, "expired@example.test", json!({}), "").await;
-            let key=db.text("SELECT identifier FROM verifications WHERE value=$1 AND identifier LIKE '2fa-%' AND identifier NOT LIKE '2fa-attempts-%'",&[&id]).await?.unwrap();
+            let key=db.text("SELECT \"identifier\" FROM \"verification\" WHERE \"value\"=$1 AND \"identifier\" LIKE '2fa-%' AND \"identifier\" NOT LIKE '2fa-attempts-%'",&[&id]).await?.unwrap();
             _ = db
-                .execute("UPDATE two_factor SET failed_verification_count=3", &[])
+                .execute(
+                    "UPDATE \"twoFactor\" SET \"failedVerificationCount\"=3",
+                    &[],
+                )
                 .await?;
             let old = "2020-01-01T00:00:00Z".parse()?;
-            db.set_timestamp("verifications", "expires_at", ("identifier", &key), old)
+            db.set_timestamp("verification", "expiresAt", ("identifier", &key), old)
                 .await?;
             db.set_timestamp(
-                "verifications",
-                "expires_at",
+                "verification",
+                "expiresAt",
                 ("identifier", &format!("2fa-attempts-{key}")),
                 old,
             )
             .await?;
             let factor = auth.store().get_two_factor_by_user_id(&id).await?.unwrap();
-            let sessions = db.tables(&["users", "accounts", "sessions"]).await?;
+            let sessions = db.tables(&["user", "account", "session"]).await?;
             let code = match kind {
                 "totp" => totp.generate_current().to_string(),
                 "backup" => enrollment["backupCodes"][0].as_str().unwrap().to_owned(),
@@ -2657,10 +2504,7 @@ async fn two_factor_expired_pending_factor_stage_policy<B: Backend>(db: Db) -> T
             )
             .await;
             assert_eq!(body(&denied)["code"], "INVALID_TWO_FACTOR_COOKIE");
-            assert_eq!(
-                db.tables(&["users", "accounts", "sessions"]).await?,
-                sessions
-            );
+            assert_eq!(db.tables(&["user", "account", "session"]).await?, sessions);
             let next = auth.store().get_two_factor_by_user_id(&id).await?.unwrap();
             assert_eq!(
                 (next.id, next.secret, next.backup_codes),
@@ -2677,7 +2521,7 @@ async fn two_factor_expired_pending_factor_stage_policy<B: Backend>(db: Db) -> T
             ] {
                 assert_eq!(
                     db.count_where(
-                        "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+                        "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
                         &[identifier]
                     )
                     .await?,
@@ -2745,7 +2589,7 @@ async fn two_factor_configured_proof_cookie_lifetimes<B: Backend>(db: Db) -> Tes
         assert!(header.contains("HttpOnly"));
         assert!(header.contains("SameSite=Lax"));
         assert!(!header.contains("Expires="));
-        let key=db.text("SELECT identifier FROM verifications WHERE value=$1 AND identifier LIKE '2fa-%' AND identifier NOT LIKE '2fa-attempts-%'",&[&id]).await?.unwrap();
+        let key=db.text("SELECT \"identifier\" FROM \"verification\" WHERE \"value\"=$1 AND \"identifier\" LIKE '2fa-%' AND \"identifier\" NOT LIKE '2fa-attempts-%'",&[&id]).await?.unwrap();
         let proof = auth
             .store()
             .get_latest_verification_by_identifier(&key)
@@ -2781,7 +2625,7 @@ async fn two_factor_configured_proof_cookie_lifetimes<B: Backend>(db: Db) -> Tes
             if trust_ms >= 0 {
                 assert!(header.contains(&format!("Max-Age={}", trust_ms / 1000)));
             }
-            let key=db.text("SELECT identifier FROM verifications WHERE identifier LIKE 'trust-device-%' AND value=$1",&[&id]).await?.unwrap();
+            let key=db.text("SELECT \"identifier\" FROM \"verification\" WHERE \"identifier\" LIKE 'trust-device-%' AND \"value\"=$1",&[&id]).await?.unwrap();
             let trust = auth
                 .store()
                 .get_latest_verification_by_identifier(&key)
@@ -2802,7 +2646,7 @@ async fn two_factor_configured_proof_cookie_lifetimes<B: Backend>(db: Db) -> Tes
                         .await?
                         .is_none()
                 );
-                let next=db.text("SELECT identifier FROM verifications WHERE identifier LIKE 'trust-device-%' AND value=$1",&[&id]).await?.unwrap();
+                let next=db.text("SELECT \"identifier\" FROM \"verification\" WHERE \"identifier\" LIKE 'trust-device-%' AND \"value\"=$1",&[&id]).await?.unwrap();
                 assert_ne!(next, key);
                 let expiry = auth
                     .store()
@@ -2861,7 +2705,7 @@ async fn two_factor_trust_syntax_before_cleanup<B: Backend>(db: Db) -> TestResul
         .to_owned();
     let key = db
         .text(
-            "SELECT identifier FROM verifications WHERE identifier LIKE 'trust-device-%'",
+            "SELECT \"identifier\" FROM \"verification\" WHERE \"identifier\" LIKE 'trust-device-%'",
             &[],
         )
         .await?
@@ -2875,11 +2719,11 @@ async fn two_factor_trust_syntax_before_cleanup<B: Backend>(db: Db) -> TestResul
         })
         .await?;
     let principals = db
-        .tables(&["two_factor", "users", "accounts", "sessions"])
+        .tables(&["twoFactor", "user", "account", "session"])
         .await?;
     let issued = db
         .text(
-            "SELECT value FROM verifications WHERE identifier=$1",
+            "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
             &[&key],
         )
         .await?;
@@ -2900,7 +2744,7 @@ async fn two_factor_trust_syntax_before_cleanup<B: Backend>(db: Db) -> TestResul
         .await;
         assert_eq!(body(&pending)["twoFactorRedirect"], true);
         assert_eq!(
-            db.tables(&["two_factor", "users", "accounts", "sessions"])
+            db.tables(&["twoFactor", "user", "account", "session"])
                 .await?,
             principals
         );
@@ -2913,7 +2757,7 @@ async fn two_factor_trust_syntax_before_cleanup<B: Backend>(db: Db) -> TestResul
         );
         assert_eq!(
             db.text(
-                "SELECT value FROM verifications WHERE identifier=$1",
+                "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
                 &[&key]
             )
             .await?,
@@ -2921,7 +2765,7 @@ async fn two_factor_trust_syntax_before_cleanup<B: Backend>(db: Db) -> TestResul
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM verifications WHERE identifier='unrelated-expired-syntax'",
+                "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"='unrelated-expired-syntax'",
                 &[]
             )
             .await?,
@@ -2932,7 +2776,7 @@ async fn two_factor_trust_syntax_before_cleanup<B: Backend>(db: Db) -> TestResul
     assert_eq!(body(&control)["user"]["id"], id);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM verifications WHERE identifier='unrelated-expired-syntax'",
+            "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"='unrelated-expired-syntax'",
             &[]
         )
         .await?,
@@ -2940,7 +2784,7 @@ async fn two_factor_trust_syntax_before_cleanup<B: Backend>(db: Db) -> TestResul
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+            "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
             &[&key]
         )
         .await?,
@@ -2987,15 +2831,15 @@ async fn two_factor_trust_lookup_cleanup_policy<B: Backend>(db: Db) -> TestResul
                 .to_owned();
             let key = db
                 .text(
-                    "SELECT identifier FROM verifications WHERE identifier LIKE 'trust-device-%'",
+                    "SELECT \"identifier\" FROM \"verification\" WHERE \"identifier\" LIKE 'trust-device-%'",
                     &[],
                 )
                 .await?
                 .unwrap();
             if expired {
                 db.set_timestamp(
-                    "verifications",
-                    "expires_at",
+                    "verification",
+                    "expiresAt",
                     ("identifier", &key),
                     "2020-01-01T00:00:00Z".parse()?,
                 )
@@ -3003,7 +2847,7 @@ async fn two_factor_trust_lookup_cleanup_policy<B: Backend>(db: Db) -> TestResul
             } else {
                 _ = db
                     .execute(
-                        "UPDATE verifications SET value='changed-trust-owner' WHERE identifier=$1",
+                        "UPDATE \"verification\" SET \"value\"='changed-trust-owner' WHERE \"identifier\"=$1",
                         &[&key],
                     )
                     .await?;
@@ -3017,19 +2861,19 @@ async fn two_factor_trust_lookup_cleanup_policy<B: Backend>(db: Db) -> TestResul
                 })
                 .await?;
             let before = db
-                .tables(&["two_factor", "users", "accounts", "sessions"])
+                .tables(&["twoFactor", "user", "account", "session"])
                 .await?;
             let rejected = sign_in(&auth, "lookup@example.test", json!({}), &real).await;
             assert_eq!(body(&rejected)["twoFactorRedirect"], true);
             assert_eq!(
-                db.tables(&["two_factor", "users", "accounts", "sessions"])
+                db.tables(&["twoFactor", "user", "account", "session"])
                     .await?,
                 before
             );
-            assert_eq!(db.count_where("SELECT COUNT(*) FROM verifications WHERE identifier='unrelated-expired-lookup'",&[]).await?,i64::from(disabled));
+            assert_eq!(db.count_where("SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"='unrelated-expired-lookup'",&[]).await?,i64::from(disabled));
             assert_eq!(
                 db.count_where(
-                    "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+                    "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
                     &[&key]
                 )
                 .await?,
@@ -3038,7 +2882,7 @@ async fn two_factor_trust_lookup_cleanup_policy<B: Backend>(db: Db) -> TestResul
             if !expired {
                 assert_eq!(
                     db.text(
-                        "SELECT value FROM verifications WHERE identifier=$1",
+                        "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
                         &[&key]
                     )
                     .await?
@@ -3101,7 +2945,7 @@ async fn two_factor_trust_ignored_components<B: Backend>(db: Db) -> TestResult {
     let payload = decoded.rsplit_once('.').unwrap().0;
     let key = payload.split('!').nth(1).unwrap();
     let preceding = sign_in(&auth, "components@example.test", json!({}), "").await;
-    let pending_key=db.text("SELECT identifier FROM verifications WHERE value=$1 AND identifier LIKE '2fa-%' AND identifier NOT LIKE '2fa-attempts-%'",&[&id]).await?.unwrap();
+    let pending_key=db.text("SELECT \"identifier\" FROM \"verification\" WHERE \"value\"=$1 AND \"identifier\" LIKE '2fa-%' AND \"identifier\" NOT LIKE '2fa-attempts-%'",&[&id]).await?.unwrap();
     let extended = format!("{payload}!ignored!components");
     let mut mac = Hmac::<sha2::Sha256>::new_from_slice(SECRET.as_bytes())?;
     mac.update(extended.as_bytes());
@@ -3119,7 +2963,7 @@ async fn two_factor_trust_ignored_components<B: Backend>(db: Db) -> TestResult {
     authenticated(&auth, &cookies(&rotated), "components@example.test").await;
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+            "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
             &[key]
         )
         .await?,
@@ -3127,7 +2971,7 @@ async fn two_factor_trust_ignored_components<B: Backend>(db: Db) -> TestResult {
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM verifications WHERE identifier LIKE 'trust-device-%'",
+            "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\" LIKE 'trust-device-%'",
             &[]
         )
         .await?,
@@ -3135,7 +2979,7 @@ async fn two_factor_trust_ignored_components<B: Backend>(db: Db) -> TestResult {
     );
     let next = db
         .text(
-            "SELECT identifier FROM verifications WHERE identifier LIKE 'trust-device-%'",
+            "SELECT \"identifier\" FROM \"verification\" WHERE \"identifier\" LIKE 'trust-device-%'",
             &[],
         )
         .await?
@@ -3145,7 +2989,7 @@ async fn two_factor_trust_ignored_components<B: Backend>(db: Db) -> TestResult {
     assert_eq!(body(&replay)["twoFactorRedirect"], true);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM verifications WHERE identifier=$1 AND value=$2",
+            "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1 AND \"value\"=$2",
             &[&next, &id]
         )
         .await?,
@@ -3153,7 +2997,7 @@ async fn two_factor_trust_ignored_components<B: Backend>(db: Db) -> TestResult {
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM verifications WHERE identifier=$1 AND value=$2",
+            "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1 AND \"value\"=$2",
             &[&pending_key, &id]
         )
         .await?,
@@ -3202,7 +3046,7 @@ async fn two_factor_factor_cookie_wire_aliases<B: Backend>(db: Db) -> TestResult
         } else if mode == 1 {
             "2fa-%E9".to_owned()
         } else {
-            db.text("SELECT identifier FROM verifications WHERE value=$1 AND identifier LIKE '2fa-%' AND identifier NOT LIKE '2fa-attempts-%'",&[&id]).await?.unwrap()
+            db.text("SELECT \"identifier\" FROM \"verification\" WHERE \"value\"=$1 AND \"identifier\" LIKE '2fa-%' AND \"identifier\" NOT LIKE '2fa-attempts-%'",&[&id]).await?.unwrap()
         };
         if mode < 2 {
             for (identifier, value) in [
@@ -3221,13 +3065,7 @@ async fn two_factor_factor_cookie_wire_aliases<B: Backend>(db: Db) -> TestResult
         }
         let signed_key = sign(&key);
         let before = db
-            .tables(&[
-                "two_factor",
-                "verifications",
-                "users",
-                "accounts",
-                "sessions",
-            ])
+            .tables(&["twoFactor", "verification", "user", "account", "session"])
             .await?;
         let incomplete = signed_key.strip_suffix('=').unwrap();
         let bad = call(
@@ -3242,14 +3080,8 @@ async fn two_factor_factor_cookie_wire_aliases<B: Backend>(db: Db) -> TestResult
         .await;
         assert_eq!(body(&bad)["code"], "INVALID_TWO_FACTOR_COOKIE");
         assert_eq!(
-            db.tables(&[
-                "two_factor",
-                "verifications",
-                "users",
-                "accounts",
-                "sessions"
-            ])
-            .await?,
+            db.tables(&["twoFactor", "verification", "user", "account", "session"])
+                .await?,
             before
         );
         let wire = match mode {
@@ -3310,7 +3142,7 @@ async fn two_factor_factor_cookie_wire_aliases<B: Backend>(db: Db) -> TestResult
         assert!(!session.contains("Expires="));
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+                "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
                 &[&key]
             )
             .await?,
@@ -3318,7 +3150,7 @@ async fn two_factor_factor_cookie_wire_aliases<B: Backend>(db: Db) -> TestResult
         );
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+                "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
                 &[&format!("2fa-attempts-{key}")]
             )
             .await?,
@@ -3346,10 +3178,10 @@ async fn two_factor_factor_cookie_wire_aliases<B: Backend>(db: Db) -> TestResult
         )
         .await;
         assert!(body(&disabled)["status"].as_bool().unwrap());
-        assert_eq!(db.count("two_factor").await?, 0);
+        assert_eq!(db.count("twoFactor").await?, 0);
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM verifications WHERE identifier LIKE 'trust-device-%'",
+                "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\" LIKE 'trust-device-%'",
                 &[]
             )
             .await?,
@@ -3435,7 +3267,7 @@ async fn two_factor_factory_headers_do_not_retime_actual_proofs<B: Backend>(db: 
     ] {
         assert!(header.contains(attribute), "{header}");
     }
-    let key = db.text("SELECT identifier FROM verifications WHERE value=$1 AND identifier LIKE '2fa-%' AND identifier NOT LIKE '2fa-attempts-%'",&[&id]).await?.unwrap();
+    let key = db.text("SELECT \"identifier\" FROM \"verification\" WHERE \"value\"=$1 AND \"identifier\" LIKE '2fa-%' AND \"identifier\" NOT LIKE '2fa-attempts-%'",&[&id]).await?.unwrap();
     let proof = auth
         .store()
         .get_latest_verification_by_identifier(&key)
@@ -3488,7 +3320,7 @@ async fn two_factor_factory_headers_do_not_retime_actual_proofs<B: Backend>(db: 
     ] {
         assert!(header.contains(attribute), "{header}");
     }
-    let key = db.text("SELECT identifier FROM verifications WHERE identifier LIKE 'trust-device-%' AND value=$1",&[&id]).await?.unwrap();
+    let key = db.text("SELECT \"identifier\" FROM \"verification\" WHERE \"identifier\" LIKE 'trust-device-%' AND \"value\"=$1",&[&id]).await?.unwrap();
     let trust = auth
         .store()
         .get_latest_verification_by_identifier(&key)

@@ -204,7 +204,7 @@ fn get(path: &str, query: &[(&str, &str)], cookie: &str) -> AuthRequest {
 
 async fn rows(db: &Db, code: &str) -> TestResult<i64> {
     db.count_where(
-        "SELECT COUNT(*) FROM device_code WHERE device_code = $1",
+        "SELECT COUNT(*) FROM \"deviceCode\" WHERE \"deviceCode\" = $1",
         &[code],
     )
     .await
@@ -212,6 +212,18 @@ async fn rows(db: &Db, code: &str) -> TestResult<i64> {
 
 async fn application_grant_lifecycle<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
+    _ = db
+        .execute(
+            "ALTER TABLE \"deviceCode\" ADD COLUMN \"grantAudience\" TEXT",
+            &[],
+        )
+        .await?;
+    _ = db
+        .execute(
+            "ALTER TABLE \"deviceCode\" ADD COLUMN \"grantNonce\" TEXT",
+            &[],
+        )
+        .await?;
     let events = Events::default();
     let auth = builder::<B>(&connection)
         .plugin(
@@ -257,7 +269,7 @@ async fn application_grant_lifecycle<B: Backend>(db: Db) -> TestResult {
         denied.headers.get("cache-control").map(String::as_str),
         Some("no-store")
     );
-    assert_eq!(db.count("device_code").await?, 0);
+    assert_eq!(db.count("deviceCode").await?, 0);
     assert_eq!(
         *events.lock().unwrap(),
         [
@@ -360,7 +372,7 @@ async fn application_grant_lifecycle<B: Backend>(db: Db) -> TestResult {
     let user_code = issued["user_code"].as_str().unwrap();
     assert_eq!(
         db.text(
-            "SELECT client_id FROM device_code WHERE device_code = $1",
+            "SELECT \"clientId\" FROM \"deviceCode\" WHERE \"deviceCode\" = $1",
             &[code]
         )
         .await?
@@ -435,9 +447,9 @@ async fn application_grant_lifecycle<B: Backend>(db: Db) -> TestResult {
     );
     assert_eq!(rows(&db, &code).await?, 1);
     db.set_timestamp(
-        "device_code",
-        "expires_at",
-        ("device_code", &code),
+        "deviceCode",
+        "expiresAt",
+        ("deviceCode", &code),
         chrono::Utc::now() - chrono::Duration::minutes(1),
     )
     .await?;
@@ -525,9 +537,9 @@ async fn device_decision_and_issuance_edges<B: Backend>(db: Db) -> TestResult {
         200,
     )
     .await;
-    _ = db.execute("DELETE FROM sessions", &[]).await?;
-    _ = db.execute("DELETE FROM accounts", &[]).await?;
-    _ = db.execute("DELETE FROM users", &[]).await?;
+    _ = db.execute("DELETE FROM \"session\"", &[]).await?;
+    _ = db.execute("DELETE FROM \"account\"", &[]).await?;
+    _ = db.execute("DELETE FROM \"user\"", &[]).await?;
     let orphaned = call(
         &auth,
         request(
@@ -555,9 +567,9 @@ async fn device_decision_and_issuance_edges<B: Backend>(db: Db) -> TestResult {
     );
     let user_code = issued["user_code"].as_str().unwrap();
     db.set_timestamp(
-        "device_code",
-        "expires_at",
-        ("user_code", user_code),
+        "deviceCode",
+        "expiresAt",
+        ("userCode", user_code),
         chrono::Utc::now() - chrono::Duration::minutes(1),
     )
     .await?;
@@ -633,7 +645,7 @@ async fn device_missing_owner_preserves_approved_grant_for_recovery<B: Backend>(
         .get_device_code_by_device_code(code)
         .await?
         .unwrap();
-    let stable = db.tables(&["users", "accounts", "sessions"]).await?;
+    let stable = db.tables(&["user", "account", "session"]).await?;
     let redemption = || {
         request(
             "/device/token",
@@ -648,7 +660,7 @@ async fn device_missing_owner_preserves_approved_grant_for_recovery<B: Backend>(
         body(&denied),
         json!({"error":"server_error","error_description":"User not found"})
     );
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stable);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, stable);
     let retained = auth
         .store()
         .get_device_code_by_device_code(code)
@@ -688,13 +700,13 @@ async fn device_missing_owner_preserves_approved_grant_for_recovery<B: Backend>(
             .await?
             .is_none()
     );
-    let final_rows = db.tables(&["users", "accounts", "sessions"]).await?;
+    let final_rows = db.tables(&["user", "account", "session"]).await?;
     assert_eq!(
         body(&call(&auth, redemption(), 400).await)["error"],
         "invalid_grant"
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         final_rows
     );
     assert_eq!(final_rows[..2], stable[..2]);
@@ -720,7 +732,7 @@ async fn device_empty_application_codes_complete_real_grant<B: Backend>(db: Db) 
         .await?;
     let owner = signup(&auth, "owner@example.test").await;
     let foreign = signup(&auth, "foreign@example.test").await;
-    let stable = db.tables(&["users", "accounts", "sessions"]).await?;
+    let stable = db.tables(&["user", "account", "session"]).await?;
     let issued = body(
         &call(
             &auth,
@@ -765,7 +777,7 @@ async fn device_empty_application_codes_complete_real_grant<B: Backend>(db: Db) 
         )?,
         serde_json::to_value(&grant)?
     );
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stable);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, stable);
     _ = call(
         &auth,
         get("/device", &[("user_code", "")], &cookies(&owner)),
@@ -800,12 +812,12 @@ async fn device_empty_application_codes_complete_real_grant<B: Backend>(db: Db) 
             .await?
             .is_none()
     );
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     assert_eq!(
         body(&call(&auth, redeem("empty"), 400).await)["error"],
         "invalid_grant"
     );
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, after);
     assert_eq!(after[..2], stable[..2]);
     let old: Vec<Value> = serde_json::from_str(&stable[2])?;
     let new: Vec<Value> = serde_json::from_str(&after[2])?;
@@ -833,7 +845,7 @@ async fn device_fractional_durations_preserve_persisted_milliseconds<B: Backend>
             )
             .build()
             .await?;
-        let stable = db.tables(&["users", "accounts", "sessions"]).await?;
+        let stable = db.tables(&["user", "account", "session"]).await?;
         let start = Utc::now();
         let issued = body(
             &call(
@@ -895,9 +907,9 @@ async fn device_fractional_durations_preserve_persisted_milliseconds<B: Backend>
                         },
                     )
                     .await?;
-                let before = db.table("device_code").await?;
+                let before = db.table("deviceCode").await?;
                 assert_eq!(body(&call(&auth, poll(), 400).await)["error"], "slow_down");
-                assert_eq!(db.table("device_code").await?, before);
+                assert_eq!(db.table("deviceCode").await?, before);
             } else {
                 assert_eq!(
                     body(&call(&auth, poll(), 400).await)["error"],
@@ -913,7 +925,7 @@ async fn device_fractional_durations_preserve_persisted_milliseconds<B: Backend>
                 );
             }
         }
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, stable);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, stable);
     }
     B::close(connection).await
 }
@@ -941,7 +953,7 @@ async fn revoked_compact_browser_claims_and_completes_only_its_device_grant<B: B
             .build()
             .await?;
         let foreign = signup(&auth, "foreign@example.test").await;
-        let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+        let baseline = db.tables(&["user", "account", "session"]).await?;
         let owner = signup(&auth, "owner@example.test").await;
         let owner_value = body(&owner);
         let id = owner_value["user"]["id"].as_str().unwrap();
@@ -962,7 +974,7 @@ async fn revoked_compact_browser_claims_and_completes_only_its_device_grant<B: B
         let code = issued["device_code"].as_str().unwrap();
         let user_code = issued["user_code"].as_str().unwrap();
         assert_eq!(
-            db.execute("DELETE FROM sessions WHERE token=$1", &[token])
+            db.execute("DELETE FROM \"session\" WHERE \"token\"=$1", &[token])
                 .await?,
             1
         );
@@ -971,7 +983,7 @@ async fn revoked_compact_browser_claims_and_completes_only_its_device_grant<B: B
         _ = call(&auth, review, 200).await;
         assert_eq!(
             db.text(
-                "SELECT user_id FROM device_code WHERE device_code=$1",
+                "SELECT \"userId\" FROM \"deviceCode\" WHERE \"deviceCode\"=$1",
                 &[code]
             )
             .await?
@@ -979,7 +991,7 @@ async fn revoked_compact_browser_claims_and_completes_only_its_device_grant<B: B
             Some(id)
         );
         let before = db
-            .tables(&["device_code", "users", "accounts", "sessions"])
+            .tables(&["deviceCode", "user", "account", "session"])
             .await?;
         _ = call(
             &auth,
@@ -992,7 +1004,7 @@ async fn revoked_compact_browser_claims_and_completes_only_its_device_grant<B: B
         )
         .await;
         assert_eq!(
-            db.tables(&["device_code", "users", "accounts", "sessions"])
+            db.tables(&["deviceCode", "user", "account", "session"])
                 .await?,
             before
         );
@@ -1008,7 +1020,7 @@ async fn revoked_compact_browser_claims_and_completes_only_its_device_grant<B: B
         .await;
         assert_eq!(body(&accepted), json!({"success":true}));
         let decided = db
-            .tables(&["device_code", "users", "accounts", "sessions"])
+            .tables(&["deviceCode", "user", "account", "session"])
             .await?;
         _ = call(
             &auth,
@@ -1021,7 +1033,7 @@ async fn revoked_compact_browser_claims_and_completes_only_its_device_grant<B: B
         )
         .await;
         assert_eq!(
-            db.tables(&["device_code", "users", "accounts", "sessions"])
+            db.tables(&["deviceCode", "user", "account", "session"])
                 .await?,
             decided
         );
@@ -1029,7 +1041,10 @@ async fn revoked_compact_browser_claims_and_completes_only_its_device_grant<B: B
         assert!(redeemed.headers.get_all("set-cookie").next().is_none());
         assert_eq!(rows(&db, code).await?, 0);
         let count = db
-            .count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[id])
+            .count_where(
+                "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+                &[id],
+            )
             .await?;
         assert_eq!(count, if decision == "approve" { 1 } else { 0 });
         if decision == "approve" {
@@ -1037,15 +1052,18 @@ async fn revoked_compact_browser_claims_and_completes_only_its_device_grant<B: B
             assert_eq!(value["token_type"], "Bearer");
             assert_eq!(value["scope"], "read write");
             assert_eq!(
-                db.text("SELECT token FROM sessions WHERE user_id=$1", &[id])
-                    .await?
-                    .as_deref(),
+                db.text(
+                    "SELECT \"token\" FROM \"session\" WHERE \"userId\"=$1",
+                    &[id]
+                )
+                .await?
+                .as_deref(),
                 value["access_token"].as_str()
             );
         } else {
             assert_eq!(body(&redeemed)["error"], "access_denied");
         }
-        let after = db.tables(&["users", "accounts", "sessions"]).await?;
+        let after = db.tables(&["user", "account", "session"]).await?;
         for (before, now) in baseline.iter().zip(after.iter()) {
             let before: Vec<Value> = serde_json::from_str(before)?;
             let now: Vec<Value> = serde_json::from_str(now)?;
@@ -1074,7 +1092,7 @@ async fn device_poller_session_metadata<B: Backend>(db: Db) -> TestResult {
             .await?;
         let owner = signup(&auth, "owner@example.test").await;
         let foreign = signup(&auth, "foreign@example.test").await;
-        let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+        let baseline = db.tables(&["user", "account", "session"]).await?;
         let issued = body(
             &call(
                 &auth,
@@ -1102,13 +1120,10 @@ async fn device_poller_session_metadata<B: Backend>(db: Db) -> TestResult {
             200,
         )
         .await;
-        let grant = db.table("device_code").await?;
+        let grant = db.table("deviceCode").await?;
         _=call(&auth,request("/device/token",Some(json!({"grant_type":"urn:ietf:params:oauth:grant-type:device_code","device_code":code,"client_id":"wrong-client"})),""),400).await;
-        assert_eq!(db.table("device_code").await?, grant);
-        assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
-            baseline
-        );
+        assert_eq!(db.table("deviceCode").await?, grant);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, baseline);
         let mut poll = request(
             "/device/token",
             Some(
@@ -1127,25 +1142,34 @@ async fn device_poller_session_metadata<B: Backend>(db: Db) -> TestResult {
         assert!(redeemed.headers.get_all("set-cookie").next().is_none());
         let token = body(&redeemed)["access_token"].as_str().unwrap().to_owned();
         assert_eq!(
-            db.text("SELECT user_id FROM sessions WHERE token=$1", &[&token])
-                .await?
-                .as_deref(),
+            db.text(
+                "SELECT \"userId\" FROM \"session\" WHERE \"token\"=$1",
+                &[&token]
+            )
+            .await?
+            .as_deref(),
             body(&owner)["user"]["id"].as_str()
         );
         assert_eq!(
-            db.text("SELECT ip_address FROM sessions WHERE token=$1", &[&token])
-                .await?
-                .as_deref(),
+            db.text(
+                "SELECT \"ipAddress\" FROM \"session\" WHERE \"token\"=$1",
+                &[&token]
+            )
+            .await?
+            .as_deref(),
             Some(if disabled { "" } else { "198.51.100.218" })
         );
         assert_eq!(
-            db.text("SELECT user_agent FROM sessions WHERE token=$1", &[&token])
-                .await?
-                .as_deref(),
+            db.text(
+                "SELECT \"userAgent\" FROM \"session\" WHERE \"token\"=$1",
+                &[&token]
+            )
+            .await?
+            .as_deref(),
             Some("device-poller")
         );
         assert_eq!(rows(&db, code).await?, 0);
-        let after = db.tables(&["users", "accounts", "sessions"]).await?;
+        let after = db.tables(&["user", "account", "session"]).await?;
         for (before, now) in baseline.iter().zip(after.iter()) {
             let before: Vec<Value> = serde_json::from_str(before)?;
             let now: Vec<Value> = serde_json::from_str(now)?;
@@ -1153,7 +1177,7 @@ async fn device_poller_session_metadata<B: Backend>(db: Db) -> TestResult {
         }
         let replay=call(&auth,request("/device/token",Some(json!({"grant_type":"urn:ietf:params:oauth:grant-type:device_code","device_code":code,"client_id":"metadata-client"})),""),400).await;
         assert_eq!(body(&replay)["error"], "invalid_grant");
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, after);
         _ = call(
             &auth,
             request(
@@ -1164,10 +1188,7 @@ async fn device_poller_session_metadata<B: Backend>(db: Db) -> TestResult {
             200,
         )
         .await;
-        assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
-            baseline
-        );
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, baseline);
         authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
         B::close(connection).await?;
     }
@@ -1231,7 +1252,7 @@ async fn device_overlapping_reviews_retain_first_claim_authority<B: Backend>(db:
     let first_id = body(&first)["user"]["id"].as_str().unwrap().to_owned();
     let second_id = body(&second)["user"]["id"].as_str().unwrap().to_owned();
     *gate.ids.lock().unwrap() = vec![first_id.clone(), second_id];
-    let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+    let baseline = db.tables(&["user", "account", "session"]).await?;
     let issued = body(
         &call(
             &auth,
@@ -1246,7 +1267,7 @@ async fn device_overlapping_reviews_retain_first_claim_authority<B: Backend>(db:
     );
     let code = issued["device_code"].as_str().unwrap();
     let user_code = issued["user_code"].as_str().unwrap();
-    let initial = db.table("device_code").await?;
+    let initial = db.table("deviceCode").await?;
     let review = |cookie: &str| {
         let mut r = request("/device", None, cookie);
         r.set_query_pairs([("user_code", user_code)]);
@@ -1256,11 +1277,8 @@ async fn device_overlapping_reviews_retain_first_claim_authority<B: Backend>(db:
     let mut a = Box::pin(auth.handle_request(review(&cookies(&first))));
     let mut b = Box::pin(auth.handle_request(review(&cookies(&second))));
     tokio::time::timeout(std::time::Duration::from_secs(10),async{tokio::select!{biased;_=gate.entered[0].notified()=>{},r=&mut a=>panic!("first review escaped before its gate: {r:?}")};tokio::select!{biased;_=gate.entered[1].notified()=>{},r=&mut b=>panic!("second review escaped before its gate: {r:?}")};}).await?;
-    assert_eq!(db.table("device_code").await?, initial);
-    assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
-        baseline
-    );
+    assert_eq!(db.table("deviceCode").await?, initial);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, baseline);
     gate.release[0].notify_one();
     let winner = tokio::time::timeout(std::time::Duration::from_secs(10), &mut a).await??;
     assert_eq!(winner.status, 200);
@@ -1268,10 +1286,10 @@ async fn device_overlapping_reviews_retain_first_claim_authority<B: Backend>(db:
         body(&winner),
         json!({"user_code":user_code,"status":"pending","client_id":"claim-client","scope":"openid private-scope"})
     );
-    let claimed = db.table("device_code").await?;
+    let claimed = db.table("deviceCode").await?;
     assert_eq!(
         db.text(
-            "SELECT user_id FROM device_code WHERE device_code=$1",
+            "SELECT \"userId\" FROM \"deviceCode\" WHERE \"deviceCode\"=$1",
             &[code]
         )
         .await?
@@ -1285,7 +1303,7 @@ async fn device_overlapping_reviews_retain_first_claim_authority<B: Backend>(db:
         body(&loser),
         json!({"user_code":user_code,"status":"pending"})
     );
-    assert_eq!(db.table("device_code").await?, claimed);
+    assert_eq!(db.table("deviceCode").await?, claimed);
     gate.armed.store(false, Ordering::SeqCst);
     for decision in ["approve", "deny"] {
         _ = call(
@@ -1298,12 +1316,9 @@ async fn device_overlapping_reviews_retain_first_claim_authority<B: Backend>(db:
             403,
         )
         .await;
-        assert_eq!(db.table("device_code").await?, claimed);
+        assert_eq!(db.table("deviceCode").await?, claimed);
     }
-    assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
-        baseline
-    );
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, baseline);
     _ = call(
         &auth,
         request(
@@ -1324,15 +1339,18 @@ async fn device_overlapping_reviews_retain_first_claim_authority<B: Backend>(db:
     let done = call(&auth, poll.clone(), 200).await;
     let token = body(&done)["access_token"].as_str().unwrap().to_owned();
     assert_eq!(
-        db.text("SELECT user_id FROM sessions WHERE token=$1", &[&token])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT \"userId\" FROM \"session\" WHERE \"token\"=$1",
+            &[&token]
+        )
+        .await?
+        .as_deref(),
         Some(first_id.as_str())
     );
     assert_eq!(rows(&db, code).await?, 0);
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     _ = call(&auth, poll, 400).await;
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, after);
     authenticated(&auth, &cookies(&second), "second@example.test").await;
     B::close(connection).await
 }
@@ -1368,11 +1386,11 @@ async fn device_custom_user_codes_prefer_exact_lookup<B: Backend>(db: Db) -> Tes
     let code = issue["device_code"].as_str().unwrap();
     let uc = issue["user_code"].as_str().unwrap();
     assert_eq!(uc, " café-Code! ");
-    let before = db.table("device_code").await?;
+    let before = db.table("deviceCode").await?;
     let mut alias = request("/device", None, &jar);
     alias.set_query_pairs([("user_code", "CAFCODE")]);
     _ = call(&exact, alias, 400).await;
-    assert_eq!(db.table("device_code").await?, before);
+    assert_eq!(db.table("deviceCode").await?, before);
     let mut review = request("/device", None, &jar);
     review.set_query_pairs([("user_code", uc)]);
     let viewed = call(&exact, review, 200).await;
@@ -1393,7 +1411,7 @@ async fn device_custom_user_codes_prefer_exact_lookup<B: Backend>(db: Db) -> Tes
     let done = call(&exact, poll.clone(), 200).await;
     assert_eq!(
         db.text(
-            "SELECT user_id FROM sessions WHERE token=$1",
+            "SELECT \"userId\" FROM \"session\" WHERE \"token\"=$1",
             &[body(&done)["access_token"].as_str().unwrap()]
         )
         .await?
@@ -1426,7 +1444,7 @@ async fn device_custom_user_codes_prefer_exact_lookup<B: Backend>(db: Db) -> Tes
     assert_eq!(body(&viewed)["user_code"], alias);
     assert_eq!(
         db.text(
-            "SELECT user_id FROM device_code WHERE device_code=$1",
+            "SELECT \"userId\" FROM \"deviceCode\" WHERE \"deviceCode\"=$1",
             &[generated["device_code"].as_str().unwrap()]
         )
         .await?
@@ -1490,7 +1508,7 @@ async fn device_user_code_collision_retries_without_replacing_grant<B: Backend>(
         )
         .await,
     );
-    let initial = db.table("device_code").await?;
+    let initial = db.table("deviceCode").await?;
     let new = body(
         &call(
             &auth,
@@ -1508,11 +1526,11 @@ async fn device_user_code_collision_retries_without_replacing_grant<B: Backend>(
     assert_eq!(devices.lock().unwrap().len(), 3);
     assert_eq!(users.lock().unwrap().len(), 3);
     assert_eq!(calls.load(Ordering::SeqCst), 2);
-    let present: Vec<Value> = serde_json::from_str(&db.table("device_code").await?)?;
+    let present: Vec<Value> = serde_json::from_str(&db.table("deviceCode").await?)?;
     let original_rows: Vec<Value> = serde_json::from_str(&initial)?;
     assert_eq!(present.len(), 2);
     assert!(original_rows.iter().all(|r| present.contains(r)));
-    let before = db.table("device_code").await?;
+    let before = db.table("deviceCode").await?;
     _ = call(
         &auth,
         request(
@@ -1526,7 +1544,7 @@ async fn device_user_code_collision_retries_without_replacing_grant<B: Backend>(
     assert!(devices.lock().unwrap().is_empty());
     assert!(users.lock().unwrap().is_empty());
     assert_eq!(calls.load(Ordering::SeqCst), 3);
-    assert_eq!(db.table("device_code").await?, before);
+    assert_eq!(db.table("deviceCode").await?, before);
     for (grant, owner, scope) in [
         (&original, &first, "original-private"),
         (&new, &second, "new-private"),
@@ -1554,7 +1572,7 @@ async fn device_user_code_collision_retries_without_replacing_grant<B: Backend>(
         assert_eq!(body(&done)["scope"], scope);
         assert_eq!(
             db.text(
-                "SELECT user_id FROM sessions WHERE token=$1",
+                "SELECT \"userId\" FROM \"session\" WHERE \"token\"=$1",
                 &[body(&done)["access_token"].as_str().unwrap()]
             )
             .await?
@@ -1577,7 +1595,7 @@ async fn device_issuance_retains_prebound_owner_authority<B: Backend>(db: Db) ->
     let foreign = signup(&auth, "foreign@example.test").await;
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
-    let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+    let baseline = db.tables(&["user", "account", "session"]).await?;
     for prebound in [owner_id.as_str(), "unknown-prebound-owner", ""] {
         let issued = body(
             &call(
@@ -1597,14 +1615,14 @@ async fn device_issuance_retains_prebound_owner_authority<B: Backend>(db: Db) ->
         let uc = issued["user_code"].as_str().unwrap();
         assert_eq!(
             db.text(
-                "SELECT user_id FROM device_code WHERE device_code=$1",
+                "SELECT \"userId\" FROM \"deviceCode\" WHERE \"deviceCode\"=$1",
                 &[code]
             )
             .await?
             .as_deref(),
             (!prebound.is_empty()).then_some(prebound)
         );
-        let original = db.table("device_code").await?;
+        let original = db.table("deviceCode").await?;
         let mut review = request("/device", None, &cookies(&foreign));
         review.set_query_pairs([("user_code", uc)]);
         let viewed = call(&auth, review, 200).await;
@@ -1612,7 +1630,7 @@ async fn device_issuance_retains_prebound_owner_authority<B: Backend>(db: Db) ->
             assert_eq!(body(&viewed)["client_id"], "prebound-client");
             assert_eq!(
                 db.text(
-                    "SELECT user_id FROM device_code WHERE device_code=$1",
+                    "SELECT \"userId\" FROM \"deviceCode\" WHERE \"deviceCode\"=$1",
                     &[code]
                 )
                 .await?
@@ -1621,7 +1639,7 @@ async fn device_issuance_retains_prebound_owner_authority<B: Backend>(db: Db) ->
             );
         } else {
             assert_eq!(body(&viewed), json!({"user_code":uc,"status":"pending"}));
-            assert_eq!(db.table("device_code").await?, original);
+            assert_eq!(db.table("deviceCode").await?, original);
             for decision in ["approve", "deny"] {
                 _ = call(
                     &auth,
@@ -1633,7 +1651,7 @@ async fn device_issuance_retains_prebound_owner_authority<B: Backend>(db: Db) ->
                     403,
                 )
                 .await;
-                assert_eq!(db.table("device_code").await?, original);
+                assert_eq!(db.table("deviceCode").await?, original);
             }
         }
         if prebound == owner_id {
@@ -1657,7 +1675,7 @@ async fn device_issuance_retains_prebound_owner_authority<B: Backend>(db: Db) ->
             let done = call(&auth, poll.clone(), 200).await;
             assert_eq!(
                 db.text(
-                    "SELECT user_id FROM sessions WHERE token=$1",
+                    "SELECT \"userId\" FROM \"session\" WHERE \"token\"=$1",
                     &[body(&done)["access_token"].as_str().unwrap()]
                 )
                 .await?
@@ -1668,7 +1686,7 @@ async fn device_issuance_retains_prebound_owner_authority<B: Backend>(db: Db) ->
             _ = call(&auth, poll, 400).await;
         }
     }
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     for (before, now) in baseline.iter().zip(after.iter()) {
         let before: Vec<Value> = serde_json::from_str(before)?;
         let now: Vec<Value> = serde_json::from_str(now)?;
@@ -1682,7 +1700,19 @@ async fn device_application_result_owns_consumed_receipt_identity<B: Backend>(
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
-    _=db.execute("CREATE TABLE completion_receipts (grant_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, audience TEXT NOT NULL, nonce TEXT NOT NULL)",&[]).await?;
+    _ = db
+        .execute(
+            "ALTER TABLE \"deviceCode\" ADD COLUMN \"grantAudience\" TEXT",
+            &[],
+        )
+        .await?;
+    _ = db
+        .execute(
+            "ALTER TABLE \"deviceCode\" ADD COLUMN \"grantNonce\" TEXT",
+            &[],
+        )
+        .await?;
+    _=db.execute("CREATE TABLE completion_receipts (grant_id TEXT PRIMARY KEY, \"userId\" TEXT NOT NULL, audience TEXT NOT NULL, nonce TEXT NOT NULL)",&[]).await?;
     let events = Events::default();
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(
@@ -1695,7 +1725,7 @@ async fn device_application_result_owns_consumed_receipt_identity<B: Backend>(
     let owner = signup(&auth, "owner@example.test").await;
     let foreign = signup(&auth, "foreign@example.test").await;
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
-    let baseline = db.tables(&["users", "accounts", "sessions"]).await?;
+    let baseline = db.tables(&["user", "account", "session"]).await?;
     for expired in [false, true] {
         let nonce = if expired {
             "expired-nonce"
@@ -1717,7 +1747,10 @@ async fn device_application_result_owns_consumed_receipt_identity<B: Backend>(
         let code = issued["device_code"].as_str().unwrap();
         let uc = issued["user_code"].as_str().unwrap();
         let id = db
-            .text("SELECT id FROM device_code WHERE device_code=$1", &[code])
+            .text(
+                "SELECT id FROM \"deviceCode\" WHERE \"deviceCode\"=$1",
+                &[code],
+            )
             .await?
             .unwrap();
         let mut review = request("/device", None, &cookies(&owner));
@@ -1735,9 +1768,9 @@ async fn device_application_result_owns_consumed_receipt_identity<B: Backend>(
         .await;
         if expired {
             db.set_timestamp(
-                "device_code",
-                "expires_at",
-                ("device_code", code),
+                "deviceCode",
+                "expiresAt",
+                ("deviceCode", code),
                 chrono::Utc::now() - chrono::Duration::minutes(1),
             )
             .await?;
@@ -1811,7 +1844,7 @@ async fn device_application_result_owns_consumed_receipt_identity<B: Backend>(
             json!({"audience":"application-api"})
         );
         assert_eq!(rows(&db, code).await?, 0);
-        assert_eq!(db.execute("INSERT INTO completion_receipts (grant_id,user_id,audience,nonce) VALUES ($1,$2,$3,$4)",&[&result.claimed_device_code.device_code.id,result.user.id().as_ref(),result.claimed_device_code.fields["grantAudience"].as_str().unwrap(),result.authorization_context["nonce"].as_str().unwrap()]).await?,1);
+        assert_eq!(db.execute("INSERT INTO completion_receipts (grant_id,\"userId\",audience,nonce) VALUES ($1,$2,$3,$4)",&[&result.claimed_device_code.device_code.id,result.user.id().as_ref(),result.claimed_device_code.fields["grantAudience"].as_str().unwrap(),result.authorization_context["nonce"].as_str().unwrap()]).await?,1);
         assert_eq!(
             db.text("SELECT grant_id FROM completion_receipts", &[])
                 .await?
@@ -1832,10 +1865,7 @@ async fn device_application_result_owns_consumed_receipt_identity<B: Backend>(
         );
         assert_eq!(db.count("completion_receipts").await?, 1);
     }
-    assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
-        baseline
-    );
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, baseline);
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     B::close(connection).await
 }

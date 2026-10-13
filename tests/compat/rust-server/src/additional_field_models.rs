@@ -27,9 +27,15 @@ pub(super) mod application_user {
         #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "display_name"))]
         pub name: Option<String>,
         pub email: Option<String>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "emailVerified"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "emailVerified"))]
         pub email_verified: bool,
         pub image: Option<String>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "createdAt"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "createdAt"))]
         pub created_at: DateTime<Utc>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "updatedAt"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "updatedAt"))]
         pub updated_at: DateTime<Utc>,
         #[cfg_attr(feature = "seaorm", sea_orm(column_name = "user_label"))]
         #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "user_label"))]
@@ -69,15 +75,26 @@ pub(super) mod application_session {
     pub struct Model {
         #[cfg_attr(feature = "seaorm", sea_orm(primary_key, auto_increment = false))]
         pub id: String,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "expiresAt"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "expiresAt"))]
         pub expires_at: DateTime<Utc>,
         pub token: String,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "createdAt"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "createdAt"))]
         pub created_at: DateTime<Utc>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "updatedAt"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "updatedAt"))]
         pub updated_at: DateTime<Utc>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "ipAddress"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "ipAddress"))]
         pub ip_address: Option<String>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "userAgent"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "userAgent"))]
         pub user_agent: Option<String>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "userId"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "userId"))]
         pub user_id: String,
         #[serde(skip)]
-        pub active: bool,
         pub label: Option<String>,
         pub hidden: Option<String>,
         pub omitted: Option<String>,
@@ -109,17 +126,37 @@ pub(super) mod application_account {
     pub struct Model {
         #[cfg_attr(feature = "seaorm", sea_orm(primary_key, auto_increment = false))]
         pub id: String,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "accountId"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "accountId"))]
         pub account_id: String,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "providerId"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "providerId"))]
         pub provider_id: String,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "userId"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "userId"))]
         pub user_id: String,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "accessToken"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "accessToken"))]
         pub access_token: Option<String>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "refreshToken"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "refreshToken"))]
         pub refresh_token: Option<String>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "idToken"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "idToken"))]
         pub id_token: Option<String>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "accessTokenExpiresAt"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "accessTokenExpiresAt"))]
         pub access_token_expires_at: Option<DateTime<Utc>>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "refreshTokenExpiresAt"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "refreshTokenExpiresAt"))]
         pub refresh_token_expires_at: Option<DateTime<Utc>>,
         pub scope: Option<String>,
         pub password: Option<String>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "createdAt"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "createdAt"))]
         pub created_at: DateTime<Utc>,
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "updatedAt"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "updatedAt"))]
         pub updated_at: DateTime<Utc>,
         pub label: Option<String>,
         pub hidden: Option<String>,
@@ -134,10 +171,10 @@ pub(super) mod application_account {
 
 /// The physical tables behind these models.
 pub(super) const TABLES: [&str; 4] = [
-    r#"CREATE TABLE "app_user" ( "id" varchar NOT NULL PRIMARY KEY, "display_name" varchar, "email" varchar, "email_verified" boolean NOT NULL, "image" varchar, "created_at" timestamp_with_timezone_text NOT NULL, "updated_at" timestamp_with_timezone_text NOT NULL, "user_label" varchar, "hidden" varchar, "omitted" varchar, "readonly" varchar, "role" varchar, "private_column" varchar NOT NULL DEFAULT 'physical-private' )"#,
-    r#"CREATE TABLE "app_session" ( "id" varchar NOT NULL PRIMARY KEY, "expires_at" timestamp_with_timezone_text NOT NULL, "token" varchar NOT NULL, "created_at" timestamp_with_timezone_text NOT NULL, "updated_at" timestamp_with_timezone_text NOT NULL, "ip_address" varchar, "user_agent" varchar, "user_id" varchar NOT NULL, "active" boolean NOT NULL, "label" varchar, "hidden" varchar, "omitted" varchar )"#,
-    r#"CREATE TABLE "app_account" ( "id" varchar NOT NULL PRIMARY KEY, "account_id" varchar NOT NULL, "provider_id" varchar NOT NULL, "user_id" varchar NOT NULL, "access_token" varchar, "refresh_token" varchar, "id_token" varchar, "access_token_expires_at" timestamp_with_timezone_text, "refresh_token_expires_at" timestamp_with_timezone_text, "scope" varchar, "password" varchar, "created_at" timestamp_with_timezone_text NOT NULL, "updated_at" timestamp_with_timezone_text NOT NULL, "label" varchar, "hidden" varchar, "omitted" varchar )"#,
-    r#"CREATE TABLE "verifications" ( "id" varchar NOT NULL PRIMARY KEY, "identifier" varchar NOT NULL, "value" varchar NOT NULL, "expires_at" timestamp_with_timezone_text NOT NULL, "created_at" timestamp_with_timezone_text NOT NULL, "updated_at" timestamp_with_timezone_text NOT NULL )"#,
+    r#"CREATE TABLE "app_user" ( "id" varchar NOT NULL PRIMARY KEY, "display_name" varchar, "email" varchar, "emailVerified" boolean NOT NULL, "image" varchar, "createdAt" timestamp_with_timezone_text NOT NULL, "updatedAt" timestamp_with_timezone_text NOT NULL, "user_label" varchar, "hidden" varchar, "omitted" varchar, "readonly" varchar, "role" varchar, "private_column" varchar NOT NULL DEFAULT 'physical-private' )"#,
+    r#"CREATE TABLE "app_session" ( "id" varchar NOT NULL PRIMARY KEY, "expiresAt" timestamp_with_timezone_text NOT NULL, "token" varchar NOT NULL, "createdAt" timestamp_with_timezone_text NOT NULL, "updatedAt" timestamp_with_timezone_text NOT NULL, "ipAddress" varchar, "userAgent" varchar, "userId" varchar NOT NULL, "label" varchar, "hidden" varchar, "omitted" varchar )"#,
+    r#"CREATE TABLE "app_account" ( "id" varchar NOT NULL PRIMARY KEY, "accountId" varchar NOT NULL, "providerId" varchar NOT NULL, "userId" varchar NOT NULL, "accessToken" varchar, "refreshToken" varchar, "idToken" varchar, "accessTokenExpiresAt" timestamp_with_timezone_text, "refreshTokenExpiresAt" timestamp_with_timezone_text, "scope" varchar, "password" varchar, "createdAt" timestamp_with_timezone_text NOT NULL, "updatedAt" timestamp_with_timezone_text NOT NULL, "label" varchar, "hidden" varchar, "omitted" varchar )"#,
+    r#"CREATE TABLE "verification" ( "id" varchar NOT NULL PRIMARY KEY, "identifier" varchar NOT NULL, "value" varchar NOT NULL, "expiresAt" timestamp_with_timezone_text NOT NULL, "createdAt" timestamp_with_timezone_text NOT NULL, "updatedAt" timestamp_with_timezone_text NOT NULL )"#,
 ];
 
 pub(super) struct ApplicationSchema;

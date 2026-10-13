@@ -74,10 +74,6 @@ pub struct TwoFactor {
     pub failed_verification_count: Option<f64>,
     #[serde(rename = "lockedUntil")]
     pub locked_until: Option<DateTime<Utc>>,
-    #[serde(rename = "createdAt")]
-    pub created_at: DateTime<Utc>,
-    #[serde(rename = "updatedAt")]
-    pub updated_at: DateTime<Utc>,
 }
 
 /// Two-factor authentication creation data.
@@ -132,13 +128,9 @@ pub struct Passkey {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transports: Option<String>,
     #[serde(rename = "createdAt")]
-    pub created_at: DateTime<Utc>,
-    #[serde(rename = "updatedAt")]
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aaguid: Option<String>,
-    #[serde(skip_serializing, skip_deserializing, default)]
-    pub credential: String,
 }
 
 /// Input for creating a new passkey.
@@ -152,7 +144,6 @@ pub struct CreatePasskey {
     pub device_type: String,
     pub backed_up: bool,
     pub transports: Option<String>,
-    pub credential: String,
     pub aaguid: Option<String>,
 }
 
@@ -165,7 +156,6 @@ pub struct UpdatePasskey {
 /// Input for updating stored passkey credential state after authentication.
 #[derive(Debug, Clone)]
 pub struct UpdatePasskeyAuthentication {
-    pub credential: String,
     pub counter: u64,
     pub backed_up: bool,
     pub device_type: String,
@@ -390,12 +380,6 @@ impl AuthTwoFactor for TwoFactor {
     fn user_id(&self) -> Cow<'_, str> {
         Cow::Borrowed(&self.user_id)
     }
-    fn created_at(&self) -> DateTime<Utc> {
-        self.created_at
-    }
-    fn updated_at(&self) -> DateTime<Utc> {
-        self.updated_at
-    }
     fn verified(&self) -> Option<bool> {
         self.verified
     }
@@ -417,8 +401,6 @@ impl<T: AuthTwoFactor> From<&T> for TwoFactor {
             verified: two_factor.verified(),
             failed_verification_count: two_factor.failed_verification_count(),
             locked_until: two_factor.locked_until(),
-            created_at: two_factor.created_at(),
-            updated_at: two_factor.updated_at(),
         }
     }
 }
@@ -549,17 +531,11 @@ impl AuthPasskey for Passkey {
     fn transports(&self) -> Option<&str> {
         self.transports.as_deref()
     }
-    fn created_at(&self) -> DateTime<Utc> {
+    fn created_at(&self) -> Option<DateTime<Utc>> {
         self.created_at
-    }
-    fn updated_at(&self) -> DateTime<Utc> {
-        self.updated_at
     }
     fn aaguid(&self) -> Option<&str> {
         self.aaguid.as_deref()
-    }
-    fn credential(&self) -> &str {
-        &self.credential
     }
 }
 
@@ -576,9 +552,8 @@ impl<T: AuthPasskey> From<&T> for Passkey {
             backed_up: passkey.backed_up(),
             transports: passkey.transports().map(str::to_owned),
             created_at: passkey.created_at(),
-            updated_at: passkey.updated_at(),
+
             aaguid: passkey.aaguid().map(str::to_owned),
-            credential: passkey.credential().to_owned(),
         }
     }
 }

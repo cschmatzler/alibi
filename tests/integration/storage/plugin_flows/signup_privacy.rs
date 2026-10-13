@@ -23,7 +23,7 @@ async fn duplicate_signup_preserves_identity_and_filters_synthetic_output<B: Bac
     let owner = signup(&original_auth, "duplicate@example.test").await;
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let original = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let input = json!({"email":"duplicate@example.test","password":"different-password-456","name":"Submitted Name","image":"https://images.test/submitted"});
     let _ = call(
@@ -33,7 +33,7 @@ async fn duplicate_signup_preserves_identity_and_filters_synthetic_output<B: Bac
     )
     .await;
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         original
     );
@@ -104,7 +104,7 @@ async fn duplicate_signup_preserves_identity_and_filters_synthetic_output<B: Bac
         .await;
         assert!(!cookies(&response).contains("session_token="));
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             original,
             "{mode} must not mutate the physical identity"
@@ -196,7 +196,7 @@ async fn duplicate_privacy_hashes_before_notification_without_replacing_credenti
     let owner = signup(&setup, "crypto-owner@example.test").await;
     let foreign = signup(&setup, "crypto-foreign@example.test").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for generic in [false, true] {
         let events = Arc::new(Mutex::new(Vec::new()));
@@ -256,7 +256,7 @@ async fn duplicate_privacy_hashes_before_notification_without_replacing_credenti
             let synthetic = body(&response)["user"]["id"].as_str().unwrap().to_owned();
             assert_ne!(synthetic, body(&owner)["user"]["id"].as_str().unwrap());
             assert_eq!(
-                db.count_where("SELECT COUNT(*) FROM users WHERE id=$1", &[&synthetic])
+                db.count_where("SELECT COUNT(*) FROM \"user\" WHERE id=$1", &[&synthetic])
                     .await?,
                 0
             );
@@ -265,7 +265,7 @@ async fn duplicate_privacy_hashes_before_notification_without_replacing_credenti
         }
         assert!(!response.headers.contains_key("set-cookie"));
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -309,7 +309,7 @@ async fn existing_signup_notification_waits_or_remains_owned_in_background<B: Ba
         let owner = signup(&setup, "notification-owner@example.test").await;
         let foreign = signup(&setup, "notification-foreign@example.test").await;
         let before = db
-            .tables(&["users", "accounts", "sessions", "verifications"])
+            .tables(&["user", "account", "session", "verification"])
             .await?;
         let entered = Arc::new(tokio::sync::Notify::new());
         let release = Arc::new(tokio::sync::Notify::new());
@@ -386,7 +386,7 @@ async fn existing_signup_notification_waits_or_remains_owned_in_background<B: Ba
         tokio::time::timeout(std::time::Duration::from_secs(5), completed.notified()).await?;
         assert!(finished.load(std::sync::atomic::Ordering::SeqCst));
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -424,7 +424,7 @@ async fn synthetic_callback_failures_keep_public_error_boundary_and_principals<B
     let owner = signup(&setup, "synthetic-error-owner@example.test").await;
     let foreign = signup(&setup, "synthetic-error-foreign@example.test").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for api in [false, true] {
         let events = Arc::new(Mutex::new(Vec::new()));
@@ -474,7 +474,7 @@ async fn synthetic_callback_failures_keep_public_error_boundary_and_principals<B
         assert!(!response.headers.contains_key("set-cookie"));
         assert_eq!(*events.lock().unwrap(), ["hash", "existing", "synthetic"]);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -537,7 +537,7 @@ async fn signup_privacy_never_synthesizes_creation_cancellation_or_ordinary_erro
         .await?;
     let owner = signup(&setup, "creation-existing@example.test").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for generic in [false, true] {
         for cancel in [false, true] {
@@ -567,7 +567,7 @@ async fn signup_privacy_never_synthesizes_creation_cancellation_or_ordinary_erro
             assert!(!denied.headers.contains_key("set-cookie"));
             assert_eq!(*events.lock().unwrap(), ["hash", "hook"]);
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "verifications"])
+                db.tables(&["user", "account", "session", "verification"])
                     .await?,
                 before
             );
@@ -587,7 +587,7 @@ async fn synthetic_duplicate_identity_uses_application_id_policy<B: Backend>(db:
     let owner = signup(&setup, "synthetic-id-owner@example.test").await;
     let foreign = signup(&setup, "synthetic-id-foreign@example.test").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for custom in [false, true] {
         let fail = Arc::new(AtomicBool::new(false));
@@ -644,7 +644,7 @@ async fn synthetic_duplicate_identity_uses_application_id_policy<B: Backend>(db:
         }
         assert_eq!(*events.lock().unwrap(), expected);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -662,7 +662,7 @@ async fn synthetic_duplicate_identity_uses_application_id_policy<B: Backend>(db:
             vec![json!({"stage":"id-generation","model":"user","size":null})]
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -689,7 +689,10 @@ async fn synthetic_customization_retains_declared_application_fields<B: Backend>
         "synthetic_note",
     ] {
         _ = db
-            .execute(&format!("ALTER TABLE users ADD COLUMN {column} TEXT"), &[])
+            .execute(
+                &format!("ALTER TABLE \"user\" ADD COLUMN {column} TEXT"),
+                &[],
+            )
             .await?;
     }
     let setup = super::auth_probe::fast_builder::<B>(&connection)
@@ -698,7 +701,7 @@ async fn synthetic_customization_retains_declared_application_fields<B: Backend>
     let owner = signup(&setup, "synthetic-fields-owner@example.test").await;
     let foreign = signup(&setup, "synthetic-fields-foreign@example.test").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for custom in [false, true] {
         let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
@@ -818,7 +821,7 @@ async fn synthetic_customization_retains_declared_application_fields<B: Backend>
                 }
             );
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "verifications"])
+                db.tables(&["user", "account", "session", "verification"])
                     .await?,
                 before
             );

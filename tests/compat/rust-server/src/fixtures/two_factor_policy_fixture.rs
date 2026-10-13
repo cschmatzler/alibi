@@ -439,7 +439,7 @@ async fn control(
         return match database
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Sqlite,
-                "UPDATE verifications SET value=? WHERE identifier=?",
+                "UPDATE \"verification\" SET \"value\"=? WHERE \"identifier\"=?",
                 [user_id.into(), identifier.into()],
             ))
             .await
@@ -478,7 +478,7 @@ async fn control(
         let key = if let Some(key) = value.get("pendingKey").and_then(JsValue::as_str) {
             Some(key.to_owned())
         } else {
-            database.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Sqlite,"SELECT identifier FROM verifications WHERE value=? AND identifier LIKE '2fa-%'",[user_id.into()])).await.map_err(|_|())?.map(|row|row.try_get::<String>("","identifier").map_err(|_|())).transpose()?
+            database.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Sqlite,"SELECT \"identifier\" FROM \"verification\" WHERE \"value\"=? AND \"identifier\" LIKE '2fa-%'",[user_id.into()])).await.map_err(|_|())?.map(|row|row.try_get::<String>("","identifier").map_err(|_|())).transpose()?
         };
         // Raw rows, as the reference reads them: an expired row that was never
         // deleted must stay visible, or a missed deletion would read as one.
@@ -488,7 +488,7 @@ async fn control(
                 database
                     .query_one_raw(Statement::from_sql_and_values(
                         DatabaseBackend::Sqlite,
-                        "SELECT value FROM verifications WHERE identifier=?",
+                        "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=?",
                         [identifier.into()],
                     ))
                     .await
@@ -505,7 +505,7 @@ async fn control(
         } else {
             (false, None, false)
         };
-        let trust_count=database.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Sqlite,"SELECT count(*) AS n FROM verifications WHERE value=? AND identifier LIKE 'trust-device-%'",[user_id.into()])).await.map_err(|_|())?.ok_or(())?.try_get::<i64>("","n").map_err(|_|())?;
+        let trust_count=database.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Sqlite,"SELECT \"count\"(*) AS n FROM \"verification\" WHERE \"value\"=? AND \"identifier\" LIKE 'trust-device-%'",[user_id.into()])).await.map_err(|_|())?.ok_or(())?.try_get::<i64>("","n").map_err(|_|())?;
         Ok::<_,()>(json!({"key":key,"challenge":challenge,"attempts":attempts,"otpExists":otp_exists,"trustCount":trust_count}))
       }.await;
         return match read {
@@ -520,7 +520,7 @@ async fn control(
         && database
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Sqlite,
-                "UPDATE accounts SET password='' WHERE user_id=? AND provider_id='credential'",
+                "UPDATE \"account\" SET \"password\"='' WHERE \"userId\"=? AND \"providerId\"='credential'",
                 [user_id.into()],
             ))
             .await
@@ -576,7 +576,7 @@ async fn control(
             let _ = database
                 .execute_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Sqlite,
-                    "UPDATE two_factor SET failed_verification_count=? WHERE user_id=?",
+                    "UPDATE \"twoFactor\" SET \"failedVerificationCount\"=? WHERE \"userId\"=?",
                     [count.as_f64().into(), user_id.into()],
                 ))
                 .await?;
@@ -585,7 +585,7 @@ async fn control(
             let _ = database
                 .execute_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Sqlite,
-                    "UPDATE two_factor SET verified=? WHERE user_id=?",
+                    "UPDATE \"twoFactor\" SET \"verified\"=? WHERE \"userId\"=?",
                     [verified.into(), user_id.into()],
                 ))
                 .await?;
@@ -594,7 +594,7 @@ async fn control(
             let _ = database
                 .execute_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Sqlite,
-                    "UPDATE two_factor SET locked_until=? WHERE user_id=?",
+                    "UPDATE \"twoFactor\" SET \"lockedUntil\"=? WHERE \"userId\"=?",
                     [(Utc::now() - Duration::seconds(1)).into(), user_id.into()],
                 ))
                 .await?;

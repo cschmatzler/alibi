@@ -215,7 +215,7 @@ mod tests {
         let row = database
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
-                "SELECT metadata, reference_id FROM api_keys WHERE id = ?",
+                "SELECT \"metadata\", \"referenceId\" FROM \"apikey\" WHERE id = ?",
                 [key_id.into()],
             ))
             .await
@@ -273,7 +273,7 @@ mod tests {
         let row_2 = database
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
-                "SELECT metadata, reference_id FROM api_keys WHERE id = ?",
+                "SELECT \"metadata\", \"referenceId\" FROM \"apikey\" WHERE id = ?",
                 [key_id.into()],
             ))
             .await
@@ -349,7 +349,7 @@ mod tests {
         let row_3 = database
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
-                "SELECT metadata FROM organization WHERE id = ?",
+                "SELECT \"metadata\" FROM \"organization\" WHERE id = ?",
                 [organization.id.clone().into()],
             ))
             .await
@@ -375,7 +375,7 @@ mod tests {
         let row_4 = database
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
-                "SELECT metadata FROM organization WHERE id = ?",
+                "SELECT \"metadata\" FROM \"organization\" WHERE id = ?",
                 [organization.id.into()],
             ))
             .await
@@ -428,7 +428,7 @@ mod tests {
             let row = database
                 .query_one_raw(Statement::from_sql_and_values(
                     DbBackend::Sqlite,
-                    "SELECT phone_number FROM users WHERE id = ?",
+                    "SELECT \"phoneNumber\" FROM \"user\" WHERE id = ?",
                     [owner.id().into()],
                 ))
                 .await
@@ -524,7 +524,7 @@ mod tests {
         let row = database
             .query_one_raw(Statement::from_string(
                 DbBackend::Sqlite,
-                "SELECT COUNT(*) AS count FROM verifications".to_owned(),
+                "SELECT COUNT(*) AS \"count\" FROM \"verification\"".to_owned(),
             ))
             .await
             .unwrap()

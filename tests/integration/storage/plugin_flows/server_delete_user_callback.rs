@@ -72,7 +72,7 @@ async fn server_delete_user_callback_consumes_owned_proofs_and_preserves_foreign
     let bystander = signup(&auth, "logical-callback-bystander@example.test").await;
     let owner_id = body(&owner)["user"]["id"].clone();
     let foreign_id = body(&foreign)["user"]["id"].clone();
-    let auth_before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let auth_before = db.tables(&["user", "account", "session"]).await?;
     let requested = call(
         &delivery_auth,
         request("/delete-user", Some(json!({})), &cookies(&owner)),
@@ -93,7 +93,7 @@ async fn server_delete_user_callback_consumes_owned_proofs_and_preserves_foreign
 
     let first = mailbox.0.lock().unwrap().last().unwrap().1.clone();
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for query in [
         json!({}),
@@ -120,7 +120,7 @@ async fn server_delete_user_callback_consumes_owned_proofs_and_preserves_foreign
     assert_eq!(guest.error.status_code(), 404);
     assert!(guest.error.to_string().contains("Failed to get user info"));
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
@@ -138,9 +138,9 @@ async fn server_delete_user_callback_consumes_owned_proofs_and_preserves_foreign
         .unwrap_err();
     assert_eq!(wrong.error.status_code(), 404);
     assert!(wrong.error.to_string().contains("Invalid token"));
-    assert_eq!(db.table("verifications").await?, "[]");
+    assert_eq!(db.table("verification").await?, "[]");
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         auth_before
     );
     assert_eq!(
@@ -148,7 +148,7 @@ async fn server_delete_user_callback_consumes_owned_proofs_and_preserves_foreign
         foreign_id.as_str()
     );
     let after_wrong = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     let spent = auth
         .dispatch_endpoint(endpoint(&json!({"token":first}))?, options(&owner))
@@ -157,7 +157,7 @@ async fn server_delete_user_callback_consumes_owned_proofs_and_preserves_foreign
     assert_eq!(spent.error.status_code(), 404);
     assert!(spent.error.to_string().contains("Invalid token"));
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         after_wrong
     );
@@ -188,7 +188,7 @@ async fn server_delete_user_callback_consumes_owned_proofs_and_preserves_foreign
         );
 
         let token = mailbox.0.lock().unwrap().last().unwrap().1.clone();
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         let result=auth.dispatch_endpoint(endpoint(&json!({"token":token,"callbackURL":callback,"userId":body(&bystander)["user"]["id"]}))?,options(target)).await;
         let headers = if callback.is_empty() {
             let output = result?;
@@ -224,22 +224,22 @@ async fn server_delete_user_callback_consumes_owned_proofs_and_preserves_foreign
                 .filter(|cookie| cookie.starts_with("better-auth.session_data="))
                 .all(|cookie| cookie.contains("Max-Age=0"))
         );
-        for (index, table) in ["users", "accounts", "sessions"].iter().enumerate() {
+        for (index, table) in ["user", "account", "session"].iter().enumerate() {
             let original: Vec<Value> = serde_json::from_str(&before[index])?;
             let expected: Vec<_> = original
                 .into_iter()
-                .filter(|row| row[if *table == "users" { "id" } else { "user_id" }] != *id)
+                .filter(|row| row[if *table == "user" { "id" } else { "userId" }] != *id)
                 .collect();
             let actual: Vec<Value> = serde_json::from_str(&db.table(table).await?)?;
             assert_eq!(actual, expected, "unexpected changes to {table}");
         }
-        assert_eq!(db.table("verifications").await?, "[]");
+        assert_eq!(db.table("verification").await?, "[]");
         assert_eq!(
             observer.0.lock().unwrap().last().unwrap().as_deref(),
             id.as_str()
         );
         let before_replay = db
-            .tables(&["users", "accounts", "sessions", "verifications"])
+            .tables(&["user", "account", "session", "verification"])
             .await?;
         let replay = auth
             .dispatch_endpoint(endpoint(&json!({"token":token}))?, options(target))
@@ -248,7 +248,7 @@ async fn server_delete_user_callback_consumes_owned_proofs_and_preserves_foreign
         assert_eq!(replay.error.status_code(), 404);
         assert!(replay.error.to_string().contains("Failed to get user info"));
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before_replay
         );

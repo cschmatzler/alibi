@@ -149,11 +149,6 @@ pub trait SqlxSessionModel: AuthSession + SqlxModel {
 
     fn user_id_column() -> &'static str;
 
-    /// Optional legacy flag. Schemas without it use session expiry for validity.
-    fn active_column() -> Option<&'static str> {
-        None
-    }
-
     fn expires_at_column() -> &'static str;
 
     fn created_at_column() -> &'static str;

@@ -39,10 +39,10 @@ impl<S: AuthSchema> SqlxStore<S> {
                     .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
             },
         );
-        active.set("public_key", data.public_key);
-        active.set("private_key", data.private_key);
-        active.set("created_at", data.created_at);
-        active.set("expires_at", data.expires_at);
+        active.set("publicKey", data.public_key);
+        active.set("privateKey", data.private_key);
+        active.set("createdAt", data.created_at);
+        active.set("expiresAt", data.expires_at);
         active.set("alg", data.alg);
         active.set("crv", data.crv);
         model::insert::<Model>(exec, &active).await.map(Into::into)

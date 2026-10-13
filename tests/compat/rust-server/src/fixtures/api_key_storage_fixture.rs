@@ -130,7 +130,7 @@ impl Application {
                         let email = database
                             .query_one_raw(Statement::from_sql_and_values(
                                 DbBackend::Sqlite,
-                                "SELECT email FROM users WHERE id=?",
+                                "SELECT \"email\" FROM \"user\" WHERE id=?",
                                 [reference.into()],
                             ))
                             .await
@@ -141,7 +141,7 @@ impl Application {
                             database
                                 .query_one_raw(Statement::from_sql_and_values(
                                     DbBackend::Sqlite,
-                                    "SELECT slug FROM organization WHERE id=?",
+                                    "SELECT \"slug\" FROM \"organization\" WHERE id=?",
                                     [reference.into()],
                                 ))
                                 .await
@@ -510,7 +510,7 @@ pub(crate) async fn router(
                 let rows = database
                     .query_all_raw(Statement::from_string(
                         DbBackend::Sqlite,
-                "SELECT *,hex(CAST(start AS BLOB)) AS startHex,typeof(start) AS startType FROM api_keys ORDER BY name",
+                "SELECT *,hex(CAST(\"start\" AS BLOB)) AS startHex,typeof(\"start\") AS startType FROM \"apikey\" ORDER BY \"name\"",
                     ))
                     .await
                     .unwrap();
@@ -703,7 +703,7 @@ pub(crate) async fn router(
                                 database
                                     .execute_raw(Statement::from_sql_and_values(
                                         DbBackend::Sqlite,
-                                        format!("UPDATE api_keys SET {column}=? WHERE id=?"),
+                                        format!("UPDATE \"apikey\" SET {column}=? WHERE id=?"),
                                         [value, input["keyId"].as_str().unwrap().to_owned().into()],
                                     ))
                                     .await

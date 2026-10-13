@@ -151,7 +151,8 @@ impl DatabaseHooks<TestSchema, crate::backend::Backend> for SessionHooks {
             .request
             .as_ref()
             .is_some_and(|request| request.path.contains("oauth-proxy"))
-            || alibi::endpoint::current_endpoint_call_context().is_some_and(|call| call.path().is_some_and(|path| path.contains("oauth-proxy")))
+            || alibi::endpoint::current_endpoint_call_context()
+                .is_some_and(|call| call.path().is_some_and(|path| path.contains("oauth-proxy")))
         {
             let mut provider = self.0.provider.lock().await;
             let mode = provider.failure.clone();
@@ -396,15 +397,73 @@ async fn build_router(
             );
             routers.insert(
                 (index, mode.to_owned()),
-                Router::new().nest(path, Router::new()
-                    .route("/__server-proxy",post({let auth=auth.clone();move |Json(input):Json<Value>|{let auth=auth.clone();async move {
-                        let endpoint=alibi::endpoint::ServerEndpoint::<Value>::new("oauth-proxy",if input["operation"]=="oAuthProxyCompletion" {"oAuthProxyCompletion"}else{"oAuthProxy"}).with_query(&input["query"]).unwrap().with_params(&input["params"]).unwrap();
-                        match auth.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),..Default::default()}).await {
-                            Ok(output)=>output.into_response().unwrap().into_response(),
-                            Err(error)=>{let mut response=if error.body_absent{AuthResponse::new(error.error.status_code())}else{error.error.to_auth_response()};if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}if let Some(headers)=error.headers{for(name,value)in headers.iter(){if name.eq_ignore_ascii_case("set-cookie"){response.headers.append(name,value);}else{response.headers.insert(name,value);}}}response.into_response()}
-                        }
-                    }}}))
-                    .merge(auth.clone().axum_router().with_state(auth))),
+                Router::new().nest(
+                    path,
+                    Router::new()
+                        .route(
+                            "/__server-proxy",
+                            post({
+                                let auth = auth.clone();
+                                move |Json(input): Json<Value>| {
+                                    let auth = auth.clone();
+                                    async move {
+                                        let endpoint =
+                                            alibi::endpoint::ServerEndpoint::<Value>::new(
+                                                "oauth-proxy",
+                                                if input["operation"] == "oAuthProxyCompletion" {
+                                                    "oAuthProxyCompletion"
+                                                } else {
+                                                    "oAuthProxy"
+                                                },
+                                            )
+                                            .with_query(&input["query"])
+                                            .unwrap()
+                                            .with_params(&input["params"])
+                                            .unwrap();
+                                        match auth
+                                            .dispatch_endpoint(
+                                                endpoint,
+                                                alibi::endpoint::EndpointOptions {
+                                                    headers: input.get("headers").map(|headers| {
+                                                        serde_json::from_value(headers.clone())
+                                                            .unwrap()
+                                                    }),
+                                                    ..Default::default()
+                                                },
+                                            )
+                                            .await
+                                        {
+                                            Ok(output) => {
+                                                output.into_response().unwrap().into_response()
+                                            }
+                                            Err(error) => {
+                                                let mut response = if error.body_absent {
+                                                    AuthResponse::new(error.error.status_code())
+                                                } else {
+                                                    error.error.to_auth_response()
+                                                };
+                                                if let Some(body) = error.body {
+                                                    response.body =
+                                                        serde_json::to_vec(&*body).unwrap();
+                                                }
+                                                if let Some(headers) = error.headers {
+                                                    for (name, value) in headers.iter() {
+                                                        if name.eq_ignore_ascii_case("set-cookie") {
+                                                            response.headers.append(name, value);
+                                                        } else {
+                                                            response.headers.insert(name, value);
+                                                        }
+                                                    }
+                                                }
+                                                response.into_response()
+                                            }
+                                        }
+                                    }
+                                }
+                            }),
+                        )
+                        .merge(auth.clone().axum_router().with_state(auth)),
+                ),
             );
         }
     }
@@ -434,7 +493,7 @@ async fn build_router(
     .route(&format!("{control}/control"),post(|State(fixture):State<Fixture>,Json(value):Json<Value>|async move{
         let mode=value.get("mode").and_then(Value::as_str).unwrap_or("none").to_owned();{let mut provider=fixture.provider.lock().await;provider.failure=mode.clone();provider.tracking=true;}let db=&fixture.preview;
         db.execute_raw(Statement::from_string(db.get_database_backend(),"DROP TRIGGER IF EXISTS proxy_delete_veto")).await.map_err(|e|e.to_string())?;
-        if mode=="delete-veto" {db.execute_raw(Statement::from_string(db.get_database_backend(),"CREATE TRIGGER proxy_delete_veto BEFORE DELETE ON verifications BEGIN SELECT RAISE(ABORT, 'proxy delete veto'); END")).await.map_err(|e|e.to_string())?;}
+        if mode=="delete-veto" {db.execute_raw(Statement::from_string(db.get_database_backend(),"CREATE TRIGGER proxy_delete_veto BEFORE DELETE ON \"verification\" BEGIN SELECT RAISE(ABORT, 'proxy delete veto'); END")).await.map_err(|e|e.to_string())?;}
         Ok::<_,String>(Json(json!({"status":true})))
     }))
     .route(&format!("{control}/profile"),post(|State(fixture):State<Fixture>,Json(value):Json<Value>|async move{fixture.provider.lock().await.profile=value;Json(json!({"status":true}))}))

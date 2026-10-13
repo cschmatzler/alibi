@@ -6,6 +6,7 @@
 )]
 
 use crate::contract::helpers::*;
+use alibi::AuthUser as _;
 use alibi::prelude::{CreateUser, UpdateUser};
 use serde_json::json;
 
@@ -23,7 +24,7 @@ mod tests {
 
         let user = auth.store().create_user(create_user).await.unwrap();
 
-        assert_eq!(user.email.as_deref(), Some("mixed.case@test.com"));
+        assert_eq!(user.email(), Some("mixed.case@test.com"));
 
         let lower = auth
             .store()
@@ -64,7 +65,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(updated.email.as_deref(), Some("updated.case@test.com"));
+        assert_eq!(updated.email(), Some("updated.case@test.com"));
 
         let fetched = auth
             .store()

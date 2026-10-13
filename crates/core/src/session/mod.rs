@@ -197,7 +197,7 @@ impl<S: AuthSchema> SessionManager<S> {
     {
         let token = session.token();
         let now = Utc::now();
-        if session.expires_at() < now || !session.active() {
+        if session.expires_at() < now {
             if options.cleanup_expired {
                 self.database.delete_session(token).await?;
             }
@@ -284,7 +284,7 @@ impl<S: AuthSchema> SessionManager<S> {
         let now = Utc::now();
         Ok(sessions
             .into_iter()
-            .filter(|session| session.expires_at() > now && session.active())
+            .filter(|session| session.expires_at() > now)
             .collect())
     }
 
@@ -534,7 +534,6 @@ mod tests {
             user_id: "u1".into(),
             impersonated_by: None,
             active_organization_id: None,
-            active: true,
         };
         assert!(mgr.is_session_fresh(&session));
     }
@@ -561,7 +560,6 @@ mod tests {
             user_id: "u1".into(),
             impersonated_by: None,
             active_organization_id: None,
-            active: true,
         };
         assert!(!mgr.is_session_fresh(&session));
     }
@@ -586,7 +584,6 @@ mod tests {
             user_id: "u1".into(),
             impersonated_by: None,
             active_organization_id: None,
-            active: true,
         };
         assert!(mgr.is_session_fresh(&session));
     }

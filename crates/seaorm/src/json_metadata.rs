@@ -58,7 +58,21 @@ impl From<JsonMetadata> for serde_json::Value {
         value.0
     }
 }
-impl sea_orm::TryGetableFromJson for JsonMetadata {}
+impl sea_orm::TryGetable for JsonMetadata {
+    fn try_get_by<I: sea_orm::ColIdx>(
+        result: &sea_orm::QueryResult,
+        index: I,
+    ) -> Result<Self, sea_orm::TryGetError> {
+        if let Ok(value) = serde_json::Value::try_get_by(result, index) {
+            Ok(Self::from(value))
+        } else {
+            let text = String::try_get_by(result, index)?;
+            alibi_core::utils::json::from_slice(text.as_bytes()).map_err(|error| {
+                sea_orm::TryGetError::DbErr(sea_orm::DbErr::Custom(error.to_string()))
+            })
+        }
+    }
+}
 impl From<JsonMetadata> for sea_orm::Value {
     fn from(value: JsonMetadata) -> Self {
         match value.1 {

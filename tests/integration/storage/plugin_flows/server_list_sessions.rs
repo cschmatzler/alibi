@@ -44,9 +44,9 @@ async fn server_list_sessions_retains_cached_freshness_and_filters_physical_rows
     let foreign = signup(&auth, "logical-list-foreign@example.test").await;
     let token = |response: &AuthResponse| body(response)["token"].as_str().unwrap().to_owned();
     let old = chrono::DateTime::from_timestamp(1_577_836_800, 0).unwrap();
-    db.set_timestamp("sessions", "expires_at", ("token", &token(&peers[1])), old)
+    db.set_timestamp("session", "expiresAt", ("token", &token(&peers[1])), old)
         .await?;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let missing = auth
         .dispatch_endpoint(endpoint(false)?, EndpointOptions::default())
         .await
@@ -99,10 +99,10 @@ async fn server_list_sessions_retains_cached_freshness_and_filters_physical_rows
         assert_eq!(row.ip_address.as_deref(), stored.ip_address());
         assert_eq!(row.user_agent.as_deref(), stored.user_agent());
     }
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
-    db.set_timestamp("sessions", "created_at", ("token", &token(&owner)), old)
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
+    db.set_timestamp("session", "createdAt", ("token", &token(&owner)), old)
         .await?;
-    let aged = db.tables(&["users", "accounts", "sessions"]).await?;
+    let aged = db.tables(&["user", "account", "session"]).await?;
     let cached = auth
         .dispatch_endpoint(endpoint(false)?, options(&owner))
         .await?;
@@ -121,10 +121,10 @@ async fn server_list_sessions_retains_cached_freshness_and_filters_physical_rows
         .unwrap_err();
     assert_eq!(stale.error.status_code(), 403);
     assert!(stale.error.to_string().contains("Session is not fresh"));
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, aged);
-    db.set_timestamp("sessions", "expires_at", ("token", &token(&owner)), old)
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, aged);
+    db.set_timestamp("session", "expiresAt", ("token", &token(&owner)), old)
         .await?;
-    let expired = db.tables(&["users", "accounts", "sessions"]).await?;
+    let expired = db.tables(&["user", "account", "session"]).await?;
     let cached = auth
         .dispatch_endpoint(endpoint(false)?, options(&owner))
         .await?;
@@ -141,7 +141,7 @@ async fn server_list_sessions_retains_cached_freshness_and_filters_physical_rows
         .await
         .unwrap_err();
     assert_eq!(absent.error.status_code(), 401);
-    let after_expired_lookup = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after_expired_lookup = db.tables(&["user", "account", "session"]).await?;
     assert_eq!(after_expired_lookup[..2], expired[..2]);
     let expired_rows: Vec<Value> = serde_json::from_str(&expired[2])?;
     let retained: Vec<_> = expired_rows

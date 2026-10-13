@@ -6,9 +6,12 @@ use chrono::{DateTime, Utc};
 #[auth(table = "member")]
 pub struct Model {
     pub id: String,
+    #[sqlx(rename = "organizationId")]
     pub organization_id: String,
+    #[sqlx(rename = "userId")]
     pub user_id: String,
     pub role: String,
+    #[sqlx(rename = "createdAt")]
     pub created_at: DateTime<Utc>,
 }
 

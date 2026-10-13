@@ -3,6 +3,10 @@
 extern crate self as alibi_seaorm;
 
 mod conversions;
+mod integer;
+pub use integer::Integer;
+mod number;
+pub use number::Number;
 
 pub mod rate_limit;
 pub use rate_limit::SeaOrmRateLimitStorage;

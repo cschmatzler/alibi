@@ -9,7 +9,7 @@ repository = { workspace = true }
 homepage = { workspace = true }
 documentation = "https://docs.rs/alibi-schema-registry"
 publish = ["crates-io"]
-include = ["/src/**", "/migrations/**", "/README.md", "/LICENSE"]
+include = ["/src/**", "/schema/**", "/migrations/**", "/README.md", "/LICENSE"]
 
 readme = { workspace = true }
 keywords = { workspace = true }

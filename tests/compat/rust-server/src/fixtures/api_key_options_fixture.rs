@@ -224,7 +224,7 @@ struct Fixture {
     application: Application,
 }
 async fn state(State(fixture): State<Fixture>) -> Json<Value> {
-    let rows=fixture.database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT *,hex(CAST(start AS BLOB)) AS startHex,typeof(start) AS startType FROM api_keys ORDER BY name,id")).await.unwrap();
+    let rows=fixture.database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT *,hex(CAST(\"start\" AS BLOB)) AS startHex,typeof(\"start\") AS startType FROM \"apikey\" ORDER BY \"name\",id")).await.unwrap();
     Json(json!({"keys":rows.iter().map(persisted).collect::<Vec<_>>()}))
 }
 async fn events(State(fixture): State<Fixture>) -> Json<Value> {
@@ -255,7 +255,7 @@ async fn install(State(fixture): State<Fixture>, Json(input): Json<Value>) -> Js
             .database
             .execute_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
-                format!("UPDATE api_keys SET {column}=? WHERE id=?"),
+                format!("UPDATE \"apikey\" SET {column}=? WHERE id=?"),
                 [value.into(), input["keyId"].as_str().unwrap().into()],
             ))
             .await

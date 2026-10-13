@@ -94,7 +94,7 @@ async fn public_role_operators_guard_persisted_grants_and_physical_writes<B: Bac
         .await?;
     assert_eq!(
         db.execute(
-            "UPDATE organization_role SET permission = $1 WHERE id = $2",
+            "UPDATE \"organizationRole\" SET \"permission\" = $1 WHERE id = $2",
             &[literal, &stored.id]
         )
         .await?,
@@ -128,7 +128,7 @@ async fn public_role_operators_guard_persisted_grants_and_physical_writes<B: Bac
     );
     let permission_before = db
         .text(
-            "SELECT permission FROM organization_role WHERE id = $1",
+            "SELECT \"permission\" FROM \"organizationRole\" WHERE id = $1",
             &[&stored.id],
         )
         .await?;
@@ -161,7 +161,7 @@ async fn public_role_operators_guard_persisted_grants_and_physical_writes<B: Bac
                 .await?;
             assert_eq!(
                 db.text(
-                    "SELECT name FROM team WHERE id = $1 AND organization_id = $2",
+                    "SELECT \"name\" FROM \"team\" WHERE id = $1 AND \"organizationId\" = $2",
                     &[&team.id, &organization.id]
                 )
                 .await?
@@ -177,7 +177,7 @@ async fn public_role_operators_guard_persisted_grants_and_physical_writes<B: Bac
         );
         assert_eq!(
             db.text(
-                "SELECT permission FROM organization_role WHERE id = $1",
+                "SELECT \"permission\" FROM \"organizationRole\" WHERE id = $1",
                 &[&stored.id]
             )
             .await?
@@ -204,7 +204,7 @@ async fn public_role_operators_guard_persisted_grants_and_physical_writes<B: Bac
     assert_eq!(physical_effects, expected_effects);
     let physical = json!({
         "permissionBefore": permission_before,
-        "permissionAfter": db.text("SELECT permission FROM organization_role WHERE id = $1", &[&stored.id]).await?,
+        "permissionAfter": db.text("SELECT \"permission\" FROM \"organizationRole\" WHERE id = $1", &[&stored.id]).await?,
         "teamCountBefore": count_before,
         "teamCountAfter": db.count("team").await?,
     });
@@ -217,7 +217,7 @@ async fn public_role_operators_guard_persisted_grants_and_physical_writes<B: Bac
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM team WHERE organization_id = $1",
+            "SELECT COUNT(*) FROM \"team\" WHERE \"organizationId\" = $1",
             &[&foreign.id]
         )
         .await?,
@@ -249,7 +249,7 @@ async fn public_role_operators_guard_persisted_grants_and_physical_writes<B: Bac
     // A malformed stored role still aborts loading, including for the creator.
     assert_eq!(
         db.execute(
-            "UPDATE organization_role SET permission = $1 WHERE id = $2",
+            "UPDATE \"organizationRole\" SET \"permission\" = $1 WHERE id = $2",
             &["[]", &other.id]
         )
         .await?,

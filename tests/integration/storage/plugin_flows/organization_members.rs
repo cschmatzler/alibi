@@ -150,7 +150,7 @@ async fn organization_member_authority<B: Backend>(db: Db) -> TestResult {
     trace.mask(&foreign_member);
     let owner_member = db
         .text(
-            "SELECT id FROM member WHERE user_id = $1 AND organization_id = $2",
+            "SELECT id FROM \"member\" WHERE \"userId\" = $1 AND \"organizationId\" = $2",
             &[&owner.id, &organization_id],
         )
         .await?
@@ -324,7 +324,7 @@ async fn organization_member_authority<B: Backend>(db: Db) -> TestResult {
     trace.response("member leaves the active organization", &left);
     assert_eq!(
         db.text(
-            "SELECT active_organization_id FROM sessions WHERE token = $1",
+            "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\" = $1",
             &[body(&joined)["token"].as_str().unwrap()]
         )
         .await?,
@@ -337,7 +337,7 @@ async fn organization_member_authority<B: Backend>(db: Db) -> TestResult {
     trace.mask(&admin_member);
     _ = db
         .execute(
-            "CREATE TRIGGER fail_member_delete BEFORE DELETE ON member BEGIN SELECT RAISE(ABORT, 'forced'); END",
+            "CREATE TRIGGER fail_member_delete BEFORE DELETE ON \"member\" BEGIN SELECT RAISE(ABORT, 'forced'); END",
             &[],
         )
         .await?;
@@ -399,7 +399,10 @@ async fn organization_dynamic_roles<B: Backend>(db: Db) -> TestResult {
     ] {
         if let Some(stored) = stored {
             _ = db
-                .execute("UPDATE organization_role SET permission = $1", &[stored])
+                .execute(
+                    "UPDATE \"organizationRole\" SET \"permission\" = $1",
+                    &[stored],
+                )
                 .await?;
         }
         trace.response(
@@ -418,7 +421,10 @@ async fn organization_dynamic_roles<B: Backend>(db: Db) -> TestResult {
     }
     trace.value(
         "stored role",
-        json!(db.text("SELECT role FROM organization_role", &[]).await?),
+        json!(
+            db.text("SELECT \"role\" FROM \"organizationRole\"", &[])
+                .await?
+        ),
     );
     B::close(connection).await?;
 
@@ -626,7 +632,7 @@ async fn organization_plugin_helpers<B: Backend>(db: Db) -> TestResult {
     let created = organization(&auth, &mut owner, "helpers").await;
     trace.mask(&owner.id);
     trace.mask(&created);
-    let creator = db.text("SELECT role FROM member", &[]).await?;
+    let creator = db.text("SELECT \"role\" FROM \"member\"", &[]).await?;
     trace.value("creator role", json!(creator));
 
     for (label, input) in [
@@ -723,7 +729,7 @@ async fn organization_trusted_addition_preserves_literal_role_arrays_and_session
     let target = account(&auth, "target@example.test").await;
     let org = organization(&auth, &mut owner, "literal-roles").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "organization"])
+        .tables(&["user", "account", "session", "organization"])
         .await?;
     let result = serde_json::to_value(auth.dispatch_endpoint(OrganizationPlugin::add_member_endpoint(&serde_json::from_value(json!({"userId":target.id,"organizationId":org,"role":[" member ","member","admin"]}))?)?,EndpointOptions::default()).await?.decode()?)?;
     assert_eq!(result["role"], " member ,member,admin");
@@ -737,7 +743,7 @@ async fn organization_trusted_addition_preserves_literal_role_arrays_and_session
     );
     assert_eq!(
         db.text(
-            "SELECT role FROM member WHERE id=$1",
+            "SELECT \"role\" FROM \"member\" WHERE id=$1",
             &[result["id"].as_str().unwrap()]
         )
         .await?
@@ -745,7 +751,7 @@ async fn organization_trusted_addition_preserves_literal_role_arrays_and_session
         Some(" member ,member,admin")
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization"])
+        db.tables(&["user", "account", "session", "organization"])
             .await?,
         before
     );
@@ -772,7 +778,7 @@ async fn fractional_organization_membership_limit_uses_actual_physical_count<B: 
     assert_eq!(admitted["userId"], first.id);
     assert_eq!(db.count("member").await?, 2);
     let before = db
-        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .tables(&["user", "account", "session", "organization", "member"])
         .await?;
     let endpoint = OrganizationPlugin::add_member_endpoint(&serde_json::from_value(
         json!({"userId":second.id,"organizationId":org,"role":"member"}),
@@ -790,7 +796,7 @@ async fn fractional_organization_membership_limit_uses_actual_physical_count<B: 
         }
     ));
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization", "member"])
+        db.tables(&["user", "account", "session", "organization", "member"])
             .await?,
         before
     );
@@ -853,13 +859,13 @@ async fn organization_membership_resolver_keeps_target_snapshots_and_raw_falsy_r
     .await;
     let raw = db
         .text(
-            "SELECT CAST(metadata AS TEXT) FROM organization WHERE id=$1",
+            "SELECT CAST(\"metadata\" AS TEXT) FROM \"organization\" WHERE id=$1",
             &[&org],
         )
         .await?
         .unwrap();
     let before = db
-        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .tables(&["user", "account", "session", "organization", "member"])
         .await?;
     for mode in 0..3 {
         *policy.mode.lock().unwrap() = mode;
@@ -886,7 +892,7 @@ async fn organization_membership_resolver_keeps_target_snapshots_and_raw_falsy_r
                 );
             }
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "organization", "member"])
+                db.tables(&["user", "account", "session", "organization", "member"])
                     .await?,
                 before
             );
@@ -939,7 +945,7 @@ async fn organization_creation_raw_quota<B: Backend>(db: Db) -> TestResult {
             .build()
             .await?;
         let before = db
-            .tables(&["users", "accounts", "sessions", "organization", "member"])
+            .tables(&["user", "account", "session", "organization", "member"])
             .await?;
         let response=call(&auth,request("/organization/create",Some(json!({"name":"Quota request","slug":if allowed {"quota-new"} else {"quota-own"},"userId":foreign.id})),&owner.cookie),if allowed {200} else {403}).await;
         if allowed {
@@ -950,15 +956,15 @@ async fn organization_creation_raw_quota<B: Backend>(db: Db) -> TestResult {
                 "YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS"
             );
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "organization", "member"])
+                db.tables(&["user", "account", "session", "organization", "member"])
                     .await?,
                 before
             );
         }
         let before_trusted = db
-            .tables(&["users", "accounts", "sessions", "organization", "member"])
+            .tables(&["user", "account", "session", "organization", "member"])
             .await?;
-        let sessions = db.table("sessions").await?;
+        let sessions = db.table("session").await?;
         let result = Box::pin(auth.dispatch_endpoint(
             OrganizationPlugin::create_endpoint(
                 &serde_json::from_value(
@@ -973,18 +979,18 @@ async fn organization_creation_raw_quota<B: Backend>(db: Db) -> TestResult {
             let created = serde_json::to_value(result?.decode()?)?;
             assert_eq!(created["members"][0]["userId"], owner.id);
             assert_eq!(db.count("organization").await?, 4);
-            assert_eq!(db.table("sessions").await?, sessions);
+            assert_eq!(db.table("session").await?, sessions);
         } else {
             assert_eq!(result.unwrap_err().error.status_code(), 403);
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "organization", "member"])
+                db.tables(&["user", "account", "session", "organization", "member"])
                     .await?,
                 before_trusted
             );
         }
         assert_eq!(
             db.count_where(
-                "SELECT COUNT(*) FROM member WHERE organization_id=$1 AND user_id=$2",
+                "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\"=$1 AND \"userId\"=$2",
                 &[&own, &owner.id]
             )
             .await?,
@@ -1034,10 +1040,13 @@ async fn organization_creation_policy_principal<B: Backend>(db: Db) -> TestResul
     let free = account(&auth, "creation-free@example.test").await;
     let paid = account(&auth, "creation-paid@example.test").await;
     _ = db
-        .execute("UPDATE users SET name='Paid' WHERE id=$1", &[&paid.id])
+        .execute(
+            "UPDATE \"user\" SET \"name\"='Paid' WHERE id=$1",
+            &[&paid.id],
+        )
         .await?;
     let before = db
-        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .tables(&["user", "account", "session", "organization", "member"])
         .await?;
     assert_eq!(
         body(
@@ -1056,7 +1065,7 @@ async fn organization_creation_policy_principal<B: Backend>(db: Db) -> TestResul
     );
     assert_eq!(*policy.events.lock().unwrap(), [("allow", free.id.clone())]);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization", "member"])
+        db.tables(&["user", "account", "session", "organization", "member"])
             .await?,
         before
     );
@@ -1081,7 +1090,7 @@ async fn organization_creation_policy_principal<B: Backend>(db: Db) -> TestResul
         .reached
         .store(true, std::sync::atomic::Ordering::SeqCst);
     let before = db
-        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .tables(&["user", "account", "session", "organization", "member"])
         .await?;
     _ = call(
         &auth,
@@ -1098,7 +1107,7 @@ async fn organization_creation_policy_principal<B: Backend>(db: Db) -> TestResul
         [("allow", paid.id.clone()), ("limit", paid.id.clone())]
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization", "member"])
+        db.tables(&["user", "account", "session", "organization", "member"])
             .await?,
         before
     );
@@ -1106,7 +1115,7 @@ async fn organization_creation_policy_principal<B: Backend>(db: Db) -> TestResul
         .reached
         .store(false, std::sync::atomic::Ordering::SeqCst);
     policy.events.lock().unwrap().clear();
-    let sessions = db.table("sessions").await?;
+    let sessions = db.table("session").await?;
     let input = serde_json::from_value(
         json!({"name":"Trusted free","slug":"trusted-free","userId":free.id}),
     )?;
@@ -1124,12 +1133,12 @@ async fn organization_creation_policy_principal<B: Backend>(db: Db) -> TestResul
         *policy.events.lock().unwrap(),
         [("allow", free.id.clone()), ("limit", free.id.clone())]
     );
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("session").await?, sessions);
     policy
         .reached
         .store(true, std::sync::atomic::Ordering::SeqCst);
     let before = db
-        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .tables(&["user", "account", "session", "organization", "member"])
         .await?;
     let rejected = Box::pin(auth.dispatch_endpoint(
         OrganizationPlugin::create_endpoint(
@@ -1144,7 +1153,7 @@ async fn organization_creation_policy_principal<B: Backend>(db: Db) -> TestResul
     .unwrap_err();
     assert_eq!(rejected.error.status_code(), 403);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization", "member"])
+        db.tables(&["user", "account", "session", "organization", "member"])
             .await?,
         before
     );
@@ -1200,7 +1209,7 @@ async fn organization_creation_policy_error<B: Backend>(db: Db) -> TestResult {
         let owner = account(&auth, "creation-error-owner@example.test").await;
         let foreign = account(&auth, "creation-error-foreign@example.test").await;
         let before = db
-            .tables(&["users", "accounts", "sessions", "organization", "member"])
+            .tables(&["user", "account", "session", "organization", "member"])
             .await?;
         let code = format!("CREATION_{}_REJECTED", failure.to_uppercase());
         let expected = if failure == "allow" {
@@ -1224,7 +1233,7 @@ async fn organization_creation_policy_error<B: Backend>(db: Db) -> TestResult {
         );
         assert_eq!(*policy.events.lock().unwrap(), expected);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "organization", "member"])
+            db.tables(&["user", "account", "session", "organization", "member"])
                 .await?,
             before
         );
@@ -1245,7 +1254,7 @@ async fn organization_creation_policy_error<B: Backend>(db: Db) -> TestResult {
         );
         assert_eq!(*policy.events.lock().unwrap(), expected);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "organization", "member"])
+            db.tables(&["user", "account", "session", "organization", "member"])
                 .await?,
             before
         );
@@ -1337,7 +1346,7 @@ async fn organization_raw_team_count_quota<B: Backend>(db: Db) -> TestResult {
             let mut owner = account(&auth, "raw-team-owner@example.test").await;
             let org = organization(&auth, &mut owner, "raw-team").await;
             let protected = db
-                .tables(&["users", "accounts", "sessions", "organization", "member"])
+                .tables(&["user", "account", "session", "organization", "member"])
                 .await?;
             for index in 0..3 {
                 policy.events.lock().unwrap().clear();
@@ -1366,7 +1375,7 @@ async fn organization_raw_team_count_quota<B: Backend>(db: Db) -> TestResult {
                 }
                 assert_eq!(*policy.events.lock().unwrap(), expected);
                 assert_eq!(
-                    db.tables(&["users", "accounts", "sessions", "organization", "member"])
+                    db.tables(&["user", "account", "session", "organization", "member"])
                         .await?,
                     protected
                 );
@@ -1475,7 +1484,7 @@ async fn organization_raw_team_seat_endpoint_policy<B: Backend>(db: Db) -> TestR
                 .unwrap()
                 .to_owned();
             let protected = db
-                .tables(&["users", "accounts", "sessions", "organization", "member"])
+                .tables(&["user", "account", "session", "organization", "member"])
                 .await?;
             for (index, target) in [&owner.id, &first.id, &second.id, &owner.id]
                 .into_iter()
@@ -1505,15 +1514,15 @@ async fn organization_raw_team_seat_endpoint_policy<B: Backend>(db: Db) -> TestR
                 }
                 assert_eq!(*policy.events.lock().unwrap(), expected);
                 assert_eq!(
-                    db.tables(&["users", "accounts", "sessions", "organization", "member"])
+                    db.tables(&["user", "account", "session", "organization", "member"])
                         .await?,
                     protected
                 );
             }
-            assert_eq!(db.count("team_member").await?, allowed);
+            assert_eq!(db.count("teamMember").await?, allowed);
             assert_eq!(
                 db.text(
-                    "SELECT CAST(member_count AS TEXT) FROM team WHERE id=$1",
+                    "SELECT CAST(\"memberCount\" AS TEXT) FROM \"team\" WHERE id=$1",
                     &[&team]
                 )
                 .await?,
@@ -1570,7 +1579,7 @@ async fn organization_raw_role_count_quota<B: Backend>(db: Db) -> TestResult {
             let mut owner = account(&auth, "raw-role-owner@example.test").await;
             let org = organization(&auth, &mut owner, "raw-role").await;
             let protected = db
-                .tables(&["users", "accounts", "sessions", "organization", "member"])
+                .tables(&["user", "account", "session", "organization", "member"])
                 .await?;
             for index in 0..3 {
                 let accepted = index < allowed;
@@ -1581,7 +1590,7 @@ async fn organization_raw_role_count_quota<B: Backend>(db: Db) -> TestResult {
                     assert_eq!(body(&response)["code"], "TOO_MANY_ROLES");
                 }
                 assert_eq!(
-                    db.tables(&["users", "accounts", "sessions", "organization", "member"])
+                    db.tables(&["user", "account", "session", "organization", "member"])
                         .await?,
                     protected
                 );
@@ -1595,7 +1604,7 @@ async fn organization_raw_role_count_quota<B: Backend>(db: Db) -> TestResult {
                 }
                 .as_slice()
             );
-            assert_eq!(db.count("organization_role").await?, allowed);
+            assert_eq!(db.count("organizationRole").await?, allowed);
             B::close(connection).await?;
         }
     }
@@ -1672,7 +1681,7 @@ async fn organization_quota_callback_write_order<B: Backend>(db: Db) -> TestResu
     let mut owner = account(&auth, "quota-write-owner@example.test").await;
     let org = organization(&auth, &mut owner, "quota-write").await;
     let protected = db
-        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .tables(&["user", "account", "session", "organization", "member"])
         .await?;
     let team = call(
         &auth,
@@ -1697,10 +1706,10 @@ async fn organization_quota_callback_write_order<B: Backend>(db: Db) -> TestResu
     )
     .await;
     assert_eq!(body(&role)["code"], "TOO_MANY_ROLES");
-    assert_eq!(db.count("organization_role").await?, 2);
+    assert_eq!(db.count("organizationRole").await?, 2);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM organization_role WHERE role='original-role'",
+            "SELECT COUNT(*) FROM \"organizationRole\" WHERE \"role\"='original-role'",
             &[]
         )
         .await?,
@@ -1708,7 +1717,7 @@ async fn organization_quota_callback_write_order<B: Backend>(db: Db) -> TestResu
     );
     assert_eq!(*policy.events.lock().unwrap(), ["team", "role"]);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization", "member"])
+        db.tables(&["user", "account", "session", "organization", "member"])
             .await?,
         protected
     );
@@ -1767,7 +1776,7 @@ async fn organization_duplicate_member_authority<B: Backend>(db: Db) -> TestResu
     let other = organization(&auth, &mut foreign, "duplicate-other").await;
     let first = add(&auth, &own, &target.id, "member").await;
     _ = add(&auth, &other, &target.id, "member").await;
-    let protected = db.tables(&["users", "accounts", "sessions"]).await?;
+    let protected = db.tables(&["user", "account", "session"]).await?;
     *patch.target.lock().unwrap() = Some(target.id.clone());
     patch.seen.lock().unwrap().clear();
     let duplicate = add(&auth, &own, &candidate.id, "member").await;
@@ -1819,7 +1828,7 @@ async fn organization_duplicate_member_authority<B: Backend>(db: Db) -> TestResu
     assert_eq!(ids, [own.as_str(), other.as_str(), own.as_str()]);
     assert_eq!(
         db.text(
-            "SELECT role FROM member WHERE id=$1",
+            "SELECT \"role\" FROM \"member\" WHERE id=$1",
             &[first["id"].as_str().unwrap()]
         )
         .await?
@@ -1828,16 +1837,13 @@ async fn organization_duplicate_member_authority<B: Backend>(db: Db) -> TestResu
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM member WHERE organization_id=$1 AND user_id=$2",
+            "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\"=$1 AND \"userId\"=$2",
             &[&own, &target.id]
         )
         .await?,
         2
     );
-    assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
-        protected
-    );
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, protected);
     B::close(connection).await
 }
 
@@ -1894,11 +1900,11 @@ async fn organization_duplicate_member_exact_id_cleanup<B: Backend>(db: Db) -> T
         _ = auth.store().add_team_member(team, user, None).await?;
     }
     let protected = db
-        .tables(&["users", "accounts", "sessions", "organization"])
+        .tables(&["user", "account", "session", "organization"])
         .await?;
     let first_id = first["id"].as_str().unwrap();
     let first_role = db
-        .text("SELECT role FROM member WHERE id=$1", &[first_id])
+        .text("SELECT \"role\" FROM \"member\" WHERE id=$1", &[first_id])
         .await?;
     _ = call(
         &auth,
@@ -1921,18 +1927,21 @@ async fn organization_duplicate_member_exact_id_cleanup<B: Backend>(db: Db) -> T
     )
     .await;
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM member WHERE id=$1", &[&duplicate.id])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"member\" WHERE id=$1",
+            &[&duplicate.id]
+        )
+        .await?,
         0
     );
     assert_eq!(
-        db.text("SELECT role FROM member WHERE id=$1", &[first_id])
+        db.text("SELECT \"role\" FROM \"member\" WHERE id=$1", &[first_id])
             .await?,
         first_role
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM team_member WHERE team_id=$1 AND user_id=$2",
+            "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1 AND \"userId\"=$2",
             &[&own_team.id, &target.id]
         )
         .await?,
@@ -1940,7 +1949,7 @@ async fn organization_duplicate_member_exact_id_cleanup<B: Backend>(db: Db) -> T
     );
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM team_member WHERE team_id=$1 AND user_id=$2",
+            "SELECT COUNT(*) FROM \"teamMember\" WHERE \"teamId\"=$1 AND \"userId\"=$2",
             &[&other_team.id, &target.id]
         )
         .await?,
@@ -1948,7 +1957,7 @@ async fn organization_duplicate_member_exact_id_cleanup<B: Backend>(db: Db) -> T
     );
     assert_eq!(
         db.text(
-            "SELECT CAST(member_count AS TEXT) FROM team WHERE id=$1",
+            "SELECT CAST(\"memberCount\" AS TEXT) FROM \"team\" WHERE id=$1",
             &[&own_team.id]
         )
         .await?
@@ -1957,7 +1966,7 @@ async fn organization_duplicate_member_exact_id_cleanup<B: Backend>(db: Db) -> T
     );
     assert_eq!(
         db.text(
-            "SELECT CAST(member_count AS TEXT) FROM team WHERE id=$1",
+            "SELECT CAST(\"memberCount\" AS TEXT) FROM \"team\" WHERE id=$1",
             &[&other_team.id]
         )
         .await?
@@ -1965,7 +1974,7 @@ async fn organization_duplicate_member_exact_id_cleanup<B: Backend>(db: Db) -> T
         Some("1")
     );
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization"])
+        db.tables(&["user", "account", "session", "organization"])
             .await?,
         protected
     );
@@ -1980,7 +1989,7 @@ async fn organization_duplicate_member_exact_id_cleanup<B: Backend>(db: Db) -> T
     )
     .await;
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM member WHERE id=$1", &[first_id])
+        db.count_where("SELECT COUNT(*) FROM \"member\" WHERE id=$1", &[first_id])
             .await?,
         1
     );
@@ -2041,7 +2050,7 @@ async fn organization_physical_membership_pages<B: Backend>(db: Db) -> TestResul
         let expected = [new.as_str(), old.as_str(), new.as_str()];
         assert_eq!(ids, expected[..limit.min(3)]);
         let before = db
-            .tables(&["users", "accounts", "sessions", "organization", "member"])
+            .tables(&["user", "account", "session", "organization", "member"])
             .await?;
         let response = call(
             &auth,
@@ -2059,7 +2068,7 @@ async fn organization_physical_membership_pages<B: Backend>(db: Db) -> TestResul
                 "YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS"
             );
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "organization", "member"])
+                db.tables(&["user", "account", "session", "organization", "member"])
                     .await?,
                 before
             );
@@ -2097,7 +2106,7 @@ async fn organization_concurrent_member_admission<B: Backend>(db: Db) -> TestRes
             let count = self
                 .raw
                 .count_where(
-                    "SELECT COUNT(*) FROM member WHERE organization_id=$1 AND user_id=$2",
+                    "SELECT COUNT(*) FROM \"member\" WHERE \"organizationId\"=$1 AND \"userId\"=$2",
                     &[&c.member.organization_id, &c.user.id],
                 )
                 .await
@@ -2131,7 +2140,7 @@ async fn organization_concurrent_member_admission<B: Backend>(db: Db) -> TestRes
     let mut owner = account(&auth, "concurrent-owner@example.test").await;
     let target = account(&auth, "concurrent-target@example.test").await;
     let org = organization(&auth, &mut owner, "concurrent-admission").await;
-    let protected = db.tables(&["users", "accounts", "sessions"]).await?;
+    let protected = db.tables(&["user", "account", "session"]).await?;
     let endpoint = || {
         OrganizationPlugin::add_member_endpoint(
             &serde_json::from_value(
@@ -2177,10 +2186,7 @@ async fn organization_concurrent_member_admission<B: Backend>(db: Db) -> TestRes
             .collect::<Vec<_>>(),
         [org.as_str(), org.as_str()]
     );
-    assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
-        protected
-    );
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, protected);
     B::close(connection).await
 }
 
@@ -2219,7 +2225,7 @@ async fn organization_member_role_js_whitespace<B: Backend>(db: Db) -> TestResul
     let foreign = account(&auth, "space-foreign@example.test").await;
     let org = organization(&auth, &mut owner, "space-role").await;
     let member = add(&auth, &org, &target.id, "member").await;
-    let protected = db.tables(&["users", "accounts", "sessions"]).await?;
+    let protected = db.tables(&["user", "account", "session"]).await?;
     let response=call(&auth,request("/organization/update-member-role",Some(json!({"organizationId":org,"memberId":member["id"],"role":["\u{feff}admin\u{feff}","\u{a0}member\u{3000}"," admin "]})),&owner.cookie),200).await;
     assert_eq!(body(&response)["role"], "admin,member,admin");
     assert_eq!(
@@ -2231,7 +2237,7 @@ async fn organization_member_role_js_whitespace<B: Backend>(db: Db) -> TestResul
     );
     assert_eq!(
         db.text(
-            "SELECT role FROM member WHERE id=$1",
+            "SELECT \"role\" FROM \"member\" WHERE id=$1",
             &[member["id"].as_str().unwrap()]
         )
         .await?
@@ -2263,10 +2269,7 @@ async fn organization_member_role_js_whitespace<B: Backend>(db: Db) -> TestResul
         assert!(hooks.0.lock().unwrap().is_empty());
         assert_eq!(db.table("member").await?, before);
     }
-    assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
-        protected
-    );
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, protected);
     authenticated(&auth, &foreign.cookie, "space-foreign@example.test").await;
     B::close(connection).await
 }
@@ -2301,7 +2304,7 @@ async fn organization_member_role_guest_validation<B: Backend>(db: Db) -> TestRe
     let org = organization(&auth, &mut owner, "guest-role").await;
     let member = add(&auth, &org, &target.id, "member").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .tables(&["user", "account", "session", "organization", "member"])
         .await?;
     let mut cases = Vec::new();
     for role in [Value::Null, json!(1), json!({}), json!([1])] {
@@ -2324,7 +2327,7 @@ async fn organization_member_role_guest_validation<B: Backend>(db: Db) -> TestRe
         );
         assert!(!denied.headers.contains_key("set-cookie"));
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "organization", "member"])
+            db.tables(&["user", "account", "session", "organization", "member"])
                 .await?,
             before
         );
@@ -2353,7 +2356,7 @@ async fn organization_member_role_guest_validation<B: Backend>(db: Db) -> TestRe
     .await;
     assert_eq!(hooks.0.load(std::sync::atomic::Ordering::SeqCst), 0);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization", "member"])
+        db.tables(&["user", "account", "session", "organization", "member"])
             .await?,
         before
     );
@@ -2378,7 +2381,7 @@ async fn organization_legacy_role_read_without_ac<B: Backend>(db: Db) -> TestRes
     let org = organization(&auth, &mut owner, "raw-no-ac").await;
     let member_row = add(&auth, &org, &member.id, "member").await;
     let protected = db
-        .tables(&["users", "accounts", "sessions", "organization"])
+        .tables(&["user", "account", "session", "organization"])
         .await?;
     let mut roles = Vec::new();
     for (i, literal) in [
@@ -2404,7 +2407,7 @@ async fn organization_legacy_role_read_without_ac<B: Backend>(db: Db) -> TestRes
             .await?;
         _ = db
             .execute(
-                "UPDATE organization_role SET permission=$1 WHERE id=$2",
+                "UPDATE \"organizationRole\" SET \"permission\"=$1 WHERE id=$2",
                 &[literal, &role.id],
             )
             .await?;
@@ -2422,7 +2425,7 @@ async fn organization_legacy_role_read_without_ac<B: Backend>(db: Db) -> TestRes
             body(&read)["permission"],
             serde_json::from_str::<Value>(literal)?
         );
-        let row = db.table("organization_role").await?;
+        let row = db.table("organizationRole").await?;
         let denied = call(
             &auth,
             request(
@@ -2434,7 +2437,7 @@ async fn organization_legacy_role_read_without_ac<B: Backend>(db: Db) -> TestRes
         )
         .await;
         assert_eq!(body(&denied)["code"], "MISSING_AC_INSTANCE");
-        assert_eq!(db.table("organization_role").await?, row);
+        assert_eq!(db.table("organizationRole").await?, row);
         roles.push((role, literal));
     }
     let list = call(
@@ -2461,7 +2464,7 @@ async fn organization_legacy_role_read_without_ac<B: Backend>(db: Db) -> TestRes
     );
     _ = db
         .execute(
-            "UPDATE member SET role=$1 WHERE id=$2",
+            "UPDATE \"member\" SET \"role\"=$1 WHERE id=$2",
             &[&roles[0].0.role, member_row["id"].as_str().unwrap()],
         )
         .await?;
@@ -2505,7 +2508,7 @@ async fn organization_legacy_role_read_without_ac<B: Backend>(db: Db) -> TestRes
     assert_eq!(body(&create)["code"], "MISSING_AC_INSTANCE");
     _ = db
         .execute(
-            "UPDATE member SET role='member' WHERE id=$1",
+            "UPDATE \"member\" SET \"role\"='member' WHERE id=$1",
             &[member_row["id"].as_str().unwrap()],
         )
         .await?;
@@ -2521,7 +2524,7 @@ async fn organization_legacy_role_read_without_ac<B: Backend>(db: Db) -> TestRes
         )
         .await;
     }
-    assert_eq!(db.count("organization_role").await?, 0);
+    assert_eq!(db.count("organizationRole").await?, 0);
     for literal in ["{bad", ""] {
         let role = auth
             .store()
@@ -2533,11 +2536,11 @@ async fn organization_legacy_role_read_without_ac<B: Backend>(db: Db) -> TestRes
             .await?;
         _ = db
             .execute(
-                "UPDATE organization_role SET permission=$1 WHERE id=$2",
+                "UPDATE \"organizationRole\" SET \"permission\"=$1 WHERE id=$2",
                 &[literal, &role.id],
             )
             .await?;
-        let before = db.table("organization_role").await?;
+        let before = db.table("organizationRole").await?;
         for input in [
             get(
                 "/organization/get-role",
@@ -2572,13 +2575,13 @@ async fn organization_legacy_role_read_without_ac<B: Backend>(db: Db) -> TestRes
             body(&denied)["code"],
             "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION"
         );
-        assert_eq!(db.table("organization_role").await?, before);
+        assert_eq!(db.table("organizationRole").await?, before);
         _ = db
-            .execute("DELETE FROM organization_role WHERE id=$1", &[&role.id])
+            .execute("DELETE FROM \"organizationRole\" WHERE id=$1", &[&role.id])
             .await?;
     }
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization"])
+        db.tables(&["user", "account", "session", "organization"])
             .await?,
         protected
     );
@@ -2627,24 +2630,24 @@ async fn organization_legacy_role_loader_after_warm_cache<B: Backend>(db: Db) ->
             .await?;
         _ = db
             .execute(
-                "UPDATE organization_role SET permission=$1 WHERE id=$2",
+                "UPDATE \"organizationRole\" SET \"permission\"=$1 WHERE id=$2",
                 &[literal, &role.id],
             )
             .await?;
         _ = db
             .execute(
-                "UPDATE member SET role='legacy' WHERE id=$1",
+                "UPDATE \"member\" SET \"role\"='legacy' WHERE id=$1",
                 &[membership["id"].as_str().unwrap()],
             )
             .await?;
         let before = db
             .tables(&[
-                "users",
-                "accounts",
-                "sessions",
+                "user",
+                "account",
+                "session",
                 "organization",
                 "member",
-                "organization_role",
+                "organizationRole",
             ])
             .await?;
         for input in [
@@ -2702,12 +2705,12 @@ async fn organization_legacy_role_loader_after_warm_cache<B: Backend>(db: Db) ->
         );
         assert_eq!(
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
+                "user",
+                "account",
+                "session",
                 "organization",
                 "member",
-                "organization_role"
+                "organizationRole"
             ])
             .await?,
             before
@@ -2748,7 +2751,7 @@ async fn organization_selected_role_permission_page<B: Backend>(db: Db) -> TestR
         })
         .await?;
     let protected = db
-        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .tables(&["user", "account", "session", "organization", "member"])
         .await?;
     for (i, literal) in [
         " [\"create\"] ",
@@ -2773,11 +2776,11 @@ async fn organization_selected_role_permission_page<B: Backend>(db: Db) -> TestR
             .await?;
         _ = db
             .execute(
-                "UPDATE organization_role SET permission=$1 WHERE id=$2",
+                "UPDATE \"organizationRole\" SET \"permission\"=$1 WHERE id=$2",
                 &[literal, &role.id],
             )
             .await?;
-        let selected_before = db.table("organization_role").await?;
+        let selected_before = db.table("organizationRole").await?;
         _ = call(
             &auth,
             request(
@@ -2788,7 +2791,7 @@ async fn organization_selected_role_permission_page<B: Backend>(db: Db) -> TestR
             403,
         )
         .await;
-        assert_eq!(db.table("organization_role").await?, selected_before);
+        assert_eq!(db.table("organizationRole").await?, selected_before);
         let read = call(
             &auth,
             get(
@@ -2824,7 +2827,7 @@ async fn organization_selected_role_permission_page<B: Backend>(db: Db) -> TestR
             .await;
             if literal == "{bad" {
                 assert!(update.body.is_empty());
-                assert_eq!(db.table("organization_role").await?, selected_before);
+                assert_eq!(db.table("organizationRole").await?, selected_before);
             } else {
                 let parsed = if literal.trim().starts_with('[') {
                     json!(["create"])
@@ -2838,7 +2841,7 @@ async fn organization_selected_role_permission_page<B: Backend>(db: Db) -> TestR
                 );
                 assert_eq!(
                     db.text(
-                        "SELECT permission FROM organization_role WHERE id=$1",
+                        "SELECT \"permission\" FROM \"organizationRole\" WHERE id=$1",
                         &[&role.id]
                     )
                     .await?
@@ -2847,7 +2850,7 @@ async fn organization_selected_role_permission_page<B: Backend>(db: Db) -> TestR
                 );
                 assert!(
                     db.text(
-                        "SELECT updated_at FROM organization_role WHERE id=$1",
+                        "SELECT \"updatedAt\" FROM \"organizationRole\" WHERE id=$1",
                         &[&role.id]
                     )
                     .await?
@@ -2858,7 +2861,7 @@ async fn organization_selected_role_permission_page<B: Backend>(db: Db) -> TestR
         let replacement=call(&auth,request("/organization/update-role",Some(json!({"organizationId":org,"roleId":role.id,"data":{"permission":{"team":["create"]}}})),&owner.cookie),if literal=="{bad"{500}else{200}).await;
         if literal == "{bad" {
             assert!(replacement.body.is_empty());
-            assert_eq!(db.table("organization_role").await?, selected_before);
+            assert_eq!(db.table("organizationRole").await?, selected_before);
         } else {
             assert_eq!(
                 body(&replacement)["roleData"]["permission"],
@@ -2866,7 +2869,7 @@ async fn organization_selected_role_permission_page<B: Backend>(db: Db) -> TestR
             );
             assert_eq!(
                 db.text(
-                    "SELECT permission FROM organization_role WHERE id=$1",
+                    "SELECT \"permission\" FROM \"organizationRole\" WHERE id=$1",
                     &[&role.id]
                 )
                 .await?
@@ -2876,7 +2879,7 @@ async fn organization_selected_role_permission_page<B: Backend>(db: Db) -> TestR
         }
     }
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization", "member"])
+        db.tables(&["user", "account", "session", "organization", "member"])
             .await?,
         protected
     );
@@ -2917,16 +2920,16 @@ async fn organization_duplicate_role_omitted_permission_bytes<B: Backend>(db: Db
             .await?;
         _ = db
             .execute(
-                "UPDATE organization_role SET permission=$1 WHERE id=$2",
+                "UPDATE \"organizationRole\" SET \"permission\"=$1 WHERE id=$2",
                 &[literals[i], &role.id],
             )
             .await?;
         ids.push(role.id);
     }
     let before = db
-        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .tables(&["user", "account", "session", "organization", "member"])
         .await?;
-    let foreign_before=db.text("SELECT CAST(json_object('id',id,'role',role,'permission',permission,'updatedAt',updated_at) AS TEXT) FROM organization_role WHERE id=$1", &[&ids[2]]).await?;
+    let foreign_before=db.text("SELECT CAST(json_object('id',id,'role',\"role\",'permission',\"permission\",'updatedAt',\"updatedAt\") AS TEXT) FROM \"organizationRole\" WHERE id=$1", &[&ids[2]]).await?;
     for data in [json!({}), json!({"roleName":"Renamed-Editor"})] {
         let response = call(
             &auth,
@@ -2946,7 +2949,7 @@ async fn organization_duplicate_role_omitted_permission_bytes<B: Backend>(db: Db
         for (i, id) in ids[..2].iter().enumerate() {
             assert_eq!(
                 db.text(
-                    "SELECT permission FROM organization_role WHERE id=$1",
+                    "SELECT \"permission\" FROM \"organizationRole\" WHERE id=$1",
                     &[id]
                 )
                 .await?
@@ -2954,9 +2957,12 @@ async fn organization_duplicate_role_omitted_permission_bytes<B: Backend>(db: Db
                 Some(literals[i])
             );
             assert_eq!(
-                db.text("SELECT role FROM organization_role WHERE id=$1", &[id])
-                    .await?
-                    .as_deref(),
+                db.text(
+                    "SELECT \"role\" FROM \"organizationRole\" WHERE id=$1",
+                    &[id]
+                )
+                .await?
+                .as_deref(),
                 Some(if data.get("roleName").is_some() {
                     "renamed-editor"
                 } else {
@@ -2965,7 +2971,7 @@ async fn organization_duplicate_role_omitted_permission_bytes<B: Backend>(db: Db
             );
             assert!(
                 db.text(
-                    "SELECT updated_at FROM organization_role WHERE id=$1",
+                    "SELECT \"updatedAt\" FROM \"organizationRole\" WHERE id=$1",
                     &[id]
                 )
                 .await?
@@ -2980,16 +2986,16 @@ async fn organization_duplicate_role_omitted_permission_bytes<B: Backend>(db: Db
     );
     assert_eq!(
         db.text(
-            "SELECT permission FROM organization_role WHERE id=$1",
+            "SELECT \"permission\" FROM \"organizationRole\" WHERE id=$1",
             &[&ids[1]]
         )
         .await?
         .as_deref(),
         Some(literals[1])
     );
-    assert_eq!(db.text("SELECT CAST(json_object('id',id,'role',role,'permission',permission,'updatedAt',updated_at) AS TEXT) FROM organization_role WHERE id=$1", &[&ids[2]]).await?,foreign_before);
+    assert_eq!(db.text("SELECT CAST(json_object('id',id,'role',\"role\",'permission',\"permission\",'updatedAt',\"updatedAt\") AS TEXT) FROM \"organizationRole\" WHERE id=$1", &[&ids[2]]).await?,foreign_before);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "organization", "member"])
+        db.tables(&["user", "account", "session", "organization", "member"])
             .await?,
         before
     );
@@ -3020,7 +3026,7 @@ async fn organization_full_member_user_page_split<B: Backend>(db: Db) -> TestRes
     let org = organization(&setup, &mut owner, "split-pages").await;
     _ = add(&setup, &org, &target.id, "member").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .tables(&["user", "account", "session", "organization", "member"])
         .await?;
     let policy = Arc::new(Policy(std::sync::atomic::AtomicUsize::new(0)));
     for (limit, page, list_count, full_count) in [
@@ -3102,7 +3108,7 @@ async fn organization_full_member_user_page_split<B: Backend>(db: Db) -> TestRes
             assert!(foreign_read.body.is_empty());
         }
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "organization", "member"])
+            db.tables(&["user", "account", "session", "organization", "member"])
                 .await?,
             before
         );
@@ -3133,7 +3139,7 @@ async fn organization_last_owner_adapter_page<B: Backend>(db: Db) -> TestResult 
     let org = organization(&setup, &mut owner, "owner-page").await;
     let added = add(&setup, &org, &second.id, "owner").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "organization", "member"])
+        .tables(&["user", "account", "session", "organization", "member"])
         .await?;
     let policy = Arc::new(Policy(std::sync::atomic::AtomicUsize::new(0)));
     for admission in [
@@ -3164,7 +3170,7 @@ async fn organization_last_owner_adapter_page<B: Backend>(db: Db) -> TestResult 
                 "YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER"
             );
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "organization", "member"])
+                db.tables(&["user", "account", "session", "organization", "member"])
                     .await?,
                 before
             );
@@ -3172,14 +3178,14 @@ async fn organization_last_owner_adapter_page<B: Backend>(db: Db) -> TestResult 
             assert_eq!(body(&response)["member"]["id"], added["id"]);
             assert_eq!(
                 db.count_where(
-                    "SELECT COUNT(*) FROM member WHERE id=$1",
+                    "SELECT COUNT(*) FROM \"member\" WHERE id=$1",
                     &[added["id"].as_str().unwrap()]
                 )
                 .await?,
                 0
             );
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "organization"])
+                db.tables(&["user", "account", "session", "organization"])
                     .await?,
                 before[..4]
             );

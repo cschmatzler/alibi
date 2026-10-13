@@ -892,7 +892,7 @@ impl<S: AuthSchema> AuthContext<S> {
         let Some(session) = self.database.get_session(&token).await? else {
             return Ok(None);
         };
-        if !session.active() || session.expires_at() <= chrono::Utc::now() {
+        if session.expires_at() <= chrono::Utc::now() {
             return Ok(None);
         }
         let user = self.session_user(&session).await?;

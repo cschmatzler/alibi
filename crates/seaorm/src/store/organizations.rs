@@ -42,7 +42,6 @@ where
             logo: Set(org.logo),
             metadata: Set(metadata),
             created_at: Set(now),
-            updated_at: Set(now),
         }
         .insert(self.scoped_connection())
         .await
@@ -248,7 +247,6 @@ fn apply_organization_update(
             backend,
         )?));
     }
-    active.updated_at = Set(Utc::now());
 
     Ok(active)
 }

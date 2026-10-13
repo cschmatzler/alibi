@@ -298,7 +298,7 @@ pub(crate) async fn router(
     let reset = enrollment.clone();
     let state_database = database.clone();
     router=router.route("/__test/passkey-registration-state",get(move|Query(query):Query<HashMap<String,String>>|{let database=state_database.clone();async move{
-        let rows=database.query_all_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"SELECT id,name,public_key AS publicKey,user_id AS userId,credential_id AS credentialID,counter,device_type AS deviceType,backed_up AS backedUp,transports,created_at AS createdAt,aaguid FROM passkeys WHERE user_id=? ORDER BY rowid",[query.get("userId").cloned().unwrap_or_default().into()])).await.map_err(|error|AuthError::internal(error.to_string()))?;
+        let rows=database.query_all_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"SELECT id,\"name\",\"publicKey\" AS publicKey,\"userId\" AS userId,\"credentialID\" AS credentialID,\"counter\",\"deviceType\" AS deviceType,\"backedUp\" AS backedUp,\"transports\",\"createdAt\" AS createdAt,\"aaguid\" FROM \"passkey\" WHERE \"userId\"=? ORDER BY rowid",[query.get("userId").cloned().unwrap_or_default().into()])).await.map_err(|error|AuthError::internal(error.to_string()))?;
         let mut result=Vec::new();
         for row in rows {let mut object=serde_json::Map::new();for column in ["id","name","publicKey","userId","credentialID","counter","deviceType","backedUp","transports","createdAt","aaguid"] {
             let value=match column {

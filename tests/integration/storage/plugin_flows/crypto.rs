@@ -86,18 +86,18 @@ async fn wallet_signature_consumes_the_issued_nonce_and_persists_identity<B: Bac
         }
         assert!(denied.headers.get_all("set-cookie").next().is_none());
         for table in [
-            "users",
-            "accounts",
-            "sessions",
-            "wallet_address",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "walletAddress",
+            "verification",
         ] {
             assert_eq!(db.count(table).await?, 0, "{table}: rejected {message}");
         }
     }
     let issued = call(&auth, request("/siwe/nonce", Some(json!({})), ""), 200).await;
     assert_eq!(body(&issued)["nonce"], fixture["nonce"]);
-    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(db.count("verification").await?, 1);
     let input = request(
         "/siwe/verify",
         Some(json!({"message":fixture["message"],"signature":fixture["signature"]})),
@@ -113,16 +113,16 @@ async fn wallet_signature_consumes_the_issued_nonce_and_persists_identity<B: Bac
     .await;
     assert_eq!(body(&session)["user"]["id"], body(&accepted)["user"]["id"]);
     assert_eq!(body(&session)["session"]["token"], body(&accepted)["token"]);
-    assert_eq!(db.count("users").await?, 1);
-    assert_eq!(db.count("accounts").await?, 1);
-    assert_eq!(db.count("wallet_address").await?, 1);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("user").await?, 1);
+    assert_eq!(db.count("account").await?, 1);
+    assert_eq!(db.count("walletAddress").await?, 1);
+    assert_eq!(db.count("verification").await?, 0);
     let replay = call(&auth, input, 401).await;
     assert_eq!(
         body(&replay)["code"],
         "UNAUTHORIZED_INVALID_OR_EXPIRED_NONCE"
     );
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     B::close(connection).await?;
     wallet_email_policy::<B>(&db).await
 }
@@ -184,8 +184,8 @@ async fn wallet_email_policy<B: Backend>(parent: &Db) -> TestResult {
         if mode == "invalid" {
             assert_eq!(body(&result)["code"], "SIWE_INVALID_NONCE");
         }
-        assert_eq!(db.count("verifications").await?, 0);
-        assert_eq!(db.count("users").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
+        assert_eq!(db.count("user").await?, 0);
         B::close(connection).await?;
     }
     for mode in ["new", "existing", "reserved", "ens-error"] {
@@ -230,7 +230,7 @@ async fn wallet_email_policy<B: Backend>(parent: &Db) -> TestResult {
         let _ = call(&auth, request("/siwe/verify", Some(proof.clone()), ""), 400).await;
         assert!(observed.lock().unwrap().is_empty());
         assert_eq!(
-            db.count("verifications").await?,
+            db.count("verification").await?,
             if mode == "reserved" { 2 } else { 1 }
         );
         let mut proof = proof;
@@ -247,12 +247,12 @@ async fn wallet_email_policy<B: Backend>(parent: &Db) -> TestResult {
         );
         if mode == "ens-error" {
             assert_eq!(body(&response)["error"], "ENS unavailable");
-            for table in ["users", "sessions", "accounts", "wallet_address"] {
+            for table in ["user", "session", "account", "walletAddress"] {
                 assert_eq!(db.count(table).await?, 0);
             }
-            assert_eq!(db.count("verifications").await?, 1);
+            assert_eq!(db.count("verification").await?, 1);
             assert_eq!(
-                db.text("SELECT identifier FROM verifications", &[])
+                db.text("SELECT \"identifier\" FROM \"verification\"", &[])
                     .await?
                     .as_deref(),
                 Some("siwe-email-claim-claimed@example.test")
@@ -279,9 +279,9 @@ async fn wallet_email_policy<B: Backend>(parent: &Db) -> TestResult {
                 "https://images.example/wallet.png"
             );
             assert_eq!(body(&session)["user"]["emailVerified"], false);
-            assert_eq!(db.count("wallet_address").await?, 1);
+            assert_eq!(db.count("walletAddress").await?, 1);
             assert_eq!(
-                db.count("users").await?,
+                db.count("user").await?,
                 if existing.is_some() { 2 } else { 1 }
             );
             if let Some(existing) = existing {
@@ -289,7 +289,7 @@ async fn wallet_email_policy<B: Backend>(parent: &Db) -> TestResult {
                 authenticated(&auth, &cookies(&existing), "claimed@example.test").await;
             }
             assert_eq!(
-                db.count("verifications").await?,
+                db.count("verification").await?,
                 i64::from(mode == "reserved")
             );
         }
@@ -504,8 +504,8 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
     ] {
         let _ = call(&auth, request(route, None, ""), 401).await;
     }
-    assert_eq!(db.count("verifications").await?, 0);
-    assert_eq!(db.count("passkeys").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(db.count("passkey").await?, 0);
     let owner = signup(&auth, "passkey@example.test").await;
     let resolver_auth = builder::<B>(&connection)
         .store(B::hook(
@@ -538,7 +538,7 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
     )
     .await;
     assert_eq!(body(&rejected)["code"], "RESOLVED_USER_INVALID");
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
 
     // Act as an authenticator: answer the server's actual challenge with a
     // public test key. No production encoder, verifier or credential is mocked.
@@ -565,7 +565,7 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
         (Cbor::Text("attStmt".into()), Cbor::Map(BTreeMap::new())),
         (Cbor::Text("authData".into()), Cbor::Bytes(data)),
     ])))?;
-    let original = db.tables(&["passkeys", "sessions"]).await?;
+    let original = db.tables(&["passkey", "session"]).await?;
     for mode in 0..4 {
         policy
             .registration
@@ -594,9 +594,7 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
         )?;
         let proof = json!({"id":URL_SAFE_NO_PAD.encode(id),"rawId":URL_SAFE_NO_PAD.encode(id),"type":"public-key","clientExtensionResults":{},"response":{"clientDataJSON":URL_SAFE_NO_PAD.encode(client),"attestationObject":URL_SAFE_NO_PAD.encode(&attestation),"transports":["internal"]}});
         if mode == 0 {
-            let before = db
-                .tables(&["verifications", "passkeys", "sessions"])
-                .await?;
+            let before = db.tables(&["verification", "passkey", "session"]).await?;
             for input in [
                 json!({}),
                 json!({"response":proof,"name":null}),
@@ -614,8 +612,7 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
                 )
                 .await;
                 assert_eq!(
-                    db.tables(&["verifications", "passkeys", "sessions"])
-                        .await?,
+                    db.tables(&["verification", "passkey", "session"]).await?,
                     before
                 );
             }
@@ -636,7 +633,7 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
         )
         .await;
         if mode < 3 {
-            assert_eq!(db.tables(&["passkeys", "sessions"]).await?, original);
+            assert_eq!(db.tables(&["passkey", "session"]).await?, original);
             if mode == 1 {
                 assert_eq!(
                     body(&registered)["code"],
@@ -646,7 +643,9 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
         } else {
             authenticated(&auth, &cookies(&registered), "passkey@example.test").await;
             assert_eq!(
-                db.text("SELECT name FROM passkeys", &[]).await?.as_deref(),
+                db.text("SELECT \"name\" FROM \"passkey\"", &[])
+                    .await?
+                    .as_deref(),
                 Some("Application credential")
             );
         }
@@ -655,7 +654,7 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
         *policy.registrations.lock().unwrap(),
         vec![body(&owner)["user"]["id"].as_str().unwrap().to_owned(); 4]
     );
-    assert_eq!(db.count("passkeys").await?, 1);
+    assert_eq!(db.count("passkey").await?, 1);
     let options = call(
         &auth,
         request("/passkey/generate-authenticate-options", None, ""),
@@ -676,9 +675,7 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
         "authenticatorData":URL_SAFE_NO_PAD.encode(data),
         "signature":URL_SAFE_NO_PAD.encode(signing.sign(&signed).to_bytes())
     }});
-    let before = db
-        .tables(&["verifications", "passkeys", "sessions"])
-        .await?;
+    let before = db.tables(&["verification", "passkey", "session"]).await?;
     for malformed in [
         json!({}),
         json!({"response":null}),
@@ -696,12 +693,11 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
         )
         .await;
         assert_eq!(
-            db.tables(&["verifications", "passkeys", "sessions"])
-                .await?,
+            db.tables(&["verification", "passkey", "session"]).await?,
             before
         );
     }
-    let credential_id = db.text("SELECT id FROM passkeys", &[]).await?.unwrap();
+    let credential_id = db.text("SELECT id FROM \"passkey\"", &[]).await?.unwrap();
     let _ = call(
         &auth,
         request(
@@ -713,8 +709,7 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
     )
     .await;
     assert_eq!(
-        db.tables(&["verifications", "passkeys", "sessions"])
-            .await?,
+        db.tables(&["verification", "passkey", "session"]).await?,
         before
     );
     let input = request(
@@ -726,7 +721,7 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
     authenticated(&auth, &cookies(&accepted), "passkey@example.test").await;
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM passkeys WHERE counter = 2 AND user_id = $1",
+            "SELECT COUNT(*) FROM \"passkey\" WHERE \"counter\" = 2 AND \"userId\" = $1",
             &[body(&owner)["user"]["id"].as_str().unwrap()]
         )
         .await?,
@@ -734,8 +729,8 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
     );
     let replay = call(&auth, input, 400).await;
     assert_eq!(body(&replay)["code"], "CHALLENGE_NOT_FOUND");
-    assert_eq!(db.count("sessions").await?, 3);
-    let persisted = db.table("passkeys").await?;
+    assert_eq!(db.count("session").await?, 3);
+    let persisted = db.table("passkey").await?;
     for (counter, corrupt_signature, veto) in
         [(3_u32, true, false), (2, false, false), (3, false, true)]
     {
@@ -792,8 +787,8 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
             policy.authentications.lock().unwrap().len(),
             callbacks_before + usize::from(veto)
         );
-        assert_eq!(db.table("passkeys").await?, persisted);
-        assert_eq!(db.count("sessions").await?, 3);
+        assert_eq!(db.table("passkey").await?, persisted);
+        assert_eq!(db.count("session").await?, 3);
         assert!(
             !denied
                 .headers

@@ -67,7 +67,7 @@ fn phase(sql: &str) -> Option<&'static str> {
     None
 }
 async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
-    let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT id,identifier,value,expires_at,created_at,updated_at FROM verifications ORDER BY CASE WHEN identifier LIKE '2fa-attempts-%' THEN 0 WHEN identifier LIKE '2fa-otp-%' THEN 1 WHEN identifier LIKE '2fa-%' THEN 2 ELSE 3 END,created_at,id")).await.map_err(|error|AuthError::internal(error.to_string()))?;
+    let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT id,\"identifier\",\"value\",\"expiresAt\",\"createdAt\",\"updatedAt\" FROM \"verification\" ORDER BY CASE WHEN \"identifier\" LIKE '2fa-attempts-%' THEN 0 WHEN \"identifier\" LIKE '2fa-otp-%' THEN 1 WHEN \"identifier\" LIKE '2fa-%' THEN 2 ELSE 3 END,\"createdAt\",id")).await.map_err(|error|AuthError::internal(error.to_string()))?;
     let mut verifications = Vec::new();
     for row in rows {
         let string = |column| {
@@ -81,7 +81,7 @@ async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
         };
         verifications.push(json!({"id":string("id")?,"identifier":string("identifier")?,"value":string("value")?,"expiresAt":date("expires_at")?,"createdAt":date("created_at")?,"updatedAt":date("updated_at")?}));
     }
-    let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT t.id,t.user_id,t.secret,t.backup_codes,t.verified,CAST(t.failed_verification_count AS REAL) AS failed_verification_count,t.locked_until FROM two_factor t JOIN users u ON u.id=t.user_id ORDER BY u.email,t.id")).await.map_err(|error|AuthError::internal(error.to_string()))?;
+    let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT t.id,t.\"userId\",t.\"secret\",t.\"backupCodes\",t.\"verified\",CAST(t.\"failedVerificationCount\" AS REAL) AS \"failedVerificationCount\",t.\"lockedUntil\" FROM \"twoFactor\" t JOIN \"user\" u ON u.id=t.\"userId\" ORDER BY u.\"email\",t.id")).await.map_err(|error|AuthError::internal(error.to_string()))?;
     let mut factors = Vec::new();
     for row in rows {
         let string = |column| {
@@ -224,7 +224,7 @@ pub(crate) async fn router(
                             database
                                 .execute_raw(Statement::from_sql_and_values(
                                     DbBackend::Sqlite,
-                                    "UPDATE verifications SET created_at=? WHERE id=?",
+                                    "UPDATE \"verification\" SET \"createdAt\"=? WHERE id=?",
                                     [text("createdAt").into(), row.id.into()],
                                 ))
                                 .await
@@ -238,7 +238,7 @@ pub(crate) async fn router(
                                     .execute_raw(Statement::from_sql_and_values(
                                         DbBackend::Sqlite,
                                         format!(
-                                            "UPDATE verifications SET {column}=? WHERE identifier=?"
+                                            "UPDATE \"verification\" SET {column}=? WHERE \"identifier\"=?"
                                         ),
                                         [text(key).into(), text("identifier").into()],
                                     ))

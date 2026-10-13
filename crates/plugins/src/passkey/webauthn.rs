@@ -41,7 +41,6 @@ pub(super) struct RegisteredPasskeyMetadata {
 
 #[derive(Debug)]
 pub(super) struct PasskeySnapshot {
-    pub serialized: String,
     pub counter: u64,
     pub backed_up: bool,
     pub backup_eligible: bool,
@@ -578,7 +577,6 @@ pub(super) fn snapshot_passkey(passkey: &impl Serialize) -> AuthResult<PasskeySn
     let (counter, backed_up, backup_eligible) = extract_passkey_snapshot_fields(&value)?;
 
     Ok(PasskeySnapshot {
-        serialized,
         counter,
         backed_up,
         backup_eligible,

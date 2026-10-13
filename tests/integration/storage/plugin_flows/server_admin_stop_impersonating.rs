@@ -87,7 +87,7 @@ async fn server_admin_stop_impersonating_restores_owner_and_remember_policy<B: B
         } else {
             (admin_token.clone(), cookies(&admin))
         };
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         let impersonated = auth
             .dispatch_endpoint(
                 AdminPlugin::impersonate_user_endpoint(id.clone()),
@@ -100,7 +100,7 @@ async fn server_admin_stop_impersonating_restores_owner_and_remember_policy<B: B
             .filter(|pair| !pair.starts_with("better-auth.admin_session="))
             .collect::<Vec<_>>()
             .join("; ");
-        let during = db.tables(&["users", "accounts", "sessions"]).await?;
+        let during = db.tables(&["user", "account", "session"]).await?;
         for proof in [
             None,
             Some("invalid".to_owned()),
@@ -122,7 +122,7 @@ async fn server_admin_stop_impersonating_restores_owner_and_remember_policy<B: B
                 body(&error.error.to_auth_response())["message"],
                 "Failed to find admin session"
             );
-            assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, during);
+            assert_eq!(db.tables(&["user", "account", "session"]).await?, during);
         }
         let stopped = auth
             .dispatch_endpoint(
@@ -170,7 +170,7 @@ async fn server_admin_stop_impersonating_restores_owner_and_remember_policy<B: B
         );
         assert!(raw.contains(&"application_a=first; Path=/; HttpOnly".into()));
         assert!(raw.contains(&"application_b=second; Path=/; HttpOnly".into()));
-        assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
         let restored_cookie = cookies(&stopped.into_response()?);
         let current = call(&auth, request("/get-session", None, &restored_cookie), 200).await;
         assert_eq!(body(&current)["user"]["id"], admin_id);

@@ -1,5 +1,6 @@
 //! Transport ownership is independent of plugin lifecycle ordering, proved by the SDK owners.
 
+use alibi::AuthUser as _;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::{BodyLimitConfig, CsrfConfig, Middleware, RateLimitConfig};
 use alibi::seaorm::{Database, SeaOrmStore};
@@ -314,8 +315,7 @@ mod tests {
                 )
                 .unwrap()
                 .unwrap()
-                .name
-                .as_deref(),
+                .name(),
             Some("completed")
         );
     }
@@ -357,8 +357,7 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap()
-                .name
-                .as_deref(),
+                .name(),
             Some("started")
         );
         drop(socket);
@@ -380,8 +379,7 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap()
-                .name
-                .as_deref(),
+                .name(),
             Some("completed")
         );
         assert_eq!(observations.calls.load(Ordering::SeqCst), 1);
@@ -501,8 +499,7 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap()
-                .name
-                .as_deref(),
+                .name(),
             Some("completed")
         );
     }
@@ -569,8 +566,7 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap()
-                .name
-                .as_deref(),
+                .name(),
             Some("completed")
         );
         shutdown.send(()).unwrap();
@@ -603,8 +599,7 @@ mod tests {
                     .await
                     .unwrap()
                     .unwrap()
-                    .name
-                    .as_deref(),
+                    .name(),
                 Some("started")
             );
             if mode == "cancel" {
@@ -617,8 +612,7 @@ mod tests {
                         .await
                         .unwrap()
                         .unwrap()
-                        .name
-                        .as_deref(),
+                        .name(),
                     Some("started")
                 );
                 assert_eq!(observations.completions.load(Ordering::SeqCst), 0);
@@ -670,8 +664,7 @@ mod tests {
                         .await
                         .unwrap()
                         .unwrap()
-                        .name
-                        .as_deref(),
+                        .name(),
                     Some("completed")
                 );
                 assert_eq!(observations.completions.load(Ordering::SeqCst), 1);
@@ -709,7 +702,7 @@ async fn application_middleware_short_circuits_and_errors_preserve_dispatch_effe
             .unwrap();
         assert_eq!(stored.is_some(), written);
         if written {
-            assert_eq!(stored.unwrap().name.as_deref(), Some("completed"));
+            assert_eq!(stored.unwrap().name(), Some("completed"));
             assert_eq!(
                 *observations.phases.lock().unwrap(),
                 [

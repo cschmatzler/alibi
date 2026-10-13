@@ -55,7 +55,7 @@ async fn server_admin_get_user_validates_query_and_rejects_stale_admin_authority
     let member = signup(&auth, "server-member@example.test").await;
     let target = body(&member)["user"]["id"].as_str().unwrap().to_owned();
     let member_cookie = cookies(&member);
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let denied_config = AuthConfig::new(SECRET)
         .base_url(ORIGIN)
         .session_cookie_cache(alibi::CookieCacheConfig {
@@ -181,7 +181,7 @@ async fn server_admin_get_user_validates_query_and_rejects_stale_admin_authority
             assert!(value.get(private).is_none());
         }
     }
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let _ = call(
         &auth,
         request(
@@ -193,12 +193,15 @@ async fn server_admin_get_user_validates_query_and_rejects_stale_admin_authority
     )
     .await;
     assert_eq!(
-        db.text("SELECT role FROM users WHERE id = $1", &[&administrator])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT \"role\" FROM \"user\" WHERE id = $1",
+            &[&administrator]
+        )
+        .await?
+        .as_deref(),
         Some("user")
     );
-    let demoted = db.tables(&["users", "accounts", "sessions"]).await?;
+    let demoted = db.tables(&["user", "account", "session"]).await?;
     let endpoint = AdminPlugin::get_user_endpoint(target.clone());
     let options = EndpointOptions {
         headers: Some(
@@ -220,10 +223,7 @@ async fn server_admin_get_user_validates_query_and_rejects_stale_admin_authority
         error.headers.unwrap().get("x-admin-principal"),
         Some(&administrator)
     );
-    assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
-        demoted
-    );
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, demoted);
     let _ = call(
         &auth,
         request("/sign-out", Some(json!({})), &admin_cookie),

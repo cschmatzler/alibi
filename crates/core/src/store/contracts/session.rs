@@ -131,7 +131,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         self.get_user_sessions(user_id)
             .await?
             .into_iter()
-            .filter(|session| session.expires_at() > now && session.active())
+            .filter(|session| session.expires_at() > now)
             .map(AdapterRecord::physical)
             .collect()
     }

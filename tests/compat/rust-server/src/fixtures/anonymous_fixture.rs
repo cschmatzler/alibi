@@ -1,5 +1,4 @@
 //! Application-owned anonymous identity/link handlers and actual stored-state observer.
-use axum::response::IntoResponse;
 use crate::anonymous_user_model::{ApplicationSchema as TestSchema, Model as ApplicationUser};
 use alibi::seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
@@ -27,6 +26,7 @@ use alibi::{
 };
 use alibi::{AuthRequest, AuthSession, CreateSession, CreateUser};
 use async_trait::async_trait;
+use axum::response::IntoResponse;
 use axum::{
     Json, Router,
     extract::Query,
@@ -188,7 +188,7 @@ impl LinkAnonymousAccount for Application {
             self.database
                 .execute_raw(Statement::from_sql_and_values(
                     DbBackend::Sqlite,
-                    "UPDATE users SET cargo_label=? WHERE id=?",
+                    "UPDATE \"user\" SET cargo_label=? WHERE id=?",
                     vec![
                         format!(
                             "Transferred {}",
@@ -266,7 +266,7 @@ impl DatabaseHooks<TestSchema, crate::backend::Backend> for Hooks {
         {
             _ = crate::backend::hook_execute(
                 context.db,
-                "UPDATE users SET name=? WHERE id=?",
+                "UPDATE \"user\" SET \"name\"=? WHERE id=?",
                 vec![
                     "Stored Hook Name".to_owned(),
                     session.user_id().into_owned(),
@@ -276,7 +276,7 @@ impl DatabaseHooks<TestSchema, crate::backend::Backend> for Hooks {
             if self.mode.starts_with("custom") {
                 _ = crate::backend::hook_execute(
                     context.db,
-                    "UPDATE users SET cargo_label=?, cargo_hidden=? WHERE id=?",
+                    "UPDATE \"user\" SET cargo_label=?, cargo_hidden=? WHERE id=?",
                     vec![
                         "Application Stored".into(),
                         "Stored Secret".into(),
@@ -301,14 +301,14 @@ pub(crate) async fn router(
         database
             .execute_raw(Statement::from_string(
                 DbBackend::Sqlite,
-                format!("ALTER TABLE users ADD COLUMN {column} TEXT"),
+                format!("ALTER TABLE \"user\" ADD COLUMN {column} TEXT"),
             ))
             .await
             .map_err(|error| AuthError::internal(error.to_string()))?;
     }
     let fixture = Fixture::default();
     let mut router = Router::new();
-    let mut runtimes=std::collections::HashMap::new();
+    let mut runtimes = std::collections::HashMap::new();
     for mode in [
         "standard",
         "defaults",
@@ -418,33 +418,104 @@ pub(crate) async fn router(
                 }));
         }
         let auth = Arc::new(builder.build().await?);
-        runtimes.insert(format!("anonymous-{mode}"),auth.clone());
+        runtimes.insert(format!("anonymous-{mode}"), auth.clone());
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
-    let runtimes=Arc::new(runtimes);    let deletion_runtimes=runtimes.clone();
-    router=router.route("/__test/server-api/anonymous-delete",post(move |Json(input):Json<Value>|{
-        let runtimes=deletion_runtimes.clone();
-        async move {
-            let selected=runtimes.get(input["profile"].as_str().unwrap_or("anonymous-standard")).unwrap();
-            let mut endpoint=alibi::endpoint::ServerEndpoint::<Value>::new("anonymous","deleteAnonymousUser");
-            if let Some(body)=input.get("body"){endpoint=endpoint.with_body(body).unwrap();}
-            match selected.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions {headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),..Default::default()}).await {
-                Ok(output)=>output.into_response().unwrap().into_response(),
-                Err(error)=>{let mut response=error.error.to_auth_response();if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}if let Some(headers)=error.headers{for(name,value) in headers.iter(){if name.eq_ignore_ascii_case("set-cookie"){response.headers.append(name,value);}else{response.headers.insert(name.clone(),value.clone());}}}response.into_response()}
+    let runtimes = Arc::new(runtimes);
+    let deletion_runtimes = runtimes.clone();
+    router = router.route(
+        "/__test/server-api/anonymous-delete",
+        post(move |Json(input): Json<Value>| {
+            let runtimes = deletion_runtimes.clone();
+            async move {
+                let selected = runtimes
+                    .get(input["profile"].as_str().unwrap_or("anonymous-standard"))
+                    .unwrap();
+                let mut endpoint = alibi::endpoint::ServerEndpoint::<Value>::new(
+                    "anonymous",
+                    "deleteAnonymousUser",
+                );
+                if let Some(body) = input.get("body") {
+                    endpoint = endpoint.with_body(body).unwrap();
+                }
+                match selected
+                    .dispatch_endpoint(
+                        endpoint,
+                        alibi::endpoint::EndpointOptions {
+                            headers: input
+                                .get("headers")
+                                .map(|headers| serde_json::from_value(headers.clone()).unwrap()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                {
+                    Ok(output) => output.into_response().unwrap().into_response(),
+                    Err(error) => {
+                        let mut response = error.error.to_auth_response();
+                        if let Some(body) = error.body {
+                            response.body = serde_json::to_vec(&*body).unwrap();
+                        }
+                        if let Some(headers) = error.headers {
+                            for (name, value) in headers.iter() {
+                                if name.eq_ignore_ascii_case("set-cookie") {
+                                    response.headers.append(name, value);
+                                } else {
+                                    response.headers.insert(name.clone(), value.clone());
+                                }
+                            }
+                        }
+                        response.into_response()
+                    }
+                }
             }
-        }
-    }));
+        }),
+    );
 
-    router=router.route("/__test/server-api/anonymous-sign-in",post(move |Json(input):Json<Value>|{
-        let runtimes=runtimes.clone();
-        async move {
-            let selected=runtimes.get(input["profile"].as_str().unwrap_or("anonymous-standard")).unwrap();
-            match selected.dispatch_endpoint(alibi::endpoint::ServerEndpoint::<Value>::new("anonymous","signInAnonymous"),alibi::endpoint::EndpointOptions {headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),..Default::default()}).await {
-                Ok(output)=>output.into_response().unwrap().into_response(),
-                Err(error)=>{let mut response=error.error.to_auth_response();if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}if let Some(headers)=error.headers{for(name,value) in headers.iter(){if name.eq_ignore_ascii_case("set-cookie"){response.headers.append(name,value);}else{response.headers.insert(name.clone(),value.clone());}}}response.into_response()}
+    router = router.route(
+        "/__test/server-api/anonymous-sign-in",
+        post(move |Json(input): Json<Value>| {
+            let runtimes = runtimes.clone();
+            async move {
+                let selected = runtimes
+                    .get(input["profile"].as_str().unwrap_or("anonymous-standard"))
+                    .unwrap();
+                match selected
+                    .dispatch_endpoint(
+                        alibi::endpoint::ServerEndpoint::<Value>::new(
+                            "anonymous",
+                            "signInAnonymous",
+                        ),
+                        alibi::endpoint::EndpointOptions {
+                            headers: input
+                                .get("headers")
+                                .map(|headers| serde_json::from_value(headers.clone()).unwrap()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                {
+                    Ok(output) => output.into_response().unwrap().into_response(),
+                    Err(error) => {
+                        let mut response = error.error.to_auth_response();
+                        if let Some(body) = error.body {
+                            response.body = serde_json::to_vec(&*body).unwrap();
+                        }
+                        if let Some(headers) = error.headers {
+                            for (name, value) in headers.iter() {
+                                if name.eq_ignore_ascii_case("set-cookie") {
+                                    response.headers.append(name, value);
+                                } else {
+                                    response.headers.insert(name.clone(), value.clone());
+                                }
+                            }
+                        }
+                        response.into_response()
+                    }
+                }
             }
-        }
-    }));
+        }),
+    );
     let controls = Arc::new(crate::backend::store::<TestSchema>(
         config.clone(),
         database.clone(),
@@ -543,7 +614,7 @@ pub(crate) async fn router(
     let observer = fixture.clone();
     router = router.route("/__test/anonymous/state", get(move || {
         let database = database.clone(); let observer = observer.clone(); async move {
-            let users = crate::backend::rows::<ApplicationUser>(&database, "SELECT * FROM users ORDER BY created_at ASC", vec![]).await;
+            let users = crate::backend::rows::<ApplicationUser>(&database, "SELECT * FROM \"user\" ORDER BY \"createdAt\" ASC", vec![]).await;
             let accounts = account::Entity::find().order_by_asc(account::Column::CreatedAt).all(&database).await;
             let sessions = session::Entity::find().order_by_asc(session::Column::CreatedAt).all(&database).await;
             match (users, accounts, sessions) {

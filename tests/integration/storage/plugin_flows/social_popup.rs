@@ -96,7 +96,7 @@ async fn popup_start_validates_targets_and_forwards_sign_in_options<B: Backend>(
             error.error.error_payload().1.as_deref(),
             Some("VALIDATION_ERROR")
         );
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
     }
     for (label, extra) in [
         (
@@ -126,7 +126,7 @@ async fn popup_start_validates_targets_and_forwards_sign_in_options<B: Backend>(
         assert_eq!(response.status, 200, "{label}");
         trace.value(label, payload(&response));
     }
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
 
     let started = start(
         &auth,
@@ -153,7 +153,7 @@ async fn popup_start_validates_targets_and_forwards_sign_in_options<B: Backend>(
         query["scope"]
     );
     let stored = db
-        .text("SELECT value FROM verifications", &[])
+        .text("SELECT \"value\" FROM \"verification\"", &[])
         .await?
         .unwrap();
     let stored: Value = serde_json::from_str(&stored)?;
@@ -187,7 +187,7 @@ async fn popup_start_validates_targets_and_forwards_sign_in_options<B: Backend>(
         "delivered",
         json!({"nonce": delivered["nonce"], "redirectTo": delivered["redirectTo"]}),
     );
-    assert_eq!(db.count("users").await?, 1);
+    assert_eq!(db.count("user").await?, 1);
 
     let started = start(&auth, &[("provider", "google")]).await;
     let location = url::Url::parse(started.headers.get("location").unwrap())?;

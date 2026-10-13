@@ -202,7 +202,7 @@ impl<S: AuthSchema> SchemaMigrator for SqlxStore<S> {
             let commands = mapping.migration_statements()?;
             self.in_transaction(false, async move |tx| {
                 let exec = Exec::tx(tx);
-                if migrator::has_table(exec, "two_factor").await? {
+                if migrator::has_table(exec, "twoFactor").await? {
                     for command in commands {
                         _ = exec.execute(Sql::with(exec.engine(), &command)).await?;
                     }

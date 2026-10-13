@@ -77,9 +77,7 @@ async fn account_deletion_consumes_delivered_owner_proof_and_preserves_foreign_i
             200,
         )
         .await;
-        let snapshot = db
-            .tables(&["users", "accounts", "sessions", "api_keys"])
-            .await?;
+        let snapshot = db.tables(&["user", "account", "session", "apikey"]).await?;
         let _ = call(&auth, request("/delete-user", Some(json!({})), ""), 401).await;
         let _ = call(
             &auth,
@@ -92,8 +90,7 @@ async fn account_deletion_consumes_delivered_owner_proof_and_preserves_foreign_i
         )
         .await;
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "api_keys"])
-                .await?,
+            db.tables(&["user", "account", "session", "apikey"]).await?,
             snapshot
         );
         assert!(mailbox.0.lock().unwrap().is_empty());
@@ -115,8 +112,7 @@ async fn account_deletion_consumes_delivered_owner_proof_and_preserves_foreign_i
             let pending = call(&auth, deliver(), 200).await;
             assert_eq!(body(&pending)["message"], "Verification email sent");
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "api_keys"])
-                    .await?,
+                db.tables(&["user", "account", "session", "apikey"]).await?,
                 snapshot
             );
             let (recipient, url, token) = mailbox.0.lock().unwrap().pop().unwrap();
@@ -132,12 +128,11 @@ async fn account_deletion_consumes_delivered_owner_proof_and_preserves_foreign_i
             callback.query = delivered.query_pairs().into_owned().collect();
             let _ = call(&auth, callback.clone(), 404).await;
             assert_eq!(
-                db.tables(&["users", "accounts", "sessions", "api_keys"])
-                    .await?,
+                db.tables(&["user", "account", "session", "apikey"]).await?,
                 snapshot
             );
             assert_eq!(
-                db.count("verifications").await?,
+                db.count("verification").await?,
                 0,
                 "a mismatched owner consumes the delivered proof without deleting anyone"
             );
@@ -168,13 +163,10 @@ async fn account_deletion_consumes_delivered_owner_proof_and_preserves_foreign_i
                     Some(format!("{ORIGIN}/gone").as_str())
                 );
                 drop(callback.headers.insert("cookie".into(), cookies(&foreign)));
-                let remaining = db
-                    .tables(&["users", "accounts", "sessions", "api_keys"])
-                    .await?;
+                let remaining = db.tables(&["user", "account", "session", "apikey"]).await?;
                 let _ = call(&auth, callback, 404).await;
                 assert_eq!(
-                    db.tables(&["users", "accounts", "sessions", "api_keys"])
-                        .await?,
+                    db.tables(&["user", "account", "session", "apikey"]).await?,
                     remaining
                 );
                 response
@@ -184,23 +176,23 @@ async fn account_deletion_consumes_delivered_owner_proof_and_preserves_foreign_i
             assert!(response.headers.get_all("set-cookie").any(|cookie|cookie.contains("session_token=") && cookie.contains("Max-Age=0")));
         }
         for (table, column) in [
-            ("users", "id"),
-            ("accounts", "user_id"),
-            ("sessions", "user_id"),
-            ("api_keys", "reference_id"),
+            ("user", "id"),
+            ("account", "userId"),
+            ("session", "userId"),
+            ("apikey", "referenceId"),
         ] {
             assert_eq!(
                 db.count_where(
-                    &format!("SELECT COUNT(*) FROM {table} WHERE {column}=$1"),
+                    &format!("SELECT COUNT(*) FROM \"{table}\" WHERE \"{column}\"=$1"),
                     &[&owner_id]
                 )
                 .await?,
-                i64::from(table == "api_keys"),
+                i64::from(table == "apikey"),
                 "{mode}/{table}"
             );
             assert_eq!(
                 db.count_where(
-                    &format!("SELECT COUNT(*) FROM {table} WHERE {column}=$1"),
+                    &format!("SELECT COUNT(*) FROM \"{table}\" WHERE \"{column}\"=$1"),
                     &[&foreign_id]
                 )
                 .await?,
@@ -208,7 +200,7 @@ async fn account_deletion_consumes_delivered_owner_proof_and_preserves_foreign_i
                 "{mode}/{table}"
             );
         }
-        assert_eq!(db.count("verifications").await?, 0);
+        assert_eq!(db.count("verification").await?, 0);
         assert!(
             auth.store()
                 .get_api_key_by_id(body(&key)["id"].as_str().unwrap())
@@ -292,7 +284,7 @@ async fn deletion_password_rejection_preserves_delivered_body_proof<B: Backend>(
     .await;
     let (_, _, token) = mailbox.0.lock().unwrap().pop().unwrap();
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for (password, code) in [
         ("wrong-password".to_owned(), "INVALID_PASSWORD"),
@@ -312,7 +304,7 @@ async fn deletion_password_rejection_preserves_delivered_body_proof<B: Backend>(
         assert_eq!(hooks.before.load(Ordering::SeqCst), 0);
         assert_eq!(hooks.after.load(Ordering::SeqCst), 0);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
@@ -331,12 +323,12 @@ async fn deletion_password_rejection_preserves_delivered_body_proof<B: Backend>(
     assert!(!deleted.headers.contains_key("set-cookie"));
     assert_eq!(hooks.before.load(Ordering::SeqCst), 1);
     assert_eq!(hooks.after.load(Ordering::SeqCst), 1);
-    assert_eq!(db.count("verifications").await?, 0);
-    assert_eq!(db.count("users").await?, 1);
-    assert_eq!(db.count("accounts").await?, 1);
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(db.count("user").await?, 1);
+    assert_eq!(db.count("account").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     assert_eq!(
-        db.text("SELECT id FROM users", &[]).await?.as_deref(),
+        db.text("SELECT id FROM \"user\"", &[]).await?.as_deref(),
         body(&foreign)["user"]["id"].as_str()
     );
     authenticated(
@@ -409,7 +401,7 @@ async fn concurrent_deletion_replay_rejects_before_awaited_owner_hook<B: Backend
     )
     .await;
     let (_, _, token) = mailbox.0.lock().unwrap().pop().unwrap();
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let callback = |token: &str| {
         let mut input = request("/delete-user/callback", None, &cookie);
         let _ = input.query.insert("token".into(), token.into());
@@ -419,8 +411,8 @@ async fn concurrent_deletion_replay_rejects_before_awaited_owner_hook<B: Backend
     let worker = auth.clone();
     let first = tokio::spawn(async move { call(&worker, input, 200).await });
     tokio::time::timeout(std::time::Duration::from_secs(2), gate.entered.notified()).await?;
-    assert_eq!(db.count("verifications").await?, 0);
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let replay = call(&auth, callback(&token), 404).await;
     assert_eq!(body(&replay)["code"], "INVALID_TOKEN");
     assert_eq!(gate.before.load(Ordering::SeqCst), 1);
@@ -429,11 +421,11 @@ async fn concurrent_deletion_replay_rejects_before_awaited_owner_hook<B: Backend
     let _ = first.await?;
     assert_eq!(gate.before.load(Ordering::SeqCst), 1);
     assert_eq!(gate.after.load(Ordering::SeqCst), 1);
-    assert_eq!(db.count("users").await?, 1);
-    assert_eq!(db.count("accounts").await?, 1);
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("user").await?, 1);
+    assert_eq!(db.count("account").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     assert_eq!(
-        db.text("SELECT id FROM users", &[]).await?.as_deref(),
+        db.text("SELECT id FROM \"user\"", &[]).await?.as_deref(),
         body(&foreign)["user"]["id"].as_str()
     );
     authenticated(

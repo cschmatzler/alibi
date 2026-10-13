@@ -31,14 +31,18 @@ async fn oauth_client_read_redacts_secret_and_enforces_owner<B: Backend>(db: Db)
     let mut expected = body(&created);
     let client_id = expected["client_id"].as_str().unwrap().to_owned();
     _ = expected.as_object_mut().unwrap().remove("client_secret");
+    _ = expected
+        .as_object_mut()
+        .unwrap()
+        .remove("client_credentials_scopes");
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
+            "oauthClient",
         ])
         .await?;
     for (id, cookie, status) in [
@@ -81,12 +85,12 @@ async fn oauth_client_read_redacts_secret_and_enforces_owner<B: Backend>(db: Db)
         }
         assert_eq!(
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
+                "user",
+                "account",
+                "session",
+                "verification",
                 "jwks",
-                "oauth_client"
+                "oauthClient"
             ])
             .await?,
             before

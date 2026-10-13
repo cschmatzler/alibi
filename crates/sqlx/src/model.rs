@@ -168,6 +168,9 @@ pub trait SqlxModel: SqlxRow + Clone + Send + Sync + 'static {
     fn column_value(column: &str, value: SqlValue) -> SqlValue {
         match (Self::column_kind(column), value) {
             (ColumnKind::BpChar, SqlValue::Text(value)) => SqlValue::BpChar(value),
+            (ColumnKind::Text, SqlValue::Json(value)) => {
+                SqlValue::Text(value.map(|value| value.to_string()))
+            }
             (_, value) => value,
         }
     }
@@ -217,6 +220,11 @@ fn projection<M: SqlxModel>(sql: &mut Sql, qualified: bool) {
             emit_column(sql);
             sql.push(" <> '' END AS ");
             sql.ident(column);
+        } else if sql.engine() == Engine::Postgres && M::column_kind(column) == ColumnKind::BigInt {
+            sql.push("CAST(");
+            emit_column(sql);
+            sql.push(" AS BIGINT) AS ");
+            sql.ident(column);
         } else {
             emit_column(sql);
         }
@@ -224,7 +232,7 @@ fn projection<M: SqlxModel>(sql: &mut Sql, qualified: bool) {
 }
 
 pub(crate) fn select_model<M: SqlxModel>(exec: Exec<'_>) -> Sql {
-    if exec.engine() != Engine::Sqlite || M::PROVIDER_VERIFICATION_COLUMN.is_none() {
+    if exec.engine() == Engine::Sqlite && M::PROVIDER_VERIFICATION_COLUMN.is_none() {
         return select(exec.engine(), M::TABLE, M::COLUMN_NAMES);
     }
     let mut sql = Sql::new(exec.engine());
@@ -240,7 +248,19 @@ pub(crate) fn returning<M: SqlxModel>(sql: &mut Sql) {
     projection::<M>(sql, false);
 }
 
-fn bind_model_value<M: SqlxModel>(sql: &mut Sql, column: &str, value: SqlValue) {
+pub(crate) fn bind_model_value<M: SqlxModel>(sql: &mut Sql, column: &str, value: SqlValue) {
+    if sql.engine() == Engine::Postgres && M::column_kind(column) == ColumnKind::Number {
+        let text = match value {
+            SqlValue::Double(value) => SqlValue::Text(value.map(|value| value.to_string())),
+            SqlValue::BigInt(value) => SqlValue::Text(value.map(|value| value.to_string())),
+            SqlValue::Int(value) => SqlValue::Text(value.map(|value| value.to_string())),
+            value => value,
+        };
+        sql.push("CAST(");
+        sql.bind(text);
+        sql.push(" AS INTEGER)");
+        return;
+    }
     let cast = sql.engine() == Engine::Postgres
         && M::PROVIDER_VERIFICATION_COLUMN == Some(column)
         && matches!(&value, SqlValue::Text(_));

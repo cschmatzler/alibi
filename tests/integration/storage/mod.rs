@@ -44,6 +44,7 @@ mod optional_records;
 mod organizations;
 mod plugin_flows;
 mod rate_limit;
+mod schema_parity;
 mod sessions;
 mod stateless;
 mod teams;
@@ -133,7 +134,10 @@ impl Raw {
         value: DateTime<Utc>,
     ) -> TestResult {
         let (key_column, id) = key;
-        let sql = format!("UPDATE {table} SET {column} = $1 WHERE {key_column} = $2");
+        let sql = format!(
+            "UPDATE \"{}\" SET \"{column}\" = $1 WHERE \"{key_column}\" = $2",
+            table.trim_matches('"')
+        );
         on_raw!(self, |pool| {
             _ = sqlx::query(sqlx::AssertSqlSafe(sql.clone()))
                 .bind(value)
@@ -145,8 +149,11 @@ impl Raw {
     }
 
     pub(crate) async fn count(&self, table: &str) -> TestResult<i64> {
-        self.count_where(&format!("SELECT COUNT(*) FROM {table}"), &[])
-            .await
+        self.count_where(
+            &format!("SELECT COUNT(*) FROM \"{}\"", table.trim_matches('"')),
+            &[],
+        )
+        .await
     }
 
     pub(crate) async fn count_where(&self, sql: &str, args: &[&str]) -> TestResult<i64> {
@@ -182,7 +189,7 @@ impl Raw {
             ).await?.unwrap_or_default());
         };
         let columns: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-            "SELECT name FROM pragma_table_xinfo('{table}')"
+            "SELECT \"name\" FROM pragma_table_xinfo('{table}')"
         )))
         .fetch_all(pool)
         .await?;
@@ -411,7 +418,7 @@ macro_rules! backend_tests {
             $(
                 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
                 async fn $name() -> $crate::storage::TestResult {
-                    super::$name::<$crate::storage::SeaOrm>($crate::storage::Db::sqlite().await?).await
+                    Box::pin(super::$name::<$crate::storage::SeaOrm>($crate::storage::Db::sqlite().await?)).await
                 }
             )*
         }
@@ -419,7 +426,7 @@ macro_rules! backend_tests {
             $(
                 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
                 async fn $name() -> $crate::storage::TestResult {
-                    super::$name::<$crate::storage::Sqlx>($crate::storage::Db::sqlite().await?).await
+                    Box::pin(super::$name::<$crate::storage::Sqlx>($crate::storage::Db::sqlite().await?)).await
                 }
             )*
         }
@@ -435,7 +442,7 @@ macro_rules! postgres_tests {
                 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
                 #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
                 async fn $name() -> $crate::storage::TestResult {
-                    super::$name::<$crate::storage::SeaOrm>($crate::storage::Db::postgres().await?).await
+                    Box::pin(super::$name::<$crate::storage::SeaOrm>($crate::storage::Db::postgres().await?)).await
                 }
             )*
         }
@@ -444,7 +451,7 @@ macro_rules! postgres_tests {
                 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
                 #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
                 async fn $name() -> $crate::storage::TestResult {
-                    super::$name::<$crate::storage::Sqlx>($crate::storage::Db::postgres().await?).await
+                    Box::pin(super::$name::<$crate::storage::Sqlx>($crate::storage::Db::postgres().await?)).await
                 }
             )*
         }

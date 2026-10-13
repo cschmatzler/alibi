@@ -59,7 +59,7 @@ mod tests {
             let row = database
                 .query_one_raw(Statement::from_sql_and_values(
                     DbBackend::Sqlite,
-                    "SELECT logo, metadata FROM organization WHERE id = ?",
+                    "SELECT \"logo\", \"metadata\" FROM \"organization\" WHERE id = ?",
                     [organization.id.clone().into()],
                 ))
                 .await

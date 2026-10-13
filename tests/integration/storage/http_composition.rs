@@ -412,9 +412,9 @@ async fn physical_http_composition_preserves_principals_and_committed_rows<B: Ba
         ids.push(body["user"]["id"].as_str().expect("user id").to_owned());
     }
     *cookie_b.lock().expect("cookie") = cookies[1].clone();
-    let accounts_before = db.table("accounts").await?;
-    let sessions_before = db.table("sessions").await?;
-    let users_before: Value = serde_json::from_str(&db.table("users").await?)?;
+    let accounts_before = db.table("account").await?;
+    let sessions_before = db.table("session").await?;
+    let users_before: Value = serde_json::from_str(&db.table("user").await?)?;
     let actor_a_before = users_before
         .as_array()
         .expect("physical users")
@@ -478,10 +478,10 @@ async fn physical_http_composition_preserves_principals_and_committed_rows<B: Ba
             .filter_map(|e| e["stage"].as_str())
             .collect::<Vec<_>>();
         let a = db
-            .text("SELECT name FROM users WHERE id = $1", &[&ids[0]])
+            .text("SELECT \"name\" FROM \"user\" WHERE id = $1", &[&ids[0]])
             .await?;
         let b = db
-            .text("SELECT name FROM users WHERE id = $1", &[&ids[1]])
+            .text("SELECT \"name\" FROM \"user\" WHERE id = $1", &[&ids[1]])
             .await?;
         let output = match &result {
             Ok(r) => {
@@ -491,12 +491,12 @@ async fn physical_http_composition_preserves_principals_and_committed_rows<B: Ba
         };
         eprintln!(
             "{}",
-            json!({"backend":std::any::type_name::<B>(),"mode":selected,"result":output,"events":trace,"actors":ids,"rows":{"a":a,"b":b},"physicalUsers":db.count("users").await?,"physicalSessions":db.count("sessions").await?,"physicalRows":{"users":serde_json::from_str::<Value>(&db.table("users").await?)?,"accounts":serde_json::from_str::<Value>(&db.table("accounts").await?)?,"sessions":serde_json::from_str::<Value>(&db.table("sessions").await?)?}})
+            json!({"backend":std::any::type_name::<B>(),"mode":selected,"result":output,"events":trace,"actors":ids,"rows":{"a":a,"b":b},"physicalUsers":db.count("user").await?,"physicalSessions":db.count("session").await?,"physicalRows":{"users":serde_json::from_str::<Value>(&db.table("user").await?)?,"accounts":serde_json::from_str::<Value>(&db.table("account").await?)?,"sessions":serde_json::from_str::<Value>(&db.table("session").await?)?}})
         );
         assert_eq!(a.as_deref(), Some("a"));
-        assert_eq!(db.table("accounts").await?, accounts_before);
-        assert_eq!(db.table("sessions").await?, sessions_before);
-        let users: Value = serde_json::from_str(&db.table("users").await?)?;
+        assert_eq!(db.table("account").await?, accounts_before);
+        assert_eq!(db.table("session").await?, sessions_before);
+        let users: Value = serde_json::from_str(&db.table("user").await?)?;
         assert_eq!(
             users
                 .as_array()
@@ -507,8 +507,8 @@ async fn physical_http_composition_preserves_principals_and_committed_rows<B: Ba
             &actor_a_before
         );
 
-        assert_eq!(db.count("users").await?, 2);
-        assert_eq!(db.count("sessions").await?, 2);
+        assert_eq!(db.count("user").await?, 2);
+        assert_eq!(db.count("session").await?, 2);
         assert!(trace.iter().all(|e| e["authority"] != true));
         if selected.starts_with("request-") {
             assert!(result.is_err());

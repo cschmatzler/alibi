@@ -4,7 +4,7 @@ mod database_hooks;
 mod decorated;
 mod jwks;
 mod migrations;
-mod oauth_clients;
+pub mod oauth_clients;
 mod org_extensions;
 mod secondary_sessions;
 pub mod secondary_storage;

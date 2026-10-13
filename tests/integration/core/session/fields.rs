@@ -53,7 +53,7 @@ impl DatabaseHooks<ApplicationSchema, SeaOrmBackend> for ApplicationHook {
                 .db
                 .execute_raw(Statement::from_sql_and_values(
                     ctx.db.get_database_backend(),
-                    "DELETE FROM sessions WHERE token=?",
+                    "DELETE FROM \"session\" WHERE \"token\"=?",
                     [token.into()],
                 ))
                 .await
@@ -110,14 +110,14 @@ async fn session_fields_database() -> alibi::seaorm::DatabaseConnection {
     let db = Database::connect("sqlite::memory:").await.unwrap();
     run_migrations(&db).await.unwrap();
     for sql in [
-        "ALTER TABLE sessions ADD COLUMN label TEXT",
-        "ALTER TABLE sessions ADD COLUMN hidden TEXT",
-        "ALTER TABLE sessions ADD COLUMN number REAL",
-        "ALTER TABLE sessions ADD COLUMN server_only TEXT",
-        "ALTER TABLE sessions ADD COLUMN transformed TEXT",
-        "ALTER TABLE sessions ADD COLUMN validated TEXT",
-        "ALTER TABLE sessions ADD COLUMN callback TEXT",
-        "ALTER TABLE sessions ADD COLUMN payload JSON NOT NULL DEFAULT '{}'",
+        "ALTER TABLE \"session\" ADD COLUMN label TEXT",
+        "ALTER TABLE \"session\" ADD COLUMN hidden TEXT",
+        "ALTER TABLE \"session\" ADD COLUMN number REAL",
+        "ALTER TABLE \"session\" ADD COLUMN server_only TEXT",
+        "ALTER TABLE \"session\" ADD COLUMN transformed TEXT",
+        "ALTER TABLE \"session\" ADD COLUMN validated TEXT",
+        "ALTER TABLE \"session\" ADD COLUMN callback TEXT",
+        "ALTER TABLE \"session\" ADD COLUMN payload JSON NOT NULL DEFAULT '{}'",
         "CREATE TABLE session_model_events (phase TEXT, label TEXT, is_insert BOOLEAN)",
     ] {
         _ = db
@@ -160,9 +160,9 @@ mod tests {
 
         let db = session_fields_database().await;
         for sql in [
-            "CREATE TABLE initial_session_fields (organization TEXT, team TEXT, label TEXT)",
-            "CREATE TRIGGER capture_initial_session AFTER INSERT ON sessions BEGIN INSERT INTO initial_session_fields VALUES (NEW.active_organization_id, NEW.active_team_id, NEW.label); END",
-            "CREATE TRIGGER reject_session_update BEFORE UPDATE ON sessions BEGIN SELECT RAISE(ABORT, 'issuance must use one insert'); END",
+            "CREATE TABLE initial_session_fields (\"organization\" TEXT, \"team\" TEXT, label TEXT)",
+            "CREATE TRIGGER capture_initial_session AFTER INSERT ON \"session\" BEGIN INSERT INTO initial_session_fields VALUES (NEW.\"activeOrganizationId\", NEW.\"activeTeamId\", NEW.label); END",
+            "CREATE TRIGGER reject_session_update BEFORE UPDATE ON \"session\" BEGIN SELECT RAISE(ABORT, 'issuance must use one insert'); END",
         ] {
             _ = db
                 .execute_raw(Statement::from_string(db.get_database_backend(), sql))
@@ -266,7 +266,7 @@ mod tests {
         let inserted = db
             .query_all_raw(Statement::from_string(
                 db.get_database_backend(),
-                "SELECT organization, team, label FROM initial_session_fields",
+                "SELECT \"organization\", \"team\", label FROM initial_session_fields",
             ))
             .await
             .unwrap();
@@ -379,7 +379,7 @@ mod tests {
         _ = db
             .execute_raw(Statement::from_sql_and_values(
                 db.get_database_backend(),
-                "UPDATE sessions SET validated=? WHERE token=?",
+                "UPDATE \"session\" SET validated=? WHERE \"token\"=?",
                 ["unregistered-storage-secret".into(), token.into()],
             ))
             .await

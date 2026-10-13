@@ -36,10 +36,10 @@ pub(crate) fn select(plugins: &[String]) -> Selection {
 }
 
 pub(crate) const CORE_ENTITIES: [(&str, &str, EntityRole); 4] = [
-    ("user", "users", EntityRole::User),
-    ("session", "sessions", EntityRole::Session),
-    ("account", "accounts", EntityRole::Account),
-    ("verification", "verifications", EntityRole::Verification),
+    ("user", "user", EntityRole::User),
+    ("session", "session", EntityRole::Session),
+    ("account", "account", EntityRole::Account),
+    ("verification", "verification", EntityRole::Verification),
 ];
 
 pub(crate) fn role_name(role: EntityRole) -> &'static str {

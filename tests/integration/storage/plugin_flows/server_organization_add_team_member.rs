@@ -65,7 +65,7 @@ async fn server_team_membership_lifecycle_enforces_headers_and_admission<B: Back
             organization_id,
         };
     let before = db
-        .tables(&["users", "sessions", "member", "team", "team_member"])
+        .tables(&["user", "session", "member", "team", "teamMember"])
         .await?;
     for operation in ["addTeamMember", "removeTeamMember"] {
         for (input, options, status, code) in [
@@ -114,7 +114,7 @@ async fn server_team_membership_lifecycle_enforces_headers_and_admission<B: Back
         }
     }
     assert_eq!(
-        db.tables(&["users", "sessions", "member", "team", "team_member"])
+        db.tables(&["user", "session", "member", "team", "teamMember"])
             .await?,
         before
     );
@@ -131,11 +131,11 @@ async fn server_team_membership_lifecycle_enforces_headers_and_admission<B: Back
     assert_eq!(member.team_id, team_id);
     assert_eq!(member.user_id, user_id);
     let added = db
-        .tables(&["users", "sessions", "member", "team", "team_member"])
+        .tables(&["user", "session", "member", "team", "teamMember"])
         .await?;
     assert_eq!(&added[..3], &before[..3]);
     let mut expected_teams: Vec<Value> = serde_json::from_str(&before[3])?;
-    expected_teams[0]["member_count"] = json!(1);
+    expected_teams[0]["memberCount"] = json!(1);
     assert_eq!(
         serde_json::from_str::<Vec<Value>>(&added[3])?,
         expected_teams
@@ -143,8 +143,8 @@ async fn server_team_membership_lifecycle_enforces_headers_and_admission<B: Back
     let rows: Vec<Value> = serde_json::from_str(&added[4])?;
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["id"], member.id);
-    assert_eq!(rows[0]["team_id"], team_id);
-    assert_eq!(rows[0]["user_id"], user_id);
+    assert_eq!(rows[0]["teamId"], team_id);
+    assert_eq!(rows[0]["userId"], user_id);
     let repeated = Box::pin(auth.dispatch_endpoint(
         OrganizationPlugin::add_team_member_endpoint(&input(
             team_id.clone(),
@@ -159,7 +159,7 @@ async fn server_team_membership_lifecycle_enforces_headers_and_admission<B: Back
         serde_json::to_value(output.value())?
     );
     assert_eq!(
-        db.tables(&["users", "sessions", "member", "team", "team_member"])
+        db.tables(&["user", "session", "member", "team", "teamMember"])
             .await?,
         added
     );
@@ -176,7 +176,7 @@ async fn server_team_membership_lifecycle_enforces_headers_and_admission<B: Back
         json!({"message":"Team member removed successfully."})
     );
     assert_eq!(
-        db.tables(&["users", "sessions", "member", "team", "team_member"])
+        db.tables(&["user", "session", "member", "team", "teamMember"])
             .await?,
         before
     );
@@ -189,7 +189,7 @@ async fn server_team_membership_lifecycle_enforces_headers_and_admission<B: Back
         "USER_IS_NOT_A_MEMBER_OF_THE_TEAM"
     );
     assert_eq!(
-        db.tables(&["users", "sessions", "member", "team", "team_member"])
+        db.tables(&["user", "session", "member", "team", "teamMember"])
             .await?,
         before
     );

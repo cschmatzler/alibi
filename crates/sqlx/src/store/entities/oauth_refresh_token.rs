@@ -1,0 +1,53 @@
+use crate::{JsonMetadata, SqlxModel};
+use chrono::{DateTime, Utc};
+#[derive(Clone, Debug, PartialEq, serde::Serialize, sqlx::FromRow, SqlxModel)]
+#[auth(table = "oauthRefreshToken")]
+pub struct Model {
+    pub id: String,
+    #[serde(rename = "token")]
+    pub token: String,
+    #[sqlx(rename = "clientId")]
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[sqlx(rename = "sessionId")]
+    #[serde(rename = "sessionId")]
+    pub session_id: Option<String>,
+    #[sqlx(rename = "userId")]
+    #[serde(rename = "userId")]
+    pub user_id: String,
+    #[sqlx(rename = "referenceId")]
+    #[serde(rename = "referenceId")]
+    pub reference_id: Option<String>,
+    #[sqlx(rename = "authorizationCodeId")]
+    #[serde(rename = "authorizationCodeId")]
+    pub authorization_code_id: Option<String>,
+    #[serde(rename = "resources")]
+    pub resources: Option<JsonMetadata>,
+    #[sqlx(rename = "requestedUserInfoClaims")]
+    #[serde(rename = "requestedUserInfoClaims")]
+    pub requested_user_info_claims: Option<JsonMetadata>,
+    #[sqlx(rename = "expiresAt")]
+    #[serde(rename = "expiresAt")]
+    pub expires_at: DateTime<Utc>,
+    #[sqlx(rename = "createdAt")]
+    #[serde(rename = "createdAt")]
+    pub created_at: DateTime<Utc>,
+    #[serde(rename = "revoked")]
+    pub revoked: Option<DateTime<Utc>>,
+    #[sqlx(rename = "rotatedAt")]
+    #[serde(rename = "rotatedAt")]
+    pub rotated_at: Option<DateTime<Utc>>,
+    #[sqlx(rename = "rotationReplayResponse")]
+    #[serde(rename = "rotationReplayResponse")]
+    pub rotation_replay_response: Option<String>,
+    #[sqlx(rename = "rotationReplayExpiresAt")]
+    #[serde(rename = "rotationReplayExpiresAt")]
+    pub rotation_replay_expires_at: Option<DateTime<Utc>>,
+    #[sqlx(rename = "authTime")]
+    #[serde(rename = "authTime")]
+    pub auth_time: Option<DateTime<Utc>>,
+    #[serde(rename = "confirmation")]
+    pub confirmation: Option<JsonMetadata>,
+    #[serde(rename = "scopes")]
+    pub scopes: JsonMetadata,
+}

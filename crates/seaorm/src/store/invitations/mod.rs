@@ -43,7 +43,7 @@ where
             }),
             organization_id: Set(invitation.organization_id),
             email: Set(invitation.email),
-            role: Set(invitation.role),
+            role: Set(Some(invitation.role)),
             team_id: Set(invitation.team_id),
             status: Set(options.status.unwrap_or_default().to_string()),
             inviter_id: Set(invitation.inviter_id),
@@ -129,10 +129,6 @@ where
             let session = <S::Session as SeaOrmSessionModel>::Entity::find()
                 .filter(S::Session::token_column().eq(session_token))
                 .filter(S::Session::user_id_column().eq(S::Session::parse_user_id(user_id)?))
-                .filter(
-                    sea_orm::Condition::all()
-                        .add_option(S::Session::active_column().map(|column| column.eq(true))),
-                )
                 .lock_exclusive()
                 .one(&transaction)
                 .await
@@ -201,7 +197,10 @@ where
                     .unwrap_or_else(|| Uuid::new_v4().to_string())),
                 organization_id: Set(invitation.organization_id.clone()),
                 user_id: Set(user_id.to_owned()),
-                role: Set(invitation.role.clone()),
+                role: Set(invitation
+                    .role
+                    .clone()
+                    .ok_or_else(|| AuthError::internal("Invitation has no role"))?),
                 created_at: Set(Utc::now()),
             }
             .insert(&transaction)

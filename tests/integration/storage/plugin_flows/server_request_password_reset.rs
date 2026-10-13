@@ -35,7 +35,7 @@ async fn server_request_password_reset_delivers_only_owned_redeemable_proof<B: B
     let owner = signup(&auth, "logical-delivery-owner@example.test").await;
     let foreign = signup(&auth, "logical-delivery-foreign@example.test").await;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for input in [
         json!({}),
@@ -74,11 +74,11 @@ async fn server_request_password_reset_delivers_only_owned_redeemable_proof<B: B
     );
     assert!(sender.0.lock().unwrap().is_empty());
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications"])
+        db.tables(&["user", "account", "session", "verification"])
             .await?,
         before
     );
-    let unchanged = db.tables(&["users", "accounts", "sessions"]).await?;
+    let unchanged = db.tables(&["user", "account", "session"]).await?;
     let sent = auth.dispatch_endpoint(ServerEndpoint::<Value>::new("password-management", "requestPasswordReset").with_body(&json!({"email":"logical-delivery-owner@example.test","redirectTo":"https://external.example/reset?a=1#step","userId":body(&foreign)["user"]["id"]}))?,EndpointOptions::default()).await?;
     assert_eq!(sent.value(), missing.value());
     assert_eq!(
@@ -101,11 +101,11 @@ async fn server_request_password_reset_delivers_only_owned_redeemable_proof<B: B
             .1,
         "https://external.example/reset?a=1#step"
     );
-    let rows: Vec<Value> = serde_json::from_str(&db.table("verifications").await?)?;
+    let rows: Vec<Value> = serde_json::from_str(&db.table("verification").await?)?;
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["identifier"], format!("reset-password:{token}"));
     assert_eq!(rows[0]["value"], body(&owner)["user"]["id"]);
-    let expires = chrono::DateTime::parse_from_rfc3339(rows[0]["expires_at"].as_str().unwrap())?;
+    let expires = chrono::DateTime::parse_from_rfc3339(rows[0]["expiresAt"].as_str().unwrap())?;
     assert!(
         (3590..=3600).contains(
             &expires
@@ -113,10 +113,7 @@ async fn server_request_password_reset_delivers_only_owned_redeemable_proof<B: B
                 .num_seconds()
         )
     );
-    assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
-        unchanged
-    );
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, unchanged);
     let reset = auth
         .dispatch_endpoint(
             ServerEndpoint::<StatusResponse>::new("password-management", "resetPassword")
@@ -127,7 +124,7 @@ async fn server_request_password_reset_delivers_only_owned_redeemable_proof<B: B
         )
         .await?;
     assert!(reset.decode()?.status);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     let login = call(&auth,request("/sign-in/email",Some(json!({"email":"logical-delivery-owner@example.test","password":"logical-delivery-replacement-205"})),""),200).await;
     assert_eq!(body(&login)["user"]["id"], body(&owner)["user"]["id"]);
     assert!(observer.0.lock().unwrap().iter().all(Option::is_none));

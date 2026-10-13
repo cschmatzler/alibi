@@ -84,9 +84,9 @@ mod tests {
             .unwrap();
         if db.is_postgres() {
             _=db.execute("CREATE FUNCTION reject_oauth_account_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'account insert veto'; END $$",&[]).await?;
-            _=db.execute("CREATE TRIGGER reject_oauth_account BEFORE INSERT ON accounts FOR EACH ROW WHEN (NEW.provider_id='google') EXECUTE FUNCTION reject_oauth_account_insert()",&[]).await?;
+            _=db.execute("CREATE TRIGGER reject_oauth_account BEFORE INSERT ON \"account\" FOR EACH ROW WHEN (NEW.\"providerId\"='google') EXECUTE FUNCTION reject_oauth_account_insert()",&[]).await?;
         } else {
-            _ = db.execute("CREATE TRIGGER reject_oauth_account BEFORE INSERT ON accounts WHEN NEW.provider_id = 'google' BEGIN SELECT RAISE(FAIL, 'account insert veto'); END", &[]).await?;
+            _ = db.execute("CREATE TRIGGER reject_oauth_account BEFORE INSERT ON \"account\" WHEN NEW.\"providerId\" = 'google' BEGIN SELECT RAISE(FAIL, 'account insert veto'); END", &[]).await?;
         }
         let rejected = Box::pin(auth.handle_request(request())).await?;
         assert_eq!(rejected.status, 401);
@@ -116,13 +116,13 @@ mod tests {
                 .is_none(),
             "a failed account insert must roll back its newly created user"
         );
-        assert_eq!(db.count("users").await?, 0);
-        assert_eq!(db.count("accounts").await?, 0);
-        assert_eq!(db.count("sessions").await?, 0);
+        assert_eq!(db.count("user").await?, 0);
+        assert_eq!(db.count("account").await?, 0);
+        assert_eq!(db.count("session").await?, 0);
         _ = db
             .execute(
                 if db.is_postgres() {
-                    "DROP TRIGGER reject_oauth_account ON accounts"
+                    "DROP TRIGGER reject_oauth_account ON \"account\""
                 } else {
                     "DROP TRIGGER reject_oauth_account"
                 },

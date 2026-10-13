@@ -17,8 +17,7 @@ fn wire_name(name: &str) -> String {
     output
 }
 fn field(field: &FieldDef, core: bool) -> Option<OpenApiField> {
-    // `active` is an internal Rust revocation flag, not a public session field.
-    if field.is_primary_key || (core && field.name == "active") {
+    if field.is_primary_key {
         return None;
     }
     let ty = field.ty.trim_start_matches("Option<").trim_end_matches('>');

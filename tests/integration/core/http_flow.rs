@@ -736,8 +736,7 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap()
-                .name
-                .as_deref(),
+                .name(),
             Some("Existing User")
         );
     }

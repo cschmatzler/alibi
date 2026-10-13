@@ -36,11 +36,11 @@ impl alibi::middleware::rate_limit::RateLimitResolver for ApplicationRule {
     }
 }
 
-type Row = (String, f64, i64, Option<i64>);
+type Row = (String, i32, i64);
 
 async fn row(db: &Db, key: &str) -> TestResult<Option<Row>> {
     on_raw!(&db.raw, |pool| Ok(sqlx::query_as(
-        "SELECT key, count, last_request, expires_at FROM rate_limit WHERE key = $1",
+        "SELECT \"key\", \"count\", \"lastRequest\" FROM \"rateLimit\" WHERE \"key\" = $1",
     )
     .bind(key)
     .fetch_optional(pool)
@@ -48,15 +48,15 @@ async fn row(db: &Db, key: &str) -> TestResult<Option<Row>> {
 }
 
 async fn insert(db: &Db, row: Row) -> TestResult {
-    let (key, count, last_request, expires_at) = row;
+    let (key, count, last_request) = row;
     on_raw!(&db.raw, |pool| {
         _ = sqlx::query(
-            "INSERT INTO rate_limit (key, count, last_request, expires_at) VALUES ($1, $2, $3, $4)",
+            "INSERT INTO \"rateLimit\" (\"id\", \"key\", \"count\", \"lastRequest\") VALUES ($1, $2, $3, $4)",
         )
+        .bind(uuid::Uuid::new_v4().to_string())
         .bind(&key)
         .bind(count)
         .bind(last_request)
-        .bind(expires_at)
         .execute(pool)
         .await?;
     });
@@ -65,7 +65,7 @@ async fn insert(db: &Db, row: Row) -> TestResult {
 
 async fn set_last_request(db: &Db, key: &str, last_request: i64) -> TestResult {
     on_raw!(&db.raw, |pool| {
-        _ = sqlx::query("UPDATE rate_limit SET last_request = $1 WHERE key = $2")
+        _ = sqlx::query("UPDATE \"rateLimit\" SET \"lastRequest\" = $1 WHERE \"key\" = $2")
             .bind(last_request)
             .bind(key)
             .execute(pool)
@@ -132,24 +132,16 @@ async fn independent_sqlite_instances_preserve_quota_expiry_and_fail_closed<B: B
     drop(dynamic_request.headers.remove("x-policy"));
     assert!(dynamic.before_request(&dynamic_request).await?.is_none());
     let consumed = row(&db, dynamic_key).await?.unwrap();
-    assert_eq!(consumed.1, 1.0);
+    assert_eq!(consumed.1, 1);
     let blocked = dynamic.before_request(&dynamic_request).await?.unwrap();
     assert_eq!(blocked.status, 429);
     assert_eq!(row(&db, dynamic_key).await?, Some(consumed));
     let now = chrono::Utc::now().timestamp_millis();
     let old_key = format!("stale-{key}");
     let protected_key = format!("protected-{key}");
-    let protected: Row = (
-        protected_key.clone(),
-        3.0,
-        now - 121_000,
-        Some(now + 59_000),
-    );
-    for (key, count, last_request, expires_at) in [
-        (old_key.clone(), 3.0, now - 181_000, Some(now - 1_000)),
-        protected.clone(),
-    ] {
-        insert(&db, (key, count, last_request, expires_at)).await?;
+    let protected: Row = (protected_key.clone(), 3, now - 121_000);
+    for (key, count, last_request) in [(old_key.clone(), 3, now - 181_000), protected.clone()] {
+        insert(&db, (key, count, last_request)).await?;
     }
     let infinite_key = format!("infinite-{key}");
     let infinite_rule = EndpointRateLimit {
@@ -164,9 +156,7 @@ async fn independent_sqlite_instances_preserve_quota_expiry_and_fail_closed<B: B
     let infinite = row(&db, &infinite_key)
         .await?
         .ok_or("missing infinite row")?;
-    assert_eq!(infinite.3, None);
-    // The independent shorter-window process performs cleanup without
-    // retiring another process's long-lived or nonexpiring quota.
+    // Requests under a shorter rule preserve other keys' quotas.
     assert!(matches!(
         stores[1].consume(&format!("cleanup-{key}"), &rule).await?,
         RateLimitDecision::Allowed
@@ -182,7 +172,10 @@ async fn independent_sqlite_instances_preserve_quota_expiry_and_fail_closed<B: B
     while let Some(result) = tasks.join_next().await {
         results.push(result??);
     }
-    assert!(row(&db, &old_key).await?.is_none());
+    assert_eq!(
+        row(&db, &old_key).await?,
+        Some((old_key.clone(), 3, now - 181_000))
+    );
     assert_eq!(row(&db, &protected_key).await?, Some(protected));
     assert_eq!(row(&db, &infinite_key).await?, Some(infinite));
     assert!(
@@ -213,7 +206,7 @@ async fn independent_sqlite_instances_preserve_quota_expiry_and_fail_closed<B: B
     assert_eq!(reset.1.to_string(), "1");
     assert!(reset.2 >= before.2);
     // An absent/misconfigured backend fails closed before endpoint dispatch.
-    _ = db.execute("DROP TABLE rate_limit", &[]).await?;
+    _ = db.execute("DROP TABLE \"rateLimit\"", &[]).await?;
     let middleware =
         RateLimitMiddleware::new(RateLimitConfig::new().storage(Arc::new(stores[0].clone())));
     let request = AuthRequest::from_parts(
@@ -229,7 +222,7 @@ async fn independent_sqlite_instances_preserve_quota_expiry_and_fail_closed<B: B
         .unwrap_err()
         .to_auth_response();
     assert_eq!(failure.status, 500);
-    assert!(!String::from_utf8_lossy(&failure.body).contains("rate_limit"));
+    assert!(!String::from_utf8_lossy(&failure.body).contains("rateLimit"));
     B::close(first).await?;
     B::close(second).await
 }

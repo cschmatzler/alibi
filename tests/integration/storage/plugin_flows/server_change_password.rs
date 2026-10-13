@@ -58,7 +58,7 @@ fn physical_owner(snapshot: &[String], user_id: &str) -> Vec<Vec<Value>> {
             serde_json::from_str::<Vec<Value>>(table)
                 .unwrap()
                 .into_iter()
-                .filter(|row| row["user_id"] == user_id || row["id"] == user_id)
+                .filter(|row| row["userId"] == user_id || row["id"] == user_id)
                 .collect()
         })
         .collect()
@@ -119,13 +119,13 @@ async fn server_change_password_preserves_logical_authority_and_returns_usable_r
     let foreign_token = body(&foreign)["token"].as_str().unwrap().to_owned();
     // A due physical session must remain unrenewed when the logical caller disables refresh.
     db.set_timestamp(
-        "sessions",
-        "expires_at",
+        "session",
+        "expiresAt",
         ("token", body(&owner)["token"].as_str().unwrap()),
         chrono::Utc::now() + chrono::Duration::hours(1),
     )
     .await?;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
     let foreign_physical = physical_owner(&before, &foreign_id);
     for input in [
@@ -159,8 +159,8 @@ async fn server_change_password_preserves_logical_authority_and_returns_usable_r
         .unwrap_err();
     assert_eq!(wrong.error.status_code(), 400);
     assert!(wrong.error.to_string().contains("Invalid password"));
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
-    let original_users_sessions = db.tables(&["users", "sessions"]).await?;
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
+    let original_users_sessions = db.tables(&["user", "session"]).await?;
     let input = ChangePasswordRequest {
         current_password: PASSWORD.into(),
         new_password: "a-kept-password-123".into(),
@@ -177,7 +177,7 @@ async fn server_change_password_preserves_logical_authority_and_returns_usable_r
         Some("logical-password-owner@example.test")
     );
     assert_eq!(
-        db.tables(&["users", "sessions"]).await?,
+        db.tables(&["user", "session"]).await?,
         original_users_sessions
     );
     assert!(
@@ -207,7 +207,7 @@ async fn server_change_password_preserves_logical_authority_and_returns_usable_r
             .any(|header| header.starts_with("better-auth.session_token="))
     );
     assert_eq!(
-        db.tables(&["users", "sessions"]).await?,
+        db.tables(&["user", "session"]).await?,
         original_users_sessions
     );
     let foreign_before = auth.store().get_session(&foreign_token).await?.unwrap();
@@ -227,7 +227,7 @@ async fn server_change_password_preserves_logical_authority_and_returns_usable_r
     assert_eq!(actual.user_agent(), Some("Logical-password-agent"));
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM sessions WHERE user_id = $1",
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\" = $1",
             &[&owner_id]
         )
         .await?,
@@ -262,7 +262,7 @@ async fn server_change_password_preserves_logical_authority_and_returns_usable_r
     assert_eq!(body(&restored)["user"]["id"], owner_id);
     // Both old cookies still include unexpired cache data. Sensitive logical calls
     // must re-read storage and reject them without changing the new credential.
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     assert_eq!(physical_owner(&after, &foreign_id), foreign_physical);
     for response in [&owner, &sibling] {
         let rejected = auth
@@ -277,7 +277,7 @@ async fn server_change_password_preserves_logical_authority_and_returns_usable_r
                 .is_none()
         );
     }
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, after);
     let foreign_after = auth.store().get_session(&foreign_token).await?.unwrap();
     assert_eq!(foreign_after.created_at(), foreign_before.created_at());
     assert_eq!(foreign_after.updated_at(), foreign_before.updated_at());

@@ -17,12 +17,12 @@ async fn oauth_client_creation_persists_owned_metadata_and_protected_secret<B: B
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
+            "oauthClient",
         ])
         .await?;
     for (input, cookie, status, code) in [
@@ -99,12 +99,12 @@ async fn oauth_client_creation_persists_owned_metadata_and_protected_secret<B: B
         assert_eq!(standard.as_deref().or(protocol), Some(code));
         assert_eq!(
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
+                "user",
+                "account",
+                "session",
+                "verification",
                 "jwks",
-                "oauth_client"
+                "oauthClient"
             ])
             .await?,
             before
@@ -150,7 +150,7 @@ async fn oauth_client_creation_persists_owned_metadata_and_protected_secret<B: B
     let expected = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .encode(sha2::Sha256::digest(secret.as_bytes()));
     assert_eq!(stored.client_secret.as_deref(), Some(expected.as_str()));
-    assert_eq!(db.count("oauth_client").await?, 1);
+    assert_eq!(db.count("oauthClient").await?, 1);
     let public_start = chrono::Utc::now().timestamp();
     let public = auth
         .dispatch_endpoint(
@@ -187,6 +187,6 @@ async fn oauth_client_creation_persists_owned_metadata_and_protected_secret<B: B
         stored.metadata["redirect_uris"],
         json!(["com.fixture.app:/callback"])
     );
-    assert_eq!(db.count("oauth_client").await?, 2);
+    assert_eq!(db.count("oauthClient").await?, 2);
     B::close(connection).await
 }

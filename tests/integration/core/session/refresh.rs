@@ -249,7 +249,7 @@ mod tests {
             .update_session_expiry(&token, Utc::now() + Duration::hours(1))
             .await
             .unwrap();
-        _ = db.execute("CREATE TRIGGER revoke_on_refresh BEFORE UPDATE OF expires_at ON sessions BEGIN DELETE FROM sessions WHERE token = OLD.token; SELECT RAISE(IGNORE); END", &[]).await.unwrap();
+        _ = db.execute("CREATE TRIGGER revoke_on_refresh BEFORE UPDATE OF \"expiresAt\" ON \"session\" BEGIN DELETE FROM \"session\" WHERE \"token\" = OLD.\"token\"; SELECT RAISE(IGNORE); END", &[]).await.unwrap();
         let (response, value) =
             request(&auth, HttpMethod::Get, "/get-session", &cookie, None).await;
         assert_eq!(response.status, 401, "{value}");
@@ -277,7 +277,7 @@ mod tests {
             .update_session_expiry(&token, expiry)
             .await
             .unwrap();
-        _ = db.execute("CREATE TRIGGER fail_refresh BEFORE UPDATE OF expires_at ON sessions BEGIN SELECT RAISE(ABORT, 'fixture refresh failure'); END", &[]).await.unwrap();
+        _ = db.execute("CREATE TRIGGER fail_refresh BEFORE UPDATE OF \"expiresAt\" ON \"session\" BEGIN SELECT RAISE(ABORT, 'fixture refresh failure'); END", &[]).await.unwrap();
         let (response, value) =
             request(&auth, HttpMethod::Get, "/get-session", &cookie, None).await;
         assert_eq!(response.status, 500, "{value}");
@@ -411,7 +411,7 @@ mod secondary {
     async fn physical(db: &Db, token: &str) -> Option<PhysicalSession> {
         on_raw!(&db.raw, |pool| {
             sqlx::query_as::<_, PhysicalSession>(sqlx::AssertSqlSafe(
-                "SELECT expires_at, active_organization_id FROM sessions WHERE token = $1"
+                "SELECT \"expiresAt\", \"activeOrganizationId\" FROM \"session\" WHERE \"token\" = $1"
                     .to_owned(),
             ))
             .bind(token)
@@ -862,7 +862,7 @@ mod secondary {
                     .unwrap()
                     .is_none()
             );
-            assert_eq!(db.count("sessions").await?, 0);
+            assert_eq!(db.count("session").await?, 0);
         }
         Ok(())
     }

@@ -92,7 +92,7 @@ async fn grant_id_token_profiles_fail_like_the_published_factory<B: Backend>(db:
     trace.response("numeric email, new identity", &sign_in("", false).await);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM accounts WHERE provider_id = $1",
+            "SELECT COUNT(*) FROM \"account\" WHERE \"providerId\" = $1",
             &["paybin"]
         )
         .await?,
@@ -111,7 +111,7 @@ async fn grant_id_token_profiles_fail_like_the_published_factory<B: Backend>(db:
     trace.response("matching email, link", &sign_in(&owner, true).await);
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM accounts WHERE provider_id = $1",
+            "SELECT COUNT(*) FROM \"account\" WHERE \"providerId\" = $1",
             &["paybin"]
         )
         .await?,
@@ -174,7 +174,7 @@ async fn encrypted_token_storage_rejects_non_string_grant_tokens<B: Backend>(db:
         ]
     );
     let stored = db
-        .text("SELECT access_token FROM accounts", &[])
+        .text("SELECT \"accessToken\" FROM \"account\"", &[])
         .await?
         .unwrap();
     assert_ne!(stored, "paybin-access");

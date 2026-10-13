@@ -537,7 +537,7 @@ mod tests {
                 device_type: "singleDevice".to_owned(),
                 backed_up: false,
                 transports: Some("usb,nfc".to_owned()),
-                credential: "invalid-stored-passkey".to_owned(),
+
                 aaguid: Some("00000000-0000-0000-0000-000000000000".to_owned()),
             })
             .await
@@ -648,7 +648,7 @@ mod tests {
                 device_type: "singleDevice".to_owned(),
                 backed_up: false,
                 transports: Some("internal".to_owned()),
-                credential: "invalid-stored-passkey".to_owned(),
+
                 aaguid: None,
             })
             .await
@@ -793,7 +793,7 @@ mod tests {
                 device_type: "singleDevice".to_owned(),
                 backed_up: false,
                 transports: None,
-                credential: "invalid-stored-passkey".to_owned(),
+
                 aaguid: Some("00000000-0000-0000-0000-000000000000".to_owned()),
             })
             .await
@@ -855,7 +855,7 @@ mod tests {
                 device_type: "singleDevice".to_owned(),
                 backed_up: false,
                 transports: None,
-                credential: "invalid-stored-passkey".to_owned(),
+
                 aaguid: None,
             })
             .await
@@ -909,7 +909,7 @@ mod tests {
                 device_type: "singleDevice".to_owned(),
                 backed_up: false,
                 transports: None,
-                credential: "invalid-stored-passkey".to_owned(),
+
                 aaguid: None,
             })
             .await
@@ -1083,7 +1083,7 @@ mod tests {
         config: &PasskeyConfig,
         secret: &p256::SecretKey,
         cose: &serde_cbor_2::Value,
-        mut key: webauthn_rs::prelude::Passkey,
+        key: webauthn_rs::prelude::Passkey,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use p256::pkcs8::EncodePrivateKey;
         use sha2::{Digest, Sha256};
@@ -1105,7 +1105,7 @@ mod tests {
                 credential_id: credential_id.clone(),
                 public_key: base64::engine::general_purpose::STANDARD
                     .encode(serde_cbor_2::to_vec(cose)?),
-                credential: serde_json::to_string(&key)?,
+
                 counter: 0,
                 device_type: "singleDevice".into(),
                 backed_up: false,
@@ -1121,7 +1121,8 @@ mod tests {
         ] {
             for verified in [false, true] {
                 let (challenge, state) = if kind == "passkey" {
-                    let (options, state) = webauthn.start_passkey_authentication(&[key.clone()])?;
+                    let (options, state) =
+                        webauthn.start_passkey_authentication(std::slice::from_ref(&key))?;
                     (
                         options.public_key.challenge,
                         serde_json::json!({"kind":"passkey","state":state}),
@@ -1191,18 +1192,8 @@ mod tests {
                         sessions + 1
                     );
                     assert_eq!(after.counter, u64::from(counter));
-                    let opaque: serde_json::Value = serde_json::from_str(&after.credential)?;
-                    assert_eq!(
-                        opaque.get("cred").and_then(|c| c.get("backup_eligible")),
-                        Some(&serde_json::json!(true))
-                    );
-                    assert_eq!(
-                        opaque.get("cred").and_then(|c| c.get("backup_state")),
-                        Some(&serde_json::json!(backup == 0x18))
-                    );
                     assert!(!after.backed_up);
                     assert_eq!(after.device_type, "singleDevice");
-                    key = serde_json::from_str(&after.credential)?;
                     assert_eq!(
                         plugin
                             .handle_verify_authentication(&request, &ctx)
@@ -1318,16 +1309,6 @@ mod tests {
                 row.public_key,
                 base64::engine::general_purpose::STANDARD.encode(&key)
             );
-            let raw_none::StoredCredential::Raw(raw) = serde_json::from_str(&row.credential)?
-            else {
-                panic!("actual raw codec required")
-            };
-            assert_eq!(raw.credential_id(), id);
-            assert_eq!(raw.public_key(), key);
-            assert_eq!(raw.snapshot()?.counter, 25);
-            assert!(
-                serde_json::from_str::<webauthn_rs::prelude::Passkey>(&row.credential).is_err()
-            );
             if curve == 6 {
                 use ed25519_dalek::Signer;
                 let mut persisted = serde_json::to_value(&row)?;
@@ -1442,18 +1423,6 @@ mod tests {
                     assert_eq!(updated.credential_id, row.credential_id);
                     assert_eq!(updated.user_id, row.user_id);
                     assert_eq!(updated.counter, u64::from(counter));
-                    let raw_none::StoredCredential::Raw(raw) =
-                        serde_json::from_str(&updated.credential)?
-                    else {
-                        panic!("authentication must retain raw codec")
-                    };
-                    assert_eq!(raw.public_key(), key);
-                    assert_eq!(raw.credential_id(), id);
-                    assert_eq!(raw.snapshot()?.counter, u64::from(counter));
-                    assert!(
-                        serde_json::from_str::<webauthn_rs::prelude::Passkey>(&updated.credential)
-                            .is_err()
-                    );
                 }
             }
             assert_eq!(

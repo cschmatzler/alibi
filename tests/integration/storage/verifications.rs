@@ -57,7 +57,7 @@ async fn count(raw: &Raw, sql: &str, args: &[&str]) -> AuthResult<i64> {
 }
 
 async fn set_created_at(db: &Db, id: &str, created_at: DateTime<Utc>) -> TestResult {
-    db.set_timestamp("verifications", "created_at", ("id", id), created_at)
+    db.set_timestamp("verification", "createdAt", ("id", id), created_at)
         .await
 }
 
@@ -90,7 +90,7 @@ impl TransactionCreationHooks {
             context.tx.is_none(),
             "after hooks must run after the transaction commits"
         );
-        for table in ["users", "accounts", "verifications", "sessions"] {
+        for table in ["user", "account", "verification", "session"] {
             assert_eq!(
                 count(&self.raw, &format!("SELECT COUNT(*) FROM {table}"), &[]).await?,
                 1,
@@ -178,7 +178,7 @@ impl<S: AuthSchema, B: HookBackend> DatabaseHooks<S, B> for DeleteHooks {
         assert_eq!(
             count(
                 &self.raw,
-                "SELECT COUNT(*) FROM verifications WHERE identifier=$1",
+                "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
                 &[row.identifier()]
             )
             .await?,
@@ -221,14 +221,14 @@ impl<S: AuthSchema, B: HookBackend> DatabaseHooks<S, B> for ExpirationHooks {
         assert_eq!(
             count(
                 &self.raw,
-                "SELECT COUNT(*) FROM verifications WHERE id=$1",
+                "SELECT COUNT(*) FROM \"verification\" WHERE id=$1",
                 &[row.id().as_ref()]
             )
             .await?,
             0
         );
         assert_eq!(
-            count(&self.raw, "SELECT COUNT(*) FROM verifications", &[]).await?,
+            count(&self.raw, "SELECT COUNT(*) FROM \"verification\"", &[]).await?,
             1
         );
         self.events
@@ -333,7 +333,7 @@ async fn transactional_verification_creation_rolls_back_with_signup_work<B: Back
                 matches!(outcome, Err(AuthError::BadRequest(message)) if message == "email sender rejected signup")
             );
             assert_eq!(*events.lock().await, vec!["inside:signup-rolled-back"]);
-            for table in ["users", "accounts", "verifications", "sessions"] {
+            for table in ["user", "account", "verification", "session"] {
                 assert_eq!(db.count(table).await?, 0);
             }
         }
@@ -421,7 +421,7 @@ async fn expired_latest_generation_is_visible_then_invalidates_live_siblings<B: 
             .map(|row| row.value().to_owned()),
         Some("newest-expired".to_owned())
     );
-    assert_eq!(db.count("verifications").await?, 2);
+    assert_eq!(db.count("verification").await?, 2);
     assert!(
         store
             .consume_verification_by_identifier("generation")
@@ -440,7 +440,7 @@ async fn expired_latest_generation_is_visible_then_invalidates_live_siblings<B: 
             .await?
             .is_none()
     );
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     B::close(connection).await
 }
 
@@ -497,7 +497,7 @@ async fn value_mismatch_preserves_latest_and_success_prevents_replay<B: Backend>
             .await?
             .is_none()
     );
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     B::close(connection).await
 }
 
@@ -539,7 +539,7 @@ async fn expiration_cleanup_can_veto_the_whole_batch_and_after_hooks_keep_delete
         },
     );
     assert_eq!(cancelled.delete_expired_verifications().await?, 0);
-    assert_eq!(db.count("verifications").await?, 4);
+    assert_eq!(db.count("verification").await?, 4);
     assert_eq!(
         *events.lock().await,
         vec!["before:expired-a:first", "before:expired-b:second"]
@@ -608,14 +608,14 @@ async fn identifier_invalidation_uses_one_hook_snapshot_for_all_siblings<B: Back
     hooked(true)
         .delete_verifications_by_identifier("invalidate")
         .await?;
-    assert_eq!(db.count("verifications").await?, 2);
+    assert_eq!(db.count("verification").await?, 2);
     assert_eq!(before.load(Ordering::SeqCst), 1);
     assert_eq!(after.load(Ordering::SeqCst), 0);
     let active = hooked(false);
     active
         .delete_verifications_by_identifier("invalidate")
         .await?;
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
     assert_eq!(before.load(Ordering::SeqCst), 2);
     assert_eq!(after.load(Ordering::SeqCst), 1);
     active
@@ -733,7 +733,7 @@ async fn compare_and_swap_updates_only_the_expected_generation<B: Backend>(db: D
         .create_verification(token("callback-delete", "before", expiry))
         .await?;
     let disappearing = disappearing.id().into_owned();
-    _ = db.execute("CREATE TRIGGER remove_after_update AFTER UPDATE ON verifications WHEN NEW.identifier = 'callback-delete' BEGIN DELETE FROM verifications WHERE id = NEW.id; END", &[]).await?;
+    _ = db.execute("CREATE TRIGGER remove_after_update AFTER UPDATE ON \"verification\" WHEN NEW.\"identifier\" = 'callback-delete' BEGIN DELETE FROM \"verification\" WHERE id = NEW.id; END", &[]).await?;
     let snapshots = Arc::new(Mutex::new(Vec::new()));
     let hooked = B::hook(
         B::store(Arc::new(AuthConfig::new(SECRET)), &connection),
@@ -815,7 +815,7 @@ async fn independent_sqlite_stores_have_one_consume_reserve_and_update_winner<B:
         }
     }
     assert_eq!(consumed, vec![newest.id().into_owned()]);
-    assert_eq!(db.count("verifications").await?, 0);
+    assert_eq!(db.count("verification").await?, 0);
 
     let barrier = Arc::new(Barrier::new(8));
     let mut reservations = JoinSet::new();
@@ -836,7 +836,7 @@ async fn independent_sqlite_stores_have_one_consume_reserve_and_update_winner<B:
         }
     }
     assert_eq!(reservation_winners, 1);
-    assert_eq!(db.count("verifications").await?, 1);
+    assert_eq!(db.count("verification").await?, 1);
     let reserved = primary
         .get_latest_verification_by_identifier("claim")
         .await?

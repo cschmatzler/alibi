@@ -16,7 +16,7 @@ pub(crate) fn sqlx_schema(selection: &Selection) -> TokenStream {
             &entity.fields.iter().collect::<Vec<_>>(),
         )
     });
-    let tables = CORE_ENTITIES
+    let mut tables = CORE_ENTITIES
         .iter()
         .map(|(_, table, role)| (*table, entity_fields(selection, *role)))
         .chain(
@@ -26,12 +26,13 @@ pub(crate) fn sqlx_schema(selection: &Selection) -> TokenStream {
                 .map(|entity| (entity.table_name, entity.fields.iter().collect())),
         )
         .collect::<Vec<_>>();
+    tables.sort_by_key(|(table, _)| crate::sqlx::table_order(table));
     let sqlite = tables
         .iter()
-        .map(|(table, fields)| create_table(table, fields, SqlDialect::Sqlite));
+        .flat_map(|(table, fields)| migration_statements(table, fields, SqlDialect::Sqlite));
     let postgres = tables
         .iter()
-        .map(|(table, fields)| create_table(table, fields, SqlDialect::Postgres));
+        .flat_map(|(table, fields)| migration_statements(table, fields, SqlDialect::Postgres));
     quote! {
         use alibi::AuthSchema;
         use alibi::sqlx::{Engine, SqlxPool};
@@ -72,17 +73,30 @@ pub(crate) fn sqlx_entity(
     let module = format_ident!("{}", module);
     let fields = fields.iter().map(|field| {
         let name = format_ident!("{}", field.name);
-        let ty = parse_type(field, &sqlx_type(field.ty));
+        let ty = parse_type(
+            field,
+            &sqlx_type(field.ty).replace(
+                "i64",
+                if field.name == "last_request" {
+                    "i64"
+                } else {
+                    "alibi::sqlx::Integer"
+                },
+            ),
+        );
         let rename = field
             .column_name
             .map(|column| quote! { #[sqlx(rename = #column)] });
+        let column_kind = (table == "organization" && field.name == "metadata")
+            .then(|| quote! { #[auth(column_type = "text")] });
         quote! {
+            #column_kind
             #rename
             pub #name: #ty,
         }
     });
     let derive = role.map_or_else(
-        || quote! { #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow)] },
+        || quote! { #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::SqlxModel)] #[auth(table = #table)] },
         |role| {
             let role = role_name(role);
             quote! {
@@ -105,6 +119,7 @@ pub(crate) fn sqlx_entity(
 pub(crate) fn sqlx_type(ty: &str) -> String {
     ty.replace("DateTimeUtc", "chrono::DateTime<chrono::Utc>")
         .replace("Json", "alibi::sqlx::JsonMetadata")
+        .replace("f64", "alibi::sqlx::Number")
 }
 
 #[derive(Clone, Copy)]
@@ -113,41 +128,79 @@ pub(crate) enum SqlDialect {
     Postgres,
 }
 
-/// `CREATE TABLE IF NOT EXISTS` for a generated model, as `SeaORM` derives
-/// tables from its entities: column types follow the registry types.
-pub(crate) fn create_table(table: &str, fields: &[&FieldDef], dialect: SqlDialect) -> String {
-    let columns = fields
+/// Filter the compiled TypeScript DDL to the selected plugin columns and indexes.
+pub(crate) fn migration_statements(
+    table: &str,
+    fields: &[&FieldDef],
+    dialect: SqlDialect,
+) -> Vec<String> {
+    let (auth, oauth, rate) = match dialect {
+        SqlDialect::Sqlite => (
+            alibi_schema_registry::SQLITE_AUTH_SCHEMA,
+            alibi_schema_registry::SQLITE_OAUTH_SCHEMA,
+            alibi_schema_registry::SQLITE_RATE_LIMIT_SCHEMA,
+        ),
+        SqlDialect::Postgres => (
+            alibi_schema_registry::POSTGRES_AUTH_SCHEMA,
+            alibi_schema_registry::POSTGRES_OAUTH_SCHEMA,
+            alibi_schema_registry::POSTGRES_RATE_LIMIT_SCHEMA,
+        ),
+    };
+    let selected: std::collections::HashSet<_> = fields
         .iter()
-        .map(|field| {
-            let (inner, nullable) = field
-                .ty
-                .strip_prefix("Option<")
-                .and_then(|inner| inner.strip_suffix('>'))
-                .map_or((field.ty, false), |inner| (inner, true));
-            let sql_type = match (inner, dialect) {
-                ("bool", _) => "BOOLEAN",
-                ("i64", SqlDialect::Sqlite) => "INTEGER",
-                ("i64", SqlDialect::Postgres) => "BIGINT",
-                ("f64", SqlDialect::Sqlite) => "REAL",
-                ("f64", SqlDialect::Postgres) => "DOUBLE PRECISION",
-                ("DateTimeUtc", SqlDialect::Postgres) => "TIMESTAMPTZ",
-                ("Json", SqlDialect::Postgres) => "JSONB",
-                _ => "TEXT",
-            };
-            let column = field.column_name.unwrap_or(field.name);
-            let constraint = if field.is_primary_key {
-                " NOT NULL PRIMARY KEY"
-            } else if nullable {
-                ""
-            } else {
-                " NOT NULL"
-            };
-            let default = field.default_value.map_or_else(String::new, |value| {
-                format!(" DEFAULT '{}'", value.replace('\'', "''"))
-            });
-            format!("\"{column}\" {sql_type}{constraint}{default}")
+        .map(|field| field.column_name.unwrap_or(field.name))
+        .collect();
+    let prefix = format!("create table \"{table}\" (");
+    let mut statements = Vec::new();
+    for statement in auth
+        .split(';')
+        .chain(oauth.split(';'))
+        .chain(rate.split(';'))
+    {
+        let statement = statement.trim();
+        if let Some(start) = statement.find(&prefix) {
+            let columns = statement
+                .get(start + prefix.len()..)
+                .unwrap_or_default()
+                .trim_end_matches(')');
+            let columns: Vec<_> = columns
+                .split(", ")
+                .filter(|column| {
+                    column
+                        .split('"')
+                        .nth(1)
+                        .is_some_and(|name| selected.contains(name))
+                })
+                .collect();
+            statements.push(format!(
+                "CREATE TABLE IF NOT EXISTS \"{table}\" ({})",
+                columns.join(", ")
+            ));
+        } else if statement.starts_with("create ")
+            && statement.contains(&format!(" on \"{table}\" ("))
+        {
+            let columns = statement
+                .rsplit_once('(')
+                .map_or("", |(_, columns)| columns.trim_end_matches(')'));
+            if columns
+                .split(", ")
+                .all(|column| selected.contains(column.trim_matches('"')))
+            {
+                statements.push(statement.replacen("index ", "index IF NOT EXISTS ", 1));
+            }
+        }
+    }
+    statements
+}
+
+pub(crate) fn table_order(table: &str) -> usize {
+    let prefix = format!("create table \"{table}\" (");
+    alibi_schema_registry::SQLITE_AUTH_SCHEMA
+        .find(&prefix)
+        .or_else(|| {
+            alibi_schema_registry::SQLITE_OAUTH_SCHEMA
+                .find(&prefix)
+                .map(|index| index + alibi_schema_registry::SQLITE_AUTH_SCHEMA.len())
         })
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("CREATE TABLE IF NOT EXISTS \"{table}\" ({columns})")
+        .unwrap_or(usize::MAX)
 }

@@ -191,14 +191,14 @@ mod tests {
             let db = Database::connect("sqlite::memory:").await.unwrap();
             run_migrations(&db).await.unwrap();
             for sql in [
-                "ALTER TABLE sessions ADD COLUMN label TEXT",
-                "ALTER TABLE sessions ADD COLUMN hidden TEXT",
-                "ALTER TABLE sessions ADD COLUMN number REAL",
-                "ALTER TABLE sessions ADD COLUMN server_only TEXT NOT NULL DEFAULT 'physical-private-sentinel'",
-                "ALTER TABLE sessions ADD COLUMN transformed TEXT",
-                "ALTER TABLE sessions ADD COLUMN validated TEXT",
-                "ALTER TABLE sessions ADD COLUMN callback TEXT",
-                "ALTER TABLE sessions ADD COLUMN payload JSON NOT NULL DEFAULT '{}'",
+                "ALTER TABLE \"session\" ADD COLUMN label TEXT",
+                "ALTER TABLE \"session\" ADD COLUMN hidden TEXT",
+                "ALTER TABLE \"session\" ADD COLUMN number REAL",
+                "ALTER TABLE \"session\" ADD COLUMN server_only TEXT NOT NULL DEFAULT 'physical-private-sentinel'",
+                "ALTER TABLE \"session\" ADD COLUMN transformed TEXT",
+                "ALTER TABLE \"session\" ADD COLUMN validated TEXT",
+                "ALTER TABLE \"session\" ADD COLUMN callback TEXT",
+                "ALTER TABLE \"session\" ADD COLUMN payload JSON NOT NULL DEFAULT '{}'",
                 "CREATE TABLE session_model_events (phase TEXT, label TEXT, is_insert BOOLEAN)",
             ] {
                 _ = db
@@ -336,7 +336,7 @@ mod tests {
                 );
             }
         }
-        for table in ["users", "sessions"] {
+        for table in ["user", "session"] {
             let rows = db
                 .query_all_raw(Statement::from_string(
                     db.get_database_backend(),

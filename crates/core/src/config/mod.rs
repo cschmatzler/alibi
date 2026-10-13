@@ -1,5 +1,6 @@
 mod account;
 mod advanced;
+pub(crate) use advanced::two_factor_column;
 mod client_ip;
 mod id;
 mod identity;

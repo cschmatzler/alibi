@@ -202,6 +202,25 @@ impl AuthPlugin<TestSchema> for ApplicationToken {
     }
 }
 pub async fn initialize(db: &DatabaseConnection) -> AuthResult<()> {
+    for column in ["grantAudience", "grantNonce"] {
+        let exists = db
+            .query_one_raw(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                "SELECT name FROM pragma_table_info('deviceCode') WHERE name = ?",
+                [column.into()],
+            ))
+            .await
+            .map_err(|error| AuthError::internal(error.to_string()))?
+            .is_some();
+        if !exists {
+            _ = db
+                .execute_unprepared(&format!(
+                    "ALTER TABLE \"deviceCode\" ADD COLUMN \"{column}\" TEXT"
+                ))
+                .await
+                .map_err(|error| AuthError::internal(error.to_string()))?;
+        }
+    }
     _ = db.execute_unprepared("CREATE TABLE IF NOT EXISTS application_grant_receipts (row_id TEXT,owner_id TEXT,audience TEXT)").await.map_err(|error|AuthError::internal(error.to_string()))?;
     Ok(())
 }
@@ -224,7 +243,7 @@ async fn observation(db: &DatabaseConnection, code: &str) -> Value {
         let fields = db
             .query_one_raw(Statement::from_sql_and_values(
                 db.get_database_backend(),
-                "SELECT fields FROM device_code_fields WHERE device_code_id=?",
+                "SELECT json_object('grantAudience', \"grantAudience\", 'grantNonce', \"grantNonce\") AS fields FROM \"deviceCode\" WHERE id=?",
                 [row.id.clone().into()],
             ))
             .await

@@ -138,11 +138,6 @@ pub fn auth_session_impl(
         quote! {}
     };
     let additional_output = additional_output(EntityRole::Session, entity_fields, core_root);
-    let active_value = if has("active") {
-        quote! { self.active }
-    } else {
-        quote! { true }
-    };
     let impersonated_by_impl = optional_str_getter(fields, "impersonated_by");
     let active_org_impl = optional_str_getter(fields, "active_organization_id");
     let active_team_impl = if has("active_team_id") {
@@ -165,7 +160,6 @@ pub fn auth_session_impl(
             #impersonated_by_impl
             #active_org_impl
             #active_team_impl
-            fn active(&self) -> bool { #active_value }
         }
     }
 }

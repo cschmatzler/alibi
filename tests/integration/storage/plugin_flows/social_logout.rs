@@ -178,9 +178,9 @@ async fn logout_schema_rejection_preserves_owned_account_and_live_sessions<B: Ba
     )
     .await;
     let foreign = signup(&auth, "logout-schema-foreign@example.test").await;
-    _ = db.execute("INSERT INTO accounts (id,user_id,account_id,provider_id,id_token,created_at,updated_at) SELECT 'logout-schema-account',user_id,'logout-schema-sub','google','logout-owner-token',created_at,updated_at FROM accounts WHERE user_id=$1 AND provider_id='credential'", &[&owner_id]).await?;
+    _ = db.execute("INSERT INTO \"account\" (id,\"userId\",\"accountId\",\"providerId\",\"idToken\",\"createdAt\",\"updatedAt\") SELECT 'logout-schema-account',\"userId\",'logout-schema-sub','google','logout-owner-token',\"createdAt\",\"updatedAt\" FROM \"account\" WHERE \"userId\"=$1 AND \"providerId\"='credential'", &[&owner_id]).await?;
     let before = db
-        .tables(&["users", "accounts", "sessions", "verifications"])
+        .tables(&["user", "account", "session", "verification"])
         .await?;
     for input in [
         json!({"disableRedirect":"yes"}),
@@ -197,13 +197,13 @@ async fn logout_schema_rejection_preserves_owned_account_and_live_sessions<B: Ba
         assert!(rejected.headers.get("location").is_none());
         assert!(cookies(&rejected).is_empty());
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions", "verifications"])
+            db.tables(&["user", "account", "session", "verification"])
                 .await?,
             before
         );
         authenticated(&auth, &cookies(&owner), "logout-schema-owner@example.test").await;
     }
-    let retained = db.tables(&["users", "accounts", "verifications"]).await?;
+    let retained = db.tables(&["user", "account", "verification"]).await?;
     let accepted = call(
         &auth,
         request(
@@ -223,10 +223,10 @@ async fn logout_schema_rejection_preserves_owned_account_and_live_sessions<B: Ba
     );
     assert!(accepted.headers.get("location").is_none());
     assert_eq!(
-        db.tables(&["users", "accounts", "verifications"]).await?,
+        db.tables(&["user", "account", "verification"]).await?,
         retained
     );
-    assert_eq!(db.count("sessions").await?, 2);
+    assert_eq!(db.count("session").await?, 2);
     assert!(
         body(&call(&auth, request("/get-session", None, &cookies(&owner)), 200).await).is_null()
     );
@@ -305,10 +305,10 @@ async fn logout_selects_newest_eligible_owned_account<B: Backend>(db: Db) -> Tes
             "2024-01-01T00:00:00Z",
         ),
     ] {
-        _ = db.execute("INSERT INTO accounts (id,user_id,account_id,provider_id,id_token,created_at,updated_at) VALUES ($1,$2,$1,$3,$4,$5,$5)", &[account_id,&owner_id,provider_id,token,updated]).await?;
+        _ = db.execute("INSERT INTO \"account\" (id,\"userId\",\"accountId\",\"providerId\",\"idToken\",\"createdAt\",\"updatedAt\") VALUES ($1,$2,$1,$3,$4,$5,$5)", &[account_id,&owner_id,provider_id,token,updated]).await?;
     }
-    _ = db.execute("INSERT INTO accounts (id,user_id,account_id,provider_id,id_token,created_at,updated_at) VALUES ('foreign-account',$1,'foreign-account','primary','foreign-token','2025-01-01T00:00:00Z','2025-01-01T00:00:00Z')", &[&foreign_id]).await?;
-    let preserved = db.tables(&["users", "accounts", "verifications"]).await?;
+    _ = db.execute("INSERT INTO \"account\" (id,\"userId\",\"accountId\",\"providerId\",\"idToken\",\"createdAt\",\"updatedAt\") VALUES ('foreign-account',$1,'foreign-account','primary','foreign-token','2025-01-01T00:00:00Z','2025-01-01T00:00:00Z')", &[&foreign_id]).await?;
+    let preserved = db.tables(&["user", "account", "verification"]).await?;
     let completed = call(
         &auth,
         request(
@@ -327,10 +327,10 @@ async fn logout_selects_newest_eligible_owned_account<B: Backend>(db: Db) -> Tes
     );
     assert!(completed.headers.get("location").is_none());
     assert_eq!(
-        db.tables(&["users", "accounts", "verifications"]).await?,
+        db.tables(&["user", "account", "verification"]).await?,
         preserved
     );
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     authenticated(
         &auth,
         &cookies(&foreign),
@@ -346,9 +346,9 @@ async fn logout_selects_newest_eligible_owned_account<B: Backend>(db: Db) -> Tes
     assert_eq!(body(&replay), json!({"success":true}));
     assert!(replay.headers.get("location").is_none());
     assert_eq!(
-        db.tables(&["users", "accounts", "verifications"]).await?,
+        db.tables(&["user", "account", "verification"]).await?,
         preserved
     );
-    assert_eq!(db.count("sessions").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
     B::close(connection).await
 }

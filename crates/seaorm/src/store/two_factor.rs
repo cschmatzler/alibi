@@ -19,20 +19,19 @@ where
     S: AuthSchema + Send + Sync,
 {
     async fn create_two_factor(&self, two_factor: CreateTwoFactor) -> AuthResult<TwoFactor> {
-        let now = Utc::now();
         let active = ActiveModel {
             id: Set(self
-                .generated_id(&self.db, "twoFactor", "two_factor", "id")
+                .generated_id(&self.db, "twoFactor", "twoFactor", "id")
                 .await?
                 .unwrap_or_else(|| Uuid::new_v4().to_string())),
             secret: Set(two_factor.secret),
             backup_codes: Set(two_factor.backup_codes),
             user_id: Set(two_factor.user_id),
             verified: Set(two_factor.verified),
-            failed_verification_count: Set(two_factor.failed_verification_count),
+            failed_verification_count: Set(two_factor
+                .failed_verification_count
+                .map(crate::Number::from)),
             locked_until: Set(two_factor.locked_until),
-            created_at: Set(now),
-            updated_at: Set(now),
         };
         let backend = self.scoped_connection().get_database_backend();
         if !matches!(
@@ -96,7 +95,7 @@ where
     async fn increment_two_factor_failure(&self, id: &str) -> AuthResult<Option<TwoFactor>> {
         self.apply_factor_update(Entity::update_many().filter(Column::Id.eq(id)).col_expr(
             Column::FailedVerificationCount,
-            Expr::cust("\"failed_verification_count\" + 1"),
+            Expr::cust("\"failedVerificationCount\" + 1"),
         ))
         .await
     }
@@ -178,8 +177,7 @@ where
         self.apply_factor_update(
             Entity::update_many()
                 .filter(Column::Id.eq(model.id))
-                .col_expr(Column::BackupCodes, Expr::value(backup_codes))
-                .col_expr(Column::UpdatedAt, Expr::value(Utc::now())),
+                .col_expr(Column::BackupCodes, Expr::value(backup_codes)),
         )
         .await?
         .ok_or_else(|| alibi_core::error::AuthError::not_found("Two-factor settings not found"))

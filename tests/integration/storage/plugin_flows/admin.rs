@@ -82,14 +82,14 @@ async fn admin_provisioning_permissions_passwords_and_session_moderation<B: Back
     let second = login(&auth, PASSWORD, 200).await;
     let first_token = body(&first)["token"].as_str().unwrap().to_owned();
     let second_token = body(&second)["token"].as_str().unwrap().to_owned();
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let _ = call(
         &auth,
         request("/admin/list-users", None, &unprivileged),
         403,
     )
     .await;
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     // Valid operation inputs make each rejection reach the permission guard.
     for (path, input) in [
         (
@@ -123,7 +123,7 @@ async fn admin_provisioning_permissions_passwords_and_session_moderation<B: Back
             "{path}"
         );
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
+            db.tables(&["user", "account", "session"]).await?,
             before,
             "{path}"
         );
@@ -165,7 +165,7 @@ async fn admin_provisioning_permissions_passwords_and_session_moderation<B: Back
     .await;
     assert_eq!(body(&renamed)["name"], "Renamed");
     assert_eq!(
-        db.text("SELECT name FROM users WHERE id = $1", &[&target])
+        db.text("SELECT \"name\" FROM \"user\" WHERE id = $1", &[&target])
             .await?
             .as_deref(),
         Some("Renamed")
@@ -183,7 +183,7 @@ async fn admin_provisioning_permissions_passwords_and_session_moderation<B: Back
         .await;
         assert_eq!(body(&changed)["user"]["role"], role);
         assert_eq!(
-            db.text("SELECT role FROM users WHERE id = $1", &[&target])
+            db.text("SELECT \"role\" FROM \"user\" WHERE id = $1", &[&target])
                 .await?
                 .as_deref(),
             Some(role)
@@ -259,7 +259,7 @@ async fn admin_provisioning_permissions_passwords_and_session_moderation<B: Back
     .await;
     assert_eq!(
         db.count_where(
-            "SELECT COUNT(*) FROM users WHERE id = $1 AND banned = true AND ban_reason = 'review'",
+            "SELECT COUNT(*) FROM \"user\" WHERE id = $1 AND \"banned\" = true AND \"banReason\" = 'review'",
             &[&target]
         )
         .await?,
@@ -274,7 +274,7 @@ async fn admin_provisioning_permissions_passwords_and_session_moderation<B: Back
         200,
     )
     .await;
-    assert_eq!(db.count_where("SELECT COUNT(*) FROM users WHERE id = $1 AND banned = false AND ban_reason IS NULL AND ban_expires IS NULL", &[&target]).await?, 1);
+    assert_eq!(db.count_where("SELECT COUNT(*) FROM \"user\" WHERE id = $1 AND \"banned\" = false AND \"banReason\" IS NULL AND \"banExpires\" IS NULL", &[&target]).await?, 1);
     let _ = login(&auth, replacement, 200).await;
 
     let impersonated = call(

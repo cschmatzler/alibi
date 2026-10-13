@@ -36,12 +36,12 @@ async fn oauth_client_update_persists_owned_metadata_and_preserves_credentials<B
     let old = auth.store().get_oauth_client(id).await?.unwrap();
     let before = db
         .tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client",
+            "oauthClient",
         ])
         .await?;
     for (id, patch, cookie, status) in [
@@ -76,12 +76,12 @@ async fn oauth_client_update_persists_owned_metadata_and_preserves_credentials<B
         assert_eq!(error.error.status_code(), status);
         assert_eq!(
             db.tables(&[
-                "users",
-                "accounts",
-                "sessions",
-                "verifications",
+                "user",
+                "account",
+                "session",
+                "verification",
                 "jwks",
-                "oauth_client"
+                "oauthClient"
             ])
             .await?,
             before
@@ -90,21 +90,25 @@ async fn oauth_client_update_persists_owned_metadata_and_preserves_credentials<B
     let unchanged=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","updateOAuthClient").with_body(&json!({"client_id":id,"update":{"user_id":"forged","token_endpoint_auth_method":"none"}}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()}).await?.into_response()?;
     let mut expected = original.clone();
     _ = expected.as_object_mut().unwrap().remove("client_secret");
+    _ = expected
+        .as_object_mut()
+        .unwrap()
+        .remove("client_credentials_scopes");
     assert_eq!(body(&unchanged), expected);
     assert_eq!(
         db.tables(&[
-            "users",
-            "accounts",
-            "sessions",
-            "verifications",
+            "user",
+            "account",
+            "session",
+            "verification",
             "jwks",
-            "oauth_client"
+            "oauthClient"
         ])
         .await?,
         before
     );
     let unrelated = db
-        .tables(&["users", "accounts", "sessions", "verifications", "jwks"])
+        .tables(&["user", "account", "session", "verification", "jwks"])
         .await?;
     let start = chrono::Utc::now().timestamp();
     let output=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","updateOAuthClient").with_body(&json!({"client_id":id,"update":{"client_name":"After update","scope":"email","redirect_uris":["https://new.fixture.test/callback"],"contacts":["support@fixture.test"],"client_secret":"forged","user_id":"forged"}}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()}).await?.into_response()?;
@@ -119,17 +123,19 @@ async fn oauth_client_update_persists_owned_metadata_and_preserves_credentials<B
     assert_eq!(stored.user_id, old.user_id);
     assert_eq!(stored.client_secret, old.client_secret);
     assert_eq!(stored.created_at, old.created_at);
-    assert!(stored.updated_at.timestamp() >= start);
-    assert!(stored.updated_at.timestamp() <= chrono::Utc::now().timestamp());
+    assert!(stored.updated_at.expect("client timestamp").timestamp() >= start);
+    assert!(
+        stored.updated_at.expect("client timestamp").timestamp() <= chrono::Utc::now().timestamp()
+    );
     assert_eq!(stored.metadata["client_name"], "After update");
     assert_eq!(stored.metadata["scope"], "email");
     assert_eq!(
         stored.metadata["redirect_uris"],
         json!(["https://new.fixture.test/callback"])
     );
-    assert_eq!(db.count("oauth_client").await?, 1);
+    assert_eq!(db.count("oauthClient").await?, 1);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions", "verifications", "jwks"])
+        db.tables(&["user", "account", "session", "verification", "jwks"])
             .await?,
         unrelated
     );

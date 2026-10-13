@@ -68,7 +68,7 @@ impl Fixture {
             application
                 .database
                 .execute_unprepared(
-                    "DELETE FROM app_session; DELETE FROM app_account; DELETE FROM verifications; DELETE FROM app_user",
+                    "DELETE FROM app_session; DELETE FROM app_account; DELETE FROM \"verification\"; DELETE FROM app_user",
                 )
                 .await
                 .map_err(db_error)?;
@@ -349,18 +349,17 @@ fn plugin_fields(entity: &'static str, application: &Application) -> FieldConfig
 }
 impl Application {
     fn record_completed(&self, request: &impl alibi::session::SessionRequest, path: &str) {
-            let snapshot =
-                alibi::session::cookie_cache::runtime::published_session_snapshot(request);
-            let record = snapshot
-                .as_ref()
-                .map(|snapshot| json!({"user":snapshot.user(),"session":snapshot.session()}));
-            let user_output = snapshot
-                .as_ref()
-                .and_then(|snapshot| snapshot.user_output());
-            let session_output = snapshot
-                .as_ref()
-                .and_then(|snapshot| snapshot.session_output());
-            self.events.lock().expect("application receipts").push(json!({
+        let snapshot = alibi::session::cookie_cache::runtime::published_session_snapshot(request);
+        let record = snapshot
+            .as_ref()
+            .map(|snapshot| json!({"user":snapshot.user(),"session":snapshot.session()}));
+        let user_output = snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.user_output());
+        let session_output = snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.session_output());
+        self.events.lock().expect("application receipts").push(json!({
                 "phase":"completed", "path":path, "record":record,
                 "userOmittedPresent":snapshot.as_ref().map(|_| user_output.is_some_and(|output| output.contains_field("omitted"))),
                 "userOmittedUndefined":snapshot.as_ref().map(|snapshot| !snapshot.user().extension_fields.contains_key("omitted")),
@@ -371,10 +370,20 @@ impl Application {
 }
 #[async_trait::async_trait]
 impl alibi::endpoint::EndpointHook<ApplicationSchema> for Application {
-    fn matches_after(&self, call: &alibi::endpoint::EndpointCall, _: &alibi::AuthContext<ApplicationSchema>, _: &alibi::endpoint::EndpointResponse) -> AuthResult<bool> {
+    fn matches_after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<ApplicationSchema>,
+        _: &alibi::endpoint::EndpointResponse,
+    ) -> AuthResult<bool> {
         Ok(self.mode == "cached" && call.request().is_none())
     }
-    async fn after(&self, call: &alibi::endpoint::EndpointCall, _: &alibi::AuthContext<ApplicationSchema>, response: alibi::endpoint::EndpointResponse) -> AuthResult<alibi::endpoint::EndpointResponse> {
+    async fn after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<ApplicationSchema>,
+        response: alibi::endpoint::EndpointResponse,
+    ) -> AuthResult<alibi::endpoint::EndpointResponse> {
         self.record_completed(call, call.path().unwrap_or("/"));
         Ok(response)
     }
@@ -393,7 +402,9 @@ impl AuthPlugin<ApplicationSchema> for Application {
     fn session_fields(&self) -> FieldConfigs {
         plugin_fields("session", self)
     }
-    fn endpoint_hooks(&self) -> Vec<&dyn alibi::endpoint::EndpointHook<ApplicationSchema>> { vec![self] }
+    fn endpoint_hooks(&self) -> Vec<&dyn alibi::endpoint::EndpointHook<ApplicationSchema>> {
+        vec![self]
+    }
     fn routes(&self) -> Vec<AuthRoute> {
         Vec::new()
     }
@@ -410,7 +421,9 @@ impl AuthPlugin<ApplicationSchema> for Application {
         _: &alibi::AuthContext<ApplicationSchema>,
         response: alibi::AuthResponse,
     ) -> AuthResult<alibi::AuthResponse> {
-        if self.mode == "cached" { self.record_completed(request, request.path()); }
+        if self.mode == "cached" {
+            self.record_completed(request, request.path());
+        }
         Ok(response)
     }
     async fn on_init(&self, context: &mut AuthInitContext<ApplicationSchema>) -> AuthResult<()> {
@@ -529,7 +542,7 @@ impl DatabaseHooks<ApplicationSchema, crate::backend::Backend> for Application {
             .push(json!({"phase":"before","entity":"session","fields":fields}));
         let stored = crate::backend::rows::<application_session::Model>(
             &self.database,
-            "SELECT * FROM app_session WHERE token = ? LIMIT 1",
+            "SELECT * FROM app_session WHERE \"token\" = ? LIMIT 1",
             vec![token.to_owned()],
         )
         .await
@@ -556,7 +569,7 @@ impl DatabaseHooks<ApplicationSchema, crate::backend::Backend> for Application {
                 self.database
                     .execute_raw(Statement::from_sql_and_values(
                         DbBackend::Sqlite,
-                        "DELETE FROM app_session WHERE token = ?",
+                        "DELETE FROM app_session WHERE \"token\" = ?",
                         [token.into()],
                     ))
                     .await
@@ -781,7 +794,7 @@ impl Application {
         .map_err(db_error)?;
         let verifications = crate::backend::rows::<verification::Model>(
             &self.database,
-            "SELECT * FROM verifications",
+            "SELECT * FROM \"verification\"",
             vec![],
         )
         .await
@@ -844,7 +857,7 @@ pub(crate) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
                                 .database
                                 .execute_raw(Statement::from_sql_and_values(
                                     DbBackend::Sqlite,
-                                    "UPDATE app_session SET label = ? WHERE token = ?",
+                                    "UPDATE app_session SET label = ? WHERE \"token\" = ?",
                                     [label.into(), input.token.clone().into()],
                                 ))
                                 .await
@@ -859,7 +872,7 @@ pub(crate) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
                                 .database
                                 .execute_raw(Statement::from_sql_and_values(
                                     DbBackend::Sqlite,
-                                    "UPDATE app_session SET omitted = ? WHERE token = ?",
+                                    "UPDATE app_session SET omitted = ? WHERE \"token\" = ?",
                                     [omitted.into(), input.token.clone().into()],
                                 ))
                                 .await
@@ -870,7 +883,7 @@ pub(crate) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
                                 .database
                                 .execute_raw(Statement::from_sql_and_values(
                                     DbBackend::Sqlite,
-                                    "UPDATE app_session SET hidden = ? WHERE token = ?",
+                                    "UPDATE app_session SET hidden = ? WHERE \"token\" = ?",
                                     [hidden.into(), input.token.clone().into()],
                                 ))
                                 .await
@@ -880,7 +893,7 @@ pub(crate) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
                             .database
                             .execute_raw(Statement::from_sql_and_values(
                                 DbBackend::Sqlite,
-                                "UPDATE app_session SET expires_at = ? WHERE token = ?",
+                                "UPDATE app_session SET \"expiresAt\" = ? WHERE \"token\" = ?",
                                 [input.expires_at.into(), input.token.into()],
                             ))
                             .await

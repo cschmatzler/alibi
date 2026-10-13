@@ -137,12 +137,12 @@ async fn exercise<S: AuthSchema>(
     // only this empty owned fixture table with NOCASE token/identity columns.
     let schema = db
         .text(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='accounts'",
+            "SELECT sql FROM sqlite_master WHERE type='table' AND \"name\"='accounts'",
             &[],
         )
         .await?
         .ok_or("account DDL")?;
-    _ = db.execute("DROP TABLE accounts", &[]).await?;
+    _ = db.execute("DROP TABLE \"account\"", &[]).await?;
     _ = db
         .execute(
             &schema
@@ -173,7 +173,7 @@ async fn exercise<S: AuthSchema>(
         })
         .await?;
     let input = manifest(&account);
-    let initial = db.table("accounts").await?;
+    let initial = db.table("account").await?;
     assert!(OAuthTokenConversion::prepare(input.clone(), "wrong-secret", &config()).is_err());
     for field in 0..3 {
         let mut damaged = input.clone();
@@ -195,15 +195,15 @@ async fn exercise<S: AuthSchema>(
         );
         assert!(OAuthTokenConversion::prepare(damaged, ORIGINAL, &config()).is_err());
     }
-    assert_eq!(db.table("accounts").await?, initial);
+    assert_eq!(db.table("account").await?, initial);
     let plan = OAuthTokenConversion::prepare(input.clone(), ORIGINAL, &config())?;
     // FAIL preserves prior statement/trigger writes unless the adapter rolls
     // back an explicit transaction; ABORT alone cannot prove that contract.
     for action in ["ABORT", "FAIL"] {
-        _ = db.execute(&format!("CREATE TRIGGER conversion190_fail AFTER UPDATE OF access_token ON accounts BEGIN UPDATE accounts SET refresh_token='trigger-change' WHERE id=NEW.id; SELECT RAISE({action}, 'owned fixture failure'); END"), &[]).await?;
+        _ = db.execute(&format!("CREATE TRIGGER conversion190_fail AFTER UPDATE OF \"accessToken\" ON \"account\" BEGIN UPDATE \"account\" SET \"refreshToken\"='trigger-change' WHERE id=NEW.id; SELECT RAISE({action}, 'owned fixture failure'); END"), &[]).await?;
         assert!(plan.apply(store).await.is_err());
         assert!(
-            db.table("accounts").await? == initial,
+            db.table("account").await? == initial,
             "{action} must roll back token and trigger writes"
         );
         _ = db.execute("DROP TRIGGER conversion190_fail", &[]).await?;
@@ -223,7 +223,7 @@ async fn exercise<S: AuthSchema>(
     );
     assert_eq!(converted.id_token(), Some("id190"));
     let mut before: serde_json::Value = serde_json::from_str(&initial)?;
-    let mut after: serde_json::Value = serde_json::from_str(&db.table("accounts").await?)?;
+    let mut after: serde_json::Value = serde_json::from_str(&db.table("account").await?)?;
     for rows in [&mut before, &mut after] {
         let row = rows
             .as_array_mut()
@@ -236,7 +236,7 @@ async fn exercise<S: AuthSchema>(
     }
     assert_eq!(before, after); // All untouched physical columns, including timestamps.
     assert!(!plan.apply(store).await?); // Retry cannot reapply old legacy observations.
-    let stable = db.table("accounts").await?;
+    let stable = db.table("account").await?;
     let mut current = manifest(&converted);
     current.access_encoding = TokenEncoding::Source;
     current.refresh_encoding = TokenEncoding::Source;
@@ -246,7 +246,7 @@ async fn exercise<S: AuthSchema>(
             .apply(store)
             .await?
     );
-    assert_eq!(db.table("accounts").await?, stable); // Explicit already-converted retry.
+    assert_eq!(db.table("account").await?, stable); // Explicit already-converted retry.
 
     // Restore only the owned fixture's tokens, then interleave real side-pool writes.
     for (change, case_only) in [
@@ -263,7 +263,7 @@ async fn exercise<S: AuthSchema>(
         ("account_id", true),
         ("user_id", true),
     ] {
-        _ = db.execute("UPDATE accounts SET access_token=$1, refresh_token=$2, id_token=$3, user_id=$4, provider_id=$5, account_id=$6 WHERE id=$7", &[
+        _ = db.execute("UPDATE \"account\" SET \"accessToken\"=$1, \"refreshToken\"=$2, \"idToken\"=$3, \"userId\"=$4, \"providerId\"=$5, \"accountId\"=$6 WHERE id=$7", &[
             input.observed.tokens.access_token.as_deref().ok_or("access")?, input.observed.tokens.refresh_token.as_deref().ok_or("refresh")?, input.observed.tokens.id_token.as_deref().ok_or("id")?, &input.observed.user_id, &input.observed.provider_id, &input.observed.account_id, &input.observed.id]).await?;
         let pending = OAuthTokenConversion::prepare(input.clone(), ORIGINAL, &config())?;
         let value = if case_only {
@@ -293,16 +293,16 @@ async fn exercise<S: AuthSchema>(
         };
         _ = db
             .execute(
-                &format!("UPDATE accounts SET {change}=$1 WHERE id=$2"),
+                &format!("UPDATE \"account\" SET {change}=$1 WHERE id=$2"),
                 &[&value, &input.observed.id],
             )
             .await?;
-        let concurrent = db.table("accounts").await?;
+        let concurrent = db.table("account").await?;
         assert!(!pending.apply(store).await?);
-        assert_eq!(db.table("accounts").await?, concurrent);
+        assert_eq!(db.table("account").await?, concurrent);
     }
     // Mixed plaintext and NULL require explicit classifications; no guessing.
-    _ = db.execute("UPDATE accounts SET access_token=$1, refresh_token=NULL, id_token=$2, user_id=$3, provider_id=$4, account_id=$5 WHERE id=$6", &["plain-access", "plain-id", &input.observed.user_id, &input.observed.provider_id, &input.observed.account_id, &input.observed.id]).await?;
+    _ = db.execute("UPDATE \"account\" SET \"accessToken\"=$1, \"refreshToken\"=NULL, \"idToken\"=$2, \"userId\"=$3, \"providerId\"=$4, \"accountId\"=$5 WHERE id=$6", &["plain-access", "plain-id", &input.observed.user_id, &input.observed.provider_id, &input.observed.account_id, &input.observed.id]).await?;
     let mixed = store
         .get_account("operator-fixture", "legacy-row")
         .await?
@@ -333,7 +333,7 @@ async fn exercise<S: AuthSchema>(
     missing.id_encoding = TokenEncoding::Plain;
     let pending = OAuthTokenConversion::prepare(missing, ORIGINAL, &config())?;
     _ = db
-        .execute("DELETE FROM accounts WHERE id=$1", &[&input.observed.id])
+        .execute("DELETE FROM \"account\" WHERE id=$1", &[&input.observed.id])
         .await?;
     assert!(!pending.apply(store).await?);
     Ok(())

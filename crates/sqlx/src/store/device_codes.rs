@@ -17,26 +17,73 @@ impl<S: AuthSchema + Send + Sync> SqlxStore<S> {
         &self,
         exec: Exec<'_>,
         input: CreateDeviceCode,
+        fields: serde_json::Map<String, serde_json::Value>,
     ) -> AuthResult<DeviceCode> {
         let mut active = ActiveRow::new();
         active.set(
             "id",
-            self.generated_id(self.exec(), "deviceCode", "device_code", "id")
+            self.generated_id(self.exec(), "deviceCode", "deviceCode", "id")
                 .await?
                 .unwrap_or_else(|| Uuid::new_v4().to_string()),
         );
-        active.set("device_code", input.device_code);
-        active.set("user_code", input.user_code);
-        active.set("user_id", input.user_id);
-        active.set("expires_at", input.expires_at);
+        active.set("deviceCode", input.device_code);
+        active.set("userCode", input.user_code);
+        active.set("userId", input.user_id);
+        active.set("expiresAt", input.expires_at);
         active.set("status", input.status);
-        active.set("last_polled_at", input.last_polled_at);
-        active.set("polling_interval", input.polling_interval);
-        active.set("client_id", input.client_id);
+        active.set("lastPolledAt", input.last_polled_at);
+        active.set("pollingInterval", input.polling_interval);
+        active.set("clientId", input.client_id);
         active.set("scope", input.scope);
-        model::insert::<Model>(exec, &active)
-            .await
+        if fields.is_empty() {
+            return model::insert::<Model>(exec, &active)
+                .await
+                .map(|model| DeviceCode::from(&model));
+        }
+        if fields
+            .keys()
+            .any(|name| Model::COLUMN_NAMES.contains(&name.as_str()))
+        {
+            return Err(AuthError::bad_request(
+                "Application device fields cannot replace core columns",
+            ));
+        }
+        let present = active.present().collect::<Vec<_>>();
+        let mut sql = Sql::with(exec.engine(), "INSERT INTO ");
+        sql.ident(Model::TABLE);
+        sql.push(" (");
+        for (index, name) in present
+            .iter()
+            .map(|(name, _)| *name)
+            .chain(fields.keys().map(String::as_str))
+            .enumerate()
+        {
+            if index > 0 {
+                sql.push(", ");
+            }
+            sql.ident(name);
+        }
+        sql.push(") VALUES (");
+        for (index, (name, value)) in present.into_iter().enumerate() {
+            if index > 0 {
+                sql.push(", ");
+            }
+            model::bind_model_value::<Model>(&mut sql, name, value.clone());
+        }
+        for value in fields.into_values() {
+            sql.push(", ");
+            if value.is_null() {
+                sql.push("NULL");
+            } else {
+                sql.bind(device_field_value(value));
+            }
+        }
+        sql.push(")");
+        model::returning::<Model>(&mut sql);
+        exec.fetch_optional::<Model>(sql)
+            .await?
             .map(|model| DeviceCode::from(&model))
+            .ok_or_else(|| AuthError::internal("Device code insertion returned no row"))
     }
 
     async fn find_device_code(&self, column: &str, value: &str) -> AuthResult<Option<DeviceCode>> {
@@ -89,7 +136,7 @@ where
     S: AuthSchema + Send + Sync,
 {
     async fn create_device_code(&self, input: CreateDeviceCode) -> AuthResult<DeviceCode> {
-        self.create_device_code_with_connection(self.exec(), input)
+        self.create_device_code_with_connection(self.exec(), input, serde_json::Map::new())
             .await
     }
     async fn create_device_code_with_fields(
@@ -97,38 +144,50 @@ where
         input: CreateDeviceCode,
         fields: serde_json::Map<String, serde_json::Value>,
     ) -> AuthResult<DeviceCode> {
-        if fields.is_empty() {
-            return self.create_device_code(input).await;
-        }
-        self.in_transaction(true, async move |tx| {
-            let exec = crate::pool::Exec::tx(tx);
-            let create = Sql::with(exec.engine(), "CREATE TABLE IF NOT EXISTS device_code_fields (device_code_id TEXT PRIMARY KEY REFERENCES device_code(id) ON DELETE CASCADE, fields TEXT NOT NULL)");
-            _ = exec.execute(create).await?;
-            let row = self.create_device_code_with_connection(exec, input).await?;
-            let mut insert = Sql::with(exec.engine(), "INSERT INTO device_code_fields (device_code_id, fields) VALUES (");
-            insert.bind(row.id.clone());insert.push(", ");insert.bind(serde_json::to_string(&fields)?);insert.push(")");
-            _ = exec.execute(insert).await?;
-            Ok(row)
-        }).await
+        self.create_device_code_with_connection(self.exec(), input, fields)
+            .await
     }
     async fn device_code_fields(
         &self,
         id: &str,
     ) -> AuthResult<serde_json::Map<String, serde_json::Value>> {
-        if !super::migrator::has_table(self.exec(), "device_code_fields").await? {
-            return Ok(serde_json::Map::new());
-        }
-        let mut sql = Sql::with(
-            self.exec().engine(),
-            "SELECT fields FROM device_code_fields WHERE device_code_id = ",
-        );
-        sql.bind(id);
-        self.exec()
-            .fetch_scalar::<String>(sql)
-            .await?
-            .map(|fields| serde_json::from_str(&fields).map_err(Into::into))
-            .transpose()
-            .map(Option::unwrap_or_default)
+        let mut query = if self.exec().engine() == Engine::Postgres {
+            Sql::with(
+                Engine::Postgres,
+                "SELECT to_jsonb(t)::text FROM \"deviceCode\" t WHERE \"id\" = ",
+            )
+        } else {
+            #[derive(sqlx::FromRow)]
+            struct ColumnName {
+                name: String,
+            }
+            let columns = self
+                .exec()
+                .fetch_all::<ColumnName>(Sql::with(
+                    Engine::Sqlite,
+                    "SELECT name FROM pragma_table_info('deviceCode')",
+                ))
+                .await?;
+            let mut query = Sql::with(Engine::Sqlite, "SELECT json_object(");
+            for (index, column) in columns.into_iter().enumerate() {
+                if index > 0 {
+                    query.push(", ");
+                }
+                query.bind(column.name.clone());
+                query.push(", ");
+                query.ident(&column.name);
+            }
+            query.push(") FROM \"deviceCode\" WHERE \"id\" = ");
+            query
+        };
+        query.bind(id);
+        let json = self.exec().fetch_scalar::<String>(query).await?;
+        let mut fields = json
+            .map(|json| serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&json))
+            .transpose()?
+            .unwrap_or_default();
+        fields.retain(|name, _| !Model::COLUMN_NAMES.contains(&name.as_str()));
+        Ok(fields)
     }
     async fn consume_device_code(
         &self,
@@ -136,34 +195,24 @@ where
         status: &str,
         ownership: &serde_json::Map<String, serde_json::Value>,
     ) -> AuthResult<Option<DeviceCode>> {
-        let mut sql = Sql::with(self.exec().engine(), "DELETE FROM device_code WHERE id = ");
+        let mut sql = Sql::with(
+            self.exec().engine(),
+            "DELETE FROM \"deviceCode\" WHERE id = ",
+        );
         sql.bind(id);
         sql.push(" AND status = ");
         sql.bind(status);
         for (field, value) in ownership {
-            sql.push(" AND EXISTS (SELECT 1 FROM device_code_fields WHERE device_code_id = device_code.id AND ");
-            if self.exec().engine() == Engine::Postgres {
-                sql.push("CAST(fields AS JSONB) -> ");
-                sql.bind(field);
-                sql.push(" = CAST(");
-                sql.bind(value.to_string());
-                sql.push(" AS JSONB)");
+            sql.push(" AND ");
+            sql.ident(field);
+            if value.is_null() {
+                sql.push(" IS NULL");
             } else {
-                sql.push("json_extract(fields, ");
-                sql.bind(format!("$.{}", serde_json::to_string(field)?));
-                sql.push(") IS json_extract(");
-                sql.bind(value.to_string());
-                sql.push(", '$')");
+                sql.push(" = ");
+                sql.bind(device_field_value(value.clone()));
             }
-            sql.push(")");
         }
-        sql.push(" RETURNING ");
-        for (index, column) in Model::COLUMN_NAMES.iter().enumerate() {
-            if index > 0 {
-                sql.push(", ");
-            }
-            sql.ident(column);
-        }
+        model::returning::<Model>(&mut sql);
         self.exec()
             .fetch_optional::<Model>(sql)
             .await
@@ -174,14 +223,14 @@ where
         &self,
         device_code: &str,
     ) -> AuthResult<Option<DeviceCode>> {
-        self.find_device_code("device_code", device_code).await
+        self.find_device_code("deviceCode", device_code).await
     }
 
     async fn get_device_code_by_user_code(
         &self,
         user_code: &str,
     ) -> AuthResult<Option<DeviceCode>> {
-        self.find_device_code("user_code", user_code).await
+        self.find_device_code("userCode", user_code).await
     }
 
     async fn update_device_code(
@@ -200,10 +249,10 @@ where
             active.set("status", status);
         }
         if let Some(user_id) = update.user_id {
-            active.set("user_id", user_id);
+            active.set("userId", user_id);
         }
         if let Some(last_polled_at) = update.last_polled_at {
-            active.set("last_polled_at", last_polled_at);
+            active.set("lastPolledAt", last_polled_at);
         }
 
         model::update::<Model>(self.exec(), &active)
@@ -223,10 +272,10 @@ where
             sets.push(("status", status.into()));
         }
         if let Some(user_id) = update.user_id {
-            sets.push(("user_id", user_id.into()));
+            sets.push(("userId", user_id.into()));
         }
         if let Some(last_polled_at) = update.last_polled_at {
-            sets.push(("last_polled_at", last_polled_at.into()));
+            sets.push(("lastPolledAt", last_polled_at.into()));
         }
         self.update_device_codes(
             sets,
@@ -241,11 +290,11 @@ where
 
     async fn claim_device_code(&self, id: &str, user_id: &str) -> AuthResult<bool> {
         self.update_device_codes(
-            vec![("user_id", user_id.into())],
+            vec![("userId", user_id.into())],
             vec![
                 ("id", Some(id.into())),
                 ("status", Some("pending".into())),
-                ("user_id", None),
+                ("userId", None),
             ],
         )
         .await
@@ -264,5 +313,17 @@ where
         sql.push(" AND ");
         sql.compare(Model::TABLE, "status", " = ", status);
         self.exec().execute(sql).await.map(|affected| affected == 1)
+    }
+}
+
+fn device_field_value(value: serde_json::Value) -> SqlValue {
+    match value {
+        serde_json::Value::String(value) => value.into(),
+        serde_json::Value::Bool(value) => value.into(),
+        serde_json::Value::Number(value) => value
+            .as_i64()
+            .map_or_else(|| value.as_f64().into(), SqlValue::from),
+        serde_json::Value::Null => SqlValue::Text(None),
+        value => SqlValue::Json(Some(Box::new(value))),
     }
 }

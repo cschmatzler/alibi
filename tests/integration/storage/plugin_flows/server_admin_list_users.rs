@@ -53,7 +53,7 @@ async fn server_admin_list_users_preserves_query_pagination_and_sql_behavior<B: 
         ),
         ..Default::default()
     };
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for (query, options, status) in [
         (None, EndpointOptions::default(), 400),
         (Some(json!(null)), EndpointOptions::default(), 400),
@@ -237,6 +237,6 @@ async fn server_admin_list_users_preserves_query_pagination_and_sql_behavior<B: 
             ]
         );
     }
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     B::close(connection).await
 }

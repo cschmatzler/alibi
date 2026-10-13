@@ -55,7 +55,7 @@ async fn server_set_password_is_pathless_and_creates_only_owned_credentials<B: B
     auth.store()
         .delete_account(credential.id().as_ref())
         .await?;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for input in [
         json!({}),
         json!({"newPassword":null}),
@@ -83,10 +83,10 @@ async fn server_set_password_is_pathless_and_creates_only_owned_credentials<B: B
         .unwrap_err();
     assert_eq!(short.error.status_code(), 400);
     assert!(short.error.to_string().contains("Password too short"));
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
-    let users = db.table("users").await?;
-    let sessions = db.table("sessions").await?;
-    let foreign_accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
+    let users = db.table("user").await?;
+    let sessions = db.table("session").await?;
+    let foreign_accounts: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
     let set = auth
         .dispatch_endpoint(
             PasswordManagementPlugin::set_password_endpoint(&SetPasswordRequest {
@@ -103,8 +103,8 @@ async fn server_set_password_is_pathless_and_creates_only_owned_credentials<B: B
         Some("logical")
     );
     assert!(set.headers().get_all("set-cookie").next().is_none());
-    assert_eq!(db.table("users").await?, users);
-    assert_eq!(db.table("sessions").await?, sessions);
+    assert_eq!(db.table("user").await?, users);
+    assert_eq!(db.table("session").await?, sessions);
     let accounts = auth.store().get_user_accounts(&owner_id).await?;
     assert_eq!(accounts.len(), 1);
     assert_eq!(accounts[0].provider_id(), "credential");
@@ -113,15 +113,15 @@ async fn server_set_password_is_pathless_and_creates_only_owned_credentials<B: B
         accounts[0].password(),
         Some("fast$replacement-password-205")
     );
-    let persisted_accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    let persisted_accounts: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
     assert_eq!(
         persisted_accounts
             .into_iter()
-            .filter(|row| row["user_id"] == foreign_id)
+            .filter(|row| row["userId"] == foreign_id)
             .collect::<Vec<_>>(),
         foreign_accounts
     );
-    let after = db.tables(&["users", "accounts", "sessions"]).await?;
+    let after = db.tables(&["user", "account", "session"]).await?;
     let duplicate = auth
         .dispatch_endpoint(endpoint("another-password-205")?, options(&sibling))
         .await
@@ -133,16 +133,16 @@ async fn server_set_password_is_pathless_and_creates_only_owned_credentials<B: B
             .to_string()
             .contains("User already has a password set")
     );
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, after);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, after);
     auth.store().delete_session(&owner_token).await?;
-    let revoked_before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let revoked_before = db.tables(&["user", "account", "session"]).await?;
     let revoked = auth
         .dispatch_endpoint(endpoint("another-password-205")?, options(&owner))
         .await
         .unwrap_err();
     assert_eq!(revoked.error.status_code(), 401);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         revoked_before
     );
     {

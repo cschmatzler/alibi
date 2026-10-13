@@ -80,13 +80,13 @@ async fn server_verify_password_validates_then_checks_authoritative_owner<B: Bac
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let owner_token = body(&owner)["token"].as_str().unwrap().to_owned();
     db.set_timestamp(
-        "sessions",
-        "expires_at",
+        "session",
+        "expiresAt",
         ("token", &owner_token),
         chrono::Utc::now() + chrono::Duration::hours(1),
     )
     .await?;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     for input in [json!({}), json!({"password":null}), json!({"password":7})] {
         let rejected = auth
             .dispatch_endpoint(
@@ -130,16 +130,16 @@ async fn server_verify_password_validates_then_checks_authoritative_owner<B: Bac
         );
         assert!(verified.headers().get_all("set-cookie").next().is_none());
     }
-    assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     auth.store().delete_session(&owner_token).await?;
-    let revoked_before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let revoked_before = db.tables(&["user", "account", "session"]).await?;
     let revoked = auth
         .dispatch_endpoint(verify_endpoint(PASSWORD)?, options(&owner))
         .await
         .unwrap_err();
     assert_eq!(revoked.error.status_code(), 401);
     assert_eq!(
-        db.tables(&["users", "accounts", "sessions"]).await?,
+        db.tables(&["user", "account", "session"]).await?,
         revoked_before
     );
     {

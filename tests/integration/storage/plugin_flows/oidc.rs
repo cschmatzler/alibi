@@ -135,7 +135,7 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
             assert_eq!(target.path(), "/failed", "{control}");
             assert!(target.query_pairs().any(|(key, _)| key == "error"));
             assert!(!cookies(&response).contains("session_token="));
-            for table in ["users", "accounts", "sessions"] {
+            for table in ["user", "account", "session"] {
                 assert_eq!(db.count(table).await?, 0, "{control}/{table}");
             }
         }
@@ -150,7 +150,7 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
     let owner = body(&session)["user"]["id"].as_str().unwrap().to_owned();
     let account = db
         .text(
-            "SELECT id FROM accounts WHERE provider_id = 'oidc' AND account_id = 'oidc-subject'",
+            "SELECT id FROM \"account\" WHERE \"providerId\" = 'oidc' AND \"accountId\" = 'oidc-subject'",
             &[],
         )
         .await?
@@ -201,7 +201,7 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
     assert!(remote.take().is_empty());
     let outsider = signup(&auth, "outsider@example.test").await;
     let outsider_id = body(&outsider)["user"]["id"].as_str().unwrap().to_owned();
-    let accounts = db.table("accounts").await?;
+    let accounts = db.table("account").await?;
     assert!(
         OAuthAccountApi::get_access_token(&outsider_id, select(), auth.context())
             .await
@@ -218,7 +218,7 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
             .is_err()
     );
     assert!(remote.take().is_empty());
-    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.table("account").await?, accounts);
     for options in [
         alibi::endpoint::EndpointOptions {
             headers: Some(std::collections::HashMap::new()),
@@ -237,7 +237,7 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
         .unwrap_err();
         assert_eq!(denied.error.status_code(), 401);
         assert!(denied.body_absent);
-        assert_eq!(db.table("accounts").await?, accounts);
+        assert_eq!(db.table("account").await?, accounts);
         assert!(remote.take().is_empty());
     }
     let wrong = Box::pin(
@@ -256,7 +256,7 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
     .await
     .unwrap_err();
     assert_eq!(wrong.error.status_code(), 400);
-    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.table("account").await?, accounts);
     assert!(remote.take().is_empty());
     let selected = Box::pin(
         auth.dispatch_endpoint(
@@ -280,7 +280,7 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
     .await
     .unwrap_err();
     assert_eq!(malformed.error.status_code(), 400);
-    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.table("account").await?, accounts);
     assert!(remote.take().is_empty());
     // HTTP selectors must not turn a body/query userId into trusted authority.
     for (route, method) in [
@@ -305,7 +305,7 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
         }
         let _ = call(&auth, denied, 400).await;
         assert!(remote.take().is_empty());
-        assert_eq!(db.table("accounts").await?, accounts);
+        assert_eq!(db.table("account").await?, accounts);
     }
     let mut public_profile = request("/account-info", None, &cookies(&accepted));
     drop(
@@ -320,7 +320,7 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
         "oidc-subject"
     );
     assert_eq!(body(&public_profile)["user"]["email"], "oidc@example.test");
-    assert_eq!(db.table("accounts").await?, accounts);
+    assert_eq!(db.table("account").await?, accounts);
     drop(remote.take());
 
     Box::pin(refresh_owned_grant(
@@ -393,8 +393,11 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
     assert_eq!(params["state"], "caller-state");
     assert_eq!(params["keep"], "yes");
     assert_eq!(
-        db.count_where("SELECT COUNT(*) FROM sessions WHERE user_id=$1", &[&owner])
-            .await?,
+        db.count_where(
+            "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
+            &[&owner]
+        )
+        .await?,
         0
     );
     authenticated(&auth, &cookies(&outsider), "outsider@example.test").await;
@@ -444,7 +447,7 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
             200,
             json!({"access_token":"algorithm-access","id_token":token,"expires_in":3600}),
         );
-        let before = db.tables(&["users", "accounts", "sessions"]).await?;
+        let before = db.tables(&["user", "account", "session"]).await?;
         let response =
             super::oauth_profiles::complete(&scoped, "algorithm", &authorization, &cookie).await;
         assert_eq!(
@@ -459,14 +462,14 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
             authenticated(&scoped, &cookies(&response), "algorithm@example.test").await;
             assert_eq!(
                 db.count_where(
-                    "SELECT COUNT(*) FROM accounts WHERE provider_id=$1 AND account_id=$2",
+                    "SELECT COUNT(*) FROM \"account\" WHERE \"providerId\"=$1 AND \"accountId\"=$2",
                     &["algorithm", "algorithm-subject"]
                 )
                 .await?,
                 1
             );
         } else {
-            assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+            assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
             assert!(!cookies(&response).contains("session_token="));
         }
     }
@@ -554,11 +557,11 @@ async fn discovered_callback_issuer_rejects_mixup_before_grant_exchange<B: Backe
         .build()
         .await?;
     let foreign = signup(&auth, "mixup-foreign@example.test").await;
-    let before = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before = db.tables(&["user", "account", "session"]).await?;
     let foreign_rows = [
-        ("users", db.table("users").await?),
-        ("accounts", db.table("accounts").await?),
-        ("sessions", db.table("sessions").await?),
+        ("user", db.table("user").await?),
+        ("account", db.table("account").await?),
+        ("session", db.table("session").await?),
     ];
     for stage in ["wrong issuer", "matching issuer"] {
         let (authorization, cookie) = super::oauth_profiles::begin(&auth, "oidc").await;
@@ -598,7 +601,7 @@ async fn discovered_callback_issuer_rejects_mixup_before_grant_exchange<B: Backe
                     .get_all("set-cookie")
                     .any(|cookie| cookie.contains("state=") && cookie.contains("Max-Age=0"))
             );
-            assert_eq!(db.tables(&["users", "accounts", "sessions"]).await?, before);
+            assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
             assert!(remote.take().is_empty());
         } else {
             assert_eq!(location.path(), "/done");
@@ -611,13 +614,13 @@ async fn discovered_callback_issuer_rejects_mixup_before_grant_exchange<B: Backe
                 )
                 .await,
             );
-            let rows: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+            let rows: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
             let account = rows
                 .iter()
-                .find(|row| row["account_id"] == "mixup-owner-sub")
+                .find(|row| row["accountId"] == "mixup-owner-sub")
                 .unwrap();
-            assert_eq!(account["provider_id"], "oidc");
-            assert_eq!(account["user_id"], current["user"]["id"]);
+            assert_eq!(account["providerId"], "oidc");
+            assert_eq!(account["userId"], current["user"]["id"]);
             let receipts = remote.take();
             assert_eq!(
                 receipts
@@ -637,8 +640,8 @@ async fn discovered_callback_issuer_rejects_mixup_before_grant_exchange<B: Backe
                 );
             }
         }
-        assert_eq!(db.count("verifications").await?, 0);
-        let committed = db.tables(&["users", "accounts", "sessions"]).await?;
+        assert_eq!(db.count("verification").await?, 0);
+        let committed = db.tables(&["user", "account", "session"]).await?;
         let mut replay = request("/callback/oidc", None, &cookie);
         replay.set_query_pairs([
             ("state", authorization["state"].as_str()),
@@ -655,10 +658,7 @@ async fn discovered_callback_issuer_rejects_mixup_before_grant_exchange<B: Backe
                 .1,
             "state_mismatch"
         );
-        assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
-            committed
-        );
+        assert_eq!(db.tables(&["user", "account", "session"]).await?, committed);
         assert!(remote.take().is_empty());
         authenticated(&auth, &cookies(&foreign), "mixup-foreign@example.test").await;
     }
@@ -677,7 +677,7 @@ async fn refresh_owned_grant<S: AuthSchema>(
     account_events: &Arc<Mutex<Vec<&'static str>>>,
 ) -> TestResult {
     let (owner, account, delivered_id_token) = owner_account_token;
-    let before_refresh = db.tables(&["users", "accounts", "sessions"]).await?;
+    let before_refresh = db.tables(&["user", "account", "session"]).await?;
     for (options, status) in [
         (
             alibi::endpoint::EndpointOptions {
@@ -713,7 +713,7 @@ async fn refresh_owned_grant<S: AuthSchema>(
         assert_eq!(denied.error.status_code(), status);
         assert_eq!(denied.body_absent, status == 401);
         assert_eq!(
-            db.tables(&["users", "accounts", "sessions"]).await?,
+            db.tables(&["user", "account", "session"]).await?,
             before_refresh
         );
         assert!(remote.take().is_empty());
@@ -762,23 +762,29 @@ async fn refresh_owned_grant<S: AuthSchema>(
     );
     assert_eq!(*account_events.lock().unwrap(), ["before", "after"]);
     assert_eq!(
-        db.text("SELECT access_token FROM accounts WHERE id=$1", &[account])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT \"accessToken\" FROM \"account\" WHERE id=$1",
+            &[account]
+        )
+        .await?
+        .as_deref(),
         Some("rotated-access")
     );
     assert_eq!(
-        db.text("SELECT refresh_token FROM accounts WHERE id=$1", &[account])
-            .await?
-            .as_deref(),
+        db.text(
+            "SELECT \"refreshToken\" FROM \"account\" WHERE id=$1",
+            &[account]
+        )
+        .await?
+        .as_deref(),
         Some("rotated-refresh")
     );
     assert_eq!(
-        db.tables(&["users", "sessions"]).await?,
+        db.tables(&["user", "session"]).await?,
         vec![before_refresh[0].clone(), before_refresh[2].clone()]
     );
     let before_accounts: Vec<Value> = serde_json::from_str(&before_refresh[1])?;
-    let after_accounts: Vec<Value> = serde_json::from_str(&db.table("accounts").await?)?;
+    let after_accounts: Vec<Value> = serde_json::from_str(&db.table("account").await?)?;
     assert_eq!(
         after_accounts
             .iter()
