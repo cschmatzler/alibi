@@ -63,6 +63,16 @@ compatScenario(
         400,
         "VALIDATION_ERROR",
       ],
+      [
+        {
+          redirect_uris: ["http://127.1:3000/callback"],
+          application_type: "native",
+          token_endpoint_auth_method: "none",
+        },
+        { cookie },
+        400,
+        "invalid_redirect_uri",
+      ],
     ] as const) {
       const response = await control({ body, headers });
       expect(response.status).toBe(status);

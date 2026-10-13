@@ -322,7 +322,8 @@ fn redirect_error(uri: &str, application: &str) -> Option<String> {
             .then(|| format!("native clients must not use https loopback redirect URIs: {uri}"));
     }
     if url.scheme() == "http" {
-        return (!["localhost","127.0.0.1","[::1]"].contains(&host)).then(||format!("native clients may use http only on the exact loopback hosts localhost, 127.0.0.1, or [::1]: {uri}"));
+        let raw_host = raw_http_host(uri);
+        return (!raw_host.as_deref().is_some_and(|host|["localhost","127.0.0.1","[::1]"].contains(&host))).then(||format!("native clients may use http only on the exact loopback hosts localhost, 127.0.0.1, or [::1]: {uri}"));
     }
     let scheme = url.scheme();
     let labels = scheme.split('.').collect::<Vec<_>>();
@@ -339,6 +340,23 @@ fn redirect_error(uri: &str, application: &str) -> Option<String> {
         .strip_prefix(&format!("{scheme}:"))
         .is_some_and(|path| path.starts_with('/') && !path.starts_with("//"));
     (!reverse||!private||["file","ftp","mailto","javascript","data","vbscript"].contains(&scheme)).then(||format!("native private-use redirect URI schemes must be well-formed reverse-domain names, omit the naming authority, and must not use a reserved scheme: {uri}"))
+}
+fn raw_http_host(uri: &str) -> Option<String> {
+    if !uri
+        .get(..7)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("http://"))
+    {
+        return None;
+    }
+    let authority = uri.get(7..)?.split(['/', '?', '#']).next()?;
+    let host = authority.rsplit('@').next()?;
+    if host.starts_with('[') {
+        host.find(']')
+            .and_then(|end| host.get(..=end))
+            .map(str::to_ascii_lowercase)
+    } else {
+        host.split(':').next().map(str::to_ascii_lowercase)
+    }
 }
 fn private_host(host: &str) -> bool {
     let host = host.trim_matches(['[', ']']).trim_end_matches('.');

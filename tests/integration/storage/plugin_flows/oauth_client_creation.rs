@@ -68,6 +68,12 @@ async fn oauth_client_creation_persists_owned_metadata_and_protected_secret<B: B
             400,
             "VALIDATION_ERROR",
         ),
+        (
+            json!({"redirect_uris":["http://127.1:3000/callback"],"application_type":"native","token_endpoint_auth_method":"none"}),
+            cookies(&owner),
+            400,
+            "invalid_redirect_uri",
+        ),
     ] {
         let error = auth
             .dispatch_endpoint(
