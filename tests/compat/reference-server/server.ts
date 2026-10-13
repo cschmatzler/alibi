@@ -2979,6 +2979,7 @@ async function resetDatabaseState() {
     "oauthClientResource",
     "oauthResource",
     "oauthClient",
+    "ssoProvider",
   ]) {
     database.query(`DELETE FROM "${table}"`).run();
   }

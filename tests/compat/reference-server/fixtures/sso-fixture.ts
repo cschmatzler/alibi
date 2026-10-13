@@ -18,6 +18,13 @@ export async function ssoFixture(base: BetterAuthOptions) {
     if (input.action === "signup") {
       return auth.api.signUpEmail({ body: input.body, asResponse: true });
     }
+    if (input.action === "get") {
+      return auth.api.getSSOProvider({
+        query: input.query,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
     if (input.action === "restart") {
       auth = betterAuth(options);
       return new Response(JSON.stringify({ restarted: true }), {

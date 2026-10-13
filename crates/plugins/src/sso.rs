@@ -1,4 +1,5 @@
 //! Enterprise single-sign-on provider registration.
+mod provider_read;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
@@ -275,21 +276,38 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         "sso"
     }
     fn routes(&self) -> Vec<AuthRoute> {
-        vec![AuthRoute::post("/sso/register", "registerSSOProvider")]
+        vec![
+            AuthRoute::post("/sso/register", "registerSSOProvider"),
+            AuthRoute::get("/sso/get-provider", "getSSOProvider"),
+        ]
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
-        vec![super::endpoint::definition(
-            "registerSSOProvider",
-            "registerSSOProvider",
-            Some("/sso/register"),
-            HttpMethod::Post,
-        )]
+        vec![
+            super::endpoint::definition(
+                "getSSOProvider",
+                "getSSOProvider",
+                Some("/sso/get-provider"),
+                HttpMethod::Get,
+            ),
+            super::endpoint::definition(
+                "registerSSOProvider",
+                "registerSSOProvider",
+                Some("/sso/register"),
+                HttpMethod::Post,
+            ),
+        ]
     }
     fn validate_endpoint(
         &self,
         call: &EndpointCall,
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
+        if call.operation_id() == "getSSOProvider" {
+            return Ok(EndpointInput {
+                body: None,
+                query: Some(provider_read::validate_query(call.query())?),
+            });
+        }
         Ok(EndpointInput {
             body: Some(validate(call.body())?),
             query: call.query().cloned(),
@@ -300,6 +318,16 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "getSSOProvider" {
+            return self
+                .read(
+                    call.query()
+                        .ok_or_else(|| super::endpoint::validation("Missing query"))?,
+                    call,
+                    ctx,
+                )
+                .await;
+        }
         self.register(
             call.body()
                 .ok_or_else(|| super::endpoint::validation("Missing body"))?,
@@ -313,6 +341,14 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/sso/get-provider" && *req.method() == HttpMethod::Get {
+            let query = alibi_core::utils::json::parse_value(&serde_json::to_string(&req.query)?)?;
+            return Ok(Some(
+                self.read(&provider_read::validate_query(Some(&query))?, req, ctx)
+                    .await?
+                    .to_response()?,
+            ));
+        }
         if req.path() != "/sso/register" || *req.method() != HttpMethod::Post {
             return Ok(None);
         }
