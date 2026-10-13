@@ -233,13 +233,19 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         guest.error.error_payload().1.as_deref(),
         Some("UNAUTHORIZED")
     );
-    let other = Box::pin(auth.dispatch_endpoint(
-        PasskeyPlugin::list_passkeys_endpoint(),
-        alibi::endpoint::EndpointOptions {
-            headers: Some([("cookie".to_owned(), foreign)].into_iter().collect()),
-            ..Default::default()
-        },
-    ))
+    let other = Box::pin(
+        auth.dispatch_endpoint(
+            PasskeyPlugin::list_passkeys_endpoint(),
+            alibi::endpoint::EndpointOptions {
+                headers: Some(
+                    [("cookie".to_owned(), foreign.clone())]
+                        .into_iter()
+                        .collect(),
+                ),
+                ..Default::default()
+            },
+        ),
+    )
     .await?;
     assert!(other.decode()?.is_empty());
     let listed = Box::pin(
@@ -324,6 +330,134 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
             2,
         )
         .await,
+    );
+    let registered = auth
+        .store()
+        .get_passkey_by_credential_id(&URL_SAFE_NO_PAD.encode(&key.id))
+        .await?
+        .unwrap();
+    let before_delete = db
+        .tables(&["users", "accounts", "sessions", "passkeys"])
+        .await?;
+    for (input, cookie, status, code, absent) in [
+        (
+            json!({"id":42}),
+            Some(owner.as_str()),
+            400,
+            Some("VALIDATION_ERROR"),
+            false,
+        ),
+        (
+            json!({"id":registered.id}),
+            None,
+            401,
+            Some("UNAUTHORIZED"),
+            false,
+        ),
+        (
+            json!({"id":registered.id}),
+            Some(foreign.as_str()),
+            401,
+            None,
+            true,
+        ),
+        (
+            json!({"id":"missing-passkey"}),
+            Some(owner.as_str()),
+            404,
+            Some("PASSKEY_NOT_FOUND"),
+            false,
+        ),
+        (json!({"id":""}), Some(owner.as_str()), 400, None, false),
+    ] {
+        let error = Box::pin(
+            auth.dispatch_endpoint(
+                alibi::endpoint::ServerEndpoint::<Value>::new("passkey", "deletePasskey")
+                    .with_body(&input)?,
+                alibi::endpoint::EndpointOptions {
+                    headers: cookie.map(|cookie| {
+                        [("cookie".to_owned(), cookie.to_owned())]
+                            .into_iter()
+                            .collect()
+                    }),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.error.status_code(), status);
+        assert_eq!(error.error.error_payload().1.as_deref(), code);
+        assert_eq!(error.body_absent, absent);
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "passkeys"])
+                .await?,
+            before_delete
+        );
+    }
+    let empty_http = call(
+        &auth,
+        request("/passkey/delete-passkey", Some(json!({"id":""})), &owner),
+        400,
+    )
+    .await;
+    assert_eq!(
+        body(&empty_http),
+        json!({"message":"Missing required parameter: id"})
+    );
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "passkeys"])
+            .await?,
+        before_delete
+    );
+    let deleted = Box::pin(
+        auth.dispatch_endpoint(
+            PasskeyPlugin::delete_passkey_endpoint(&registered.id)
+                .with_body(&json!({"id":registered.id,"userId":"foreign-owner-selector"}))?,
+            alibi::endpoint::EndpointOptions {
+                headers: Some([("cookie".to_owned(), owner.clone())].into_iter().collect()),
+                ..Default::default()
+            },
+        ),
+    )
+    .await?;
+    assert!(deleted.decode()?.status);
+    assert!(
+        auth.store()
+            .get_passkey_by_credential_id(&URL_SAFE_NO_PAD.encode(&key.id))
+            .await?
+            .is_none()
+    );
+    let after_delete = db
+        .tables(&["users", "accounts", "sessions", "passkeys"])
+        .await?;
+    assert_eq!(&after_delete[..3], &before_delete[..3]);
+    let expected: Vec<Value> = serde_json::from_str::<Vec<Value>>(&before_delete[3])?
+        .into_iter()
+        .filter(|row| row["id"] != registered.id)
+        .collect();
+    assert_eq!(
+        serde_json::from_str::<Vec<Value>>(&after_delete[3])?,
+        expected
+    );
+    let replay = Box::pin(auth.dispatch_endpoint(
+        PasskeyPlugin::delete_passkey_endpoint(&registered.id),
+        alibi::endpoint::EndpointOptions {
+            headers: Some([("cookie".to_owned(), owner.clone())].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(replay.error.status_code(), 404);
+    assert_eq!(
+        replay.error.error_payload().1.as_deref(),
+        Some("PASSKEY_NOT_FOUND")
+    );
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions", "passkeys"])
+            .await?,
+        after_delete
     );
     trace.assert("passkey/ceremony-matrix");
     B::close(connection).await
