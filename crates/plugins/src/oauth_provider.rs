@@ -247,8 +247,19 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     fn name(&self) -> &'static str {
         "oauth-provider"
     }
+    fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
+        match route.path.as_str() {
+            "/oauth2/end-session/confirm" => vec!["application/x-www-form-urlencoded"],
+            "/oauth2/end-session" => vec!["application/json", "application/x-www-form-urlencoded"],
+            _ => vec!["application/json"],
+        }
+    }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
+            AuthRoute::post(
+                "/oauth2/end-session/confirm",
+                "oauth2EndSessionConfirmation",
+            ),
             AuthRoute::get("/oauth2/end-session", "oauth2EndSession"),
             AuthRoute::post("/oauth2/end-session", "oauth2EndSession"),
             AuthRoute::get("/oauth2/userinfo", "oauth2UserInfo"),
@@ -280,6 +291,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "oauth2EndSessionConfirmation",
+                "oauth2EndSessionConfirmation",
+                Some("/oauth2/end-session/confirm"),
+                HttpMethod::Post,
+            ),
             crate::endpoint::definition(
                 "oauth2EndSession",
                 "oauth2EndSession",
@@ -480,7 +497,17 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
         Ok(EndpointInput {
-            body: if call.operation_id() == "oauth2EndSession" {
+            body: if call.operation_id() == "oauth2EndSessionConfirmation" {
+                Some(crate::endpoint::validate_fields(
+                    call.body(),
+                    "body",
+                    &[crate::authentication_helpers::JsonField {
+                        name: "action",
+                        kind: crate::authentication_helpers::JsonFieldKind::OneOf(&["confirm"]),
+                        required: true,
+                    }],
+                )?)
+            } else if call.operation_id() == "oauth2EndSession" {
                 logout::validate(call.body(), "body")?
             } else if call.operation_id() == "oauth2UserInfo" {
                 call.body()
@@ -544,6 +571,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "oauth2EndSessionConfirmation" {
+            return Box::pin(self.confirm_logout(call, ctx)).await;
+        }
         if call.operation_id() == "oauth2EndSession" {
             return Box::pin(self.end_session(call.query(), call.body(), call, ctx)).await;
         }
@@ -657,6 +687,21 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/oauth2/end-session/confirm" && *req.method() == HttpMethod::Post {
+            let action = url::form_urlencoded::parse(req.body.as_deref().unwrap_or_default())
+                .find(|(key, _)| key == "action")
+                .map(|(_, value)| value.into_owned());
+            if action.as_deref() != Some("confirm") {
+                return Ok(Some(
+                    AuthError::bad_request("Invalid logout action").to_auth_response(),
+                ));
+            }
+            return Ok(Some(
+                Box::pin(self.confirm_logout(req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
         if req.path() == "/oauth2/end-session"
             && matches!(req.method(), HttpMethod::Get | HttpMethod::Post)
         {

@@ -407,3 +407,5 @@ mod oauth_id_token;
 mod oauth_userinfo;
 
 mod oauth_logout;
+
+mod oauth_logout_confirmation;
