@@ -10,6 +10,29 @@ use alibi_core::{
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
+    async fn delete_oauth_client_resource(
+        &self,
+        client_id: &str,
+        resource_id: &str,
+    ) -> AuthResult<()> {
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident(super::entities::oauth_client_resource::Model::TABLE);
+        sql.push(" WHERE ");
+        sql.compare(
+            super::entities::oauth_client_resource::Model::TABLE,
+            "client_id",
+            " = ",
+            client_id,
+        );
+        sql.push(" AND ");
+        sql.compare(
+            super::entities::oauth_client_resource::Model::TABLE,
+            "resource_id",
+            " = ",
+            resource_id,
+        );
+        self.exec().execute(sql).await.map(|_| ())
+    }
     async fn create_oauth_client_resource(
         &self,
         data: alibi_core::store::CreateOAuthClientResource,

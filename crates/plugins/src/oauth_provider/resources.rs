@@ -463,3 +463,30 @@ impl OAuthProviderPlugin {
         }
     }
 }
+
+impl OAuthProviderPlugin {
+    /// Remove a client's durable resource membership, including an already absent pair.
+    pub fn admin_unlink_client_resource_endpoint(
+        identifier: &str,
+        client_id: &str,
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("oauth-provider", "adminUnlinkClientResource")
+            .with_params(&json!({"identifier":identifier,"client_id":client_id}))
+    }
+    pub(super) async fn unlink_resource<S: AuthSchema>(
+        &self,
+        params: Option<&JsValue>,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let identifier = decode_parameter(params, "identifier")?;
+        let client_id = decode_parameter(params, "client_id")?;
+        if let Some(response) = Box::pin(self.resource_admission(req, ctx)).await? {
+            return Ok(response);
+        }
+        ctx.database
+            .delete_oauth_client_resource(&client_id, &identifier)
+            .await?;
+        EndpointResponse::json(&json!({"unlinked":true}))
+    }
+}
