@@ -3408,6 +3408,9 @@ const server = Bun.serve({
         if (url.pathname === `/__test/profiles/${name}/api/auth/__test/server-api/schema`) {
           return instance.api.generateOpenAPISchema({ asResponse: true });
         }
+        if (url.pathname === `/__test/profiles/${name}/api/auth/__test/server-api/reference`) {
+          return instance.api.openAPIReference({ asResponse: true });
+        }
         if (
           name === "openapi-custom-schema" &&
           url.pathname === `/__test/profiles/${name}/api/auth/__test/server-document`

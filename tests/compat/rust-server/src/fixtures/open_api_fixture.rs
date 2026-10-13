@@ -216,23 +216,43 @@ where
     );
     let schema_auth = auth.clone();
     let mut router = auth.clone().axum_router().with_state(auth.clone()).route(
-        "/__test/server-api/schema",
-        axum::routing::get(move || {
-            let auth = schema_auth.clone();
-            async move {
-                let response = match auth
-                    .dispatch_endpoint(
-                        OpenApiPlugin::generate_open_api_schema_endpoint(),
-                        alibi::endpoint::EndpointOptions::default(),
-                    )
-                    .await
-                {
-                    Ok(output) => output.into_response().unwrap(),
-                    Err(error) => error.error.to_auth_response(),
-                };
-                response.into_response()
-            }
-        }),
+        "/__test/server-api/{operation}",
+        axum::routing::get(
+            move |axum::extract::Path(operation): axum::extract::Path<String>| {
+                let auth = schema_auth.clone();
+                async move {
+                    let endpoint = if operation == "reference" {
+                        OpenApiPlugin::open_api_reference_endpoint()
+                    } else {
+                        OpenApiPlugin::generate_open_api_schema_endpoint()
+                    };
+                    let response = match auth
+                        .dispatch_endpoint(endpoint, alibi::endpoint::EndpointOptions::default())
+                        .await
+                    {
+                        Ok(output) => output.into_response().unwrap(),
+                        Err(error) => {
+                            let mut response = if error.body_absent {
+                                alibi::AuthResponse::new(error.error.status_code())
+                            } else {
+                                error.error.to_auth_response()
+                            };
+                            if let Some(headers) = error.headers {
+                                for (name, value) in headers.iter() {
+                                    if name.eq_ignore_ascii_case("set-cookie") {
+                                        response.headers.append(name, value);
+                                    } else {
+                                        response.headers.insert(name, value);
+                                    }
+                                }
+                            }
+                            response
+                        }
+                    };
+                    response.into_response()
+                }
+            },
+        ),
     );
     if name == "openapi-custom-schema" {
         router = router.route(

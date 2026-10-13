@@ -223,11 +223,15 @@ for (const profile of [
       expect(await raw.json()).toEqual(schema);
 
       const path = profile === "openapi-configured" ? "/docs" : "/reference";
-      const html = await actor.fetch(`${ctx.baseURL}/api/auth${path}`);
+      const html = await actor.fetch(`${ctx.baseURL}/api/auth/__test/server-api/reference`);
       expect(html.status).toBe(200);
       expect(html.headers.get("content-type")?.split(";")[0]).toBe("text/html");
 
       const page = await html.text();
+      const routed = await actor.fetch(`${ctx.baseURL}/api/auth${path}`);
+      expect(routed.status).toBe(200);
+      expect(await routed.text()).toBe(page);
+      expect(html.headers.get("set-cookie")).toBeNull();
       const embedded =
         /<script\s+id="api-reference"\s+type="application\/json">\s*([^]*?)\s*<\/script>/.exec(
           page,
@@ -391,7 +395,7 @@ compatScenario(
     expect(schema.error).toBeNull();
 
     const document = documentSchema.parse(schema.data);
-    const page = await actor.fetch(`${ctx.baseURL}/api/auth/reference`);
+    const page = await actor.fetch(`${ctx.baseURL}/api/auth/__test/server-api/reference`);
     expect(page.status).toBe(404);
     expect(await page.text()).toBe("");
 
