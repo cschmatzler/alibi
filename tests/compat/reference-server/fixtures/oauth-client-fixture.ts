@@ -82,6 +82,46 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         headers: { "content-type": "application/json" },
       });
     }
+    if (input.action === "session") {
+      return auth.api.getSession({ headers: new Headers(input.headers ?? {}), asResponse: true });
+    }
+    if (input.action === "grant-row") {
+      const { createHash } = await import("node:crypto");
+      const context = await auth.$context;
+      const row = (await context.adapter.findOne({
+        model: "verification",
+        where: [
+          {
+            field: "identifier",
+            value: createHash("sha256").update(input.token).digest("base64url"),
+          },
+        ],
+      })) as any;
+      return new Response(
+        JSON.stringify(
+          row
+            ? { value: JSON.parse(row.value), createdAt: row.createdAt, expiresAt: row.expiresAt }
+            : null,
+        ),
+        { headers: { "content-type": "application/json" } },
+      );
+    }
+    if (input.action === "authorize") {
+      const headers = new Headers(input.headers ?? {});
+      return auth.api.oauth2Authorize({
+        query: input.query,
+        headers,
+        asResponse: true,
+        ...(input.attachRequest === false
+          ? {}
+          : {
+              request: new Request(
+                `${base.baseURL}${base.basePath ?? "/api/auth"}/oauth2/authorize`,
+                { headers },
+              ),
+            }),
+      });
+    }
     if (input.action === "admin-update") {
       return auth.api.adminUpdateOAuthClient({
         body: input.body,

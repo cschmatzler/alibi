@@ -776,7 +776,7 @@ impl OAuthProviderPlugin {
         EndpointResponse::json(&output)
     }
 }
-fn status_protocol_error(
+pub(super) fn status_protocol_error(
     status: u16,
     error: &str,
     description: &str,
