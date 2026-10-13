@@ -84,6 +84,25 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
             .await?
             .try_into()
     }
+    async fn get_oauth_consent(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<alibi_core::store::OAuthConsent>> {
+        let mut sql = model::select_model::<super::entities::oauth_consent::Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare(
+            super::entities::oauth_consent::Model::TABLE,
+            "id",
+            " = ",
+            id,
+        );
+        model::limit_one(&mut sql);
+        self.exec()
+            .fetch_optional::<super::entities::oauth_consent::Model>(sql)
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+    }
     async fn get_oauth_client(&self, client_id: &str) -> AuthResult<Option<OAuthClient>> {
         let mut sql = model::select_model::<Model>(self.exec());
         sql.push(" WHERE ");

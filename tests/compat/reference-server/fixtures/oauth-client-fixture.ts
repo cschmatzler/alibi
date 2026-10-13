@@ -147,6 +147,13 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             }),
       });
     }
+    if (input.action === "consent-get") {
+      return auth.api.getOAuthConsent({
+        query: input.query,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
     if (input.action === "consents") {
       return auth.api.getOAuthConsents({
         headers: new Headers(input.headers ?? {}),

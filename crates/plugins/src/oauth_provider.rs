@@ -249,6 +249,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             AuthRoute::post("/oauth2/register", "registerOAuthClient"),
             AuthRoute::post("/oauth2/consent", "oauth2Consent"),
             AuthRoute::get("/oauth2/get-consents", "getOAuthConsents"),
+            AuthRoute::get("/oauth2/get-consent", "getOAuthConsent"),
             AuthRoute::get("/oauth2/authorize", "oauth2Authorize"),
             AuthRoute::post("/oauth2/authorize", "oauth2Authorize"),
             AuthRoute::post("/oauth2/client/rotate-secret", "rotateClientSecret"),
@@ -256,6 +257,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "getOAuthConsent",
+                "getOAuthConsent",
+                Some("/oauth2/get-consent"),
+                HttpMethod::Get,
+            ),
             crate::endpoint::definition(
                 "getOAuthConsents",
                 "getOAuthConsents",
@@ -380,7 +387,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             } else {
                 call.body().cloned()
             },
-            query: if matches!(
+            query: if call.operation_id() == "getOAuthConsent" {
+                Some(consent::validate_id(call.query(), "query")?)
+            } else if matches!(
                 call.operation_id(),
                 "getOAuthClient" | "getOAuthClientPublic"
             ) {
@@ -395,6 +404,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "getOAuthConsent" {
+            return Box::pin(self.read_consent(call.query_as()?, call, ctx)).await;
+        }
         if call.operation_id() == "getOAuthConsents" {
             return Box::pin(self.list_consents(call, ctx)).await;
         }
@@ -537,6 +549,16 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             let input = alibi_core::utils::json::from_value(consent::validate(Some(&body))?)?;
             return Ok(Some(
                 Box::pin(self.consent(input, req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
+        if req.path() == "/oauth2/get-consent" && *req.method() == HttpMethod::Get {
+            let query = alibi_core::utils::json::parse_value(&serde_json::to_string(&req.query)?)?;
+            let input =
+                alibi_core::utils::json::from_value(consent::validate_id(Some(&query), "query")?)?;
+            return Ok(Some(
+                Box::pin(self.read_consent(input, req, ctx))
                     .await?
                     .to_response()?,
             ));

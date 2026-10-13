@@ -23,6 +23,11 @@ pub struct CreateOAuthClient {
 }
 #[async_trait]
 pub trait OAuthClientStore: Send + Sync {
+    async fn get_oauth_consent(&self, _id: &str) -> AuthResult<Option<OAuthConsent>> {
+        Err(AuthError::config(
+            "OAuth consent persistence is not supported by this store",
+        ))
+    }
     async fn create_oauth_consent(&self, _data: CreateOAuthConsent) -> AuthResult<OAuthConsent> {
         Err(AuthError::config(
             "OAuth consent persistence is not supported by this store",
