@@ -23,8 +23,20 @@ pub struct TotpOutput {
     pub code: String,
 }
 
+/// The caller's factor was disabled and its current session replaced.
+#[derive(Debug, Deserialize)]
+pub struct TwoFactorDisabled {
+    pub status: bool,
+}
+
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
+        definition(
+            "disableTwoFactor",
+            "disableTwoFactor",
+            Some("/two-factor/disable"),
+            HttpMethod::Post,
+        ),
         definition(
             "enableTwoFactor",
             "enableTwoFactor",
@@ -37,6 +49,16 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 }
 
 pub(super) fn validate(call: &EndpointCall, allow_passwordless: bool) -> AuthResult<EndpointInput> {
+    if call.operation_id() == "disableTwoFactor" {
+        return Ok(EndpointInput {
+            body: Some(validate_fields(
+                call.body(),
+                "body",
+                &[JsonField::string("password", !allow_passwordless)],
+            )?),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "enableTwoFactor" {
         let mut body = validate_fields(
             call.body(),
@@ -87,6 +109,32 @@ pub(super) fn validate(call: &EndpointCall, allow_passwordless: bool) -> AuthRes
 }
 
 impl TwoFactorPlugin {
+    /// Disable the persistent session owner's factor and rotate that session.
+    #[must_use]
+    pub fn disable_two_factor_endpoint(
+        input: super::DisableTwoFactorInput,
+    ) -> ServerEndpoint<TwoFactorDisabled> {
+        let body = input
+            .password
+            .map(|password| ("password".into(), JsValue::String(password)))
+            .into_iter()
+            .collect();
+        ServerEndpoint::new("two-factor", "disableTwoFactor").with_body_value(JsValue::Object(body))
+    }
+
+    async fn disable_endpoint(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<EndpointResponse> {
+        let output = self.disable_factor(&call.body_as()?, call, ctx).await?;
+        let mut response = EndpointResponse::json(
+            &alibi_core::utils::json::from_slice::<JsValue>(&output.body)?,
+        )?;
+        response.merge_headers(output.headers);
+        Ok(response)
+    }
+
     /// Enroll the signed-in owner using the configured factor and backup-code policies.
     #[must_use]
     pub fn enable_two_factor_endpoint(
@@ -161,7 +209,9 @@ impl TwoFactorPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
-        if call.operation_id() == "enableTwoFactor" {
+        if call.operation_id() == "disableTwoFactor" {
+            self.disable_endpoint(call, ctx).await
+        } else if call.operation_id() == "enableTwoFactor" {
             self.enable_endpoint(call, ctx).await
         } else if call.operation_id() == "viewBackupCodes" {
             #[derive(Deserialize)]

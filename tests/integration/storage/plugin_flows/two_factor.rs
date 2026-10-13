@@ -196,11 +196,11 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         200,
     )
     .await;
-    let backup_view = auth
+    let backup_view = Box::pin(auth
         .dispatch_endpoint(
             TwoFactorPlugin::view_backup_codes_endpoint(&user),
             EndpointOptions::default(),
-        )
+        ))
         .await?
         .decode()?;
     assert!(backup_view.status);
@@ -231,11 +231,11 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     )
     .await;
 
-    let remaining = auth
+    let remaining = Box::pin(auth
         .dispatch_endpoint(
             TwoFactorPlugin::view_backup_codes_endpoint(&user),
             EndpointOptions::default(),
-        )
+        ))
         .await?
         .decode()?
         .backup_codes;
@@ -543,17 +543,50 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     )
     .await;
     assert_eq!(db.table("sessions").await?, sessions);
-    let disabled = call(
-        &auth,
-        request(
-            "/two-factor/disable",
-            Some(json!({"password":PASSWORD})),
-            &cookies(&trusted),
-        ),
-        200,
-    )
-    .await;
+    let preference = call(&auth,request("/sign-in/email",Some(json!({"email":"factor@example.test","password":PASSWORD,"rememberMe":false})),""),200).await;
+    let remember_cookie = cookies(&preference).split("; ").find(|cookie|cookie.starts_with("better-auth.dont_remember=")).unwrap().to_owned();
+    let disable_cookie = format!("{}; {remember_cookie}",cookies(&trusted));
+    let foreign = call(&auth,request("/sign-up/email",Some(json!({"email":"disable-foreign@example.test","password":"foreign-password123","name":"Foreign owner"})),""),200).await;
+    let before_disable = db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?;
+    let trust_id = db.text("SELECT identifier FROM verifications WHERE identifier LIKE 'trust-device-%' AND value=$1",&[&user]).await?.unwrap();
+    let old_token = body(&trusted)["token"].as_str().unwrap().to_owned();
+    for (input,cookie,status,code) in [
+        (json!({}),Some(disable_cookie.clone()),400,"VALIDATION_ERROR"),
+        (json!({"password":42}),Some(disable_cookie.clone()),400,"VALIDATION_ERROR"),
+        (json!({"password":null}),Some(disable_cookie.clone()),400,"VALIDATION_ERROR"),
+        (json!({"password":PASSWORD}),None,401,"UNAUTHORIZED"),
+        (json!({"password":"incorrect-password"}),Some(disable_cookie.clone()),400,"INVALID_PASSWORD"),
+        (json!({"password":PASSWORD,"userId":user}),Some(cookies(&foreign)),400,"INVALID_PASSWORD"),
+    ] {
+        let error = Box::pin(auth.dispatch_endpoint(
+            alibi::endpoint::ServerEndpoint::<Value>::new("two-factor","disableTwoFactor").with_body(&input)?,
+            EndpointOptions{headers:cookie.map(|cookie|[("cookie".into(),cookie)].into_iter().collect()),..Default::default()}
+        )).await.unwrap_err();
+        assert_eq!(error.error.status_code(),status);
+        assert_eq!(error.error.error_payload().1.as_deref(),Some(code));
+        assert_eq!(db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?,before_disable);
+    }
+    let disabled = Box::pin(auth.dispatch_endpoint(
+        TwoFactorPlugin::disable_two_factor_endpoint(alibi::plugins::two_factor::DisableTwoFactorInput { password:Some(PASSWORD.into()) })
+            .with_body(&json!({"password":PASSWORD,"userId":"untrusted-selector"}))?,
+        EndpointOptions {headers:Some([("cookie".into(),disable_cookie.clone())].into_iter().collect()),..Default::default()}
+    )).await?;
+    assert!(disabled.decode()?.status);
+    let disabled = disabled.into_response()?;
+    let session_cookie = disabled.headers.get_all("set-cookie").find(|cookie|cookie.starts_with("better-auth.session_token=")).unwrap();
+    assert!(!session_cookie.to_ascii_lowercase().contains("max-age"));
     assert_eq!(body(&disabled)["status"], true);
+    authenticated(&auth,&cookies(&disabled),"factor@example.test").await;
+    assert_eq!(db.count_where("SELECT COUNT(*) FROM sessions WHERE token=$1",&[&old_token]).await?,0);
+    assert_eq!(db.count_where("SELECT COUNT(*) FROM verifications WHERE identifier=$1",&[&trust_id]).await?,0);
+    let after_disable = db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?;
+    let replay = Box::pin(auth.dispatch_endpoint(
+        TwoFactorPlugin::disable_two_factor_endpoint(alibi::plugins::two_factor::DisableTwoFactorInput {password:Some(PASSWORD.into())}),
+        EndpointOptions{headers:Some([("cookie".into(),cookies(&trusted))].into_iter().collect()),..Default::default()}
+    )).await.unwrap_err();
+    assert_eq!(replay.error.status_code(),401);
+    assert_eq!(replay.error.error_payload().1.as_deref(),Some("UNAUTHORIZED"));
+    assert_eq!(db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?,after_disable);
     assert_eq!(db.count("two_factor").await?, 0);
     let password_only = signin(&auth, "").await;
     authenticated(&auth, &cookies(&password_only), "factor@example.test").await;
