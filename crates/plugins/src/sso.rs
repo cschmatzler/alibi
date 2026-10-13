@@ -5,6 +5,7 @@ mod provider_delete;
 mod provider_list;
 mod provider_read;
 mod provider_update;
+mod sign_in;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
@@ -294,6 +295,7 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         let mut routes = vec![
+            AuthRoute::post("/sign-in/sso", "signInSSO"),
             AuthRoute::post("/sso/register", "registerSSOProvider"),
             AuthRoute::get("/sso/get-provider", "getSSOProvider"),
             AuthRoute::get("/sso/providers", "listSSOProviders"),
@@ -311,6 +313,12 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         let mut endpoints = vec![
+            super::endpoint::definition(
+                "signInSSO",
+                "signInSSO",
+                Some("/sign-in/sso"),
+                HttpMethod::Post,
+            ),
             super::endpoint::definition(
                 "updateSSOProvider",
                 "updateSSOProvider",
@@ -363,6 +371,12 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
+        if call.operation_id() == "signInSSO" {
+            return Ok(EndpointInput {
+                body: Some(sign_in::validate(call.body())?),
+                query: call.query().cloned(),
+            });
+        }
         if call.operation_id() == "updateSSOProvider" {
             return Ok(EndpointInput {
                 body: Some(provider_update::validate_update(call.body())?),
@@ -400,6 +414,15 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "signInSSO" {
+            return self
+                .sign_in(
+                    call.body()
+                        .ok_or_else(|| super::endpoint::validation("Missing body"))?,
+                    ctx,
+                )
+                .await;
+        }
         if call.operation_id() == "verifyDomain" {
             return self
                 .verify_domain(
@@ -466,6 +489,17 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/sign-in/sso" && *req.method() == HttpMethod::Post {
+            let input = alibi_core::utils::json::parse_value(
+                std::str::from_utf8(req.body.as_deref().unwrap_or_default())
+                    .map_err(|_| super::endpoint::validation("Invalid JSON"))?,
+            )?;
+            return Ok(Some(
+                self.sign_in(&sign_in::validate(Some(&input))?, ctx)
+                    .await?
+                    .to_response()?,
+            ));
+        }
         if self.config.domain_verification
             && req.path() == "/sso/verify-domain"
             && *req.method() == HttpMethod::Post
