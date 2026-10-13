@@ -56,13 +56,57 @@ compatScenario(
     const email = ctx.uniqueEmail("two-factor-totp");
     const password = "password123";
 
-    await client.signUp.email({
+    let ownerCookie = "";
+    const signup = await client.signUp.email({
       email,
       password,
       name: "Two Factor TOTP",
+      fetchOptions: {
+        onSuccess({ response }) {
+          ownerCookie = response.headers
+            .getSetCookie()
+            .map((cookie) => cookie.split(";")[0])
+            .join("; ");
+        },
+      },
     });
 
-    const enable = await client.twoFactor.enable({ password });
+    async function serverEnable(body: unknown, cookie?: string) {
+      return ctx.actor("primary").fetch(`${ctx.baseURL}/__test/server-api/two-factor-enable`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ body, ...(cookie ? { headers: { cookie } } : {}) }),
+      });
+    }
+    const before = await ctx.readUserState({ userId: signup.data!.user.id });
+    for (const [body, cookie, status, code] of [
+      [{}, ownerCookie, 400, "VALIDATION_ERROR"],
+      [{ password: 42 }, ownerCookie, 400, "VALIDATION_ERROR"],
+      [{ password, method: "invalid" }, ownerCookie, 400, "VALIDATION_ERROR"],
+      [{ password, issuer: null }, ownerCookie, 400, "VALIDATION_ERROR"],
+      [{ password }, undefined, 401, "UNAUTHORIZED"],
+      [{ password: "wrong-password" }, ownerCookie, 400, "INVALID_PASSWORD"],
+    ] as const) {
+      const response = await serverEnable(body, cookie);
+      expect(response.status).toBe(status);
+      expect(((await response.json()) as any).code).toBe(code);
+      expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(before);
+    }
+    const enableResponse = await serverEnable(
+      { password, issuer: "Server enrollment", userId: "untrusted-selector" },
+      ownerCookie,
+    );
+    expect(enableResponse.status).toBe(200);
+    expect(enableResponse.headers.get("set-cookie")).toBeNull();
+    const enable = { data: (await enableResponse.json()) as any, error: null };
+    expect(new URL(enable.data.totpURI).searchParams.get("issuer")).toBe("Server enrollment");
+    expect(enable.data.method).toBe("totp");
+    expect(new Set(enable.data.backupCodes).size).toBe(10);
+    expect((await client.getSession()).data?.user.twoFactorEnabled).toBe(false);
+    expect((await ctx.readUserState({ userId: signup.data!.user.id })) as any).toHaveProperty(
+      "twoFactorExists",
+      true,
+    );
 
     if (!enable.data || !("totpURI" in enable.data)) {
       throw new Error("TOTP enrollment must return a URI");
@@ -94,15 +138,39 @@ compatScenario(
     const email = ctx.uniqueEmail("two-factor-otp");
     const password = "password123";
 
-    await client.signUp.email({
+    let ownerCookie = "";
+    const signup = await client.signUp.email({
       email,
       password,
       name: "Two Factor OTP",
+      fetchOptions: {
+        onSuccess({ response }) {
+          ownerCookie = response.headers
+            .getSetCookie()
+            .map((cookie) => cookie.split(";")[0])
+            .join("; ");
+        },
+      },
     });
 
-    const enable = await client.twoFactor.enable({ password });
-    const setupCode = await generateCurrentTotp(enrollmentUri(enable.data));
-    await client.twoFactor.verifyTotp({ code: setupCode });
+    const enabled = await ctx
+      .actor("primary")
+      .fetch(`${ctx.baseURL}/__test/server-api/two-factor-enable`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          body: { password, method: "otp" },
+          headers: { cookie: ownerCookie },
+        }),
+      });
+    expect(enabled.status).toBe(200);
+    expect(await enabled.json()).toEqual({ method: "otp" });
+    const active = await client.getSession();
+    expect(active.data?.user.twoFactorEnabled).toBe(true);
+    const state = (await ctx.readUserState({ userId: signup.data!.user.id })) as any;
+    expect(state.twoFactorExists).toBe(false);
+    expect(state.sessions).toHaveLength(1);
+    expect(state.sessions[0].token).not.toBe(signup.data!.token);
     await client.signOut();
 
     const signIn = await client.signIn.email({

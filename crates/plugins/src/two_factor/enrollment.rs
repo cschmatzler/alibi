@@ -4,12 +4,12 @@ use super::*;
     reason = "Keep factor enrollment, backup generation, and session replacement in their callback order"
 )]
 pub(in crate::two_factor) async fn enable_core(
-    body: &EnableRequest,
+    body: &EnableTwoFactorInput,
     user: &impl AuthUser,
     current_session: &impl AuthSession,
     config: &TwoFactorConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
-) -> Result<(EnableResponse, Vec<String>), BackupOperationError> {
+) -> Result<(TwoFactorEnabled, Vec<String>), BackupOperationError> {
     verify_user_password(
         ctx,
         user,
@@ -17,7 +17,7 @@ pub(in crate::two_factor) async fn enable_core(
         config.allow_passwordless,
     )
     .await?;
-    if body.method == EnableMethod::Otp {
+    if body.method == TwoFactorMethod::Otp {
         if config.send_otp.is_none() {
             return Err(AuthError::Upstream {
                 status: 400,
@@ -47,7 +47,7 @@ pub(in crate::two_factor) async fn enable_core(
         .map_err(SessionIssueError::into_auth_error)?;
         ctx.database.delete_session(current_session.token()).await?;
         return Ok((
-            EnableResponse::Otp,
+            TwoFactorEnabled::Otp,
             vec![create_session_cookie(issued.session.token(), &ctx.config)?],
         ));
     }
@@ -144,7 +144,7 @@ pub(in crate::two_factor) async fn enable_core(
         true,
     );
     Ok((
-        EnableResponse::Totp {
+        TwoFactorEnabled::Totp {
             totp_uri,
             backup_codes,
         },
