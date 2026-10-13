@@ -1,20 +1,31 @@
-//! Axum router and session extractors. Enable the `axum` feature.
+//! Axum router, session layer and session extractors. Enable the `axum` feature.
 
 use super::dispatch::DispatchSupervisor;
 use super::shared::{
     CurrentSession, OptionalSession, auth_request, check_content_length, max_body_bytes,
-    payload_too_large,
+    payload_too_large, request_headers,
 };
 use crate::Alibi;
-use alibi_core::{AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, core_paths};
+use alibi_core::endpoint::EndpointOptions;
+use alibi_core::{
+    AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, Headers, core_paths,
+};
+use alibi_plugins::{GetSessionQuery, GetSessionResponse, SessionManagementPlugin};
 use axum::{
     Router,
-    extract::{FromRef, FromRequestParts, OriginalUri, Request, State},
-    http::request::Parts,
+    extract::{FromRef, FromRequestParts, OptionalFromRequestParts, OriginalUri, Request, State},
+    http::{HeaderMap, HeaderName, HeaderValue, header, request::Parts},
     response::{IntoResponse, Response},
     routing::any,
 };
-use std::{collections::HashSet, future::Future, pin::Pin, sync::Arc};
+use std::{
+    collections::HashSet,
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
+use tower::{Layer, Service};
 
 /// Mount an initialized auth instance in an Axum application.
 pub trait AxumIntegration {
@@ -98,6 +109,215 @@ where
                 .await
                 .ok(),
         ))
+    }
+}
+
+/// Resolves the session of each request through get-session, as Better Auth's
+/// `getSessionFromCtx` does for its own endpoints.
+///
+/// This applies the cookie cache, renews an aging session, clears an ended one
+/// and appends the resulting `Set-Cookie` headers to the response, including
+/// rejections. Handlers read the outcome with [`ResolvedSession`]. A failed
+/// lookup counts as no session.
+///
+/// ```rust,no_run
+/// use alibi::{Alibi, AuthSchema};
+/// use alibi::integrations::axum::{ResolvedSession, SessionLayer};
+/// use axum::{Json, Router, routing::get};
+/// use std::sync::Arc;
+///
+/// async fn profile(ResolvedSession(session): ResolvedSession) -> Json<serde_json::Value> {
+///     Json(serde_json::json!({ "id": session.user.id }))
+/// }
+///
+/// fn router<S: AuthSchema>(auth: Arc<Alibi<S>>) -> Router {
+///     Router::new()
+///         .route("/profile", get(profile))
+///         .layer(SessionLayer::new(auth))
+/// }
+/// ```
+pub struct SessionLayer<S: AuthSchema> {
+    auth: Arc<Alibi<S>>,
+    query: Option<GetSessionQuery>,
+}
+
+impl<S: AuthSchema> SessionLayer<S> {
+    pub const fn new(auth: Arc<Alibi<S>>) -> Self {
+        Self { auth, query: None }
+    }
+
+    /// Bypass the cookie cache or suppress refresh for every request.
+    #[must_use]
+    pub const fn query(mut self, query: GetSessionQuery) -> Self {
+        self.query = Some(query);
+        self
+    }
+
+    async fn get_session(
+        &self,
+        headers: &HeaderMap,
+    ) -> AuthResult<(Option<GetSessionResponse>, Headers)> {
+        let mut endpoint = SessionManagementPlugin::get_session_endpoint();
+        if let Some(query) = &self.query {
+            endpoint = endpoint.with_query(query)?;
+        }
+        let options = EndpointOptions {
+            headers: Some(request_headers(headers)),
+            ..EndpointOptions::default()
+        };
+        let output = Box::pin(self.auth.dispatch_endpoint(endpoint, options))
+            .await
+            .map_err(|error| error.error)?;
+        Ok((output.decode()?, output.headers().clone()))
+    }
+}
+
+impl<S: AuthSchema> Clone for SessionLayer<S> {
+    fn clone(&self) -> Self {
+        Self {
+            auth: Arc::clone(&self.auth),
+            query: self.query.clone(),
+        }
+    }
+}
+
+impl<S: AuthSchema, I> Layer<I> for SessionLayer<S> {
+    type Service = SessionService<S, I>;
+
+    fn layer(&self, inner: I) -> Self::Service {
+        SessionService {
+            layer: self.clone(),
+            inner,
+        }
+    }
+}
+
+/// The service produced by [`SessionLayer`].
+pub struct SessionService<S: AuthSchema, I> {
+    layer: SessionLayer<S>,
+    inner: I,
+}
+
+impl<S: AuthSchema, I: Clone> Clone for SessionService<S, I> {
+    fn clone(&self) -> Self {
+        Self {
+            layer: self.layer.clone(),
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<S, I> Service<Request> for SessionService<S, I>
+where
+    S: AuthSchema,
+    I: Service<Request, Response = Response> + Clone + Send + 'static,
+    I::Future: Send,
+{
+    type Response = Response;
+    type Error = I::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Response, I::Error>> + Send>>;
+
+    fn poll_ready(&mut self, context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(context)
+    }
+
+    fn call(&mut self, mut request: Request) -> Self::Future {
+        // Call the instance that was polled ready and keep a fresh clone.
+        let ready = self.inner.clone();
+        let mut inner = std::mem::replace(&mut self.inner, ready);
+        let layer = self.layer.clone();
+        Box::pin(async move {
+            let (session, headers) =
+                layer
+                    .get_session(request.headers())
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::warn!(%error, "Failed to get session");
+                        (None, Headers::new())
+                    });
+            _ = request.extensions_mut().insert(Resolution(session));
+            let mut response = inner.call(request).await?;
+            merge_session_headers(response.headers_mut(), headers);
+            Ok(response)
+        })
+    }
+}
+
+/// Merge get-session headers as upstream response headers do: session cookies
+/// come before the handler's, and other handler headers win. Cache headers
+/// belong to `/get-session` itself and are dropped.
+fn merge_session_headers(response: &mut HeaderMap, session: Headers) {
+    let handler_cookies: Vec<_> = response
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .cloned()
+        .collect();
+    _ = response.remove(header::SET_COOKIE);
+    for (name, value) in session {
+        let (Ok(name), Ok(value)) = (HeaderName::try_from(name), HeaderValue::try_from(value))
+        else {
+            continue;
+        };
+        if name == header::SET_COOKIE {
+            _ = response.append(name, value);
+        } else if name != header::CACHE_CONTROL
+            && name != header::PRAGMA
+            && !response.contains_key(&name)
+        {
+            _ = response.insert(name, value);
+        }
+    }
+    for cookie in handler_cookies {
+        _ = response.append(header::SET_COOKIE, cookie);
+    }
+}
+
+#[derive(Clone)]
+struct Resolution(Option<GetSessionResponse>);
+
+/// The session [`SessionLayer`] resolved for the request.
+///
+/// Rejects with `401` when there is no valid session; extract
+/// `Option<ResolvedSession>` for routes that also serve guests. Both reject with
+/// `500` when the layer is not installed.
+#[derive(Debug, Clone)]
+pub struct ResolvedSession(pub GetSessionResponse);
+
+impl ResolvedSession {
+    fn from_parts(parts: &Parts) -> AuthResult<Option<Self>> {
+        parts
+            .extensions
+            .get::<Resolution>()
+            .map(|Resolution(session)| session.clone().map(Self))
+            .ok_or_else(|| AuthError::internal("SessionLayer is not installed"))
+    }
+}
+
+impl<T: Send + Sync> FromRequestParts<T> for ResolvedSession {
+    type Rejection = AuthError;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &T,
+    ) -> impl Future<Output = AuthResult<Self>> + Send {
+        std::future::ready(Self::from_parts(parts).and_then(|session| {
+            session.ok_or(AuthError::Upstream {
+                status: 401,
+                code: "UNAUTHORIZED",
+                message: "Unauthorized",
+            })
+        }))
+    }
+}
+
+impl<T: Send + Sync> OptionalFromRequestParts<T> for ResolvedSession {
+    type Rejection = AuthError;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &T,
+    ) -> impl Future<Output = AuthResult<Option<Self>>> + Send {
+        std::future::ready(Self::from_parts(parts))
     }
 }
 

@@ -29,9 +29,10 @@ impl FromRef<AppState> for Arc<Alibi<TestSchema>> {
     }
 }
 
-type TestSchema = alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+pub(super) type TestSchema =
+    alibi::seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
-fn test_session_cookie(token: &str) -> String {
+pub(super) fn test_session_cookie(token: &str) -> String {
     format!(
         "better-auth.session_token={}",
         alibi::utils::cookie_utils::sign_cookie_value(
@@ -58,7 +59,7 @@ async fn create_test_auth() -> Arc<Alibi<TestSchema>> {
     .await
 }
 
-async fn create_test_auth_with_config(config: AuthConfig) -> Arc<Alibi<TestSchema>> {
+pub(super) async fn create_test_auth_with_config(config: AuthConfig) -> Arc<Alibi<TestSchema>> {
     struct NoopResetSender;
 
     #[async_trait::async_trait]
@@ -166,7 +167,7 @@ fn create_app_state_test_router(auth: Arc<Alibi<TestSchema>>) -> axum::Router {
 }
 
 /// Helper to create a user and return user data + session token
-async fn create_test_user(router: axum::Router) -> (Value, String) {
+pub(super) async fn create_test_user(router: axum::Router) -> (Value, String) {
     let signup_data = json!({
         "email": "test@example.com",
         "password": "password123",

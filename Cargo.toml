@@ -111,6 +111,7 @@ axum = [
     "dep:axum",
     "dep:http",
     "dep:http-body-util",
+    "dep:tower",
     "alibi-core/axum",
     "alibi-plugins/axum",
 ]
@@ -135,6 +136,7 @@ axum = { workspace = true, optional = true }
 poem = { workspace = true, optional = true }
 http-body-util = { version = "0.1", optional = true }
 http = { workspace = true, optional = true }
+tower = { workspace = true, optional = true }
 url = { workspace = true }
 tracing = { workspace = true }
 [dev-dependencies]
