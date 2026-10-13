@@ -45,6 +45,12 @@ pub struct TwoFactorOtpSent {
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
         definition(
+            "verifyTwoFactorOTP",
+            "verifyTwoFactorOTP",
+            Some("/two-factor/verify-otp"),
+            HttpMethod::Post,
+        ),
+        definition(
             "sendTwoFactorOTP",
             "sendTwoFactorOTP",
             Some("/two-factor/send-otp"),
@@ -98,7 +104,7 @@ pub(super) fn validate(
             query: call.query().cloned(),
         });
     }
-    if call.operation_id() == "verifyTOTP" {
+    if matches!(call.operation_id(), "verifyTOTP" | "verifyTwoFactorOTP") {
         return Ok(EndpointInput {
             body: Some(validate_fields(
                 call.body(),
@@ -187,7 +193,46 @@ pub(super) fn validate(
     })
 }
 
+fn verification_response(output: alibi_core::AuthResponse) -> AuthResult<EndpointResponse> {
+    let body = alibi_core::utils::json::from_slice::<JsValue>(&output.body).ok();
+    let mut response = if output.status >= 400 {
+        let response = EndpointResponse::error(crate::endpoint::error_response(output.clone()));
+        if let Some(body) = body {
+            response.with_error_body(body)
+        } else {
+            response.without_error_body()
+        }
+    } else {
+        EndpointResponse::json(&body)?
+    };
+    response.merge_headers(output.headers);
+    Ok(response)
+}
+
 impl TwoFactorPlugin {
+    /// Verify a delivered code for the current session or pending sign-in challenge.
+    #[must_use]
+    pub fn verify_two_factor_otp_endpoint(
+        input: super::VerifyOtpInput,
+    ) -> ServerEndpoint<TotpVerified> {
+        let mut body = [("code".into(), JsValue::String(input.code))]
+            .into_iter()
+            .collect::<indexmap::IndexMap<_, _>>();
+        if let Some(trust_device) = input.trust_device {
+            _ = body.insert("trustDevice".into(), JsValue::Bool(trust_device));
+        }
+        ServerEndpoint::new("two-factor", "verifyTwoFactorOTP")
+            .with_body_value(JsValue::Object(body))
+    }
+
+    async fn verify_otp_endpoint_call(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<EndpointResponse> {
+        verification_response(self.verify_otp(&call.body_as()?, call, ctx).await?)
+    }
+
     /// Persist and deliver a code for the session owner or pending sign-in challenge.
     #[must_use]
     pub fn send_two_factor_otp_endpoint() -> ServerEndpoint<TwoFactorOtpSent> {
@@ -231,19 +276,7 @@ impl TwoFactorPlugin {
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
         let output = self.verify_totp(&call.body_as()?, call, ctx).await?;
-        let body = alibi_core::utils::json::from_slice::<JsValue>(&output.body).ok();
-        let mut response = if output.status >= 400 {
-            let response = EndpointResponse::error(crate::endpoint::error_response(output.clone()));
-            if let Some(body) = body {
-                response.with_error_body(body)
-            } else {
-                response.without_error_body()
-            }
-        } else {
-            EndpointResponse::json(&body)?
-        };
-        response.merge_headers(output.headers);
-        Ok(response)
+        verification_response(output)
     }
 
     /// Recover the signed-in owner's authenticator URI using configured password policy.
@@ -370,7 +403,9 @@ impl TwoFactorPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
-        if call.operation_id() == "sendTwoFactorOTP" {
+        if call.operation_id() == "verifyTwoFactorOTP" {
+            Box::pin(self.verify_otp_endpoint_call(call, ctx)).await
+        } else if call.operation_id() == "sendTwoFactorOTP" {
             Box::pin(self.send_otp_endpoint_call(call, ctx)).await
         } else if call.operation_id() == "verifyTOTP" {
             Box::pin(self.verify_totp_endpoint_call(call, ctx)).await

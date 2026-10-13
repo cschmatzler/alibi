@@ -309,7 +309,34 @@ compatScenario(
     expect(sendOtp.data).toEqual({ status: true });
     const otpRecord = (await ctx.readTwoFactorOtp({ email })) as { otp: string };
     const verificationStartedAt = Date.now();
-    const verifyOtp = await client.twoFactor.verifyOtp({ code: otpRecord.otp });
+    async function serverVerifyOtp(body: unknown, cookie?: string) {
+      return ctx.actor("primary").fetch(`${ctx.baseURL}/__test/server-api/two-factor-verify-otp`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ body, ...(cookie ? { headers: { cookie } } : {}) }),
+      });
+    }
+    const beforeVerify = await ctx.readUserState({ userId: signup.data!.user.id });
+    for (const [body, cookie, status, code] of [
+      [{}, pendingCookie, 400, "VALIDATION_ERROR"],
+      [{ code: 42 }, pendingCookie, 400, "VALIDATION_ERROR"],
+      [{ code: otpRecord.otp, trustDevice: null }, pendingCookie, 400, "VALIDATION_ERROR"],
+      [{ code: otpRecord.otp }, undefined, 401, "INVALID_TWO_FACTOR_COOKIE"],
+    ] as const) {
+      const rejected = await serverVerifyOtp(body, cookie);
+      expect(rejected.status).toBe(status);
+      expect(((await rejected.json()) as any).code).toBe(code);
+      expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(beforeVerify);
+    }
+    const wrong = await serverVerifyOtp({ code: "" }, pendingCookie);
+    expect(wrong.status).toBe(401);
+    expect(((await wrong.json()) as any).code).toBe("INVALID_CODE");
+    const verified = await serverVerifyOtp(
+      { code: otpRecord.otp, userId: "untrusted-selector" },
+      pendingCookie,
+    );
+    expect(verified.status).toBe(200);
+    const verifyOtp = { data: (await verified.json()) as any, error: null };
     const verificationFinishedAt = Date.now();
 
     if (!verifyOtp.data?.user.id) {
@@ -334,6 +361,12 @@ compatScenario(
     expect(session.data.session.expiresAt.getTime()).toBeLessThanOrEqual(
       verificationFinishedAt + 86_400_000,
     );
+
+    const beforeReplay = await ctx.readUserState({ userId: signup.data!.user.id });
+    const replay = await serverVerifyOtp({ code: otpRecord.otp }, pendingCookie);
+    expect(replay.status).toBe(401);
+    expect(((await replay.json()) as any).code).toBe("INVALID_TWO_FACTOR_COOKIE");
+    expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(beforeReplay);
 
     const missingCookieClient = twoFactorActor(ctx, "missing-cookie");
     const missingCookie = await missingCookieClient.twoFactor.verifyOtp({

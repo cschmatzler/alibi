@@ -58,12 +58,12 @@ pub(in crate::two_factor) async fn send_otp_core(
     reason = "Keep OTP ownership, attempt limits, and successful factor consumption in protocol order"
 )]
 pub(in crate::two_factor) async fn verify_otp_core(
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     body: &VerifyOtpRequest,
     config: &TwoFactorConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<(SessionTokenResponse<UserView>, Vec<String>), ExistingSessionFactorError> {
-    let state = resolve_two_factor_state(req, ctx).await?;
+    let state = Box::pin(resolve_two_factor_state(req, ctx)).await?;
     let factor = if matches!(state, ResolvedTwoFactorState::Pending(_)) {
         let factor = ctx
             .database
@@ -166,13 +166,20 @@ pub(in crate::two_factor) async fn verify_otp_core(
 
     match state {
         ResolvedTwoFactorState::Session { user, session, .. } => {
-            verify_existing_session_factor(user, *session, true, true, ctx).await
+            Box::pin(verify_existing_session_factor(
+                user, *session, true, true, ctx,
+            ))
+            .await
         }
-        ResolvedTwoFactorState::Pending(pending) => {
-            finalize_pending_two_factor(pending, req, body.trust_device.unwrap_or(false), true, ctx)
-                .await
-                .map_err(ExistingSessionFactorError::Auth)
-        }
+        ResolvedTwoFactorState::Pending(pending) => Box::pin(finalize_pending_two_factor(
+            pending,
+            req,
+            body.trust_device.unwrap_or(false),
+            true,
+            ctx,
+        ))
+        .await
+        .map_err(ExistingSessionFactorError::Auth),
     }
 }
 

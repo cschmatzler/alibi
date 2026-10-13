@@ -192,12 +192,15 @@ impl crate::authentication_helpers::RequestBody for SendOtpRequest {
         }];
 }
 
-#[derive(Debug, Deserialize, Validate)]
-pub(crate) struct VerifyOtpRequest {
-    code: String,
-    #[serde(rename = "trustDevice")]
-    trust_device: Option<bool>,
+/// Delivered code and optional trusted-device preference.
+#[derive(Debug, Deserialize, Serialize, Validate)]
+pub struct VerifyOtpRequest {
+    pub code: String,
+    #[serde(rename = "trustDevice", skip_serializing_if = "Option::is_none")]
+    pub trust_device: Option<bool>,
 }
+/// Public input for direct delivered-code verification.
+pub type VerifyOtpInput = VerifyOtpRequest;
 
 #[derive(Debug, Deserialize, Validate)]
 pub(crate) struct GenerateBackupCodesRequest {
@@ -562,8 +565,17 @@ impl TwoFactorPlugin {
             Err(resp) => return Ok(resp),
         };
 
+        self.verify_otp(&body, req, ctx).await
+    }
+
+    async fn verify_otp<S: alibi_core::AuthSchema>(
+        &self,
+        body: &VerifyOtpInput,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<AuthResponse> {
         let (response, set_cookie_headers) =
-            match verify_otp_core(req, &body, &self.config, ctx).await {
+            match Box::pin(verify_otp_core(req, body, &self.config, ctx)).await {
                 Ok(result) => result,
                 Err(ExistingSessionFactorError::SessionCreationCancelled) => {
                     return Ok(AuthResponse::new(500));

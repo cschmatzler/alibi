@@ -617,31 +617,44 @@ async fn two_factor_otp_budget_and_session_choices<B: Backend>(db: Db) -> TestRe
     let code = outbox.0.lock().unwrap().pop().unwrap();
     let wrong = if code == "000000" { "000001" } else { "000000" };
     for _ in 0..2 {
-        let denied = call(
-            &auth,
-            request(
-                "/two-factor/verify-otp",
-                Some(json!({"code":wrong})),
-                &pending,
+        let denied = Box::pin(auth.dispatch_endpoint(
+            TwoFactorPlugin::verify_two_factor_otp_endpoint(
+                alibi::plugins::two_factor::VerifyOtpInput {
+                    code: wrong.into(),
+                    trust_device: None,
+                },
             ),
-            401,
-        )
-        .await;
-        assert_eq!(body(&denied)["message"], "Invalid code");
+            alibi::endpoint::EndpointOptions {
+                headers: Some([("cookie".into(), pending.clone())].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(denied.error.status_code(), 401);
+        assert_eq!(
+            denied.error.error_payload().1.as_deref(),
+            Some("INVALID_CODE")
+        );
     }
-    let exhausted = call(
-        &auth,
-        request(
-            "/two-factor/verify-otp",
-            Some(json!({"code":code})),
-            &pending,
+    let exhausted = Box::pin(auth.dispatch_endpoint(
+        TwoFactorPlugin::verify_two_factor_otp_endpoint(
+            alibi::plugins::two_factor::VerifyOtpInput {
+                code: code.clone(),
+                trust_device: None,
+            },
         ),
-        400,
-    )
-    .await;
+        alibi::endpoint::EndpointOptions {
+            headers: Some([("cookie".into(), pending.clone())].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(exhausted.error.status_code(), 400);
     assert_eq!(
-        body(&exhausted)["code"],
-        "TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE"
+        exhausted.error.error_payload().1.as_deref(),
+        Some("TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE")
     );
     assert_eq!(db.count("sessions").await?, 1);
 
@@ -658,16 +671,79 @@ async fn two_factor_otp_budget_and_session_choices<B: Backend>(db: Db) -> TestRe
     .await?;
     assert!(sent.decode()?.status);
     let delivered = outbox.0.lock().unwrap().pop().unwrap();
-    let done = call(
-        &auth,
-        request(
-            "/two-factor/verify-otp",
-            Some(json!({"code":delivered})),
-            &pending,
+    let before_verify = db
+        .tables(&[
+            "users",
+            "accounts",
+            "sessions",
+            "two_factor",
+            "verifications",
+        ])
+        .await?;
+    for (input, cookie, status, code) in [
+        (json!({}), Some(pending.clone()), 400, "VALIDATION_ERROR"),
+        (
+            json!({"code":42}),
+            Some(pending.clone()),
+            400,
+            "VALIDATION_ERROR",
         ),
-        200,
+        (
+            json!({"code":delivered,"trustDevice":null}),
+            Some(pending.clone()),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (
+            json!({"code":delivered}),
+            None,
+            401,
+            "INVALID_TWO_FACTOR_COOKIE",
+        ),
+    ] {
+        let error = Box::pin(
+            auth.dispatch_endpoint(
+                alibi::endpoint::ServerEndpoint::<Value>::new("two-factor", "verifyTwoFactorOTP")
+                    .with_body(&input)?,
+                alibi::endpoint::EndpointOptions {
+                    headers: cookie.map(|cookie| [("cookie".into(), cookie)].into_iter().collect()),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.error.status_code(), status);
+        assert_eq!(error.error.error_payload().1.as_deref(), Some(code));
+        assert_eq!(
+            db.tables(&[
+                "users",
+                "accounts",
+                "sessions",
+                "two_factor",
+                "verifications"
+            ])
+            .await?,
+            before_verify
+        );
+    }
+    let done = Box::pin(
+        auth.dispatch_endpoint(
+            TwoFactorPlugin::verify_two_factor_otp_endpoint(
+                alibi::plugins::two_factor::VerifyOtpInput {
+                    code: delivered.clone(),
+                    trust_device: None,
+                },
+            )
+            .with_body(&json!({"code":delivered,"userId":"untrusted-selector"}))?,
+            alibi::endpoint::EndpointOptions {
+                headers: Some([("cookie".into(), pending.clone())].into_iter().collect()),
+                ..Default::default()
+            },
+        ),
     )
-    .await;
+    .await?
+    .into_response()?;
     assert!(cookies(&done).contains("better-auth.dont_remember="));
     let token = body(&done)["token"].as_str().unwrap().to_owned();
     let expires = db
@@ -678,6 +754,47 @@ async fn two_factor_otp_budget_and_session_choices<B: Backend>(db: Db) -> TestRe
         .await?
         .unwrap();
     assert!(!expires.is_empty());
+    let active = call(&auth, request("/get-session", None, &cookies(&done)), 200).await;
+    assert_eq!(body(&active)["session"]["token"], token);
+    let before_replay = db
+        .tables(&[
+            "users",
+            "accounts",
+            "sessions",
+            "two_factor",
+            "verifications",
+        ])
+        .await?;
+    let replay = Box::pin(auth.dispatch_endpoint(
+        TwoFactorPlugin::verify_two_factor_otp_endpoint(
+            alibi::plugins::two_factor::VerifyOtpInput {
+                code: delivered,
+                trust_device: None,
+            },
+        ),
+        alibi::endpoint::EndpointOptions {
+            headers: Some([("cookie".into(), pending.clone())].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(replay.error.status_code(), 401);
+    assert_eq!(
+        replay.error.error_payload().1.as_deref(),
+        Some("INVALID_TWO_FACTOR_COOKIE")
+    );
+    assert_eq!(
+        db.tables(&[
+            "users",
+            "accounts",
+            "sessions",
+            "two_factor",
+            "verifications"
+        ])
+        .await?,
+        before_replay
+    );
     let plain = call(
         &auth,
         request(
