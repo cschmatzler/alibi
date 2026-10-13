@@ -250,3 +250,53 @@ impl OAuthProviderPlugin {
         EndpointResponse::json(&values)
     }
 }
+
+pub(super) fn decode_parameter(params: Option<&JsValue>, name: &str) -> AuthResult<String> {
+    let raw = params.and_then(|params| params.get(name)).map_or_else(
+        || Ok("undefined".to_owned()),
+        |value| value.coerce_string().map_err(AuthError::internal),
+    )?;
+    for (index, byte) in raw.bytes().enumerate() {
+        if byte == b'%'
+            && (!raw
+                .as_bytes()
+                .get(index + 1)
+                .is_some_and(u8::is_ascii_hexdigit)
+                || !raw
+                    .as_bytes()
+                    .get(index + 2)
+                    .is_some_and(u8::is_ascii_hexdigit))
+        {
+            return Ok(raw);
+        }
+    }
+    Ok(urlencoding::decode(&raw).map_or_else(|_| raw.clone(), std::borrow::Cow::into_owned))
+}
+impl OAuthProviderPlugin {
+    /// Read durable resource policy by a raw or URI-encoded identifier through the server-only API.
+    pub fn admin_get_oauth_resource_endpoint(
+        identifier: &str,
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("oauth-provider", "adminGetOAuthResource")
+            .with_params(&json!({"identifier":identifier}))
+    }
+    pub(super) async fn read_resource<S: AuthSchema>(
+        &self,
+        params: Option<&JsValue>,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let identifier = decode_parameter(params, "identifier")?;
+        if let Some(response) = Box::pin(self.resource_admission(req, ctx)).await? {
+            return Ok(response);
+        }
+        let Some(row) = ctx.database.get_oauth_resource(&identifier).await? else {
+            return super::clients::status_protocol_error(
+                404,
+                "not_found",
+                &format!("resource {identifier} not found"),
+            );
+        };
+        EndpointResponse::json(&resource_value(row)?)
+    }
+}

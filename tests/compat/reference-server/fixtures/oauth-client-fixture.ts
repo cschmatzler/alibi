@@ -159,6 +159,13 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             }),
       });
     }
+    if (input.action === "resource-get") {
+      return auth.api.adminGetOAuthResource({
+        params: input.params,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
     if (input.action === "resource-list") {
       return auth.api.adminListOAuthResources({
         headers: new Headers(input.headers ?? {}),
@@ -182,11 +189,16 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     if (input.action === "resource-http") {
       const response = await auth.handler(
-        new Request(`${base.baseURL}${base.basePath ?? "/api/auth"}/admin/oauth2/resources`, {
-          method: input.operation === "list" ? "GET" : "POST",
-          headers: { ...input.headers, "content-type": "application/json" },
-          ...(input.operation === "list" ? {} : { body: JSON.stringify(input.body) }),
-        }),
+        new Request(
+          `${base.baseURL}${base.basePath ?? "/api/auth"}/admin/oauth2/resources${input.operation === "read" ? `/${encodeURIComponent(input.identifier)}` : ""}`,
+          {
+            method: ["list", "read"].includes(input.operation) ? "GET" : "POST",
+            headers: { ...input.headers, "content-type": "application/json" },
+            ...(["list", "read"].includes(input.operation)
+              ? {}
+              : { body: JSON.stringify(input.body) }),
+          },
+        ),
       );
       return new Response(JSON.stringify({ status: response.status }), {
         headers: { "content-type": "application/json" },
