@@ -6,7 +6,7 @@ pub use grant::{
 };
 
 mod endpoint;
-pub use endpoint::{DeviceCodeRequest, DeviceCodeResponse};
+pub use endpoint::{DeviceActionResponse, DeviceCodeRequest, DeviceCodeResponse};
 mod http;
 mod issuance;
 mod redemption;
@@ -311,7 +311,9 @@ alibi_core::impl_auth_plugin! {
         endpoint::validate(call)
     }
     async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
-        if call.operation_id() == "deviceVerify" {
+        if call.operation_id() == "deviceApprove" {
+            self.approve_endpoint(call, ctx).await
+        } else if call.operation_id() == "deviceVerify" {
             self.verify_endpoint(call, ctx).await
         } else {
             self.issue_endpoint(call, ctx).await

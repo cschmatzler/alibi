@@ -56,8 +56,9 @@ pub(super) struct DeviceVerifyResponse {
     pub scope: Option<Option<String>>,
 }
 
-#[derive(Debug, Serialize)]
-pub(super) struct DeviceActionResponse {
+/// A device authorization decision was persisted for its claiming owner.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeviceActionResponse {
     pub success: bool,
 }
 
