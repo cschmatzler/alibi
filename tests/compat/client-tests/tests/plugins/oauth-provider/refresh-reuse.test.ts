@@ -116,6 +116,23 @@ compatScenario(
     }
     expect(repeated.expires_in).toBeLessThanOrEqual(3600);
     expect(repeated.expires_in).toBeGreaterThanOrEqual(0);
+    for (const scope of ["offline_access email", "email offline_access email"]) {
+      const response = await control({ action: "token", body: { ...refreshInput, scope } });
+      expect(response.status).toBe(200);
+      const replayed = (await response.json()) as any;
+      for (const key of ["access_token", "refresh_token", "expires_at", "scope", "token_type"]) {
+        expect(replayed[key]).toBe(issued[key]);
+      }
+      const unchanged = await control({
+        action: "token-row",
+        kind: "refresh",
+        token: token.refresh_token,
+      });
+      expect(unchanged.status).toBe(200);
+      const stored = (await unchanged.json()) as any;
+      expect(stored.rotationReplayResponse).toBe(row.rotationReplayResponse);
+      expect(stored.rotationReplayExpiresAt).toBe(row.rotationReplayExpiresAt);
+    }
     const denied = await control({ action: "token", body: { ...refreshInput, scope: "email" } });
     expect(denied.status).toBe(400);
     expect(await denied.json()).toEqual({

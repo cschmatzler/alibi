@@ -162,6 +162,43 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
         assert_eq!(repeated[key], issued[key]);
     }
     assert!(repeated["expires_in"].as_i64().unwrap() <= 3600);
+    for scope in ["offline_access email", "email offline_access email"] {
+        let mut equivalent = input.clone();
+        equivalent["scope"] = json!(scope);
+        let replayed = Box::pin(auth.dispatch_endpoint(
+            OAuthProviderPlugin::oauth2_token_endpoint(&equivalent)?,
+            EndpointOptions {
+                request: Some(request("/oauth2/token", Some(equivalent), "")),
+                ..Default::default()
+            },
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(replayed.status, 200);
+        let replayed = body(&replayed);
+        for key in [
+            "access_token",
+            "refresh_token",
+            "expires_at",
+            "scope",
+            "token_type",
+        ] {
+            assert_eq!(replayed[key], issued[key]);
+        }
+        let unchanged = auth
+            .store()
+            .get_oauth_token(OAuthTokenKind::Refresh, &hash(refresh))
+            .await?
+            .unwrap();
+        assert_eq!(
+            unchanged.metadata["rotationReplayResponse"],
+            stored.metadata["rotationReplayResponse"]
+        );
+        assert_eq!(
+            unchanged.metadata["rotationReplayExpiresAt"],
+            stored.metadata["rotationReplayExpiresAt"]
+        );
+    }
     let mut different = input.clone();
     different["scope"] = json!("email");
     let denied = Box::pin(auth.dispatch_endpoint(
