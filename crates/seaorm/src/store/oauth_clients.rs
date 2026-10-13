@@ -14,6 +14,91 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
+    async fn delete_oauth_token(
+        &self,
+        kind: alibi_core::store::OAuthTokenKind,
+        token: &str,
+    ) -> AuthResult<()> {
+        match kind {
+            alibi_core::store::OAuthTokenKind::Access => {
+                _ = super::entities::oauth_access_token::Entity::delete_many()
+                    .filter(super::entities::oauth_access_token::Column::Token.eq(token))
+                    .exec(self.scoped_connection())
+                    .await
+                    .map_err(map_db_err)?;
+            }
+            alibi_core::store::OAuthTokenKind::Refresh => {
+                _ = super::entities::oauth_refresh_token::Entity::delete_many()
+                    .filter(super::entities::oauth_refresh_token::Column::Token.eq(token))
+                    .exec(self.scoped_connection())
+                    .await
+                    .map_err(map_db_err)?;
+            }
+        }
+        Ok(())
+    }
+    async fn revoke_oauth_refresh_token(
+        &self,
+        token: &str,
+        revoked_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<bool> {
+        let Some(row) = super::entities::oauth_refresh_token::Entity::find()
+            .filter(super::entities::oauth_refresh_token::Column::Token.eq(token))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+        else {
+            return Ok(false);
+        };
+        if row.revoked.is_some() {
+            return Ok(false);
+        }
+        let result = super::entities::oauth_refresh_token::Entity::update_many()
+            .col_expr(
+                super::entities::oauth_refresh_token::Column::Revoked,
+                sea_orm::sea_query::Expr::value(revoked_at),
+            )
+            .filter(super::entities::oauth_refresh_token::Column::Token.eq(token))
+            .filter(super::entities::oauth_refresh_token::Column::Revoked.is_null())
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        Ok(result.rows_affected > 0)
+    }
+    async fn delete_oauth_access_tokens_for_refresh(&self, refresh_id: &str) -> AuthResult<()> {
+        _ = super::entities::oauth_access_token::Entity::delete_many()
+            .filter(super::entities::oauth_access_token::Column::RefreshId.eq(refresh_id))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        Ok(())
+    }
+    async fn delete_oauth_refresh_family(&self, client_id: &str, user_id: &str) -> AuthResult<()> {
+        use super::entities::{oauth_access_token, oauth_refresh_token};
+        use sea_orm::sea_query::{Expr, ExprTrait, Query};
+        let query = Query::select()
+            .column(oauth_refresh_token::Column::Id)
+            .from(oauth_refresh_token::Entity)
+            .and_where(Expr::col(oauth_refresh_token::Column::ClientId).eq(client_id))
+            .and_where(Expr::col(oauth_refresh_token::Column::UserId).eq(user_id))
+            .limit(
+                u64::try_from(self.config().advanced.database.default_find_many_limit)
+                    .unwrap_or(u64::MAX),
+            )
+            .to_owned();
+        _ = oauth_access_token::Entity::delete_many()
+            .filter(oauth_access_token::Column::RefreshId.in_subquery(query))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        _ = oauth_refresh_token::Entity::delete_many()
+            .filter(oauth_refresh_token::Column::ClientId.eq(client_id))
+            .filter(oauth_refresh_token::Column::UserId.eq(user_id))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        Ok(())
+    }
     async fn create_oauth_token(
         &self,
         kind: alibi_core::store::OAuthTokenKind,

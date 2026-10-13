@@ -397,3 +397,7 @@ mod oauth_continuation;
 mod oauth_token;
 
 mod oauth_offline_tokens;
+
+mod oauth_introspection;
+
+mod oauth_revocation;

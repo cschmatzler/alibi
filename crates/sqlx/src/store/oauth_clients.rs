@@ -10,6 +10,104 @@ use alibi_core::{
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
+    async fn delete_oauth_token(
+        &self,
+        kind: alibi_core::store::OAuthTokenKind,
+        token: &str,
+    ) -> AuthResult<()> {
+        match kind {
+            alibi_core::store::OAuthTokenKind::Access => {
+                let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+                sql.ident(super::entities::oauth_access_token::Model::TABLE);
+                sql.push(" WHERE ");
+                sql.compare(
+                    super::entities::oauth_access_token::Model::TABLE,
+                    "token",
+                    " = ",
+                    token,
+                );
+                _ = self.exec().execute(sql).await?;
+            }
+            alibi_core::store::OAuthTokenKind::Refresh => {
+                let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+                sql.ident(super::entities::oauth_refresh_token::Model::TABLE);
+                sql.push(" WHERE ");
+                sql.compare(
+                    super::entities::oauth_refresh_token::Model::TABLE,
+                    "token",
+                    " = ",
+                    token,
+                );
+                _ = self.exec().execute(sql).await?;
+            }
+        }
+        Ok(())
+    }
+    async fn revoke_oauth_refresh_token(
+        &self,
+        token: &str,
+        revoked_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<bool> {
+        let mut lookup =
+            model::select_model::<super::entities::oauth_refresh_token::Model>(self.exec());
+        lookup.push(" WHERE ");
+        lookup.compare("oauthRefreshToken", "token", " = ", token);
+        let Some(row) = self
+            .exec()
+            .fetch_optional::<super::entities::oauth_refresh_token::Model>(lookup)
+            .await?
+        else {
+            return Ok(false);
+        };
+        if row.revoked.is_some() {
+            return Ok(false);
+        }
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "UPDATE ");
+        sql.ident("oauthRefreshToken");
+        sql.push(" SET ");
+        sql.assign("revoked", revoked_at);
+        sql.push(" WHERE ");
+        sql.compare("oauthRefreshToken", "token", " = ", token);
+        sql.push(" AND ");
+        sql.ident("revoked");
+        sql.push(" IS NULL");
+        Ok(self.exec().execute(sql).await? > 0)
+    }
+    async fn delete_oauth_access_tokens_for_refresh(&self, refresh_id: &str) -> AuthResult<()> {
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident("oauthAccessToken");
+        sql.push(" WHERE ");
+        sql.compare("oauthAccessToken", "refreshId", " = ", refresh_id);
+        _ = self.exec().execute(sql).await?;
+        Ok(())
+    }
+    async fn delete_oauth_refresh_family(&self, client_id: &str, user_id: &str) -> AuthResult<()> {
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident("oauthAccessToken");
+        sql.push(" WHERE ");
+        sql.ident("refreshId");
+        sql.push(" IN (SELECT id FROM ");
+        sql.ident("oauthRefreshToken");
+        sql.push(" WHERE ");
+        sql.compare("oauthRefreshToken", "clientId", " = ", client_id);
+        sql.push(" AND ");
+        sql.compare("oauthRefreshToken", "userId", " = ", user_id);
+        sql.push(" LIMIT ");
+        sql.bind(
+            i64::try_from(self.config().advanced.database.default_find_many_limit)
+                .unwrap_or(i64::MAX),
+        );
+        sql.push(")");
+        _ = self.exec().execute(sql).await?;
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident("oauthRefreshToken");
+        sql.push(" WHERE ");
+        sql.compare("oauthRefreshToken", "clientId", " = ", client_id);
+        sql.push(" AND ");
+        sql.compare("oauthRefreshToken", "userId", " = ", user_id);
+        _ = self.exec().execute(sql).await?;
+        Ok(())
+    }
     async fn create_oauth_token(
         &self,
         kind: alibi_core::store::OAuthTokenKind,

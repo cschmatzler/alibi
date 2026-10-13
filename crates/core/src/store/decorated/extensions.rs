@@ -580,6 +580,32 @@ impl<S: AuthSchema> WalletAddressStore for PluginStore<S> {
 
 #[async_trait::async_trait]
 impl<S: AuthSchema> crate::store::OAuthClientStore for PluginStore<S> {
+    async fn delete_oauth_token(
+        &self,
+        kind: crate::store::OAuthTokenKind,
+        token: &str,
+    ) -> AuthResult<()> {
+        self.inner.delete_oauth_token(kind, token).await
+    }
+    async fn revoke_oauth_refresh_token(
+        &self,
+        token: &str,
+        revoked_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<bool> {
+        self.inner
+            .revoke_oauth_refresh_token(token, revoked_at)
+            .await
+    }
+    async fn delete_oauth_access_tokens_for_refresh(&self, refresh_id: &str) -> AuthResult<()> {
+        self.inner
+            .delete_oauth_access_tokens_for_refresh(refresh_id)
+            .await
+    }
+    async fn delete_oauth_refresh_family(&self, client_id: &str, user_id: &str) -> AuthResult<()> {
+        self.inner
+            .delete_oauth_refresh_family(client_id, user_id)
+            .await
+    }
     async fn create_oauth_token(
         &self,
         kind: crate::store::OAuthTokenKind,

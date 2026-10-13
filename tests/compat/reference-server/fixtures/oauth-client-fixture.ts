@@ -156,6 +156,58 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         { headers: { "content-type": "application/json" } },
       );
     }
+    if (input.action === "expire-session") {
+      const context = await auth.$context;
+      const updated = await context.internalAdapter.updateSession(input.token, {
+        expiresAt: new Date(Date.now() - 1000),
+      });
+      return new Response(
+        JSON.stringify({ expired: Boolean(updated && updated.expiresAt.getTime() < Date.now()) }),
+        { headers: { "content-type": "application/json" } },
+      );
+    }
+    if (input.action === "revoke-concurrently") {
+      const call = () =>
+        auth.api.oauth2Revoke({
+          body: input.body,
+          headers: new Headers(input.headers ?? {}),
+          asResponse: true,
+          request: new Request(`${base.baseURL}${base.basePath ?? "/api/auth"}/oauth2/revoke`, {
+            method: "POST",
+            headers: { ...input.headers, "content-type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams(input.body),
+          }),
+        });
+      const responses = await Promise.all([call(), call()]);
+      return new Response(
+        JSON.stringify(responses.map((response) => response.status).sort((a, b) => a - b)),
+        { headers: { "content-type": "application/json" } },
+      );
+    }
+    if (input.action === "revoke") {
+      return auth.api.oauth2Revoke({
+        body: input.body,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+        request: new Request(`${base.baseURL}${base.basePath ?? "/api/auth"}/oauth2/revoke`, {
+          method: "POST",
+          headers: { ...input.headers, "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams(input.body),
+        }),
+      });
+    }
+    if (input.action === "introspect") {
+      return auth.api.oauth2Introspect({
+        body: input.body,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+        request: new Request(`${base.baseURL}${base.basePath ?? "/api/auth"}/oauth2/introspect`, {
+          method: "POST",
+          headers: { ...input.headers, "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams(input.body),
+        }),
+      });
+    }
     if (input.action === "token") {
       return auth.api.oauth2Token({
         body: input.body,
@@ -196,6 +248,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
                 refreshId: row.refreshId ?? null,
                 authTime: row.authTime ?? null,
                 resources: row.resources ?? null,
+                revoked: row.revoked ?? null,
               }
             : null,
         ),

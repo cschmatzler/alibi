@@ -52,6 +52,35 @@ pub struct CreateOAuthToken {
 }
 #[async_trait]
 pub trait OAuthClientStore: Send + Sync {
+    async fn delete_oauth_token(&self, _kind: OAuthTokenKind, _token: &str) -> AuthResult<()> {
+        Err(AuthError::config(
+            "OAuth token persistence is not supported by this store",
+        ))
+    }
+    /// Atomically claim an unrevoked refresh token; concurrent claimants lose.
+    async fn revoke_oauth_refresh_token(
+        &self,
+        _token: &str,
+        _revoked_at: DateTime<Utc>,
+    ) -> AuthResult<bool> {
+        Err(AuthError::config(
+            "OAuth token persistence is not supported by this store",
+        ))
+    }
+    async fn delete_oauth_access_tokens_for_refresh(&self, _refresh_id: &str) -> AuthResult<()> {
+        Err(AuthError::config(
+            "OAuth token persistence is not supported by this store",
+        ))
+    }
+    async fn delete_oauth_refresh_family(
+        &self,
+        _client_id: &str,
+        _user_id: &str,
+    ) -> AuthResult<()> {
+        Err(AuthError::config(
+            "OAuth token persistence is not supported by this store",
+        ))
+    }
     async fn create_oauth_token(
         &self,
         _kind: OAuthTokenKind,
