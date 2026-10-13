@@ -6,7 +6,12 @@ import { Cookie } from "tough-cookie";
 
 import type { ScenarioContext } from "../../../support/scenario";
 
-export async function samlLogoutFlow(ctx: ScenarioContext, complete: boolean, signed = false) {
+export async function samlLogoutFlow(
+  ctx: ScenarioContext,
+  complete: boolean,
+  signed = false,
+  rollover = false,
+) {
   const actor = ctx.actor();
   const control = (input: Record<string, unknown>) =>
     actor.fetch(`${ctx.baseURL}/__test/server-api/sso`, {
@@ -40,7 +45,14 @@ export async function samlLogoutFlow(ctx: ScenarioContext, complete: boolean, si
       domain: "company.test",
       samlConfig: {
         entryPoint: "https://idp.example.test/sso",
-        cert,
+        cert: rollover
+          ? [
+              await Bun.file(
+                new URL("../../../../fixtures/passkey-attestation/ca.pem", import.meta.url),
+              ).text(),
+              cert,
+            ]
+          : cert,
         idpMetadata: {
           entityID: "https://idp.example.test/entity",
           singleLogoutService: [
@@ -76,6 +88,7 @@ export async function samlLogoutFlow(ctx: ScenarioContext, complete: boolean, si
     headers: {},
   });
   expect(completed.status).toBe(302);
+  expect(completed.headers.get("location")).toBe(`${ctx.baseURL}/complete`);
   const cookie = pairs(completed);
   const authenticated = (await (
     await control({ action: "session", headers: { cookie } })
