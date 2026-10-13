@@ -32,6 +32,12 @@ pub struct TwoFactorDisabled {
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
         definition(
+            "getTOTPURI",
+            "getTOTPURI",
+            Some("/two-factor/get-totp-uri"),
+            HttpMethod::Post,
+        ),
+        definition(
             "disableTwoFactor",
             "disableTwoFactor",
             Some("/two-factor/disable"),
@@ -48,7 +54,24 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
     ]
 }
 
-pub(super) fn validate(call: &EndpointCall, allow_passwordless: bool) -> AuthResult<EndpointInput> {
+pub(super) fn validate(
+    call: &EndpointCall,
+    config: &super::TwoFactorConfig,
+) -> AuthResult<EndpointInput> {
+    let allow_passwordless = config.allow_passwordless;
+    if call.operation_id() == "getTOTPURI" {
+        return Ok(EndpointInput {
+            body: Some(validate_fields(
+                call.body(),
+                "body",
+                &[JsonField::string(
+                    "password",
+                    !config.totp_allow_passwordless.unwrap_or(allow_passwordless),
+                )],
+            )?),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "disableTwoFactor" {
         return Ok(EndpointInput {
             body: Some(validate_fields(
@@ -109,6 +132,30 @@ pub(super) fn validate(call: &EndpointCall, allow_passwordless: bool) -> AuthRes
 }
 
 impl TwoFactorPlugin {
+    /// Recover the signed-in owner's authenticator URI using configured password policy.
+    #[must_use]
+    pub fn get_totp_uri_endpoint(
+        input: super::GetTotpUriInput,
+    ) -> ServerEndpoint<super::TotpUriOutput> {
+        let body = input
+            .password
+            .map(|password| ("password".into(), JsValue::String(password)))
+            .into_iter()
+            .collect();
+        ServerEndpoint::new("two-factor", "getTOTPURI").with_body_value(JsValue::Object(body))
+    }
+
+    async fn uri_endpoint(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<EndpointResponse> {
+        let (user, _) = crate::helpers::ordinary_session(call, ctx).await?;
+        EndpointResponse::json(
+            &super::get_totp_uri_core(&call.body_as()?, &user, &self.config, ctx).await?,
+        )
+    }
+
     /// Disable the persistent session owner's factor and rotate that session.
     #[must_use]
     pub fn disable_two_factor_endpoint(
@@ -209,7 +256,9 @@ impl TwoFactorPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
-        if call.operation_id() == "disableTwoFactor" {
+        if call.operation_id() == "getTOTPURI" {
+            self.uri_endpoint(call, ctx).await
+        } else if call.operation_id() == "disableTwoFactor" {
             self.disable_endpoint(call, ctx).await
         } else if call.operation_id() == "enableTwoFactor" {
             self.enable_endpoint(call, ctx).await

@@ -106,6 +106,42 @@ async fn two_factor_input_and_enrollment_matrix<B: Backend>(db: Db) -> TestResul
         .await?;
     let mut trace = Trace::default();
     let owner = cookies(&signup(&auth, "matrix@example.test").await);
+    let before_uri = db
+        .tables(&[
+            "users",
+            "accounts",
+            "sessions",
+            "two_factor",
+            "verifications",
+        ])
+        .await?;
+    let missing_uri = Box::pin(auth.dispatch_endpoint(
+        TwoFactorPlugin::get_totp_uri_endpoint(alibi::plugins::two_factor::GetTotpUriInput {
+            password: Some(PASSWORD.into()),
+        }),
+        alibi::endpoint::EndpointOptions {
+            headers: Some([("cookie".into(), owner.clone())].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(missing_uri.error.status_code(), 400);
+    assert_eq!(
+        missing_uri.error.error_payload().1.as_deref(),
+        Some("TOTP_NOT_ENABLED")
+    );
+    assert_eq!(
+        db.tables(&[
+            "users",
+            "accounts",
+            "sessions",
+            "two_factor",
+            "verifications"
+        ])
+        .await?,
+        before_uri
+    );
     for path in [
         "/two-factor/enable",
         "/two-factor/disable",

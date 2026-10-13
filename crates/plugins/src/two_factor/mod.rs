@@ -157,9 +157,11 @@ pub struct DisableTwoFactorInput {
     pub password: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
-pub(crate) struct GetTotpUriRequest {
-    password: Option<String>,
+/// Password authority for retrieving the current user's stored authenticator URI.
+#[derive(Debug, Default, Deserialize, Serialize, Validate)]
+pub struct GetTotpUriInput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -218,10 +220,11 @@ pub enum TwoFactorEnabled {
     },
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct TotpUriResponse {
+/// An authenticator URI recovered from the caller's stored factor.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TotpUriOutput {
     #[serde(rename = "totpURI")]
-    totp_uri: String,
+    pub totp_uri: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -351,7 +354,7 @@ alibi_core::impl_auth_plugin! {
         }
         fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> { endpoint::definitions() }
 
-        fn validate_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointInput> { endpoint::validate(call, self.config.allow_passwordless) }
+        fn validate_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointInput> { endpoint::validate(call, &self.config) }
 
         async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> { self.call_endpoint(call, ctx).await }
 
@@ -473,7 +476,7 @@ impl TwoFactorPlugin {
             .config
             .totp_allow_passwordless
             .unwrap_or(self.config.allow_passwordless);
-        let body: GetTotpUriRequest = match parse_password_body(req, allow_passwordless, false) {
+        let body: GetTotpUriInput = match parse_password_body(req, allow_passwordless, false) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };

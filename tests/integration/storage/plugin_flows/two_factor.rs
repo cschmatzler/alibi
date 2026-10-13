@@ -318,16 +318,27 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         true,
         "trusted-device proofs rotate once used"
     );
-    let uri = call(
-        &auth,
-        request(
-            "/two-factor/get-totp-uri",
-            Some(json!({"password":PASSWORD})),
-            &cookies(&trusted),
-        ),
-        200,
-    )
-    .await;
+    let before_uri = db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?;
+    for (input,cookie,status,code) in [
+        (json!({}),Some(cookies(&trusted)),400,"VALIDATION_ERROR"),
+        (json!({"password":42}),Some(cookies(&trusted)),400,"VALIDATION_ERROR"),
+        (json!({"password":null}),Some(cookies(&trusted)),400,"VALIDATION_ERROR"),
+        (json!({"password":PASSWORD}),None,401,"UNAUTHORIZED"),
+        (json!({"password":"wrong-password"}),Some(cookies(&trusted)),400,"INVALID_PASSWORD"),
+    ] {
+        let error = Box::pin(auth.dispatch_endpoint(alibi::endpoint::ServerEndpoint::<Value>::new("two-factor","getTOTPURI").with_body(&input)?,EndpointOptions {headers:cookie.map(|cookie|[("cookie".into(),cookie)].into_iter().collect()),..Default::default()})).await.unwrap_err();
+        assert_eq!(error.error.status_code(),status);
+        assert_eq!(error.error.error_payload().1.as_deref(),Some(code));
+        assert_eq!(db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?,before_uri);
+    }
+    let uri = Box::pin(auth.dispatch_endpoint(
+        TwoFactorPlugin::get_totp_uri_endpoint(alibi::plugins::two_factor::GetTotpUriInput{password:Some(PASSWORD.into())})
+            .with_body(&json!({"password":PASSWORD,"userId":"untrusted-selector"}))?,
+        EndpointOptions{headers:Some([("cookie".into(),cookies(&trusted))].into_iter().collect()),..Default::default()}
+    )).await?;
+    assert!(!uri.decode()?.totp_uri.is_empty());
+    let uri = uri.into_response()?;
+    assert_eq!(db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?,before_uri);
     let recovered = totp_rs::Totp::from_url(body(&uri)["totpURI"].as_str().unwrap())?;
     assert!(
         recovered
