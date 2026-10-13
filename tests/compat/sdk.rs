@@ -590,6 +590,7 @@ mod tests {
         plugins_magic_link_client_compat => "plugins/magic-link",
         plugins_multi_session_client_compat => "plugins/multi-session",
         plugins_oauth_popup_client_compat => "plugins/oauth-popup",
+        plugins_oauth_provider_client_compat => "plugins/oauth-provider",
         plugins_oauth_proxy_client_compat => "plugins/oauth-proxy",
         plugins_one_tap_client_compat => "plugins/one-tap",
         plugins_one_time_token_client_compat => "plugins/one-time-token",

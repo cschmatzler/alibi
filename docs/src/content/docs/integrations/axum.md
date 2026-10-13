@@ -1,9 +1,9 @@
 ---
 title: "Axum"
-description: "Mount the auth routes in an Axum application and protect handlers with session extractors."
+description: "Mount the auth routes in an Axum application and protect handlers with the session layer or extractors."
 ---
 
-The Axum adapter mounts every auth route as a nested router and provides two extractors, `CurrentSession` and `OptionalSession`. It needs Axum 0.8 and the `axum` feature:
+The Axum adapter mounts every auth route as a nested router, resolves sessions for your own routes with `SessionLayer`, and provides the `CurrentSession` and `OptionalSession` extractors. It needs Axum 0.8 and the `axum` feature:
 
 ```toml title="Cargo.toml"
 alibi = { version = "0.6.0", features = ["axum"] }
@@ -35,6 +35,42 @@ fn router(auth: Arc<Alibi<AppAuthSchema>>) -> Router {
 - `axum_router()` is implemented for `Arc<Alibi<S>>`. It returns a `Router<Arc<Alibi<S>>>`, so the application state is the auth instance.
 - Nest it at `AuthConfig::base_path` (`/api/auth` by default). Auth dispatch itself owns method matching, disabled paths and trailing-slash policy, so the nested router answers `405`/`404` exactly like the reference server rather than Axum's own defaults.
 - The extractors need `Arc<Alibi<S>>` in the router state.
+
+## Resolve sessions with `SessionLayer`
+
+`SessionLayer` runs get-session for each request, as Better Auth's `getSessionFromCtx` does for its own endpoints: it reads and validates the cookie cache, renews an aging session (`update_age`/`expires_in`), clears the cookies of an ended one, and appends the resulting `Set-Cookie` headers to your handler's response. Handlers read the session with `ResolvedSession`:
+
+```rust
+use crate::auth_schema::AppAuthSchema;
+use axum::{Json, Router, routing::get};
+use alibi::Alibi;
+use alibi::integrations::axum::{AxumIntegration, ResolvedSession, SessionLayer};
+use serde_json::{Value, json};
+use std::sync::Arc;
+
+async fn me(ResolvedSession(session): ResolvedSession) -> Json<Value> {
+    Json(json!({ "id": session.user.id, "expiresAt": session.session.expires_at }))
+}
+
+async fn home(session: Option<ResolvedSession>) -> String {
+    if session.is_some() { "Welcome back".into() } else { "Hi".into() }
+}
+
+fn router(auth: Arc<Alibi<AppAuthSchema>>) -> Router {
+    Router::new()
+        .route("/me", get(me))
+        .route("/", get(home))
+        .layer(SessionLayer::new(auth.clone()))
+        .nest("/api/auth", auth.clone().axum_router())
+        .with_state(auth)
+}
+```
+
+- `ResolvedSession` wraps the `GetSessionResponse` that `/get-session` returns. Without a session it rejects with `401` (`UNAUTHORIZED`), and the layer still attaches the cookie deletions. `Option<ResolvedSession>` yields `None` instead.
+- A failed lookup counts as no session, as upstream. Extracting `ResolvedSession` on a route without the layer rejects with `500`.
+- Session cookies come before cookies your handler sets, and your handler's other headers win. The `cache-control`/`pragma` headers of `/get-session` are not forwarded.
+- `SessionLayer::new(auth).query(GetSessionQuery { disable_cookie_cache: true, .. })` bypasses the cookie cache; `disable_refresh` suppresses renewal.
+- Apply it with `route_layer` to run it only for matched routes, and keep it off the auth router, which resolves sessions itself.
 
 ## Extractors
 
@@ -69,7 +105,7 @@ async fn greeting(session: OptionalSession<AppAuthSchema>) -> String {
 }
 ```
 
-The extractors validate the session token from the request headers against the store. They do not run auth-router request hooks, so they authenticate with the **session cookie**. For API keys or other credentials, call the auth endpoints (or [`dispatch_endpoint`](/guides/server-side-calls/)) instead of relying on the extractor.
+The extractors validate the session token from the request headers against the store. They do not read the cookie cache or renew the session; use [`SessionLayer`](#resolve-sessions-with-sessionlayer) for that. They also do not run auth-router request hooks, so they authenticate with the **session cookie**. For API keys or other credentials, call the auth endpoints (or [`dispatch_endpoint`](/guides/server-side-calls/)) instead of relying on the extractor.
 
 ### Authorization on top of authentication
 
