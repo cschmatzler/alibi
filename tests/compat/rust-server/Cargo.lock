@@ -165,6 +165,7 @@ dependencies = [
  "cookie",
  "der-parser",
  "ed25519-dalek 3.0.0",
+ "flate2",
  "futures-util",
  "hickory-resolver",
  "hkdf 0.13.0",

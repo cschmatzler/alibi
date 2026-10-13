@@ -88,9 +88,15 @@ impl SsoPlugin {
             return Err(api(401, "Provider domain has not been verified"));
         }
         if string("providerType") == Some("saml") || oidc.is_none() {
-            return Err(AuthError::not_implemented(
-                "SAML SSO authorization is not implemented",
-            ));
+            return self
+                .saml_sign_in(
+                    &body,
+                    &provider,
+                    saml.as_ref()
+                        .ok_or_else(|| api(400, "Invalid SSO provider"))?,
+                    ctx,
+                )
+                .await;
         }
         let config = oidc
             .as_ref()
@@ -125,39 +131,13 @@ impl SsoPlugin {
         _ = payload
             .additional_data
             .insert("oauthState".into(), json!(state));
-        let cookie = match ctx.config.account.store_state_strategy {
-            OAuthStateStrategy::Database => {
-                _ = ctx
-                    .verifications()
-                    .create(alibi_core::CreateVerification {
-                        identifier: crate::oauth::state::state_verification_identifier(&state),
-                        value: serde_json::to_string(&payload)?,
-                        expires_at: chrono::Utc::now() + chrono::Duration::minutes(10),
-                    })
-                    .await?
-                    .ok_or_else(|| api(500, "Unable to create verification"))?;
-                alibi_core::utils::cookie_utils::create_cookie(
-                    &crate::oauth::state::state_cookie_name(&ctx.config),
-                    &alibi_core::utils::cookie_utils::sign_cookie_value(
-                        &state,
-                        ctx.config.current_secret(),
-                    ),
-                    300,
-                    &ctx.config,
-                )?
-            }
-            OAuthStateStrategy::Cookie => alibi_core::utils::cookie_utils::create_cookie(
-                &crate::oauth::state::state_cookie_name(&ctx.config),
-                &crate::oauth::state::create_cookie_state_value(&ctx.config, &payload)?,
-                600,
-                &ctx.config,
-            )?,
-            OAuthStateStrategy::Automatic => {
-                return Err(AuthError::config(
-                    "OAuth state strategy has not been initialized",
-                ));
-            }
-        };
+        let cookie = issue_state(
+            &payload,
+            &state,
+            &crate::oauth::state::state_cookie_name(&ctx.config),
+            ctx,
+        )
+        .await?;
         let base = format!(
             "{}{}",
             ctx.config.base_url.trim_end_matches('/'),
@@ -215,7 +195,7 @@ impl SsoPlugin {
         )
     }
 }
-fn random(length: usize) -> String {
+pub(super) fn random(length: usize) -> String {
     const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
     use rand::RngExt as _;
     let mut rng = rand::rng();
@@ -245,6 +225,34 @@ pub(super) fn provider_reference(
             _ = object.remove("clientSecret");
         }
         _ = configuration.insert("oidcConfig".into(), config);
+    }
+    if let Some(raw) = provider.saml_config.as_deref() {
+        let mut config: Value = serde_json::from_str(raw)?;
+        if let Some(object) = config.as_object_mut() {
+            _ = object.remove("privateKey");
+            let idp = object.entry("idpMetadata").or_insert_with(|| json!({}));
+            if let Some(metadata) = idp.as_object_mut() {
+                for key in [
+                    "privateKey",
+                    "privateKeyPass",
+                    "encPrivateKey",
+                    "encPrivateKeyPass",
+                ] {
+                    _ = metadata.remove(key);
+                }
+            }
+            if let Some(metadata) = object.get_mut("spMetadata").and_then(Value::as_object_mut) {
+                for key in [
+                    "privateKey",
+                    "privateKeyPass",
+                    "encPrivateKey",
+                    "encPrivateKeyPass",
+                ] {
+                    _ = metadata.remove(key);
+                }
+            }
+        }
+        _ = configuration.insert("samlConfig".into(), config);
     }
     let fingerprint = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
         sha2::Sha256::digest(canonical(&Value::Object(configuration))?.into_bytes()),
@@ -316,5 +324,44 @@ fn canonical(value: &Value) -> AuthResult<String> {
                 .join(",")
         )),
         _ => serde_json::to_string(value).map_err(Into::into),
+    }
+}
+
+pub(super) async fn issue_state<S: AuthSchema>(
+    payload: &crate::oauth::state::OAuthStatePayload,
+    state: &str,
+    cookie_name: &str,
+    ctx: &AuthContext<S>,
+) -> AuthResult<String> {
+    match ctx.config.account.store_state_strategy {
+        OAuthStateStrategy::Database => {
+            _ = ctx
+                .verifications()
+                .create(alibi_core::CreateVerification {
+                    identifier: crate::oauth::state::state_verification_identifier(state),
+                    value: serde_json::to_string(payload)?,
+                    expires_at: chrono::Utc::now() + chrono::Duration::minutes(10),
+                })
+                .await?
+                .ok_or_else(|| api(500, "Unable to create verification"))?;
+            alibi_core::utils::cookie_utils::create_cookie(
+                cookie_name,
+                &alibi_core::utils::cookie_utils::sign_cookie_value(
+                    state,
+                    ctx.config.current_secret(),
+                ),
+                300,
+                &ctx.config,
+            )
+        }
+        OAuthStateStrategy::Cookie => alibi_core::utils::cookie_utils::create_cookie(
+            cookie_name,
+            &crate::oauth::state::create_cookie_state_value(&ctx.config, payload)?,
+            600,
+            &ctx.config,
+        ),
+        OAuthStateStrategy::Automatic => Err(AuthError::config(
+            "OAuth state strategy has not been initialized",
+        )),
     }
 }
