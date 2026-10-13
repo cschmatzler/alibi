@@ -147,6 +147,13 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             }),
       });
     }
+    if (input.action === "consent-delete") {
+      return auth.api.deleteOAuthConsent({
+        body: input.body,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
     if (input.action === "consent-update") {
       return auth.api.updateOAuthConsent({
         body: input.body,
