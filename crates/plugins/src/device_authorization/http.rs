@@ -161,6 +161,16 @@ impl DeviceAuthorizationPlugin {
             Ok(value) => value,
             Err(response) => return Ok(response),
         };
+        self.decision_core(req, ctx, decision, body).await
+    }
+
+    pub(super) async fn decision_core(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
+        decision: DeviceDecision,
+        body: DeviceActionRequest,
+    ) -> AuthResult<AuthResponse> {
         let user = match ctx.require_cached_session(req).await {
             Ok((user, _session)) => user,
             Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {

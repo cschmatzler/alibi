@@ -1,5 +1,5 @@
 //! Public device issuance without manufacturing an HTTP request.
-pub use super::types::{DeviceCodeRequest, DeviceCodeResponse};
+pub use super::types::{DeviceActionResponse, DeviceCodeRequest, DeviceCodeResponse};
 use super::{DeviceAuthorizationPlugin, DeviceRequestKind, no_store, validate_device_json_body};
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
@@ -21,12 +21,33 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             Some("/device"),
             HttpMethod::Get,
         ),
+        crate::endpoint::definition(
+            "deviceApprove",
+            "deviceApprove",
+            Some("/device/approve"),
+            HttpMethod::Post,
+        ),
     ]
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+    let body = if call.operation_id() == "deviceApprove" {
+        let body = crate::endpoint::validate_fields(
+            call.body(),
+            "body",
+            &[crate::authentication_helpers::JsonField::string(
+                "userCode", true,
+            )],
+        )?;
+        if call.headers().is_none() {
+            return Err(crate::endpoint::validation("Headers is required"));
+        }
+        Some(body)
+    } else {
+        call.body().cloned()
+    };
     Ok(EndpointInput {
-        body: call.body().cloned(),
+        body,
         query: if call.operation_id() == "deviceVerify" {
             Some(crate::endpoint::validate_fields(
                 call.query(),
@@ -43,6 +64,31 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
 }
 
 impl DeviceAuthorizationPlugin {
+    /// Approve a pending device grant previously claimed by the caller's session.
+    #[must_use]
+    pub fn device_approve_endpoint(
+        user_code: impl Into<String>,
+    ) -> ServerEndpoint<DeviceActionResponse> {
+        ServerEndpoint::new("device-authorization", "deviceApprove").with_body_value(
+            JsValue::Object(
+                [("userCode".into(), JsValue::String(user_code.into()))]
+                    .into_iter()
+                    .collect(),
+            ),
+        )
+    }
+
+    pub(super) async fn approve_endpoint<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        endpoint_response(
+            self.decision_core(call, ctx, super::DeviceDecision::Approve, call.body_as()?)
+                .await?,
+        )
+    }
+
     /// Look up a device code and claim a pending proof under the caller's session.
     #[must_use]
     pub fn device_verify_endpoint(
