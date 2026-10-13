@@ -111,6 +111,40 @@ async fn account_endpoints_validate_selection_authentication_and_refresh<B: Back
         Some("provider-refresh")
     );
 
+    let current = body(&call(&auth, request("/get-session", None, &session), 200).await);
+    let user_id = current["user"]["id"].as_str().unwrap();
+    let started = chrono::Utc::now();
+    let refreshed = OAuthAccountApi::refresh_token(
+        user_id,
+        OAuthAccountSelection::Id(id.clone()),
+        auth.context(),
+    )
+    .await?;
+    let finished = chrono::Utc::now();
+    assert_eq!(refreshed.access_token.as_deref(), Some("rotated-access"));
+    assert_eq!(refreshed.refresh_token.as_deref(), Some("provider-refresh"));
+    assert_eq!(refreshed.id_token.as_deref(), Some("provider-id-token"));
+    assert_eq!(refreshed.scopes, ["openid", "email", "profile"]);
+    let expires_at = refreshed.access_token_expires_at.unwrap();
+    assert!(expires_at >= started + chrono::Duration::seconds(3600));
+    assert!(expires_at <= finished + chrono::Duration::seconds(3600));
+    let current = OAuthAccountApi::get_access_token(
+        user_id,
+        OAuthAccountSelection::Id(id.clone()),
+        auth.context(),
+    )
+    .await?;
+    assert_eq!(current.access_token.as_deref(), Some("rotated-access"));
+    assert_eq!(current.refresh_token, None);
+    assert_eq!(current.id_token.as_deref(), Some("provider-id-token"));
+    assert_eq!(current.scopes, refreshed.scopes);
+    assert_eq!(
+        current
+            .access_token_expires_at
+            .map(|at| at.timestamp_millis()),
+        Some(expires_at.timestamp_millis())
+    );
+
     for selection in [
         OAuthAccountSelection::Id(id.clone()),
         OAuthAccountSelection::Cookie,

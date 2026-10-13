@@ -219,16 +219,20 @@ impl OAuthPlugin {
                 cookies,
             )
         } else if call.operation_id() == "refreshToken" {
-            Box::pin(super::account::refresh_token_for_selection(
+            let (tokens, account, cookies) = Box::pin(super::account::refresh_token_for_selection(
                 &self.config,
                 call,
                 ctx,
                 &user_id,
                 selection,
             ))
-            .await?
+            .await?;
+            (
+                super::account::refresh_token_body(&self.config, &tokens, &account)?,
+                cookies,
+            )
         } else {
-            let (value, cookies) = super::account::get_access_token_for_selection(
+            let (tokens, cookies) = super::account::get_access_token_for_selection(
                 &self.config,
                 call,
                 ctx,
@@ -237,7 +241,7 @@ impl OAuthPlugin {
             )
             .await?;
             (
-                serde_json::to_value(value)
+                serde_json::to_value(OAuthAccessToken::from(tokens))
                     .map_err(|error| AuthError::internal(error.to_string()))?,
                 cookies,
             )

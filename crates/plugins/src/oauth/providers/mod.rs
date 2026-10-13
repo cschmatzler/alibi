@@ -88,6 +88,8 @@ pub struct OAuthConfig {
     pub providers: HashMap<String, OAuthProvider>,
 }
 
+/// A provider grant, and the typed result of [`OAuthAccountApi`](crate::oauth::OAuthAccountApi)'s
+/// token operations.
 #[derive(Debug, Clone, Default)]
 pub struct OAuthTokenSet {
     pub token_type: Option<String>,
