@@ -211,6 +211,32 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         }),
       });
     }
+    if (input.action === "userinfo") {
+      return auth.api.oauth2UserInfo({
+        body: input.body,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+        ...(input.attachRequest === false
+          ? {}
+          : {
+              request: new Request(
+                `${base.baseURL}${base.basePath ?? "/api/auth"}/oauth2/userinfo`,
+                {
+                  method: input.method ?? "GET",
+                  headers: {
+                    ...input.headers,
+                    ...(input.method === "POST"
+                      ? { "content-type": "application/x-www-form-urlencoded" }
+                      : {}),
+                  },
+                  ...(input.method === "POST"
+                    ? { body: new URLSearchParams(input.body ?? {}) }
+                    : {}),
+                },
+              ),
+            }),
+      });
+    }
     if (input.action === "token") {
       return auth.api.oauth2Token({
         body: input.body,

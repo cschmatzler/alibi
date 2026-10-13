@@ -85,10 +85,15 @@ impl OAuthProviderPlugin {
         };
         let hash = URL_SAFE_NO_PAD.encode(Sha256::digest(token));
         for kind in kinds {
-            let Some(row) = ctx.database.get_oauth_token(*kind, &hash).await? else {
+            let refresh = matches!(kind, OAuthTokenKind::Refresh);
+            let row = if refresh {
+                ctx.database.get_oauth_token(*kind, &hash).await?
+            } else {
+                super::userinfo::live_access(token, ctx).await?
+            };
+            let Some(row) = row else {
                 continue;
             };
-            let refresh = matches!(kind, OAuthTokenKind::Refresh);
             if row.expires_at < chrono::Utc::now()
                 || row.metadata.get("revoked").is_some_and(|v| !v.is_null())
             {
