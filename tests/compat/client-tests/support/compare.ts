@@ -21,6 +21,7 @@ import {
 } from "./managed-account-cookie";
 import { normalizeClientValue } from "./normalize";
 import { remoteJwtDefaultCopy, remoteJwtDefaultPublication } from "./remote-jwt-publication";
+import { samlLogoutProjection } from "./saml-redirect";
 import type { RequestWindow } from "./trace";
 import { samePublication, verificationPublicationPairs } from "./verification-publication";
 
@@ -5103,6 +5104,14 @@ export function compareValues(
         /^[A-Za-z0-9]{32}$/.test(b)
       ) {
         identity(a, b, path, "token");
+        return;
+      }
+      if (urlQueryContext === "query" && key === "SAMLRequest") {
+        try {
+          visit(samlLogoutProjection(a), samlLogoutProjection(b), `${path}.logout`, "");
+        } catch {
+          fail(path, "invalid published SAML logout request");
+        }
         return;
       }
       const opaqueKey =

@@ -1,4 +1,5 @@
 //! A real IdP signature redeems issued SAML state and creates a usable session.
+use super::saml_idp as idp;
 use super::*;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::SsoPlugin;
@@ -6,8 +7,6 @@ use alibi::{
     AuthAccount, AuthVerification,
     store::{AccountStore, VerificationStore},
 };
-#[path = "../../../support/sso_saml_grant.rs"]
-mod idp;
 backend_tests!(sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay);
 async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B: Backend>(
     db: Db,

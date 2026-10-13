@@ -1,12 +1,11 @@
 //! Logout starts from a real SAML login and retires its actual local session.
+use super::saml_idp as idp;
 use super::*;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{SsoConfig, SsoPlugin};
 use alibi::{AuthVerification, store::VerificationStore};
 use base64::Engine as _;
 use std::io::Read as _;
-#[path = "../../../support/sso_saml_grant.rs"]
-mod idp;
 backend_tests!(sso_logout_uses_acs_session_index_and_retires_session);
 async fn sso_logout_uses_acs_session_index_and_retires_session<B: Backend>(db: Db) -> TestResult {
     let (connection, store) = db.migrated::<B>(SECRET).await?;
@@ -100,7 +99,7 @@ async fn sso_logout_uses_acs_session_index_and_retires_session<B: Backend>(db: D
         .query_pairs()
         .into_owned()
         .collect::<std::collections::HashMap<_, _>>();
-    assert_eq!(query["RelayState"], format!("{ORIGIN}/logged-out"));
+    assert!(!query.contains_key("RelayState"));
     let bytes = base64::engine::general_purpose::STANDARD.decode(&query["SAMLRequest"])?;
     let mut xml = String::new();
     _ = flate2::read::DeflateDecoder::new(bytes.as_slice()).read_to_string(&mut xml)?;
@@ -131,6 +130,13 @@ async fn sso_logout_uses_acs_session_index_and_retires_session<B: Backend>(db: D
         Some("https://sp.example.test/entity")
     );
     let id = doc.get_attribute(root, "ID").unwrap();
+    _ = uuid::Uuid::parse_str(id.strip_prefix('_').unwrap())?;
+    let issue =
+        chrono::DateTime::parse_from_rfc3339(doc.get_attribute(root, "IssueInstant").unwrap())?;
+    assert!(
+        issue.timestamp_millis() >= before.timestamp_millis()
+            && issue.timestamp_millis() <= after.timestamp_millis()
+    );
     let proof = store
         .get_latest_verification_by_identifier(&format!("saml-logout-request:{id}"))
         .await?

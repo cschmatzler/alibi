@@ -107,7 +107,7 @@ compatScenario(
     const url = new URL(output.headers.get("location")!);
     expect(url.origin).toBe("https://idp.example.test");
     expect(url.pathname).toBe("/logout");
-    expect(url.searchParams.get("RelayState")).toBe(`${ctx.baseURL}/logged-out`);
+    expect(url.searchParams.has("RelayState")).toBe(false);
     const xml = inflateRawSync(
       Buffer.from(url.searchParams.get("SAMLRequest")!, "base64"),
     ).toString();
@@ -119,6 +119,9 @@ compatScenario(
     }).parse(xml).LogoutRequest;
     expect(request["@_Destination"]).toBe("https://idp.example.test/logout");
     expect(request["@_Version"]).toBe("2.0");
+    expect(request["@_ID"]).toMatch(/^_[0-9a-f-]{36}$/);
+    expect(Date.parse(request["@_IssueInstant"])).toBeGreaterThanOrEqual(before);
+    expect(Date.parse(request["@_IssueInstant"])).toBeLessThanOrEqual(after);
     expect(request.Issuer).toBe("https://sp.example.test/entity");
     expect(request.NameID["#text"]).toBe(email);
     expect(request.SessionIndex).toBe("session-index");

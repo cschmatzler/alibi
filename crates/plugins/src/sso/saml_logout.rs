@@ -22,7 +22,7 @@ impl SsoPlugin {
     pub(super) async fn initiate_logout<S: AuthSchema>(
         &self,
         provider_id: &str,
-        body: &JsValue,
+        _body: &JsValue,
         request: &impl SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
@@ -156,21 +156,10 @@ impl SsoPlugin {
                 .finish()
                 .map_err(|error| AuthError::internal(error.to_string()))?,
         );
-        let default_callback = format!(
-            "{}{}",
-            ctx.config.base_url.trim_end_matches('/'),
-            ctx.config.base_path.trim_end_matches('/')
-        );
-        let callback = body
-            .get("callbackURL")
-            .and_then(JsValue::as_str)
-            .filter(|url| !url.is_empty())
-            .unwrap_or(&default_callback);
+        // The pinned TS plugin puts callbackURL in the user argument, which samlify ignores.
         let query = {
             let mut query = url::form_urlencoded::Serializer::new(String::new());
-            _ = query
-                .append_pair("SAMLRequest", &encoded)
-                .append_pair("RelayState", callback);
+            _ = query.append_pair("SAMLRequest", &encoded);
             query.finish()
         };
         let separator = if url::Url::parse(destination)
