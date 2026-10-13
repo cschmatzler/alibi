@@ -118,6 +118,35 @@ async fn tap<S: AuthSchema>(auth: &Alibi<S>, claims: Value, cookie: &str) -> Aut
     .unwrap()
 }
 
+async fn server_tap<S: AuthSchema>(
+    auth: &Alibi<S>,
+    claims: Value,
+    cookie: Option<&str>,
+) -> (AuthResponse, alibi::plugins::one_tap::OneTapAuthenticated) {
+    let output = Box::pin(
+        auth.dispatch_endpoint(
+            OneTapPlugin::one_tap_callback_endpoint(
+                &alibi::plugins::one_tap::OneTapCallbackInput {
+                    id_token: token(claims),
+                    callback_url: Some("https://outside.example/welcome".into()),
+                },
+            )
+            .unwrap(),
+            alibi::endpoint::EndpointOptions {
+                headers: cookie.map(|cookie| {
+                    [("cookie".to_owned(), cookie.to_owned())]
+                        .into_iter()
+                        .collect()
+                }),
+                ..Default::default()
+            },
+        ),
+    )
+    .await
+    .unwrap();
+    let decoded = output.decode().unwrap();
+    (output.into_response().unwrap(), decoded)
+}
 async fn one_tap_token_admission_matrix<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let tap_remote = Tap::start().await;
@@ -895,18 +924,45 @@ async fn one_tap_returning_profile_and_browser_ownership<B: Backend>(db: Db) -> 
     )
     .build()
     .await?;
-    let first = tap(
+    let before_invalid = db.tables(&["users", "accounts", "sessions"]).await?;
+    let error = Box::pin(
+        auth.dispatch_endpoint(
+            alibi::endpoint::ServerEndpoint::<Value>::new("one-tap", "oneTapCallback")
+                .with_body(&json!({"idToken":42}))?,
+            alibi::endpoint::EndpointOptions::default(),
+        ),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.error.status_code(), 400);
+    assert_eq!(
+        error.error.error_payload().1.as_deref(),
+        Some("VALIDATION_ERROR")
+    );
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions"]).await?,
+        before_invalid
+    );
+    let (first, first_value) = server_tap(
         &auth,
         json!({"name":"Original Google Owner","picture":"https://images.example/original"}),
-        "",
+        None,
     )
     .await;
     assert_eq!(first.status, 200);
+    assert_eq!(
+        first_value.user.name.as_deref(),
+        Some("Original Google Owner")
+    );
+    assert_eq!(
+        first_value.user.image.as_deref(),
+        Some("https://images.example/original")
+    );
     let original = body(&first)["user"].clone();
     let foreign = signup(&auth, "foreign@example.test").await;
     let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
     let before = db.tables(&["users", "accounts", "sessions"]).await?;
-    let returned=tap(&auth,json!({"email":"changed@example.test","name":"Provider Replacement","picture":"https://images.example/changed"}),&cookies(&foreign)).await;
+    let (returned, returned_value)=server_tap(&auth,json!({"email":"changed@example.test","name":"Provider Replacement","picture":"https://images.example/changed"}),Some(&cookies(&foreign))).await;
     assert_eq!(returned.status, 200);
     assert_eq!(body(&returned)["user"], original);
     assert_ne!(body(&returned)["user"]["id"], foreign_id);
@@ -919,7 +975,7 @@ async fn one_tap_returning_profile_and_browser_ownership<B: Backend>(db: Db) -> 
         .await,
     );
     assert_eq!(current["user"], original);
-    assert_eq!(current["session"]["token"], body(&returned)["token"]);
+    assert_eq!(current["session"]["token"], returned_value.token);
     assert_eq!(db.table("users").await?, before[0]);
     assert_eq!(
         db.count_where(
