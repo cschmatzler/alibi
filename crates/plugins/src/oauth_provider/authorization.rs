@@ -286,9 +286,33 @@ impl OAuthProviderPlugin {
         let force_login =
             session.is_none() || prompts.contains(&"login") || prompts.contains(&"create");
         _ = query.insert("scope".into(), json!(scope));
+        let remembered = if !force_login
+            && !prompts.contains(&"consent")
+            && client.metadata.get("skip_consent") != Some(&json!(true))
+            && let Some((user, _)) = &session
+        {
+            ctx.database
+                .list_oauth_consents_by_user(user.id().as_ref())
+                .await?
+                .into_iter()
+                .any(|consent| {
+                    consent.client_id == client_id
+                        && scope.split(' ').all(|scope| {
+                            consent
+                                .metadata
+                                .get("scopes")
+                                .and_then(Value::as_array)
+                                .is_some_and(|scopes| {
+                                    scopes.iter().any(|value| value.as_str() == Some(scope))
+                                })
+                        })
+                })
+        } else {
+            false
+        };
         if !force_login
             && !prompts.contains(&"consent")
-            && client.metadata.get("skip_consent") == Some(&json!(true))
+            && (client.metadata.get("skip_consent") == Some(&json!(true)) || remembered)
             && let Some((user, session)) = &session
         {
             let code = rand::RngExt::sample_iter(rand::rng(), rand::distr::Alphanumeric)

@@ -147,6 +147,42 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             }),
       });
     }
+    if (input.action === "consent-row") {
+      const context = await auth.$context;
+      const rows = await context.adapter.findMany({
+        model: "oauthConsent",
+        where: [{ field: "clientId", value: input.clientId }],
+      });
+      return new Response(JSON.stringify(rows), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "consent") {
+      try {
+        return await auth.api.oauth2Consent({
+          body: input.body,
+          headers: new Headers(input.headers ?? {}),
+          asResponse: true,
+          ...(input.attachRequest === false
+            ? {}
+            : {
+                request: new Request(
+                  `${base.baseURL}${base.basePath ?? "/api/auth"}/oauth2/consent`,
+                  { method: "POST", headers: input.headers },
+                ),
+              }),
+        });
+      } catch (error) {
+        const failure = error as { statusCode?: number; body?: unknown };
+        if (!failure.statusCode) {
+          throw error;
+        }
+        return new Response(failure.body ? JSON.stringify(failure.body) : null, {
+          status: failure.statusCode,
+          headers: { "content-type": "application/json" },
+        });
+      }
+    }
     if (input.action === "prelogin") {
       try {
         return await auth.api.getOAuthClientPublicPrelogin({ body: input.body, asResponse: true });
