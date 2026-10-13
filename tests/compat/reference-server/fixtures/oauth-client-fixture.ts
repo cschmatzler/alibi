@@ -149,15 +149,25 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         asResponse: true,
       });
     }
-    if (input.action === "logout-http") {
+    if (input.action === "logout-http" || input.action === "protocol-http") {
       const headers = new Headers(input.headers ?? {});
       headers.set("origin", base.baseURL!);
-      headers.set("content-type", "application/x-www-form-urlencoded");
+      headers.set(
+        "content-type",
+        input.contentType ?? "application/x-www-form-urlencoded; charset=UTF-8",
+      );
       return auth.handler(
         new Request(`${base.baseURL}${base.basePath ?? "/api/auth"}${input.path}`, {
           method: input.method,
           headers,
-          ...(input.method === "POST" ? { body: new URLSearchParams(input.body) } : {}),
+          ...(input.method === "POST"
+            ? {
+                body:
+                  input.contentType === "application/json"
+                    ? JSON.stringify(input.body)
+                    : new URLSearchParams(input.body),
+              }
+            : {}),
         }),
       );
     }

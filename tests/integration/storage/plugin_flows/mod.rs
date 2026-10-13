@@ -415,3 +415,5 @@ mod oauth_session_retirement;
 mod oauth_refresh_grant;
 
 mod oauth_client_credentials;
+
+mod oauth_protocol_forms;
