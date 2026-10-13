@@ -298,6 +298,10 @@ enum FieldKind {
     Jwks,
     Grants,
     Responses,
+    Scopes,
+    Subject,
+    Expiration,
+    Record,
 }
 const FIELDS: &[(&str, FieldKind)] = &[
     ("redirect_uris", FieldKind::Uris),
@@ -346,7 +350,7 @@ fn validate_metadata(
         validate_field(*kind, value, &path, &mut issues);
         let normalized = match (kind, value) {
             (FieldKind::Method, JsValue::String(value)) => JsValue::String(value.trim().into()),
-            (FieldKind::Grants, JsValue::Array(values)) => JsValue::Array(
+            (FieldKind::Grants | FieldKind::Scopes, JsValue::Array(values)) => JsValue::Array(
                 values
                     .iter()
                     .map(|value| {
@@ -407,7 +411,11 @@ fn validate_field(kind: FieldKind, value: &JsValue, path: &str, issues: &mut Vec
                 add("Invalid option: expected one of \"web\"|\"native\"".into());
             }
         }
-        FieldKind::Uris | FieldKind::Contacts | FieldKind::Grants | FieldKind::Responses => {
+        FieldKind::Uris
+        | FieldKind::Contacts
+        | FieldKind::Grants
+        | FieldKind::Responses
+        | FieldKind::Scopes => {
             let JsValue::Array(values) = value else {
                 add(format!(
                     "Invalid input: expected array, received {}",
@@ -415,7 +423,7 @@ fn validate_field(kind: FieldKind, value: &JsValue, path: &str, issues: &mut Vec
                 ));
                 return;
             };
-            if values.is_empty() && !matches!(kind, FieldKind::Responses) {
+            if values.is_empty() && !matches!(kind, FieldKind::Responses | FieldKind::Scopes) {
                 add("Too small: expected array to have >=1 items".into());
             }
             for (index, value) in values.iter().enumerate() {
@@ -434,7 +442,8 @@ fn validate_field(kind: FieldKind, value: &JsValue, path: &str, issues: &mut Vec
                 }
                 if let Some(text) = value.as_str() {
                     if matches!(kind, FieldKind::Contacts) && text.is_empty()
-                        || matches!(kind, FieldKind::Grants) && text.trim().is_empty()
+                        || matches!(kind, FieldKind::Grants | FieldKind::Scopes)
+                            && text.trim().is_empty()
                     {
                         issues.push(format!(
                             "[{item_path}] Too small: expected string to have >=1 characters"
@@ -446,6 +455,24 @@ fn validate_field(kind: FieldKind, value: &JsValue, path: &str, issues: &mut Vec
                         }
                     }
                 }
+            }
+        }
+        FieldKind::Subject => {
+            if ![Some("public"), Some("pairwise")].contains(&value.as_str()) {
+                add("Invalid option: expected one of \"public\"|\"pairwise\"".into());
+            }
+        }
+        FieldKind::Expiration => {
+            if !matches!(value, JsValue::String(_) | JsValue::Number(_)) {
+                add("Invalid input".into());
+            }
+        }
+        FieldKind::Record => {
+            if value.as_object().is_none() {
+                add(format!(
+                    "Invalid input: expected record, received {}",
+                    json_type(Some(value))
+                ));
             }
         }
         FieldKind::Jwks => {
@@ -610,6 +637,7 @@ fn client_read_metadata(client: alibi_core::store::OAuthClient) -> AuthResult<Va
         _ = output.insert("client_secret_expires_at".into(), json!(0));
     }
     _ = output.remove("client_secret");
+    _ = output.remove("client_credentials_scopes");
     Ok(Value::Object(output))
 }
 impl OAuthProviderPlugin {
@@ -1275,3 +1303,194 @@ fn registration_metadata(
     }
     Ok(Ok(metadata))
 }
+
+pub(super) fn validate_admin_create(body: Option<&JsValue>) -> AuthResult<JsValue> {
+    let mut fields = Vec::new();
+    for &(name, kind) in FIELDS {
+        if name == "dpop_bound_access_tokens" {
+            continue;
+        }
+        if name == "response_types" {
+            fields.push(("client_credentials_scopes", FieldKind::Scopes));
+        }
+        fields.push((name, kind));
+    }
+    fields.extend([
+        ("client_secret_expires_at", FieldKind::Expiration),
+        ("skip_consent", FieldKind::Boolean),
+        ("enable_end_session", FieldKind::Boolean),
+        ("require_pkce", FieldKind::Boolean),
+        ("dpop_bound_access_tokens", FieldKind::Boolean),
+        ("subject_type", FieldKind::Subject),
+        ("metadata", FieldKind::Record),
+    ]);
+    validate_metadata(body, "body", &fields)
+}
+impl OAuthProviderPlugin {
+    /// Create a managed client with operator fields through the trusted server API.
+    pub fn admin_create_oauth_client_endpoint(
+        input: &impl Serialize,
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("oauth-provider", "adminCreateOAuthClient").with_body(input)
+    }
+    pub(super) async fn admin_create_client<S: AuthSchema>(
+        &self,
+        mut metadata: serde_json::Map<String, Value>,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        req.queue_response_header("Cache-Control", "no-store");
+        req.queue_response_header("Pragma", "no-cache");
+        let Some((user, _)) = Box::pin(ctx.require_cached_session(req)).await.ok() else {
+            return Ok(EndpointResponse::error(AuthError::Api {
+                status: 401,
+                code: None,
+                message: String::new(),
+            })
+            .without_error_body()
+            .with_header("Content-Type", "application/json"));
+        };
+        let scopes = metadata
+            .remove("client_credentials_scopes")
+            .and_then(|value| value.as_array().cloned())
+            .unwrap_or_default();
+        if !scopes.is_empty() {
+            if !metadata
+                .get("grant_types")
+                .and_then(Value::as_array)
+                .is_some_and(|grants| grants.contains(&json!("client_credentials")))
+            {
+                return status_protocol_error(
+                    400,
+                    "invalid_client_metadata",
+                    "client_credentials_scopes requires the client_credentials grant",
+                );
+            }
+            if metadata
+                .get("token_endpoint_auth_method")
+                .and_then(Value::as_str)
+                == Some("none")
+            {
+                return status_protocol_error(
+                    400,
+                    "invalid_client_metadata",
+                    "public clients cannot be assigned client_credentials scopes",
+                );
+            }
+            let invalid = scopes
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|scope| {
+                    !self.config.scopes.iter().any(|allowed| allowed == scope)
+                        || ["openid", "profile", "email", "offline_access"].contains(scope)
+                })
+                .collect::<Vec<_>>();
+            if !invalid.is_empty() {
+                return status_protocol_error(
+                    400,
+                    "invalid_scope",
+                    &format!(
+                        "The following client_credentials scopes are invalid: {}",
+                        invalid.join(", ")
+                    ),
+                );
+            }
+            return Ok(EndpointResponse::error(AuthError::Api {
+                status: 401,
+                code: None,
+                message: String::new(),
+            })
+            .without_error_body()
+            .with_header("Content-Type", "application/json"));
+        }
+        _ = metadata.remove("client_secret_expires_at");
+        let extensions = metadata
+            .remove("metadata")
+            .and_then(|value| value.as_object().cloned())
+            .unwrap_or_default();
+        let mut metadata = match self.admit_metadata(metadata, ctx)? {
+            Ok(metadata) => metadata,
+            Err(response) => return Ok(response),
+        };
+        for (name, value) in extensions {
+            if !RESERVED_METADATA_FIELDS.contains(&name.as_str()) {
+                _ = metadata.insert(name, value);
+            }
+        }
+        _ = metadata.insert("client_credentials_scopes".into(), json!([]));
+        self.persist_client(metadata, Some(user.id().as_ref().to_owned()), ctx)
+            .await
+    }
+}
+
+const RESERVED_METADATA_FIELDS: &[&str] = &[
+    "clientId",
+    "clientSecret",
+    "clientDiscoveryId",
+    "disabled",
+    "scopes",
+    "clientCredentialsScopes",
+    "userId",
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "name",
+    "uri",
+    "icon",
+    "contacts",
+    "tos",
+    "policy",
+    "softwareId",
+    "softwareVersion",
+    "softwareStatement",
+    "redirectUris",
+    "postLogoutRedirectUris",
+    "backchannelLogoutUri",
+    "backchannelLogoutSessionRequired",
+    "tokenEndpointAuthMethod",
+    "grantTypes",
+    "responseTypes",
+    "applicationType",
+    "jwks",
+    "jwksUri",
+    "requirePKCE",
+    "dpopBoundAccessTokens",
+    "skipConsent",
+    "enableEndSession",
+    "subjectType",
+    "referenceId",
+    "metadata",
+    "client_id",
+    "client_secret",
+    "client_secret_expires_at",
+    "scope",
+    "user_id",
+    "client_id_issued_at",
+    "client_name",
+    "client_uri",
+    "logo_uri",
+    "tos_uri",
+    "policy_uri",
+    "jwks_uri",
+    "software_id",
+    "software_version",
+    "software_statement",
+    "redirect_uris",
+    "post_logout_redirect_uris",
+    "backchannel_logout_uri",
+    "backchannel_logout_session_required",
+    "token_endpoint_auth_method",
+    "grant_types",
+    "response_types",
+    "application_type",
+    "skip_consent",
+    "enable_end_session",
+    "require_pkce",
+    "dpop_bound_access_tokens",
+    "subject_type",
+    "reference_id",
+    "public",
+    "type",
+    "resources",
+    "client_credentials_scopes",
+];
