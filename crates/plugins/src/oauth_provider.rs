@@ -228,10 +228,17 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         vec![
             AuthRoute::post("/oauth2/create-client", "createOAuthClient"),
             AuthRoute::get("/oauth2/get-client", "getOAuthClient"),
+            AuthRoute::get("/oauth2/public-client", "getOAuthClientPublic"),
         ]
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "getOAuthClientPublic",
+                "getOAuthClientPublic",
+                Some("/oauth2/public-client"),
+                HttpMethod::Get,
+            ),
             crate::endpoint::definition(
                 "getOAuthClient",
                 "getOAuthClient",
@@ -269,7 +276,10 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             } else {
                 call.body().cloned()
             },
-            query: if call.operation_id() == "getOAuthClient" {
+            query: if matches!(
+                call.operation_id(),
+                "getOAuthClient" | "getOAuthClientPublic"
+            ) {
                 Some(clients::validate_read(call.query())?)
             } else {
                 call.query().cloned()
@@ -281,6 +291,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "getOAuthClientPublic" {
+            return Box::pin(self.read_public_client(call.query_as()?, call, ctx)).await;
+        }
         if call.operation_id() == "getOAuthClient" {
             return Box::pin(self.read_client(call.query_as()?, call, ctx)).await;
         }
@@ -305,9 +318,18 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
-        if req.path() == "/oauth2/get-client" && *req.method() == HttpMethod::Get {
+        if matches!(req.path(), "/oauth2/get-client" | "/oauth2/public-client")
+            && *req.method() == HttpMethod::Get
+        {
             let query = alibi_core::utils::json::parse_value(&serde_json::to_string(&req.query)?)?;
             let input = alibi_core::utils::json::from_value(clients::validate_read(Some(&query))?)?;
+            if req.path() == "/oauth2/public-client" {
+                return Ok(Some(
+                    Box::pin(self.read_public_client(input, req, ctx))
+                        .await?
+                        .to_response()?,
+                ));
+            }
             return Ok(Some(
                 Box::pin(self.read_client(input, req, ctx))
                     .await?
