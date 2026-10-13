@@ -250,15 +250,15 @@ async fn exercise<S: AuthSchema>(
 
     // Restore only the owned fixture's tokens, then interleave real side-pool writes.
     for (change, case_only) in [
-        ("refresh_token", false),
-        ("access_token", false),
-        ("id_token", false),
+        ("refreshToken", false),
+        ("accessToken", false),
+        ("idToken", false),
         ("user_id", false),
         ("provider_id", false),
         ("account_id", false),
-        ("refresh_token", true),
-        ("access_token", true),
-        ("id_token", true),
+        ("refreshToken", true),
+        ("accessToken", true),
+        ("idToken", true),
         ("provider_id", true),
         ("account_id", true),
         ("user_id", true),
@@ -268,19 +268,19 @@ async fn exercise<S: AuthSchema>(
         let pending = OAuthTokenConversion::prepare(input.clone(), ORIGINAL, &config())?;
         let value = if case_only {
             match change {
-                "access_token" => input
+                "accessToken" => input
                     .observed
                     .tokens
                     .access_token
                     .as_deref()
                     .ok_or("access")?,
-                "refresh_token" => input
+                "refreshToken" => input
                     .observed
                     .tokens
                     .refresh_token
                     .as_deref()
                     .ok_or("refresh")?,
-                "id_token" => input.observed.tokens.id_token.as_deref().ok_or("id")?,
+                "idToken" => input.observed.tokens.id_token.as_deref().ok_or("id")?,
                 "provider_id" => &input.observed.provider_id,
                 "account_id" => &input.observed.account_id,
                 _ => &input.observed.user_id,

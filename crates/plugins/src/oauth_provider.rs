@@ -4,6 +4,7 @@ mod clients;
 mod consent;
 mod continuation;
 mod resources;
+mod token;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
@@ -242,6 +243,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
+            AuthRoute::post("/oauth2/token", "oauth2Token"),
             AuthRoute::post("/oauth2/create-client", "createOAuthClient"),
             AuthRoute::get("/oauth2/get-client", "getOAuthClient"),
             AuthRoute::get("/oauth2/public-client", "getOAuthClientPublic"),
@@ -266,6 +268,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "oauth2Token",
+                "oauth2Token",
+                Some("/oauth2/token"),
+                HttpMethod::Post,
+            ),
             crate::endpoint::definition(
                 "oauth2Continue",
                 "oauth2Continue",
@@ -483,6 +491,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "oauth2Token" {
+            return Box::pin(self.token(call.body(), call, ctx)).await;
+        }
         if call.operation_id() == "oauth2Continue" {
             return Box::pin(self.continue_authorization(call.body_as()?, call, ctx)).await;
         }
@@ -581,6 +592,25 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/oauth2/token" && *req.method() == HttpMethod::Post {
+            let mut fields = indexmap::IndexMap::new();
+            for (key, value) in url::form_urlencoded::parse(req.body.as_deref().unwrap_or_default())
+            {
+                _ = fields.insert(
+                    key.into_owned(),
+                    alibi_core::utils::json::JsValue::String(value.into_owned()),
+                );
+            }
+            return Ok(Some(
+                Box::pin(self.token(
+                    Some(&alibi_core::utils::json::JsValue::Object(fields)),
+                    req,
+                    ctx,
+                ))
+                .await?
+                .to_response()?,
+            ));
+        }
         if req.path() == "/oauth2/authorize"
             && matches!(req.method(), HttpMethod::Get | HttpMethod::Post)
         {

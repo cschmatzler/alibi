@@ -105,6 +105,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         JSON.stringify(
           row
             ? {
+                id: row.id,
                 clientId: row.clientId,
                 userId: row.userId ?? null,
                 clientName: row.name,
@@ -150,6 +151,52 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         JSON.stringify(
           row
             ? { value: JSON.parse(row.value), createdAt: row.createdAt, expiresAt: row.expiresAt }
+            : null,
+        ),
+        { headers: { "content-type": "application/json" } },
+      );
+    }
+    if (input.action === "token") {
+      return auth.api.oauth2Token({
+        body: input.body,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+        request: new Request(`${base.baseURL}${base.basePath ?? "/api/auth"}/oauth2/token`, {
+          method: "POST",
+          headers: {
+            ...input.headers,
+            "content-type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams(input.body),
+        }),
+      });
+    }
+    if (input.action === "token-row") {
+      const { createHash } = await import("node:crypto");
+      const context = await auth.$context;
+      const row = (await context.adapter.findOne({
+        model: input.kind === "refresh" ? "oauthRefreshToken" : "oauthAccessToken",
+        where: [
+          { field: "token", value: createHash("sha256").update(input.token).digest("base64url") },
+        ],
+      })) as any;
+      return new Response(
+        JSON.stringify(
+          row
+            ? {
+                id: row.id,
+                clientId: row.clientId,
+                userId: row.userId,
+                sessionId: row.sessionId,
+                scopes: row.scopes,
+                createdAt: row.createdAt,
+                expiresAt: row.expiresAt,
+                authorizationCodeId: row.authorizationCodeId,
+                token: row.token,
+                refreshId: row.refreshId ?? null,
+                authTime: row.authTime ?? null,
+                resources: row.resources ?? null,
+              }
             : null,
         ),
         { headers: { "content-type": "application/json" } },

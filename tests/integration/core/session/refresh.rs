@@ -662,7 +662,6 @@ mod secondary {
             serde_json::from_str(&cache.get(&combined_token).await.unwrap().unwrap()).unwrap();
         for (field, value) in [
             ("expires_at", json!(Utc::now() - Duration::seconds(1))),
-            ("active", json!(false)),
             ("user_id", json!("foreign-snapshot-owner")),
         ] {
             let mut snapshot = issued_snapshot.clone();

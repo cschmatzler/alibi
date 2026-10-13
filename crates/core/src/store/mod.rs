@@ -30,7 +30,8 @@ pub use jwks::JwkStore;
 pub use migrations::SchemaMigrator;
 pub use oauth_clients::{
     CreateOAuthClient, CreateOAuthClientResource, CreateOAuthConsent, CreateOAuthResource,
-    OAuthClient, OAuthClientResource, OAuthClientStore, OAuthConsent, OAuthResource,
+    CreateOAuthToken, OAuthClient, OAuthClientResource, OAuthClientStore, OAuthConsent,
+    OAuthResource, OAuthToken, OAuthTokenKind,
 };
 pub use org_extensions::{OrganizationRoleStore, TeamStore, team_membership_key};
 #[cfg(feature = "redis-cache")]
