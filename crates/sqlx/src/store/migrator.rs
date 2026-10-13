@@ -20,13 +20,24 @@ const AUTH_SCHEMA: Migration = Migration {
     postgres: include_str!("../../migrations/postgres.sql"),
 };
 
+const OAUTH_CLIENTS: Migration = Migration {
+    name: "m20261013_000002_oauth_clients",
+    sqlite: include_str!("../../migrations/sqlite_oauth_clients.sql"),
+    postgres: include_str!("../../migrations/postgres_oauth_clients.sql"),
+};
+
 /// Apply the bundled auth schema.
 ///
 /// # Errors
 ///
 /// Returns the database error; a failed migration is rolled back and not recorded.
 pub async fn run_migrations(pool: &SqlxPool) -> AuthResult<()> {
-    apply(pool, "better_auth_migrations", &[AUTH_SCHEMA]).await
+    apply(
+        pool,
+        "better_auth_migrations",
+        &[AUTH_SCHEMA, OAUTH_CLIENTS],
+    )
+    .await
 }
 
 /// Apply pending migrations in order, each in its own transaction with its
@@ -43,7 +54,13 @@ pub(crate) async fn run_migrations_scoped(
     pool: &SqlxPool,
     config: &Arc<AuthConfig>,
 ) -> AuthResult<()> {
-    apply_scoped(pool, "better_auth_migrations", &[AUTH_SCHEMA], Some(config)).await
+    apply_scoped(
+        pool,
+        "better_auth_migrations",
+        &[AUTH_SCHEMA, OAUTH_CLIENTS],
+        Some(config),
+    )
+    .await
 }
 
 async fn apply_scoped(

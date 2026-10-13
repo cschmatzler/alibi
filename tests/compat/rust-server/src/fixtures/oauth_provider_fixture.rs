@@ -42,7 +42,33 @@ pub(crate) async fn router(
         );
         instances.insert(mode.to_owned(), auth);
     }
-    Ok(Router::new().route(
+    let client_auth = Arc::new(
+        AuthBuilder::<TestSchema>::new(config.clone())
+            .store(crate::backend::store::<TestSchema>(
+                config.clone(),
+                database.clone(),
+            ))
+            .plugin(alibi::plugins::EmailPasswordPlugin::new())
+            .plugin(alibi::plugins::SessionManagementPlugin::new())
+            .plugin(JwtPlugin::new())
+            .plugin(OAuthProviderPlugin::new())
+            .build()
+            .await?,
+    );
+    Ok(Router::new().route("/__test/server-api/oauth-provider-clients",axum::routing::post(move |axum::Json(input):axum::Json<serde_json::Value>| {
+        let auth=client_auth.clone();async move {
+            if input["action"]=="row" {
+                let row=auth.store().get_oauth_client(input["clientId"].as_str().unwrap()).await.unwrap();
+                return axum::Json(row.map(|row|serde_json::json!({"clientId":row.client_id,"userId":row.user_id,"clientName":row.metadata.get("client_name"),"redirectUris":row.metadata.get("redirect_uris"),"client_secret":row.client_secret}))).into_response();
+            }
+            let (plugin,operation)=if input["action"]=="signup" {("email-password","signUpEmail")}else{("oauth-provider","createOAuthClient")};
+            let endpoint=alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(plugin,operation).with_body(&input["body"]).unwrap();
+            match auth.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),..Default::default()}).await {
+                Ok(output)=>output.into_response().unwrap().into_response(),
+                Err(error)=>{let mut response=if error.body_absent{alibi::AuthResponse::new(error.error.status_code())}else{error.error.to_auth_response()};if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}if let Some(headers)=error.headers {for(name,value)in headers.iter(){if name.eq_ignore_ascii_case("set-cookie"){response.headers.append(name,value);}else{response.headers.insert(name,value);}}}response.into_response()}
+            }
+        }
+    })).route(
         "/__test/server-api/oauth-provider-metadata",
         get(move |Query(query): Query<HashMap<String, String>>| {
             let auth = instances

@@ -414,3 +414,8 @@ where
         result
     }
 }
+
+delegate_store!(OAuthClientStore, {
+ async fn create_oauth_client(&self,data:CreateOAuthClient)->AuthResult<OAuthClient>;
+ async fn get_oauth_client(&self,client_id:&str)->AuthResult<Option<OAuthClient>>;
+});

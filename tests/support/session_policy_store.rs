@@ -210,3 +210,5 @@ impl SessionStore<Schema> for PolicyStore {
             .await
     }
 }
+
+impl alibi_core::store::OAuthClientStore for PolicyStore {}

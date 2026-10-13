@@ -4,6 +4,7 @@ mod database_hooks;
 mod decorated;
 mod jwks;
 mod migrations;
+mod oauth_clients;
 mod org_extensions;
 mod secondary_sessions;
 pub mod secondary_storage;
@@ -27,6 +28,7 @@ pub(crate) use decorated::{
 };
 pub use jwks::JwkStore;
 pub use migrations::SchemaMigrator;
+pub use oauth_clients::{CreateOAuthClient, OAuthClient, OAuthClientStore};
 pub use org_extensions::{OrganizationRoleStore, TeamStore, team_membership_key};
 #[cfg(feature = "redis-cache")]
 pub use secondary_storage::RedisAdapter;
@@ -41,6 +43,7 @@ pub trait AuthStore<S: AuthSchema>:
     + OrganizationStore
     + MemberStore
     + InvitationStore
+    + OAuthClientStore
     + TeamStore
     + OrganizationRoleStore
     + WalletAddressStore
@@ -65,6 +68,7 @@ where
         + OrganizationStore
         + MemberStore
         + InvitationStore
+        + OAuthClientStore
         + TeamStore
         + OrganizationRoleStore
         + WalletAddressStore

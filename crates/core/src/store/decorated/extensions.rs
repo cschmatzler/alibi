@@ -577,3 +577,19 @@ impl<S: AuthSchema> WalletAddressStore for PluginStore<S> {
         self.inner.create_wallet_address(data).await
     }
 }
+
+#[async_trait::async_trait]
+impl<S: AuthSchema> crate::store::OAuthClientStore for PluginStore<S> {
+    async fn create_oauth_client(
+        &self,
+        data: crate::store::CreateOAuthClient,
+    ) -> AuthResult<crate::store::OAuthClient> {
+        self.inner.create_oauth_client(data).await
+    }
+    async fn get_oauth_client(
+        &self,
+        client_id: &str,
+    ) -> AuthResult<Option<crate::store::OAuthClient>> {
+        self.inner.get_oauth_client(client_id).await
+    }
+}

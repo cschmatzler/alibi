@@ -40,12 +40,14 @@ async fn reruns_are_no_ops_recorded_once_in_the_namespaced_ledger<B: Backend>(
     let schema = tables(&db).await?;
     store.migrate().await?;
     assert_eq!(tables(&db).await?, schema);
-    assert_eq!(db.count("better_auth_migrations").await?, 1);
+    assert_eq!(db.count("better_auth_migrations").await?, 2);
     assert_eq!(
-        db.text("SELECT version FROM better_auth_migrations", &[])
+        db.text("SELECT version FROM better_auth_migrations WHERE version = 'm20261003_000001_auth_schema'", &[])
             .await?,
         Some("m20261003_000001_auth_schema".to_owned())
     );
+    assert_eq!(db.text("SELECT version FROM better_auth_migrations WHERE version = 'm20261013_000002_oauth_clients'", &[]).await?,Some("m20261013_000002_oauth_clients".to_owned()));
+    assert_eq!(db.count("oauth_client").await?, 0);
     let schema = schema.unwrap_or_default();
     assert!(!schema.split(',').any(|table| table == "seaql_migrations"));
     assert!(!schema.split(',').any(|table| table == "_sqlx_migrations"));
@@ -88,7 +90,8 @@ async fn installed_by<From: Backend, To: Backend>(db: Db) -> TestResult {
         .await?;
     From::close(from_connection).await?;
     let (to_connection, to) = db.migrated::<To>(SECRET).await?;
-    assert_eq!(db.count("better_auth_migrations").await?, 1);
+    assert_eq!(db.count("better_auth_migrations").await?, 2);
+    assert_eq!(db.count("oauth_client").await?, 0);
     assert_eq!(
         to.get_user_by_email("switch@fixture.test")
             .await?
