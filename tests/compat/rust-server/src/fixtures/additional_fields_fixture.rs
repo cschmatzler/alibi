@@ -349,18 +349,17 @@ fn plugin_fields(entity: &'static str, application: &Application) -> FieldConfig
 }
 impl Application {
     fn record_completed(&self, request: &impl alibi::session::SessionRequest, path: &str) {
-            let snapshot =
-                alibi::session::cookie_cache::runtime::published_session_snapshot(request);
-            let record = snapshot
-                .as_ref()
-                .map(|snapshot| json!({"user":snapshot.user(),"session":snapshot.session()}));
-            let user_output = snapshot
-                .as_ref()
-                .and_then(|snapshot| snapshot.user_output());
-            let session_output = snapshot
-                .as_ref()
-                .and_then(|snapshot| snapshot.session_output());
-            self.events.lock().expect("application receipts").push(json!({
+        let snapshot = alibi::session::cookie_cache::runtime::published_session_snapshot(request);
+        let record = snapshot
+            .as_ref()
+            .map(|snapshot| json!({"user":snapshot.user(),"session":snapshot.session()}));
+        let user_output = snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.user_output());
+        let session_output = snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.session_output());
+        self.events.lock().expect("application receipts").push(json!({
                 "phase":"completed", "path":path, "record":record,
                 "userOmittedPresent":snapshot.as_ref().map(|_| user_output.is_some_and(|output| output.contains_field("omitted"))),
                 "userOmittedUndefined":snapshot.as_ref().map(|snapshot| !snapshot.user().extension_fields.contains_key("omitted")),
@@ -371,10 +370,20 @@ impl Application {
 }
 #[async_trait::async_trait]
 impl alibi::endpoint::EndpointHook<ApplicationSchema> for Application {
-    fn matches_after(&self, call: &alibi::endpoint::EndpointCall, _: &alibi::AuthContext<ApplicationSchema>, _: &alibi::endpoint::EndpointResponse) -> AuthResult<bool> {
+    fn matches_after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<ApplicationSchema>,
+        _: &alibi::endpoint::EndpointResponse,
+    ) -> AuthResult<bool> {
         Ok(self.mode == "cached" && call.request().is_none())
     }
-    async fn after(&self, call: &alibi::endpoint::EndpointCall, _: &alibi::AuthContext<ApplicationSchema>, response: alibi::endpoint::EndpointResponse) -> AuthResult<alibi::endpoint::EndpointResponse> {
+    async fn after(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<ApplicationSchema>,
+        response: alibi::endpoint::EndpointResponse,
+    ) -> AuthResult<alibi::endpoint::EndpointResponse> {
         self.record_completed(call, call.path().unwrap_or("/"));
         Ok(response)
     }
@@ -393,7 +402,9 @@ impl AuthPlugin<ApplicationSchema> for Application {
     fn session_fields(&self) -> FieldConfigs {
         plugin_fields("session", self)
     }
-    fn endpoint_hooks(&self) -> Vec<&dyn alibi::endpoint::EndpointHook<ApplicationSchema>> { vec![self] }
+    fn endpoint_hooks(&self) -> Vec<&dyn alibi::endpoint::EndpointHook<ApplicationSchema>> {
+        vec![self]
+    }
     fn routes(&self) -> Vec<AuthRoute> {
         Vec::new()
     }
@@ -410,7 +421,9 @@ impl AuthPlugin<ApplicationSchema> for Application {
         _: &alibi::AuthContext<ApplicationSchema>,
         response: alibi::AuthResponse,
     ) -> AuthResult<alibi::AuthResponse> {
-        if self.mode == "cached" { self.record_completed(request, request.path()); }
+        if self.mode == "cached" {
+            self.record_completed(request, request.path());
+        }
         Ok(response)
     }
     async fn on_init(&self, context: &mut AuthInitContext<ApplicationSchema>) -> AuthResult<()> {

@@ -42,26 +42,46 @@ pub(crate) async fn router(
         );
         instances.insert(mode.to_owned(), auth);
     }
-    let mut client_instances=HashMap::new();
-    for mode in ["default","dynamic","public","prelogin","expired","resources-open","selection"] {
-        let provider=OAuthProviderConfig {select_account_page:if mode=="selection"{Some("/select".into())}else{None},enforce_per_client_resources:mode!="resources-open",allow_public_client_prelogin:matches!(mode,"prelogin"|"expired"),code_expires_in:if mode=="expired" {-1.0}else{600.0},allow_dynamic_client_registration:matches!(mode,"dynamic"|"public"),allow_unauthenticated_client_registration:mode=="public",..Default::default()};
+    let mut client_instances = HashMap::new();
+    for mode in [
+        "default",
+        "dynamic",
+        "public",
+        "prelogin",
+        "expired",
+        "resources-open",
+        "selection",
+    ] {
+        let provider = OAuthProviderConfig {
+            select_account_page: if mode == "selection" {
+                Some("/select".into())
+            } else {
+                None
+            },
+            enforce_per_client_resources: mode != "resources-open",
+            allow_public_client_prelogin: matches!(mode, "prelogin" | "expired"),
+            code_expires_in: if mode == "expired" { -1.0 } else { 600.0 },
+            allow_dynamic_client_registration: matches!(mode, "dynamic" | "public"),
+            allow_unauthenticated_client_registration: mode == "public",
+            ..Default::default()
+        };
         let auth = Arc::new(
-        AuthBuilder::<TestSchema>::new(config.clone())
-            .store(crate::backend::store::<TestSchema>(
-                config.clone(),
-                database.clone(),
-            ))
-            .plugin(alibi::plugins::EmailPasswordPlugin::new())
-            .plugin(alibi::plugins::SessionManagementPlugin::new())
-            .plugin(JwtPlugin::new())
-            .plugin(OAuthProviderPlugin::with_config(provider))
-            .build()
-            .await?,
-    );
-        client_instances.insert(mode.to_owned(),auth);
+            AuthBuilder::<TestSchema>::new(config.clone())
+                .store(crate::backend::store::<TestSchema>(
+                    config.clone(),
+                    database.clone(),
+                ))
+                .plugin(alibi::plugins::EmailPasswordPlugin::new())
+                .plugin(alibi::plugins::SessionManagementPlugin::new())
+                .plugin(JwtPlugin::new())
+                .plugin(OAuthProviderPlugin::with_config(provider))
+                .build()
+                .await?,
+        );
+        client_instances.insert(mode.to_owned(), auth);
     }
-    let authorization_path=format!("{}/oauth2/authorize",config.base_path);
-    let admin_path=format!("{}/admin/oauth2/create-client",config.base_path);
+    let authorization_path = format!("{}/oauth2/authorize", config.base_path);
+    let admin_path = format!("{}/admin/oauth2/create-client", config.base_path);
     Ok(Router::new().route("/__test/server-api/oauth-provider-clients",axum::routing::post(move |axum::Json(input):axum::Json<serde_json::Value>| {
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();

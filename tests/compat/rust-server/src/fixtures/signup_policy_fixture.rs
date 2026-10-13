@@ -375,32 +375,81 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         let _ = profiles.insert(name.to_owned(), auth);
     }
     let profiles = Arc::new(profiles);
-    let sign_in_profiles=profiles.clone();
-    router=router.route("/__test/server-api/username-sign-in",post(move |Json(input):Json<Value>|{
-        let profiles=sign_in_profiles.clone();
-        async move {
-            let selected=profiles.get(input["profile"].as_str().unwrap_or("signup-username")).unwrap();
-            let mut endpoint=alibi::endpoint::ServerEndpoint::<Value>::new("email-password","signInUsername");
-            if let Some(body)=input.get("body"){endpoint=endpoint.with_body(body).unwrap();}
-            match selected.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions {headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),..Default::default()}).await {
-                Ok(output)=>output.into_response().unwrap().into_response(),
-                Err(error)=>{let mut response=error.error.to_auth_response();if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}if let Some(headers)=error.headers{for(name,value) in headers.iter(){if name.eq_ignore_ascii_case("set-cookie"){response.headers.append(name,value);}else{response.headers.insert(name.clone(),value.clone());}}}response.into_response()}
+    let sign_in_profiles = profiles.clone();
+    router = router.route(
+        "/__test/server-api/username-sign-in",
+        post(move |Json(input): Json<Value>| {
+            let profiles = sign_in_profiles.clone();
+            async move {
+                let selected = profiles
+                    .get(input["profile"].as_str().unwrap_or("signup-username"))
+                    .unwrap();
+                let mut endpoint = alibi::endpoint::ServerEndpoint::<Value>::new(
+                    "email-password",
+                    "signInUsername",
+                );
+                if let Some(body) = input.get("body") {
+                    endpoint = endpoint.with_body(body).unwrap();
+                }
+                match selected
+                    .dispatch_endpoint(
+                        endpoint,
+                        alibi::endpoint::EndpointOptions {
+                            headers: input
+                                .get("headers")
+                                .map(|headers| serde_json::from_value(headers.clone()).unwrap()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                {
+                    Ok(output) => output.into_response().unwrap().into_response(),
+                    Err(error) => {
+                        let mut response = error.error.to_auth_response();
+                        if let Some(body) = error.body {
+                            response.body = serde_json::to_vec(&*body).unwrap();
+                        }
+                        if let Some(headers) = error.headers {
+                            for (name, value) in headers.iter() {
+                                if name.eq_ignore_ascii_case("set-cookie") {
+                                    response.headers.append(name, value);
+                                } else {
+                                    response.headers.insert(name.clone(), value.clone());
+                                }
+                            }
+                        }
+                        response.into_response()
+                    }
+                }
             }
-        }
-    }));
-    let availability_profiles=profiles.clone();
-    router=router.route("/__test/server-api/username-available",post(move |Json(input):Json<Value>|{
-        let profiles=availability_profiles.clone();
-        async move {
-            let selected=profiles.get(input["profile"].as_str().unwrap_or("signup-username")).unwrap();
-            let mut endpoint=alibi::endpoint::ServerEndpoint::<Value>::new("email-password","isUsernameAvailable");
-            if let Some(body)=input.get("body"){endpoint=endpoint.with_body(body).unwrap();}
-            match selected.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions::default()).await {
-                Ok(output)=>output.into_response().unwrap().into_response(),
-                Err(error)=>error.error.to_auth_response().into_response(),
+        }),
+    );
+    let availability_profiles = profiles.clone();
+    router = router.route(
+        "/__test/server-api/username-available",
+        post(move |Json(input): Json<Value>| {
+            let profiles = availability_profiles.clone();
+            async move {
+                let selected = profiles
+                    .get(input["profile"].as_str().unwrap_or("signup-username"))
+                    .unwrap();
+                let mut endpoint = alibi::endpoint::ServerEndpoint::<Value>::new(
+                    "email-password",
+                    "isUsernameAvailable",
+                );
+                if let Some(body) = input.get("body") {
+                    endpoint = endpoint.with_body(body).unwrap();
+                }
+                match selected
+                    .dispatch_endpoint(endpoint, alibi::endpoint::EndpointOptions::default())
+                    .await
+                {
+                    Ok(output) => output.into_response().unwrap().into_response(),
+                    Err(error) => error.error.to_auth_response().into_response(),
+                }
             }
-        }
-    }));
+        }),
+    );
     let state_profiles = profiles.clone();
     let state_app = app.clone();
     let state_db = database.clone();
