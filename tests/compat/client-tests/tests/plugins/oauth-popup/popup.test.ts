@@ -80,11 +80,23 @@ compatScenario(
           ...extra,
         });
         return responseRecord(
-          await request.get(`${base}${PATH}/oauth-popup/start?${query}`, { maxRedirects: 0 }),
+          await request.post(`${base}${CONTROL}/server-start`, {
+            data: { query: Object.fromEntries(query) },
+            maxRedirects: 0,
+          }),
         );
       }
       const dangerous = "</script><script>window.pwned=true</script>\u2028\u2029";
       await reset();
+      for (const query of [{ provider: 42, popupOrigin: APP }, { provider: "gitlab" }]) {
+        const rejected = await request.post(`${base}${CONTROL}/server-start`, {
+          data: { query },
+          maxRedirects: 0,
+        });
+        expect(rejected.status()).toBe(400);
+        expect(await rejected.json()).toMatchObject({ code: "VALIDATION_ERROR" });
+        expect((await readState(request)).verification).toHaveLength(0);
+      }
       const foreign = await start({ popupOrigin: "https://foreign.invalid" });
       expect(foreign.status).toBe(403);
       expect(JSON.parse(foreign.body).code).toBe("INVALID_ORIGIN");

@@ -21,15 +21,48 @@ fn payload(response: &AuthResponse) -> Value {
 }
 
 async fn start<S: AuthSchema>(auth: &Alibi<S>, query: &[(&str, &str)]) -> AuthResponse {
-    let mut req = request("/oauth-popup/start", None, "");
-    req.set_query_pairs(
+    let query: std::collections::HashMap<_, _> =
         [("popupOrigin", ORIGIN), ("popupNonce", "nonce-1")]
             .into_iter()
-            .chain(query.iter().copied()),
-    );
-    Box::pin(auth.handle_request(req)).await.unwrap()
+            .chain(query.iter().copied())
+            .collect();
+    match Box::pin(
+        auth.dispatch_endpoint(
+            OAuthPopupPlugin::oauth_popup_start_endpoint(
+                &serde_json::from_value::<alibi::plugins::oauth_popup::OAuthPopupStartInput>(
+                    serde_json::to_value(&query).unwrap(),
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+            alibi::endpoint::EndpointOptions::default(),
+        ),
+    )
+    .await
+    {
+        Ok(output) => output.into_response().unwrap(),
+        Err(error) => {
+            let mut response = if error.body_absent {
+                AuthResponse::new(error.error.status_code())
+            } else {
+                error.error.to_auth_response()
+            };
+            if let Some(body) = error.body {
+                response.body = serde_json::to_vec(&*body).unwrap();
+            }
+            if let Some(headers) = error.headers {
+                for (name, value) in headers.iter() {
+                    if name.eq_ignore_ascii_case("set-cookie") {
+                        response.headers.append(name, value);
+                    } else {
+                        drop(response.headers.insert(name, value));
+                    }
+                }
+            }
+            response
+        }
+    }
 }
-
 async fn popup_start_validates_targets_and_forwards_sign_in_options<B: Backend>(
     db: Db,
 ) -> TestResult {
@@ -45,6 +78,26 @@ async fn popup_start_validates_targets_and_forwards_sign_in_options<B: Backend>(
         )
         .await?;
 
+    for query in [
+        json!({"provider":42,"popupOrigin":ORIGIN}),
+        json!({"provider":"google"}),
+    ] {
+        let error = Box::pin(
+            auth.dispatch_endpoint(
+                alibi::endpoint::ServerEndpoint::<Value>::new("oauth-popup", "oauthPopupStart")
+                    .with_query(&query)?,
+                alibi::endpoint::EndpointOptions::default(),
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.error.status_code(), 400);
+        assert_eq!(
+            error.error.error_payload().1.as_deref(),
+            Some("VALIDATION_ERROR")
+        );
+        assert_eq!(db.count("verifications").await?, 0);
+    }
     for (label, extra) in [
         (
             "untrusted callback",
