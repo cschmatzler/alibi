@@ -4517,9 +4517,11 @@ const server = Bun.serve({
           url.pathname === `/__test/profiles/${name}/api/auth/__test/server-callback` &&
           request.method === "POST"
         ) {
+          const original = request.clone();
           const input = await readJson(request);
           return (instance.api as any).oneTapCallback({
             body: input?.body,
+            ...(input?.originalRequest ? { request: original } : {}),
             ...(input?.headers
               ? { headers: new Headers(input.headers as Record<string, string>) }
               : {}),

@@ -45,6 +45,15 @@ compatScenario(
       });
     expect(malformed.error).toMatchObject({ status: 400, code: "VALIDATION_ERROR" });
     expect(await state(ctx)).toEqual(baseline);
+    const denied = await ctx
+      .actor("owner", "one-tap-plugin-only")
+      .client.$fetch<any>("/one-tap/callback", {
+        method: "POST",
+        headers: { origin: ctx.baseURL },
+        body: { idToken: token, callbackURL: "https://outside.example/welcome" },
+      });
+    expect(denied.error).toMatchObject({ status: 403, code: "INVALID_CALLBACK_URL" });
+    expect(await state(ctx)).toEqual(baseline);
     const result = await invoke("owner", "one-tap-plugin-only", token);
 
     const user = result.data!.user;
@@ -71,6 +80,23 @@ compatScenario(
     const session = await ctx.actor("owner", "one-tap-plugin-only").client.getSession();
     expect(session.data?.user.id).toBe(user.id);
     expect(session.data?.session.token).toBe(result.data!.token);
+
+    const requestful = await ctx
+      .actor("requestful", "one-tap-plugin-only")
+      .client.$fetch<any>("/__test/server-callback", {
+        method: "POST",
+        headers: { origin: ctx.baseURL },
+        body: {
+          body: { idToken: token, callbackURL: "https://outside.example/welcome" },
+          originalRequest: true,
+        },
+      });
+    expect(requestful.error).toBeNull();
+    expect(requestful.data!.user.id).toBe(user.id);
+    const requestfulState = await state(ctx);
+    expect(requestfulState.users).toEqual(initial.users);
+    expect(requestfulState.accounts).toEqual(initial.accounts);
+    expect(requestfulState.sessions).toHaveLength(2);
 
     const foreign = ctx.actor("foreign", "one-tap-no-override");
     let foreignCookie = "";

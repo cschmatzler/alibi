@@ -124,6 +124,18 @@ impl OneTapPlugin {
             Ok(body) => body,
             Err(response) => return Ok(response),
         };
+        if !ctx.config.current_origin_check_disabled()
+            && body
+                .callback_url
+                .as_deref()
+                .is_some_and(|url| !ctx.config.is_redirect_target_trusted(url))
+        {
+            return AuthResponse::json(
+                403,
+                &json!({"code":"INVALID_CALLBACK_URL","message":"Invalid callbackURL"}),
+            )
+            .map_err(Into::into);
+        }
         self.callback_core(req, ctx, body).await
     }
 
@@ -141,19 +153,6 @@ impl OneTapPlugin {
             create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
             sign_cookie_value, verify_cookie_value,
         };
-        if req.physical_request().is_some()
-            && !ctx.config.current_origin_check_disabled()
-            && body
-                .callback_url
-                .as_deref()
-                .is_some_and(|url| !ctx.config.is_redirect_target_trusted(url))
-        {
-            return AuthResponse::json(
-                403,
-                &json!({"code":"INVALID_CALLBACK_URL","message":"Invalid callbackURL"}),
-            )
-            .map_err(Into::into);
-        }
         let oauth = ctx.extensions.get::<OAuthConfig>();
         let provider = oauth
             .as_ref()
@@ -346,7 +345,7 @@ impl OneTapPlugin {
 #[serde(rename_all = "camelCase")]
 pub struct OneTapCallbackInput {
     pub id_token: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "callbackURL", skip_serializing_if = "Option::is_none")]
     pub callback_url: Option<String>,
 }
 

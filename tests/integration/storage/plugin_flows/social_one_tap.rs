@@ -943,6 +943,23 @@ async fn one_tap_returning_profile_and_browser_ownership<B: Backend>(db: Db) -> 
         db.tables(&["users", "accounts", "sessions"]).await?,
         before_invalid
     );
+    let input = alibi::plugins::one_tap::OneTapCallbackInput {
+        id_token: token(json!({})),
+        callback_url: Some("https://outside.example/welcome".into()),
+    };
+    let wire_input = serde_json::to_value(&input)?;
+    assert_eq!(wire_input["callbackURL"], "https://outside.example/welcome");
+    let denied = call(
+        &auth,
+        request("/one-tap/callback", Some(wire_input), ""),
+        403,
+    )
+    .await;
+    assert_eq!(body(&denied)["code"], "INVALID_CALLBACK_URL");
+    assert_eq!(
+        db.tables(&["users", "accounts", "sessions"]).await?,
+        before_invalid
+    );
     let (first, first_value) = server_tap(
         &auth,
         json!({"name":"Original Google Owner","picture":"https://images.example/original"}),
@@ -959,6 +976,23 @@ async fn one_tap_returning_profile_and_browser_ownership<B: Backend>(db: Db) -> 
         Some("https://images.example/original")
     );
     let original = body(&first)["user"].clone();
+    let requestful = Box::pin(auth.dispatch_endpoint(
+        OneTapPlugin::one_tap_callback_endpoint(&input)?,
+        alibi::endpoint::EndpointOptions {
+            request: Some(request(
+                "/one-tap/callback",
+                Some(serde_json::to_value(&input)?),
+                "",
+            )),
+            ..Default::default()
+        },
+    ))
+    .await?;
+    let requestful = requestful.decode()?;
+    assert_eq!(requestful.user.id, first_value.user.id);
+    assert_eq!(db.count("users").await?, 1);
+    assert_eq!(db.count("accounts").await?, 1);
+    assert_eq!(db.count("sessions").await?, 2);
     let foreign = signup(&auth, "foreign@example.test").await;
     let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
     let before = db.tables(&["users", "accounts", "sessions"]).await?;
