@@ -3,6 +3,8 @@ mod authorization;
 mod clients;
 mod consent;
 mod continuation;
+mod credentials;
+mod introspection;
 mod resources;
 mod token;
 use alibi_core::endpoint::{
@@ -243,6 +245,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
+            AuthRoute::post("/oauth2/introspect", "oauth2Introspect"),
             AuthRoute::post("/oauth2/token", "oauth2Token"),
             AuthRoute::post("/oauth2/create-client", "createOAuthClient"),
             AuthRoute::get("/oauth2/get-client", "getOAuthClient"),
@@ -268,6 +271,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "oauth2Introspect",
+                "oauth2Introspect",
+                Some("/oauth2/introspect"),
+                HttpMethod::Post,
+            ),
             crate::endpoint::definition(
                 "oauth2Token",
                 "oauth2Token",
@@ -491,6 +500,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "oauth2Introspect" {
+            return Box::pin(self.introspect(call.body(), call, ctx)).await;
+        }
         if call.operation_id() == "oauth2Token" {
             return Box::pin(self.token(call.body(), call, ctx)).await;
         }
@@ -592,7 +604,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
-        if req.path() == "/oauth2/token" && *req.method() == HttpMethod::Post {
+        if matches!(req.path(), "/oauth2/token" | "/oauth2/introspect")
+            && *req.method() == HttpMethod::Post
+        {
             let mut fields = indexmap::IndexMap::new();
             for (key, value) in url::form_urlencoded::parse(req.body.as_deref().unwrap_or_default())
             {
@@ -600,6 +614,17 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
                     key.into_owned(),
                     alibi_core::utils::json::JsValue::String(value.into_owned()),
                 );
+            }
+            if req.path() == "/oauth2/introspect" {
+                return Ok(Some(
+                    Box::pin(self.introspect(
+                        Some(&alibi_core::utils::json::JsValue::Object(fields)),
+                        req,
+                        ctx,
+                    ))
+                    .await?
+                    .to_response()?,
+                ));
             }
             return Ok(Some(
                 Box::pin(self.token(

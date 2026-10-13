@@ -53,28 +53,9 @@ impl OAuthProviderPlugin {
                 },
             );
         }
-        let mut client_id = text("client_id").to_owned();
-        let mut secret = text("client_secret").to_owned();
-        let method = if let Some(header) = req
-            .physical_request()
-            .and_then(|r| r.header("authorization"))
-            && let Some(encoded) = header.strip_prefix("Basic ")
-            && let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(encoded)
-            && let Ok(decoded) = String::from_utf8(decoded)
-            && let Some((id, value)) = decoded.split_once(':')
-        {
-            client_id = urlencoding::decode(id)
-                .unwrap_or_else(|_| id.into())
-                .into_owned();
-            secret = urlencoding::decode(value)
-                .unwrap_or_else(|_| value.into())
-                .into_owned();
-            "client_secret_basic"
-        } else if secret.is_empty() {
-            "none"
-        } else {
-            "client_secret_post"
-        };
+        let credentials = super::credentials::extract(&body, req);
+        let client_id = credentials.client_id.clone();
+        let secret = &credentials.secret;
         if client_id.is_empty() {
             return error(400, "invalid_request", "client_id is required");
         }
@@ -123,41 +104,19 @@ impl OAuthProviderPlugin {
         let Some(scope) = query.get("scope").unwrap_or(&Value::Null).as_str() else {
             return error(500, "invalid_scope", "verification scope unset");
         };
-        let Some(client) = ctx.database.get_oauth_client(&client_id).await? else {
-            return error(401, "invalid_client", "missing client");
+        let client = match credentials.authenticate(ctx).await? {
+            Ok(client) => client,
+            Err(response) => {
+                return Ok(response
+                    .with_header("Cache-Control", "no-store")
+                    .with_header("Pragma", "no-cache"));
+            }
         };
-        if client.metadata.get("disabled").unwrap_or(&Value::Null) == true {
-            return error(401, "invalid_client", "client is disabled");
-        }
         let registered = client
             .metadata
             .get("token_endpoint_auth_method")
-            .unwrap_or(&Value::Null)
-            .as_str()
+            .and_then(Value::as_str)
             .unwrap_or("client_secret_basic");
-        if registered != method {
-            return error(
-                401,
-                "invalid_client",
-                &format!("client registered for {registered} cannot use {method}"),
-            );
-        }
-        if registered != "none" && secret.is_empty() {
-            return error(401, "invalid_client", "client secret must be provided");
-        }
-        if !secret.is_empty() && client.client_secret.is_none() {
-            return error(
-                401,
-                "invalid_client",
-                "public client, client secret should not be received",
-            );
-        }
-        if !secret.is_empty()
-            && client.client_secret.as_deref()
-                != Some(&URL_SAFE_NO_PAD.encode(Sha256::digest(&secret)))
-        {
-            return error(401, "invalid_client", "invalid client_secret");
-        }
         if client
             .metadata
             .get("grant_types")
