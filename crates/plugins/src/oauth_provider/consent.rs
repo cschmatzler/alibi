@@ -233,3 +233,36 @@ impl OAuthProviderPlugin {
         .await
     }
 }
+
+impl OAuthProviderPlugin {
+    /// List durable OAuth grants belonging to the current authenticated user.
+    #[must_use]
+    pub fn get_oauth_consents_endpoint() -> ServerEndpoint<Value> {
+        ServerEndpoint::new("oauth-provider", "getOAuthConsents")
+    }
+    pub(super) async fn list_consents<S: AuthSchema>(
+        &self,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
+        let rows = ctx
+            .database
+            .list_oauth_consents_by_user(user.id().as_ref())
+            .await?;
+        let values = rows
+            .into_iter()
+            .map(consent_value)
+            .collect::<AuthResult<Vec<_>>>()?;
+        EndpointResponse::json(&values)
+    }
+}
+fn consent_value(row: alibi_core::store::OAuthConsent) -> AuthResult<Value> {
+    let mut value: serde_json::Map<String, Value> = serde_json::from_value(row.metadata)?;
+    _ = value.insert("id".into(), json!(row.id));
+    _ = value.insert("clientId".into(), json!(row.client_id));
+    _ = value.insert("userId".into(), json!(row.user_id));
+    _ = value.insert("createdAt".into(), json!(row.created_at));
+    _ = value.insert("updatedAt".into(), json!(row.updated_at));
+    Ok(Value::Object(value))
+}
