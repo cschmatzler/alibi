@@ -774,3 +774,25 @@ impl<S: AuthSchema> crate::store::OAuthClientStore for PluginStore<S> {
             .await
     }
 }
+
+#[async_trait]
+impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
+    async fn create_sso_provider(
+        &self,
+        provider: crate::store::SsoProvider,
+    ) -> AuthResult<crate::store::SsoProvider> {
+        self.inner.create_sso_provider(provider).await
+    }
+    async fn get_sso_provider(
+        &self,
+        provider_id: &str,
+    ) -> AuthResult<Option<crate::store::SsoProvider>> {
+        self.inner.get_sso_provider(provider_id).await
+    }
+    async fn list_sso_providers_by_user(
+        &self,
+        user_id: &str,
+    ) -> AuthResult<Vec<crate::store::SsoProvider>> {
+        self.inner.list_sso_providers_by_user(user_id).await
+    }
+}

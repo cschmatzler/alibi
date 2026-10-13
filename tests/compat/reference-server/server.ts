@@ -70,6 +70,7 @@ import { microsoftProviderFixture } from "./fixtures/microsoft-provider-fixture"
 import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixture";
 import { naverProviderFixture } from "./fixtures/naver-provider-fixture";
 import { notionProviderFixture } from "./fixtures/notion-provider-fixture";
+import { ssoFixture } from "./fixtures/sso-fixture";
 import { oauthClientFixture } from "./fixtures/oauth-client-fixture";
 import { oauthPopupFixture } from "./fixtures/oauth-popup-fixture";
 import { oauthProviderDiscovery } from "./fixtures/oauth-provider-fixture";
@@ -3051,6 +3052,7 @@ async function oneTimeTokenControl(request: Request, url: URL): Promise<Response
 const openApiInstances = openApiProfiles(PORT, database);
 const oauthProviderMetadata = oauthProviderDiscovery(`http://localhost:${PORT}`);
 const oauthClients = await oauthClientFixture(authOptions);
+const ssoControl = await ssoFixture(authOptions);
 
 const passkeyControls = passkeyFixture(database);
 const server = Bun.serve({
@@ -3593,6 +3595,7 @@ const server = Bun.serve({
       ) {
         return oauthClients(request);
       }
+      if (url.pathname === "/__test/server-api/sso" && request.method === "POST") return ssoControl(request);
       if (url.pathname === "/__test/server-api/oauth-provider-metadata") {
         return oauthProviderMetadata(
           url.searchParams.get("mode") ?? "default",

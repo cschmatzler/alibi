@@ -134,16 +134,18 @@ pub(crate) fn migration_statements(
     fields: &[&FieldDef],
     dialect: SqlDialect,
 ) -> Vec<String> {
-    let (auth, oauth, rate) = match dialect {
+    let (auth, oauth, rate, sso) = match dialect {
         SqlDialect::Sqlite => (
             alibi_schema_registry::SQLITE_AUTH_SCHEMA,
             alibi_schema_registry::SQLITE_OAUTH_SCHEMA,
             alibi_schema_registry::SQLITE_RATE_LIMIT_SCHEMA,
+            alibi_schema_registry::SQLITE_SSO_SCHEMA,
         ),
         SqlDialect::Postgres => (
             alibi_schema_registry::POSTGRES_AUTH_SCHEMA,
             alibi_schema_registry::POSTGRES_OAUTH_SCHEMA,
             alibi_schema_registry::POSTGRES_RATE_LIMIT_SCHEMA,
+            alibi_schema_registry::POSTGRES_SSO_SCHEMA,
         ),
     };
     let selected: std::collections::HashSet<_> = fields
@@ -156,6 +158,7 @@ pub(crate) fn migration_statements(
         .split(';')
         .chain(oauth.split(';'))
         .chain(rate.split(';'))
+        .chain(sso.split(';'))
     {
         let statement = statement.trim();
         if let Some(start) = statement.find(&prefix) {

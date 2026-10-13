@@ -1,0 +1,329 @@
+//! Enterprise single-sign-on provider registration.
+use alibi_core::endpoint::{
+    EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
+};
+use alibi_core::session::SessionRequest;
+use alibi_core::store::SsoProvider;
+use alibi_core::utils::json::JsValue;
+use alibi_core::{
+    AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
+    AuthSchema, AuthUser, HttpMethod,
+};
+use async_trait::async_trait;
+use serde_json::{Value, json};
+#[derive(Clone, Debug)]
+pub struct SsoConfig {
+    pub providers_limit: usize,
+    pub default_override_user_info: bool,
+    pub redirect_uri: Option<String>,
+}
+impl Default for SsoConfig {
+    fn default() -> Self {
+        Self {
+            providers_limit: 10,
+            default_override_user_info: false,
+            redirect_uri: None,
+        }
+    }
+}
+#[derive(Clone, Debug, Default)]
+pub struct SsoPlugin {
+    config: SsoConfig,
+}
+impl SsoPlugin {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+    #[must_use]
+    pub fn with_config(config: SsoConfig) -> Self {
+        Self { config }
+    }
+    pub fn register_sso_provider_endpoint(input: &Value) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("sso", "registerSSOProvider").with_body(input)
+    }
+    async fn register<S: AuthSchema>(
+        &self,
+        input: &JsValue,
+        request: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let (user, _) = super::helpers::ordinary_session(request, ctx).await?;
+        if self.config.providers_limit == 0 {
+            return Err(api(403, "SSO provider registration is disabled"));
+        }
+        if ctx
+            .database
+            .list_sso_providers_by_user(user.id().as_ref())
+            .await?
+            .len()
+            >= self.config.providers_limit
+        {
+            return Err(api(
+                403,
+                "You have reached the maximum number of SSO providers",
+            ));
+        }
+        let body = input.to_json_value()?;
+        let provider_id = required_string(&body, "providerId")?;
+        let issuer = required_string(&body, "issuer")?;
+        let domain = required_string(&body, "domain")?;
+        if let Some(organization_id) = body.get("organizationId").and_then(Value::as_str) {
+            let member = ctx
+                .database
+                .get_member(organization_id, user.id().as_ref())
+                .await?
+                .ok_or_else(|| api(400, "You are not a member of the organization"))?;
+            if ctx
+                .get_metadata(super::organization::METADATA_ENABLED)
+                .is_some()
+                && !member
+                    .role
+                    .split(',')
+                    .any(|r| matches!(r.trim(), "owner" | "admin"))
+            {
+                return Err(api(
+                    403,
+                    "You must be an organization owner or admin to register SSO providers",
+                ));
+            }
+        }
+        if [
+            "credential",
+            "email-otp",
+            "magic-link",
+            "phone-number",
+            "anonymous",
+            "siwe",
+        ]
+        .contains(&provider_id)
+            || ctx
+                .config
+                .account
+                .account_linking
+                .trusted_providers
+                .iter()
+                .any(|p| p == provider_id)
+        {
+            return Err(api(
+                422,
+                "This providerId is reserved and cannot be used for an SSO provider",
+            ));
+        }
+        if ctx.database.get_sso_provider(provider_id).await?.is_some() {
+            return Err(api(422, "SSO provider with this providerId already exists"));
+        }
+        let oidc=body.get("oidcConfig").map(|config| {
+            if config.get("skipDiscovery").and_then(Value::as_bool)!=Some(true) {
+                return Err(AuthError::not_implemented("OIDC discovery is not implemented"));
+            }
+            let method=config.get("tokenEndpointAuthentication").and_then(Value::as_str).unwrap_or("client_secret_basic");
+            if method!="private_key_jwt" && config.get("clientSecret").and_then(Value::as_str).is_none_or(str::is_empty) {
+                return Err(api(400,"clientSecret is required when using client_secret_basic or client_secret_post authentication"));
+            }
+            if method=="private_key_jwt" {return Err(api(400,"private_key_jwt authentication requires either a resolvePrivateKey callback or a privateKey in defaultSSO"));}
+            let mut output=serde_json::Map::new();
+            for field in ["clientId","clientSecret","authorizationEndpoint","tokenEndpoint","privateKeyId","privateKeyAlgorithm","jwksEndpoint","pkce","mapping","scopes","userInfoEndpoint"] {
+                if let Some(value)=config.get(field) { _=output.insert(field.into(),value.clone()); }
+            }
+            _=output.insert("issuer".into(),json!(issuer));
+            _=output.insert("tokenEndpointAuthentication".into(),json!(method));
+            _=output.insert("discoveryEndpoint".into(),config.get("discoveryEndpoint").cloned().unwrap_or_else(||json!(format!("{issuer}/.well-known/openid-configuration"))));
+            _=output.insert("overrideUserInfo".into(),json!(body.get("overrideUserInfo").and_then(Value::as_bool).unwrap_or(false)||self.config.default_override_user_info));
+            serde_json::to_string(&output).map_err(Into::into)
+        }).transpose()?;
+        if body.get("samlConfig").is_some() {
+            return Err(AuthError::not_implemented(
+                "SAML registration is not implemented",
+            ));
+        }
+        let provider = ctx
+            .database
+            .create_sso_provider(SsoProvider {
+                id: uuid::Uuid::new_v4().to_string(),
+                issuer: issuer.into(),
+                domain: domain.into(),
+                provider_id: provider_id.into(),
+                user_id: Some(user.id().into_owned()),
+                organization_id: body
+                    .get("organizationId")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                oidc_config: oidc,
+                saml_config: None,
+                domain_verified: None,
+            })
+            .await?;
+        let mut output = serde_json::to_value(&provider)?;
+        let object = output
+            .as_object_mut()
+            .ok_or_else(|| AuthError::internal("SSO provider serialization failed"))?;
+        _ = object.remove("domainVerified");
+        for (key, value) in [
+            ("oidcConfig", provider.oidc_config.as_deref()),
+            ("samlConfig", provider.saml_config.as_deref()),
+        ] {
+            _ = object.insert(
+                key.into(),
+                value
+                    .map(serde_json::from_str::<Value>)
+                    .transpose()?
+                    .unwrap_or(Value::Null),
+            );
+        }
+        let base = format!(
+            "{}{}",
+            ctx.config.base_url.trim_end_matches('/'),
+            ctx.config.base_path.trim_end_matches('/')
+        );
+        let redirect = self
+            .config
+            .redirect_uri
+            .as_ref()
+            .filter(|uri| !uri.trim().is_empty())
+            .map_or_else(
+                || format!("{base}/sso/callback/{provider_id}"),
+                |uri| {
+                    if url::Url::parse(uri).is_ok() {
+                        uri.clone()
+                    } else {
+                        format!("{base}/{}", uri.trim_start_matches('/'))
+                    }
+                },
+            );
+        _ = object.insert("redirectURI".into(), json!(redirect));
+        EndpointResponse::json(&output)
+    }
+}
+fn required_string<'a>(value: &'a Value, name: &str) -> AuthResult<&'a str> {
+    value
+        .get(name)
+        .and_then(Value::as_str)
+        .ok_or_else(|| super::endpoint::validation(format!("Invalid {name}")))
+}
+fn api(status: u16, message: &str) -> AuthError {
+    AuthError::Api {
+        status,
+        code: None,
+        message: message.into(),
+    }
+}
+fn validate(input: Option<&JsValue>) -> AuthResult<JsValue> {
+    use super::authentication_helpers::{JsonField, JsonFieldKind};
+    let output = super::endpoint::validate_fields(
+        input,
+        "body",
+        &[
+            JsonField::string("providerId", true),
+            JsonField::string("issuer", true),
+            JsonField::string("domain", true),
+            JsonField {
+                name: "oidcConfig",
+                kind: JsonFieldKind::Record,
+                required: false,
+            },
+            JsonField {
+                name: "samlConfig",
+                kind: JsonFieldKind::Record,
+                required: false,
+            },
+            JsonField::string("organizationId", false),
+            JsonField {
+                name: "overrideUserInfo",
+                kind: JsonFieldKind::Boolean,
+                required: false,
+            },
+        ],
+    )?;
+    if output
+        .get("issuer")
+        .and_then(JsValue::as_str)
+        .is_none_or(|issuer| url::Url::parse(issuer).is_err())
+    {
+        return Err(super::endpoint::validation("[body.issuer] Invalid URL"));
+    }
+    if let Some(config) = output.get("oidcConfig") {
+        _ = super::endpoint::validate_fields(
+            Some(config),
+            "body.oidcConfig",
+            &[
+                JsonField::string("clientId", true),
+                JsonField::string("clientSecret", false),
+                JsonField::string("authorizationEndpoint", false),
+                JsonField::string("tokenEndpoint", false),
+                JsonField::string("jwksEndpoint", false),
+                JsonField::string("discoveryEndpoint", false),
+                JsonField::string("userInfoEndpoint", false),
+                JsonField {
+                    name: "skipDiscovery",
+                    kind: JsonFieldKind::Boolean,
+                    required: false,
+                },
+                JsonField {
+                    name: "pkce",
+                    kind: JsonFieldKind::Boolean,
+                    required: false,
+                },
+            ],
+        )?;
+    }
+    Ok(output)
+}
+#[async_trait]
+impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
+    fn name(&self) -> &'static str {
+        "sso"
+    }
+    fn routes(&self) -> Vec<AuthRoute> {
+        vec![AuthRoute::post("/sso/register", "registerSSOProvider")]
+    }
+    fn server_endpoints(&self) -> Vec<EndpointDefinition> {
+        vec![super::endpoint::definition(
+            "registerSSOProvider",
+            "registerSSOProvider",
+            Some("/sso/register"),
+            HttpMethod::Post,
+        )]
+    }
+    fn validate_endpoint(
+        &self,
+        call: &EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointInput> {
+        Ok(EndpointInput {
+            body: Some(validate(call.body())?),
+            query: call.query().cloned(),
+        })
+    }
+    async fn on_endpoint(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        self.register(
+            call.body()
+                .ok_or_else(|| super::endpoint::validation("Missing body"))?,
+            call,
+            ctx,
+        )
+        .await
+    }
+    async fn on_request(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() != "/sso/register" || *req.method() != HttpMethod::Post {
+            return Ok(None);
+        }
+        let input = alibi_core::utils::json::parse_value(
+            std::str::from_utf8(req.body.as_deref().unwrap_or_default())
+                .map_err(|_| super::endpoint::validation("Invalid JSON"))?,
+        )?;
+        Ok(Some(
+            self.register(&validate(Some(&input))?, req, ctx)
+                .await?
+                .to_response()?,
+        ))
+    }
+}

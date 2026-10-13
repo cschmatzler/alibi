@@ -26,6 +26,11 @@ const OAUTH_CLIENTS: Migration = Migration {
     postgres: alibi_schema_registry::POSTGRES_OAUTH_SCHEMA,
 };
 
+const SSO: Migration = Migration {
+    name: "m20261013_000003_typescript_sso_schema",
+    sqlite: alibi_schema_registry::SQLITE_SSO_SCHEMA,
+    postgres: alibi_schema_registry::POSTGRES_SSO_SCHEMA,
+};
 /// Apply the bundled auth schema.
 ///
 /// # Errors
@@ -35,7 +40,7 @@ pub async fn run_migrations(pool: &SqlxPool) -> AuthResult<()> {
     apply(
         pool,
         "better_auth_migrations",
-        &[AUTH_SCHEMA, OAUTH_CLIENTS],
+        &[AUTH_SCHEMA, OAUTH_CLIENTS, SSO],
     )
     .await
 }
@@ -57,7 +62,7 @@ pub(crate) async fn run_migrations_scoped(
     apply_scoped(
         pool,
         "better_auth_migrations",
-        &[AUTH_SCHEMA, OAUTH_CLIENTS],
+        &[AUTH_SCHEMA, OAUTH_CLIENTS, SSO],
         Some(config),
     )
     .await

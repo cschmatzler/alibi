@@ -2109,6 +2109,99 @@
     ]
   },
   {
+    "table": "ssoProvider",
+    "columns": [
+      {
+        "name": "domain",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "domainVerified",
+        "type": "INTEGER",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "id",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 1
+      },
+      {
+        "name": "issuer",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "oidcConfig",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "organizationId",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "providerId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "samlConfig",
+        "type": "TEXT",
+        "required": 0,
+        "default": null,
+        "primaryKey": 0
+      },
+      {
+        "name": "userId",
+        "type": "TEXT",
+        "required": 1,
+        "default": null,
+        "primaryKey": 0
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sqlite_autoindex_ssoProvider_1",
+        "unique": 1,
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "name": "sqlite_autoindex_ssoProvider_2",
+        "unique": 1,
+        "columns": [
+          "providerId"
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "table": "user",
+        "from": "userId",
+        "to": "id",
+        "onDelete": "CASCADE",
+        "onUpdate": "NO ACTION"
+      }
+    ]
+  },
+  {
     "table": "team",
     "columns": [
       {

@@ -9,9 +9,9 @@ mod org_extensions;
 mod secondary_sessions;
 pub mod secondary_storage;
 mod session_deletion;
+mod sso;
 pub mod stateless;
 mod wallets;
-
 use crate::schema::AuthSchema;
 pub(crate) use contracts::UserCreateTransform;
 use contracts::create_data;
@@ -40,6 +40,7 @@ pub use secondary_storage::RedisAdapter;
 pub use secondary_storage::{CacheAdapter, MemoryCacheAdapter};
 pub(crate) use session_deletion::SessionDeletionHooks;
 pub use session_deletion::{SessionDeletionHook, SessionDeletionWork};
+pub use sso::{SsoProvider, SsoProviderStore};
 pub use wallets::WalletAddressStore;
 
 pub trait AuthStore<S: AuthSchema>:
@@ -51,6 +52,7 @@ pub trait AuthStore<S: AuthSchema>:
     + MemberStore
     + InvitationStore
     + OAuthClientStore
+    + SsoProviderStore
     + TeamStore
     + OrganizationRoleStore
     + WalletAddressStore
@@ -76,6 +78,7 @@ where
         + MemberStore
         + InvitationStore
         + OAuthClientStore
+        + SsoProviderStore
         + TeamStore
         + OrganizationRoleStore
         + WalletAddressStore

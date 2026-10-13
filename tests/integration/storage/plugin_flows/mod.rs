@@ -419,3 +419,5 @@ mod oauth_client_credentials;
 mod oauth_protocol_forms;
 
 mod oauth_refresh_reuse;
+
+mod sso_registration;

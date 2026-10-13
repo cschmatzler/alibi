@@ -433,3 +433,9 @@ delegate_store!(OAuthClientStore, {
         updated_at: chrono::DateTime<chrono::Utc>,
     ) -> AuthResult<Option<OAuthClient>>;
 });
+
+delegate_store!(SsoProviderStore, {
+ async fn create_sso_provider(&self, provider:SsoProvider)->AuthResult<SsoProvider>;
+ async fn get_sso_provider(&self, provider_id:&str)->AuthResult<Option<SsoProvider>>;
+ async fn list_sso_providers_by_user(&self, user_id:&str)->AuthResult<Vec<SsoProvider>>;
+});

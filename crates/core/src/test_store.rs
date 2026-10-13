@@ -1355,3 +1355,5 @@ pub async fn test_database() -> Arc<dyn AuthStore<BundledSchema>> {
 // LCOV_EXCL_STOP
 
 impl crate::store::OAuthClientStore for MemoryStore {}
+
+impl crate::store::SsoProviderStore for MemoryStore {}
