@@ -14,13 +14,27 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
+    async fn store_oauth_refresh_replay(&self, id: &str, ciphertext: &str) -> AuthResult<()> {
+        use super::entities::oauth_refresh_token;
+        _ = oauth_refresh_token::Entity::update_many()
+            .col_expr(
+                oauth_refresh_token::Column::RotationReplayResponse,
+                sea_orm::sea_query::Expr::value(ciphertext),
+            )
+            .filter(oauth_refresh_token::Column::Id.eq(id))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        Ok(())
+    }
     async fn claim_oauth_refresh_rotation(
         &self,
         token: &str,
         at: chrono::DateTime<chrono::Utc>,
+        replay_expires: Option<chrono::DateTime<chrono::Utc>>,
     ) -> AuthResult<bool> {
         use super::entities::oauth_refresh_token;
-        let result = oauth_refresh_token::Entity::update_many()
+        let mut update = oauth_refresh_token::Entity::update_many()
             .col_expr(
                 oauth_refresh_token::Column::Revoked,
                 sea_orm::sea_query::Expr::value(at),
@@ -30,7 +44,14 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
                 sea_orm::sea_query::Expr::value(at),
             )
             .filter(oauth_refresh_token::Column::Token.eq(token))
-            .filter(oauth_refresh_token::Column::Revoked.is_null())
+            .filter(oauth_refresh_token::Column::Revoked.is_null());
+        if let Some(expires) = replay_expires {
+            update = update.col_expr(
+                oauth_refresh_token::Column::RotationReplayExpiresAt,
+                sea_orm::sea_query::Expr::value(expires),
+            );
+        }
+        let result = update
             .exec(self.scoped_connection())
             .await
             .map_err(map_db_err)?;

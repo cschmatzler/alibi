@@ -92,6 +92,48 @@ impl OAuthProviderPlugin {
             .get("revoked")
             .is_some_and(|value| !value.is_null())
         {
+            let within = original
+                .metadata
+                .get("rotatedAt")
+                .is_some_and(|value| !value.is_null())
+                && original
+                    .metadata
+                    .get("rotationReplayExpiresAt")
+                    .and_then(Value::as_str)
+                    .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+                    .is_some_and(|deadline| deadline >= chrono::Utc::now());
+            if within {
+                if let Some(ciphertext) = original
+                    .metadata
+                    .get("rotationReplayResponse")
+                    .and_then(Value::as_str)
+                {
+                    let decoded = crate::token_crypto::decrypt_with_config(ciphertext, &ctx.config)
+                        .and_then(|plain| {
+                            serde_json::from_str::<Value>(&plain)
+                                .map_err(alibi_core::AuthError::from)
+                        });
+                    if let Ok(replay) = decoded
+                        && replay.get("request")
+                            == Some(&replay_request(
+                                &scopes,
+                                body,
+                                original.metadata.get("resources"),
+                                original.metadata.get("confirmation"),
+                            ))
+                        && let Some(mut response) =
+                            replay.get("response").and_then(Value::as_object).cloned()
+                        && let Some(expires) = response.get("expires_at").and_then(Value::as_i64)
+                    {
+                        _ = response.insert(
+                            "expires_in".into(),
+                            json!((expires - chrono::Utc::now().timestamp()).max(0)),
+                        );
+                        return Ok(no_store(EndpointResponse::json(&response)?));
+                    }
+                }
+                return error("invalid_grant", "invalid refresh token");
+            }
             if let Some(user) = &original.user_id {
                 ctx.database
                     .delete_oauth_refresh_family(&original.client_id, user)
@@ -119,7 +161,11 @@ impl OAuthProviderPlugin {
         let next_refresh = if rotate {
             if !ctx
                 .database
-                .claim_oauth_refresh_rotation(&protected, issued)
+                .claim_oauth_refresh_rotation(
+                    &protected,
+                    issued,
+                    replay_deadline(issued, self.config.refresh_token_reuse_interval)?,
+                )
                 .await?
             {
                 return error("invalid_grant", "invalid refresh token");
@@ -211,6 +257,27 @@ impl OAuthProviderPlugin {
                 Err(response) => return Ok(no_store(response)),
             }
         }
+        if rotate && self.config.refresh_token_reuse_interval > 0.0 {
+            let replay = json!({"request":replay_request(&scopes,body,original.metadata.get("resources"),original.metadata.get("confirmation")),"response":response});
+            let saved = crate::token_crypto::encrypt_with_config(
+                &serde_json::to_string(&replay)?,
+                &ctx.config,
+            );
+            match saved {
+                Ok(ciphertext) => {
+                    if let Err(error) = ctx
+                        .database
+                        .store_oauth_refresh_replay(&original.id, &ciphertext)
+                        .await
+                    {
+                        tracing::error!(%error,"Unable to store refresh rotation replay");
+                    }
+                }
+                Err(error) => {
+                    tracing::error!(%error,"Unable to encrypt refresh rotation replay");
+                }
+            }
+        }
         Ok(no_store(EndpointResponse::json(&response)?))
     }
 }
@@ -221,4 +288,51 @@ fn no_store(response: EndpointResponse) -> EndpointResponse {
 }
 fn error(code: &str, description: &str) -> AuthResult<EndpointResponse> {
     super::clients::status_protocol_error(400, code, description).map(no_store)
+}
+
+fn replay_request(
+    scopes: &[&str],
+    body: &Value,
+    original_resources: Option<&Value>,
+    confirmation: Option<&Value>,
+) -> Value {
+    let mut scopes = scopes.to_vec();
+    scopes.sort_unstable();
+    scopes.dedup();
+    let mut request = serde_json::Map::from_iter([("effectiveScopes".into(), json!(scopes))]);
+    let resources = body.get("resource").or(original_resources);
+    let values = resources.and_then(|value| {
+        value
+            .as_array()
+            .map(|values| values.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+            .or_else(|| value.as_str().map(|value| vec![value]))
+    });
+    if let Some(mut values) = values {
+        values.sort_unstable();
+        values.dedup();
+        _ = request.insert("requestedResources".into(), json!(values));
+    }
+    if let Some(value) = confirmation.filter(|value| !value.is_null()) {
+        _ = request.insert("confirmation".into(), value.clone());
+    }
+    Value::Object(request)
+}
+fn replay_deadline(
+    issued: chrono::DateTime<chrono::Utc>,
+    interval: f64,
+) -> AuthResult<Option<chrono::DateTime<chrono::Utc>>> {
+    if interval <= 0.0 {
+        return Ok(None);
+    }
+    let seconds = json!(issued.timestamp())
+        .as_f64()
+        .ok_or_else(|| alibi_core::AuthError::internal("Invalid rotation timestamp"))?;
+    let milliseconds = ((seconds + interval) * 1000.0)
+        .trunc()
+        .to_string()
+        .parse::<i64>()
+        .map_err(|_| alibi_core::AuthError::internal("Invalid refresh reuse interval"))?;
+    chrono::DateTime::from_timestamp_millis(milliseconds)
+        .map(Some)
+        .ok_or_else(|| alibi_core::AuthError::internal("Invalid refresh reuse deadline"))
 }

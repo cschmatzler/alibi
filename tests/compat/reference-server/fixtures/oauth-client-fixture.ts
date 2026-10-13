@@ -14,6 +14,18 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   await (await getMigrations(options)).runMigrations();
   const auths = {
     default: betterAuth(options),
+    reuse: betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          refreshTokenReuseInterval: 60,
+        }),
+      ],
+    }),
     machine: betterAuth({
       ...options,
       plugins: [
@@ -358,6 +370,8 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
                 resources: row.resources ?? null,
                 revoked: row.revoked ?? null,
                 rotatedAt: row.rotatedAt ?? null,
+                rotationReplayResponse: row.rotationReplayResponse ?? null,
+                rotationReplayExpiresAt: row.rotationReplayExpiresAt ?? null,
               }
             : null,
         ),

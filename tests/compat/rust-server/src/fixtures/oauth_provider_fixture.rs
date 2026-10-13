@@ -60,8 +60,10 @@ pub(crate) async fn router(
         "resources-open",
         "selection",
         "machine",
+        "reuse",
     ] {
         let provider = OAuthProviderConfig {
+            refresh_token_reuse_interval:if mode=="reuse"{60.0}else{0.0},
             client_credentials_scope_privileges:if mode=="machine"{Some(Arc::new(MachinePrivileges))}else{None},
             scopes:if mode=="machine"{vec!["api:read".into(),"api:write".into()]}else{OAuthProviderConfig::default().scopes},
             select_account_page: if mode == "selection" {
@@ -141,7 +143,7 @@ pub(crate) async fn router(
                 use base64::Engine as _; use sha2::Digest as _;
                 let hashed=base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(input["token"].as_str().unwrap()));
                 let row=auth.store().get_oauth_token(if input["kind"]=="refresh" {alibi::store::OAuthTokenKind::Refresh}else{alibi::store::OAuthTokenKind::Access},&hashed).await.unwrap();
-                return axum::Json(row.map(|r|serde_json::json!({"id":r.id,"clientId":r.client_id,"userId":r.user_id,"sessionId":r.session_id,"scopes":r.metadata["scopes"],"createdAt":r.created_at,"expiresAt":r.expires_at,"authorizationCodeId":r.authorization_code_id,"token":r.token,"refreshId":r.metadata.get("refreshId"),"authTime":r.metadata.get("authTime"),"resources":r.metadata.get("resources"),"revoked":r.metadata.get("revoked"),"rotatedAt":r.metadata.get("rotatedAt")}))).into_response();
+                return axum::Json(row.map(|r|serde_json::json!({"id":r.id,"clientId":r.client_id,"userId":r.user_id,"sessionId":r.session_id,"scopes":r.metadata["scopes"],"createdAt":r.created_at,"expiresAt":r.expires_at,"authorizationCodeId":r.authorization_code_id,"token":r.token,"refreshId":r.metadata.get("refreshId"),"authTime":r.metadata.get("authTime"),"resources":r.metadata.get("resources"),"revoked":r.metadata.get("revoked"),"rotatedAt":r.metadata.get("rotatedAt"),"rotationReplayResponse":r.metadata.get("rotationReplayResponse"),"rotationReplayExpiresAt":r.metadata.get("rotationReplayExpiresAt")}))).into_response();
             }
             if input["action"]=="expire-session" {
                 use alibi::AuthSession as _;
