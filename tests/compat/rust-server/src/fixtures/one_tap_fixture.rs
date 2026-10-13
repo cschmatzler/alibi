@@ -210,9 +210,38 @@ pub(crate) async fn router(
         let server_auth = auth.clone();
         let instance = auth.clone().axum_router().with_state(auth).route(
             "/__test/server-callback",
-            post(move |Json(input): Json<Value>| {
+            post(move |request: axum::extract::Request| {
                 let auth = server_auth.clone();
                 async move {
+                    let (parts, body) = request.into_parts();
+                    let bytes = axum::body::to_bytes(body, 1024 * 1024).await.unwrap();
+                    let input: Value = serde_json::from_slice(&bytes).unwrap();
+                    let original = if input["originalRequest"].as_bool() == Some(true) {
+                        let mut request =
+                            alibi::AuthRequest::new(alibi::HttpMethod::Post, parts.uri.path())
+                                .with_url(
+                                    url::Url::parse(&format!(
+                                        "http://{}{}",
+                                        parts.headers.get("host").unwrap().to_str().unwrap(),
+                                        parts.uri
+                                    ))
+                                    .unwrap(),
+                                );
+                        request.headers = parts
+                            .headers
+                            .iter()
+                            .filter_map(|(name, value)| {
+                                value
+                                    .to_str()
+                                    .ok()
+                                    .map(|value| (name.to_string(), value.to_owned()))
+                            })
+                            .collect();
+                        request.body = Some(bytes.to_vec());
+                        Some(request)
+                    } else {
+                        None
+                    };
                     let endpoint =
                         alibi::endpoint::ServerEndpoint::<Value>::new("one-tap", "oneTapCallback")
                             .with_body(&input["body"])
@@ -224,6 +253,7 @@ pub(crate) async fn router(
                                 headers: input.get("headers").map(|headers| {
                                     serde_json::from_value(headers.clone()).unwrap()
                                 }),
+                                request: original,
                                 ..Default::default()
                             },
                         )
