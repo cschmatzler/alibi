@@ -11,7 +11,9 @@ pub(super) mod types;
 
 mod validation;
 
-pub use access::RolePermissions;
+pub use access::{
+    DEFAULT_STATEMENTS, RolePermissions, admin_role, default_ac, default_roles, user_role,
+};
 use access::{has_permission, is_admin_role, is_admin_user_id};
 use alibi_core::entity::AuthUser;
 use alibi_core::wire::{SessionView, UserView};
@@ -90,6 +92,7 @@ pub struct AdminConfig {
     pub admin_user_ids: Option<Vec<String>>,
     /// Custom role definitions. When provided, these replace the built-in
     /// `admin` and `user` role permissions. None uses builtins; Some(empty) grants none.
+    /// Start from [`default_roles`] and extend [`admin_role`] to retain built-in grants.
     #[config(default = None)]
     pub roles: Option<HashMap<String, RolePermissions>>,
     /// Default reason applied when banning a user without an explicit reason.

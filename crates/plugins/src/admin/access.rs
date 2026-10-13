@@ -1,7 +1,48 @@
 //! Permission helpers for the admin plugin.
 
 use super::AdminConfig;
+use crate::access::{AccessControl, create_access_control};
 use std::collections::HashMap;
+
+/// Built-in admin resources and actions, matching Better Auth's `defaultStatements`.
+///
+/// These declarations include `user:impersonate-admins`, which is deliberately
+/// not granted by [`admin_role`]. Declaring an action does not grant it to a role.
+pub const DEFAULT_STATEMENTS: &[(&str, &[&str])] = &[
+    (
+        "user",
+        &[
+            "create",
+            "list",
+            "set-role",
+            "ban",
+            "impersonate",
+            "impersonate-admins",
+            "delete",
+            "set-password",
+            "set-email",
+            "get",
+            "update",
+        ],
+    ),
+    ("session", &["list", "revoke", "delete"]),
+];
+
+/// Create application-side access control from [`DEFAULT_STATEMENTS`].
+#[must_use]
+pub fn default_ac() -> AccessControl {
+    create_access_control(
+        DEFAULT_STATEMENTS
+            .iter()
+            .map(|(resource, actions)| {
+                (
+                    (*resource).to_owned(),
+                    actions.iter().map(|action| (*action).to_owned()).collect(),
+                )
+            })
+            .collect(),
+    )
+}
 
 /// Role-based permission grants for the admin plugin.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -18,6 +59,7 @@ impl RolePermissions {
     }
 
     /// Allow a set of actions for one resource.
+    /// Replaces that resource's grants while preserving other resources.
     #[must_use]
     pub fn allow<I, S>(mut self, resource: impl Into<String>, actions: I) -> Self
     where
@@ -44,29 +86,46 @@ impl RolePermissions {
     }
 }
 
-pub(super) fn default_roles() -> HashMap<String, RolePermissions> {
+/// Create the built-in admin role, ready to extend with [`RolePermissions::allow`].
+///
+/// Grants every action in [`DEFAULT_STATEMENTS`] except `user:impersonate-admins`.
+#[must_use]
+pub fn admin_role() -> RolePermissions {
+    DEFAULT_STATEMENTS
+        .iter()
+        .fold(RolePermissions::new(), |role, (resource, actions)| {
+            role.allow(
+                *resource,
+                actions
+                    .iter()
+                    .copied()
+                    .filter(|action| *resource != "user" || *action != "impersonate-admins"),
+            )
+        })
+}
+
+/// Create the built-in user role, which grants no admin permissions.
+#[must_use]
+pub fn user_role() -> RolePermissions {
+    RolePermissions::new()
+}
+
+/// Create the built-in role map used when [`AdminConfig::roles`] is unset.
+///
+/// Extend a role before passing the map to the plugin:
+///
+/// ```
+/// use alibi_plugins::admin::{AdminPlugin, admin_role, default_roles};
+///
+/// let mut roles = default_roles();
+/// roles.insert("admin".into(), admin_role().allow("job", ["read", "manage"]));
+/// let plugin = AdminPlugin::new().roles(roles);
+/// ```
+#[must_use]
+pub fn default_roles() -> HashMap<String, RolePermissions> {
     HashMap::from([
-        (
-            "admin".to_owned(),
-            RolePermissions::new()
-                .allow(
-                    "user",
-                    [
-                        "create",
-                        "list",
-                        "set-role",
-                        "ban",
-                        "impersonate",
-                        "delete",
-                        "set-password",
-                        "set-email",
-                        "get",
-                        "update",
-                    ],
-                )
-                .allow("session", ["list", "revoke", "delete"]),
-        ),
-        ("user".to_owned(), RolePermissions::new()),
+        ("admin".to_owned(), admin_role()),
+        ("user".to_owned(), user_role()),
     ])
 }
 

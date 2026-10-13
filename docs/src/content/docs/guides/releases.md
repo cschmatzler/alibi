@@ -52,6 +52,7 @@ The upstream compatibility target is separate release information. Do not encode
 
 The compatibility target remains Better Auth `1.7.7`.
 
+- The admin plugin exports `DEFAULT_STATEMENTS`, `default_ac()`, `admin_role()`, `user_role()`, and `default_roles()` from `alibi::plugins::admin` (also under `admin::access`). Applications can extend the built-in grants before setting `AdminConfig::roles`. The declarations include `impersonate-admins`, while the default admin role continues to exclude it; endpoint authorization and wire formats are unchanged.
 - Public constants in `alibi::error::codes` let server callers match core and plugin errors without repeating code strings. Plugin construction uses the same constants; `AuthError`, response statuses, error codes, and messages are unchanged.
 - SQLx database hooks can import `SqlxHookContextExt` and call `ctx.connection().await?` to query on the active auth transaction or acquire a pool connection outside one. Application queries see earlier uncommitted auth writes and participate in the transaction's commit or rollback. Existing hook context fields remain available.
 

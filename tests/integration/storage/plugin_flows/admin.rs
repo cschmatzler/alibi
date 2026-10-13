@@ -1,10 +1,124 @@
 //! Admin authority comes from the acting session; target mutations stay scoped.
 use super::*;
 use alibi::plugins::AdminPlugin;
+use alibi::plugins::admin::{admin_role, default_ac, default_roles};
 use alibi::{AuthUser, UpdateUser};
 
-backend_tests!(admin_provisioning_permissions_passwords_and_session_moderation);
+backend_tests!(
+    admin_provisioning_permissions_passwords_and_session_moderation,
+    admin_public_defaults_extend_application_permissions
+);
 postgres_tests!(admin_provisioning_permissions_passwords_and_session_moderation);
+
+async fn admin_public_defaults_extend_application_permissions<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let baseline = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new())
+        .build()
+        .await?;
+    let administrator = signup(&baseline, "defaults-admin@example.test").await;
+    let admin_id = body(&administrator)["user"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    drop(
+        baseline
+            .store()
+            .update_user(
+                &admin_id,
+                UpdateUser {
+                    role: Some("admin".into()),
+                    ..Default::default()
+                },
+            )
+            .await?,
+    );
+    let member = signup(&baseline, "defaults-member@example.test").await;
+    let member_id = body(&member)["user"]["id"].as_str().unwrap().to_owned();
+    let mut roles = default_roles();
+    _ = roles.insert(
+        "admin".into(),
+        admin_role().allow("job", ["read", "manage"]),
+    );
+    let extended = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(AdminPlugin::new().roles(roles))
+        .build()
+        .await?;
+
+    // The declared action can be explicitly granted in application access control,
+    // but extending the built-in admin role must not grant it implicitly.
+    let ac = default_ac();
+    let all_actions = ac.new_role(ac.statements.clone());
+    assert!(
+        all_actions
+            .authorize(
+                &[("user".into(), vec!["impersonate-admins".into()].into())]
+                    .into_iter()
+                    .collect()
+            )
+            .success()
+    );
+    for (auth, extended_jobs) in [(&baseline, false), (&extended, true)] {
+        for (actor, is_admin) in [(&administrator, true), (&member, false)] {
+            let cookie = cookies(actor);
+            for (permissions, allowed) in [
+                (json!({"job":["read","manage"]}), is_admin && extended_jobs),
+                (json!({"job":["delete"]}), false),
+                (
+                    json!({"user":["set-email","ban"],"session":["revoke"]}),
+                    is_admin,
+                ),
+                (json!({"user":["impersonate-admins"]}), false),
+            ] {
+                let checked = call(
+                    auth,
+                    request(
+                        "/admin/has-permission",
+                        Some(json!({"permissions":permissions})),
+                        &cookie,
+                    ),
+                    200,
+                )
+                .await;
+                assert_eq!(body(&checked), json!({"success":allowed,"error":null}));
+            }
+            let status = if is_admin { 200 } else { 403 };
+            let users = call(auth, request("/admin/list-users", None, &cookie), status).await;
+            let sessions = call(
+                auth,
+                request(
+                    "/admin/list-user-sessions",
+                    Some(json!({"userId":member_id})),
+                    &cookie,
+                ),
+                status,
+            )
+            .await;
+            if is_admin {
+                assert_eq!(body(&users)["total"], 2);
+                assert_eq!(body(&sessions)["sessions"][0]["userId"], member_id);
+            } else {
+                assert_eq!(body(&users)["code"], "YOU_ARE_NOT_ALLOWED_TO_LIST_USERS");
+                assert_eq!(
+                    body(&sessions)["code"],
+                    "YOU_ARE_NOT_ALLOWED_TO_LIST_USERS_SESSIONS"
+                );
+            }
+        }
+        let denied = call(
+            auth,
+            request(
+                "/admin/impersonate-user",
+                Some(json!({"userId":admin_id})),
+                &cookies(&administrator),
+            ),
+            403,
+        )
+        .await;
+        assert_eq!(body(&denied)["code"], "YOU_CANNOT_IMPERSONATE_ADMINS");
+    }
+    B::close(connection).await
+}
 
 async fn login<S: AuthSchema>(auth: &Alibi<S>, password: &str, status: u16) -> AuthResponse {
     call(

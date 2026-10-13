@@ -111,7 +111,7 @@ Banning revokes all of the user's sessions. While the ban lasts, **every** way o
 {"session":{"id":"…","userId":"<target>","impersonatedBy":"<admin>","expiresAt":"<now+1h>","token":"…"},"user":{…target…}}
 ```
 
-Admins cannot impersonate other admins unless `allow_impersonating_admins` is set (`403 YOU_CANNOT_IMPERSONATE_ADMINS`). Impersonated sessions are hidden from the target's `GET /list-sessions`.
+Admins cannot impersonate other admins unless `allow_impersonating_admins` is set or their role explicitly grants `user:impersonate-admins` (`403 YOU_CANNOT_IMPERSONATE_ADMINS`). The default admin role does not grant that action. Impersonated sessions are hidden from the target's `GET /list-sessions`.
 
 ## Configuration
 
@@ -132,27 +132,27 @@ Admins cannot impersonate other admins unless `allow_impersonating_admins` is se
 
 ### Custom roles and permissions
 
-The permission model is `resource → actions`. The built-in resources are `user` (`create`, `list`, `set-role`, `ban`, `impersonate`, `delete`, `set-password`, `get`, `update`) and `session` (`list`, `revoke`, `delete`):
+The permission model is `resource → actions`. `alibi::plugins::admin::DEFAULT_STATEMENTS` lists the built-in resources: `user` (`create`, `list`, `set-role`, `ban`, `impersonate`, `impersonate-admins`, `delete`, `set-password`, `set-email`, `get`, `update`) and `session` (`list`, `revoke`, `delete`). `default_ac()` constructs the [application-side access-control helper](/plugins/organization/#application-side-access-control) from these declarations.
+
+`admin_role()` returns the built-in admin grants, excluding `impersonate-admins`; `user_role()` returns a role with no grants. `default_roles()` returns a fresh map containing both. The plugin uses these same definitions when `AdminConfig::roles` is unset.
+
+Setting `roles` replaces the whole role map. Start from the defaults to add your own resources while retaining Alibi's built-in grants:
 
 ```rust
 use alibi::plugins::{AdminPlugin, RolePermissions};
-use std::collections::HashMap;
+use alibi::plugins::admin::{admin_role, default_roles};
 
 fn admin() -> AdminPlugin {
-    let roles = HashMap::from([
-        (
-            "admin".to_owned(),
-            RolePermissions::new()
-                .allow("user", ["create", "list", "set-role", "ban", "impersonate", "delete", "set-password", "get", "update"])
-                .allow("session", ["list", "revoke", "delete"]),
-        ),
-        (
-            // Support staff can look but not change anything.
-            "support".to_owned(),
-            RolePermissions::new().allow("user", ["list", "get"]).allow("session", ["list"]),
-        ),
-        ("user".to_owned(), RolePermissions::new()),
-    ]);
+    let mut roles = default_roles();
+    roles.insert(
+        "admin".to_owned(),
+        admin_role().allow("job", ["read", "manage"]),
+    );
+    // Support staff can look but not change anything.
+    roles.insert(
+        "support".to_owned(),
+        RolePermissions::new().allow("user", ["list", "get"]).allow("session", ["list"]),
+    );
     AdminPlugin::new()
         .roles(roles)
         .admin_roles(vec!["admin".to_owned()])
@@ -161,6 +161,8 @@ fn admin() -> AdminPlugin {
         .default_ban_expires_in(7.0 * 24.0 * 3600.0)
 }
 ```
+
+`RolePermissions::allow` replaces the actions for the named resource. Adding a new resource such as `job` preserves the existing `user` and `session` grants. To add an action to an existing resource, extend that entry in the role's public `permissions` map.
 
 Check a permission from the client with `POST /admin/has-permission` and `{"permissions":{"user":["ban"]}}` → `{"success":true,"error":null}`. For access-control checks in **your own** code, use the [access-control helpers](/plugins/organization/#application-side-access-control), which implement the same `resource → actions` semantics.
 
