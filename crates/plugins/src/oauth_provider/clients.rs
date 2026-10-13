@@ -736,3 +736,48 @@ impl OAuthProviderPlugin {
         EndpointResponse::json(&Value::Object(output))
     }
 }
+
+impl OAuthProviderPlugin {
+    /// Read public display fields for any authenticated user.
+    pub fn get_oauth_client_public_endpoint(client_id: &str) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("oauth-provider", "getOAuthClientPublic")
+            .with_query(&json!({"client_id":client_id}))
+    }
+    pub(super) async fn read_public_client<S: AuthSchema>(
+        &self,
+        input: ReadClientInput,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        _ = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
+        let client = ctx.database.get_oauth_client(&input.client_id).await?;
+        let Some(client) =
+            client.filter(|client| client.metadata.get("disabled") != Some(&json!(true)))
+        else {
+            return Ok(EndpointResponse::error(AuthError::Api {
+                status: 404,
+                code: None,
+                message: String::new(),
+            })
+            .with_error_body(alibi_core::utils::json::parse_value(
+                r#"{"error":"not_found","error_description":"client not found"}"#,
+            )?));
+        };
+        let mut display = serde_json::Map::new();
+        for name in [
+            "client_name",
+            "client_uri",
+            "logo_uri",
+            "contacts",
+            "tos_uri",
+            "policy_uri",
+        ] {
+            if let Some(value) = client.metadata.get(name) {
+                _ = display.insert(name.into(), value.clone());
+            }
+        }
+        _ = display.insert("client_id".into(), json!(client.client_id));
+        _ = display.insert("redirect_uris".into(), json!([]));
+        EndpointResponse::json(&Value::Object(display))
+    }
+}
