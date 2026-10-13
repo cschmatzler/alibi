@@ -90,6 +90,22 @@ const serverApprove = (ctx: Context, body: unknown, headers?: Record<string, str
   serverDecision(ctx, "approve", body, headers);
 const serverDeny = (ctx: Context, body: unknown, headers?: Record<string, string>) =>
   serverDecision(ctx, "deny", body, headers);
+function serverToken(
+  ctx: Context,
+  body: unknown,
+  headers?: Record<string, string>,
+  onResponse?: (response: Response) => void,
+) {
+  return ctx
+    .actor("server-token")
+    .client.$fetch<any>(`${ctx.baseURL}/__test/server-api/device-token`, {
+      method: "POST",
+      body: { body, ...(headers ? { headers } : {}) },
+      onResponse({ response }) {
+        onResponse?.(response.clone());
+      },
+    });
+}
 async function signUpOwner(ctx: Context, prefix: string) {
   const owner = deviceActor(ctx, "owner");
   let cookie = "";
@@ -137,7 +153,7 @@ compatScenario(
   "device token returns authorization_pending while request is pending",
   async (ctx) => {
     const code = await requestCode(ctx);
-    const token = await deviceActor(ctx, "device").device.token(tokenRequest(code.device_code));
+    const token = await serverToken(ctx, tokenRequest(code.device_code));
     expect(token.data).toBeNull();
     expect(token.error).toMatchObject({ status: 400, error: "authorization_pending" });
 
@@ -146,7 +162,7 @@ compatScenario(
 );
 
 compatScenario("device token returns invalid_grant for an unknown device code", async (ctx) => {
-  const token = await deviceActor(ctx, "device").device.token(tokenRequest("unknown-device-code"));
+  const token = await serverToken(ctx, tokenRequest("unknown-device-code"));
   expect(token.error).toMatchObject({ status: 400, error: "invalid_grant" });
   return { token: ctx.snapshot(token) };
 });
@@ -180,6 +196,20 @@ compatScenario(
       await ctx.readDeviceState({ deviceCode: code.device_code }),
     );
     expect(unclaimedState.userId).toBeNull();
+    for (const body of [
+      { ...tokenRequest(code.device_code), grant_type: "wrong" },
+      { ...tokenRequest(code.device_code), device_code: 42 },
+    ]) {
+      let rejectedResponse: Response | undefined;
+      const rejected = await serverToken(ctx, body, undefined, (response) => {
+        rejectedResponse = response;
+      });
+      expect(rejected.error).toMatchObject({ status: 400, code: "VALIDATION_ERROR" });
+      expect(rejectedResponse!.headers.get("cache-control")).toBeNull();
+      expect(rejectedResponse!.headers.get("pragma")).toBeNull();
+      expect(await ctx.readDeviceState({ deviceCode: code.device_code })).toEqual(unclaimedState);
+    }
+
     for (const [body, headers, status] of [
       [{ userCode: code.user_code }, undefined, 400],
       [{ userCode: 42 }, { cookie }, 400],
@@ -218,11 +248,14 @@ compatScenario(
     const device = deviceActor(ctx, "device");
     const redemptionStartedAt = Date.now();
     let tokenResponse: Response | undefined;
-    const token = await device.device.token(tokenRequest(code.device_code), {
-      onResponse(context) {
-        tokenResponse = context.response.clone();
+    const token = await serverToken(
+      ctx,
+      tokenRequest(code.device_code),
+      { "user-agent": "device-sdk-poller", "x-forwarded-for": "198.51.100.25" },
+      (response) => {
+        tokenResponse = response;
       },
-    });
+    );
     const redemptionCompletedAt = Date.now();
     expect(token.error).toBeNull();
 
@@ -260,6 +293,8 @@ compatScenario(
       throw new Error("device token must identify its persisted session");
     }
 
+    expect(issuedSession.userAgent).toBe("device-sdk-poller");
+    expect(issuedSession.ipAddress).toBe("198.51.100.25");
     const absoluteExpiry = new Date(issuedSession.expiresAt).getTime();
     expect(token.data.expires_in).toBeGreaterThanOrEqual(
       Math.floor((absoluteExpiry - redemptionCompletedAt) / 1000),
@@ -279,7 +314,7 @@ compatScenario(
     expect((bearer.body as any).user.id).toBe(userId);
     expect((bearer.body as any).session.token).toBe(token.data.access_token);
 
-    const replay = await device.device.token(tokenRequest(code.device_code));
+    const replay = await serverToken(ctx, tokenRequest(code.device_code));
     expect(replay.error).toMatchObject({ status: 400, error: "invalid_grant" });
 
     const consumed = await owner.device({ query: { user_code: code.user_code } });
@@ -354,11 +389,10 @@ compatScenario(
     const deniedState = await owner.device({ query: { user_code: code.user_code } });
     expect(deniedState.data?.status).toBe("denied");
 
-    const device = deviceActor(ctx, "device");
-    const token = await device.device.token(tokenRequest(code.device_code));
+    const token = await serverToken(ctx, tokenRequest(code.device_code));
     expect(token.error).toMatchObject({ status: 400, error: "access_denied" });
 
-    const replay = await device.device.token(tokenRequest(code.device_code));
+    const replay = await serverToken(ctx, tokenRequest(code.device_code));
     expect(replay.error).toMatchObject({ status: 400, error: "invalid_grant" });
 
     const sessions = await owner.listSessions();
@@ -376,7 +410,7 @@ compatScenario(
       sessions: ctx.snapshot(sessions),
     };
   },
-  ["POST /device/token"],
+  [],
 );
 
 compatScenario(

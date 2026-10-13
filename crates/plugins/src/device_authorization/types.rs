@@ -34,10 +34,11 @@ pub struct DeviceCodeResponse {
     pub interval: i64,
 }
 
-#[derive(Debug, Serialize)]
-pub(super) struct DeviceTokenResponse {
+/// A bearer token issued after consuming an approved device proof.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeviceTokenResponse {
     pub access_token: String,
-    pub token_type: &'static str,
+    pub token_type: String,
     pub expires_in: i64,
     pub scope: String,
 }
