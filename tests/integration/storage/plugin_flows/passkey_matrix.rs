@@ -320,17 +320,65 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
     );
     trace.response("listed keys", &listed.into_response()?);
 
+    for (cookie, hints) in [
+        (Some(owner.as_str()), true),
+        (Some(foreign.as_str()), false),
+        (None, false),
+    ] {
+        let before = db
+            .tables(&["users", "accounts", "sessions", "passkeys"])
+            .await?;
+        let output = Box::pin(
+            auth.dispatch_endpoint(
+                PasskeyPlugin::generate_passkey_authentication_options_endpoint()
+                    .with_query(&json!({"userId":"ignored-selector"}))?
+                    .with_body(&json!({"userId":"ignored-selector"}))?,
+                alibi::endpoint::EndpointOptions {
+                    headers: cookie
+                        .map(|cookie| [("cookie".into(), cookie.to_owned())].into_iter().collect()),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await?;
+        let options = output.decode()?;
+        assert_eq!(options.get("allowCredentials").is_some(), hints);
+        if hints {
+            assert!(
+                options["allowCredentials"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|credential| credential["id"] == URL_SAFE_NO_PAD.encode(&key.id))
+            );
+        }
+        assert_eq!(
+            db.tables(&["users", "accounts", "sessions", "passkeys"])
+                .await?,
+            before
+        );
+        assert!(
+            output
+                .headers()
+                .iter()
+                .any(|(name, value)| name.eq_ignore_ascii_case("set-cookie")
+                    && value.contains("better-auth-passkey="))
+        );
+    }
     let authenticate = async |authenticator: &Authenticator,
                               origin: &str,
                               binding: Option<Value>,
                               flags: u8,
                               counter: u32| {
-        let options = call(
-            &auth,
-            request("/passkey/generate-authenticate-options", None, ""),
-            200,
-        )
-        .await;
+        let options = Box::pin(auth.dispatch_endpoint(
+            PasskeyPlugin::generate_passkey_authentication_options_endpoint(),
+            alibi::endpoint::EndpointOptions::default(),
+        ))
+        .await
+        .unwrap()
+        .into_response()
+        .unwrap();
+        assert!(body(&options).get("allowCredentials").is_none());
         let mut client = json!({"type": "webauthn.get", "challenge": body(&options)["challenge"], "origin": origin});
         if let Some(binding) = binding {
             client["tokenBinding"] = binding;
