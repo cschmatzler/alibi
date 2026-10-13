@@ -140,6 +140,7 @@ tower = { workspace = true, optional = true }
 url = { workspace = true }
 tracing = { workspace = true }
 [dev-dependencies]
+quick-xml = "=0.41.0"
 rsa = { workspace = true }
 # Enable adapters and passkeys for repository tests without changing downstream defaults.
 alibi = { path = ".", features = ["axum", "poem", "seaorm", "passkey"] }

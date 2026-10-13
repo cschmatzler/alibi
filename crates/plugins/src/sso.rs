@@ -8,6 +8,7 @@ mod provider_read;
 mod provider_update;
 mod registration_saml;
 mod sign_in;
+mod sp_metadata;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
@@ -323,6 +324,7 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         let mut routes = vec![
             AuthRoute::get("/sso/callback/:providerId", "handleSSOCallback"),
             AuthRoute::get("/sso/callback", "handleSSOCallbackShared"),
+            AuthRoute::get("/sso/saml2/sp/metadata", "getSSOServiceProviderMetadata"),
             AuthRoute::post("/sign-in/sso", "signInSSO"),
             AuthRoute::post("/sso/register", "registerSSOProvider"),
             AuthRoute::get("/sso/get-provider", "getSSOProvider"),
@@ -341,6 +343,12 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         let mut endpoints = vec![
+            super::endpoint::definition(
+                "spMetadata",
+                "getSSOServiceProviderMetadata",
+                Some("/sso/saml2/sp/metadata"),
+                HttpMethod::Get,
+            ),
             super::endpoint::definition(
                 "callbackSSOShared",
                 "handleSSOCallbackShared",
@@ -459,7 +467,10 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
                 query: call.query().cloned(),
             });
         }
-        if call.operation_id() == "getSSOProvider" {
+        if matches!(
+            call.operation_id(),
+            "getSSOProvider" | "getSSOServiceProviderMetadata"
+        ) {
             return Ok(EndpointInput {
                 body: None,
                 query: Some(provider_read::validate_query(call.query())?),
@@ -499,6 +510,14 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
                 alibi_core::RequestMeta::from_request,
             );
             return self.callback(provider_id, &query, call, &meta, ctx).await;
+        }
+        if call.operation_id() == "getSSOServiceProviderMetadata" {
+            return Self::metadata(
+                call.query()
+                    .ok_or_else(|| crate::endpoint::validation("Missing query"))?,
+                ctx,
+            )
+            .await;
         }
         if call.operation_id() == "signInSSO" {
             return self
@@ -575,6 +594,14 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/sso/saml2/sp/metadata" && *req.method() == HttpMethod::Get {
+            let query = alibi_core::utils::json::parse_value(&serde_json::to_string(&req.query)?)?;
+            return Ok(Some(
+                Self::metadata(&provider_read::validate_query(Some(&query))?, ctx)
+                    .await?
+                    .to_response()?,
+            ));
+        }
         if req.path() == "/sso/callback" && *req.method() == HttpMethod::Get {
             return Ok(Some(
                 self.callback(

@@ -32,6 +32,7 @@
     "@babel/parser": "7.29.9",
     "@types/bun": "1.4.2",
     "@types/istanbul-lib-instrument": "1.7.8",
+    "fast-xml-parser": "5.11.2",
     "istanbul-lib-instrument": "6.0.3",
     "oxfmt": "0.71.0",
     "oxlint": "1.86.0",

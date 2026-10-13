@@ -49,6 +49,13 @@ export async function ssoFixture(base: BetterAuthOptions) {
         headers: { "content-type": "application/json" },
       });
     }
+    if (input.action === "sp-metadata") {
+      return auth.api.spMetadata({
+        query: input.query,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
     if (input.action === "sign-in") {
       return auth.api.signInSSO({
         body: input.body,

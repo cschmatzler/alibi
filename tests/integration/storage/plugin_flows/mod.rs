@@ -421,6 +421,7 @@ mod oauth_protocol_forms;
 mod oauth_refresh_reuse;
 
 mod sso_registration;
+mod sso_sp_metadata;
 
 mod sso_provider_read;
 
