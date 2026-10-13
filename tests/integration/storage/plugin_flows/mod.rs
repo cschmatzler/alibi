@@ -341,3 +341,5 @@ mod server_organization_update_team;
 mod server_organization_create_role;
 
 mod server_organization_get_role;
+
+mod oauth_server_metadata;

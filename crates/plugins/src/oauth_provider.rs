@@ -1,0 +1,297 @@
+//! OAuth authorization-server discovery from installed issuer and provider policy.
+use alibi_core::endpoint::{
+    EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
+};
+use alibi_core::{
+    AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
+    AuthSchema, HttpMethod,
+};
+use async_trait::async_trait;
+use serde_json::{Value, json};
+
+/// Immutable policy shared by authorization-server metadata and grant admission.
+#[derive(Clone, Debug)]
+pub struct OAuthProviderConfig {
+    pub scopes: Vec<String>,
+    pub advertised_scopes: Option<Vec<String>>,
+    pub advertised_claims: Option<Vec<String>>,
+    pub grant_types: Vec<String>,
+    pub allow_dynamic_client_registration: bool,
+    pub allow_unauthenticated_client_registration: bool,
+    pub disable_jwt_plugin: bool,
+    pub pairwise_secret: Option<String>,
+    pub dpop_signing_algorithms: Option<Vec<String>>,
+}
+impl Default for OAuthProviderConfig {
+    fn default() -> Self {
+        Self {
+            scopes: ["openid", "profile", "email", "offline_access"]
+                .map(str::to_owned)
+                .into(),
+            advertised_scopes: None,
+            advertised_claims: None,
+            grant_types: ["authorization_code", "client_credentials", "refresh_token"]
+                .map(str::to_owned)
+                .into(),
+            allow_dynamic_client_registration: false,
+            allow_unauthenticated_client_registration: false,
+            disable_jwt_plugin: false,
+            pairwise_secret: None,
+            dpop_signing_algorithms: None,
+        }
+    }
+}
+#[derive(Clone, Debug, Default)]
+pub struct OAuthProviderPlugin {
+    config: OAuthProviderConfig,
+}
+impl OAuthProviderPlugin {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+    #[must_use]
+    pub fn with_config(mut config: OAuthProviderConfig) -> Self {
+        config.scopes = unique(
+            config
+                .scopes
+                .into_iter()
+                .filter(|scope| !scope.is_empty())
+                .collect(),
+        );
+        Self { config }
+    }
+    /// Return the issuer's authorization-server configuration for trusted server callers.
+    #[must_use]
+    pub fn get_oauth_server_config_endpoint() -> ServerEndpoint<Value> {
+        ServerEndpoint::new("oauth-provider", "getOAuthServerConfig")
+    }
+    fn metadata<S: AuthSchema>(&self, ctx: &AuthContext<S>) -> AuthResult<Value> {
+        let jwt = if self.config.disable_jwt_plugin {
+            None
+        } else {
+            Some(
+                ctx.extensions
+                    .get::<super::jwt::JwtDiscoveryOptions>()
+                    .ok_or_else(|| AuthError::config("jwt_config"))?,
+            )
+        };
+        let base = format!(
+            "{}{}",
+            ctx.config.base_url.trim_end_matches('/'),
+            ctx.config.base_path
+        );
+        let issuer = jwt
+            .as_ref()
+            .and_then(|jwt| jwt.issuer.as_deref())
+            .unwrap_or(&base);
+        let issuer = normalize_issuer(issuer);
+        let grants = unique(self.config.grant_types.clone());
+        let mut token_auth = vec![
+            "client_secret_basic",
+            "client_secret_post",
+            "private_key_jwt",
+        ];
+        if self.config.allow_unauthenticated_client_registration {
+            token_auth.insert(0, "none");
+        }
+        let signing = [
+            "RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512",
+            "EdDSA",
+        ];
+        let mut output: serde_json::Map<String, Value> = serde_json::from_value(json!({
+            "scopes_supported":self.config.advertised_scopes.as_ref().unwrap_or(&self.config.scopes),
+            "issuer":issuer,"authorization_endpoint":format!("{base}/oauth2/authorize"),"token_endpoint":format!("{base}/oauth2/token"),
+            "introspection_endpoint":format!("{base}/oauth2/introspect"),"revocation_endpoint":format!("{base}/oauth2/revoke"),
+            "response_types_supported":if grants.iter().any(|grant|grant=="authorization_code"){vec!["code"]}else{vec![]},
+            "response_modes_supported":["query"],"grant_types_supported":grants,
+            "token_endpoint_auth_methods_supported":token_auth,"token_endpoint_auth_signing_alg_values_supported":signing,
+            "introspection_endpoint_auth_methods_supported":["client_secret_basic","client_secret_post","private_key_jwt"],
+            "introspection_endpoint_auth_signing_alg_values_supported":signing,
+            "revocation_endpoint_auth_methods_supported":["client_secret_basic","client_secret_post","private_key_jwt"],
+            "revocation_endpoint_auth_signing_alg_values_supported":signing,
+            "code_challenge_methods_supported":["S256"],"authorization_response_iss_parameter_supported":true,
+            "dpop_signing_alg_values_supported":self.config.dpop_signing_algorithms.clone().unwrap_or_else(||["EdDSA","ES256","ES512","PS256","RS256"].map(str::to_owned).into()),
+            "backchannel_logout_supported":!self.config.disable_jwt_plugin,"backchannel_logout_session_supported":!self.config.disable_jwt_plugin,
+        }))?;
+        if let Some(jwt) = jwt.as_ref() {
+            _ = output.insert(
+                "jwks_uri".into(),
+                json!(
+                    jwt.remote_url
+                        .clone()
+                        .unwrap_or_else(|| format!("{base}{}", jwt.jwks_path))
+                ),
+            );
+        }
+        if self.config.allow_dynamic_client_registration {
+            _ = output.insert(
+                "registration_endpoint".into(),
+                json!(format!("{base}/oauth2/register")),
+            );
+        }
+        if self.config.scopes.iter().any(|scope| scope == "openid") {
+            let mut claims = ["sub", "iss", "aud", "exp", "iat", "sid", "scope", "azp"]
+                .map(str::to_owned)
+                .to_vec();
+            for (scope, names) in [
+                (
+                    "profile",
+                    vec!["name", "picture", "given_name", "family_name"],
+                ),
+                ("email", vec!["email", "email_verified"]),
+            ] {
+                if self.config.scopes.iter().any(|value| value == scope) {
+                    claims.extend(names.into_iter().map(str::to_owned));
+                }
+            }
+            _ = output.insert(
+                "claims_supported".into(),
+                json!(self.config.advertised_claims.as_ref().unwrap_or(&claims)),
+            );
+            _ = output.insert("claims_parameter_supported".into(), json!(true));
+            _ = output.insert(
+                "userinfo_endpoint".into(),
+                json!(format!("{base}/oauth2/userinfo")),
+            );
+            _ = output.insert(
+                "subject_types_supported".into(),
+                json!(if self
+                    .config
+                    .pairwise_secret
+                    .as_ref()
+                    .is_some_and(|secret| !secret.is_empty())
+                {
+                    vec!["public", "pairwise"]
+                } else {
+                    vec!["public"]
+                }),
+            );
+            _ = output.insert("acr_values_supported".into(), json!(["0"]));
+            _ = output.insert(
+                "id_token_signing_alg_values_supported".into(),
+                json!(jwt.as_ref().map_or_else(
+                    || vec!["HS256".to_owned()],
+                    |jwt| jwt.signing_algorithms.clone()
+                )),
+            );
+            _ = output.insert(
+                "end_session_endpoint".into(),
+                json!(format!("{base}/oauth2/end-session")),
+            );
+            _ = output.insert("request_parameter_supported".into(), json!(false));
+            _ = output.insert("request_uri_parameter_supported".into(), json!(false));
+            _ = output.insert(
+                "prompt_values_supported".into(),
+                json!(["login", "consent", "create", "select_account", "none"]),
+            );
+        }
+        Ok(Value::Object(output))
+    }
+}
+fn unique(values: Vec<String>) -> Vec<String> {
+    let mut result = Vec::new();
+    for value in values {
+        if !result.contains(&value) {
+            result.push(value);
+        }
+    }
+    result
+}
+fn normalize_issuer(value: &str) -> String {
+    let Ok(mut url) = url::Url::parse(value) else {
+        return value.into();
+    };
+    let loopback = url.host_str().is_some_and(|host| {
+        host == "localhost" || host == "127.0.0.1" || host == "[::1]" || host == "::1"
+    });
+    if url.scheme() != "https" && !loopback {
+        _ = url.set_scheme("https");
+    }
+    url.set_query(None);
+    url.set_fragment(None);
+    url.to_string().trim_end_matches('/').to_owned()
+}
+#[async_trait]
+impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
+    fn name(&self) -> &'static str {
+        "oauth-provider"
+    }
+    fn routes(&self) -> Vec<AuthRoute> {
+        vec![]
+    }
+    fn server_endpoints(&self) -> Vec<EndpointDefinition> {
+        vec![crate::endpoint::definition(
+            "getOAuthServerConfig",
+            "getOAuthServerConfig",
+            Some("/.well-known/oauth-authorization-server"),
+            HttpMethod::Get,
+        )]
+    }
+    fn validate_endpoint(
+        &self,
+        call: &EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointInput> {
+        Ok(EndpointInput {
+            body: call.body().cloned(),
+            query: call.query().cloned(),
+        })
+    }
+    async fn on_endpoint(
+        &self,
+        _call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        EndpointResponse::json(&self.metadata(ctx)?)
+    }
+    async fn on_request(
+        &self,
+        _req: &AuthRequest,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<AuthResponse>> {
+        Ok(None)
+    }
+    async fn on_init(&self, _ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
+        if self
+            .config
+            .advertised_scopes
+            .as_ref()
+            .is_some_and(|scopes| {
+                scopes
+                    .iter()
+                    .any(|scope| !self.config.scopes.contains(scope))
+            })
+        {
+            return Err(AuthError::config(
+                "advertisedMetadata.scopes_supported contains an unsupported scope",
+            ));
+        }
+        if self
+            .config
+            .pairwise_secret
+            .as_ref()
+            .is_some_and(|secret| !secret.is_empty() && secret.len() < 32)
+        {
+            return Err(AuthError::config(
+                "pairwiseSecret must be at least 32 characters long for adequate HMAC-SHA256 security",
+            ));
+        }
+        if self
+            .config
+            .grant_types
+            .iter()
+            .any(|grant| grant == "refresh_token")
+            && !self
+                .config
+                .grant_types
+                .iter()
+                .any(|grant| grant == "authorization_code")
+        {
+            return Err(AuthError::config(
+                "refresh_token grant requires authorization_code grant",
+            ));
+        }
+        Ok(())
+    }
+}

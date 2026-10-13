@@ -120,6 +120,22 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
     }
 
     async fn on_init(&self, ctx: &mut AuthInitContext<S>) -> AuthResult<()> {
+        ctx.extensions.insert(JwtDiscoveryOptions {
+            issuer: self.config.claims.issuer.clone(),
+            jwks_path: self.config.jwks_path.clone(),
+            remote_url: self.config.remote_url.clone(),
+            signing_algorithms: {
+                let mut algorithms = vec![self.config.key_pair.algorithm.as_str().to_owned()];
+                for pair in &self.config.additional_key_pairs {
+                    let algorithm = pair.algorithm.as_str().to_owned();
+                    if !algorithms.contains(&algorithm) {
+                        algorithms.push(algorithm);
+                    }
+                }
+                algorithms
+            },
+        });
+
         if self.config.jwks_path.is_empty()
             || !self.config.jwks_path.starts_with('/')
             || self.config.jwks_path.contains("..")
@@ -2244,3 +2260,12 @@ mod tests {
     }
 }
 // LCOV_EXCL_STOP
+
+/// Installed JWT policy consumed by authorization-server discovery.
+#[derive(Clone)]
+pub(crate) struct JwtDiscoveryOptions {
+    pub(crate) issuer: Option<String>,
+    pub(crate) jwks_path: String,
+    pub(crate) remote_url: Option<String>,
+    pub(crate) signing_algorithms: Vec<String>,
+}
