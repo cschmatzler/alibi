@@ -6,7 +6,7 @@ description: "Mount the auth routes in an Axum application and protect handlers 
 The Axum adapter mounts every auth route as a nested router, resolves sessions for your own routes with `SessionLayer`, and provides the `CurrentSession` and `OptionalSession` extractors. It needs Axum 0.8 and the `axum` feature:
 
 ```toml title="Cargo.toml"
-alibi = { version = "0.6.0", features = ["axum"] }
+alibi = { version = "0.7.0", features = ["axum"] }
 axum = "0.8"
 ```
 
