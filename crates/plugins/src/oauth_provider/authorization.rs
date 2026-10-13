@@ -21,6 +21,15 @@ impl OAuthProviderPlugin {
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        Box::pin(self.authorize_flow(input, req, ctx, true)).await
+    }
+    pub(super) async fn authorize_flow<S: AuthSchema>(
+        &self,
+        input: Option<JsValue>,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+        initial: bool,
+    ) -> AuthResult<EndpointResponse> {
         if !self
             .config
             .grant_types
@@ -61,6 +70,22 @@ impl OAuthProviderPlugin {
             ctx.config.base_url.trim_end_matches('/'),
             ctx.config.base_path
         );
+        if text("prompt")
+            .split(' ')
+            .any(|prompt| prompt == "select_account")
+            && self.config.select_account_page.is_none()
+        {
+            return browser_redirect(
+                req,
+                &error_url(
+                    &server_error,
+                    "unsupported_prompt_select_account",
+                    "unsupported prompt type",
+                    None,
+                    None,
+                )?,
+            );
+        }
         let client = ctx.database.get_oauth_client(&client_id).await?;
         let trusted = client.as_ref().is_some_and(|client| {
             client.metadata.get("disabled") != Some(&json!(true))
@@ -357,6 +382,14 @@ impl OAuthProviderPlugin {
         let force_login =
             session.is_none() || prompts.contains(&"login") || prompts.contains(&"create");
         _ = query.insert("scope".into(), json!(scope));
+        if !force_login
+            && initial
+            && prompts.contains(&"select_account")
+            && let Some(page) = &self.config.select_account_page
+        {
+            let params = self.sign_authorization_query(query, ctx)?;
+            return browser_redirect(req, &format!("{page}?{params}"));
+        }
         let remembered = if !force_login
             && !prompts.contains(&"consent")
             && client.metadata.get("skip_consent") != Some(&json!(true))
