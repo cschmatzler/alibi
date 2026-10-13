@@ -85,7 +85,7 @@ webauthn-rs = { version = "=0.5.4", optional = true, features = ["conditional-ui
 webauthn-rs-core = { version = "=0.5.4", optional = true }
 base64urlsafedata = { version = "=0.5.4", optional = true }
 openssl = { version = "0.10.75", optional = true }
-x509-parser = { version = "0.16", optional = true }
+x509-parser = "0.16"
 der-parser = { version = "9", optional = true }
 serde_cbor_2 = { version = "0.13.0", optional = true }
 serde_path_to_error = "0.1.20"
@@ -110,7 +110,6 @@ passkey = [
     "dep:webauthn-rs-core",
     "dep:base64urlsafedata",
     "dep:openssl",
-    "dep:x509-parser",
     "dep:der-parser",
     "dep:serde_cbor_2",
 ]
