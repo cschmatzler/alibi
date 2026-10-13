@@ -263,6 +263,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
             crate::endpoint::definition(
+                "adminGetOAuthResource",
+                "adminGetOAuthResource",
+                Some("/admin/oauth2/resources/:identifier"),
+                HttpMethod::Get,
+            ),
+            crate::endpoint::definition(
                 "adminListOAuthResources",
                 "adminListOAuthResources",
                 Some("/admin/oauth2/resources"),
@@ -439,6 +445,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "adminGetOAuthResource" {
+            return Box::pin(self.read_resource(call.params(), call, ctx)).await;
+        }
         if call.operation_id() == "adminListOAuthResources" {
             return Box::pin(self.list_resources(call, ctx)).await;
         }
