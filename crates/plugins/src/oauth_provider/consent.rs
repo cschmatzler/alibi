@@ -289,22 +289,158 @@ impl OAuthProviderPlugin {
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        let row = match Box::pin(self.owned_consent(&input.id, req, ctx)).await? {
+            Ok(row) => row,
+            Err(response) => return Ok(response),
+        };
+        EndpointResponse::json(&consent_value(row)?)
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub(super) struct ConsentUpdateInput {
+    id: String,
+    update: ConsentScopeUpdate,
+}
+#[derive(serde::Deserialize)]
+struct ConsentScopeUpdate {
+    scopes: Vec<String>,
+}
+pub(super) fn validate_update(input: Option<&JsValue>) -> AuthResult<JsValue> {
+    let mut output = validate_id(input, "body")?;
+    let update = input.and_then(|value| value.get("update"));
+    let Some(object) = update.and_then(JsValue::as_object) else {
+        return Err(crate::endpoint::validation(format!(
+            "[body.update] Invalid input: expected object, received {}",
+            crate::authentication_helpers::json_type(update)
+        )));
+    };
+    let scopes = object.get("scopes");
+    let Some(values) = scopes.and_then(JsValue::as_array) else {
+        return Err(crate::endpoint::validation(format!(
+            "[body.update.scopes] Invalid input: expected array, received {}",
+            crate::authentication_helpers::json_type(scopes)
+        )));
+    };
+    let issues = values
+        .iter()
+        .enumerate()
+        .filter_map(|(index, value)| {
+            crate::authentication_helpers::field_issue(
+                crate::authentication_helpers::JsonFieldKind::String,
+                Some(value),
+                crate::authentication_helpers::json_type(Some(value)),
+            )
+            .map(|issue| format!("[body.update.scopes.{index}] {issue}"))
+        })
+        .collect::<Vec<_>>();
+    if !issues.is_empty() {
+        return Err(crate::endpoint::validation(issues.join("; ")));
+    }
+    if let JsValue::Object(object) = &mut output {
+        _ = object.insert(
+            "update".into(),
+            JsValue::Object(
+                [("scopes".into(), JsValue::Array(values.to_vec()))]
+                    .into_iter()
+                    .collect(),
+            ),
+        );
+    }
+    Ok(output)
+}
+impl OAuthProviderPlugin {
+    /// Replace the current user's granted scopes with a subset allowed by the client.
+    pub fn update_oauth_consent_endpoint(
+        id: &str,
+        scopes: &[String],
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("oauth-provider", "updateOAuthConsent")
+            .with_body(&json!({"id":id,"update":{"scopes":scopes}}))
+    }
+    async fn owned_consent<S: AuthSchema>(
+        &self,
+        id: &str,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Result<alibi_core::store::OAuthConsent, EndpointResponse>> {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
-        if input.id.is_empty() {
-            return super::clients::status_protocol_error(404, "not_found", "missing id parameter");
+        if id.is_empty() {
+            return Ok(Err(super::clients::status_protocol_error(
+                404,
+                "not_found",
+                "missing id parameter",
+            )?));
         }
-        let Some(row) = ctx.database.get_oauth_consent(&input.id).await? else {
-            return super::clients::status_protocol_error(404, "not_found", "no consent");
+        let Some(row) = ctx.database.get_oauth_consent(id).await? else {
+            return Ok(Err(super::clients::status_protocol_error(
+                404,
+                "not_found",
+                "no consent",
+            )?));
         };
         if row.user_id.as_deref() != Some(user.id().as_ref()) {
-            return Ok(EndpointResponse::error(AuthError::Api {
+            return Ok(Err(EndpointResponse::error(AuthError::Api {
                 status: 401,
                 code: None,
                 message: String::new(),
             })
             .without_error_body()
-            .with_header("Content-Type", "application/json"));
+            .with_header("Content-Type", "application/json")));
         }
-        EndpointResponse::json(&consent_value(row)?)
+        Ok(Ok(row))
+    }
+    pub(super) async fn update_consent<S: AuthSchema>(
+        &self,
+        input: ConsentUpdateInput,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let row = match Box::pin(self.owned_consent(&input.id, req, ctx)).await? {
+            Ok(row) => row,
+            Err(response) => return Ok(response),
+        };
+        let Some(client) = ctx.database.get_oauth_client(&row.client_id).await? else {
+            return super::clients::status_protocol_error(404, "not_found", "client not found");
+        };
+        let allowed = client
+            .metadata
+            .get("scope")
+            .and_then(Value::as_str)
+            .map_or_else(
+                || self.config.scopes.clone(),
+                |scope| scope.split(' ').map(str::to_owned).collect::<Vec<_>>(),
+            );
+        if !input
+            .update
+            .scopes
+            .iter()
+            .all(|scope| allowed.contains(scope))
+        {
+            let owner = client
+                .metadata
+                .get("reference_id")
+                .and_then(Value::as_str)
+                .or(client.user_id.as_deref())
+                .unwrap_or("undefined");
+            return super::clients::status_protocol_error(
+                400,
+                "invalid_request",
+                &format!("unable to provide scopes to {owner}"),
+            );
+        }
+        let mut metadata = row
+            .metadata
+            .as_object()
+            .cloned()
+            .ok_or_else(|| AuthError::internal("Invalid consent metadata"))?;
+        _ = metadata.insert("scopes".into(), json!(input.update.scopes));
+        let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
+            .ok_or_else(|| AuthError::internal("Invalid consent timestamp"))?;
+        let updated = ctx
+            .database
+            .update_oauth_consent_metadata(&input.id, Value::Object(metadata), now)
+            .await?;
+        EndpointResponse::json(&updated.map(consent_value).transpose()?)
     }
 }

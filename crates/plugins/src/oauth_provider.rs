@@ -250,6 +250,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             AuthRoute::post("/oauth2/consent", "oauth2Consent"),
             AuthRoute::get("/oauth2/get-consents", "getOAuthConsents"),
             AuthRoute::get("/oauth2/get-consent", "getOAuthConsent"),
+            AuthRoute::post("/oauth2/update-consent", "updateOAuthConsent"),
             AuthRoute::get("/oauth2/authorize", "oauth2Authorize"),
             AuthRoute::post("/oauth2/authorize", "oauth2Authorize"),
             AuthRoute::post("/oauth2/client/rotate-secret", "rotateClientSecret"),
@@ -257,6 +258,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "updateOAuthConsent",
+                "updateOAuthConsent",
+                Some("/oauth2/update-consent"),
+                HttpMethod::Post,
+            ),
             crate::endpoint::definition(
                 "getOAuthConsent",
                 "getOAuthConsent",
@@ -367,7 +374,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
         Ok(EndpointInput {
-            body: if call.operation_id() == "oauth2Consent" {
+            body: if call.operation_id() == "updateOAuthConsent" {
+                Some(consent::validate_update(call.body())?)
+            } else if call.operation_id() == "oauth2Consent" {
                 Some(consent::validate(call.body())?)
             } else if call.operation_id() == "getOAuthClientPublicPrelogin" {
                 Some(clients::validate_prelogin(call.body())?)
@@ -404,6 +413,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "updateOAuthConsent" {
+            return Box::pin(self.update_consent(call.body_as()?, call, ctx)).await;
+        }
         if call.operation_id() == "getOAuthConsent" {
             return Box::pin(self.read_consent(call.query_as()?, call, ctx)).await;
         }
@@ -549,6 +561,16 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             let input = alibi_core::utils::json::from_value(consent::validate(Some(&body))?)?;
             return Ok(Some(
                 Box::pin(self.consent(input, req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
+        if req.path() == "/oauth2/update-consent" && *req.method() == HttpMethod::Post {
+            let body = req.body_as_json()?;
+            let input =
+                alibi_core::utils::json::from_value(consent::validate_update(Some(&body))?)?;
+            return Ok(Some(
+                Box::pin(self.update_consent(input, req, ctx))
                     .await?
                     .to_response()?,
             ));
