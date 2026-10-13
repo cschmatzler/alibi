@@ -53,7 +53,10 @@ impl SsoPlugin {
         EndpointResponse::json(&sanitize(&provider, ctx)?)
     }
 }
-fn sanitize<S: AuthSchema>(provider: &SsoProvider, ctx: &AuthContext<S>) -> AuthResult<Value> {
+pub(super) fn sanitize<S: AuthSchema>(
+    provider: &SsoProvider,
+    ctx: &AuthContext<S>,
+) -> AuthResult<Value> {
     let saml = provider
         .saml_config
         .as_deref()

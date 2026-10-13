@@ -423,3 +423,5 @@ mod oauth_refresh_reuse;
 mod sso_registration;
 
 mod sso_provider_read;
+
+mod sso_provider_list;

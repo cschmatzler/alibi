@@ -10,6 +10,15 @@ use alibi_core::{
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> SsoProviderStore for SqlxStore<S> {
+    async fn list_sso_providers(&self) -> AuthResult<Vec<SsoProvider>> {
+        let mut sql = model::select_model::<Model>(self.exec());
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
+        self.exec()
+            .fetch_all::<Model>(sql)
+            .await
+            .map(|rows| rows.into_iter().map(Into::into).collect())
+    }
     async fn create_sso_provider(&self, row: SsoProvider) -> AuthResult<SsoProvider> {
         let mut active = ActiveRow::new();
         active.set("id", row.id);

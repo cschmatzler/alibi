@@ -12,6 +12,17 @@ use async_trait::async_trait;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QuerySelect, Set};
 #[async_trait]
 impl<S: AuthSchema> SsoProviderStore for SeaOrmStore<S> {
+    async fn list_sso_providers(&self) -> AuthResult<Vec<SsoProvider>> {
+        Entity::find()
+            .limit(
+                u64::try_from(self.config().advanced.database.default_find_many_limit)
+                    .unwrap_or(u64::MAX),
+            )
+            .all(self.scoped_connection())
+            .await
+            .map(|rows| rows.into_iter().map(Into::into).collect())
+            .map_err(map_db_err)
+    }
     async fn create_sso_provider(&self, row: SsoProvider) -> AuthResult<SsoProvider> {
         sso_provider::ActiveModel {
             id: Set(row.id),
