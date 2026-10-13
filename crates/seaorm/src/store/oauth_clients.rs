@@ -14,6 +14,110 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
+    async fn delete_oauth_token(
+        &self,
+        kind: alibi_core::store::OAuthTokenKind,
+        token: &str,
+    ) -> AuthResult<()> {
+        match kind {
+            alibi_core::store::OAuthTokenKind::Access => {
+                _ = super::entities::oauth_access_token::Entity::delete_many()
+                    .filter(super::entities::oauth_access_token::Column::Token.eq(token))
+                    .exec(self.scoped_connection())
+                    .await
+                    .map_err(map_db_err)?;
+            }
+            alibi_core::store::OAuthTokenKind::Refresh => {
+                _ = super::entities::oauth_refresh_token::Entity::delete_many()
+                    .filter(super::entities::oauth_refresh_token::Column::Token.eq(token))
+                    .exec(self.scoped_connection())
+                    .await
+                    .map_err(map_db_err)?;
+            }
+        }
+        Ok(())
+    }
+    async fn revoke_oauth_refresh_token(
+        &self,
+        token: &str,
+        revoked_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<bool> {
+        let Some(row) = super::entities::oauth_refresh_token::Entity::find()
+            .filter(super::entities::oauth_refresh_token::Column::Token.eq(token))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+        else {
+            return Ok(false);
+        };
+        let mut metadata: serde_json::Value = serde_json::from_str(&row.metadata)?;
+        if metadata
+            .get("revoked")
+            .is_some_and(|value| !value.is_null())
+        {
+            return Ok(false);
+        }
+        _ = metadata
+            .as_object_mut()
+            .ok_or_else(|| alibi_core::AuthError::internal("Invalid refresh metadata"))?
+            .insert("revoked".into(), serde_json::json!(revoked_at));
+        let result = super::entities::oauth_refresh_token::Entity::update_many()
+            .col_expr(
+                super::entities::oauth_refresh_token::Column::Metadata,
+                sea_orm::sea_query::Expr::value(serde_json::to_string(&metadata)?),
+            )
+            .filter(super::entities::oauth_refresh_token::Column::Token.eq(token))
+            .filter(super::entities::oauth_refresh_token::Column::Metadata.eq(row.metadata))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        Ok(result.rows_affected > 0)
+    }
+    async fn delete_oauth_access_tokens_for_refresh(&self, refresh_id: &str) -> AuthResult<()> {
+        let template =
+            if self.scoped_connection().get_database_backend() == sea_orm::DbBackend::Postgres {
+                "metadata::jsonb->>'refreshId' = $1"
+            } else {
+                "json_extract(metadata, '$.refreshId') = ?"
+            };
+        _ = super::entities::oauth_access_token::Entity::delete_many()
+            .filter(sea_orm::sea_query::Expr::cust_with_values(
+                template,
+                [refresh_id.to_owned()],
+            ))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        Ok(())
+    }
+    async fn delete_oauth_refresh_family(&self, client_id: &str, user_id: &str) -> AuthResult<()> {
+        let template = if self.scoped_connection().get_database_backend()
+            == sea_orm::DbBackend::Postgres
+        {
+            "metadata::jsonb->>'refreshId' IN (SELECT id FROM oauth_refresh_token WHERE client_id = $1 AND user_id = $2 LIMIT $3)"
+        } else {
+            "json_extract(metadata, '$.refreshId') IN (SELECT id FROM oauth_refresh_token WHERE client_id = ? AND user_id = ? LIMIT ?)"
+        };
+        let values: Vec<sea_orm::Value> = vec![
+            client_id.to_owned().into(),
+            user_id.to_owned().into(),
+            i64::try_from(self.config().advanced.database.default_find_many_limit)
+                .unwrap_or(i64::MAX)
+                .into(),
+        ];
+        _ = super::entities::oauth_access_token::Entity::delete_many()
+            .filter(sea_orm::sea_query::Expr::cust_with_values(template, values))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        _ = super::entities::oauth_refresh_token::Entity::delete_many()
+            .filter(super::entities::oauth_refresh_token::Column::ClientId.eq(client_id))
+            .filter(super::entities::oauth_refresh_token::Column::UserId.eq(user_id))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        Ok(())
+    }
     async fn create_oauth_token(
         &self,
         kind: alibi_core::store::OAuthTokenKind,
