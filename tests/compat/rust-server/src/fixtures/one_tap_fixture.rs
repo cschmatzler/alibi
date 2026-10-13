@@ -12,7 +12,11 @@ use alibi::seaorm::sea_orm::{DatabaseConnection, EntityTrait};
 use alibi::seaorm::store::entities::{account, session, user};
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use async_trait::async_trait;
-use axum::{Json, Router, routing::get};
+use axum::{
+    Json, Router,
+    response::IntoResponse,
+    routing::{get, post},
+};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -203,7 +207,50 @@ pub(crate) async fn router(
                 .build()
                 .await?,
         );
-        router = router.nest(&path, auth.clone().axum_router().with_state(auth));
+        let server_auth = auth.clone();
+        let instance = auth.clone().axum_router().with_state(auth).route(
+            "/__test/server-callback",
+            post(move |Json(input): Json<Value>| {
+                let auth = server_auth.clone();
+                async move {
+                    let endpoint =
+                        alibi::endpoint::ServerEndpoint::<Value>::new("one-tap", "oneTapCallback")
+                            .with_body(&input["body"])
+                            .unwrap();
+                    match auth
+                        .dispatch_endpoint(
+                            endpoint,
+                            alibi::endpoint::EndpointOptions {
+                                headers: input.get("headers").map(|headers| {
+                                    serde_json::from_value(headers.clone()).unwrap()
+                                }),
+                                ..Default::default()
+                            },
+                        )
+                        .await
+                    {
+                        Ok(output) => output.into_response().unwrap().into_response(),
+                        Err(error) => {
+                            let mut response = error.error.to_auth_response();
+                            if let Some(body) = error.body {
+                                response.body = serde_json::to_vec(&*body).unwrap();
+                            }
+                            if let Some(headers) = error.headers {
+                                for (name, value) in headers.iter() {
+                                    if name.eq_ignore_ascii_case("set-cookie") {
+                                        response.headers.append(name, value);
+                                    } else {
+                                        response.headers.insert(name, value);
+                                    }
+                                }
+                            }
+                            response.into_response()
+                        }
+                    }
+                }
+            }),
+        );
+        router = router.nest(&path, instance);
     }
     let fetches = Arc::new(AtomicUsize::new(0));
     let jwks_fetches = fetches.clone();

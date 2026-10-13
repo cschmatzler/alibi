@@ -5,7 +5,7 @@ import { compatScenario } from "../../../support/scenario";
 import { oneTap, responseSchema, state, successful } from "./helpers";
 
 compatScenario(
-  "One Tap official client binds verified Google accounts and persisted sessions",
+  "One Tap server API binds verified Google accounts and persisted sessions",
   async (ctx) => {
     const baseline = await state(ctx);
     const email = ctx.uniqueEmail("one-tap-owner");
@@ -19,10 +19,35 @@ compatScenario(
       nonce: "ignored-google-nonce",
       userId: "untrusted-claim-owner",
     });
-    const result = await successful(ctx, token, "one-tap-plugin-only", "owner", "/welcome");
-    expect(result.location).toBe("/welcome");
+    async function invoke(
+      actorName: string,
+      profile: "one-tap-plugin-only" | "one-tap-no-override",
+      idToken: string,
+      cookie?: string,
+    ) {
+      const response = await ctx
+        .actor(actorName, profile)
+        .client.$fetch<any>("/__test/server-callback", {
+          method: "POST",
+          body: {
+            body: { idToken, callbackURL: "https://outside.example/welcome" },
+            ...(cookie ? { headers: { cookie } } : {}),
+          },
+        });
+      expect(response.error).toBeNull();
+      return response;
+    }
+    const malformed = await ctx
+      .actor("owner", "one-tap-plugin-only")
+      .client.$fetch<any>("/__test/server-callback", {
+        method: "POST",
+        body: { body: { idToken: 42 } },
+      });
+    expect(malformed.error).toMatchObject({ status: 400, code: "VALIDATION_ERROR" });
+    expect(await state(ctx)).toEqual(baseline);
+    const result = await invoke("owner", "one-tap-plugin-only", token);
 
-    const user = result.response.data!.user;
+    const user = result.data!.user;
     expect(user).toMatchObject({
       email,
       name: "Google Owner",
@@ -41,24 +66,32 @@ compatScenario(
         idToken: token,
       },
     ]);
-    expect(initial.sessions).toMatchObject([
-      { userId: user.id, token: result.response.data!.token },
-    ]);
+    expect(initial.sessions).toMatchObject([{ userId: user.id, token: result.data!.token }]);
 
     const session = await ctx.actor("owner", "one-tap-plugin-only").client.getSession();
     expect(session.data?.user.id).toBe(user.id);
-    expect(session.data?.session.token).toBe(result.response.data!.token);
+    expect(session.data?.session.token).toBe(result.data!.token);
 
     const foreign = ctx.actor("foreign", "one-tap-no-override");
+    let foreignCookie = "";
     const other = await foreign.client.signUp.email({
       email: ctx.uniqueEmail("cookie-owner"),
       password: "password123",
       name: "Cookie Owner",
+      fetchOptions: {
+        onSuccess({ response }) {
+          foreignCookie = response.headers
+            .getSetCookie()
+            .map((raw) => raw.split(";")[0])
+            .join("; ");
+        },
+      },
     });
     expect(other.error).toBeNull();
 
-    const repeat = await successful(
-      ctx,
+    const repeat = await invoke(
+      "foreign",
+      "one-tap-no-override",
       await credential({
         sub,
         email: ctx.uniqueEmail("changed-google-email"),
@@ -66,16 +99,15 @@ compatScenario(
         name: "Provider Replacement",
         picture: "https://fixture.test/new.png",
       }),
-      "one-tap-no-override",
-      "foreign",
+      foreignCookie,
     );
-    expect(repeat.response.data?.user).toMatchObject({
+    expect(repeat.data?.user).toMatchObject({
       id: user.id,
       email,
       name: "Google Owner",
       image: "https://fixture.test/owner.png",
     });
-    expect(repeat.response.data?.user.id).not.toBe(other.data?.user.id);
+    expect(repeat.data?.user.id).not.toBe(other.data?.user.id);
 
     const bound = await foreign.client.getSession();
     expect(bound.data?.session.userId).toBe(user.id);
@@ -84,9 +116,9 @@ compatScenario(
     const after = await state(ctx);
     expect(after.users).toHaveLength(2);
     expect(after.accounts.filter((row) => row.providerId === "google")).toHaveLength(1);
-    expect(after.sessions.filter((row) => row.token === repeat.response.data?.token)).toMatchObject(
-      [{ userId: user.id }],
-    );
+    expect(after.sessions.filter((row) => row.token === repeat.data?.token)).toMatchObject([
+      { userId: user.id },
+    ]);
     expect(after.users.find((row) => row.id === other.data?.user.id)).toMatchObject({
       name: "Cookie Owner",
     });
@@ -103,7 +135,7 @@ compatScenario(
       after: { ...after, jwksFetches: after.jwksFetches - initial.jwksFetches },
     };
   },
-  ["POST /one-tap/callback"],
+  [],
 );
 
 compatScenario(

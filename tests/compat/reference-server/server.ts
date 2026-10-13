@@ -4513,6 +4513,19 @@ const server = Bun.serve({
         }
       }
       for (const [name, instance] of oneTapProfiles) {
+        if (
+          url.pathname === `/__test/profiles/${name}/api/auth/__test/server-callback` &&
+          request.method === "POST"
+        ) {
+          const input = await readJson(request);
+          return (instance.api as any).oneTapCallback({
+            body: input?.body,
+            ...(input?.headers
+              ? { headers: new Headers(input.headers as Record<string, string>) }
+              : {}),
+            asResponse: true,
+          });
+        }
         if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return instance.handler(request);
         }

@@ -91,20 +91,11 @@ impl OneTapPlugin {
         });
         Self { config, keys }
     }
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Keep provider token validation, account linking policy, and session issuance in their request order"
-    )]
     async fn callback<S: AuthSchema>(
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<AuthResponse> {
-        use alibi_core::utils::cookie_utils::{
-            create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
-            sign_cookie_value, verify_cookie_value,
-        };
-
         let content_type = req.headers.get("content-type");
         let media = content_type.map(|value| {
             value
@@ -129,11 +120,29 @@ impl OneTapPlugin {
             )
             .map_err(Into::into);
         }
-        let body: CallbackBody = match parse_body(req) {
+        let body: OneTapCallbackInput = match parse_body(req) {
             Ok(body) => body,
             Err(response) => return Ok(response),
         };
-        if !ctx.config.current_origin_check_disabled()
+        self.callback_core(req, ctx, body).await
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep provider token validation, account linking policy, and session issuance in their request order"
+    )]
+    async fn callback_core<S: AuthSchema>(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<S>,
+        body: OneTapCallbackInput,
+    ) -> AuthResult<AuthResponse> {
+        use alibi_core::utils::cookie_utils::{
+            create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
+            sign_cookie_value, verify_cookie_value,
+        };
+        if req.physical_request().is_some()
+            && !ctx.config.current_origin_check_disabled()
             && body
                 .callback_url
                 .as_deref()
@@ -230,6 +239,21 @@ impl OneTapPlugin {
             scopes: vec!["openid".into(), "profile".into(), "email".into()],
             ..Default::default()
         };
+        let headers = req.session_headers();
+        let meta = if let Some(request) = req.physical_request() {
+            alibi_core::RequestMeta::from_request(request)
+        } else {
+            alibi_core::RequestMeta {
+                ip_address: Some(
+                    ctx.config
+                        .advanced
+                        .ip_address
+                        .resolve_ip(headers)
+                        .unwrap_or_default(),
+                ),
+                user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
+            }
+        };
         let result = process_oauth_sign_in(
             super::oauth::handlers::OAuthIdentity {
                 provider_name: "google",
@@ -239,7 +263,7 @@ impl OneTapPlugin {
             &policy,
             &tokens,
             self.config.disable_signup || provider.is_some_and(|provider| provider.disable_sign_up),
-            &alibi_core::RequestMeta::from_request(req),
+            &meta,
             ctx,
         )
         .await;
@@ -300,6 +324,15 @@ impl OneTapPlugin {
         }
         Ok(response)
     }
+    /// Authenticate a verified Google credential through the public server API.
+    /// # Errors
+    /// Returns an input serialization error.
+    pub fn one_tap_callback_endpoint(
+        input: &OneTapCallbackInput,
+    ) -> AuthResult<alibi_core::endpoint::ServerEndpoint<OneTapAuthenticated>> {
+        alibi_core::endpoint::ServerEndpoint::new("one-tap", "oneTapCallback").with_body(input)
+    }
+
     async fn verify(&self, token: &str, audience: &[String]) -> Option<JsValue> {
         let mut policy = crate::oauth::OAuthIdTokenConfig::google();
         policy.selection = crate::oauth::OAuthJwksSelection::AllMatching;
@@ -308,14 +341,23 @@ impl OneTapPlugin {
     }
 }
 
-#[derive(Deserialize)]
+/// Signed Google credential and optional callback URL for a One Tap server call.
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct CallbackBody {
-    id_token: String,
-    callback_url: Option<String>,
+pub struct OneTapCallbackInput {
+    pub id_token: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub callback_url: Option<String>,
 }
 
-impl RequestBody for CallbackBody {
+/// The Google account owner's new session token and public user view.
+#[derive(Debug, Deserialize)]
+pub struct OneTapAuthenticated {
+    pub token: String,
+    pub user: Box<alibi_core::UserView>,
+}
+
+impl RequestBody for OneTapCallbackInput {
     const FIELDS: &'static [JsonField] = &[
         JsonField::string("idToken", true),
         JsonField::string("callbackURL", false),
@@ -326,6 +368,47 @@ impl RequestBody for CallbackBody {
 impl<S: AuthSchema> AuthPlugin<S> for OneTapPlugin {
     route_openapi_metadata!(S);
 
+    fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
+        vec![crate::endpoint::definition(
+            "oneTapCallback",
+            "oneTapCallback",
+            Some("/one-tap/callback"),
+            HttpMethod::Post,
+        )]
+    }
+    fn validate_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
+        Ok(alibi_core::endpoint::EndpointInput {
+            body: Some(crate::endpoint::validate_fields(
+                call.body(),
+                "body",
+                OneTapCallbackInput::FIELDS,
+            )?),
+            query: call.query().cloned(),
+        })
+    }
+    async fn on_endpoint(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        let output = self.callback_core(call, ctx, call.body_as()?).await?;
+        let value = alibi_core::utils::json::from_slice::<JsValue>(&output.body)?;
+        let mut response = if output.status >= 400 {
+            alibi_core::endpoint::EndpointResponse::error(crate::endpoint::error_response(
+                output.clone(),
+            ))
+            .with_error_body(value)
+        } else {
+            alibi_core::endpoint::EndpointResponse::value(value)
+        };
+        response.set_status(Some(output.status));
+        response.merge_headers(output.headers);
+        Ok(response)
+    }
     fn name(&self) -> &'static str {
         "one-tap"
     }
