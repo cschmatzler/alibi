@@ -132,6 +132,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         headers: { "content-type": "application/json" },
       });
     }
+    if (input.action === "jwks") {
+      return auth.api.getJwks({ asResponse: true });
+    }
     if (input.action === "session") {
       return auth.api.getSession({ headers: new Headers(input.headers ?? {}), asResponse: true });
     }

@@ -253,7 +253,7 @@ impl OAuthProviderPlugin {
                 OAuthTokenKind::Access,
                 CreateOAuthToken {
                     token: URL_SAFE_NO_PAD.encode(Sha256::digest(&token)),
-                    client_id,
+                    client_id: client_id.clone(),
                     user_id: Some(user_id.into()),
                     session_id: Some(session_id.into()),
                     authorization_code_id: Some(identifier),
@@ -264,6 +264,25 @@ impl OAuthProviderPlugin {
             )
             .await?;
         let mut response = json!({"access_token":token,"expires_in":3600,"expires_at":expires.timestamp(),"token_type":"Bearer","scope":scope});
+        if scopes.contains(&"openid") {
+            match self
+                .issue_id_token(&client, &value, &token, req, ctx)
+                .await?
+            {
+                Ok(Some(token)) => {
+                    _ = response
+                        .as_object_mut()
+                        .ok_or_else(|| alibi_core::AuthError::internal("Invalid token response"))?
+                        .insert("id_token".into(), json!(token));
+                }
+                Ok(None) => {}
+                Err(response) => {
+                    return Ok(response
+                        .with_header("Cache-Control", "no-store")
+                        .with_header("Pragma", "no-cache"));
+                }
+            }
+        }
         if let Some((_, token)) = refresh {
             _ = response
                 .as_object_mut()

@@ -4,6 +4,7 @@ mod clients;
 mod consent;
 mod continuation;
 mod credentials;
+mod id_token;
 mod introspection;
 mod resources;
 mod revocation;
