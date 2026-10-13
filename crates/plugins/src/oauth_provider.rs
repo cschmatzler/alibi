@@ -1,6 +1,7 @@
 //! OAuth authorization-server discovery from installed issuer and provider policy.
 mod authorization;
 mod clients;
+mod consent;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
@@ -246,6 +247,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             AuthRoute::post("/oauth2/delete-client", "deleteOAuthClient"),
             AuthRoute::post("/oauth2/update-client", "updateOAuthClient"),
             AuthRoute::post("/oauth2/register", "registerOAuthClient"),
+            AuthRoute::post("/oauth2/consent", "oauth2Consent"),
             AuthRoute::get("/oauth2/authorize", "oauth2Authorize"),
             AuthRoute::post("/oauth2/authorize", "oauth2Authorize"),
             AuthRoute::post("/oauth2/client/rotate-secret", "rotateClientSecret"),
@@ -253,6 +255,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "oauth2Consent",
+                "oauth2Consent",
+                Some("/oauth2/consent"),
+                HttpMethod::Post,
+            ),
             crate::endpoint::definition(
                 "getOAuthClientPublicPrelogin",
                 "getOAuthClientPublicPrelogin",
@@ -345,7 +353,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
         Ok(EndpointInput {
-            body: if call.operation_id() == "getOAuthClientPublicPrelogin" {
+            body: if call.operation_id() == "oauth2Consent" {
+                Some(consent::validate(call.body())?)
+            } else if call.operation_id() == "getOAuthClientPublicPrelogin" {
                 Some(clients::validate_prelogin(call.body())?)
             } else if call.operation_id() == "adminUpdateOAuthClient" {
                 Some(clients::validate_admin_update(call.body())?)
@@ -378,6 +388,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "oauth2Consent" {
+            return Box::pin(self.consent(call.body_as()?, call, ctx)).await;
+        }
         if call.operation_id() == "getOAuthClientPublicPrelogin" {
             return Box::pin(self.read_prelogin_client(call.body_as()?, ctx)).await;
         }
@@ -505,6 +518,15 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
                 alibi_core::utils::json::from_value(clients::validate_prelogin(Some(&body))?)?;
             return Ok(Some(
                 Box::pin(self.read_prelogin_client(input, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
+        if req.path() == "/oauth2/consent" && *req.method() == HttpMethod::Post {
+            let body = req.body_as_json()?;
+            let input = alibi_core::utils::json::from_value(consent::validate(Some(&body))?)?;
+            return Ok(Some(
+                Box::pin(self.consent(input, req, ctx))
                     .await?
                     .to_response()?,
             ));

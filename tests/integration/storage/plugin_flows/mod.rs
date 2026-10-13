@@ -367,3 +367,5 @@ mod oauth_admin_client_update;
 mod oauth_authorization;
 
 mod oauth_prelogin_client;
+
+mod oauth_consent;

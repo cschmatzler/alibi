@@ -19,3 +19,5 @@ pub mod verification;
 pub mod wallet_address;
 
 pub mod oauth_client;
+
+pub mod oauth_consent;

@@ -21,6 +21,7 @@ impl MigratorTrait for AuthMigrator {
         vec![
             Box::new(AuthSchemaMigration),
             Box::new(OAuthClientsMigration),
+            Box::new(OAuthConsentsMigration),
         ]
     }
 
@@ -920,6 +921,68 @@ impl MigrationTrait for OAuthClientsMigration {
             .drop_table(
                 Table::drop()
                     .table(super::entities::oauth_client::Entity)
+                    .to_owned(),
+            )
+            .await
+    }
+}
+
+struct OAuthConsentsMigration;
+impl MigrationName for OAuthConsentsMigration {
+    fn name(&self) -> &'static str {
+        "m20261013_000003_oauth_consents"
+    }
+}
+#[async_trait::async_trait]
+impl MigrationTrait for OAuthConsentsMigration {
+    fn use_transaction(&self) -> Option<bool> {
+        Some(true)
+    }
+    #[expect(
+        elided_lifetimes_in_paths,
+        reason = "SeaORM migration manager lifetime must remain late-bound"
+    )]
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        use super::entities::oauth_consent::{Column, Entity};
+        manager
+            .create_table(
+                Table::create()
+                    .table(Entity)
+                    .col(primary_key(Column::Id))
+                    .col(required(Column::ClientId))
+                    .col(ColumnDef::new(Column::UserId).string())
+                    .col(required(Column::Metadata))
+                    .col(timestamp(Column::CreatedAt))
+                    .col(timestamp(Column::UpdatedAt))
+                    .to_owned(),
+            )
+            .await?;
+        create_index(
+            manager,
+            "idx_oauth_consent_client",
+            Entity,
+            &["client_id"],
+            false,
+        )
+        .await?;
+        create_index(
+            manager,
+            "idx_oauth_consent_user",
+            Entity,
+            &["user_id"],
+            false,
+        )
+        .await
+    }
+    #[expect(
+        elided_lifetimes_in_paths,
+        reason = "SeaORM migration manager lifetime must remain late-bound"
+    )]
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(super::entities::oauth_consent::Entity)
                     .to_owned(),
             )
             .await
