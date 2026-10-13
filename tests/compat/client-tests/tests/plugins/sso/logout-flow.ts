@@ -6,13 +6,13 @@ import { Cookie } from "tough-cookie";
 
 import type { ScenarioContext } from "../../../support/scenario";
 
-export async function samlLogoutFlow(ctx: ScenarioContext, complete: boolean) {
+export async function samlLogoutFlow(ctx: ScenarioContext, complete: boolean, signed = false) {
   const actor = ctx.actor();
   const control = (input: Record<string, unknown>) =>
     actor.fetch(`${ctx.baseURL}/__test/server-api/sso`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...input, mode: "slo" }),
+      body: JSON.stringify({ ...input, mode: signed ? "signed-slo" : "slo" }),
       redirect: "manual",
     });
   const pairs = (response: Response) =>
@@ -139,9 +139,31 @@ export async function samlLogoutFlow(ctx: ScenarioContext, complete: boolean) {
       .some((raw) => raw.startsWith("better-auth.session_token=") && raw.includes("Max-Age=0")),
   ).toBe(true);
   if (complete) {
-    const response = Buffer.from(
-      `<samlp:LogoutResponse xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_idp-logout-response" Version="2.0" IssueInstant="${new Date().toISOString()}" InResponseTo="${request["@_ID"]}"><saml:Issuer>https://idp.example.test/entity</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status></samlp:LogoutResponse>`,
-    ).toString("base64");
+    const responseXml = `<samlp:LogoutResponse xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_idp-logout-response" Version="2.0" IssueInstant="${new Date().toISOString()}" InResponseTo="${request["@_ID"]}"><saml:Issuer>https://idp.example.test/entity</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status></samlp:LogoutResponse>`;
+    let response = Buffer.from(responseXml).toString("base64");
+    if (signed) {
+      const sign = async (wrongKey: boolean) =>
+        (
+          (await (
+            await control({ action: "sign-saml-logout", xml: responseXml, wrongKey })
+          ).json()) as any
+        ).SAMLResponse as string;
+      for (const rejectedResponse of [response, await sign(true)]) {
+        const rejected = await control({
+          action: "slo",
+          params: { providerId: "logout-provider" },
+          body: { SAMLResponse: rejectedResponse },
+          headers: {},
+        });
+        expect(rejected.status).toBe(400);
+        expect(
+          await (
+            await control({ action: "proof", identifier: `saml-logout-request:${request["@_ID"]}` })
+          ).json(),
+        ).toEqual(proof);
+      }
+      response = await sign(false);
+    }
     const completeInput = {
       action: "slo",
       params: { providerId: "logout-provider" },

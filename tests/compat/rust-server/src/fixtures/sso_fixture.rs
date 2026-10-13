@@ -7,20 +7,22 @@ use axum::{Router,Json,routing::post,response::IntoResponse};
 use std::sync::Arc;
 #[path="../../../../support/sso_oidc_peer.rs"]mod oidc_peer;
 #[path="../../../../support/sso_saml_grant.rs"]mod saml_grant;
-async fn instance(config:&AuthConfig,database:&DatabaseConnection,domain:bool,shared:bool,slo:bool,dns:std::net::SocketAddr)->AuthResult<Alibi<TestSchema>> {
- AuthBuilder::<TestSchema>::new(config.clone()).store(crate::backend::store::<TestSchema>(config.clone(),database.clone())).plugin(EmailPasswordPlugin::new()).plugin(SessionManagementPlugin::new()).plugin(SsoPlugin::with_config(SsoConfig{saml_enable_single_logout:slo,redirect_uri:shared.then(||"/sso/callback".into()),domain_verification:domain,domain_verification_dns_servers:vec![dns],..Default::default()})).build().await
+async fn instance(config:&AuthConfig,database:&DatabaseConnection,domain:bool,shared:bool,slo:bool,signed:bool,dns:std::net::SocketAddr)->AuthResult<Alibi<TestSchema>> {
+ AuthBuilder::<TestSchema>::new(config.clone()).store(crate::backend::store::<TestSchema>(config.clone(),database.clone())).plugin(EmailPasswordPlugin::new()).plugin(SessionManagementPlugin::new()).plugin(SsoPlugin::with_config(SsoConfig{saml_enable_single_logout:slo,saml_want_logout_response_signed:signed,redirect_uri:shared.then(||"/sso/callback".into()),domain_verification:domain,domain_verification_dns_servers:vec![dns],..Default::default()})).build().await
 }
 pub(crate) async fn router(config:&AuthConfig,database:DatabaseConnection)->AuthResult<Router> {
  let idp=oidc_peer::start().await;let config=config.clone().trusted_origin(&idp.base);let dns=super::sso_dns_fixture::start().await;
  let auths=Arc::new(std::collections::HashMap::from([
- ("default",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,false,false,false,dns.address).await?)))),
- ("shared",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,false,true,false,dns.address).await?)))),
- ("slo",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,false,false,true,dns.address).await?)))),
- ("domain",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,true,false,false,dns.address).await?))))]));
+ ("default",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,false,false,false,false,dns.address).await?)))),
+ ("shared",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,false,true,false,false,dns.address).await?)))),
+ ("signed-slo",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,false,false,true,true,dns.address).await?)))),
+ ("slo",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,false,false,true,false,dns.address).await?)))),
+ ("domain",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,true,false,false,false,dns.address).await?))))]));
  Ok(Router::new().route("/__test/server-api/sso",post(move|Json(input):Json<serde_json::Value>|{
- let mode=if input["mode"]=="domain" {"domain"}else if input["mode"]=="shared" {"shared"}else if input["mode"]=="slo" {"slo"}else{"default"};let auth=auths.get(mode).unwrap().clone();let dns=dns.clone();let idp=idp.clone();let config=config.clone();let database=database.clone();async move {
- if input["action"]=="restart"{*auth.lock().await=Arc::new(instance(&config,&database,mode=="domain",mode=="shared",mode=="slo",dns.address).await.unwrap());return Json(serde_json::json!({"restarted":true})).into_response();}
+ let mode=if input["mode"]=="signed-slo" {"signed-slo"}else if input["mode"]=="domain" {"domain"}else if input["mode"]=="shared" {"shared"}else if input["mode"]=="slo" {"slo"}else{"default"};let auth=auths.get(mode).unwrap().clone();let dns=dns.clone();let idp=idp.clone();let config=config.clone();let database=database.clone();async move {
+ if input["action"]=="restart"{*auth.lock().await=Arc::new(instance(&config,&database,mode=="domain",mode=="shared",mode=="slo"||mode=="signed-slo",mode=="signed-slo",dns.address).await.unwrap());return Json(serde_json::json!({"restarted":true})).into_response();}
  let auth=auth.lock().await.clone();
+ if input["action"]=="sign-saml-logout" {return Json(serde_json::json!({"SAMLResponse":saml_grant::signed_logout(input["xml"].as_str().unwrap(),input["wrongKey"].as_bool().unwrap_or(false)).unwrap()})).into_response();}
  if input["action"]=="sign-out-http"{let mut request=alibi::AuthRequest::new(alibi::HttpMethod::Post,"/sign-out");request.headers=serde_json::from_value(input["headers"].clone()).unwrap();request.headers.insert("content-type".into(),"application/json".into());request.body=Some(b"{}".to_vec());return auth.handle_request(request).await.unwrap().into_response();}
  if input["action"]=="acs-http"{let form=input["body"].as_object().unwrap().iter().map(|(name,value)|(name.as_str(),value.as_str().unwrap())).collect::<Vec<_>>();let encoded=url::form_urlencoded::Serializer::new(String::new()).extend_pairs(form).finish();let mut request=alibi::AuthRequest::new(alibi::HttpMethod::Post,format!("/sso/saml2/sp/acs/{}",input["params"]["providerId"].as_str().unwrap()));request.headers=input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()).unwrap_or_default();request.headers.insert("content-type".into(),"application/x-www-form-urlencoded".into());request.body=Some(encoded.into_bytes());return auth.handle_request(request).await.unwrap().into_response();}
  if input["action"]=="saml-grant" {return Json(saml_grant::grant(input["authorization"].as_str().unwrap(),input["email"].as_str().unwrap(),input["wrongKey"].as_bool().unwrap_or(false)).unwrap()).into_response();}
