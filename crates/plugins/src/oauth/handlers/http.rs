@@ -103,7 +103,10 @@ pub(crate) async fn handle_social_sign_in(
     }
 
     match ctx.config.account.store_state_strategy {
-        alibi_core::OAuthStateStrategy::Automatic | alibi_core::OAuthStateStrategy::Database => {
+        alibi_core::OAuthStateStrategy::Automatic => Err(AuthError::config(
+            "OAuth state strategy has not been initialized",
+        )),
+        alibi_core::OAuthStateStrategy::Database => {
             if response.token.is_some() {
                 return Ok(auth_response);
             }
@@ -230,8 +233,10 @@ pub(in crate::oauth) async fn callback_core(
             .await?;
             let response = redirect_response(flow.response.url.as_deref().unwrap_or_default());
             return match ctx.config.account.store_state_strategy {
-                alibi_core::OAuthStateStrategy::Automatic
-                | alibi_core::OAuthStateStrategy::Database => attach_state_cookie(
+                alibi_core::OAuthStateStrategy::Automatic => Err(AuthError::config(
+                    "OAuth state strategy has not been initialized",
+                )),
+                alibi_core::OAuthStateStrategy::Database => attach_state_cookie(
                     response,
                     &ctx.config,
                     ctx.config.current_secret(),
@@ -245,7 +250,12 @@ pub(in crate::oauth) async fn callback_core(
         return Ok(callback_failure_redirect(ctx, "state_not_found"));
     };
     let payload = match ctx.config.account.store_state_strategy {
-        alibi_core::OAuthStateStrategy::Automatic | alibi_core::OAuthStateStrategy::Database => {
+        alibi_core::OAuthStateStrategy::Automatic => {
+            return Err(AuthError::config(
+                "OAuth state strategy has not been initialized",
+            ));
+        }
+        alibi_core::OAuthStateStrategy::Database => {
             let verification = match ctx
                 .verifications()
                 .find(&state_verification_identifier(&state_param))
@@ -409,9 +419,12 @@ pub(in crate::oauth) async fn callback_core(
                 .ok_or_else(|| AuthError::internal("Authenticated state cookie disappeared"))?,
             &ctx.config,
         )?,
-        alibi_core::OAuthStateStrategy::Automatic | alibi_core::OAuthStateStrategy::Database => {
-            ctx.config.current_secret()
+        alibi_core::OAuthStateStrategy::Automatic => {
+            return Err(AuthError::config(
+                "OAuth state strategy has not been initialized",
+            ));
         }
+        alibi_core::OAuthStateStrategy::Database => ctx.config.current_secret(),
     };
     if let Some(context) = verified_server_context(&payload, &state_param, context_secret) {
         req.extensions()
@@ -695,14 +708,15 @@ pub(in crate::oauth) async fn handle_link_social(
     }
 
     match ctx.config.account.store_state_strategy {
-        alibi_core::OAuthStateStrategy::Automatic | alibi_core::OAuthStateStrategy::Database => {
-            attach_state_cookie(
-                auth_response,
-                &ctx.config,
-                ctx.config.current_secret(),
-                &flow.state,
-            )
-        }
+        alibi_core::OAuthStateStrategy::Automatic => Err(AuthError::config(
+            "OAuth state strategy has not been initialized",
+        )),
+        alibi_core::OAuthStateStrategy::Database => attach_state_cookie(
+            auth_response,
+            &ctx.config,
+            ctx.config.current_secret(),
+            &flow.state,
+        ),
         alibi_core::OAuthStateStrategy::Cookie => {
             attach_cookie_state_payload(auth_response, &ctx.config, &flow.payload)
         }

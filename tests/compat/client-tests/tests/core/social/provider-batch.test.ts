@@ -209,15 +209,15 @@ for (const provider of Object.keys(contracts) as Array<keyof typeof contracts>) 
           string,
           Array<Record<string, unknown>>
         >;
-        const source = "user" in sql;
-        const users = sql[source ? "user" : "users"]!;
-        const accounts = sql[source ? "account" : "accounts"]!;
-        const sessions = sql[source ? "session" : "sessions"]!;
+
+        const users = sql["user"]!;
+        const accounts = sql["account"]!;
+        const sessions = sql["session"]!;
         expect(users).toHaveLength(1);
         expect(accounts).toHaveLength(1);
         expect(sessions).toHaveLength(1);
-        expect(accounts[0]![source ? "accountId" : "account_id"]).toBe("batch-subject");
-        expect(accounts[0]![source ? "accessToken" : "access_token"]).toBe("batch-access");
+        expect(accounts[0]!["accountId"]).toBe("batch-subject");
+        expect(accounts[0]!["accessToken"]).toBe("batch-access");
         await archive(ctx, `${provider}-${mode}`, {
           start: completed.start,
           session,
@@ -335,13 +335,11 @@ for (const provider of providers) {
           string,
           Array<Record<string, unknown>>
         >;
-        const source = "user" in sql;
-        expect(sql[source ? "user" : "users"]).toHaveLength(failure ? 0 : 1);
-        expect(sql[source ? "verification" : "verifications"]).toHaveLength(0);
+
+        expect(sql["user"]).toHaveLength(failure ? 0 : 1);
+        expect(sql["verification"]).toHaveLength(0);
         if (!failure) {
-          expect(
-            sql[source ? "account" : "accounts"]![0]![source ? "accountId" : "account_id"],
-          ).toBe("batch-subject");
+          expect(sql["account"]![0]!["accountId"]).toBe("batch-subject");
         }
         await archive(ctx, `${provider}-${mode}`, { outcome });
         return {
@@ -409,18 +407,18 @@ for (const [label, provider, profile, expectedName, expectedVerified, physicalVe
       );
       if (provider === "notion") expect(session.data?.user.image).toBe("2");
       const sql = (await read(ctx, "sql-state")) as Record<string, Array<Record<string, unknown>>>;
-      const source = "user" in sql;
-      const row = sql[source ? "user" : "users"]![0]!;
-      expect(row[source ? "emailVerified" : "email_verified"]).toBe(physicalVerified);
-      expect(sql[source ? "account" : "accounts"]).toHaveLength(1);
-      expect(sql[source ? "session" : "sessions"]).toHaveLength(1);
+
+      const row = sql["user"]![0]!;
+      expect(row["emailVerified"]).toBe(physicalVerified);
+      expect(sql["account"]).toHaveLength(1);
+      expect(sql["session"]).toHaveLength(1);
       await archive(ctx, label, {
         session,
         status: status(completed.response, ctx.baseURL),
       });
       return {
         session: ctx.snapshot(session),
-        verification: row[source ? "emailVerified" : "email_verified"],
+        verification: row["emailVerified"],
       };
     },
     ["GET /callback/{}", "GET /get-session"],
@@ -466,26 +464,25 @@ for (const provider of ["spotify", "wechat", "vercel"] as const) {
       const completed = await flow(ctx, provider, "encrypted");
       expect(completed.response.headers.get("location")).toBe("/dashboard");
       const sql = (await read(ctx, "sql-state")) as Record<string, Array<Record<string, unknown>>>;
-      const source = "user" in sql;
-      const account = sql[source ? "account" : "accounts"]![0]!;
+
+      const account = sql["account"]![0]!;
       const token = await completed.actor.client.getAccessToken({
         accountId: String(account.id),
       });
       expect(token.error).toBeNull();
       expect(token.data?.accessToken).toBe("batch-access");
-      const stored = account[source ? "accessToken" : "access_token"];
+      const stored = account["accessToken"];
       expect(stored).toBeString();
       expect(stored).not.toBe("batch-access");
       expect(String(stored)).toMatch(/^(?:\$ba\$\d+\$)?[0-9a-f]+$/);
       if (provider === "wechat") {
-        expect(account[source ? "idToken" : "id_token"]).toBeNull();
+        expect(account["idToken"]).toBeNull();
       }
       await archive(ctx, `${provider}-encrypted`, { token });
       return {
         token: ctx.snapshot(token),
         encrypted: true,
-        idToken:
-          provider === "wechat" ? account[source ? "idToken" : "id_token"] : "not-applicable",
+        idToken: provider === "wechat" ? account["idToken"] : "not-applicable",
       };
     },
     ["GET /callback/{}", "POST /get-access-token"],
@@ -534,13 +531,11 @@ for (const provider of providers) {
       expect(after.data?.user.id).toBe(before.data?.user.id);
       expect(after.data?.user.name).toBe(provider === "zoom" ? "Batch Name" : "Updated Name");
       const sql: any = await read(ctx, "sql-state");
-      const source = "user" in sql;
-      expect(sql[source ? "user" : "users"]).toHaveLength(1);
-      expect(sql[source ? "account" : "accounts"]).toHaveLength(1);
-      expect(sql[source ? "session" : "sessions"]).toHaveLength(2);
-      expect(sql[source ? "account" : "accounts"][0][source ? "accountId" : "account_id"]).toBe(
-        "batch-subject",
-      );
+
+      expect(sql["user"]).toHaveLength(1);
+      expect(sql["account"]).toHaveLength(1);
+      expect(sql["session"]).toHaveLength(2);
+      expect(sql["account"][0]["accountId"]).toBe("batch-subject");
       await archive(ctx, `${provider}-override`, { before, after });
       return { before: ctx.snapshot(before), after: ctx.snapshot(after) };
     },
@@ -556,8 +551,8 @@ for (const provider of ["spotify", "wechat", "vercel"] as const) {
       const completed = await flow(ctx, provider, "refresh-callback");
       expect(completed.response.headers.get("location")).toBe("/dashboard");
       const sql: any = await read(ctx, "sql-state");
-      const source = "user" in sql;
-      const account = sql[source ? "account" : "accounts"][0];
+
+      const account = sql["account"][0];
       const token = await completed.actor.client.refreshToken({
         accountId: String(account.id),
       });
@@ -573,16 +568,10 @@ for (const provider of ["spotify", "wechat", "vercel"] as const) {
         expect(Date.parse(String(token.data?.accessTokenExpiresAt))).toBe(4102444800000);
         expect(callbacks).toEqual([{ kind: "refresh", provider, refreshToken: "batch-refresh" }]);
         const after: any = await read(ctx, "sql-state");
-        expect(
-          after[source ? "account" : "accounts"][0][source ? "accessToken" : "access_token"],
-        ).toBe("callback-access");
-        expect(
-          after[source ? "account" : "accounts"][0][source ? "refreshToken" : "refresh_token"],
-        ).toBe("callback-refresh");
-        expect(after[source ? "user" : "users"]).toEqual(sql[source ? "user" : "users"]);
-        expect(after[source ? "session" : "sessions"]).toEqual(
-          sql[source ? "session" : "sessions"],
-        );
+        expect(after["account"][0]["accessToken"]).toBe("callback-access");
+        expect(after["account"][0]["refreshToken"]).toBe("callback-refresh");
+        expect(after["user"]).toEqual(sql["user"]);
+        expect(after["session"]).toEqual(sql["session"]);
       }
       await archive(ctx, `${provider}-refresh-callback`, { token });
       return { token: ctx.snapshot(token), callbacks };
@@ -606,8 +595,8 @@ compatScenario(
     const completed = await flow(ctx, "wechat", "default");
     expect(completed.response.headers.get("location")).toBe("/dashboard");
     const sql: any = await read(ctx, "sql-state");
-    const source = "user" in sql;
-    const account = sql[source ? "account" : "accounts"][0];
+
+    const account = sql["account"][0];
     expect(account.scope).toBe("\u0085alpha\u0085,\ufeffbeta\ufeff");
     const token = await completed.actor.client.getAccessToken({
       accountId: String(account.id),
@@ -670,10 +659,10 @@ for (const variant of ["missing", "malformed", "valid"] as const) {
         ).toBe(false);
       }
       const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
-      const source = "user" in sql;
-      expect(sql[source ? "user" : "users"]).toHaveLength(variant === "valid" ? 2 : 1);
-      expect(sql[source ? "account" : "accounts"]).toHaveLength(variant === "valid" ? 2 : 1);
-      expect(sql[source ? "verification" : "verifications"]).toHaveLength(0);
+
+      expect(sql["user"]).toHaveLength(variant === "valid" ? 2 : 1);
+      expect(sql["account"]).toHaveLength(variant === "valid" ? 2 : 1);
+      expect(sql["verification"]).toHaveLength(0);
       expect(await foreign.client.getSession()).toEqual(foreignSession);
       const replay = await completed.actor.fetch(
         ctx.baseURL +
@@ -751,16 +740,14 @@ for (const variant of ["missing", "empty"] as const) {
         expect(session.data?.user.image ?? null).toBe(expectedImage);
         expect(session.data?.user.emailVerified).toBe(["salesforce", "slack"].includes(provider));
         const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
-        const source = "user" in sql;
-        const users = sql[source ? "user" : "users"]!;
-        const accounts = sql[source ? "account" : "accounts"]!;
+
+        const users = sql["user"]!;
+        const accounts = sql["account"]!;
         const owner = users.find((row) => row.id === session.data!.user.id);
         expect(owner).toMatchObject({ name: expectedName, image: expectedImage });
-        expect(
-          accounts.find((row) => row[source ? "providerId" : "provider_id"] === provider),
-        ).toMatchObject({
-          [source ? "accountId" : "account_id"]: "batch-subject",
-          [source ? "userId" : "user_id"]: owner.id,
+        expect(accounts.find((row) => row["providerId"] === provider)).toMatchObject({
+          ["accountId"]: "batch-subject",
+          ["userId"]: owner.id,
         });
         expect(users).toHaveLength(2);
         expect(accounts).toHaveLength(2);
@@ -816,13 +803,11 @@ for (const hasUnion of [true, false]) {
         expect(session.data?.user.email).toBe(`${subject}@wechat.placeholder.invalid`);
         expect(session.data?.user.emailVerified).toBe(false);
         const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
-        const source = "user" in sql;
-        const accounts = sql[source ? "account" : "accounts"]!;
-        const account = accounts.find(
-          (row) => row[source ? "providerId" : "provider_id"] === "wechat",
-        );
-        expect(account[source ? "accountId" : "account_id"]).toBe(subject);
-        expect(account[source ? "userId" : "user_id"]).toBe(session.data!.user.id);
+
+        const accounts = sql["account"]!;
+        const account = accounts.find((row) => row["providerId"] === "wechat");
+        expect(account["accountId"]).toBe(subject);
+        expect(account["userId"]).toBe(session.data!.user.id);
         if (app === "one") {
           originalOwner = session.data!.user.id;
           originalAccount = account.id;
@@ -830,9 +815,9 @@ for (const hasUnion of [true, false]) {
           expect(session.data!.user.id).toBe(originalOwner!);
           expect(account.id).toBe(originalAccount!);
         }
-        expect(sql[source ? "user" : "users"]).toHaveLength(2);
+        expect(sql["user"]).toHaveLength(2);
         expect(accounts).toHaveLength(2);
-        expect(sql[source ? "session" : "sessions"]).toHaveLength(app === "one" ? 2 : 3);
+        expect(sql["session"]).toHaveLength(app === "one" ? 2 : 3);
         const receipts: any[] = await read(ctx, "receipts");
         expect(receipts.map((row) => row.stage)).toEqual(
           app === "one" ? ["token", "user"] : ["token", "user", "token", "user"],
@@ -915,24 +900,18 @@ for (const emailMode of ["http-error", "missing", "empty", "confirmed", "primary
         expect(receipts[1].query).toEqual({ "user.fields": "profile_image_url" });
         if (!denied) expect(receipts[2].query).toEqual({ "user.fields": "confirmed_email" });
         const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
-        const source = "user" in sql;
-        expect(sql[source ? "user" : "users"]).toHaveLength(denied ? 1 : 2);
-        expect(sql[source ? "account" : "accounts"]).toHaveLength(denied ? 1 : 2);
+
+        expect(sql["user"]).toHaveLength(denied ? 1 : 2);
+        expect(sql["account"]).toHaveLength(denied ? 1 : 2);
         if (!denied) {
-          const owner = sql[source ? "user" : "users"]!.find(
-            (row) => row.id === session.data!.user.id,
-          );
+          const owner = sql["user"]!.find((row) => row.id === session.data!.user.id);
           expect(owner.email).toBe(expectedEmail);
-          expect(Boolean(owner[source ? "emailVerified" : "email_verified"])).toBe(
-            emailMode === "confirmed",
-          );
-          const account = sql[source ? "account" : "accounts"]!.find(
-            (row) => row[source ? "providerId" : "provider_id"] === "twitter",
-          );
-          expect(account[source ? "accountId" : "account_id"]).toBe("batch-subject");
-          expect(account[source ? "userId" : "user_id"]).toBe(owner.id);
+          expect(Boolean(owner["emailVerified"])).toBe(emailMode === "confirmed");
+          const account = sql["account"]!.find((row) => row["providerId"] === "twitter");
+          expect(account["accountId"]).toBe("batch-subject");
+          expect(account["userId"]).toBe(owner.id);
         }
-        expect(sql[source ? "verification" : "verifications"]).toHaveLength(0);
+        expect(sql["verification"]).toHaveLength(0);
         expect(await foreign.client.getSession()).toEqual(foreignSession);
         return {
           session: ctx.snapshot(session),
@@ -970,13 +949,11 @@ for (const provider of ["zoom", "roblox"] as const) {
           if (denied) expect(session.data).toBeNull();
           else expect(session.data?.user.name).toBe("Batch Name");
           const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
-          const source = "user" in sql;
-          for (const table of source
-            ? ["user", "account", "session"]
-            : ["users", "accounts", "sessions"]) {
+
+          for (const table of ["user", "account", "session"]) {
             expect(sql[table]).toHaveLength(denied ? 0 : 1);
           }
-          expect(sql[source ? "verification" : "verifications"]).toHaveLength(0);
+          expect(sql["verification"]).toHaveLength(0);
           const receipts: any[] = await read(ctx, "receipts");
           expect(receipts.map((row) => row.stage)).toEqual(["token", "user"]);
           return {
@@ -1042,10 +1019,8 @@ for (const stage of ["token", "user", "refresh"] as const) {
           const completed = await flow(ctx, "wechat", "default");
           expect(completed.response.headers.get("location")).toBe("/dashboard");
           const before = (await read(ctx, "sql-state")) as Record<string, any[]>;
-          const source = "user" in before;
-          const account = before[source ? "account" : "accounts"]!.find(
-            (row) => row[source ? "providerId" : "provider_id"] === "wechat",
-          );
+
+          const account = before["account"]!.find((row) => row["providerId"] === "wechat");
           await configure(errcode);
           token = await completed.actor.client.refreshToken({ accountId: account.id });
           if (failed) {
@@ -1064,18 +1039,14 @@ for (const stage of ["token", "user", "refresh"] as const) {
           expect(recovered.data?.accessToken).toBe(grant.access_token);
           expect(recovered.data?.refreshToken).toBe(grant.refresh_token);
           const after = (await read(ctx, "sql-state")) as Record<string, any[]>;
-          expect(after[source ? "user" : "users"]).toEqual(before[source ? "user" : "users"]);
-          expect(after[source ? "session" : "sessions"]).toEqual(
-            before[source ? "session" : "sessions"],
-          );
-          expect(
-            after[source ? "account" : "accounts"]!.find((row) => row.id === account.id),
-          ).toMatchObject({
-            [source ? "accessToken" : "access_token"]: grant.access_token,
-            [source ? "refreshToken" : "refresh_token"]: grant.refresh_token,
+          expect(after["user"]).toEqual(before["user"]);
+          expect(after["session"]).toEqual(before["session"]);
+          expect(after["account"]!.find((row) => row.id === account.id)).toMatchObject({
+            ["accessToken"]: grant.access_token,
+            ["refreshToken"]: grant.refresh_token,
           });
           session = await completed.actor.client.getSession();
-          expect(session.data?.user.id).toBe(account[source ? "userId" : "user_id"]);
+          expect(session.data?.user.id).toBe(account["userId"]);
         } else {
           await configure(errcode);
           const completed = await flow(ctx, "wechat", "default");
@@ -1092,13 +1063,11 @@ for (const stage of ["token", "user", "refresh"] as const) {
             expect(current.data).not.toBeNull();
           }
           const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
-          const source = "user" in sql;
-          for (const table of source
-            ? ["user", "account", "session"]
-            : ["users", "accounts", "sessions"]) {
+
+          for (const table of ["user", "account", "session"]) {
             expect(sql[table]).toHaveLength(failed ? 1 : 2);
           }
-          expect(sql[source ? "verification" : "verifications"]).toHaveLength(0);
+          expect(sql["verification"]).toHaveLength(0);
           const firstReceipts: any[] = await read(ctx, "receipts");
           expect(firstReceipts.map((row) => row.stage)).toEqual(
             failed && stage === "token" ? ["token"] : ["token", "user"],
@@ -1199,13 +1168,13 @@ for (const mode of ["default", "prompt-none", "prompt-consent", "prompt-empty"] 
       const session = await completed.actor.client.getSession();
       expect(session.data?.user.name).toBe("Batch Name");
       const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
-      const source = "user" in sql;
-      const account = sql[source ? "account" : "accounts"]![0];
-      expect(account[source ? "accountId" : "account_id"]).toBe("batch-subject");
-      expect(account[source ? "userId" : "user_id"]).toBe(session.data!.user.id);
-      expect(sql[source ? "user" : "users"]).toHaveLength(1);
-      expect(sql[source ? "session" : "sessions"]).toHaveLength(1);
-      expect(sql[source ? "verification" : "verifications"]).toHaveLength(0);
+
+      const account = sql["account"]![0];
+      expect(account["accountId"]).toBe("batch-subject");
+      expect(account["userId"]).toBe(session.data!.user.id);
+      expect(sql["user"]).toHaveLength(1);
+      expect(sql["session"]).toHaveLength(1);
+      expect(sql["verification"]).toHaveLength(0);
       const receipts: any[] = await read(ctx, "receipts");
       expect(receipts.map((row) => row.stage)).toEqual(["token", "user"]);
       return {
@@ -1257,13 +1226,11 @@ for (const mode of ["default", "language-en"] as const) {
       const session = await completed.actor.client.getSession();
       expect(session.data?.user.email).toBe("batch-subject@wechat.placeholder.invalid");
       const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
-      const source = "user" in sql;
-      const account = sql[source ? "account" : "accounts"]!.find(
-        (row) => row[source ? "providerId" : "provider_id"] === "wechat",
-      );
-      expect(account[source ? "accountId" : "account_id"]).toBe("batch-subject");
-      expect(account[source ? "userId" : "user_id"]).toBe(session.data!.user.id);
-      expect(sql[source ? "session" : "sessions"]).toHaveLength(2);
+
+      const account = sql["account"]!.find((row) => row["providerId"] === "wechat");
+      expect(account["accountId"]).toBe("batch-subject");
+      expect(account["userId"]).toBe(session.data!.user.id);
+      expect(sql["session"]).toHaveLength(2);
       expect(await foreign.client.getSession()).toEqual(foreignBefore);
       return {
         start: ctx.snapshot(completed.start),
@@ -1313,12 +1280,12 @@ for (const mode of ["default", "claims-empty", "claims-custom"] as const) {
         image: "https://images.example.invalid/batch.png",
       });
       const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
-      const source = "user" in sql;
-      const account = sql[source ? "account" : "accounts"]![0];
-      expect(account[source ? "accountId" : "account_id"]).toBe("batch-subject");
-      expect(account[source ? "userId" : "user_id"]).toBe(session.data!.user.id);
-      expect(sql[source ? "session" : "sessions"]).toHaveLength(1);
-      expect(sql[source ? "verification" : "verifications"]).toHaveLength(0);
+
+      const account = sql["account"]![0];
+      expect(account["accountId"]).toBe("batch-subject");
+      expect(account["userId"]).toBe(session.data!.user.id);
+      expect(sql["session"]).toHaveLength(1);
+      expect(sql["verification"]).toHaveLength(0);
       return {
         claims,
         start: ctx.snapshot(completed.start),

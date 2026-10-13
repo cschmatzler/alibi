@@ -510,7 +510,12 @@ fn flow_response(
         response = response.with_header("location", url);
     }
     let cookie = match config.account.store_state_strategy {
-        alibi_core::OAuthStateStrategy::Automatic | alibi_core::OAuthStateStrategy::Database => {
+        alibi_core::OAuthStateStrategy::Automatic => {
+            return Err(AuthError::config(
+                "OAuth state strategy has not been initialized",
+            ));
+        }
+        alibi_core::OAuthStateStrategy::Database => {
             super::handlers::state_cookie_header(config, config.current_secret(), &flow.state)?
         }
         alibi_core::OAuthStateStrategy::Cookie => {

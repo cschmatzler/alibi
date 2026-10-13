@@ -156,6 +156,15 @@ impl<S: AuthSchema> AuthContext<S> {
         database: Arc<dyn AuthStore<S>>,
         metadata: MetadataMap,
     ) -> Self {
+        let config = if config.account.store_state_strategy == crate::OAuthStateStrategy::Automatic
+        {
+            let mut initialized = (*config).clone();
+            // This constructor receives an explicit server store.
+            initialized.account.store_state_strategy = crate::OAuthStateStrategy::Database;
+            Arc::new(initialized)
+        } else {
+            config
+        };
         let email_provider = config.email_provider.clone();
         Self {
             config,
