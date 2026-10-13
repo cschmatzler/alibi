@@ -46,6 +46,7 @@ compatScenario(
           authorizationEndpoint: `${idp.base}/authorize`,
           tokenEndpoint: `${idp.base}/token`,
           userInfoEndpoint: `${idp.base}/userinfo`,
+          jwksEndpoint: `${idp.base}/jwks`,
         },
       },
     });
@@ -58,9 +59,10 @@ compatScenario(
         errorCallbackURL: `${ctx.baseURL}/failed`,
       },
     });
-    expect(started.status).toBe(200);
+    expect(started.status, await started.clone().text()).toBe(200);
     const authorization = ((await started.json()) as any).url;
-    const granted = await actor.fetch(authorization, { redirect: "manual" });
+    // The independent IdP mints a unique code; compare Alibi and Better Auth, not IdP randomness.
+    const granted = await fetch(authorization, { redirect: "manual" });
     expect(granted.status).toBe(302);
     const callback = new URL(granted.headers.get("location")!);
     const query = Object.fromEntries(callback.searchParams);
