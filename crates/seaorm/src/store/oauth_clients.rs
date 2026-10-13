@@ -14,6 +14,54 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
+    async fn list_oauth_client_resources(
+        &self,
+        client_id: &str,
+    ) -> AuthResult<Vec<alibi_core::store::OAuthClientResource>> {
+        super::entities::oauth_client_resource::Entity::find()
+            .filter(super::entities::oauth_client_resource::Column::ClientId.eq(client_id))
+            .limit(
+                u64::try_from(self.config().advanced.database.default_find_many_limit)
+                    .unwrap_or(u64::MAX),
+            )
+            .all(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect()
+    }
+    async fn create_oauth_resource(
+        &self,
+        data: alibi_core::store::CreateOAuthResource,
+    ) -> AuthResult<alibi_core::store::OAuthResource> {
+        super::entities::oauth_resource::ActiveModel {
+            id: Set(self
+                .generated_id(&self.db, "oauthResource", "oauth_resource", "id")
+                .await?
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
+            identifier: Set(data.identifier),
+            metadata: Set(serde_json::to_string(&data.metadata)?),
+            created_at: Set(data.created_at),
+            updated_at: Set(data.created_at),
+        }
+        .insert(self.scoped_connection())
+        .await
+        .map_err(map_db_err)?
+        .try_into()
+    }
+    async fn get_oauth_resource(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<alibi_core::store::OAuthResource>> {
+        super::entities::oauth_resource::Entity::find()
+            .filter(super::entities::oauth_resource::Column::Identifier.eq(identifier))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .map(TryInto::try_into)
+            .transpose()
+    }
     async fn create_oauth_consent(
         &self,
         data: alibi_core::store::CreateOAuthConsent,

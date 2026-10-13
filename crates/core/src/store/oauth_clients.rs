@@ -1,4 +1,4 @@
-//! Durable OAuth clients; plaintext registration secrets never belong in metadata.
+//! Durable OAuth provider clients, grants, and resource policy.
 use crate::{AuthError, AuthResult};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -23,6 +23,24 @@ pub struct CreateOAuthClient {
 }
 #[async_trait]
 pub trait OAuthClientStore: Send + Sync {
+    async fn list_oauth_client_resources(
+        &self,
+        _client_id: &str,
+    ) -> AuthResult<Vec<OAuthClientResource>> {
+        Err(AuthError::config(
+            "OAuth resource linkage is not supported by this store",
+        ))
+    }
+    async fn create_oauth_resource(&self, _data: CreateOAuthResource) -> AuthResult<OAuthResource> {
+        Err(AuthError::config(
+            "OAuth resource persistence is not supported by this store",
+        ))
+    }
+    async fn get_oauth_resource(&self, _identifier: &str) -> AuthResult<Option<OAuthResource>> {
+        Err(AuthError::config(
+            "OAuth resource persistence is not supported by this store",
+        ))
+    }
     async fn delete_oauth_consent(&self, _id: &str) -> AuthResult<()> {
         Err(AuthError::config(
             "OAuth consent persistence is not supported by this store",
@@ -111,4 +129,28 @@ pub struct CreateOAuthConsent {
     pub user_id: Option<String>,
     pub metadata: Value,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug)]
+pub struct OAuthResource {
+    pub id: String,
+    pub identifier: String,
+    pub metadata: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+#[derive(Clone, Debug)]
+pub struct CreateOAuthResource {
+    pub identifier: String,
+    pub metadata: Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug)]
+pub struct OAuthClientResource {
+    pub id: String,
+    pub client_id: String,
+    pub resource_id: String,
+    pub metadata: Value,
+    pub created_at: Option<DateTime<Utc>>,
 }
