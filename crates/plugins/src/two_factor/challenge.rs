@@ -158,10 +158,10 @@ pub(crate) async fn begin_sign_in_challenge(
 }
 
 pub(in crate::two_factor) async fn resolve_two_factor_state<S: alibi_core::AuthSchema>(
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     ctx: &AuthContext<S>,
 ) -> AuthResult<ResolvedTwoFactorState<S>> {
-    if let Ok((user, session)) = ctx.require_cached_session(req).await {
+    if let Ok((user, session)) = Box::pin(ctx.require_cached_session(req)).await {
         let key = format!("{}!{}", user.id(), session.id());
         return Ok(ResolvedTwoFactorState::Session {
             user,
@@ -406,7 +406,7 @@ pub(in crate::two_factor) async fn verify_existing_session_factor(
 
 pub(in crate::two_factor) async fn finalize_pending_two_factor<S: alibi_core::AuthSchema>(
     pending: PendingTwoFactorState<S>,
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     trust_device: bool,
     set_session_cookie: bool,
     ctx: &AuthContext<S>,
@@ -423,7 +423,28 @@ pub(in crate::two_factor) async fn finalize_pending_two_factor<S: alibi_core::Au
             message: "Invalid two factor cookie",
         });
     }
-    let meta = RequestMeta::from_request(req);
+    let meta = if req.endpoint_call().is_some() {
+        RequestMeta {
+            ip_address: Some(
+                ctx.config
+                    .advanced
+                    .ip_address
+                    .resolve_ip(req.session_headers())
+                    .unwrap_or_default(),
+            ),
+            user_agent: Some(
+                req.session_headers()
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
+                    .map(|(_, value)| value.clone())
+                    .unwrap_or_default(),
+            ),
+        }
+    } else {
+        req.physical_request()
+            .map(RequestMeta::from_request)
+            .unwrap_or_default()
+    };
     let mut config = (*ctx.config).clone();
     if pending.dont_remember {
         config.session.expires_in = Duration::days(1);

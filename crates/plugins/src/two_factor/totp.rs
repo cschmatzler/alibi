@@ -34,8 +34,8 @@ pub(in crate::two_factor) async fn get_totp_uri_core(
 }
 
 pub(in crate::two_factor) async fn verify_totp_core(
-    req: &AuthRequest,
-    body: &VerifyTotpRequest,
+    req: &impl alibi_core::session::SessionRequest,
+    body: &VerifyTotpInput,
     config: &TwoFactorConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<(SessionTokenResponse<UserView>, Vec<String>), TotpVerificationError> {
@@ -83,13 +83,13 @@ pub(in crate::two_factor) async fn verify_totp_core(
 
     match state {
         ResolvedTwoFactorState::Session { user, session, .. } => {
-            let result = verify_existing_session_factor(
+            let result = Box::pin(verify_existing_session_factor(
                 user,
                 *session,
                 two_factor.verified() != Some(true),
                 false,
                 ctx,
-            )
+            ))
             .await
             .map_err(|error| match error {
                 ExistingSessionFactorError::SessionCreationCancelled => {
@@ -102,13 +102,13 @@ pub(in crate::two_factor) async fn verify_totp_core(
         }
         ResolvedTwoFactorState::Pending(pending_2) => {
             mark_factor_verified(&two_factor, ctx).await?;
-            finalize_pending_two_factor(
+            Box::pin(finalize_pending_two_factor(
                 pending_2,
                 req,
                 body.trust_device.unwrap_or(false),
                 true,
                 ctx,
-            )
+            ))
             .await
             .map_err(TotpVerificationError::from)
         }

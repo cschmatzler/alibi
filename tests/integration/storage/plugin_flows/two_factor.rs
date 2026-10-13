@@ -157,16 +157,10 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         .await?,
         0
     );
-    let activated = call(
-        &auth,
-        request(
-            "/two-factor/verify-totp",
-            Some(json!({"code":authenticator.generate_current().to_string()})),
-            &cookies(&owner),
-        ),
-        200,
-    )
-    .await;
+    let activated = Box::pin(auth.dispatch_endpoint(
+        TwoFactorPlugin::verify_totp_endpoint(alibi::plugins::two_factor::VerifyTotpInput{code:authenticator.generate_current().to_string(),trust_device:None}),
+        EndpointOptions {headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()}
+    )).await?.into_response()?;
     let active_cookie = cookies(&activated);
     authenticated(&auth, &active_cookie, "factor@example.test").await;
     assert_eq!(
@@ -186,6 +180,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         1
     );
 
+    let remaining = Box::pin(async {
     let regenerated = call(
         &auth,
         request(
@@ -245,6 +240,9 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         backup_view.backup_codes.as_array().unwrap().len()
     );
 
+        Ok::<Value, Box<dyn std::error::Error + Send + Sync>>(remaining)
+    }).await?;
+
     let before_pending = db.table("sessions").await?;
     let pending = signin(&auth, "").await;
     assert_eq!(body(&pending)["twoFactorRedirect"], true);
@@ -267,28 +265,17 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
             })
         })
         .unwrap();
-    let denied = call(
-        &auth,
-        request(
-            "/two-factor/verify-totp",
-            Some(json!({"code":invalid_code})),
-            &pending_cookie,
-        ),
-        401,
-    )
-    .await;
-    assert_eq!(body(&denied)["message"], "Invalid code");
+    let denied = Box::pin(auth.dispatch_endpoint(
+        TwoFactorPlugin::verify_totp_endpoint(alibi::plugins::two_factor::VerifyTotpInput{code:invalid_code.clone(),trust_device:None}),
+        EndpointOptions{headers:Some([("cookie".into(),pending_cookie.clone())].into_iter().collect()),..Default::default()}
+    )).await.unwrap_err();
+    assert_eq!(denied.error.status_code(),401);
+    assert_eq!(denied.error.error_payload().1.as_deref(),Some("INVALID_CODE"));
     assert_eq!(db.table("sessions").await?, before_pending);
-    let completed = call(
-        &auth,
-        request(
-            "/two-factor/verify-totp",
-            Some(json!({"code":authenticator.generate_current().to_string(),"trustDevice":true})),
-            &pending_cookie,
-        ),
-        200,
-    )
-    .await;
+    let completed = Box::pin(auth.dispatch_endpoint(
+        TwoFactorPlugin::verify_totp_endpoint(alibi::plugins::two_factor::VerifyTotpInput{code:authenticator.generate_current().to_string(),trust_device:Some(true)}),
+        EndpointOptions {headers:Some([("cookie".into(),pending_cookie.clone())].into_iter().collect()),..Default::default()}
+    )).await?.into_response()?;
     authenticated(&auth, &cookies(&completed), "factor@example.test").await;
     let trust = cookies(&completed)
         .split("; ")
@@ -296,17 +283,15 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
         .unwrap()
         .to_owned();
     let sessions = db.table("sessions").await?;
-    let _ = call(
-        &auth,
-        request(
-            "/two-factor/verify-totp",
-            Some(json!({"code":authenticator.generate_current().to_string()})),
-            &pending_cookie,
-        ),
-        401,
-    )
-    .await;
-    assert_eq!(db.table("sessions").await?, sessions);
+    let before_replay = db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?;
+    let replay = Box::pin(auth.dispatch_endpoint(
+        TwoFactorPlugin::verify_totp_endpoint(alibi::plugins::two_factor::VerifyTotpInput{code:authenticator.generate_current().to_string(),trust_device:None}),
+        EndpointOptions{headers:Some([("cookie".into(),pending_cookie.clone())].into_iter().collect()),..Default::default()}
+    )).await.unwrap_err();
+    assert_eq!(replay.error.status_code(),401);
+    assert_eq!(replay.error.error_payload().1.as_deref(),Some("INVALID_TWO_FACTOR_COOKIE"));
+    assert_eq!(db.tables(&["users","accounts","sessions","two_factor","verifications"]).await?,before_replay);
+    assert_eq!(db.table("sessions").await?,sessions);
 
     let trusted = signin(&auth, &trust).await;
     assert!(body(&trusted)["token"].as_str().is_some());

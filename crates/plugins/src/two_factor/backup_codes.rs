@@ -48,7 +48,7 @@ pub(in crate::two_factor) async fn verify_backup_code_core(
     config: &TwoFactorConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(BackupVerificationResponse, Vec<String>)> {
-    let state = resolve_two_factor_state(req, ctx).await?;
+    let state = Box::pin(resolve_two_factor_state(req, ctx)).await?;
     let two_factor = ctx
         .database
         .get_two_factor_by_user_id(state.user().id().as_ref())
@@ -136,10 +136,12 @@ pub(in crate::two_factor) async fn verify_backup_code_core(
                     Vec::new(),
                 ))
             } else {
-                verify_existing_session_factor(user, *session, false, false, ctx)
-                    .await
-                    .map(|(response, headers)| (response.into(), headers))
-                    .map_err(ExistingSessionFactorError::into_auth_error)
+                Box::pin(verify_existing_session_factor(
+                    user, *session, false, false, ctx,
+                ))
+                .await
+                .map(|(response, headers)| (response.into(), headers))
+                .map_err(ExistingSessionFactorError::into_auth_error)
             }
         }
         ResolvedTwoFactorState::Pending(pending_2) => {
@@ -152,13 +154,13 @@ pub(in crate::two_factor) async fn verify_backup_code_core(
                     Vec::new(),
                 ));
             }
-            finalize_pending_two_factor(
+            Box::pin(finalize_pending_two_factor(
                 pending_2,
                 req,
                 body.trust_device.unwrap_or(false),
                 true,
                 ctx,
-            )
+            ))
             .await
             .map(|(response, headers)| (response.into(), headers))
         }
