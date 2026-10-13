@@ -17,3 +17,5 @@ pub mod two_factor;
 pub mod user;
 pub mod verification;
 pub mod wallet_address;
+
+pub mod oauth_client;

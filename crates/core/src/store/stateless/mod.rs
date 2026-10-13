@@ -105,3 +105,5 @@ impl StatelessStore {
 }
 
 impl WalletAddressStore for StatelessStore {}
+
+impl crate::store::OAuthClientStore for StatelessStore {}
