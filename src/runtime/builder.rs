@@ -101,6 +101,22 @@ impl<S: AuthSchema> AuthBuilder<S> {
         self.resolve_trusted_providers().await?;
         normalize_session_cookie_name(&mut self.config);
         self.install_core_plugins();
+        for plugin in &self.plugins {
+            for path in plugin.origin_check_skip_paths() {
+                if !self
+                    .config
+                    .advanced
+                    .disable_origin_check_paths
+                    .iter()
+                    .any(|existing| existing == path)
+                {
+                    self.config
+                        .advanced
+                        .disable_origin_check_paths
+                        .push(path.into());
+                }
+            }
+        }
 
         let config = Arc::new(self.config);
         let store = self

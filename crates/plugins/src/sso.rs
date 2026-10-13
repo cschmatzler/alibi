@@ -7,6 +7,8 @@ mod provider_list;
 mod provider_read;
 mod provider_update;
 mod registration_saml;
+mod saml_acs;
+mod saml_crypto;
 mod saml_sign_in;
 mod sign_in;
 mod sp_metadata;
@@ -33,6 +35,9 @@ pub struct SsoConfig {
     pub redirect_uri: Option<String>,
     pub saml_enable_in_response_to_validation: bool,
     pub saml_request_ttl: chrono::Duration,
+    pub saml_clock_skew: chrono::Duration,
+    pub saml_require_timestamps: bool,
+    pub saml_max_response_size: usize,
 }
 impl Default for SsoConfig {
     fn default() -> Self {
@@ -45,6 +50,9 @@ impl Default for SsoConfig {
             redirect_uri: None,
             saml_enable_in_response_to_validation: true,
             saml_request_ttl: chrono::Duration::minutes(5),
+            saml_clock_skew: chrono::Duration::minutes(5),
+            saml_require_timestamps: false,
+            saml_max_response_size: 262_144,
         }
     }
 }
@@ -325,10 +333,28 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
     fn name(&self) -> &'static str {
         "sso"
     }
+    fn origin_check_skip_paths(&self) -> Vec<&'static str> {
+        vec!["/sso/saml2/sp/acs", "/sso/saml2/sp/slo"]
+    }
+    fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
+        if route.path.starts_with("/sso/saml2/sp/acs/") {
+            vec!["application/x-www-form-urlencoded", "application/json"]
+        } else {
+            vec!["application/json"]
+        }
+    }
     fn routes(&self) -> Vec<AuthRoute> {
         let mut routes = vec![
             AuthRoute::get("/sso/callback/:providerId", "handleSSOCallback"),
             AuthRoute::get("/sso/callback", "handleSSOCallbackShared"),
+            AuthRoute::get(
+                "/sso/saml2/sp/acs/:providerId",
+                "handleSAMLAssertionConsumerService",
+            ),
+            AuthRoute::post(
+                "/sso/saml2/sp/acs/:providerId",
+                "handleSAMLAssertionConsumerService",
+            ),
             AuthRoute::get("/sso/saml2/sp/metadata", "getSSOServiceProviderMetadata"),
             AuthRoute::post("/sign-in/sso", "signInSSO"),
             AuthRoute::post("/sso/register", "registerSSOProvider"),
@@ -348,6 +374,12 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         let mut endpoints = vec![
+            super::endpoint::definition(
+                "acsEndpoint",
+                "handleSAMLAssertionConsumerService",
+                Some("/sso/saml2/sp/acs/:providerId"),
+                HttpMethod::Get,
+            ),
             super::endpoint::definition(
                 "spMetadata",
                 "getSSOServiceProviderMetadata",
@@ -424,6 +456,12 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
+        if call.operation_id() == "handleSAMLAssertionConsumerService" {
+            return Ok(EndpointInput {
+                body: saml_acs::validate_body(call.body())?,
+                query: saml_acs::validate_query(call.query())?,
+            });
+        }
         if matches!(
             call.operation_id(),
             "handleSSOCallback" | "handleSSOCallbackShared"
@@ -491,6 +529,22 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "handleSAMLAssertionConsumerService" {
+            let provider = call
+                .params()
+                .and_then(|params| params.get("providerId"))
+                .and_then(JsValue::as_str)
+                .ok_or_else(|| crate::endpoint::validation("Missing providerId"))?;
+            let body = call.body().map(JsValue::to_json_value).transpose()?;
+            let query = call.query().map(JsValue::to_json_value).transpose()?;
+            let meta = call.request().map_or_else(
+                alibi_core::RequestMeta::default,
+                alibi_core::RequestMeta::from_request,
+            );
+            return self
+                .acs(provider, body.as_ref(), query.as_ref(), call, &meta, ctx)
+                .await;
+        }
         if matches!(
             call.operation_id(),
             "handleSSOCallback" | "handleSSOCallbackShared"
@@ -599,6 +653,47 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if let Some(provider) = req.path().strip_prefix("/sso/saml2/sp/acs/")
+            && matches!(req.method(), HttpMethod::Get | HttpMethod::Post)
+            && !provider.contains('/')
+        {
+            let body = if let Some(bytes) = req.body.as_deref() {
+                if req
+                    .header("content-type")
+                    .is_some_and(|content| content.starts_with("application/x-www-form-urlencoded"))
+                {
+                    Some(serde_json::to_value(
+                        url::form_urlencoded::parse(bytes)
+                            .into_owned()
+                            .collect::<std::collections::HashMap<_, _>>(),
+                    )?)
+                } else {
+                    Some(serde_json::from_slice::<Value>(bytes)?)
+                }
+            } else {
+                None
+            };
+            let body = body
+                .as_ref()
+                .map(|body| alibi_core::utils::json::parse_value(&serde_json::to_string(body)?))
+                .transpose()?;
+            let body = saml_acs::validate_body(body.as_ref())?
+                .map(|body| body.to_json_value())
+                .transpose()?;
+            let query = serde_json::to_value(&req.query)?;
+            return Ok(Some(
+                self.acs(
+                    provider,
+                    body.as_ref(),
+                    Some(&query),
+                    req,
+                    &alibi_core::RequestMeta::from_request(req),
+                    ctx,
+                )
+                .await?
+                .to_response()?,
+            ));
+        }
         if req.path() == "/sso/saml2/sp/metadata" && *req.method() == HttpMethod::Get {
             let query = alibi_core::utils::json::parse_value(&serde_json::to_string(&req.query)?)?;
             return Ok(Some(
