@@ -70,10 +70,15 @@ async function serverReview(ctx: Context, query: unknown, cookie?: string) {
   expect(response.headers.get("set-cookie")).toBeNull();
   return { status: response.status, body: (await response.json()) as any };
 }
-async function serverApprove(ctx: Context, body: unknown, headers?: Record<string, string>) {
+async function serverDecision(
+  ctx: Context,
+  operation: "approve" | "deny",
+  body: unknown,
+  headers?: Record<string, string>,
+) {
   const response = await ctx
-    .actor("server-approve")
-    .fetch(`${ctx.baseURL}/__test/server-api/device-approve`, {
+    .actor("server-decision")
+    .fetch(`${ctx.baseURL}/__test/server-api/device-${operation}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ body, ...(headers ? { headers } : {}) }),
@@ -81,6 +86,10 @@ async function serverApprove(ctx: Context, body: unknown, headers?: Record<strin
   expect(response.headers.get("set-cookie")).toBeNull();
   return { status: response.status, body: (await response.json()) as any };
 }
+const serverApprove = (ctx: Context, body: unknown, headers?: Record<string, string>) =>
+  serverDecision(ctx, "approve", body, headers);
+const serverDeny = (ctx: Context, body: unknown, headers?: Record<string, string>) =>
+  serverDecision(ctx, "deny", body, headers);
 async function signUpOwner(ctx: Context, prefix: string) {
   const owner = deviceActor(ctx, "owner");
   let cookie = "";
@@ -300,20 +309,47 @@ compatScenario(
 compatScenario(
   "device deny flow returns access_denied",
   async (ctx) => {
-    const { owner, signup } = await signUpOwner(ctx, "device-authorization-device-deny");
+    const { owner, signup, cookie, userId } = await signUpOwner(
+      ctx,
+      "device-authorization-device-deny",
+    );
     const code = await requestCode(ctx);
+    const pending = await ctx.readDeviceState({ deviceCode: code.device_code });
+    for (const [body, headers, status] of [
+      [{ userCode: code.user_code }, undefined, 400],
+      [{ userCode: 42 }, { cookie }, 400],
+      [{ userCode: code.user_code }, {}, 401],
+    ] as const) {
+      const rejected = await serverDeny(ctx, body, headers);
+      expect(rejected.status).toBe(status);
+      expect(status === 400 ? rejected.body.code : rejected.body.error).toBe(
+        status === 400 ? "VALIDATION_ERROR" : "unauthorized",
+      );
+      expect(await ctx.readDeviceState({ deviceCode: code.device_code })).toEqual(pending);
+    }
     const claim = await owner.device({ query: { user_code: code.user_code } });
     expect(claim.error).toBeNull();
 
-    const deny = await owner.device.deny({ userCode: code.user_code });
-    expect(deny.data).toEqual({ success: true });
+    const deny = await serverDeny(
+      ctx,
+      { userCode: code.user_code, userId: "foreign-owner-selector" },
+      { cookie },
+    );
+    expect(deny.status).toBe(200);
+    expect(deny.body).toEqual({ success: true });
 
-    const repeatDeny = await owner.device.deny({ userCode: code.user_code });
-    expect(repeatDeny.error).toMatchObject({
-      status: 400,
+    const persisted = deviceState.parse(
+      await ctx.readDeviceState({ deviceCode: code.device_code }),
+    );
+    expect(persisted.status).toBe("denied");
+    expect(persisted.userId).toBe(userId);
+    const repeatDeny = await serverDeny(ctx, { userCode: code.user_code }, { cookie });
+    expect(repeatDeny.status).toBe(400);
+    expect(repeatDeny.body).toMatchObject({
       error: "invalid_request",
       error_description: "Device code already processed",
     });
+    expect(await ctx.readDeviceState({ deviceCode: code.device_code })).toEqual(persisted);
 
     const deniedState = await owner.device({ query: { user_code: code.user_code } });
     expect(deniedState.data?.status).toBe("denied");
@@ -340,7 +376,7 @@ compatScenario(
       sessions: ctx.snapshot(sessions),
     };
   },
-  ["POST /device/deny", "POST /device/token"],
+  ["POST /device/token"],
 );
 
 compatScenario(
@@ -399,7 +435,7 @@ compatScenario("device token rejects a mismatched client id", async (ctx) => {
 compatScenario(
   "device decisions require the claiming user and redact other actors",
   async (ctx) => {
-    const { owner, cookie, userId } = await signUpOwner(ctx, "device-authorization-claim-owner");
+    const { cookie, userId } = await signUpOwner(ctx, "device-authorization-claim-owner");
     const other = deviceActor(ctx, "other");
     let otherCookie = "";
     const otherSignup = await other.signUp.email({
@@ -416,19 +452,20 @@ compatScenario(
       },
     });
     expect(otherSignup.error).toBeNull();
-    const device = deviceActor(ctx, "device");
     const code = await requestCode(ctx, "private scope");
     const unauthenticatedApprove = await serverApprove(ctx, { userCode: code.user_code }, {});
-    const unauthenticatedDeny = await device.device.deny({ userCode: code.user_code });
+    const unauthenticatedDeny = await serverDeny(ctx, { userCode: code.user_code }, {});
     expect(unauthenticatedApprove.status).toBe(401);
     expect(unauthenticatedApprove.body.error).toBe("unauthorized");
-    expect(unauthenticatedDeny.error).toMatchObject({ status: 401, error: "unauthorized" });
+    expect(unauthenticatedDeny.status).toBe(401);
+    expect(unauthenticatedDeny.body.error).toBe("unauthorized");
 
     const unclaimedApprove = await serverApprove(ctx, { userCode: code.user_code }, { cookie });
-    const unclaimedDeny = await owner.device.deny({ userCode: code.user_code });
+    const unclaimedDeny = await serverDeny(ctx, { userCode: code.user_code }, { cookie });
     expect(unclaimedApprove.status).toBe(400);
     expect(unclaimedApprove.body.error).toBe("invalid_request");
-    expect(unclaimedDeny.error).toMatchObject({ status: 400, error: "invalid_request" });
+    expect(unclaimedDeny.status).toBe(400);
+    expect(unclaimedDeny.body.error).toBe("invalid_request");
 
     const claim = await serverReview(ctx, { user_code: code.user_code }, cookie);
     expect(claim.status).toBe(200);
@@ -452,10 +489,11 @@ compatScenario(
       { userCode: code.user_code },
       { cookie: otherCookie },
     );
-    const otherDeny = await other.device.deny({ userCode: code.user_code });
+    const otherDeny = await serverDeny(ctx, { userCode: code.user_code }, { cookie: otherCookie });
     expect(otherApprove.status).toBe(403);
     expect(otherApprove.body.error).toBe("access_denied");
-    expect(otherDeny.error).toMatchObject({ status: 403, error: "access_denied" });
+    expect(otherDeny.status).toBe(403);
+    expect(otherDeny.body.error).toBe("access_denied");
 
     const ownerApprove = await serverApprove(
       ctx,
@@ -471,6 +509,10 @@ compatScenario(
     expect(replay.status).toBe(400);
     expect(replay.body.error).toBe("invalid_request");
     expect(await ctx.readDeviceState({ deviceCode: code.device_code })).toEqual(approved);
+    const deniedReplay = await serverDeny(ctx, { userCode: code.user_code }, { cookie });
+    expect(deniedReplay.status).toBe(400);
+    expect(deniedReplay.body.error).toBe("invalid_request");
+    expect(await ctx.readDeviceState({ deviceCode: code.device_code })).toEqual(approved);
 
     return {
       unauthenticatedApprove: ctx.snapshot(unauthenticatedApprove),
@@ -485,7 +527,7 @@ compatScenario(
       ownerApprove: ctx.snapshot(ownerApprove),
     };
   },
-  ["POST /device/deny"],
+  [],
 );
 
 compatScenario(

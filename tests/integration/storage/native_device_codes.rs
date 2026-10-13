@@ -82,15 +82,20 @@ async fn server_review<S: AuthSchema>(
         .await?
         .into_response()?)
 }
-async fn server_approval<S: AuthSchema>(
+async fn server_decision<S: AuthSchema>(
     auth: &Alibi<S>,
     user_code: &str,
     cookie: &str,
+    decision: &str,
 ) -> TestResult<AuthResponse> {
+    let endpoint = if decision == "deny" {
+        DeviceAuthorizationPlugin::device_deny_endpoint(user_code)
+    } else {
+        DeviceAuthorizationPlugin::device_approve_endpoint(user_code)
+    };
     match Box::pin(
         auth.dispatch_endpoint(
-            DeviceAuthorizationPlugin::device_approve_endpoint(user_code)
-                .with_body(&json!({"userCode":user_code,"userId":"foreign-owner-selector"}))?,
+            endpoint.with_body(&json!({"userCode":user_code,"userId":"foreign-owner-selector"}))?,
             alibi::endpoint::EndpointOptions {
                 headers: Some(
                     [("cookie".to_owned(), cookie.to_owned())]
@@ -316,59 +321,62 @@ async fn workflow<S: AuthSchema>(auth: &Alibi<S>, backend: &str) -> TestResult<S
             );
         }
 
-        if decision == "approve" {
-            for (input, headers, status) in [
-                (json!({"userCode":user_code}), None, 400),
-                (
-                    json!({"userCode":42}),
-                    Some(
-                        [("cookie".to_owned(), cookies[0].clone())]
-                            .into_iter()
-                            .collect(),
-                    ),
-                    400,
+        let operation = if decision == "approve" {
+            "deviceApprove"
+        } else {
+            "deviceDeny"
+        };
+        for (input, headers, status) in [
+            (json!({"userCode":user_code}), None, 400),
+            (
+                json!({"userCode":42}),
+                Some(
+                    [("cookie".to_owned(), cookies[0].clone())]
+                        .into_iter()
+                        .collect(),
                 ),
-                (json!({"userCode":user_code}), Some(Default::default()), 401),
-            ] {
-                let error = auth
-                    .dispatch_endpoint(
-                        alibi::endpoint::ServerEndpoint::<Value>::new(
-                            "device-authorization",
-                            "deviceApprove",
-                        )
-                        .with_body(&input)?,
-                        alibi::endpoint::EndpointOptions {
-                            headers,
-                            ..Default::default()
-                        },
+                400,
+            ),
+            (json!({"userCode":user_code}), Some(Default::default()), 401),
+        ] {
+            let error = auth
+                .dispatch_endpoint(
+                    alibi::endpoint::ServerEndpoint::<Value>::new(
+                        "device-authorization",
+                        operation,
                     )
-                    .await
-                    .unwrap_err();
-                assert_eq!(error.error.status_code(), status);
-                if status == 400 {
-                    assert_eq!(
-                        error.error.error_payload().1.as_deref(),
-                        Some("VALIDATION_ERROR")
-                    );
-                } else {
-                    assert_eq!(
-                        error
-                            .body
-                            .as_ref()
-                            .unwrap()
-                            .get("error")
-                            .and_then(alibi::utils::json::JsValue::as_str),
-                        Some("unauthorized")
-                    );
-                }
-                let unchanged = auth
-                    .store()
-                    .get_device_code_by_device_code(device)
-                    .await?
-                    .unwrap();
-                assert!(unchanged.user_id.is_none());
-                assert_eq!(unchanged.status, "pending");
+                    .with_body(&input)?,
+                    alibi::endpoint::EndpointOptions {
+                        headers,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap_err();
+            assert_eq!(error.error.status_code(), status);
+            if status == 400 {
+                assert_eq!(
+                    error.error.error_payload().1.as_deref(),
+                    Some("VALIDATION_ERROR")
+                );
+            } else {
+                assert_eq!(
+                    error
+                        .body
+                        .as_ref()
+                        .unwrap()
+                        .get("error")
+                        .and_then(alibi::utils::json::JsValue::as_str),
+                    Some("unauthorized")
+                );
             }
+            let unchanged = auth
+                .store()
+                .get_device_code_by_device_code(device)
+                .await?
+                .unwrap();
+            assert!(unchanged.user_id.is_none());
+            assert_eq!(unchanged.status, "pending");
         }
         let wrong_client = call(
             auth,
@@ -400,19 +408,7 @@ async fn workflow<S: AuthSchema>(auth: &Alibi<S>, backend: &str) -> TestResult<S
         assert_eq!(body(&pending)["error"], "authorization_pending");
         let anonymous = server_review(auth, user_code, None).await?;
         assert!(body(&anonymous).get("scope").is_none());
-        let unclaimed = if decision == "approve" {
-            server_approval(auth, user_code, &cookies[0]).await?
-        } else {
-            call(
-                auth,
-                &mut trace,
-                "/device/approve",
-                Some(json!({"userCode":user_code})),
-                &cookies[0],
-                None,
-            )
-            .await?
-        };
+        let unclaimed = server_decision(auth, user_code, &cookies[0], decision).await?;
         assert_eq!(body(&unclaimed)["error"], "invalid_request");
         let claimed = server_review(auth, user_code, Some(&cookies[0])).await?;
         assert_eq!(body(&claimed)["scope"], "profile raw");
@@ -425,19 +421,7 @@ async fn workflow<S: AuthSchema>(auth: &Alibi<S>, backend: &str) -> TestResult<S
             .unwrap();
         let other = server_review(auth, user_code, Some(&cookies[1])).await?;
         assert!(body(&other).get("scope").is_none());
-        let forbidden = if decision == "approve" {
-            server_approval(auth, user_code, &cookies[1]).await?
-        } else {
-            call(
-                auth,
-                &mut trace,
-                "/device/deny",
-                Some(json!({"userCode":user_code})),
-                &cookies[1],
-                None,
-            )
-            .await?
-        };
+        let forbidden = server_decision(auth, user_code, &cookies[1], decision).await?;
         assert_eq!(forbidden.status, 403);
         assert_eq!(
             auth.store()
@@ -448,34 +432,31 @@ async fn workflow<S: AuthSchema>(auth: &Alibi<S>, backend: &str) -> TestResult<S
                 .as_deref(),
             Some(owner.as_str())
         );
-        let decided = if decision == "approve" {
-            server_approval(auth, user_code, &cookies[0]).await?
-        } else {
-            call(
-                auth,
-                &mut trace,
-                "/device/deny",
-                Some(json!({"userCode":user_code})),
-                &cookies[0],
-                None,
-            )
-            .await?
-        };
+        let decided = server_decision(auth, user_code, &cookies[0], decision).await?;
         assert_eq!(decided.status, 200);
-        let repeated = if decision == "approve" {
-            server_approval(auth, user_code, &cookies[0]).await?
-        } else {
-            call(
-                auth,
-                &mut trace,
-                "/device/deny",
-                Some(json!({"userCode":user_code})),
-                &cookies[0],
-                None,
-            )
+        let persisted = auth
+            .store()
+            .get_device_code_by_user_code(user_code)
             .await?
-        };
+            .unwrap();
+        assert_eq!(
+            persisted.status,
+            if decision == "deny" {
+                "denied"
+            } else {
+                "approved"
+            }
+        );
+        assert_eq!(persisted.user_id.as_deref(), Some(owner.as_str()));
+        let repeated = server_decision(auth, user_code, &cookies[0], decision).await?;
         assert_eq!(body(&repeated)["error"], "invalid_request");
+        let after_replay = auth
+            .store()
+            .get_device_code_by_user_code(user_code)
+            .await?
+            .unwrap();
+        assert_eq!(after_replay.status, persisted.status);
+        assert_eq!(after_replay.user_id, persisted.user_id);
         let redeemed = call(
             auth,
             &mut trace,
