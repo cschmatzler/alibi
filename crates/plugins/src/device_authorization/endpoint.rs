@@ -1,5 +1,7 @@
 //! Public device issuance without manufacturing an HTTP request.
-pub use super::types::{DeviceActionResponse, DeviceCodeRequest, DeviceCodeResponse};
+pub use super::types::{
+    DeviceActionResponse, DeviceCodeRequest, DeviceCodeResponse, DeviceTokenResponse,
+};
 use super::{DeviceAuthorizationPlugin, DeviceRequestKind, no_store, validate_device_json_body};
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
@@ -33,6 +35,12 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             Some("/device/deny"),
             HttpMethod::Post,
         ),
+        crate::endpoint::definition(
+            "deviceToken",
+            "deviceToken",
+            Some("/device/token"),
+            HttpMethod::Post,
+        ),
     ]
 }
 
@@ -49,6 +57,8 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
             return Err(crate::endpoint::validation("Headers is required"));
         }
         Some(body)
+    } else if call.operation_id() == "deviceToken" {
+        Some(validate_token_body(call.body())?)
     } else {
         call.body().cloned()
     };
@@ -69,7 +79,72 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
     })
 }
 
+fn validate_token_body(body: Option<&JsValue>) -> AuthResult<JsValue> {
+    use crate::authentication_helpers::{JsonFieldKind, field_issue, json_type};
+    let Some(object) = body.and_then(JsValue::as_object) else {
+        return Err(crate::endpoint::validation(format!(
+            "[body] Invalid input: expected object, received {}",
+            json_type(body)
+        )));
+    };
+    let mut issues = Vec::new();
+    if object.get("grant_type").and_then(JsValue::as_str) != Some(super::DEVICE_GRANT_TYPE) {
+        issues.push(format!(
+            "[body.grant_type] Invalid input: expected \"{}\"",
+            super::DEVICE_GRANT_TYPE
+        ));
+    }
+    for field in ["device_code", "client_id"] {
+        let value = object.get(field);
+        if let Some(issue) = field_issue(JsonFieldKind::String, value, json_type(value)) {
+            issues.push(format!("[body.{field}] {issue}"));
+        }
+    }
+    if !issues.is_empty() {
+        return Err(crate::endpoint::validation(issues.join("; ")));
+    }
+    Ok(JsValue::Object(
+        object
+            .iter()
+            .filter(|(name, _)| ["grant_type", "device_code", "client_id"].contains(&name.as_str()))
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect(),
+    ))
+}
+
 impl DeviceAuthorizationPlugin {
+    /// Redeem an approved device proof for its owner's bearer session.
+    #[must_use]
+    pub fn device_token_endpoint(
+        device_code: impl Into<String>,
+        client_id: impl Into<String>,
+    ) -> ServerEndpoint<DeviceTokenResponse> {
+        ServerEndpoint::new("device-authorization", "deviceToken").with_body_value(JsValue::Object(
+            [
+                (
+                    "grant_type".into(),
+                    JsValue::String(super::DEVICE_GRANT_TYPE.into()),
+                ),
+                ("device_code".into(), JsValue::String(device_code.into())),
+                ("client_id".into(), JsValue::String(client_id.into())),
+            ]
+            .into_iter()
+            .collect(),
+        ))
+    }
+
+    pub(super) async fn token_endpoint<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        call.set_response_header("Cache-Control", "no-store");
+        call.set_response_header("Pragma", "no-cache");
+        endpoint_response(no_store(
+            self.redeem_device_token(call.body_as()?, call, ctx).await?,
+        ))
+    }
+
     /// Approve a pending device grant previously claimed by the caller's session.
     #[must_use]
     pub fn device_approve_endpoint(

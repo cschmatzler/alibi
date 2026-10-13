@@ -118,6 +118,54 @@ async fn server_decision<S: AuthSchema>(
         )?),
     }
 }
+async fn server_token<S: AuthSchema>(
+    auth: &Alibi<S>,
+    device: &str,
+    client: &str,
+) -> TestResult<AuthResponse> {
+    let output = Box::pin(
+        auth.dispatch_endpoint(
+            DeviceAuthorizationPlugin::device_token_endpoint(device, client),
+            alibi::endpoint::EndpointOptions {
+                headers: Some(
+                    [
+                        ("user-agent".to_owned(), "device-sdk-poller".to_owned()),
+                        ("x-forwarded-for".to_owned(), "198.51.100.25".to_owned()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+                ..Default::default()
+            },
+        ),
+    )
+    .await;
+    let response = match output {
+        Ok(output) => {
+            assert_eq!(output.decode()?.token_type, "Bearer");
+            output.into_response()?
+        }
+        Err(error) => {
+            let mut response = AuthResponse::json(error.error.status_code(), &error.body.unwrap())?;
+            if let Some(headers) = error.headers {
+                for (name, value) in headers.iter() {
+                    drop(response.headers.insert(name, value));
+                }
+            }
+            response
+        }
+    };
+    assert_eq!(
+        response.headers.get("cache-control").map(String::as_str),
+        Some("no-store")
+    );
+    assert_eq!(
+        response.headers.get("pragma").map(String::as_str),
+        Some("no-cache")
+    );
+    assert!(response.headers.get("set-cookie").is_none());
+    Ok(response)
+}
 async fn native_device_workflow<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
@@ -378,15 +426,44 @@ async fn workflow<S: AuthSchema>(auth: &Alibi<S>, backend: &str) -> TestResult<S
             assert!(unchanged.user_id.is_none());
             assert_eq!(unchanged.status, "pending");
         }
-        let wrong_client = call(
-            auth,
-            &mut trace,
-            "/device/token",
-            Some(token(device, "other")),
-            "",
-            None,
-        )
-        .await?;
+        for input in [
+            json!({"grant_type":"wrong","device_code":device,"client_id":"console"}),
+            json!({"grant_type":"urn:ietf:params:oauth:grant-type:device_code","device_code":42,"client_id":"console"}),
+        ] {
+            let error = Box::pin(
+                auth.dispatch_endpoint(
+                    alibi::endpoint::ServerEndpoint::<Value>::new(
+                        "device-authorization",
+                        "deviceToken",
+                    )
+                    .with_body(&input)?,
+                    alibi::endpoint::EndpointOptions::default(),
+                ),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error.error.status_code(), 400);
+            assert_eq!(
+                error.error.error_payload().1.as_deref(),
+                Some("VALIDATION_ERROR")
+            );
+            assert!(
+                error
+                    .headers
+                    .as_ref()
+                    .and_then(|headers| headers.get("cache-control"))
+                    .is_none()
+            );
+            assert!(
+                auth.store()
+                    .get_device_code_by_device_code(device)
+                    .await?
+                    .unwrap()
+                    .last_polled_at
+                    .is_none()
+            );
+        }
+        let wrong_client = server_token(auth, device, "other").await?;
         assert_eq!(body(&wrong_client)["error"], "invalid_grant");
         assert!(
             auth.store()
@@ -396,15 +473,7 @@ async fn workflow<S: AuthSchema>(auth: &Alibi<S>, backend: &str) -> TestResult<S
                 .last_polled_at
                 .is_none()
         );
-        let pending = call(
-            auth,
-            &mut trace,
-            "/device/token",
-            Some(token(device, "console")),
-            "",
-            None,
-        )
-        .await?;
+        let pending = server_token(auth, device, "console").await?;
         assert_eq!(body(&pending)["error"], "authorization_pending");
         let anonymous = server_review(auth, user_code, None).await?;
         assert!(body(&anonymous).get("scope").is_none());
@@ -457,23 +526,15 @@ async fn workflow<S: AuthSchema>(auth: &Alibi<S>, backend: &str) -> TestResult<S
             .unwrap();
         assert_eq!(after_replay.status, persisted.status);
         assert_eq!(after_replay.user_id, persisted.user_id);
-        let redeemed = call(
-            auth,
-            &mut trace,
-            "/device/token",
-            Some(token(device, "console")),
-            "",
-            None,
-        )
-        .await?;
+        let redeemed = server_token(auth, device, "console").await?;
         if decision == "approve" {
             assert_eq!(redeemed.status, 200);
             assert_eq!(body(&redeemed)["scope"], "profile raw");
             let access = body(&redeemed)["access_token"].as_str().unwrap().to_owned();
-            assert_eq!(
-                auth.store().get_session(&access).await?.unwrap().user_id(),
-                owner
-            );
+            let issued = auth.store().get_session(&access).await?.unwrap();
+            assert_eq!(issued.user_id(), owner);
+            assert_eq!(issued.ip_address(), Some("198.51.100.25"));
+            assert_eq!(issued.user_agent(), Some("device-sdk-poller"));
         } else {
             assert_eq!(body(&redeemed)["error"], "access_denied");
         }
@@ -483,15 +544,7 @@ async fn workflow<S: AuthSchema>(auth: &Alibi<S>, backend: &str) -> TestResult<S
                 .await?
                 .is_none()
         );
-        let replay = call(
-            auth,
-            &mut trace,
-            "/device/token",
-            Some(token(device, "console")),
-            "",
-            None,
-        )
-        .await?;
+        let replay = server_token(auth, device, "console").await?;
         assert_eq!(body(&replay)["error"], "invalid_grant");
     }
     // Seed an expired row through the public store, avoiding wall-clock sleeps.

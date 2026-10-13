@@ -8,16 +8,14 @@ use super::{
 };
 use crate::helpers::{SessionIssueError, create_user_session_record};
 use alibi_core::entity::{AuthSession, AuthUser};
-use alibi_core::{
-    AuthContext, AuthRequest, AuthResponse, AuthResult, RequestMeta, UpdateDeviceCode,
-};
+use alibi_core::{AuthContext, AuthResponse, AuthResult, RequestMeta, UpdateDeviceCode};
 use chrono::Utc;
 
 impl DeviceAuthorizationPlugin {
     pub(in crate::device_authorization) async fn redeem_device_token(
         &self,
         body: DeviceTokenRequest,
-        req: &AuthRequest,
+        req: &impl alibi_core::session::SessionRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         if !self.validate_client_id(&body.client_id).await? {
@@ -114,7 +112,21 @@ impl DeviceAuthorizationPlugin {
                 return device_error_response(400, "invalid_grant", INVALID_DEVICE_CODE);
             }
 
-            let meta = RequestMeta::from_request(req);
+            let headers = req.session_headers();
+            let meta = if let Some(request) = req.physical_request() {
+                RequestMeta::from_request(request)
+            } else {
+                RequestMeta {
+                    ip_address: Some(
+                        ctx.config
+                            .advanced
+                            .ip_address
+                            .resolve_ip(headers)
+                            .unwrap_or_default(),
+                    ),
+                    user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
+                }
+            };
             let session =
                 match create_user_session_record(ctx, &user.id(), meta.ip_address, meta.user_agent)
                     .await
@@ -140,7 +152,7 @@ impl DeviceAuthorizationPlugin {
                 200,
                 &DeviceTokenResponse {
                     access_token: session.token().to_owned(),
-                    token_type: "Bearer",
+                    token_type: "Bearer".into(),
                     expires_in: (session.expires_at().timestamp_millis()
                         - Utc::now().timestamp_millis())
                     .div_euclid(1000)
