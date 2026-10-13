@@ -341,6 +341,22 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
     async handle(request: Request): Promise<Response | null> {
       const url = new URL(request.url);
 
+      if (url.pathname === `${path}/__server-proxy` && request.method === "POST") {
+        const origin = databases.has(url.origin) ? url.origin : preview;
+        const input = await request.json();
+        const api = instances.get(`${origin}:${modes.get(origin)}`)!.api as unknown as {
+          oAuthProxy(input: {
+            query: { callbackURL: string; profile?: string };
+            headers?: Headers;
+            asResponse: true;
+          }): Promise<Response>;
+        };
+        return api.oAuthProxy({
+          query: input.query,
+          ...(input.headers ? { headers: new Headers(input.headers) } : {}),
+          asResponse: true,
+        });
+      }
       if (url.pathname.startsWith(`${path}/`)) {
         const origin = databases.has(url.origin) ? url.origin : preview;
         const forwardedURL = new URL(url);

@@ -1117,7 +1117,71 @@ mod tests {
             }
             assert_eq!(rows(&fixture.production_db).await, prod_before);
             assert_eq!(rows(&fixture.preview_db).await, issued);
-            let completed = request(&fixture.preview, &target(&bridge), None, None).await;
+            if legacy {
+                for query in [
+                    json!({}),
+                    json!({"callbackURL":42}),
+                    json!({"callbackURL":format!("{PREVIEW}/complete"),"profile":null}),
+                ] {
+                    let error = fixture
+                        .preview
+                        .dispatch_endpoint(
+                            alibi::endpoint::ServerEndpoint::<Value>::new(
+                                "oauth-proxy",
+                                "oAuthProxy",
+                            )
+                            .with_query(&query)?,
+                            alibi::endpoint::EndpointOptions::default(),
+                        )
+                        .await
+                        .unwrap_err();
+                    assert_eq!(error.error.status_code(), 400);
+                    assert_eq!(
+                        error.error.error_payload().1.as_deref(),
+                        Some("VALIDATION_ERROR")
+                    );
+                    assert_eq!(rows(&fixture.preview_db).await, issued);
+                }
+            }
+            let completed = if legacy {
+                let result = fixture
+                    .preview
+                    .dispatch_endpoint(
+                        OAuthProxyPlugin::oauth_proxy_endpoint(
+                            &alibi::plugins::oauth_proxy::OAuthProxyInput {
+                                callback_url: bridge
+                                    .query_pairs()
+                                    .find(|(name, _)| name == "callbackURL")
+                                    .unwrap()
+                                    .1
+                                    .into_owned(),
+                                profile: bridge
+                                    .query_pairs()
+                                    .find(|(name, _)| name == "profile")
+                                    .map(|(_, value)| value.into_owned()),
+                            },
+                        )?,
+                        alibi::endpoint::EndpointOptions::default(),
+                    )
+                    .await
+                    .unwrap_err();
+                assert_eq!(result.error.status_code(), 302);
+                assert!(result.body_absent);
+                assert_eq!(
+                    result
+                        .headers
+                        .as_ref()
+                        .unwrap()
+                        .get("content-type")
+                        .map(String::as_str),
+                    Some("application/json")
+                );
+                let mut response = AuthResponse::new(302);
+                response.headers = result.headers.unwrap();
+                response
+            } else {
+                request(&fixture.preview, &target(&bridge), None, None).await
+            };
             assert_eq!(completed.status, 302);
             assert_eq!(
                 location(&completed).as_str(),
@@ -1188,7 +1252,45 @@ mod tests {
                 .unwrap();
             assert_eq!(accounts.len(), 1);
             let after = rows(&fixture.preview_db).await;
-            let replay = request(&fixture.preview, &target(&bridge), None, None).await;
+            let replay = if legacy {
+                let result = fixture
+                    .preview
+                    .dispatch_endpoint(
+                        OAuthProxyPlugin::oauth_proxy_endpoint(
+                            &alibi::plugins::oauth_proxy::OAuthProxyInput {
+                                callback_url: bridge
+                                    .query_pairs()
+                                    .find(|(name, _)| name == "callbackURL")
+                                    .unwrap()
+                                    .1
+                                    .into_owned(),
+                                profile: bridge
+                                    .query_pairs()
+                                    .find(|(name, _)| name == "profile")
+                                    .map(|(_, value)| value.into_owned()),
+                            },
+                        )?,
+                        alibi::endpoint::EndpointOptions::default(),
+                    )
+                    .await
+                    .unwrap_err();
+                assert_eq!(result.error.status_code(), 302);
+                assert!(result.body_absent);
+                assert_eq!(
+                    result
+                        .headers
+                        .as_ref()
+                        .unwrap()
+                        .get("content-type")
+                        .map(String::as_str),
+                    Some("application/json")
+                );
+                let mut response = AuthResponse::new(302);
+                response.headers = result.headers.unwrap();
+                response
+            } else {
+                request(&fixture.preview, &target(&bridge), None, None).await
+            };
             assert!(location(&replay).as_str().contains("error=state_mismatch"));
             assert_eq!(rows(&fixture.preview_db).await, after);
             let query: HashMap<_, _> = authorization.query_pairs().into_owned().collect();
