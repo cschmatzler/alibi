@@ -167,6 +167,7 @@ tracing-subscriber = { workspace = true }
 oas3 = { version = "0.22.0", features = ["yaml-spec"] }
 proptest = "1.10.0"
 reqwest = { workspace = true, features = ["cookies"] }
+hickory-proto = "0.26.3"
 [[test]]
 name = "e2e"
 path = "tests/e2e/main.rs"

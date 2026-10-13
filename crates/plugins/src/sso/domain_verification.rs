@@ -10,7 +10,7 @@ impl SsoPlugin {
         ServerEndpoint::new("sso", "requestDomainVerification")
             .with_body(&json!({"providerId":provider_id}))
     }
-    fn domain_identifier(&self, provider_id: &str) -> String {
+    pub(super) fn domain_identifier(&self, provider_id: &str) -> String {
         let prefix = if self.config.domain_verification_token_prefix.is_empty() {
             "better-auth-token"
         } else {

@@ -13,6 +13,17 @@ impl<S: AuthSchema> SsoProviderStore for SqlxStore<S>
 where
     S::Account: crate::schema::SqlxAccountModel,
 {
+    async fn mark_sso_domain_verified(&self, id: &str, domain: &str) -> AuthResult<bool> {
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "UPDATE ");
+        sql.ident(Model::TABLE);
+        sql.push(" SET ");
+        sql.assign("domainVerified", true);
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "id", " = ", id);
+        sql.push(" AND ");
+        sql.compare(Model::TABLE, "domain", " = ", domain);
+        self.exec().execute(sql).await.map(|changed| changed > 0)
+    }
     async fn update_sso_provider(
         &self,
         id: &str,

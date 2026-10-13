@@ -431,3 +431,5 @@ mod sso_provider_delete;
 mod sso_provider_update;
 
 mod sso_domain_request;
+
+mod sso_domain_verify;

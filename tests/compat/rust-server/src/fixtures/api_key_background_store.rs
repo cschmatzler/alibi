@@ -435,6 +435,7 @@ delegate_store!(OAuthClientStore, {
 });
 
 delegate_store!(SsoProviderStore, {
+ async fn mark_sso_domain_verified(&self,id:&str,domain:&str)->AuthResult<bool>;
  async fn update_sso_provider(&self,id:&str,provider_id:&str,prepare:&SsoProviderUpdateWork)->AuthResult<Option<SsoProvider>>;
  async fn delete_sso_provider_and_accounts(&self,id:&str,provider_id:&str)->AuthResult<bool>;
  async fn list_sso_providers(&self)->AuthResult<Vec<SsoProvider>>;

@@ -113,3 +113,5 @@ pub(crate) mod server_error_fixture;
 pub(crate) mod oauth_provider_fixture;
 
 pub(crate) mod sso_fixture;
+
+pub(crate) mod sso_dns_fixture;
