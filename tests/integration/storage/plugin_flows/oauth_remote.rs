@@ -238,13 +238,14 @@ async fn wechat_get_grants_bind_openid_and_rotate_refresh<B: Backend>(db: Db) ->
     let owner = body(&session)["user"]["id"].as_str().unwrap().to_owned();
     let account = db.text("SELECT id FROM \"account\"", &[]).await?.unwrap();
     remote.respond_at("/refresh", 200, json!({"access_token":"rotated-access","refresh_token":"rotated-refresh","openid":"open-41","scope":"snsapi_login,profile","expires_in":7200}));
-    let response = OAuthAccountApi::refresh_token(
+    let tokens = OAuthAccountApi::refresh_token(
         &owner,
         OAuthAccountSelection::Id(account.clone()),
         auth.context(),
     )
     .await?;
-    assert_eq!(body(&response)["accessToken"], "rotated-access");
+    assert_eq!(tokens.access_token.as_deref(), Some("rotated-access"));
+    assert_eq!(tokens.refresh_token.as_deref(), Some("rotated-refresh"));
     assert_eq!(
         db.text(
             "SELECT \"refreshToken\" FROM \"account\" WHERE id=$1",

@@ -1,3 +1,4 @@
+use super::OAuthAccountProfile;
 use super::encryption::{
     encrypt_provider_token_set, maybe_decrypt_with_config, provider_token_nulls,
 };
@@ -237,7 +238,7 @@ async fn valid_access_token(
     config: &OAuthConfig,
     req: &impl AccountRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
-) -> AuthResult<(AccessTokenResponse, bool)> {
+) -> AuthResult<(OAuthTokenSet, bool)> {
     let provider = config.providers.get(&account.provider_id).ok_or_else(|| {
         AuthError::bad_request(format!(
             "Provider {} is not supported.",
@@ -283,28 +284,27 @@ async fn valid_access_token(
             .unwrap_or_default(),
     };
     Ok((
-        AccessTokenResponse {
+        OAuthTokenSet {
             access_token: Some(access_token),
             access_token_expires_at: refreshed
                 .as_ref()
                 .and_then(|tokens| tokens.access_token_expires_at)
-                .or(original.access_token_expires_at)
-                .map(|value| value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+                .or(original.access_token_expires_at),
             scopes: scopes(account),
             id_token: refreshed
                 .as_ref()
                 .and_then(|tokens| tokens.id_token.clone())
                 .or(original.id_token),
+            ..Default::default()
         },
         refreshed.is_some(),
     ))
 }
 
-async fn handle_get_access_token_for_user(
+pub(super) async fn handle_get_access_token(
     config: &OAuthConfig,
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
-    server_user: Option<&str>,
 ) -> AuthResult<AuthResponse> {
     let selection = match OAuthAccountSelection::from_body(req) {
         Ok(selection) => selection,
@@ -314,21 +314,16 @@ async fn handle_get_access_token_for_user(
     _ = session_request
         .query
         .insert("disableCookieCache".into(), "true".into());
-    let user_id = if let Some(user_id) = server_user {
-        user_id.to_owned()
-    } else {
-        let (_, session) = match ctx.require_cached_session(&session_request).await {
-            Ok(session) => session,
-            Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
-                return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
-            }
-            Err(error) => return Err(error),
-        };
-        session.user_id
+    let user_id = match ctx.require_cached_session(&session_request).await {
+        Ok((_, session)) => session.user_id,
+        Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
+            return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
+        }
+        Err(error) => return Err(error),
     };
-    let (value, headers) =
+    let (tokens, headers) =
         get_access_token_for_selection(config, req, ctx, &user_id, selection).await?;
-    let mut response = AuthResponse::json(200, &value)?;
+    let mut response = AuthResponse::json(200, &AccessTokenResponse::from(tokens))?;
     for header in headers {
         response.headers.append("set-cookie", header);
     }
@@ -341,7 +336,7 @@ pub(super) async fn get_access_token_for_selection(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     user_id: &str,
     selection: OAuthAccountSelection,
-) -> AuthResult<(AccessTokenResponse, Vec<String>)> {
+) -> AuthResult<(OAuthTokenSet, Vec<String>)> {
     let mut account = selection.resolve(request, user_id, ctx).await?;
     let (value, refreshed) = valid_access_token(&mut account, config, request, ctx).await?;
     let headers = if refreshed && ctx.config.account.store_account_cookie {
@@ -352,11 +347,10 @@ pub(super) async fn get_access_token_for_selection(
     Ok((value, headers))
 }
 
-async fn handle_refresh_token_for_user(
+pub(super) async fn handle_refresh_token(
     config: &OAuthConfig,
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
-    server_user: Option<&str>,
 ) -> AuthResult<AuthResponse> {
     let selection = match OAuthAccountSelection::from_body(req) {
         Ok(selection) => selection,
@@ -366,21 +360,16 @@ async fn handle_refresh_token_for_user(
     _ = session_request
         .query
         .insert("disableCookieCache".into(), "true".into());
-    let user_id = if let Some(user_id) = server_user {
-        user_id.to_owned()
-    } else {
-        let (_, session) = match ctx.require_cached_session(&session_request).await {
-            Ok(session) => session,
-            Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
-                return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
-            }
-            Err(error) => return Err(error),
-        };
-        session.user_id
+    let user_id = match ctx.require_cached_session(&session_request).await {
+        Ok((_, session)) => session.user_id,
+        Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
+            return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
+        }
+        Err(error) => return Err(error),
     };
-    let (value, headers) =
+    let (tokens, account, headers) =
         refresh_token_for_selection(config, req, ctx, &user_id, selection).await?;
-    let mut response = AuthResponse::json(200, &value)?;
+    let mut response = AuthResponse::json(200, &refresh_token_body(config, &tokens, &account)?)?;
     for header in headers {
         response.headers.append("set-cookie", header);
     }
@@ -393,7 +382,7 @@ pub(super) async fn refresh_token_for_selection(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     user_id: &str,
     selection: OAuthAccountSelection,
-) -> AuthResult<(serde_json::Value, Vec<String>)> {
+) -> AuthResult<(OAuthTokenSet, AccountCookiePayload, Vec<String>)> {
     let mut account = selection.resolve(req, user_id, ctx).await?;
     let provider = config.providers.get(&account.provider_id).ok_or_else(|| {
         AuthError::bad_request(format!(
@@ -434,29 +423,55 @@ pub(super) async fn refresh_token_for_selection(
     persist_tokens(&mut account, &tokens, ctx, provider)
         .await
         .map_err(|_error| refresh_token_failure())?;
-    let raw_grant = tokens.raw.clone().filter(|_| {
-        provider
-            .authorization
-            .as_ref()
-            .is_some_and(|policy| policy.preserve_raw_profile_scalars)
-    });
+    let tokens = OAuthTokenSet {
+        refresh_token: tokens.refresh_token.or(Some(refresh_token)),
+        refresh_token_expires_at: account.refresh_token_expires_at,
+        scopes: scopes(&account),
+        id_token: account.id_token.clone(),
+        ..tokens
+    };
+    let headers = if matches!(selection, OAuthAccountSelection::Cookie)
+        && ctx.config.account.store_account_cookie
+    {
+        create_account_cookie_headers(&ctx.config, &account, req)?
+    } else {
+        Vec::new()
+    };
+    Ok((tokens, account, headers))
+}
+
+/// Source's `/refresh-token` body: the refreshed grant plus the stored scope
+/// and account identity, with provider-defined raw token scalars preserved.
+pub(super) fn refresh_token_body(
+    config: &OAuthConfig,
+    tokens: &OAuthTokenSet,
+    account: &AccountCookiePayload,
+) -> AuthResult<serde_json::Value> {
+    let policy = config
+        .providers
+        .get(&account.provider_id)
+        .and_then(|provider| provider.authorization.as_ref());
     let response = RefreshTokenResponse {
-        access_token: tokens.access_token,
+        access_token: tokens.access_token.clone(),
         access_token_expires_at: tokens
             .access_token_expires_at
             .map(|value| value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
-        refresh_token: Some(tokens.refresh_token.unwrap_or(refresh_token)),
-        refresh_token_expires_at: account
+        refresh_token: tokens.refresh_token.clone(),
+        refresh_token_expires_at: tokens
             .refresh_token_expires_at
             .map(|value| value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
         scope: account.scope.clone(),
-        id_token: account.id_token.clone(),
+        id_token: tokens.id_token.clone(),
         provider_id: account.provider_id.clone(),
         account_id: account.id.clone(),
     };
     let mut response =
         serde_json::to_value(response).map_err(|error| AuthError::internal(error.to_string()))?;
-    if let Some(raw) = raw_grant {
+    if let Some(raw) = tokens
+        .raw
+        .as_ref()
+        .filter(|_| policy.is_some_and(|policy| policy.preserve_raw_profile_scalars))
+    {
         let object = response
             .as_object_mut()
             .ok_or_else(|| AuthError::internal("Invalid refresh output"))?;
@@ -473,32 +488,19 @@ pub(super) async fn refresh_token_for_selection(
         }
         if let Some(value) = raw
             .get("id_token")
-            .filter(|_| {
-                !provider
-                    .authorization
-                    .as_ref()
-                    .is_some_and(|policy| policy.token_response_omits_id_token)
-            })
+            .filter(|_| !policy.is_some_and(|policy| policy.token_response_omits_id_token))
             .filter(|value| super::providers::remaining_profile::truthy(value))
         {
             _ = object.insert("idToken".into(), value.clone());
         }
     }
-    let headers = if matches!(selection, OAuthAccountSelection::Cookie)
-        && ctx.config.account.store_account_cookie
-    {
-        create_account_cookie_headers(&ctx.config, &account, req)?
-    } else {
-        Vec::new()
-    };
-    Ok((response, headers))
+    Ok(response)
 }
 
-async fn handle_account_info_for_user(
+pub(super) async fn handle_account_info(
     config: &OAuthConfig,
     req: &AuthRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
-    server_user: Option<&str>,
 ) -> AuthResult<AuthResponse> {
     let selection = match OAuthAccountSelection::from_query(req) {
         Ok(selection) => selection,
@@ -510,17 +512,12 @@ async fn handle_account_info_for_user(
     _ = session_request
         .query
         .insert("disableCookieCache".into(), "true".into());
-    let user_id = if let Some(user_id) = server_user {
-        user_id.to_owned()
-    } else {
-        let (_, session) = match ctx.require_cached_session(&session_request).await {
-            Ok(session) => session,
-            Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
-                return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
-            }
-            Err(error) => return Err(error),
-        };
-        session.user_id
+    let user_id = match ctx.require_cached_session(&session_request).await {
+        Ok((_, session)) => session.user_id,
+        Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
+            return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
+        }
+        Err(error) => return Err(error),
     };
     let (value, headers) =
         match account_info_for_selection(config, req, ctx, &user_id, selection).await {
@@ -588,63 +585,54 @@ pub(super) async fn account_info_for_selection(
     Ok((response, headers))
 }
 
-pub(super) async fn handle_get_access_token(
-    config: &OAuthConfig,
-    req: &AuthRequest,
-    ctx: &AuthContext<impl alibi_core::AuthSchema>,
-) -> AuthResult<AuthResponse> {
-    handle_get_access_token_for_user(config, req, ctx, None).await
-}
-
-pub(super) async fn handle_refresh_token(
-    config: &OAuthConfig,
-    req: &AuthRequest,
-    ctx: &AuthContext<impl alibi_core::AuthSchema>,
-) -> AuthResult<AuthResponse> {
-    handle_refresh_token_for_user(config, req, ctx, None).await
-}
-
-pub(super) async fn handle_account_info(
-    config: &OAuthConfig,
-    req: &AuthRequest,
-    ctx: &AuthContext<impl alibi_core::AuthSchema>,
-) -> AuthResult<AuthResponse> {
-    handle_account_info_for_user(config, req, ctx, None).await
-}
-
 /// Trusted direct account operations. The caller supplies the authorized user;
 /// these methods are not HTTP routes. HTTP handlers always resolve the session
 /// first, and cannot select a principal with a `userId` body/query field.
 pub struct OAuthAccountApi;
 impl OAuthAccountApi {
+    /// Source's `getAccessToken` result: a valid access token, refreshed and
+    /// persisted when it is within five seconds of expiry, with its expiry,
+    /// the stored scopes and the ID token.
     pub async fn get_access_token(
         user_id: &str,
         selection: OAuthAccountSelection,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
-    ) -> AuthResult<AuthResponse> {
-        let (config, req) = server_request(user_id, selection, "/get-access-token", ctx)?;
-        handle_get_access_token_for_user(&config, &req, ctx, Some(user_id)).await
+    ) -> AuthResult<OAuthTokenSet> {
+        let (config, req) = server_request(user_id, &selection, "/get-access-token", ctx)?;
+        let (tokens, _) =
+            get_access_token_for_selection(&config, &req, ctx, user_id, selection).await?;
+        Ok(tokens)
     }
+    /// Source's `refreshToken` result: the refreshed grant, the retained refresh
+    /// token when the provider did not rotate it, and the stored scopes.
     pub async fn refresh_token(
         user_id: &str,
         selection: OAuthAccountSelection,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
-    ) -> AuthResult<AuthResponse> {
-        let (config, req) = server_request(user_id, selection, "/refresh-token", ctx)?;
-        handle_refresh_token_for_user(&config, &req, ctx, Some(user_id)).await
+    ) -> AuthResult<OAuthTokenSet> {
+        let (config, req) = server_request(user_id, &selection, "/refresh-token", ctx)?;
+        let (tokens, _, _) = Box::pin(refresh_token_for_selection(
+            &config, &req, ctx, user_id, selection,
+        ))
+        .await?;
+        Ok(tokens)
     }
     pub async fn account_info(
         user_id: &str,
         selection: OAuthAccountSelection,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
-    ) -> AuthResult<AuthResponse> {
-        let (config, req) = server_request(user_id, selection, "/account-info", ctx)?;
-        handle_account_info_for_user(&config, &req, ctx, Some(user_id)).await
+    ) -> AuthResult<OAuthAccountProfile> {
+        let (config, req) = server_request(user_id, &selection, "/account-info", ctx)?;
+        let (profile, _) = Box::pin(account_info_for_selection(
+            &config, &req, ctx, user_id, selection,
+        ))
+        .await?;
+        Ok(profile)
     }
 }
 fn server_request(
     user_id: &str,
-    selection: OAuthAccountSelection,
+    selection: &OAuthAccountSelection,
     path: &str,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(std::sync::Arc<OAuthConfig>, AuthRequest)> {

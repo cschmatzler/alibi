@@ -216,7 +216,27 @@ curl -b cookies.txt http://localhost:3000/api/auth/get-access-token \
 # {"accessToken":"ya29…","accessTokenExpiresAt":"2026-10-04T10:47:38.071Z","scopes":["email","profile","openid"],"idToken":"eyJ…"}
 ```
 
-Server-side code can do the same without HTTP through `alibi::plugins::oauth::OAuthAccountApi::{get_access_token, refresh_token, account_info}`, which take the already-authorized `user_id` — they are not routes and cannot be called with a client-chosen principal.
+Server-side code can do the same without HTTP through `alibi::plugins::oauth::OAuthAccountApi::{get_access_token, refresh_token, account_info}`, which take the already-authorized `user_id` — they are not routes and cannot be called with a client-chosen principal. `get_access_token` and `refresh_token` return an `OAuthTokenSet` (access token, access-token expiry and scopes; `refresh_token` adds the refresh token and its expiry, and an ID token is included when one is stored), and `account_info` returns an `OAuthAccountProfile`. A provider failure is an `AuthError`.
+
+```rust
+use alibi::plugins::oauth::{OAuthAccountApi, OAuthAccountSelection};
+use alibi::{Alibi, AuthResult};
+use crate::auth_schema::AppAuthSchema;
+
+async fn drive_token(
+    auth: &Alibi<AppAuthSchema>,
+    user_id: &str,
+    account_id: String,
+) -> AuthResult<Option<String>> {
+    let tokens = OAuthAccountApi::get_access_token(
+        user_id,
+        OAuthAccountSelection::Id(account_id),
+        auth.context(),
+    )
+    .await?;
+    Ok(tokens.access_token)
+}
+```
 
 ### Token storage
 

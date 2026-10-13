@@ -120,6 +120,19 @@ pub struct AccessTokenResponse {
     pub id_token: Option<String>,
 }
 
+impl From<super::OAuthTokenSet> for AccessTokenResponse {
+    fn from(tokens: super::OAuthTokenSet) -> Self {
+        Self {
+            access_token: tokens.access_token,
+            access_token_expires_at: tokens
+                .access_token_expires_at
+                .map(|value| value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+            scopes: tokens.scopes,
+            id_token: tokens.id_token,
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub(super) struct RefreshTokenResponse {
     #[serde(rename = "accessToken")]
