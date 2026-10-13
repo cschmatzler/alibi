@@ -38,6 +38,12 @@ const OAUTH_RESOURCES: Migration = Migration {
     postgres: include_str!("../../migrations/postgres_oauth_resources.sql"),
 };
 
+const OAUTH_TOKENS: Migration = Migration {
+    name: "m20261013_000005_oauth_tokens",
+    sqlite: include_str!("../../migrations/sqlite_oauth_tokens.sql"),
+    postgres: include_str!("../../migrations/postgres_oauth_tokens.sql"),
+};
+
 /// Apply the bundled auth schema.
 ///
 /// # Errors
@@ -47,7 +53,13 @@ pub async fn run_migrations(pool: &SqlxPool) -> AuthResult<()> {
     apply(
         pool,
         "better_auth_migrations",
-        &[AUTH_SCHEMA, OAUTH_CLIENTS, OAUTH_CONSENTS, OAUTH_RESOURCES],
+        &[
+            AUTH_SCHEMA,
+            OAUTH_CLIENTS,
+            OAUTH_CONSENTS,
+            OAUTH_RESOURCES,
+            OAUTH_TOKENS,
+        ],
     )
     .await
 }
@@ -69,7 +81,13 @@ pub(crate) async fn run_migrations_scoped(
     apply_scoped(
         pool,
         "better_auth_migrations",
-        &[AUTH_SCHEMA, OAUTH_CLIENTS, OAUTH_CONSENTS, OAUTH_RESOURCES],
+        &[
+            AUTH_SCHEMA,
+            OAUTH_CLIENTS,
+            OAUTH_CONSENTS,
+            OAUTH_RESOURCES,
+            OAUTH_TOKENS,
+        ],
         Some(config),
     )
     .await
