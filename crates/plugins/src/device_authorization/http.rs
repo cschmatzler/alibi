@@ -72,6 +72,15 @@ impl DeviceAuthorizationPlugin {
             return device_error_response(400, "invalid_request", INVALID_REQUEST);
         };
 
+        self.verify_core(req, ctx, user_code).await
+    }
+
+    pub(super) async fn verify_core(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
+        user_code: String,
+    ) -> AuthResult<AuthResponse> {
         let Some(mut device_code) = find_device_code_by_user_code(ctx, &user_code).await? else {
             return device_error_response(400, "invalid_request", INVALID_USER_CODE);
         };

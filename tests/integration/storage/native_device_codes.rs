@@ -62,6 +62,26 @@ async fn call<S: AuthSchema>(
 fn token(code: &str, client: &str) -> Value {
     json!({"grant_type":"urn:ietf:params:oauth:grant-type:device_code","device_code":code,"client_id":client})
 }
+async fn server_review<S: AuthSchema>(
+    auth: &Alibi<S>,
+    user_code: &str,
+    cookie: Option<&str>,
+) -> TestResult<AuthResponse> {
+    Ok(auth
+        .dispatch_endpoint(
+            DeviceAuthorizationPlugin::device_verify_endpoint(user_code),
+            alibi::endpoint::EndpointOptions {
+                headers: cookie.map(|cookie| {
+                    [("cookie".to_owned(), cookie.to_owned())]
+                        .into_iter()
+                        .collect()
+                }),
+                ..Default::default()
+            },
+        )
+        .await?
+        .into_response()?)
+}
 async fn native_device_workflow<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
@@ -238,6 +258,33 @@ async fn workflow<S: AuthSchema>(auth: &Alibi<S>, backend: &str) -> TestResult<S
         assert_eq!(row.scope.as_deref(), Some("profile raw"));
         assert_eq!(row.client_id.as_deref(), Some("console"));
         assert!(row.user_id.is_none());
+        for query in [json!({}), json!({"user_code":42})] {
+            let error = auth
+                .dispatch_endpoint(
+                    alibi::endpoint::ServerEndpoint::<Value>::new(
+                        "device-authorization",
+                        "deviceVerify",
+                    )
+                    .with_query(&query)?,
+                    alibi::endpoint::EndpointOptions::default(),
+                )
+                .await
+                .unwrap_err();
+            assert_eq!(error.error.status_code(), 400);
+            assert_eq!(
+                error.error.error_payload().1.as_deref(),
+                Some("VALIDATION_ERROR")
+            );
+            assert!(
+                auth.store()
+                    .get_device_code_by_device_code(device)
+                    .await?
+                    .unwrap()
+                    .user_id
+                    .is_none()
+            );
+        }
+
         let wrong_client = call(
             auth,
             &mut trace,
@@ -266,7 +313,7 @@ async fn workflow<S: AuthSchema>(auth: &Alibi<S>, backend: &str) -> TestResult<S
         )
         .await?;
         assert_eq!(body(&pending)["error"], "authorization_pending");
-        let anonymous = call(auth, &mut trace, "/device", None, "", Some(user_code)).await?;
+        let anonymous = server_review(auth, user_code, None).await?;
         assert!(body(&anonymous).get("scope").is_none());
         let unclaimed = call(
             auth,
@@ -278,15 +325,7 @@ async fn workflow<S: AuthSchema>(auth: &Alibi<S>, backend: &str) -> TestResult<S
         )
         .await?;
         assert_eq!(body(&unclaimed)["error"], "invalid_request");
-        let claimed = call(
-            auth,
-            &mut trace,
-            "/device",
-            None,
-            &cookies[0],
-            Some(user_code),
-        )
-        .await?;
+        let claimed = server_review(auth, user_code, Some(&cookies[0])).await?;
         assert_eq!(body(&claimed)["scope"], "profile raw");
         let owner = auth
             .store()
@@ -295,15 +334,7 @@ async fn workflow<S: AuthSchema>(auth: &Alibi<S>, backend: &str) -> TestResult<S
             .unwrap()
             .user_id
             .unwrap();
-        let other = call(
-            auth,
-            &mut trace,
-            "/device",
-            None,
-            &cookies[1],
-            Some(user_code),
-        )
-        .await?;
+        let other = server_review(auth, user_code, Some(&cookies[1])).await?;
         assert!(body(&other).get("scope").is_none());
         let forbidden = call(
             auth,

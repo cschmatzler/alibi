@@ -59,12 +59,32 @@ async function requestCode(ctx: Context, scope?: string) {
     .parse(await response.json());
 }
 
+async function serverReview(ctx: Context, query: unknown, cookie?: string) {
+  const response = await ctx
+    .actor("server-review")
+    .fetch(`${ctx.baseURL}/__test/server-api/device-verify`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query, ...(cookie ? { headers: { cookie } } : {}) }),
+    });
+  expect(response.headers.get("set-cookie")).toBeNull();
+  return { status: response.status, body: (await response.json()) as any };
+}
 async function signUpOwner(ctx: Context, prefix: string) {
   const owner = deviceActor(ctx, "owner");
+  let cookie = "";
   const signup = await owner.signUp.email({
     email: ctx.uniqueEmail(prefix),
     password: "password123",
     name: "Device Owner",
+    fetchOptions: {
+      onSuccess({ response }) {
+        cookie = response.headers
+          .getSetCookie()
+          .map((raw) => raw.split(";")[0])
+          .join("; ");
+      },
+    },
   });
   expect(signup.error).toBeNull();
 
@@ -72,7 +92,7 @@ async function signUpOwner(ctx: Context, prefix: string) {
     throw new Error("device owner must have a session");
   }
 
-  return { owner, signup, userId: signup.data.user.id };
+  return { owner, signup, userId: signup.data.user.id, cookie };
 }
 
 function tokenRequest(deviceCode: string, clientId = "compat-device-client") {
@@ -113,10 +133,17 @@ compatScenario("device token returns invalid_grant for an unknown device code", 
 
 compatScenario("device verify accepts a hyphenated user code", async (ctx) => {
   const code = await requestCode(ctx);
+  const before = await ctx.readDeviceState({ deviceCode: code.device_code });
+  for (const query of [{}, { user_code: 42 }]) {
+    const invalid = await serverReview(ctx, query);
+    expect(invalid.status).toBe(400);
+    expect(invalid.body.code).toBe("VALIDATION_ERROR");
+    expect(await ctx.readDeviceState({ deviceCode: code.device_code })).toEqual(before);
+  }
   const formatted = `${code.user_code.slice(0, 4)}-${code.user_code.slice(4)}`;
-  const verify = await deviceActor(ctx, "device").device({ query: { user_code: formatted } });
-  expect(verify.error).toBeNull();
-  expect(verify.data).toEqual({ user_code: formatted, status: "pending" });
+  const verify = await serverReview(ctx, { user_code: formatted });
+  expect(verify.status).toBe(200);
+  expect(verify.body).toEqual({ user_code: formatted, status: "pending" });
 
   return { code: ctx.snapshot(code), verify: ctx.snapshot(verify) };
 });
@@ -124,15 +151,19 @@ compatScenario("device verify accepts a hyphenated user code", async (ctx) => {
 compatScenario(
   "device approve flow returns a bearer token",
   async (ctx) => {
-    const { owner, signup, userId } = await signUpOwner(ctx, "device-authorization-device-approve");
+    const { owner, signup, userId, cookie } = await signUpOwner(
+      ctx,
+      "device-authorization-device-approve",
+    );
     const code = await requestCode(ctx, "read write");
     const unclaimedState = deviceState.parse(
       await ctx.readDeviceState({ deviceCode: code.device_code }),
     );
     expect(unclaimedState.userId).toBeNull();
 
-    const verify = await owner.device({ query: { user_code: code.user_code } });
-    expect(verify.data).toEqual({
+    const verify = await serverReview(ctx, { user_code: code.user_code }, cookie);
+    expect(verify.status).toBe(200);
+    expect(verify.body).toEqual({
       user_code: code.user_code,
       status: "pending",
       client_id: "compat-device-client",
@@ -344,13 +375,23 @@ compatScenario("device token rejects a mismatched client id", async (ctx) => {
 compatScenario(
   "device decisions require the claiming user and redact other actors",
   async (ctx) => {
-    const { owner } = await signUpOwner(ctx, "device-authorization-claim-owner");
+    const { owner, cookie, userId } = await signUpOwner(ctx, "device-authorization-claim-owner");
     const other = deviceActor(ctx, "other");
-    await other.signUp.email({
+    let otherCookie = "";
+    const otherSignup = await other.signUp.email({
       email: ctx.uniqueEmail("device-authorization-claim-other"),
       password: "password123",
       name: "Other User",
+      fetchOptions: {
+        onSuccess({ response }) {
+          otherCookie = response.headers
+            .getSetCookie()
+            .map((raw) => raw.split(";")[0])
+            .join("; ");
+        },
+      },
     });
+    expect(otherSignup.error).toBeNull();
     const device = deviceActor(ctx, "device");
     const code = await requestCode(ctx, "private scope");
     const unauthenticatedApprove = await device.device.approve({ userCode: code.user_code });
@@ -363,14 +404,22 @@ compatScenario(
     expect(unclaimedApprove.error).toMatchObject({ status: 400, error: "invalid_request" });
     expect(unclaimedDeny.error).toMatchObject({ status: 400, error: "invalid_request" });
 
-    const claim = await owner.device({ query: { user_code: code.user_code } });
-    expect(claim.data?.client_id).toBe("compat-device-client");
-    expect(claim.data?.scope).toBe("private scope");
+    const claim = await serverReview(ctx, { user_code: code.user_code }, cookie);
+    expect(claim.status).toBe(200);
+    expect(claim.body.client_id).toBe("compat-device-client");
+    expect(claim.body.scope).toBe("private scope");
+    const claimedState = deviceState.parse(
+      await ctx.readDeviceState({ deviceCode: code.device_code }),
+    );
+    expect(claimedState.userId).toBe(userId);
 
-    const otherReview = await other.device({ query: { user_code: code.user_code } });
-    const publicReview = await device.device({ query: { user_code: code.user_code } });
-    expect(otherReview.data).toEqual({ user_code: code.user_code, status: "pending" });
-    expect(publicReview.data).toEqual(otherReview.data);
+    const otherReview = await serverReview(ctx, { user_code: code.user_code }, otherCookie);
+    const publicReview = await serverReview(ctx, { user_code: code.user_code });
+    expect(otherReview.status).toBe(200);
+    expect(publicReview.status).toBe(200);
+    expect(otherReview.body).toEqual({ user_code: code.user_code, status: "pending" });
+    expect(publicReview.body).toEqual(otherReview.body);
+    expect(await ctx.readDeviceState({ deviceCode: code.device_code })).toEqual(claimedState);
 
     const otherApprove = await other.device.approve({ userCode: code.user_code });
     const otherDeny = await other.device.deny({ userCode: code.user_code });
@@ -393,7 +442,7 @@ compatScenario(
       ownerApprove: ctx.snapshot(ownerApprove),
     };
   },
-  ["GET /device", "POST /device/approve"],
+  ["POST /device/approve"],
 );
 
 compatScenario(
