@@ -248,6 +248,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             AuthRoute::post("/oauth2/update-client", "updateOAuthClient"),
             AuthRoute::post("/oauth2/register", "registerOAuthClient"),
             AuthRoute::post("/oauth2/consent", "oauth2Consent"),
+            AuthRoute::get("/oauth2/get-consents", "getOAuthConsents"),
             AuthRoute::get("/oauth2/authorize", "oauth2Authorize"),
             AuthRoute::post("/oauth2/authorize", "oauth2Authorize"),
             AuthRoute::post("/oauth2/client/rotate-secret", "rotateClientSecret"),
@@ -255,6 +256,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "getOAuthConsents",
+                "getOAuthConsents",
+                Some("/oauth2/get-consents"),
+                HttpMethod::Get,
+            ),
             crate::endpoint::definition(
                 "oauth2Consent",
                 "oauth2Consent",
@@ -388,6 +395,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "getOAuthConsents" {
+            return Box::pin(self.list_consents(call, ctx)).await;
+        }
         if call.operation_id() == "oauth2Consent" {
             return Box::pin(self.consent(call.body_as()?, call, ctx)).await;
         }
@@ -527,6 +537,13 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             let input = alibi_core::utils::json::from_value(consent::validate(Some(&body))?)?;
             return Ok(Some(
                 Box::pin(self.consent(input, req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
+        if req.path() == "/oauth2/get-consents" && *req.method() == HttpMethod::Get {
+            return Ok(Some(
+                Box::pin(self.list_consents(req, ctx))
                     .await?
                     .to_response()?,
             ));
