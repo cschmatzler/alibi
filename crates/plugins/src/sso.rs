@@ -9,6 +9,7 @@ mod provider_update;
 mod registration_saml;
 mod saml_acs;
 mod saml_crypto;
+mod saml_logout;
 mod saml_sign_in;
 mod sign_in;
 mod sp_metadata;
@@ -38,6 +39,8 @@ pub struct SsoConfig {
     pub saml_clock_skew: chrono::Duration,
     pub saml_require_timestamps: bool,
     pub saml_max_response_size: usize,
+    pub saml_enable_single_logout: bool,
+    pub saml_logout_request_ttl: chrono::Duration,
 }
 impl Default for SsoConfig {
     fn default() -> Self {
@@ -53,6 +56,8 @@ impl Default for SsoConfig {
             saml_clock_skew: chrono::Duration::minutes(5),
             saml_require_timestamps: false,
             saml_max_response_size: 262_144,
+            saml_enable_single_logout: false,
+            saml_logout_request_ttl: chrono::Duration::minutes(5),
         }
     }
 }
@@ -345,6 +350,7 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         let mut routes = vec![
+            AuthRoute::post("/sso/saml2/logout/:providerId", "initiateSLO"),
             AuthRoute::get("/sso/callback/:providerId", "handleSSOCallback"),
             AuthRoute::get("/sso/callback", "handleSSOCallbackShared"),
             AuthRoute::get(
@@ -374,6 +380,12 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         let mut endpoints = vec![
+            super::endpoint::definition(
+                "initiateSLO",
+                "initiateSLO",
+                Some("/sso/saml2/logout/:providerId"),
+                HttpMethod::Post,
+            ),
             super::endpoint::definition(
                 "acsEndpoint",
                 "handleSAMLAssertionConsumerService",
@@ -456,6 +468,12 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
+        if call.operation_id() == "initiateSLO" {
+            return Ok(EndpointInput {
+                body: Some(saml_logout::validate(call.body())?),
+                query: call.query().cloned(),
+            });
+        }
         if call.operation_id() == "handleSAMLAssertionConsumerService" {
             return Ok(EndpointInput {
                 body: saml_acs::validate_body(call.body())?,
@@ -529,6 +547,22 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "initiateSLO" {
+            let provider = call
+                .params()
+                .and_then(|params| params.get("providerId"))
+                .and_then(JsValue::as_str)
+                .ok_or_else(|| crate::endpoint::validation("Missing providerId"))?;
+            return self
+                .initiate_logout(
+                    provider,
+                    call.body()
+                        .ok_or_else(|| crate::endpoint::validation("Missing body"))?,
+                    call,
+                    ctx,
+                )
+                .await;
+        }
         if call.operation_id() == "handleSAMLAssertionConsumerService" {
             let provider = call
                 .params()
@@ -653,6 +687,17 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if let Some(provider) = req.path().strip_prefix("/sso/saml2/logout/")
+            && *req.method() == HttpMethod::Post
+            && !provider.contains('/')
+        {
+            let body = req.body_as_json::<JsValue>()?;
+            return Ok(Some(
+                self.initiate_logout(provider, &saml_logout::validate(Some(&body))?, req, ctx)
+                    .await?
+                    .to_response()?,
+            ));
+        }
         if let Some(provider) = req.path().strip_prefix("/sso/saml2/sp/acs/")
             && matches!(req.method(), HttpMethod::Get | HttpMethod::Post)
             && !provider.contains('/')

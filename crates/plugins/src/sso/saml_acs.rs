@@ -285,6 +285,39 @@ impl SsoPlugin {
                 return error_redirect(&target, &code, description, clear.as_deref(), ctx);
             }
         };
+        if self.config.saml_enable_single_logout {
+            let key = format!("saml-session:{provider_id}:{}", user.id);
+            let mut data = json!({"sessionId":issued.session.id,"sessionToken":issued.session.token,"providerId":provider_id,"nameID":user.id});
+            if let Some(index) = identity.session_index {
+                _ = data
+                    .as_object_mut()
+                    .ok_or_else(|| AuthError::internal("SAML session serialization failed"))?
+                    .insert("sessionIndex".into(), json!(index));
+            }
+            let value = serde_json::to_string(&data)?;
+            if let Err(error) = ctx
+                .verifications()
+                .create(alibi_core::CreateVerification {
+                    identifier: key.clone(),
+                    value,
+                    expires_at: issued.session.expires_at,
+                })
+                .await
+            {
+                tracing::warn!(%error,"Failed to create SAML session record");
+            }
+            if let Err(error) = ctx
+                .verifications()
+                .create(alibi_core::CreateVerification {
+                    identifier: format!("saml-session-by-id:{}", issued.session.id),
+                    value: key,
+                    expires_at: issued.session.expires_at,
+                })
+                .await
+            {
+                tracing::warn!(%error,"Failed to create SAML session lookup record");
+            }
+        }
         let mut response = crate::authentication_helpers::with_session_cookies(
             crate::authentication_helpers::redirect(&target),
             &ctx.config,

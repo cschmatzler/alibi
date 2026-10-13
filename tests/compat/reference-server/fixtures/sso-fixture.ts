@@ -28,16 +28,27 @@ export async function ssoFixture(base: BetterAuthOptions) {
     ...options,
     plugins: [username(), sso({ redirectURI: "/sso/callback" })],
   };
+  const sloOptions = {
+    ...options,
+    plugins: [username(), sso({ saml: { enableSingleLogout: true } })],
+  };
   const instances = new Map([
     ["default", betterAuth(options)],
     ["domain", betterAuth(domainOptions)],
     ["shared", betterAuth(sharedOptions)],
+    ["slo", betterAuth(sloOptions)],
   ]);
 
   const handle = async (request: Request) => {
     const input = await request.json();
     const mode =
-      input.mode === "domain" ? "domain" : input.mode === "shared" ? "shared" : "default";
+      input.mode === "domain"
+        ? "domain"
+        : input.mode === "shared"
+          ? "shared"
+          : input.mode === "slo"
+            ? "slo"
+            : "default";
     const auth = instances.get(mode)!;
     if (input.action === "dns-records") {
       dns.setRecords(input.records);
@@ -76,6 +87,14 @@ export async function ssoFixture(base: BetterAuthOptions) {
           },
         ),
       );
+    }
+    if (input.action === "initiate-slo") {
+      return auth.api.initiateSLO({
+        params: input.params,
+        body: input.body,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
     }
     if (input.action === "acs") {
       return auth.api.acsEndpoint({
@@ -255,7 +274,15 @@ export async function ssoFixture(base: BetterAuthOptions) {
     if (input.action === "restart") {
       instances.set(
         mode,
-        betterAuth(mode === "domain" ? domainOptions : mode === "shared" ? sharedOptions : options),
+        betterAuth(
+          mode === "domain"
+            ? domainOptions
+            : mode === "shared"
+              ? sharedOptions
+              : mode === "slo"
+                ? sloOptions
+                : options,
+        ),
       );
       return new Response(JSON.stringify({ restarted: true }), {
         headers: { "content-type": "application/json" },

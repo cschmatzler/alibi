@@ -15,6 +15,7 @@ pub(super) struct SamlIdentity {
     pub issuer: String,
     pub in_response_to: Option<String>,
     pub expires_at: Option<DateTime<Utc>>,
+    pub session_index: Option<String>,
 }
 pub(super) struct Failure {
     pub code: &'static str,
@@ -386,5 +387,8 @@ pub(super) fn verify(
         issuer: issuer.into(),
         in_response_to: response_to.map(str::to_owned),
         expires_at,
+        session_index: child(&doc, assertion, ASSERTION, "AuthnStatement")
+            .and_then(|statement| attribute(&doc, statement, "SessionIndex"))
+            .map(str::to_owned),
     })
 }
