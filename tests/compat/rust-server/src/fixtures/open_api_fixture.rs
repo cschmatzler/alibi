@@ -11,7 +11,7 @@ use alibi::plugins::{
 };
 use alibi::seaorm::sea_orm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthResult, AuthSchema};
-use axum::Router;
+use axum::{Router, response::IntoResponse};
 use std::sync::Arc;
 
 struct DocumentationSchema;
@@ -214,7 +214,26 @@ where
             .build()
             .await?,
     );
-    let mut router = auth.clone().axum_router().with_state(auth.clone());
+    let schema_auth = auth.clone();
+    let mut router = auth.clone().axum_router().with_state(auth.clone()).route(
+        "/__test/server-api/schema",
+        axum::routing::get(move || {
+            let auth = schema_auth.clone();
+            async move {
+                let response = match auth
+                    .dispatch_endpoint(
+                        OpenApiPlugin::generate_open_api_schema_endpoint(),
+                        alibi::endpoint::EndpointOptions::default(),
+                    )
+                    .await
+                {
+                    Ok(output) => output.into_response().unwrap(),
+                    Err(error) => error.error.to_auth_response(),
+                };
+                response.into_response()
+            }
+        }),
+    );
     if name == "openapi-custom-schema" {
         router = router.route(
             "/__test/server-document",
