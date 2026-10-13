@@ -161,6 +161,62 @@ export function compareValues(
     }
     return sessions;
   };
+  // Only the declared OIDC issuance observation gets generated-claim normalization.
+  // Each value must first prove its binding to the actual client, access token and session.
+  const oidcClaims = (
+    root: unknown,
+    claims: Record<string, unknown>,
+    header: Record<string, unknown>,
+    path: string,
+  ) => {
+    if (path !== "observation.issued.id_token" || !record(root) || !record(root.observation)) {
+      return claims;
+    }
+    const observation = root.observation;
+    if (
+      !record(observation.issued) ||
+      typeof observation.issued.access_token !== "string" ||
+      typeof observation.clientId !== "string" ||
+      !record(observation.authorizationSession) ||
+      !record(observation.authorizationSession.session)
+    ) {
+      return claims;
+    }
+    const session = observation.authorizationSession.session;
+    if (claims.aud !== observation.clientId) {
+      fail(`${path}.payload.aud`, "OIDC audience is not its observed client");
+      return claims;
+    }
+    const algorithm = typeof header.alg === "string" ? header.alg : "";
+    const digest = createHash(
+      algorithm === "EdDSA" || algorithm.endsWith("512")
+        ? "sha512"
+        : algorithm.endsWith("384")
+          ? "sha384"
+          : "sha256",
+    )
+      .update(observation.issued.access_token)
+      .digest();
+    const expected = digest.subarray(0, digest.length / 2).toString("base64url");
+    if (claims.at_hash !== expected) {
+      fail(`${path}.payload.at_hash`, "OIDC access hash is not bound to its observed access token");
+      return claims;
+    }
+    const createdAt = typeof session.createdAt === "string" ? Date.parse(session.createdAt) : NaN;
+    if (!Number.isFinite(createdAt) || claims.auth_time !== Math.floor(createdAt / 1000)) {
+      fail(
+        `${path}.payload.auth_time`,
+        "OIDC authentication time is not its observed session creation time",
+      );
+      return claims;
+    }
+    return {
+      ...claims,
+      aud: "<verified-client-audience>",
+      at_hash: "<verified-access-hash>",
+      auth_time: "<verified-session-auth-time>",
+    };
+  };
   const leftAuthorizationSessions = authorizationSessions(normalizedLeft);
   const rightAuthorizationSessions = authorizationSessions(normalizedRight);
 
@@ -4949,8 +5005,8 @@ export function compareValues(
         identity(a, b, path, "jwt");
         visit(leftJwt.header, rightJwt.header, `${path}.header`, "", false, false, true);
         visit(
-          leftJwt.payload,
-          rightJwt.payload,
+          oidcClaims(normalizedLeft, leftJwt.payload, leftJwt.header, path),
+          oidcClaims(normalizedRight, rightJwt.payload, rightJwt.header, path),
           `${path}.payload`,
           "",
           true,

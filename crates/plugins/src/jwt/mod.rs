@@ -120,6 +120,7 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
     }
 
     async fn on_init(&self, ctx: &mut AuthInitContext<S>) -> AuthResult<()> {
+        ctx.extensions.insert(self.clone());
         ctx.extensions.insert(JwtDiscoveryOptions {
             issuer: self.config.claims.issuer.clone(),
             jwks_path: self.config.jwks_path.clone(),
