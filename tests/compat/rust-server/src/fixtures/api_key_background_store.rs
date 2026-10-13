@@ -435,6 +435,7 @@ delegate_store!(OAuthClientStore, {
 });
 
 delegate_store!(SsoProviderStore, {
+ async fn delete_sso_provider_and_accounts(&self,id:&str,provider_id:&str)->AuthResult<bool>;
  async fn list_sso_providers(&self)->AuthResult<Vec<SsoProvider>>;
  async fn create_sso_provider(&self, provider:SsoProvider)->AuthResult<SsoProvider>;
  async fn get_sso_provider(&self, provider_id:&str)->AuthResult<Option<SsoProvider>>;

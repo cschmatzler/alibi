@@ -13,6 +13,15 @@ impl SsoPlugin {
         request: &impl SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        let provider = self.authorized_provider(input, request, ctx).await?;
+        EndpointResponse::json(&sanitize(&provider, ctx)?)
+    }
+    pub(super) async fn authorized_provider<S: AuthSchema>(
+        &self,
+        input: &JsValue,
+        request: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<SsoProvider> {
         let (user, _) = super::super::helpers::ordinary_session(request, ctx).await?;
         let provider_id = input
             .get("providerId")
@@ -50,7 +59,7 @@ impl SsoPlugin {
         if !allowed {
             return Err(api(403, "You don't have access to this provider"));
         }
-        EndpointResponse::json(&sanitize(&provider, ctx)?)
+        Ok(provider)
     }
 }
 pub(super) fn sanitize<S: AuthSchema>(

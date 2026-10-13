@@ -9,7 +9,61 @@ use alibi_core::{
 };
 use async_trait::async_trait;
 #[async_trait]
-impl<S: AuthSchema> SsoProviderStore for SqlxStore<S> {
+impl<S: AuthSchema> SsoProviderStore for SqlxStore<S>
+where
+    S::Account: crate::schema::SqlxAccountModel,
+{
+    async fn delete_sso_provider_and_accounts(
+        &self,
+        id: &str,
+        provider_id: &str,
+    ) -> AuthResult<bool> {
+        use crate::schema::SqlxAccountModel;
+        let tx = self.begin(true).await?;
+        let exec = crate::pool::Exec::tx(&tx);
+        let outcome = async {
+            let mut lock = crate::sql::Sql::with(exec.engine(), "UPDATE ");
+            lock.ident(Model::TABLE);
+            lock.push(" SET ");
+            lock.assign("providerId", provider_id);
+            lock.push(" WHERE ");
+            lock.compare(Model::TABLE, "id", " = ", id);
+            lock.push(" AND ");
+            lock.compare(Model::TABLE, "providerId", " = ", provider_id);
+            if exec.execute(lock).await? == 0 {
+                return Ok(false);
+            }
+            let mut accounts = crate::sql::Sql::with(exec.engine(), "DELETE FROM ");
+            accounts.ident(<S::Account as SqlxModel>::TABLE);
+            accounts.push(" WHERE ");
+            accounts.compare_model::<S::Account>(
+                <S::Account as SqlxModel>::TABLE,
+                S::Account::provider_id_column(),
+                " = ",
+                provider_id,
+            );
+            _ = exec.execute(accounts).await?;
+            let mut provider = crate::sql::Sql::with(exec.engine(), "DELETE FROM ");
+            provider.ident(Model::TABLE);
+            provider.push(" WHERE ");
+            provider.compare(Model::TABLE, "id", " = ", id);
+            provider.push(" AND ");
+            provider.compare(Model::TABLE, "providerId", " = ", provider_id);
+            _ = exec.execute(provider).await?;
+            Ok(true)
+        }
+        .await;
+        match outcome {
+            Ok(deleted) => {
+                tx.commit().await?;
+                Ok(deleted)
+            }
+            Err(error) => {
+                tx.rollback().await?;
+                Err(error)
+            }
+        }
+    }
     async fn list_sso_providers(&self) -> AuthResult<Vec<SsoProvider>> {
         let mut sql = model::select_model::<Model>(self.exec());
         sql.push(" LIMIT ");

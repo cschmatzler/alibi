@@ -425,3 +425,5 @@ mod sso_registration;
 mod sso_provider_read;
 
 mod sso_provider_list;
+
+mod sso_provider_delete;
