@@ -301,12 +301,25 @@ compatScenario(
     expect(enrolled.error).toBeNull();
 
     await client.signOut();
-    const signIn = await client.signIn.email({ email, password, rememberMe: false });
+    let preferenceCookies: string[] = [];
+    const signIn = await client.signIn.email({
+      email,
+      password,
+      rememberMe: false,
+      fetchOptions: {
+        onSuccess({ response }) {
+          preferenceCookies = response.headers
+            .getSetCookie()
+            .filter((raw) => Cookie.parse(raw)?.key.endsWith(".dont_remember"));
+        },
+      },
+    });
     expect(signIn.error).toBeNull();
 
     z.object({ twoFactorRedirect: z.literal(true) }).parse(signIn.data);
     await client.twoFactor.sendOtp({});
     const otp = z.object({ otp: z.string().min(6) }).parse(await ctx.readTwoFactorOtp({ email }));
+    let disableCookies = "";
     let signedTrustCookie: string | undefined;
     let signedSessionCookie: string | undefined;
     const trusted = await client.twoFactor.verifyOtp({
@@ -314,6 +327,14 @@ compatScenario(
       trustDevice: true,
       fetchOptions: {
         onSuccess(context) {
+          disableCookies = [
+            ...new Map(
+              [...preferenceCookies, ...context.response.headers.getSetCookie()].map((raw) => {
+                const pair = raw.split(";")[0]!;
+                return [pair.slice(0, pair.indexOf("=")), pair];
+              }),
+            ).values(),
+          ].join("; ");
           for (const header of context.response.headers.getSetCookie()) {
             const cookie = Cookie.parse(header);
             if (cookie?.key.endsWith(".trust_device")) {
@@ -361,23 +382,50 @@ compatScenario(
       .parse(await ctx.readUserState({ userId }));
     expect(stateBefore.twoFactorExists).toBe(true);
 
+    async function serverDisable(body: unknown, cookie?: string, actorName = "primary") {
+      const response = await ctx
+        .actor(actorName)
+        .fetch(`${ctx.baseURL}/__test/server-api/two-factor-disable`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ body, ...(cookie ? { headers: { cookie } } : {}) }),
+        });
+      const value = (await response.json()) as any;
+      return response.ok
+        ? { data: value, error: null }
+        : { data: null, error: { ...value, status: response.status } };
+    }
     const ownerBeforeRejections = await ctx.readUserState({ userId });
     const guestValidation = await disableGuestValidation(ctx);
-    const unauthenticated = await twoFactorActor(ctx, "guest").twoFactor.disable({ password });
+    for (const input of [{}, { password: 42 }, { password: null }]) {
+      const result = await serverDisable(input, disableCookies);
+      expect(result.error).toMatchObject({ status: 400, code: "VALIDATION_ERROR" });
+      expect(await ctx.readUserState({ userId })).toEqual(ownerBeforeRejections);
+    }
+    const unauthenticated = await serverDisable({ password });
     expect(unauthenticated.error).toMatchObject({ status: 401 });
 
-    const wrongPassword = await client.twoFactor.disable({ password: "incorrect-password" });
+    const wrongPassword = await serverDisable({ password: "incorrect-password" }, disableCookies);
     expect(wrongPassword.error).toMatchObject({ status: 400, code: "INVALID_PASSWORD" });
 
     const other = twoFactorActor(ctx, "foreign-user");
+    let foreignCookie = "";
     const foreignSignup = await other.signUp.email({
       email: ctx.uniqueEmail("foreign-disable"),
       password: "foreign-password123",
       name: "Other User",
+      fetchOptions: {
+        onSuccess({ response }) {
+          foreignCookie = response.headers
+            .getSetCookie()
+            .map((cookie) => cookie.split(";")[0])
+            .join("; ");
+        },
+      },
     });
     expect(foreignSignup.error).toBeNull();
 
-    const wrongUser = await other.twoFactor.disable({ password });
+    const wrongUser = await serverDisable({ password, userId }, foreignCookie);
     expect(wrongUser.error).toMatchObject({ status: 400, code: "INVALID_PASSWORD" });
 
     const rejectedState = await ctx.readUserState({ userId });
@@ -393,7 +441,10 @@ compatScenario(
     expect(unchanged.data?.session.token).toBe(before.data?.session.token);
     expect(unchanged.data?.user.twoFactorEnabled).toBe(true);
 
-    const disable = await client.twoFactor.disable({ password });
+    const disable = await serverDisable(
+      { password, userId: foreignSignup.data!.user.id },
+      disableCookies,
+    );
     expect(disable.data).toEqual({ status: true });
 
     const after = await client.getSession();
@@ -418,10 +469,7 @@ compatScenario(
     });
     expect(revoked.data).toBeNull();
 
-    const replayDisable = await twoFactorActor(ctx, "old-session").twoFactor.disable({
-      password,
-      fetchOptions: { headers: { cookie: signedSessionCookie } },
-    });
+    const replayDisable = await serverDisable({ password }, signedSessionCookie, "old-session");
     expect(replayDisable.error).toMatchObject({ status: 401, code: "UNAUTHORIZED" });
     expect(await ctx.readUserState({ userId })).toEqual(afterStateRaw);
 

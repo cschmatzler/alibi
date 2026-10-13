@@ -153,10 +153,10 @@ pub(in crate::two_factor) async fn enable_core(
 }
 
 pub(in crate::two_factor) async fn disable_core(
-    body: &DisableRequest,
+    body: &DisableTwoFactorInput,
     user: &impl AuthUser,
     current_session: &impl AuthSession,
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     config: &TwoFactorConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(StatusResponse, Vec<String>)> {

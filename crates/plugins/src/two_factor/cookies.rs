@@ -121,7 +121,7 @@ pub(in crate::two_factor) fn get_factor_cookie(
 }
 
 pub(in crate::two_factor) fn read_signed_cookie<S: alibi_core::AuthSchema>(
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     suffix: &str,
     ctx: &AuthContext<S>,
 ) -> Option<String> {

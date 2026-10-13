@@ -81,7 +81,7 @@ use async_trait::async_trait;
 pub use backup_storage::{TwoFactorBackupCipher, TwoFactorBackupStorage};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
-pub use endpoint::{BackupCodesOutput, TotpOutput};
+pub use endpoint::{BackupCodesOutput, TotpOutput, TwoFactorDisabled};
 use hkdf::Hkdf;
 use hmac::{Hmac, KeyInit, Mac};
 pub use otp_storage::{TwoFactorOtpCipher, TwoFactorOtpHasher, TwoFactorOtpStorage};
@@ -150,9 +150,11 @@ pub enum TwoFactorMethod {
     Totp,
 }
 
-#[derive(Debug, Deserialize, Validate)]
-pub(crate) struct DisableRequest {
-    password: Option<String>,
+/// Password authority for disabling the current user's factor.
+#[derive(Debug, Default, Deserialize, Serialize, Validate)]
+pub struct DisableTwoFactorInput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -424,53 +426,36 @@ impl TwoFactorPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let body: DisableRequest =
+        let body: DisableTwoFactorInput =
             match parse_password_body(req, self.config.allow_passwordless, false) {
                 Ok(v) => v,
                 Err(resp) => return Ok(resp),
             };
+        self.disable_factor(&body, req, ctx).await
+    }
+
+    async fn disable_factor<S: alibi_core::AuthSchema>(
+        &self,
+        body: &DisableTwoFactorInput,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<AuthResponse> {
         let (user, session) = ctx
             .require_authoritative_session(req)
             .await
-            .map_err(|error| match error {
-                AuthError::Unauthenticated | AuthError::SessionNotFound => AuthError::Upstream {
-                    status: 401,
-                    code: "UNAUTHORIZED",
-                    message: "Unauthorized",
-                },
-                other @ (AuthError::Api { .. }
-                | AuthError::Upstream { .. }
-                | AuthError::BadRequest(_)
-                | AuthError::InvalidRequest(_)
-                | AuthError::Validation(_)
-                | AuthError::InvalidCredentials
-                | AuthError::AuthenticationFailed(_)
-                | AuthError::Forbidden(_)
-                | AuthError::UserCreationCancelled
-                | AuthError::SessionCreationCancelled
-                | AuthError::BannedUser(_)
-                | AuthError::Unauthorized
-                | AuthError::UserNotFound
-                | AuthError::NotFound(_)
-                | AuthError::Conflict(_)
-                | AuthError::MethodNotAllowed(_)
-                | AuthError::PayloadTooLarge(_)
-                | AuthError::UnprocessableEntity(_)
-                | AuthError::RateLimited { .. }
-                | AuthError::NotImplemented(_)
-                | AuthError::Config(_)
-                | AuthError::Database(_)
-                | AuthError::Serialization(_)
-                | AuthError::Plugin { .. }
-                | AuthError::CallbackFailure(_)
-                | AuthError::Internal(_)
-                | AuthError::Encryption(_)
-                | AuthError::PasswordHash(_)
-                | AuthError::Jwt(_)) => other,
+            .map_err(|error| {
+                if matches!(
+                    error,
+                    AuthError::Unauthenticated | AuthError::SessionNotFound
+                ) {
+                    crate::helpers::unauthorized()
+                } else {
+                    error
+                }
             })?;
 
         let (response, set_cookie_headers) =
-            disable_core(&body, &user, &session, req, &self.config, ctx).await?;
+            disable_core(body, &user, &session, req, &self.config, ctx).await?;
         let mut auth_response = AuthResponse::json(200, &response)?;
         for cookie in set_cookie_headers {
             auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
