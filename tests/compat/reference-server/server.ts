@@ -4719,6 +4719,12 @@ const server = Bun.serve({
           return instance.handler(request);
         }
       }
+      if (
+        url.pathname === `${authOptions.basePath ?? "/api/auth"}/jwks` &&
+        request.method === "GET"
+      ) {
+        return oauthClients(request);
+      }
       return auth.handler(request);
     } catch (error) {
       console.error("[reference-server] Error:", error);

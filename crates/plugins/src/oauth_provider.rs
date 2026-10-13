@@ -6,6 +6,7 @@ mod continuation;
 mod credentials;
 mod id_token;
 mod introspection;
+mod logout;
 mod resources;
 mod revocation;
 mod token;
@@ -248,6 +249,8 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
+            AuthRoute::get("/oauth2/end-session", "oauth2EndSession"),
+            AuthRoute::post("/oauth2/end-session", "oauth2EndSession"),
             AuthRoute::get("/oauth2/userinfo", "oauth2UserInfo"),
             AuthRoute::post("/oauth2/userinfo", "oauth2UserInfo"),
             AuthRoute::post("/oauth2/revoke", "oauth2Revoke"),
@@ -277,6 +280,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "oauth2EndSession",
+                "oauth2EndSession",
+                Some("/oauth2/end-session"),
+                HttpMethod::Get,
+            ),
             crate::endpoint::definition(
                 "oauth2UserInfo",
                 "oauth2UserInfo",
@@ -471,7 +480,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
         Ok(EndpointInput {
-            body: if call.operation_id() == "oauth2UserInfo" {
+            body: if call.operation_id() == "oauth2EndSession" {
+                logout::validate(call.body(), "body")?
+            } else if call.operation_id() == "oauth2UserInfo" {
                 call.body()
                     .map(|body| {
                         crate::endpoint::validate_fields(
@@ -514,7 +525,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             } else {
                 call.body().cloned()
             },
-            query: if call.operation_id() == "getOAuthConsent" {
+            query: if call.operation_id() == "oauth2EndSession" {
+                logout::validate(call.query(), "query")?
+            } else if call.operation_id() == "getOAuthConsent" {
                 Some(consent::validate_id(call.query(), "query")?)
             } else if matches!(
                 call.operation_id(),
@@ -531,6 +544,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "oauth2EndSession" {
+            return Box::pin(self.end_session(call.query(), call.body(), call, ctx)).await;
+        }
         if call.operation_id() == "oauth2UserInfo" {
             return Box::pin(self.user_info(call.body(), call, ctx)).await;
         }
@@ -641,6 +657,27 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/oauth2/end-session"
+            && matches!(req.method(), HttpMethod::Get | HttpMethod::Post)
+        {
+            let query = alibi_core::utils::json::parse_value(&serde_json::to_string(&req.query)?)?;
+            let body = if *req.method() == HttpMethod::Post {
+                Some(alibi_core::utils::json::parse_value(
+                    &serde_json::to_string(
+                        &url::form_urlencoded::parse(req.body.as_deref().unwrap_or_default())
+                            .into_owned()
+                            .collect::<std::collections::HashMap<_, _>>(),
+                    )?,
+                )?)
+            } else {
+                None
+            };
+            return Ok(Some(
+                Box::pin(self.end_session(Some(&query), body.as_ref(), req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
         if req.path() == "/oauth2/userinfo"
             && matches!(req.method(), HttpMethod::Get | HttpMethod::Post)
         {

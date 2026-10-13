@@ -57,6 +57,43 @@ impl JwtPlugin {
         request: Option<&AuthRequest>,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<Option<Map<String, Value>>> {
+        let Some(payload) = self.verify_signed_payload(token, request, ctx).await? else {
+            return Ok(None);
+        };
+        let now = Utc::now().timestamp();
+        for field in ["iat", "exp", "nbf"] {
+            if payload.get(field).is_some_and(|value| !value.is_number()) {
+                return Ok(None);
+            }
+        }
+        if payload
+            .get("exp")
+            .and_then(Value::as_f64)
+            .is_some_and(|exp| exp <= (now - policy.tolerance) as f64)
+            || payload
+                .get("nbf")
+                .and_then(Value::as_f64)
+                .is_some_and(|nbf| nbf > (now + policy.tolerance) as f64)
+            || payload.get("iss").and_then(Value::as_str) != Some(policy.issuer)
+            || !payload
+                .get("aud")
+                .is_some_and(|value| policy.audience.matches(value))
+            || payload.get("aud").is_none_or(|value| !js_truthy(value))
+            || (policy.require_nonempty_subject
+                && payload.get("sub").is_none_or(|value| !js_truthy(value)))
+        {
+            return Ok(None);
+        }
+        Ok(Some(payload))
+    }
+    /// Verify the compact signature without enforcing JWT claim lifetime.
+    /// Logout hints deliberately accept expired ID tokens and apply their own claims.
+    pub(crate) async fn verify_signed_payload(
+        &self,
+        token: &str,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<Option<Map<String, Value>>> {
         let parts = token.split('.').collect::<Vec<_>>();
         let [header, payload, signature] = parts.as_slice() else {
             return Ok(None);
@@ -104,30 +141,6 @@ impl JwtPlugin {
         let Some(payload) = decode_compact_json(payload, true)?.as_object().cloned() else {
             return Ok(None);
         };
-        let now = Utc::now().timestamp();
-        for field in ["iat", "exp", "nbf"] {
-            if payload.get(field).is_some_and(|value| !value.is_number()) {
-                return Ok(None);
-            }
-        }
-        if payload
-            .get("exp")
-            .and_then(Value::as_f64)
-            .is_some_and(|exp| exp <= (now - policy.tolerance) as f64)
-            || payload
-                .get("nbf")
-                .and_then(Value::as_f64)
-                .is_some_and(|nbf| nbf > (now + policy.tolerance) as f64)
-            || payload.get("iss").and_then(Value::as_str) != Some(policy.issuer)
-            || !payload
-                .get("aud")
-                .is_some_and(|value| policy.audience.matches(value))
-            || payload.get("aud").is_none_or(|value| !js_truthy(value))
-            || (policy.require_nonempty_subject
-                && payload.get("sub").is_none_or(|value| !js_truthy(value)))
-        {
-            return Ok(None);
-        }
         Ok(Some(payload))
     }
 }
