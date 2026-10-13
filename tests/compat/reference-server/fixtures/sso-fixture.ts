@@ -51,8 +51,18 @@ export async function ssoFixture(base: BetterAuthOptions) {
       });
     }
     if (input.action === "saml-grant") {
-      return Response.json(
-        await samlGrant(input.authorization, input.email, Boolean(input.wrongKey)),
+      return new Response(
+        JSON.stringify(await samlGrant(input.authorization, input.email, Boolean(input.wrongKey))),
+        { headers: { "content-type": "application/json" } },
+      );
+    }
+    if (input.action === "sign-out-http") {
+      return auth.handler(
+        new Request(`${options.baseURL}${options.basePath ?? "/api/auth"}/sign-out`, {
+          method: "POST",
+          headers: { ...input.headers, "content-type": "application/json" },
+          body: "{}",
+        }),
       );
     }
     if (input.action === "acs-http") {

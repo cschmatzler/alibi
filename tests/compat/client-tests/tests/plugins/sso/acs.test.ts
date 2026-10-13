@@ -138,6 +138,15 @@ compatScenario(
         });
       }
     }
+    const rejected = await control({
+      action: "sign-out-http",
+      headers: { origin: "https://idp.example.test", cookie: pairs(owner) },
+    });
+    expect(rejected.status).toBe(403);
+    const ownerSession = (await (
+      await control({ action: "session", headers: { cookie: pairs(owner) } })
+    ).json()) as any;
+    expect(ownerSession.user.email).toBe(((await owner.clone().json()) as any).user.email);
     return observations;
   },
 );

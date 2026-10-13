@@ -64,7 +64,7 @@ async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B:
                 incoming.body = Some(form.into_bytes());
                 Box::pin(auth.handle_request(incoming))
                     .await
-                    .map_err(|error| Box::<dyn std::error::Error + Send + Sync>::from(error))
+                    .map_err(Box::<dyn std::error::Error + Send + Sync>::from)
             } else {
                 Ok(
                     Box::pin(auth.dispatch_endpoint(endpoint, EndpointOptions::default()))
@@ -174,5 +174,11 @@ async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B:
             assert_eq!(query["error_description"], "Unknown or expired request ID");
         }
     }
+    let mut rejected = request("/sign-out", Some(json!({})), &cookies(&owner));
+    _ = rejected
+        .headers
+        .insert("origin".into(), "https://idp.example.test".into());
+    _ = call(&auth, rejected, 403).await;
+    authenticated(&auth, &cookies(&owner), "saml-acs-owner@example.test").await;
     B::close(connection).await
 }
