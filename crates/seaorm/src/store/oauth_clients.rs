@@ -14,6 +14,30 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
+    async fn update_oauth_resource(
+        &self,
+        identifier: &str,
+        metadata: serde_json::Value,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<alibi_core::store::OAuthResource>> {
+        let Some(model) = super::entities::oauth_resource::Entity::find()
+            .filter(super::entities::oauth_resource::Column::Identifier.eq(identifier))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+        else {
+            return Ok(None);
+        };
+        let mut active = model.into_active_model();
+        active.metadata = Set(serde_json::to_string(&metadata)?);
+        active.updated_at = Set(updated_at);
+        active
+            .update(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .try_into()
+            .map(Some)
+    }
     async fn list_oauth_resources(&self) -> AuthResult<Vec<alibi_core::store::OAuthResource>> {
         super::entities::oauth_resource::Entity::find()
             .limit(

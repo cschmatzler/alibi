@@ -383,3 +383,5 @@ mod oauth_resource_creation;
 mod oauth_resource_list;
 
 mod oauth_resource_read;
+
+mod oauth_resource_update;

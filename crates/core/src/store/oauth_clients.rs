@@ -23,6 +23,16 @@ pub struct CreateOAuthClient {
 }
 #[async_trait]
 pub trait OAuthClientStore: Send + Sync {
+    async fn update_oauth_resource(
+        &self,
+        _identifier: &str,
+        _metadata: Value,
+        _updated_at: DateTime<Utc>,
+    ) -> AuthResult<Option<OAuthResource>> {
+        Err(AuthError::config(
+            "OAuth resource persistence is not supported by this store",
+        ))
+    }
     async fn list_oauth_resources(&self) -> AuthResult<Vec<OAuthResource>> {
         Err(AuthError::config(
             "OAuth resource persistence is not supported by this store",

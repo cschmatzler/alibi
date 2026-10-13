@@ -263,6 +263,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
             crate::endpoint::definition(
+                "adminUpdateOAuthResource",
+                "adminUpdateOAuthResource",
+                Some("/admin/oauth2/resources/:identifier"),
+                HttpMethod::Patch,
+            ),
+            crate::endpoint::definition(
                 "adminGetOAuthResource",
                 "adminGetOAuthResource",
                 Some("/admin/oauth2/resources/:identifier"),
@@ -402,7 +408,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
         Ok(EndpointInput {
-            body: if call.operation_id() == "adminCreateOAuthResource" {
+            body: if call.operation_id() == "adminUpdateOAuthResource" {
+                Some(resources::validate_update(call.body())?)
+            } else if call.operation_id() == "adminCreateOAuthResource" {
                 Some(resources::validate_create(call.body())?)
             } else if call.operation_id() == "deleteOAuthConsent" {
                 Some(consent::validate_id(call.body(), "body")?)
@@ -445,6 +453,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "adminUpdateOAuthResource" {
+            return Box::pin(self.update_resource(call.params(), call.body_as()?, call, ctx)).await;
+        }
         if call.operation_id() == "adminGetOAuthResource" {
             return Box::pin(self.read_resource(call.params(), call, ctx)).await;
         }
