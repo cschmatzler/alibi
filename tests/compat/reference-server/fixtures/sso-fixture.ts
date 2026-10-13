@@ -12,9 +12,55 @@ export async function ssoFixture(base: BetterAuthOptions) {
     plugins: [username(), sso()],
   };
   await (await getMigrations(options)).runMigrations();
-  let auth = betterAuth(options);
+  const domainOptions = {
+    ...options,
+    plugins: [username(), sso({ domainVerification: { enabled: true } })],
+  };
+  await (await getMigrations(domainOptions)).runMigrations();
+  const instances = new Map([
+    ["default", betterAuth(options)],
+    ["domain", betterAuth(domainOptions)],
+  ]);
+
   const handle = async (request: Request) => {
     const input = await request.json();
+    const mode = input.mode === "domain" ? "domain" : "default";
+    const auth = instances.get(mode)!;
+    if (input.action === "request-domain") {
+      return auth.api.requestDomainVerification({
+        body: input.body,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
+    if (input.action === "proof") {
+      const context = await auth.$context;
+      const proof = await context.internalAdapter.findVerificationValue(input.identifier);
+      return new Response(
+        JSON.stringify(
+          proof
+            ? {
+                id: proof.id,
+                identifier: proof.identifier,
+                value: proof.value,
+                expiresAt: proof.expiresAt,
+              }
+            : null,
+        ),
+        { headers: { "content-type": "application/json" } },
+      );
+    }
+    if (input.action === "expire-proof") {
+      const context = await auth.$context;
+      await context.adapter.update({
+        model: "verification",
+        where: [{ field: "identifier", value: input.identifier }],
+        update: { expiresAt: new Date(Date.now() - 1000) },
+      });
+      return new Response(JSON.stringify({ expired: true }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
     if (input.action === "signup") {
       return auth.api.signUpEmail({ body: input.body, asResponse: true });
     }
@@ -93,7 +139,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
       });
     }
     if (input.action === "restart") {
-      auth = betterAuth(options);
+      instances.set(mode, betterAuth(mode === "domain" ? domainOptions : options));
       return new Response(JSON.stringify({ restarted: true }), {
         headers: { "content-type": "application/json" },
       });

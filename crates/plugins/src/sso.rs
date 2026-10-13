@@ -1,4 +1,5 @@
 //! Enterprise single-sign-on provider registration.
+mod domain_verification;
 mod provider_delete;
 mod provider_list;
 mod provider_read;
@@ -18,6 +19,8 @@ use serde_json::{Value, json};
 #[derive(Clone, Debug)]
 pub struct SsoConfig {
     pub providers_limit: usize,
+    pub domain_verification: bool,
+    pub domain_verification_token_prefix: String,
     pub default_override_user_info: bool,
     pub redirect_uri: Option<String>,
 }
@@ -25,6 +28,8 @@ impl Default for SsoConfig {
     fn default() -> Self {
         Self {
             providers_limit: 10,
+            domain_verification: false,
+            domain_verification_token_prefix: "better-auth-token".into(),
             default_override_user_info: false,
             redirect_uri: None,
         }
@@ -155,14 +160,19 @@ impl SsoPlugin {
                     .map(str::to_owned),
                 oidc_config: oidc,
                 saml_config: None,
-                domain_verified: None,
+                domain_verified: self.config.domain_verification.then_some(false),
             })
             .await?;
         let mut output = serde_json::to_value(&provider)?;
         let object = output
             .as_object_mut()
             .ok_or_else(|| AuthError::internal("SSO provider serialization failed"))?;
-        _ = object.remove("domainVerified");
+        if self.config.domain_verification {
+            let token = self.issue_domain_proof(provider_id, ctx).await?;
+            _ = object.insert("domainVerificationToken".into(), json!(token));
+        } else {
+            _ = object.remove("domainVerified");
+        }
         for (key, value) in [
             ("oidcConfig", provider.oidc_config.as_deref()),
             ("samlConfig", provider.saml_config.as_deref()),
@@ -279,16 +289,23 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         "sso"
     }
     fn routes(&self) -> Vec<AuthRoute> {
-        vec![
+        let mut routes = vec![
             AuthRoute::post("/sso/register", "registerSSOProvider"),
             AuthRoute::get("/sso/get-provider", "getSSOProvider"),
             AuthRoute::get("/sso/providers", "listSSOProviders"),
             AuthRoute::post("/sso/delete-provider", "deleteSSOProvider"),
             AuthRoute::post("/sso/update-provider", "updateSSOProvider"),
-        ]
+        ];
+        if self.config.domain_verification {
+            routes.push(AuthRoute::post(
+                "/sso/request-domain-verification",
+                "requestDomainVerification",
+            ));
+        }
+        routes
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
-        vec![
+        let mut endpoints = vec![
             super::endpoint::definition(
                 "updateSSOProvider",
                 "updateSSOProvider",
@@ -319,7 +336,16 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
                 Some("/sso/register"),
                 HttpMethod::Post,
             ),
-        ]
+        ];
+        if self.config.domain_verification {
+            endpoints.push(super::endpoint::definition(
+                "requestDomainVerification",
+                "requestDomainVerification",
+                Some("/sso/request-domain-verification"),
+                HttpMethod::Post,
+            ));
+        }
+        endpoints
     }
     fn validate_endpoint(
         &self,
@@ -332,7 +358,10 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
                 query: call.query().cloned(),
             });
         }
-        if call.operation_id() == "deleteSSOProvider" {
+        if matches!(
+            call.operation_id(),
+            "deleteSSOProvider" | "requestDomainVerification"
+        ) {
             return Ok(EndpointInput {
                 body: Some(Self::validate_delete(call.body())?),
                 query: call.query().cloned(),
@@ -360,6 +389,16 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "requestDomainVerification" {
+            return self
+                .request_domain(
+                    call.body()
+                        .ok_or_else(|| super::endpoint::validation("Missing body"))?,
+                    call,
+                    ctx,
+                )
+                .await;
+        }
         if call.operation_id() == "updateSSOProvider" {
             return self
                 .update(
@@ -406,6 +445,20 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if self.config.domain_verification
+            && req.path() == "/sso/request-domain-verification"
+            && *req.method() == HttpMethod::Post
+        {
+            let input = alibi_core::utils::json::parse_value(
+                std::str::from_utf8(req.body.as_deref().unwrap_or_default())
+                    .map_err(|_| super::endpoint::validation("Invalid JSON"))?,
+            )?;
+            return Ok(Some(
+                self.request_domain(&Self::validate_delete(Some(&input))?, req, ctx)
+                    .await?
+                    .to_response()?,
+            ));
+        }
         if req.path() == "/sso/update-provider" && *req.method() == HttpMethod::Post {
             let input = alibi_core::utils::json::parse_value(
                 std::str::from_utf8(req.body.as_deref().unwrap_or_default())
