@@ -14,6 +14,19 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
+    async fn list_oauth_resources(&self) -> AuthResult<Vec<alibi_core::store::OAuthResource>> {
+        super::entities::oauth_resource::Entity::find()
+            .limit(
+                u64::try_from(self.config().advanced.database.default_find_many_limit)
+                    .unwrap_or(u64::MAX),
+            )
+            .all(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect()
+    }
     async fn list_oauth_client_resources(
         &self,
         client_id: &str,

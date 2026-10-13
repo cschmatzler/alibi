@@ -159,6 +159,12 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             }),
       });
     }
+    if (input.action === "resource-list") {
+      return auth.api.adminListOAuthResources({
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
     if (input.action === "resource-create") {
       return auth.api.adminCreateOAuthResource({
         body: input.body,
@@ -177,9 +183,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     if (input.action === "resource-http") {
       const response = await auth.handler(
         new Request(`${base.baseURL}${base.basePath ?? "/api/auth"}/admin/oauth2/resources`, {
-          method: "POST",
+          method: input.operation === "list" ? "GET" : "POST",
           headers: { ...input.headers, "content-type": "application/json" },
-          body: JSON.stringify(input.body),
+          ...(input.operation === "list" ? {} : { body: JSON.stringify(input.body) }),
         }),
       );
       return new Response(JSON.stringify({ status: response.status }), {
