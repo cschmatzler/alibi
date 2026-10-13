@@ -9,6 +9,7 @@ mod introspection;
 mod logout;
 mod resources;
 mod revocation;
+mod session_retirement;
 mod token;
 mod userinfo;
 use alibi_core::endpoint::{
@@ -951,7 +952,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         }
         Ok(None)
     }
-    async fn on_init(&self, _ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
+    async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
         if self
             .config
             .advertised_scopes
@@ -991,6 +992,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
                 "refresh_token grant requires authorization_code grant",
             ));
         }
+        ctx.register_session_deletion_hook(std::sync::Arc::new(
+            session_retirement::TokenRetirementHook,
+        ));
         Ok(())
     }
 }

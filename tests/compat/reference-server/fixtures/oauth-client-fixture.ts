@@ -98,6 +98,23 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     const input = await request.json();
     const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
+    if (input.action === "signout") {
+      const call = () =>
+        auth.api.signOut({ headers: new Headers(input.headers ?? {}), asResponse: true });
+      if (input.foreignKeys === true) {
+        const database = base.database as import("bun:sqlite").Database;
+        const prior = database
+          .query<{ foreign_keys: number }, []>("PRAGMA foreign_keys")
+          .get()!.foreign_keys;
+        database.exec("PRAGMA foreign_keys=ON");
+        try {
+          return await call();
+        } finally {
+          database.exec(`PRAGMA foreign_keys=${prior}`);
+        }
+      }
+      return call();
+    }
     if (input.action === "session-row") {
       const context = await auth.$context;
       const row = await context.adapter.findOne<{ id: string }>({

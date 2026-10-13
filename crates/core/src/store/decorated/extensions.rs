@@ -580,6 +580,24 @@ impl<S: AuthSchema> WalletAddressStore for PluginStore<S> {
 
 #[async_trait::async_trait]
 impl<S: AuthSchema> crate::store::OAuthClientStore for PluginStore<S> {
+    async fn list_oauth_tokens_for_session(
+        &self,
+        kind: crate::store::OAuthTokenKind,
+        session_id: &str,
+    ) -> AuthResult<Vec<crate::store::OAuthToken>> {
+        self.inner
+            .list_oauth_tokens_for_session(kind, session_id)
+            .await
+    }
+    async fn mark_oauth_token_revoked(
+        &self,
+        kind: crate::store::OAuthTokenKind,
+        id: &str,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<()> {
+        self.inner.mark_oauth_token_revoked(kind, id, at).await
+    }
+
     async fn delete_oauth_token(
         &self,
         kind: crate::store::OAuthTokenKind,

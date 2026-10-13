@@ -52,6 +52,26 @@ pub struct CreateOAuthToken {
 }
 #[async_trait]
 pub trait OAuthClientStore: Send + Sync {
+    async fn list_oauth_tokens_for_session(
+        &self,
+        _kind: OAuthTokenKind,
+        _session_id: &str,
+    ) -> AuthResult<Vec<OAuthToken>> {
+        Err(AuthError::config(
+            "OAuth token persistence is not supported by this store",
+        ))
+    }
+    async fn mark_oauth_token_revoked(
+        &self,
+        _kind: OAuthTokenKind,
+        _id: &str,
+        _at: DateTime<Utc>,
+    ) -> AuthResult<()> {
+        Err(AuthError::config(
+            "OAuth token persistence is not supported by this store",
+        ))
+    }
+
     async fn delete_oauth_token(&self, _kind: OAuthTokenKind, _token: &str) -> AuthResult<()> {
         Err(AuthError::config(
             "OAuth token persistence is not supported by this store",

@@ -14,6 +14,75 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
+    async fn mark_oauth_token_revoked(
+        &self,
+        kind: alibi_core::store::OAuthTokenKind,
+        id: &str,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<()> {
+        match kind {
+            alibi_core::store::OAuthTokenKind::Access => {
+                _ = super::entities::oauth_access_token::Entity::update_many()
+                    .col_expr(
+                        super::entities::oauth_access_token::Column::Revoked,
+                        sea_orm::sea_query::Expr::value(at),
+                    )
+                    .filter(super::entities::oauth_access_token::Column::Id.eq(id))
+                    .exec(self.scoped_connection())
+                    .await
+                    .map_err(map_db_err)?;
+            }
+            alibi_core::store::OAuthTokenKind::Refresh => {
+                _ = super::entities::oauth_refresh_token::Entity::update_many()
+                    .col_expr(
+                        super::entities::oauth_refresh_token::Column::Revoked,
+                        sea_orm::sea_query::Expr::value(at),
+                    )
+                    .filter(super::entities::oauth_refresh_token::Column::Id.eq(id))
+                    .exec(self.scoped_connection())
+                    .await
+                    .map_err(map_db_err)?;
+            }
+        }
+        Ok(())
+    }
+    async fn list_oauth_tokens_for_session(
+        &self,
+        kind: alibi_core::store::OAuthTokenKind,
+        session_id: &str,
+    ) -> AuthResult<Vec<alibi_core::store::OAuthToken>> {
+        match kind {
+            alibi_core::store::OAuthTokenKind::Access => {
+                super::entities::oauth_access_token::Entity::find()
+                    .filter(super::entities::oauth_access_token::Column::SessionId.eq(session_id))
+                    .limit(
+                        u64::try_from(self.config().advanced.database.default_find_many_limit)
+                            .unwrap_or(u64::MAX),
+                    )
+                    .all(self.scoped_connection())
+                    .await
+                    .map_err(map_db_err)?
+                    .into_iter()
+                    .map(TryInto::try_into)
+                    .collect()
+            }
+            alibi_core::store::OAuthTokenKind::Refresh => {
+                super::entities::oauth_refresh_token::Entity::find()
+                    .filter(super::entities::oauth_refresh_token::Column::SessionId.eq(session_id))
+                    .limit(
+                        u64::try_from(self.config().advanced.database.default_find_many_limit)
+                            .unwrap_or(u64::MAX),
+                    )
+                    .all(self.scoped_connection())
+                    .await
+                    .map_err(map_db_err)?
+                    .into_iter()
+                    .map(TryInto::try_into)
+                    .collect()
+            }
+        }
+    }
+
     async fn delete_oauth_token(
         &self,
         kind: alibi_core::store::OAuthTokenKind,

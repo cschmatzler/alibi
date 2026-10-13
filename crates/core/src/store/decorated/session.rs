@@ -275,6 +275,17 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             _ = self.ephemeral()?.shift_remove(token);
             return Ok(());
         }
+        let works = if self
+            .projection_context
+            .extensions
+            .get::<crate::store::SessionDeletionHooks<S>>()
+            .is_some_and(|hooks| !hooks.0.is_empty())
+            && let Some(session) = self.inner.get_session(token).await?
+        {
+            self.prepare_session_deletion(&session).await?
+        } else {
+            Vec::new()
+        };
         self.remove_cached_session(token).await?;
         if !self.session_uses_database() {
             return Ok(());
@@ -282,7 +293,8 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         if self.secondary().is_some() && self.config.session.preserve_in_database {
             return self.inner.end_session_preserving(token).await;
         }
-        self.inner.delete_session(token).await
+        self.inner.delete_session(token).await?;
+        self.complete_session_deletion(token, works).await
     }
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
         if self.config.session.stateless {
@@ -341,5 +353,38 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
                 .await;
         }
         self.inner.update_session_active_team(token, team_id).await
+    }
+}
+
+impl<S: AuthSchema> PluginStore<S> {
+    async fn prepare_session_deletion(
+        &self,
+        session: &S::Session,
+    ) -> AuthResult<Vec<Box<dyn crate::store::SessionDeletionWork<S>>>> {
+        let mut works = Vec::new();
+        if let Some(hooks) = self
+            .projection_context
+            .extensions
+            .get::<crate::store::SessionDeletionHooks<S>>()
+        {
+            for hook in &hooks.0 {
+                if let Some(work) = hook.prepare(session, self.inner.as_ref()).await? {
+                    works.push(work);
+                }
+            }
+        }
+        Ok(works)
+    }
+    async fn complete_session_deletion(
+        &self,
+        token: &str,
+        works: Vec<Box<dyn crate::store::SessionDeletionWork<S>>>,
+    ) -> AuthResult<()> {
+        if !works.is_empty() && self.inner.get_session(token).await?.is_none() {
+            for work in works {
+                work.complete(self.inner.as_ref()).await?;
+            }
+        }
+        Ok(())
     }
 }
