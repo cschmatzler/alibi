@@ -39,26 +39,36 @@ export async function ssoFixture(base: BetterAuthOptions) {
       sso({ saml: { enableSingleLogout: true, wantLogoutResponseSigned: true } }),
     ],
   };
+  const signedRequestSloOptions = {
+    ...options,
+    plugins: [
+      username(),
+      sso({ saml: { enableSingleLogout: true, wantLogoutRequestSigned: true } }),
+    ],
+  };
   const instances = new Map([
     ["default", betterAuth(options)],
     ["domain", betterAuth(domainOptions)],
     ["shared", betterAuth(sharedOptions)],
     ["slo", betterAuth(sloOptions)],
     ["signed-slo", betterAuth(signedSloOptions)],
+    ["signed-request-slo", betterAuth(signedRequestSloOptions)],
   ]);
 
   const handle = async (request: Request) => {
     const input = await request.json();
     const mode =
-      input.mode === "signed-slo"
-        ? "signed-slo"
-        : input.mode === "domain"
-          ? "domain"
-          : input.mode === "shared"
-            ? "shared"
-            : input.mode === "slo"
-              ? "slo"
-              : "default";
+      input.mode === "signed-request-slo"
+        ? "signed-request-slo"
+        : input.mode === "signed-slo"
+          ? "signed-slo"
+          : input.mode === "domain"
+            ? "domain"
+            : input.mode === "shared"
+              ? "shared"
+              : input.mode === "slo"
+                ? "slo"
+                : "default";
     const auth = instances.get(mode)!;
     if (input.action === "dns-records") {
       dns.setRecords(input.records);
@@ -301,15 +311,17 @@ export async function ssoFixture(base: BetterAuthOptions) {
       instances.set(
         mode,
         betterAuth(
-          mode === "signed-slo"
-            ? signedSloOptions
-            : mode === "domain"
-              ? domainOptions
-              : mode === "shared"
-                ? sharedOptions
-                : mode === "slo"
-                  ? sloOptions
-                  : options,
+          mode === "signed-request-slo"
+            ? signedRequestSloOptions
+            : mode === "signed-slo"
+              ? signedSloOptions
+              : mode === "domain"
+                ? domainOptions
+                : mode === "shared"
+                  ? sharedOptions
+                  : mode === "slo"
+                    ? sloOptions
+                    : options,
         ),
       );
       return new Response(JSON.stringify({ restarted: true }), {

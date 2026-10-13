@@ -11,7 +11,8 @@ backend_tests!(
     sso_logout_response_retires_proof_and_rejects_external_relay,
     sso_idp_logout_matches_session_index_before_retiring_session,
     sso_logout_required_signature_preserves_proof_until_trusted_completion,
-    sso_saml_rollover_accepts_later_trusted_certificate_for_login_and_logout
+    sso_saml_rollover_accepts_later_trusted_certificate_for_login_and_logout,
+    sso_idp_logout_requires_trusted_signature_before_session_retirement
 );
 async fn sso_logout_uses_acs_session_index_and_retires_session<B: Backend>(db: Db) -> TestResult {
     logout_flow::<B>(db, false, false, false).await
@@ -282,10 +283,19 @@ async fn logout_flow<B: Backend>(
 async fn sso_idp_logout_matches_session_index_before_retiring_session<B: Backend>(
     db: Db,
 ) -> TestResult {
+    idp_logout_flow::<B>(db, false).await
+}
+async fn sso_idp_logout_requires_trusted_signature_before_session_retirement<B: Backend>(
+    db: Db,
+) -> TestResult {
+    idp_logout_flow::<B>(db, true).await
+}
+async fn idp_logout_flow<B: Backend>(db: Db, signed: bool) -> TestResult {
     let (connection, store) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(SsoPlugin::with_config(SsoConfig {
             saml_enable_single_logout: true,
+            saml_want_logout_request_signed: signed,
             ..Default::default()
         }))
         .build()
@@ -340,7 +350,45 @@ async fn sso_idp_logout_matches_session_index_before_retiring_session<B: Backend
             r#"<samlp:LogoutRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="{request_id}" Version="2.0" IssueInstant="{}"><saml:Issuer>https://idp.example.test/entity</saml:Issuer><saml:NameID>{email}</saml:NameID><samlp:SessionIndex>{index}</samlp:SessionIndex></samlp:LogoutRequest>"#,
             chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
         );
-        let endpoint=ServerEndpoint::<Value>::new("sso","sloEndpoint").with_params(&json!({"providerId":"idp-logout-provider"}))?.with_body(&json!({"SAMLRequest":base64::engine::general_purpose::STANDARD.encode(xml),"RelayState":"opaque-relay"}))?;
+        let mut encoded = base64::engine::general_purpose::STANDARD.encode(&xml);
+        if signed {
+            let key = format!("saml-session:idp-logout-provider:{email}");
+            let tracking = store
+                .get_latest_verification_by_identifier(&key)
+                .await?
+                .ok_or("Missing real SAML session")?;
+            for rejected_data in [encoded.clone(), idp::signed_logout(&xml, true)?] {
+                let rejected = Box::pin(
+                    auth.dispatch_endpoint(
+                        ServerEndpoint::<Value>::new("sso", "sloEndpoint")
+                            .with_params(&json!({"providerId":"idp-logout-provider"}))?
+                            .with_body(&json!({"SAMLRequest":rejected_data}))?,
+                        EndpointOptions {
+                            method: Some(HttpMethod::Post),
+                            ..Default::default()
+                        },
+                    ),
+                )
+                .await
+                .unwrap_err();
+                assert_eq!(rejected.error.status_code(), 400);
+                let retained = store
+                    .get_latest_verification_by_identifier(&key)
+                    .await?
+                    .ok_or("Rejected signature retired SAML tracking")?;
+                assert_eq!(retained.value(), tracking.value());
+                assert_eq!(retained.expires_at(), tracking.expires_at());
+                assert_eq!(
+                    body(&call(&auth, request("/get-session", None, &cookie), 200).await)["session"]
+                        ["id"],
+                    session["id"]
+                );
+            }
+            encoded = idp::signed_logout(&xml, false)?;
+        }
+        let endpoint = ServerEndpoint::<Value>::new("sso", "sloEndpoint")
+            .with_params(&json!({"providerId":"idp-logout-provider"}))?
+            .with_body(&json!({"SAMLRequest":encoded,"RelayState":"opaque-relay"}))?;
         let output = Box::pin(auth.dispatch_endpoint(
             endpoint,
             EndpointOptions {
