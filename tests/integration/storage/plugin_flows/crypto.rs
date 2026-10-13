@@ -379,6 +379,7 @@ impl alibi::plugins::passkey::PasskeyRegistrationAfterVerification for PasskeyPo
         assert!(
             context
                 .request
+                .unwrap()
                 .path
                 .ends_with("/passkey/verify-registration")
         );
@@ -456,6 +457,7 @@ impl alibi::plugins::passkey::PasskeyUserResolver for RegistrationResolver {
         assert!(
             context
                 .request
+                .unwrap()
                 .path
                 .ends_with("/passkey/generate-register-options")
         );

@@ -61,6 +61,7 @@ fn denied() -> AuthError {
 fn read_proof(ctx: &PasskeyRegistrationContext<'_>) -> AuthResult<Proof> {
     let token = ctx
         .request
+        .ok_or_else(denied)?
         .headers
         .get("cookie")
         .and_then(|header| {

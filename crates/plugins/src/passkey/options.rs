@@ -5,7 +5,10 @@ use serde_json::Value;
 use std::sync::Arc;
 
 pub struct PasskeyOptionsContext<'a> {
-    pub request: &'a AuthRequest,
+    /// Original physical request, when one was supplied.
+    pub request: Option<&'a AuthRequest>,
+    /// Genuine logical input for server API calls.
+    pub endpoint: Option<&'a alibi_core::endpoint::EndpointCall>,
     pub auth_config: &'a AuthConfig,
     pub extensions: &'a ContextExtensions,
     pub user: Option<&'a UserView>,

@@ -102,10 +102,43 @@ compatScenario(
 
     const user = z.object({ user: z.object({ id: z.string() }) }).parse(signup.data).user;
     const authenticator = new Authenticator();
-    const options = await ctx.rawRequest({
-      actor: "owner",
-      path: "/api/auth/passkey/generate-register-options",
-    });
+    async function serverOptions(query?: unknown, cookie?: string) {
+      return owner.fetch(`${ctx.baseURL}/__test/server-api/passkey-register-options`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...(query !== undefined ? { query } : {}),
+          ...(cookie ? { headers: { cookie } } : {}),
+        }),
+      });
+    }
+    for (const [query, cookie, status, code] of [
+      [undefined, undefined, 401, "UNAUTHORIZED"],
+      [{ name: 42 }, ownerCookie, 400, "VALIDATION_ERROR"],
+      [{ authenticatorAttachment: "invalid" }, ownerCookie, 400, "VALIDATION_ERROR"],
+      [{ context: null }, ownerCookie, 400, "VALIDATION_ERROR"],
+    ] as const) {
+      const response = await serverOptions(query, cookie);
+      expect(response.status).toBe(status);
+      expect(((await response.json()) as any).code).toBe(code);
+      expect(response.headers.get("set-cookie")).toBeNull();
+    }
+    const optionResponse = await serverOptions(
+      {
+        name: "Laptop enrollment",
+        context: "compat-enrollment",
+        authenticatorAttachment: "platform",
+      },
+      ownerCookie,
+    );
+    const options = { status: optionResponse.status, body: (await optionResponse.json()) as any };
+    expect(options.body.user.name).toBe("Laptop enrollment");
+    expect(options.body.authenticatorSelection.authenticatorAttachment).toBe("platform");
+    expect(
+      optionResponse.headers
+        .getSetCookie()
+        .some((cookie) => cookie.includes("better-auth-passkey=") && cookie.includes("HttpOnly")),
+    ).toBe(true);
     expect(options.status).toBe(200);
 
     const response = authenticator.register(options.body, ctx.baseURL);

@@ -886,13 +886,19 @@ async fn passkey_resolver_physical_request_context<B: Backend>(db: Db) -> TestRe
     #[async_trait::async_trait]
     impl PasskeyExtensionsResolver for Capture {
         async fn resolve(&self, c: &PasskeyOptionsContext<'_>) -> AuthResult<Value> {
-            let marker = c.request.headers.get("x-option-marker").unwrap();
-            self.0.lock().unwrap().push(json!({"path":c.request.path,"method":format!("{:?}",c.request.method),"marker":marker,"user":c.user,"baseURL":c.auth_config.base_url}));
-            Ok(if c.request.path.ends_with("generate-register-options") {
-                json!({"credProps":false,"minPinLength":true,"appid":marker})
-            } else {
-                json!({"appid":marker})
-            })
+            let marker = c.request.unwrap().headers.get("x-option-marker").unwrap();
+            self.0.lock().unwrap().push(json!({"path":c.request.unwrap().path,"method":format!("{:?}",c.request.unwrap().method),"marker":marker,"user":c.user,"baseURL":c.auth_config.base_url}));
+            Ok(
+                if c.request
+                    .unwrap()
+                    .path
+                    .ends_with("generate-register-options")
+                {
+                    json!({"credProps":false,"minPinLength":true,"appid":marker})
+                } else {
+                    json!({"appid":marker})
+                },
+            )
         }
     }
     let (connection, _) = db.migrated::<B>(SECRET).await?;

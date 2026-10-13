@@ -448,7 +448,8 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
     let apply_policy = move |mut input_2: CreatePasskey| async move {
         if let Some(callback) = callback {
             let callback_context = PasskeyRegistrationContext {
-                request: &request,
+                request: Some(&request),
+                endpoint: None,
                 auth_config: &auth_config,
                 extensions: &extensions,
             };
