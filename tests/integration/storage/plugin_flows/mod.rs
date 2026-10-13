@@ -405,3 +405,5 @@ mod oauth_revocation;
 mod oauth_id_token;
 
 mod oauth_userinfo;
+
+mod oauth_logout;

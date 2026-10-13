@@ -90,6 +90,12 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }),
   };
   return async (request: Request) => {
+    if (
+      request.method === "GET" &&
+      new URL(request.url).pathname === `${base.basePath ?? "/api/auth"}/jwks`
+    ) {
+      return auths.default.handler(request);
+    }
     const input = await request.json();
     const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
     if (input.action === "signup") {
@@ -283,6 +289,14 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         ),
         { headers: { "content-type": "application/json" } },
       );
+    }
+    if (input.action === "end-session") {
+      return auth.api.oauth2EndSession({
+        query: input.query,
+        body: input.body,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
     }
     if (input.action === "authorize") {
       const headers = new Headers(input.headers ?? {});
