@@ -14,6 +14,29 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
+    async fn claim_oauth_refresh_rotation(
+        &self,
+        token: &str,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<bool> {
+        use super::entities::oauth_refresh_token;
+        let result = oauth_refresh_token::Entity::update_many()
+            .col_expr(
+                oauth_refresh_token::Column::Revoked,
+                sea_orm::sea_query::Expr::value(at),
+            )
+            .col_expr(
+                oauth_refresh_token::Column::RotatedAt,
+                sea_orm::sea_query::Expr::value(at),
+            )
+            .filter(oauth_refresh_token::Column::Token.eq(token))
+            .filter(oauth_refresh_token::Column::Revoked.is_null())
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        Ok(result.rows_affected > 0)
+    }
+
     async fn mark_oauth_token_revoked(
         &self,
         kind: alibi_core::store::OAuthTokenKind,

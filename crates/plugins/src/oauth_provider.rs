@@ -7,6 +7,7 @@ mod credentials;
 mod id_token;
 mod introspection;
 mod logout;
+mod refresh;
 mod resources;
 mod revocation;
 mod session_retirement;

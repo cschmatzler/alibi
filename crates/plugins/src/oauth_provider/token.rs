@@ -39,6 +39,9 @@ impl OAuthProviderPlugin {
                 &format!("unsupported grant_type {grant}"),
             );
         }
+        if grant == "refresh_token" {
+            return Box::pin(self.refresh_grant(&body, req, ctx)).await;
+        }
         // Each remaining grant receives its own issuance and lifecycle finding.
         if grant != "authorization_code" {
             return error(

@@ -580,6 +580,14 @@ impl<S: AuthSchema> WalletAddressStore for PluginStore<S> {
 
 #[async_trait::async_trait]
 impl<S: AuthSchema> crate::store::OAuthClientStore for PluginStore<S> {
+    async fn claim_oauth_refresh_rotation(
+        &self,
+        token: &str,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<bool> {
+        self.inner.claim_oauth_refresh_rotation(token, at).await
+    }
+
     async fn list_oauth_tokens_for_session(
         &self,
         kind: crate::store::OAuthTokenKind,
