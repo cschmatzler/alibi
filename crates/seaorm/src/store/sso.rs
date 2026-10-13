@@ -15,6 +15,79 @@ impl<S: AuthSchema> SsoProviderStore for SeaOrmStore<S>
 where
     S::Account: crate::schema::SeaOrmAccountModel,
 {
+    async fn update_sso_provider(
+        &self,
+        id: &str,
+        provider_id: &str,
+        prepare: &alibi_core::store::SsoProviderUpdateWork,
+    ) -> AuthResult<Option<SsoProvider>> {
+        use crate::schema::SeaOrmAccountModel;
+        use sea_orm::TransactionTrait;
+        let tx = self.scoped_connection().begin().await.map_err(map_db_err)?;
+        let outcome = async {
+            let locked = Entity::update_many()
+                .col_expr(
+                    Column::ProviderId,
+                    sea_orm::sea_query::Expr::value(provider_id),
+                )
+                .filter(Column::Id.eq(id))
+                .filter(Column::ProviderId.eq(provider_id))
+                .exec(&tx)
+                .await
+                .map_err(map_db_err)?;
+            if locked.rows_affected == 0 {
+                return Ok(None);
+            }
+            let row: SsoProvider = Entity::find_by_id(id)
+                .one(&tx)
+                .await
+                .map_err(map_db_err)?
+                .ok_or_else(|| alibi_core::AuthError::not_found("Provider not found"))?
+                .into();
+            let update = prepare(&row)?;
+            if update.identity_changed
+                && <S::Account as SeaOrmAccountModel>::Entity::find()
+                    .filter(S::Account::provider_id_column().eq(provider_id))
+                    .one(&tx)
+                    .await
+                    .map_err(map_db_err)?
+                    .is_some()
+            {
+                return Err(alibi_core::AuthError::Api {
+                    status: 409,
+                    code: None,
+                    message:
+                        "Cannot change SSO provider identity fields while linked accounts exist"
+                            .into(),
+                });
+            }
+            let active = sso_provider::ActiveModel {
+                id: Set(id.into()),
+                issuer: Set(update.provider.issuer),
+                domain: Set(update.provider.domain),
+                oidc_config: Set(update.provider.oidc_config),
+                saml_config: Set(update.provider.saml_config),
+                domain_verified: Set(update.provider.domain_verified),
+                ..Default::default()
+            };
+            active
+                .update(&tx)
+                .await
+                .map(|row| Some(row.into()))
+                .map_err(map_db_err)
+        }
+        .await;
+        match outcome {
+            Ok(row) => {
+                tx.commit().await.map_err(map_db_err)?;
+                Ok(row)
+            }
+            Err(error) => {
+                tx.rollback().await.map_err(map_db_err)?;
+                Err(error)
+            }
+        }
+    }
     async fn delete_sso_provider_and_accounts(
         &self,
         id: &str,

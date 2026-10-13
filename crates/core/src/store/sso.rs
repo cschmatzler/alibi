@@ -15,8 +15,25 @@ pub struct SsoProvider {
     pub saml_config: Option<String>,
     pub domain_verified: Option<bool>,
 }
+/// A provider update prepared from the actual row locked by its adapter.
+pub struct SsoProviderUpdate {
+    pub provider: SsoProvider,
+    pub identity_changed: bool,
+}
+pub type SsoProviderUpdateWork =
+    dyn Fn(&SsoProvider) -> AuthResult<SsoProviderUpdate> + Send + Sync;
 #[async_trait]
 pub trait SsoProviderStore: Send + Sync {
+    async fn update_sso_provider(
+        &self,
+        _id: &str,
+        _provider_id: &str,
+        _prepare: &SsoProviderUpdateWork,
+    ) -> AuthResult<Option<SsoProvider>> {
+        Err(AuthError::config(
+            "SSO persistence is not supported by this store",
+        ))
+    }
     /// Atomically retire a provider and every account linked to its identity namespace.
     async fn delete_sso_provider_and_accounts(
         &self,

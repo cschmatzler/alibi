@@ -13,6 +13,79 @@ impl<S: AuthSchema> SsoProviderStore for SqlxStore<S>
 where
     S::Account: crate::schema::SqlxAccountModel,
 {
+    async fn update_sso_provider(
+        &self,
+        id: &str,
+        provider_id: &str,
+        prepare: &alibi_core::store::SsoProviderUpdateWork,
+    ) -> AuthResult<Option<SsoProvider>> {
+        use crate::schema::SqlxAccountModel;
+        let tx = self.begin(true).await?;
+        let exec = crate::pool::Exec::tx(&tx);
+        let outcome = async {
+            let mut lock = crate::sql::Sql::with(exec.engine(), "UPDATE ");
+            lock.ident(Model::TABLE);
+            lock.push(" SET ");
+            lock.assign("providerId", provider_id);
+            lock.push(" WHERE ");
+            lock.compare(Model::TABLE, "id", " = ", id);
+            lock.push(" AND ");
+            lock.compare(Model::TABLE, "providerId", " = ", provider_id);
+            if exec.execute(lock).await? == 0 {
+                return Ok(None);
+            }
+            let mut read = model::select_model::<Model>(exec);
+            read.push(" WHERE ");
+            read.compare(Model::TABLE, "id", " = ", id);
+            let row: SsoProvider = exec
+                .fetch_optional::<Model>(read)
+                .await?
+                .ok_or_else(|| alibi_core::AuthError::not_found("Provider not found"))?
+                .into();
+            let update = prepare(&row)?;
+            if update.identity_changed {
+                let mut accounts = model::select_model::<S::Account>(exec);
+                accounts.push(" WHERE ");
+                accounts.compare_model::<S::Account>(
+                    <S::Account as SqlxModel>::TABLE,
+                    S::Account::provider_id_column(),
+                    " = ",
+                    provider_id,
+                );
+                accounts.push(" LIMIT 1");
+                if exec.fetch_optional::<S::Account>(accounts).await?.is_some() {
+                    return Err(alibi_core::AuthError::Api {
+                        status: 409,
+                        code: None,
+                        message:
+                            "Cannot change SSO provider identity fields while linked accounts exist"
+                                .into(),
+                    });
+                }
+            }
+            let mut active = ActiveRow::new();
+            active.set("id", id);
+            active.set("issuer", update.provider.issuer);
+            active.set("domain", update.provider.domain);
+            active.set("oidcConfig", update.provider.oidc_config);
+            active.set("samlConfig", update.provider.saml_config);
+            active.set("domainVerified", update.provider.domain_verified);
+            model::update::<Model>(exec, &active)
+                .await
+                .map(|row| row.map(Into::into))
+        }
+        .await;
+        match outcome {
+            Ok(row) => {
+                tx.commit().await?;
+                Ok(row)
+            }
+            Err(error) => {
+                tx.rollback().await?;
+                Err(error)
+            }
+        }
+    }
     async fn delete_sso_provider_and_accounts(
         &self,
         id: &str,

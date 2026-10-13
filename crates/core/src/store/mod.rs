@@ -40,7 +40,7 @@ pub use secondary_storage::RedisAdapter;
 pub use secondary_storage::{CacheAdapter, MemoryCacheAdapter};
 pub(crate) use session_deletion::SessionDeletionHooks;
 pub use session_deletion::{SessionDeletionHook, SessionDeletionWork};
-pub use sso::{SsoProvider, SsoProviderStore};
+pub use sso::{SsoProvider, SsoProviderStore, SsoProviderUpdate, SsoProviderUpdateWork};
 pub use wallets::WalletAddressStore;
 
 pub trait AuthStore<S: AuthSchema>:
