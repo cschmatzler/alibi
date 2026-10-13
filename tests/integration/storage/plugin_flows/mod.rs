@@ -373,3 +373,5 @@ mod oauth_consent;
 mod oauth_consent_list;
 
 mod oauth_consent_read;
+
+mod oauth_consent_update;

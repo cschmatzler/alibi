@@ -4840,6 +4840,28 @@ export function compareValues(
       !/(?:^|\.)(?:metadata|additionalFields|custom|applicationData)(?:\.|$)/.test(path)
     ) {
       if (
+        key === "error_description" &&
+        /^traces\.\d+\.responseErrorBody\.error_description$/.test(path)
+      ) {
+        const errorPath = path.replace(".responseErrorBody.", ".responseBody.");
+        const leftPath = traceEndpoint(normalizedLeft, errorPath);
+        const rightPath = traceEndpoint(normalizedRight, errorPath);
+        const leftOwner = /^unable to provide scopes to (\S+)$/.exec(a)?.[1];
+        const rightOwner = /^unable to provide scopes to (\S+)$/.exec(b)?.[1];
+        if (
+          leftPath === "/__test/server-api/oauth-provider-clients" &&
+          rightPath === leftPath &&
+          leftOwner &&
+          rightOwner &&
+          leftEntities.has(leftOwner) &&
+          rightEntities.has(rightOwner)
+        ) {
+          // Only identities already observed in real entity outputs may alias this rejection target.
+          identity(leftOwner, rightOwner, path, "entity");
+          return;
+        }
+      }
+      if (
         !applicationData &&
         !jwtPayload &&
         (/\.headers\.(?:cookie|set-cookie)$/.test(path) ||
