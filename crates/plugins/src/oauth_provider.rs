@@ -239,6 +239,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
             crate::endpoint::definition(
+                "adminUpdateOAuthClient",
+                "adminUpdateOAuthClient",
+                Some("/admin/oauth2/update-client"),
+                HttpMethod::Patch,
+            ),
+            crate::endpoint::definition(
                 "adminCreateOAuthClient",
                 "adminCreateOAuthClient",
                 Some("/admin/oauth2/create-client"),
@@ -312,7 +318,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
         Ok(EndpointInput {
-            body: if call.operation_id() == "adminCreateOAuthClient" {
+            body: if call.operation_id() == "adminUpdateOAuthClient" {
+                Some(clients::validate_admin_update(call.body())?)
+            } else if call.operation_id() == "adminCreateOAuthClient" {
                 Some(clients::validate_admin_create(call.body())?)
             } else if call.operation_id() == "updateOAuthClient" {
                 Some(clients::validate_update(call.body())?)
@@ -341,6 +349,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "adminUpdateOAuthClient" {
+            return Box::pin(self.update_client(call.body_as()?, call, ctx, true)).await;
+        }
         if call.operation_id() == "adminCreateOAuthClient" {
             return Box::pin(self.admin_create_client(call.body_as()?, call, ctx)).await;
         }
@@ -348,7 +359,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             return Box::pin(self.register_client(call.body(), call, ctx)).await;
         }
         if call.operation_id() == "updateOAuthClient" {
-            return Box::pin(self.update_client(call.body_as()?, call, ctx)).await;
+            return Box::pin(self.update_client(call.body_as()?, call, ctx, false)).await;
         }
         if call.operation_id() == "rotateClientSecret" {
             return Box::pin(self.rotate_client_secret(call.body_as()?, call, ctx)).await;
@@ -399,7 +410,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             let input =
                 alibi_core::utils::json::from_value(clients::validate_update(Some(&body))?)?;
             return Ok(Some(
-                Box::pin(self.update_client(input, req, ctx))
+                Box::pin(self.update_client(input, req, ctx, false))
                     .await?
                     .to_response()?,
             ));

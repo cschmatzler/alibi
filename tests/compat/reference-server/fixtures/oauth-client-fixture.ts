@@ -69,14 +69,24 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     if (input.action === "admin-http") {
       const response = await auth.handler(
-        new Request(`${base.baseURL}${base.basePath ?? "/api/auth"}/admin/oauth2/create-client`, {
-          method: "POST",
-          headers: { ...input.headers, "content-type": "application/json" },
-          body: JSON.stringify(input.body),
-        }),
+        new Request(
+          `${base.baseURL}${base.basePath ?? "/api/auth"}/admin/oauth2/${input.operation === "update" ? "update-client" : "create-client"}`,
+          {
+            method: input.operation === "update" ? "PATCH" : "POST",
+            headers: { ...input.headers, "content-type": "application/json" },
+            body: JSON.stringify(input.body),
+          },
+        ),
       );
       return new Response(JSON.stringify({ status: response.status }), {
         headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "admin-update") {
+      return auth.api.adminUpdateOAuthClient({
+        body: input.body,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
       });
     }
     if (input.action === "admin-create") {

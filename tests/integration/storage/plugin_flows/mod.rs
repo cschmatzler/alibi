@@ -361,3 +361,5 @@ mod oauth_client_update;
 mod oauth_client_registration;
 
 mod oauth_admin_client_creation;
+
+mod oauth_admin_client_update;

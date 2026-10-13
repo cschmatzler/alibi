@@ -634,7 +634,9 @@ fn client_read_metadata(client: alibi_core::store::OAuthClient) -> AuthResult<Va
         json!(client.created_at.timestamp()),
     );
     if client.client_secret.is_some() {
-        _ = output.insert("client_secret_expires_at".into(), json!(0));
+        _ = output
+            .entry("client_secret_expires_at")
+            .or_insert_with(|| json!(0));
     }
     _ = output.remove("client_secret");
     _ = output.remove("client_credentials_scopes");
@@ -1031,13 +1033,30 @@ impl OAuthProviderPlugin {
         ServerEndpoint::new("oauth-provider", "updateOAuthClient")
             .with_body(&json!({"client_id":client_id,"update":update}))
     }
+
     pub(super) async fn update_client<S: AuthSchema>(
         &self,
         input: UpdateClientInput,
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
+        admin: bool,
     ) -> AuthResult<EndpointResponse> {
-        let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
+        let user = if admin {
+            let Some((user, _)) = Box::pin(ctx.require_cached_session(req)).await.ok() else {
+                return Ok(EndpointResponse::error(AuthError::Api {
+                    status: 401,
+                    code: None,
+                    message: String::new(),
+                })
+                .without_error_body()
+                .with_header("Content-Type", "application/json"));
+            };
+            user
+        } else {
+            Box::pin(crate::helpers::ordinary_session(req, ctx))
+                .await?
+                .0
+        };
         let Some(client) = ctx.database.get_oauth_client(&input.client_id).await? else {
             return status_protocol_error(404, "not_found", "client not found");
         };
@@ -1050,12 +1069,45 @@ impl OAuthProviderPlugin {
             .without_error_body()
             .with_header("Content-Type", "application/json"));
         }
-        let updates: serde_json::Map<String, Value> = serde_json::from_value(input.update)?;
+        let mut updates: serde_json::Map<String, Value> = serde_json::from_value(input.update)?;
         if updates.is_empty() {
-            return EndpointResponse::json(&client_read_metadata(client)?);
+            return client_update_response(client, admin);
         }
         let mut merged: serde_json::Map<String, Value> = serde_json::from_value(client.metadata)?;
+        let scopes = updates.remove("client_credentials_scopes");
+        let extensions = updates
+            .remove("metadata")
+            .and_then(|value| value.as_object().cloned());
+        // The pinned TS adapter strips expiresAt because it is absent from the client schema.
+        _ = updates.remove("client_secret_expires_at");
         merged.extend(updates);
+        if let Some(scopes) = scopes.and_then(|value| value.as_array().cloned()) {
+            if let Some(response) = self.admit_credential_scopes(&scopes, &merged)? {
+                return Ok(response);
+            }
+            _ = merged.insert("client_credentials_scopes".into(), json!(scopes));
+        }
+        if let Some(extensions) = extensions {
+            let extensions = extensions
+                .into_iter()
+                .filter(|(name, _)| !RESERVED_METADATA_FIELDS.contains(&name.as_str()))
+                .collect::<serde_json::Map<_, _>>();
+            if !extensions.is_empty() {
+                merged.retain(|name, _| RESERVED_METADATA_FIELDS.contains(&name.as_str()));
+                merged.extend(extensions);
+            }
+        }
+        if !merged
+            .get("grant_types")
+            .and_then(Value::as_array)
+            .is_some_and(|grants| grants.contains(&json!("client_credentials")))
+            || merged
+                .get("token_endpoint_auth_method")
+                .and_then(Value::as_str)
+                == Some("none")
+        {
+            _ = merged.insert("client_credentials_scopes".into(), json!([]));
+        }
         let metadata = match self.admit_metadata(merged, ctx)? {
             Ok(metadata) => Value::Object(metadata),
             Err(response) => return Ok(response),
@@ -1069,7 +1121,7 @@ impl OAuthProviderPlugin {
         else {
             return status_protocol_error(500, "invalid_client", "unable to update client");
         };
-        EndpointResponse::json(&client_read_metadata(client)?)
+        client_update_response(client, admin)
     }
 }
 
@@ -1354,54 +1406,8 @@ impl OAuthProviderPlugin {
             .remove("client_credentials_scopes")
             .and_then(|value| value.as_array().cloned())
             .unwrap_or_default();
-        if !scopes.is_empty() {
-            if !metadata
-                .get("grant_types")
-                .and_then(Value::as_array)
-                .is_some_and(|grants| grants.contains(&json!("client_credentials")))
-            {
-                return status_protocol_error(
-                    400,
-                    "invalid_client_metadata",
-                    "client_credentials_scopes requires the client_credentials grant",
-                );
-            }
-            if metadata
-                .get("token_endpoint_auth_method")
-                .and_then(Value::as_str)
-                == Some("none")
-            {
-                return status_protocol_error(
-                    400,
-                    "invalid_client_metadata",
-                    "public clients cannot be assigned client_credentials scopes",
-                );
-            }
-            let invalid = scopes
-                .iter()
-                .filter_map(Value::as_str)
-                .filter(|scope| {
-                    !self.config.scopes.iter().any(|allowed| allowed == scope)
-                        || ["openid", "profile", "email", "offline_access"].contains(scope)
-                })
-                .collect::<Vec<_>>();
-            if !invalid.is_empty() {
-                return status_protocol_error(
-                    400,
-                    "invalid_scope",
-                    &format!(
-                        "The following client_credentials scopes are invalid: {}",
-                        invalid.join(", ")
-                    ),
-                );
-            }
-            return Ok(EndpointResponse::error(AuthError::Api {
-                status: 401,
-                code: None,
-                message: String::new(),
-            })
-            .without_error_body()
-            .with_header("Content-Type", "application/json"));
+        if let Some(response) = self.admit_credential_scopes(&scopes, &metadata)? {
+            return Ok(response);
         }
         _ = metadata.remove("client_secret_expires_at");
         let extensions = metadata
@@ -1494,3 +1500,140 @@ const RESERVED_METADATA_FIELDS: &[&str] = &[
     "resources",
     "client_credentials_scopes",
 ];
+
+impl OAuthProviderPlugin {
+    fn admit_credential_scopes(
+        &self,
+        scopes: &[Value],
+        metadata: &serde_json::Map<String, Value>,
+    ) -> AuthResult<Option<EndpointResponse>> {
+        if !scopes.is_empty() {
+            if !metadata
+                .get("grant_types")
+                .and_then(Value::as_array)
+                .is_some_and(|grants| grants.contains(&json!("client_credentials")))
+            {
+                return status_protocol_error(
+                    400,
+                    "invalid_client_metadata",
+                    "client_credentials_scopes requires the client_credentials grant",
+                )
+                .map(Some);
+            }
+            if metadata
+                .get("token_endpoint_auth_method")
+                .and_then(Value::as_str)
+                == Some("none")
+            {
+                return status_protocol_error(
+                    400,
+                    "invalid_client_metadata",
+                    "public clients cannot be assigned client_credentials scopes",
+                )
+                .map(Some);
+            }
+            let invalid = scopes
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|scope| {
+                    !self.config.scopes.iter().any(|allowed| allowed == scope)
+                        || ["openid", "profile", "email", "offline_access"].contains(scope)
+                })
+                .collect::<Vec<_>>();
+            if !invalid.is_empty() {
+                return status_protocol_error(
+                    400,
+                    "invalid_scope",
+                    &format!(
+                        "The following client_credentials scopes are invalid: {}",
+                        invalid.join(", ")
+                    ),
+                )
+                .map(Some);
+            }
+            return Ok(Some(
+                EndpointResponse::error(AuthError::Api {
+                    status: 401,
+                    code: None,
+                    message: String::new(),
+                })
+                .without_error_body()
+                .with_header("Content-Type", "application/json"),
+            ));
+        }
+        Ok(None)
+    }
+}
+
+fn client_update_response(
+    client: alibi_core::store::OAuthClient,
+    admin: bool,
+) -> AuthResult<EndpointResponse> {
+    let scopes = client
+        .metadata
+        .get("client_credentials_scopes")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let mut output = client_read_metadata(client)?;
+    if admin {
+        let object = output
+            .as_object_mut()
+            .ok_or_else(|| AuthError::internal("OAuth client metadata must be an object"))?;
+        _ = object.insert("client_credentials_scopes".into(), scopes);
+    }
+    EndpointResponse::json(&output)
+}
+pub(super) fn validate_admin_update(body: Option<&JsValue>) -> AuthResult<JsValue> {
+    let mut output = crate::endpoint::validate_fields(
+        body,
+        "body",
+        &[crate::authentication_helpers::JsonField::string(
+            "client_id",
+            true,
+        )],
+    )?;
+    let mut fields = FIELDS
+        .iter()
+        .copied()
+        .filter(|(name, _)| {
+            ![
+                "token_endpoint_auth_method",
+                "jwks",
+                "jwks_uri",
+                "dpop_bound_access_tokens",
+            ]
+            .contains(name)
+        })
+        .collect::<Vec<_>>();
+    let position = fields
+        .iter()
+        .position(|(name, _)| *name == "response_types")
+        .unwrap_or(fields.len());
+    fields.insert(position, ("client_credentials_scopes", FieldKind::Scopes));
+    fields.extend([
+        ("client_secret_expires_at", FieldKind::Expiration),
+        ("skip_consent", FieldKind::Boolean),
+        ("enable_end_session", FieldKind::Boolean),
+        ("dpop_bound_access_tokens", FieldKind::Boolean),
+        ("metadata", FieldKind::Record),
+    ]);
+    let update = validate_metadata(
+        body.and_then(|body| body.get("update")),
+        "body.update",
+        &fields,
+    )?;
+    if let JsValue::Object(object) = &mut output {
+        _ = object.insert("update".into(), update);
+    }
+    Ok(output)
+}
+impl OAuthProviderPlugin {
+    /// Patch operator-controlled fields of an owned client through the server-only API.
+    pub fn admin_update_oauth_client_endpoint(
+        client_id: &str,
+        update: &impl Serialize,
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("oauth-provider", "adminUpdateOAuthClient")
+            .with_body(&json!({"client_id":client_id,"update":update}))
+    }
+}
