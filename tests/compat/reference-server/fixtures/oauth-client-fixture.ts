@@ -98,6 +98,35 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     const input = await request.json();
     const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
+    if (input.action === "session-row") {
+      const context = await auth.$context;
+      const row = await context.adapter.findOne<{ id: string }>({
+        model: "session",
+        where: [{ field: "token", value: input.token }],
+      });
+      return new Response(JSON.stringify(row ? { id: row.id } : null), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "confirm-logical") {
+      return (auth.api as any).oauth2EndSessionConfirmation({
+        body: { action: "confirm" },
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
+    if (input.action === "logout-http") {
+      const headers = new Headers(input.headers ?? {});
+      headers.set("origin", base.baseURL!);
+      headers.set("content-type", "application/x-www-form-urlencoded");
+      return auth.handler(
+        new Request(`${base.baseURL}${base.basePath ?? "/api/auth"}${input.path}`, {
+          method: input.method,
+          headers,
+          ...(input.method === "POST" ? { body: new URLSearchParams(input.body) } : {}),
+        }),
+      );
+    }
     if (input.action === "signup") {
       return auth.api.signUpEmail({ body: input.body, asResponse: true });
     }
