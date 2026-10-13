@@ -20,7 +20,7 @@ pub(crate) async fn router(config:&AuthConfig,database:DatabaseConnection)->Auth
  let mut row=serde_json::to_value(row).unwrap();if let Some(object)=row.as_object_mut(){_=object.remove("domainVerified");}
  return Json(row).into_response();
  }
- let endpoint=if input["action"]=="signup"{alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("email-password","signUpEmail").with_body(&input["body"]).unwrap()}else{SsoPlugin::register_sso_provider_endpoint(&input["body"]).unwrap()};
+ let endpoint=if input["action"]=="signup"{alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("email-password","signUpEmail").with_body(&input["body"]).unwrap()}else if input["action"]=="get"{alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("sso","getSSOProvider").with_query(&input["query"]).unwrap()}else{SsoPlugin::register_sso_provider_endpoint(&input["body"]).unwrap()};
  let result=auth.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),..Default::default()}).await;
  match result {
  Ok(output)=>output.into_response().unwrap().into_response(),

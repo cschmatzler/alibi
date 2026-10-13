@@ -333,6 +333,7 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
             "oauthClientResource",
             "oauthResource",
             "oauthClient",
+            "ssoProvider",
         ] {
             let _ = database
                 .execute_raw(Statement::from_string(
