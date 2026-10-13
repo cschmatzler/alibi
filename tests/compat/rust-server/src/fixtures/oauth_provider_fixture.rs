@@ -120,7 +120,7 @@ pub(crate) async fn router(
             }
             if input["action"]=="row" {
                 let row=auth.store().get_oauth_client(input["clientId"].as_str().unwrap()).await.unwrap();
-                return axum::Json(row.map(|row|serde_json::json!({"clientId":row.client_id,"userId":row.user_id,"clientName":row.metadata.get("client_name"),"redirectUris":row.metadata.get("redirect_uris"),"client_secret":row.client_secret}))).into_response();
+                return axum::Json(row.map(|row|serde_json::json!({"id":row.id,"clientId":row.client_id,"userId":row.user_id,"clientName":row.metadata.get("client_name"),"redirectUris":row.metadata.get("redirect_uris"),"client_secret":row.client_secret}))).into_response();
             }
             if input["action"]=="token-row" {
                 use base64::Engine as _; use sha2::Digest as _;

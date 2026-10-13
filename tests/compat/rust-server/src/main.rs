@@ -2,6 +2,7 @@ mod account_linking_profiles;
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 mod additional_field_models;
+mod admin_user_model;
 mod fixtures;
 use fixtures::managed_secrets_fixture;
 mod anonymous_user_model;

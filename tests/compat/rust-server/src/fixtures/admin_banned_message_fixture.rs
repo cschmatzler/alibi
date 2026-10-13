@@ -1,6 +1,5 @@
 //! Stored application fields and awaited callbacks on the real admin lifecycle.
-use crate::TestSchema;
-use crate::backend::entities::user::Model;
+use crate::admin_user_model::{ApplicationSchema as TestSchema, Model};
 use alibi::config::CookieCacheConfig;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
@@ -119,6 +118,23 @@ pub(crate) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
 ) -> AuthResult<Router> {
+    use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+    let columns = database
+        .query_all_raw(Statement::from_string(
+            DbBackend::Sqlite,
+            "PRAGMA table_info(user)",
+        ))
+        .await
+        .map_err(|error| AuthError::internal(error.to_string()))?;
+    if !columns.iter().any(|row| {
+        row.try_get::<String>("", "name")
+            .is_ok_and(|name| name == "metadata")
+    }) {
+        database
+            .execute_unprepared("ALTER TABLE user ADD COLUMN metadata JSON")
+            .await
+            .map_err(|error| AuthError::internal(error.to_string()))?;
+    }
     let events_log = Arc::new(Mutex::new(Vec::new()));
     let mut router = Router::new();
     for name in [
@@ -128,6 +144,13 @@ pub(crate) async fn router(
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = config.clone().base_path(&path);
+        let mut field = alibi::field_policy::FieldConfig::new(json!({"type":"json"}));
+        field.input = false;
+        field.returned = false;
+        _ = config
+            .user
+            .additional_fields
+            .insert("metadata".into(), field);
         if name.ends_with("-cache") {
             config = config.session_cookie_cache(CookieCacheConfig {
                 enabled: true,
