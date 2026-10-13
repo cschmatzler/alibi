@@ -9,21 +9,28 @@ use std::io::Read as _;
 backend_tests!(
     sso_logout_uses_acs_session_index_and_retires_session,
     sso_logout_response_retires_proof_and_rejects_external_relay,
-    sso_idp_logout_matches_session_index_before_retiring_session
+    sso_idp_logout_matches_session_index_before_retiring_session,
+    sso_logout_required_signature_preserves_proof_until_trusted_completion
 );
 async fn sso_logout_uses_acs_session_index_and_retires_session<B: Backend>(db: Db) -> TestResult {
-    logout_flow::<B>(db, false).await
+    logout_flow::<B>(db, false, false).await
 }
 async fn sso_logout_response_retires_proof_and_rejects_external_relay<B: Backend>(
     db: Db,
 ) -> TestResult {
-    logout_flow::<B>(db, true).await
+    logout_flow::<B>(db, true, false).await
 }
-async fn logout_flow<B: Backend>(db: Db, complete: bool) -> TestResult {
+async fn sso_logout_required_signature_preserves_proof_until_trusted_completion<B: Backend>(
+    db: Db,
+) -> TestResult {
+    logout_flow::<B>(db, true, true).await
+}
+async fn logout_flow<B: Backend>(db: Db, complete: bool, signed: bool) -> TestResult {
     let (connection, store) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(SsoPlugin::with_config(SsoConfig {
             saml_enable_single_logout: true,
+            saml_want_logout_response_signed: signed,
             ..Default::default()
         }))
         .build()
@@ -180,7 +187,36 @@ async fn logout_flow<B: Backend>(db: Db, complete: bool) -> TestResult {
                 && cookie.contains("Max-Age=0"))
     );
     if complete {
-        let response=base64::engine::general_purpose::STANDARD.encode(format!(r#"<samlp:LogoutResponse xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_idp-logout-response" Version="2.0" IssueInstant="{}" InResponseTo="{id}"><saml:Issuer>https://idp.example.test/entity</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status></samlp:LogoutResponse>"#,chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis,true)));
+        let response_xml = format!(
+            r#"<samlp:LogoutResponse xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_idp-logout-response" Version="2.0" IssueInstant="{}" InResponseTo="{id}"><saml:Issuer>https://idp.example.test/entity</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status></samlp:LogoutResponse>"#,
+            chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+        );
+        let mut response = base64::engine::general_purpose::STANDARD.encode(&response_xml);
+        if signed {
+            for rejected_response in [response.clone(), idp::signed_logout(&response_xml, true)?] {
+                let rejected = Box::pin(
+                    auth.dispatch_endpoint(
+                        ServerEndpoint::<Value>::new("sso", "sloEndpoint")
+                            .with_params(&json!({"providerId":"logout-provider"}))?
+                            .with_body(&json!({"SAMLResponse":rejected_response}))?,
+                        EndpointOptions {
+                            method: Some(HttpMethod::Post),
+                            ..Default::default()
+                        },
+                    ),
+                )
+                .await
+                .unwrap_err();
+                assert_eq!(rejected.error.status_code(), 400);
+                let retained = store
+                    .get_latest_verification_by_identifier(&format!("saml-logout-request:{id}"))
+                    .await?
+                    .ok_or("Rejected signature consumed logout proof")?;
+                assert_eq!(retained.value(), proof.value());
+                assert_eq!(retained.expires_at(), proof.expires_at());
+            }
+            response = idp::signed_logout(&response_xml, false)?;
+        }
         let endpoint = ServerEndpoint::<Value>::new("sso", "sloEndpoint")
             .with_params(&json!({"providerId":"logout-provider"}))?
             .with_body(

@@ -51,6 +51,16 @@ pub(super) fn grant(
     let xml = format!(
         r#"<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="{response_id}" Version="2.0" IssueInstant="{instant}" Destination="{recipient}" InResponseTo="{request_id}"><saml:Issuer>https://idp.example.test/entity</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status><saml:Assertion ID="{assertion_id}" Version="2.0" IssueInstant="{instant}"><saml:Issuer>https://idp.example.test/entity</saml:Issuer>{signature}<saml:Subject><saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">{email}</saml:NameID><saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"><saml:SubjectConfirmationData InResponseTo="{request_id}" Recipient="{recipient}" NotOnOrAfter="{expires}"/></saml:SubjectConfirmation></saml:Subject><saml:Conditions NotBefore="{before}" NotOnOrAfter="{expires}"><saml:AudienceRestriction><saml:Audience>{issuer}</saml:Audience></saml:AudienceRestriction></saml:Conditions><saml:AuthnStatement AuthnInstant="{instant}" SessionIndex="session-index"><saml:AuthnContext><saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</saml:AuthnContextClassRef></saml:AuthnContext></saml:AuthnStatement><saml:AttributeStatement><saml:Attribute Name="email"><saml:AttributeValue>{email}</saml:AttributeValue></saml:Attribute><saml:Attribute Name="displayName"><saml:AttributeValue>SSO employee</saml:AttributeValue></saml:Attribute></saml:AttributeStatement></saml:Assertion></samlp:Response>"#
     );
+    let signed = sign_xml(&xml, wrong_key)?;
+    Ok(
+        serde_json::json!({"SAMLResponse":base64::engine::general_purpose::STANDARD.encode(signed),"RelayState":query["RelayState"],"assertionId":assertion_id,"requestId":request_id}),
+    )
+}
+
+fn sign_xml(
+    xml: &str,
+    wrong_key: bool,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let private = if wrong_key {
         include_bytes!("../fixtures/one-tap/wrong-private-key.pem").as_slice()
     } else {
@@ -59,8 +69,18 @@ pub(super) fn grant(
     let key = bergshamra::keys::loader::load_rsa_private_pem(private)?;
     let mut keys = bergshamra::KeysManager::new();
     keys.add_key(key);
-    let signed = bergshamra::sign(&bergshamra::DsigContext::new(keys), &xml)?;
-    Ok(
-        serde_json::json!({"SAMLResponse":base64::engine::general_purpose::STANDARD.encode(signed),"RelayState":query["RelayState"],"assertionId":assertion_id,"requestId":request_id}),
-    )
+    Ok(bergshamra::sign(&bergshamra::DsigContext::new(keys), xml)?)
+}
+pub(super) fn signed_logout(
+    xml: &str,
+    wrong_key: bool,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let doc = bergshamra::xml::uppsala::parse(xml)?;
+    let root = doc.document_element().ok_or("Logout root missing")?;
+    let id = quick_xml::escape::escape(doc.get_attribute(root, "ID").ok_or("Logout ID missing")?);
+    let signature = format!(
+        r##"<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><ds:Reference URI="#{id}"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue/></ds:Reference></ds:SignedInfo><ds:SignatureValue/></ds:Signature>"##
+    );
+    let xml = xml.replacen("</saml:Issuer>", &format!("</saml:Issuer>{signature}"), 1);
+    Ok(base64::engine::general_purpose::STANDARD.encode(sign_xml(&xml, wrong_key)?))
 }

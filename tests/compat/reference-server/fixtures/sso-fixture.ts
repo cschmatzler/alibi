@@ -5,7 +5,7 @@ import { username } from "better-auth/plugins";
 
 import { ssoDnsFixture } from "./sso-dns-fixture";
 import { ssoOidcFixture } from "./sso-oidc-fixture";
-import { samlGrant } from "./sso-saml-grant";
+import { samlGrant, signedLogout } from "./sso-saml-grant";
 export async function ssoFixture(base: BetterAuthOptions) {
   const idp = ssoOidcFixture();
   const options = {
@@ -32,23 +32,33 @@ export async function ssoFixture(base: BetterAuthOptions) {
     ...options,
     plugins: [username(), sso({ saml: { enableSingleLogout: true } })],
   };
+  const signedSloOptions = {
+    ...options,
+    plugins: [
+      username(),
+      sso({ saml: { enableSingleLogout: true, wantLogoutResponseSigned: true } }),
+    ],
+  };
   const instances = new Map([
     ["default", betterAuth(options)],
     ["domain", betterAuth(domainOptions)],
     ["shared", betterAuth(sharedOptions)],
     ["slo", betterAuth(sloOptions)],
+    ["signed-slo", betterAuth(signedSloOptions)],
   ]);
 
   const handle = async (request: Request) => {
     const input = await request.json();
     const mode =
-      input.mode === "domain"
-        ? "domain"
-        : input.mode === "shared"
-          ? "shared"
-          : input.mode === "slo"
-            ? "slo"
-            : "default";
+      input.mode === "signed-slo"
+        ? "signed-slo"
+        : input.mode === "domain"
+          ? "domain"
+          : input.mode === "shared"
+            ? "shared"
+            : input.mode === "slo"
+              ? "slo"
+              : "default";
     const auth = instances.get(mode)!;
     if (input.action === "dns-records") {
       dns.setRecords(input.records);
@@ -60,6 +70,12 @@ export async function ssoFixture(base: BetterAuthOptions) {
       return new Response(JSON.stringify(dns.queries()), {
         headers: { "content-type": "application/json" },
       });
+    }
+    if (input.action === "sign-saml-logout") {
+      return new Response(
+        JSON.stringify({ SAMLResponse: await signedLogout(input.xml, Boolean(input.wrongKey)) }),
+        { headers: { "content-type": "application/json" } },
+      );
     }
     if (input.action === "saml-grant") {
       return new Response(
@@ -285,13 +301,15 @@ export async function ssoFixture(base: BetterAuthOptions) {
       instances.set(
         mode,
         betterAuth(
-          mode === "domain"
-            ? domainOptions
-            : mode === "shared"
-              ? sharedOptions
-              : mode === "slo"
-                ? sloOptions
-                : options,
+          mode === "signed-slo"
+            ? signedSloOptions
+            : mode === "domain"
+              ? domainOptions
+              : mode === "shared"
+                ? sharedOptions
+                : mode === "slo"
+                  ? sloOptions
+                  : options,
         ),
       );
       return new Response(JSON.stringify({ restarted: true }), {
