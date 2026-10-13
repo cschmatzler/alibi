@@ -27,7 +27,7 @@ async fn build<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthResult<Alibi<S>> {
 }
 ```
 
-Install Alibi `0.7.0` from [crates.io](https://crates.io/crates/alibi). See [Installation](/installation/) for the library dependency and matching schema generator.
+Install Alibi `0.8.0` from [crates.io](https://crates.io/crates/alibi). See [Installation](/installation/) for the library dependency and matching schema generator.
 
 ## How a request flows
 
