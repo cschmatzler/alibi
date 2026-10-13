@@ -267,7 +267,11 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
         match route.path.as_str() {
-            "/oauth2/end-session/confirm" => vec!["application/x-www-form-urlencoded"],
+            "/oauth2/end-session/confirm"
+            | "/oauth2/token"
+            | "/oauth2/introspect"
+            | "/oauth2/revoke"
+            | "/oauth2/userinfo" => vec!["application/x-www-form-urlencoded"],
             "/oauth2/end-session" => vec!["application/json", "application/x-www-form-urlencoded"],
             _ => vec!["application/json"],
         }
