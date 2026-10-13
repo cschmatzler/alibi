@@ -105,6 +105,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         JSON.stringify(
           row
             ? {
+                id: row.id,
                 clientId: row.clientId,
                 userId: row.userId ?? null,
                 clientName: row.name,
@@ -174,7 +175,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       const { createHash } = await import("node:crypto");
       const context = await auth.$context;
       const row = (await context.adapter.findOne({
-        model: "oauthAccessToken",
+        model: input.kind === "refresh" ? "oauthRefreshToken" : "oauthAccessToken",
         where: [
           { field: "token", value: createHash("sha256").update(input.token).digest("base64url") },
         ],
@@ -183,6 +184,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         JSON.stringify(
           row
             ? {
+                id: row.id,
                 clientId: row.clientId,
                 userId: row.userId,
                 sessionId: row.sessionId,
@@ -191,6 +193,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
                 expiresAt: row.expiresAt,
                 authorizationCodeId: row.authorizationCodeId,
                 token: row.token,
+                refreshId: row.refreshId ?? null,
+                authTime: row.authTime ?? null,
+                resources: row.resources ?? null,
               }
             : null,
         ),

@@ -395,3 +395,5 @@ mod oauth_resource_unlink;
 mod oauth_continuation;
 
 mod oauth_token;
+
+mod oauth_offline_tokens;

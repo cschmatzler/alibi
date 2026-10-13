@@ -247,13 +247,73 @@ impl OAuthProviderPlugin {
         let issued = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| alibi_core::AuthError::internal("Invalid token issue time"))?;
         let expires = issued + chrono::Duration::seconds(3600);
-        let token = rand::RngExt::sample_iter(rand::rng(), rand::distr::Alphanumeric)
-            .map(char::from)
-            .filter(char::is_ascii_alphabetic)
-            .take(32)
-            .collect::<String>();
-        _=ctx.database.create_oauth_token(OAuthTokenKind::Access,CreateOAuthToken {token:URL_SAFE_NO_PAD.encode(Sha256::digest(&token)),client_id,user_id:Some(user_id.into()),session_id:Some(session_id.into()),authorization_code_id:Some(identifier),metadata:json!({"scopes":scope.split(' ').collect::<Vec<_>>(),"resources":value.get("resource").unwrap_or(&Value::Null)}),created_at:issued,expires_at:expires}).await?;
-        Ok(EndpointResponse::json(&json!({"access_token":token,"expires_in":3600,"expires_at":expires.timestamp(),"token_type":"Bearer","scope":scope}))?.with_header("Cache-Control","no-store").with_header("Pragma","no-cache"))
+
+        let random_token = || {
+            rand::RngExt::sample_iter(rand::rng(), rand::distr::Alphanumeric)
+                .map(char::from)
+                .filter(char::is_ascii_alphabetic)
+                .take(32)
+                .collect::<String>()
+        };
+        let scopes = scope.split(' ').collect::<Vec<_>>();
+        let refresh_allowed = client
+            .metadata
+            .get("grant_types")
+            .and_then(Value::as_array)
+            .is_none_or(|grants| grants.iter().any(|g| g == "refresh_token"));
+        let resources = value
+            .get("resource")
+            .filter(|value| value.as_array().is_none_or(|values| !values.is_empty()))
+            .cloned()
+            .unwrap_or(Value::Null);
+        let refresh = if refresh_allowed && scopes.contains(&"offline_access") {
+            let token = random_token();
+            let auth_time = value
+                .get("authTime")
+                .and_then(Value::as_i64)
+                .and_then(chrono::DateTime::from_timestamp_millis);
+            let row = ctx.database.create_oauth_token(OAuthTokenKind::Refresh,CreateOAuthToken {
+                token:URL_SAFE_NO_PAD.encode(Sha256::digest(&token)),client_id:client_id.clone(),user_id:Some(user_id.into()),session_id:Some(session_id.into()),authorization_code_id:Some(identifier.clone()),
+                metadata:json!({"scopes":scopes,"resources":resources,"authTime":auth_time}),created_at:issued,expires_at:issued+chrono::Duration::seconds(2_592_000)
+            }).await?;
+            Some((row.id, token))
+        } else {
+            None
+        };
+        let token = random_token();
+        let mut metadata = json!({"scopes":scopes,"resources":resources});
+        if let Some((id, _)) = &refresh {
+            _ = metadata
+                .as_object_mut()
+                .ok_or_else(|| alibi_core::AuthError::internal("Invalid access-token metadata"))?
+                .insert("refreshId".into(), json!(id));
+        }
+        _ = ctx
+            .database
+            .create_oauth_token(
+                OAuthTokenKind::Access,
+                CreateOAuthToken {
+                    token: URL_SAFE_NO_PAD.encode(Sha256::digest(&token)),
+                    client_id,
+                    user_id: Some(user_id.into()),
+                    session_id: Some(session_id.into()),
+                    authorization_code_id: Some(identifier),
+                    metadata,
+                    created_at: issued,
+                    expires_at: expires,
+                },
+            )
+            .await?;
+        let mut response = json!({"access_token":token,"expires_in":3600,"expires_at":expires.timestamp(),"token_type":"Bearer","scope":scope});
+        if let Some((_, token)) = refresh {
+            _ = response
+                .as_object_mut()
+                .ok_or_else(|| alibi_core::AuthError::internal("Invalid token response"))?
+                .insert("refresh_token".into(), json!(token));
+        }
+        Ok(EndpointResponse::json(&response)?
+            .with_header("Cache-Control", "no-store")
+            .with_header("Pragma", "no-cache"))
     }
 }
 fn error(status: u16, code: &str, description: &str) -> AuthResult<EndpointResponse> {
