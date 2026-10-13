@@ -11,7 +11,57 @@ use alibi_core::{
 use async_trait::async_trait;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QuerySelect, Set};
 #[async_trait]
-impl<S: AuthSchema> SsoProviderStore for SeaOrmStore<S> {
+impl<S: AuthSchema> SsoProviderStore for SeaOrmStore<S>
+where
+    S::Account: crate::schema::SeaOrmAccountModel,
+{
+    async fn delete_sso_provider_and_accounts(
+        &self,
+        id: &str,
+        provider_id: &str,
+    ) -> AuthResult<bool> {
+        use crate::schema::SeaOrmAccountModel;
+        use sea_orm::TransactionTrait;
+        let tx = self.scoped_connection().begin().await.map_err(map_db_err)?;
+        let outcome = async {
+            let locked = Entity::update_many()
+                .col_expr(
+                    Column::ProviderId,
+                    sea_orm::sea_query::Expr::value(provider_id),
+                )
+                .filter(Column::Id.eq(id))
+                .filter(Column::ProviderId.eq(provider_id))
+                .exec(&tx)
+                .await
+                .map_err(map_db_err)?;
+            if locked.rows_affected == 0 {
+                return Ok(false);
+            }
+            _ = <S::Account as SeaOrmAccountModel>::Entity::delete_many()
+                .filter(S::Account::provider_id_column().eq(provider_id))
+                .exec(&tx)
+                .await
+                .map_err(map_db_err)?;
+            _ = Entity::delete_many()
+                .filter(Column::Id.eq(id))
+                .filter(Column::ProviderId.eq(provider_id))
+                .exec(&tx)
+                .await
+                .map_err(map_db_err)?;
+            Ok(true)
+        }
+        .await;
+        match outcome {
+            Ok(deleted) => {
+                tx.commit().await.map_err(map_db_err)?;
+                Ok(deleted)
+            }
+            Err(error) => {
+                tx.rollback().await.map_err(map_db_err)?;
+                Err(error)
+            }
+        }
+    }
     async fn list_sso_providers(&self) -> AuthResult<Vec<SsoProvider>> {
         Entity::find()
             .limit(

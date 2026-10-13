@@ -777,6 +777,15 @@ impl<S: AuthSchema> crate::store::OAuthClientStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
+    async fn delete_sso_provider_and_accounts(
+        &self,
+        id: &str,
+        provider_id: &str,
+    ) -> AuthResult<bool> {
+        self.inner
+            .delete_sso_provider_and_accounts(id, provider_id)
+            .await
+    }
     async fn list_sso_providers(&self) -> AuthResult<Vec<crate::store::SsoProvider>> {
         self.inner.list_sso_providers().await
     }

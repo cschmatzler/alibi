@@ -17,6 +17,16 @@ pub struct SsoProvider {
 }
 #[async_trait]
 pub trait SsoProviderStore: Send + Sync {
+    /// Atomically retire a provider and every account linked to its identity namespace.
+    async fn delete_sso_provider_and_accounts(
+        &self,
+        _id: &str,
+        _provider_id: &str,
+    ) -> AuthResult<bool> {
+        Err(AuthError::config(
+            "SSO persistence is not supported by this store",
+        ))
+    }
     async fn list_sso_providers(&self) -> AuthResult<Vec<SsoProvider>> {
         Err(AuthError::config(
             "SSO persistence is not supported by this store",
