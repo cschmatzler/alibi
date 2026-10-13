@@ -52,4 +52,11 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
             .map(TryInto::try_into)
             .collect()
     }
+    async fn delete_oauth_client(&self, client_id: &str) -> AuthResult<()> {
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident(Model::TABLE);
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "client_id", " = ", client_id);
+        self.exec().execute(sql).await.map(|_| ())
+    }
 }

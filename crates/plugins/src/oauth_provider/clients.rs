@@ -808,3 +808,50 @@ impl OAuthProviderPlugin {
         EndpointResponse::json(&output)
     }
 }
+
+impl OAuthProviderPlugin {
+    /// Delete a durable client owned by the authenticated user.
+    pub fn delete_oauth_client_endpoint(client_id: &str) -> AuthResult<ServerEndpoint<()>> {
+        ServerEndpoint::new("oauth-provider", "deleteOAuthClient")
+            .with_body(&json!({"client_id":client_id}))
+    }
+    pub(super) async fn delete_client<S: AuthSchema>(
+        &self,
+        input: ReadClientInput,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
+        let Some(client) = ctx.database.get_oauth_client(&input.client_id).await? else {
+            return Ok(EndpointResponse::error(AuthError::Api {
+                status: 404,
+                code: None,
+                message: String::new(),
+            })
+            .with_error_body(alibi_core::utils::json::parse_value(
+                r#"{"error":"not_found","error_description":"client not found"}"#,
+            )?));
+        };
+        if client.user_id.as_deref() != Some(user.id().as_ref()) {
+            return Ok(EndpointResponse::error(AuthError::Api {
+                status: 401,
+                code: None,
+                message: String::new(),
+            })
+            .without_error_body()
+            .with_header("Content-Type", "application/json"));
+        }
+        ctx.database.delete_oauth_client(&input.client_id).await?;
+        Ok(EndpointResponse::empty().with_header("Content-Type", "application/json"))
+    }
+}
+pub(super) fn validate_delete(body: Option<&JsValue>) -> AuthResult<JsValue> {
+    crate::endpoint::validate_fields(
+        body,
+        "body",
+        &[crate::authentication_helpers::JsonField::string(
+            "client_id",
+            true,
+        )],
+    )
+}

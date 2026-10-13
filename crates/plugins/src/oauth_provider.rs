@@ -230,10 +230,17 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             AuthRoute::get("/oauth2/get-client", "getOAuthClient"),
             AuthRoute::get("/oauth2/public-client", "getOAuthClientPublic"),
             AuthRoute::get("/oauth2/get-clients", "getOAuthClients"),
+            AuthRoute::post("/oauth2/delete-client", "deleteOAuthClient"),
         ]
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "deleteOAuthClient",
+                "deleteOAuthClient",
+                Some("/oauth2/delete-client"),
+                HttpMethod::Post,
+            ),
             crate::endpoint::definition(
                 "getOAuthClients",
                 "getOAuthClients",
@@ -278,7 +285,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
         Ok(EndpointInput {
-            body: if call.operation_id() == "createOAuthClient" {
+            body: if call.operation_id() == "deleteOAuthClient" {
+                Some(clients::validate_delete(call.body())?)
+            } else if call.operation_id() == "createOAuthClient" {
                 Some(clients::validate(call.body())?)
             } else {
                 call.body().cloned()
@@ -298,6 +307,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "deleteOAuthClient" {
+            return Box::pin(self.delete_client(call.body_as()?, call, ctx)).await;
+        }
         if call.operation_id() == "getOAuthClients" {
             return Box::pin(self.list_clients(call, ctx)).await;
         }
@@ -328,6 +340,16 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/oauth2/delete-client" && *req.method() == HttpMethod::Post {
+            let body: alibi_core::utils::json::JsValue = req.body_as_json()?;
+            let input =
+                alibi_core::utils::json::from_value(clients::validate_delete(Some(&body))?)?;
+            return Ok(Some(
+                Box::pin(self.delete_client(input, req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
         if req.path() == "/oauth2/get-clients" && *req.method() == HttpMethod::Get {
             return Ok(Some(
                 Box::pin(self.list_clients(req, ctx)).await?.to_response()?,

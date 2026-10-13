@@ -39,6 +39,13 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         { headers: { "content-type": "application/json" } },
       );
     }
+    if (input.action === "delete") {
+      return auth.api.deleteOAuthClient({
+        body: input.body,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
     if (input.action === "list") {
       return auth.api.getOAuthClients({
         headers: new Headers(input.headers ?? {}),
