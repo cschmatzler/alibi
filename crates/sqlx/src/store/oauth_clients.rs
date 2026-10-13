@@ -10,6 +10,234 @@ use alibi_core::{
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
+    async fn delete_oauth_client_resource(
+        &self,
+        client_id: &str,
+        resource_id: &str,
+    ) -> AuthResult<()> {
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident(super::entities::oauth_client_resource::Model::TABLE);
+        sql.push(" WHERE ");
+        sql.compare(
+            super::entities::oauth_client_resource::Model::TABLE,
+            "clientId",
+            " = ",
+            client_id,
+        );
+        sql.push(" AND ");
+        sql.compare(
+            super::entities::oauth_client_resource::Model::TABLE,
+            "resourceId",
+            " = ",
+            resource_id,
+        );
+        self.exec().execute(sql).await.map(|_| ())
+    }
+    async fn create_oauth_client_resource(
+        &self,
+        data: alibi_core::store::CreateOAuthClientResource,
+    ) -> AuthResult<alibi_core::store::OAuthClientResource> {
+        let mut active = ActiveRow::new();
+        active.set(
+            "id",
+            self.generated_id(
+                self.exec(),
+                "oauthClientResource",
+                "oauthClientResource",
+                "id",
+            )
+            .await?
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        );
+        active.set("clientId", data.client_id);
+        active.set("resourceId", data.resource_id);
+        active.set("metadata", Option::<String>::None);
+        active.set("createdAt", Some(data.created_at));
+        model::insert::<super::entities::oauth_client_resource::Model>(self.exec(), &active)
+            .await?
+            .try_into()
+    }
+    async fn delete_oauth_resource(&self, identifier: &str) -> AuthResult<()> {
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident(super::entities::oauth_resource::Model::TABLE);
+        sql.push(" WHERE ");
+        sql.compare(
+            super::entities::oauth_resource::Model::TABLE,
+            "identifier",
+            " = ",
+            identifier,
+        );
+        self.exec().execute(sql).await.map(|_| ())
+    }
+    async fn update_oauth_resource(
+        &self,
+        identifier: &str,
+        metadata: serde_json::Value,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<alibi_core::store::OAuthResource>> {
+        let Some(row) = self.get_oauth_resource(identifier).await? else {
+            return Ok(None);
+        };
+        let mut active = ActiveRow::new();
+        active.set("id", row.id);
+        let fields =
+            super::entities::oauth_resource::Model::columns_from_metadata(metadata)?.into_active();
+        for (column, value) in fields.present() {
+            if !["id", "identifier", "createdAt", "updatedAt"].contains(&column) {
+                active.set(column, value.clone());
+            }
+        }
+        active.set("updatedAt", updated_at);
+        model::update::<super::entities::oauth_resource::Model>(self.exec(), &active)
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+    }
+    async fn list_oauth_resources(&self) -> AuthResult<Vec<alibi_core::store::OAuthResource>> {
+        let mut sql = model::select_model::<super::entities::oauth_resource::Model>(self.exec());
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
+        self.exec()
+            .fetch_all::<super::entities::oauth_resource::Model>(sql)
+            .await?
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect()
+    }
+    async fn list_oauth_client_resources(
+        &self,
+        client_id: &str,
+    ) -> AuthResult<Vec<alibi_core::store::OAuthClientResource>> {
+        let mut sql =
+            model::select_model::<super::entities::oauth_client_resource::Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare(
+            super::entities::oauth_client_resource::Model::TABLE,
+            "clientId",
+            " = ",
+            client_id,
+        );
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
+        self.exec()
+            .fetch_all::<super::entities::oauth_client_resource::Model>(sql)
+            .await?
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect()
+    }
+    async fn create_oauth_resource(
+        &self,
+        data: alibi_core::store::CreateOAuthResource,
+    ) -> AuthResult<alibi_core::store::OAuthResource> {
+        let mut active = ActiveRow::new();
+        active.set(
+            "id",
+            self.generated_id(self.exec(), "oauthResource", "oauthResource", "id")
+                .await?
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        );
+        active.set("identifier", data.identifier);
+        let fields = super::entities::oauth_resource::Model::columns_from_metadata(data.metadata)?
+            .into_active();
+        for (column, value) in fields.present() {
+            if !["id", "identifier", "createdAt", "updatedAt"].contains(&column) {
+                active.set(column, value.clone());
+            }
+        }
+        active.set("createdAt", data.created_at);
+        active.set("updatedAt", data.created_at);
+        model::insert::<super::entities::oauth_resource::Model>(self.exec(), &active)
+            .await?
+            .try_into()
+    }
+    async fn get_oauth_resource(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<alibi_core::store::OAuthResource>> {
+        let mut sql = model::select_model::<super::entities::oauth_resource::Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare(
+            super::entities::oauth_resource::Model::TABLE,
+            "identifier",
+            " = ",
+            identifier,
+        );
+        model::limit_one(&mut sql);
+        self.exec()
+            .fetch_optional::<super::entities::oauth_resource::Model>(sql)
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+    }
+    async fn create_oauth_consent(
+        &self,
+        data: alibi_core::store::CreateOAuthConsent,
+    ) -> AuthResult<alibi_core::store::OAuthConsent> {
+        let mut active = ActiveRow::new();
+        active.set(
+            "id",
+            self.generated_id(self.exec(), "oauthConsent", "oauthConsent", "id")
+                .await?
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        );
+        active.set("clientId", data.client_id);
+        active.set("userId", data.user_id);
+        let fields = super::entities::oauth_consent::Model::columns_from_metadata(data.metadata)?
+            .into_active();
+        for (column, value) in fields.present() {
+            if !["id", "clientId", "userId", "createdAt", "updatedAt"].contains(&column) {
+                active.set(column, value.clone());
+            }
+        }
+        active.set("createdAt", data.created_at);
+        active.set("updatedAt", data.created_at);
+        model::insert::<super::entities::oauth_consent::Model>(self.exec(), &active)
+            .await?
+            .try_into()
+    }
+    async fn list_oauth_consents_by_user(
+        &self,
+        user_id: &str,
+    ) -> AuthResult<Vec<alibi_core::store::OAuthConsent>> {
+        let mut sql = model::select_model::<super::entities::oauth_consent::Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare(
+            super::entities::oauth_consent::Model::TABLE,
+            "userId",
+            " = ",
+            user_id,
+        );
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
+        self.exec()
+            .fetch_all::<super::entities::oauth_consent::Model>(sql)
+            .await?
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect()
+    }
+    async fn update_oauth_consent_metadata(
+        &self,
+        id: &str,
+        metadata: serde_json::Value,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<alibi_core::store::OAuthConsent>> {
+        let mut active = ActiveRow::new();
+        active.set("id", id.to_owned());
+        let fields =
+            super::entities::oauth_consent::Model::columns_from_metadata(metadata)?.into_active();
+        for (column, value) in fields.present() {
+            if !["id", "clientId", "userId", "createdAt", "updatedAt"].contains(&column) {
+                active.set(column, value.clone());
+            }
+        }
+        active.set("updatedAt", updated_at);
+        model::update::<super::entities::oauth_consent::Model>(self.exec(), &active)
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+    }
     async fn create_oauth_client(&self, data: CreateOAuthClient) -> AuthResult<OAuthClient> {
         let mut active = ActiveRow::new();
         active.set(
@@ -42,6 +270,25 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
             .await?
             .try_into()
     }
+    async fn get_oauth_consent(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<alibi_core::store::OAuthConsent>> {
+        let mut sql = model::select_model::<super::entities::oauth_consent::Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare(
+            super::entities::oauth_consent::Model::TABLE,
+            "id",
+            " = ",
+            id,
+        );
+        model::limit_one(&mut sql);
+        self.exec()
+            .fetch_optional::<super::entities::oauth_consent::Model>(sql)
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+    }
     async fn get_oauth_client(&self, client_id: &str) -> AuthResult<Option<OAuthClient>> {
         let mut sql = model::select_model::<Model>(self.exec());
         sql.push(" WHERE ");
@@ -65,6 +312,18 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
             .into_iter()
             .map(TryInto::try_into)
             .collect()
+    }
+    async fn delete_oauth_consent(&self, id: &str) -> AuthResult<()> {
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident(super::entities::oauth_consent::Model::TABLE);
+        sql.push(" WHERE ");
+        sql.compare(
+            super::entities::oauth_consent::Model::TABLE,
+            "id",
+            " = ",
+            id,
+        );
+        self.exec().execute(sql).await.map(|_| ())
     }
     async fn delete_oauth_client(&self, client_id: &str) -> AuthResult<()> {
         let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");

@@ -580,6 +580,83 @@ impl<S: AuthSchema> WalletAddressStore for PluginStore<S> {
 
 #[async_trait::async_trait]
 impl<S: AuthSchema> crate::store::OAuthClientStore for PluginStore<S> {
+    async fn delete_oauth_client_resource(
+        &self,
+        client_id: &str,
+        resource_id: &str,
+    ) -> AuthResult<()> {
+        self.inner
+            .delete_oauth_client_resource(client_id, resource_id)
+            .await
+    }
+    async fn create_oauth_client_resource(
+        &self,
+        data: crate::store::CreateOAuthClientResource,
+    ) -> AuthResult<crate::store::OAuthClientResource> {
+        self.inner.create_oauth_client_resource(data).await
+    }
+    async fn delete_oauth_resource(&self, identifier: &str) -> AuthResult<()> {
+        self.inner.delete_oauth_resource(identifier).await
+    }
+    async fn update_oauth_resource(
+        &self,
+        identifier: &str,
+        metadata: serde_json::Value,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<crate::store::OAuthResource>> {
+        self.inner
+            .update_oauth_resource(identifier, metadata, updated_at)
+            .await
+    }
+    async fn list_oauth_resources(&self) -> AuthResult<Vec<crate::store::OAuthResource>> {
+        self.inner.list_oauth_resources().await
+    }
+    async fn list_oauth_client_resources(
+        &self,
+        client_id: &str,
+    ) -> AuthResult<Vec<crate::store::OAuthClientResource>> {
+        self.inner.list_oauth_client_resources(client_id).await
+    }
+    async fn create_oauth_resource(
+        &self,
+        data: crate::store::CreateOAuthResource,
+    ) -> AuthResult<crate::store::OAuthResource> {
+        self.inner.create_oauth_resource(data).await
+    }
+    async fn get_oauth_resource(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<crate::store::OAuthResource>> {
+        self.inner.get_oauth_resource(identifier).await
+    }
+    async fn delete_oauth_consent(&self, id: &str) -> AuthResult<()> {
+        self.inner.delete_oauth_consent(id).await
+    }
+    async fn get_oauth_consent(&self, id: &str) -> AuthResult<Option<crate::store::OAuthConsent>> {
+        self.inner.get_oauth_consent(id).await
+    }
+    async fn create_oauth_consent(
+        &self,
+        data: crate::store::CreateOAuthConsent,
+    ) -> AuthResult<crate::store::OAuthConsent> {
+        self.inner.create_oauth_consent(data).await
+    }
+    async fn list_oauth_consents_by_user(
+        &self,
+        user_id: &str,
+    ) -> AuthResult<Vec<crate::store::OAuthConsent>> {
+        self.inner.list_oauth_consents_by_user(user_id).await
+    }
+    async fn update_oauth_consent_metadata(
+        &self,
+        id: &str,
+        metadata: serde_json::Value,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<crate::store::OAuthConsent>> {
+        self.inner
+            .update_oauth_consent_metadata(id, metadata, updated_at)
+            .await
+    }
     async fn create_oauth_client(
         &self,
         data: crate::store::CreateOAuthClient,

@@ -143,6 +143,28 @@ export function compareValues(
   };
   const normalizedLeft = normalizeClientValue(left);
   const normalizedRight = normalizeClientValue(right);
+  const authorizationSessions = (root: unknown) => {
+    const sessions = new Map<string, { userId: string; createdAt: number }>();
+    const observed =
+      record(root) && record(root.observation) ? root.observation.authorizationSession : undefined;
+    if (record(observed) && record(observed.session)) {
+      const session = observed.session;
+      if (
+        typeof session.id === "string" &&
+        typeof session.userId === "string" &&
+        typeof session.createdAt === "string"
+      ) {
+        const createdAt = Date.parse(session.createdAt);
+        if (Number.isFinite(createdAt)) {
+          sessions.set(session.id, { userId: session.userId, createdAt });
+        }
+      }
+    }
+    return sessions;
+  };
+  const leftAuthorizationSessions = authorizationSessions(normalizedLeft);
+  const rightAuthorizationSessions = authorizationSessions(normalizedRight);
+
   const leftRemoteJwt = context.remoteJwtSignerSecret
     ? remoteJwtDefaultPublication(
         normalizedLeft,
@@ -4818,6 +4840,28 @@ export function compareValues(
       !/(?:^|\.)(?:metadata|additionalFields|custom|applicationData)(?:\.|$)/.test(path)
     ) {
       if (
+        key === "error_description" &&
+        /^traces\.\d+\.responseErrorBody\.error_description$/.test(path)
+      ) {
+        const errorPath = path.replace(".responseErrorBody.", ".responseBody.");
+        const leftPath = traceEndpoint(normalizedLeft, errorPath);
+        const rightPath = traceEndpoint(normalizedRight, errorPath);
+        const leftOwner = /^unable to provide scopes to (\S+)$/.exec(a)?.[1];
+        const rightOwner = /^unable to provide scopes to (\S+)$/.exec(b)?.[1];
+        if (
+          leftPath === "/__test/server-api/oauth-provider-clients" &&
+          rightPath === leftPath &&
+          leftOwner &&
+          rightOwner &&
+          leftEntities.has(leftOwner) &&
+          rightEntities.has(rightOwner)
+        ) {
+          // Only identities already observed in real entity outputs may alias this rejection target.
+          identity(leftOwner, rightOwner, path, "entity");
+          return;
+        }
+      }
+      if (
         !applicationData &&
         !jwtPayload &&
         (/\.headers\.(?:cookie|set-cookie)$/.test(path) ||
@@ -4963,6 +5007,15 @@ export function compareValues(
         }
       }
 
+      if (
+        urlQueryContext === "query" &&
+        key === "code" &&
+        /^[A-Za-z0-9]{32}$/.test(a) &&
+        /^[A-Za-z0-9]{32}$/.test(b)
+      ) {
+        identity(a, b, path, "token");
+        return;
+      }
       const opaqueKey =
         (key === "deviceCode" || key === "userCode") && (applicationData || jwtPayload)
           ? key
@@ -5022,6 +5075,10 @@ export function compareValues(
 
       if (
         urlKeys.has(key) ||
+        (urlQueryContext === "query" &&
+          key === "iss" &&
+          /^https?:\/\//.test(a) &&
+          /^https?:\/\//.test(b)) ||
         (key === "issuer" && /^https?:\/\//.test(a) && /^https?:\/\//.test(b)) ||
         key.endsWith("URL") ||
         key.endsWith("Url") ||
@@ -5034,6 +5091,75 @@ export function compareValues(
         if (!ap || !bp) {
           fail(path, "invalid URL");
           return;
+        }
+
+        const leftSigned = new URL(a, context.leftBaseURL);
+        const rightSigned = new URL(b, context.rightBaseURL);
+        if (leftSigned.searchParams.has("ba_param") || rightSigned.searchParams.has("ba_param")) {
+          const index = /^traces\.(\d+)\.responseBody(?:\.|$)/.exec(path)?.[1];
+          const normalize = (
+            url: URL,
+            parts: ReturnType<typeof urlParts>,
+            side: "left" | "right",
+          ) => {
+            if (!parts || !record(parts.query)) return false;
+            const params = url.searchParams;
+            const names = [...new Set([...params.keys()].filter((name) => name !== "sig"))].sort();
+            const declared = params.getAll("ba_param");
+            const iat = Number(params.get("ba_iat"));
+            const exp = Number(params.get("exp"));
+            const window =
+              index === undefined
+                ? undefined
+                : (side === "left" ? context.leftRequestWindows : context.rightRequestWindows)?.[
+                    Number(index)
+                  ];
+            const start =
+              window?.startedAt ??
+              (side === "left" ? context.leftStartedAt : context.rightStartedAt);
+            const end =
+              window?.finishedAt ??
+              (side === "left" ? context.leftFinishedAt : context.rightFinishedAt) ??
+              start;
+            const secret = context.sessionCookieSecret;
+            if (
+              !secret ||
+              params.getAll("sig").length !== 1 ||
+              params.getAll("ba_iat").length !== 1 ||
+              params.getAll("exp").length !== 1 ||
+              !Number.isInteger(iat) ||
+              iat < start ||
+              iat > end ||
+              !Number.isFinite(exp) ||
+              JSON.stringify(declared) !== JSON.stringify(names)
+            ) {
+              return false;
+            }
+            const canonical = new URLSearchParams(
+              [...params]
+                .filter(([name]) => name !== "sig")
+                .sort(([a, av], [b, bv]) =>
+                  a < b ? -1 : a > b ? 1 : av < bv ? -1 : av > bv ? 1 : 0,
+                ),
+            );
+            if (
+              params.get("sig") !==
+              createHmac("sha256", secret).update(canonical.toString()).digest("base64")
+            ) {
+              return false;
+            }
+            parts.query.ba_iat = ["<bounded-provider-issue-time>"];
+            parts.query.exp = [`lifetime:${exp - Math.floor(iat / 1000)}`];
+            parts.query.sig = ["<verified-provider-signature>"];
+            return true;
+          };
+          if (!normalize(leftSigned, ap, "left") || !normalize(rightSigned, bp, "right")) {
+            fail(
+              path,
+              "OAuth query lacks its complete provider signature, parameter declaration, or issue window",
+            );
+            return;
+          }
         }
 
         const adminPath = /^\/(?:api\/auth|__test\/profiles\/[^/]+\/api\/auth)\/admin\/list-users$/;
@@ -5495,6 +5621,29 @@ export function compareValues(
         const childPath = path ? `${path}.${childKey}` : childKey;
         if (!Object.hasOwn(a, childKey) || !Object.hasOwn(b, childKey)) {
           fail(childPath, "field presence differs");
+        } else if (
+          childKey === "authTime" &&
+          a.type === "authorization_code" &&
+          b.type === "authorization_code"
+        ) {
+          const leftSession =
+            typeof a.sessionId === "string"
+              ? leftAuthorizationSessions.get(a.sessionId)
+              : undefined;
+          const rightSession =
+            typeof b.sessionId === "string"
+              ? rightAuthorizationSessions.get(b.sessionId)
+              : undefined;
+          if (
+            !leftSession ||
+            !rightSession ||
+            leftSession.userId !== a.userId ||
+            rightSession.userId !== b.userId ||
+            leftSession.createdAt !== a.authTime ||
+            rightSession.createdAt !== b.authTime
+          ) {
+            fail(childPath, "authorization time lacks its observed session and owner");
+          }
         } else if (proxyPayload && ["userInfo", "profile"].includes(childKey)) {
           if (stableJSON(a[childKey]) !== stableJSON(b[childKey])) {
             fail(childPath, "OAuth proxy provider JSON differs literally");

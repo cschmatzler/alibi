@@ -1,5 +1,9 @@
 //! OAuth authorization-server discovery from installed issuer and provider policy.
+mod authorization;
 mod clients;
+mod consent;
+mod continuation;
+mod resources;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
@@ -15,6 +19,12 @@ use serde_json::{Value, json};
 #[derive(Clone, Debug)]
 pub struct OAuthProviderConfig {
     pub scopes: Vec<String>,
+    pub login_page: String,
+    pub consent_page: String,
+    pub select_account_page: Option<String>,
+    pub code_expires_in: f64,
+    pub allow_public_client_prelogin: bool,
+    pub enforce_per_client_resources: bool,
     pub advertised_scopes: Option<Vec<String>>,
     pub advertised_claims: Option<Vec<String>>,
     pub grant_types: Vec<String>,
@@ -27,6 +37,12 @@ pub struct OAuthProviderConfig {
 impl Default for OAuthProviderConfig {
     fn default() -> Self {
         Self {
+            login_page: "/login".into(),
+            consent_page: "/consent".into(),
+            select_account_page: None,
+            code_expires_in: 600.0,
+            allow_public_client_prelogin: false,
+            enforce_per_client_resources: true,
             scopes: ["openid", "profile", "email", "offline_access"]
                 .map(str::to_owned)
                 .into(),
@@ -229,15 +245,117 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             AuthRoute::post("/oauth2/create-client", "createOAuthClient"),
             AuthRoute::get("/oauth2/get-client", "getOAuthClient"),
             AuthRoute::get("/oauth2/public-client", "getOAuthClientPublic"),
+            AuthRoute::post(
+                "/oauth2/public-client-prelogin",
+                "getOAuthClientPublicPrelogin",
+            ),
             AuthRoute::get("/oauth2/get-clients", "getOAuthClients"),
             AuthRoute::post("/oauth2/delete-client", "deleteOAuthClient"),
             AuthRoute::post("/oauth2/update-client", "updateOAuthClient"),
             AuthRoute::post("/oauth2/register", "registerOAuthClient"),
+            AuthRoute::post("/oauth2/consent", "oauth2Consent"),
+            AuthRoute::post("/oauth2/continue", "oauth2Continue"),
+            AuthRoute::get("/oauth2/get-consents", "getOAuthConsents"),
+            AuthRoute::get("/oauth2/get-consent", "getOAuthConsent"),
+            AuthRoute::post("/oauth2/update-consent", "updateOAuthConsent"),
+            AuthRoute::post("/oauth2/delete-consent", "deleteOAuthConsent"),
+            AuthRoute::get("/oauth2/authorize", "oauth2Authorize"),
+            AuthRoute::post("/oauth2/authorize", "oauth2Authorize"),
             AuthRoute::post("/oauth2/client/rotate-secret", "rotateClientSecret"),
         ]
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "oauth2Continue",
+                "oauth2Continue",
+                Some("/oauth2/continue"),
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
+                "adminUnlinkClientResource",
+                "adminUnlinkClientResource",
+                Some("/admin/oauth2/resources/:identifier/clients/:client_id"),
+                HttpMethod::Delete,
+            ),
+            crate::endpoint::definition(
+                "adminLinkClientResource",
+                "adminLinkClientResource",
+                Some("/admin/oauth2/resources/:identifier/clients/:client_id"),
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
+                "adminDeleteOAuthResource",
+                "adminDeleteOAuthResource",
+                Some("/admin/oauth2/resources/:identifier"),
+                HttpMethod::Delete,
+            ),
+            crate::endpoint::definition(
+                "adminUpdateOAuthResource",
+                "adminUpdateOAuthResource",
+                Some("/admin/oauth2/resources/:identifier"),
+                HttpMethod::Patch,
+            ),
+            crate::endpoint::definition(
+                "adminGetOAuthResource",
+                "adminGetOAuthResource",
+                Some("/admin/oauth2/resources/:identifier"),
+                HttpMethod::Get,
+            ),
+            crate::endpoint::definition(
+                "adminListOAuthResources",
+                "adminListOAuthResources",
+                Some("/admin/oauth2/resources"),
+                HttpMethod::Get,
+            ),
+            crate::endpoint::definition(
+                "adminCreateOAuthResource",
+                "adminCreateOAuthResource",
+                Some("/admin/oauth2/resources"),
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
+                "deleteOAuthConsent",
+                "deleteOAuthConsent",
+                Some("/oauth2/delete-consent"),
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
+                "updateOAuthConsent",
+                "updateOAuthConsent",
+                Some("/oauth2/update-consent"),
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
+                "getOAuthConsent",
+                "getOAuthConsent",
+                Some("/oauth2/get-consent"),
+                HttpMethod::Get,
+            ),
+            crate::endpoint::definition(
+                "getOAuthConsents",
+                "getOAuthConsents",
+                Some("/oauth2/get-consents"),
+                HttpMethod::Get,
+            ),
+            crate::endpoint::definition(
+                "oauth2Consent",
+                "oauth2Consent",
+                Some("/oauth2/consent"),
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
+                "getOAuthClientPublicPrelogin",
+                "getOAuthClientPublicPrelogin",
+                Some("/oauth2/public-client-prelogin"),
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
+                "oauth2Authorize",
+                "oauth2Authorize",
+                Some("/oauth2/authorize"),
+                HttpMethod::Get,
+            ),
             crate::endpoint::definition(
                 "adminUpdateOAuthClient",
                 "adminUpdateOAuthClient",
@@ -318,7 +436,21 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
         Ok(EndpointInput {
-            body: if call.operation_id() == "adminUpdateOAuthClient" {
+            body: if call.operation_id() == "oauth2Continue" {
+                Some(continuation::validate(call.body())?)
+            } else if call.operation_id() == "adminUpdateOAuthResource" {
+                Some(resources::validate_update(call.body())?)
+            } else if call.operation_id() == "adminCreateOAuthResource" {
+                Some(resources::validate_create(call.body())?)
+            } else if call.operation_id() == "deleteOAuthConsent" {
+                Some(consent::validate_id(call.body(), "body")?)
+            } else if call.operation_id() == "updateOAuthConsent" {
+                Some(consent::validate_update(call.body())?)
+            } else if call.operation_id() == "oauth2Consent" {
+                Some(consent::validate(call.body())?)
+            } else if call.operation_id() == "getOAuthClientPublicPrelogin" {
+                Some(clients::validate_prelogin(call.body())?)
+            } else if call.operation_id() == "adminUpdateOAuthClient" {
                 Some(clients::validate_admin_update(call.body())?)
             } else if call.operation_id() == "adminCreateOAuthClient" {
                 Some(clients::validate_admin_create(call.body())?)
@@ -334,7 +466,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             } else {
                 call.body().cloned()
             },
-            query: if matches!(
+            query: if call.operation_id() == "getOAuthConsent" {
+                Some(consent::validate_id(call.query(), "query")?)
+            } else if matches!(
                 call.operation_id(),
                 "getOAuthClient" | "getOAuthClientPublic"
             ) {
@@ -349,6 +483,56 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "oauth2Continue" {
+            return Box::pin(self.continue_authorization(call.body_as()?, call, ctx)).await;
+        }
+        if call.operation_id() == "adminUnlinkClientResource" {
+            return Box::pin(self.unlink_resource(call.params(), call, ctx)).await;
+        }
+        if call.operation_id() == "adminLinkClientResource" {
+            return Box::pin(self.link_resource(call.params(), call, ctx)).await;
+        }
+        if call.operation_id() == "adminDeleteOAuthResource" {
+            return Box::pin(self.delete_resource(call.params(), call, ctx)).await;
+        }
+        if call.operation_id() == "adminUpdateOAuthResource" {
+            return Box::pin(self.update_resource(call.params(), call.body_as()?, call, ctx)).await;
+        }
+        if call.operation_id() == "adminGetOAuthResource" {
+            return Box::pin(self.read_resource(call.params(), call, ctx)).await;
+        }
+        if call.operation_id() == "adminListOAuthResources" {
+            return Box::pin(self.list_resources(call, ctx)).await;
+        }
+        if call.operation_id() == "adminCreateOAuthResource" {
+            return Box::pin(self.create_resource(call.body_as()?, call, ctx)).await;
+        }
+        if call.operation_id() == "deleteOAuthConsent" {
+            return Box::pin(self.delete_consent(call.body_as()?, call, ctx)).await;
+        }
+        if call.operation_id() == "updateOAuthConsent" {
+            return Box::pin(self.update_consent(call.body_as()?, call, ctx)).await;
+        }
+        if call.operation_id() == "getOAuthConsent" {
+            return Box::pin(self.read_consent(call.query_as()?, call, ctx)).await;
+        }
+        if call.operation_id() == "getOAuthConsents" {
+            return Box::pin(self.list_consents(call, ctx)).await;
+        }
+        if call.operation_id() == "oauth2Consent" {
+            return Box::pin(self.consent(call.body_as()?, call, ctx)).await;
+        }
+        if call.operation_id() == "getOAuthClientPublicPrelogin" {
+            return Box::pin(self.read_prelogin_client(call.body_as()?, ctx)).await;
+        }
+        if call.operation_id() == "oauth2Authorize" {
+            let value = if call.method() == Some(&HttpMethod::Post) {
+                call.body()
+            } else {
+                call.query()
+            };
+            return Box::pin(self.authorize(value.cloned(), call, ctx)).await;
+        }
         if call.operation_id() == "adminUpdateOAuthClient" {
             return Box::pin(self.update_client(call.body_as()?, call, ctx, true)).await;
         }
@@ -397,6 +581,29 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/oauth2/authorize"
+            && matches!(req.method(), HttpMethod::Get | HttpMethod::Post)
+        {
+            let value = if *req.method() == HttpMethod::Post {
+                let mut fields = indexmap::IndexMap::new();
+                for (name, value) in
+                    url::form_urlencoded::parse(req.body.as_deref().unwrap_or_default())
+                {
+                    _ = fields.insert(
+                        name.into_owned(),
+                        alibi_core::utils::json::JsValue::String(value.into_owned()),
+                    );
+                }
+                alibi_core::utils::json::JsValue::Object(fields)
+            } else {
+                alibi_core::utils::json::parse_value(&serde_json::to_string(&req.query)?)?
+            };
+            return Ok(Some(
+                Box::pin(self.authorize(Some(value), req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
         if req.path() == "/oauth2/register" && *req.method() == HttpMethod::Post {
             let body: alibi_core::utils::json::JsValue = req.body_as_json()?;
             return Ok(Some(
@@ -432,6 +639,71 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             }
             return Ok(Some(
                 Box::pin(self.delete_client(input, req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
+        if req.path() == "/oauth2/public-client-prelogin" && *req.method() == HttpMethod::Post {
+            let body = req.body_as_json()?;
+            let input =
+                alibi_core::utils::json::from_value(clients::validate_prelogin(Some(&body))?)?;
+            return Ok(Some(
+                Box::pin(self.read_prelogin_client(input, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
+        if req.path() == "/oauth2/continue" && *req.method() == HttpMethod::Post {
+            let body = req.body_as_json()?;
+            let input = alibi_core::utils::json::from_value(continuation::validate(Some(&body))?)?;
+            return Ok(Some(
+                Box::pin(self.continue_authorization(input, req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
+        if req.path() == "/oauth2/consent" && *req.method() == HttpMethod::Post {
+            let body = req.body_as_json()?;
+            let input = alibi_core::utils::json::from_value(consent::validate(Some(&body))?)?;
+            return Ok(Some(
+                Box::pin(self.consent(input, req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
+        if req.path() == "/oauth2/delete-consent" && *req.method() == HttpMethod::Post {
+            let body = req.body_as_json()?;
+            let input =
+                alibi_core::utils::json::from_value(consent::validate_id(Some(&body), "body")?)?;
+            return Ok(Some(
+                Box::pin(self.delete_consent(input, req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
+        if req.path() == "/oauth2/update-consent" && *req.method() == HttpMethod::Post {
+            let body = req.body_as_json()?;
+            let input =
+                alibi_core::utils::json::from_value(consent::validate_update(Some(&body))?)?;
+            return Ok(Some(
+                Box::pin(self.update_consent(input, req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
+        if req.path() == "/oauth2/get-consent" && *req.method() == HttpMethod::Get {
+            let query = alibi_core::utils::json::parse_value(&serde_json::to_string(&req.query)?)?;
+            let input =
+                alibi_core::utils::json::from_value(consent::validate_id(Some(&query), "query")?)?;
+            return Ok(Some(
+                Box::pin(self.read_consent(input, req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
+        if req.path() == "/oauth2/get-consents" && *req.method() == HttpMethod::Get {
+            return Ok(Some(
+                Box::pin(self.list_consents(req, ctx))
                     .await?
                     .to_response()?,
             ));

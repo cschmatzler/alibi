@@ -219,7 +219,7 @@ async fn baseline(db: &Db) -> TestResult {
     Ok(())
 }
 async fn native_plan(pool: &sqlx::PgPool, wire_type: &str, id: &str, indexed: bool) -> TestResult {
-    let rows = sqlx::query(r#"SELECT "name", statement, parameter_types::text AS types, (SELECT typname FROM pg_type WHERE oid = parameter_types[1]) AS first_type, cardinality(parameter_types) AS parameters FROM pg_prepared_statements WHERE statement NOT LIKE '%pg_prepared_statements%' AND statement LIKE 'SELECT %FROM "users" WHERE %"id" = %'"#).fetch_all(pool).await?;
+    let rows = sqlx::query(r#"SELECT "name", statement, parameter_types::text AS types, (SELECT typname FROM pg_type WHERE oid = parameter_types[1]) AS first_type, cardinality(parameter_types) AS parameters FROM pg_prepared_statements WHERE statement NOT LIKE '%pg_prepared_statements%' AND statement LIKE 'SELECT %FROM "user" WHERE %"id" = %'"#).fetch_all(pool).await?;
     assert_eq!(rows.len(), 1, "must inspect the native user ID query");
     let row = &rows[0];
     let name: String = row.try_get("name")?;
@@ -598,9 +598,12 @@ mod seaorm_text {
         pub id: String,
         pub name: Option<String>,
         pub email: Option<String>,
+        #[sea_orm(column_name = "emailVerified")]
         pub email_verified: bool,
         pub image: Option<String>,
+        #[sea_orm(column_name = "createdAt")]
         pub created_at: NaiveDateTime,
+        #[sea_orm(column_name = "updatedAt")]
         pub updated_at: NaiveDateTime,
     }
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

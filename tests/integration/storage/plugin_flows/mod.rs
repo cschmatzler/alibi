@@ -363,3 +363,33 @@ mod oauth_client_registration;
 mod oauth_admin_client_creation;
 
 mod oauth_admin_client_update;
+
+mod oauth_authorization;
+
+mod oauth_prelogin_client;
+
+mod oauth_consent;
+
+mod oauth_consent_list;
+
+mod oauth_consent_read;
+
+mod oauth_consent_update;
+
+mod oauth_consent_delete;
+
+mod oauth_resource_creation;
+
+mod oauth_resource_list;
+
+mod oauth_resource_read;
+
+mod oauth_resource_update;
+
+mod oauth_resource_delete;
+
+mod oauth_resource_link;
+
+mod oauth_resource_unlink;
+
+mod oauth_continuation;

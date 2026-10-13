@@ -7,13 +7,11 @@ for (const profile of [undefined, "passwordless-hashed"] as const) {
   compatScenario(
     `server email OTP checks retain live proofs and retire exhausted attempts with ${profile ?? "plain"} storage`,
     async (ctx) => {
-      const owner = await ctx
-        .actor("owner")
-        .client.signUp.email({
-          email: ctx.uniqueEmail("server-check-owner"),
-          password: "password123",
-          name: "Check Owner",
-        });
+      const owner = await ctx.actor("owner").client.signUp.email({
+        email: ctx.uniqueEmail("server-check-owner"),
+        password: "password123",
+        name: "Check Owner",
+      });
       expect(owner.error).toBeNull();
       const email = owner.data!.user.email;
       async function create(email: string, type: string) {

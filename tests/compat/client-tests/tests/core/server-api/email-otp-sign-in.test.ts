@@ -18,13 +18,11 @@ for (const profile of [undefined, "passwordless-disabled"] as const) {
         name: "Established Owner",
       });
       expect(owner.error).toBeNull();
-      const foreign = await ctx
-        .actor("foreign", profile)
-        .client.signUp.email({
-          email: ctx.uniqueEmail("server-otp-login-foreign"),
-          password: "password123",
-          name: "Foreign",
-        });
+      const foreign = await ctx.actor("foreign", profile).client.signUp.email({
+        email: ctx.uniqueEmail("server-otp-login-foreign"),
+        password: "password123",
+        name: "Foreign",
+      });
       expect(foreign.error).toBeNull();
       const email = owner.data!.user.email;
       async function create(email: string, type: string) {
