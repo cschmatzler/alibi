@@ -1,4 +1,5 @@
 //! Enterprise single-sign-on provider registration.
+mod provider_list;
 mod provider_read;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
@@ -279,10 +280,17 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         vec![
             AuthRoute::post("/sso/register", "registerSSOProvider"),
             AuthRoute::get("/sso/get-provider", "getSSOProvider"),
+            AuthRoute::get("/sso/providers", "listSSOProviders"),
         ]
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            super::endpoint::definition(
+                "listSSOProviders",
+                "listSSOProviders",
+                Some("/sso/providers"),
+                HttpMethod::Get,
+            ),
             super::endpoint::definition(
                 "getSSOProvider",
                 "getSSOProvider",
@@ -302,6 +310,12 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         _ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
+        if call.operation_id() == "listSSOProviders" {
+            return Ok(EndpointInput {
+                body: call.body().cloned(),
+                query: call.query().cloned(),
+            });
+        }
         if call.operation_id() == "getSSOProvider" {
             return Ok(EndpointInput {
                 body: None,
@@ -318,6 +332,9 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "listSSOProviders" {
+            return self.list(call, ctx).await;
+        }
         if call.operation_id() == "getSSOProvider" {
             return self
                 .read(
@@ -341,6 +358,9 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/sso/providers" && *req.method() == HttpMethod::Get {
+            return Ok(Some(self.list(req, ctx).await?.to_response()?));
+        }
         if req.path() == "/sso/get-provider" && *req.method() == HttpMethod::Get {
             let query = alibi_core::utils::json::parse_value(&serde_json::to_string(&req.query)?)?;
             return Ok(Some(

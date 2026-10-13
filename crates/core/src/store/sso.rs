@@ -17,6 +17,11 @@ pub struct SsoProvider {
 }
 #[async_trait]
 pub trait SsoProviderStore: Send + Sync {
+    async fn list_sso_providers(&self) -> AuthResult<Vec<SsoProvider>> {
+        Err(AuthError::config(
+            "SSO persistence is not supported by this store",
+        ))
+    }
     async fn create_sso_provider(&self, _provider: SsoProvider) -> AuthResult<SsoProvider> {
         Err(AuthError::config(
             "SSO persistence is not supported by this store",
