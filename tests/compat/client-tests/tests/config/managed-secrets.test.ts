@@ -107,9 +107,7 @@ compatScenario(
   "managed rotation retains encrypted proofs and factors, retires readers and invalidates old signed cookies",
   async (ctx) => {
     const results = [];
-    for (const [write, read, version] of [
-      ["managed-old", "managed-retained", 0],
-    ] as const) {
+    for (const [write, read, version] of [["managed-old", "managed-retained", 0]] as const) {
       const email = ctx.uniqueEmail(write);
       const sent = await request(ctx, write, "email-otp/send-verification-otp", {
         email,

@@ -189,8 +189,7 @@ compatScenario(
       expect(bridge.origin).toBe(ctx.baseURL);
       expect(bridge.pathname).toBe(path + "/callback/gitlab/oauth-proxy");
       const token = bridge.searchParams.get("profile")!;
-      if (producer === "bare") expect(token.startsWith("$ba$")).toBe(false);
-      else expect(token.startsWith(producer === "old" ? "$ba$0$" : "$ba$2$")).toBe(true);
+      expect(token.startsWith(producer === "old" ? "$ba$0$" : "$ba$2$")).toBe(true);
       const payload = JSON.parse(
         await symmetricDecrypt({ key: purposeRing("oauth-proxy-profile"), data: token }),
       );
