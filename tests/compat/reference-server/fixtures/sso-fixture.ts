@@ -4,13 +4,16 @@ import { getMigrations } from "better-auth/db/migration";
 import { username } from "better-auth/plugins";
 
 import { ssoDnsFixture } from "./sso-dns-fixture";
+import { ssoOidcFixture } from "./sso-oidc-fixture";
 export async function ssoFixture(base: BetterAuthOptions) {
+  const idp = ssoOidcFixture();
   const options = {
     baseURL: base.baseURL,
     basePath: base.basePath,
     secret: base.secret,
     database: base.database,
     emailAndPassword: { enabled: true },
+    trustedOrigins: [idp.base],
     plugins: [username(), sso()],
   };
   await (await getMigrations(options)).runMigrations();
@@ -88,6 +91,28 @@ export async function ssoFixture(base: BetterAuthOptions) {
       return new Response(JSON.stringify({ expired: true }), {
         headers: { "content-type": "application/json" },
       });
+    }
+    if (input.action === "idp") {
+      if (input.email) idp.setEmail(input.email);
+      return new Response(JSON.stringify({ base: idp.base }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "idp-exchanges") {
+      return new Response(JSON.stringify(idp.exchanges()), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "callback") {
+      return auth.api.callbackSSO({
+        params: input.params,
+        query: input.query,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
+    if (input.action === "session") {
+      return auth.api.getSession({ headers: new Headers(input.headers ?? {}), asResponse: true });
     }
     if (input.action === "signup") {
       return auth.api.signUpEmail({ body: input.body, asResponse: true });
