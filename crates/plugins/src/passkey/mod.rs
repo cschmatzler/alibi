@@ -269,14 +269,22 @@ impl PasskeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
+        self.generate_authentication_options(req, ctx).await
+    }
+
+    async fn generate_authentication_options<S: alibi_core::AuthSchema>(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<AuthResponse> {
         let maybe_user = ctx.require_cached_session(req).await.ok().map(|(u, _)| u);
         let projected_user = maybe_user.as_ref().map(|user| ctx.user_view(user));
         let extensions = if let Some(input) = &self.config.authentication.extensions {
             Some(
                 input
                     .resolve(&PasskeyOptionsContext {
-                        request: Some(req),
-                        endpoint: None,
+                        request: req.physical_request(),
+                        endpoint: req.endpoint_call(),
                         auth_config: &ctx.config,
                         extensions: &ctx.extensions,
                         user: projected_user.as_ref(),
@@ -391,7 +399,7 @@ alibi_core::impl_auth_plugin! {
         endpoint::validate(call)
     }
     async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
-        if call.operation_id() == "generatePasskeyRegistrationOptions" { self.registration_options_endpoint(call, ctx).await } else if call.operation_id() == "deletePasskey" { self.delete_endpoint(call, ctx).await } else if call.operation_id() == "updatePasskey" { self.update_endpoint(call, ctx).await } else { self.list_endpoint(call, ctx).await }
+        if call.operation_id() == "passkeyGenerateAuthenticateOptions" { self.authentication_options_endpoint(call, ctx).await } else if call.operation_id() == "generatePasskeyRegistrationOptions" { self.registration_options_endpoint(call, ctx).await } else if call.operation_id() == "deletePasskey" { self.delete_endpoint(call, ctx).await } else if call.operation_id() == "updatePasskey" { self.update_endpoint(call, ctx).await } else { self.list_endpoint(call, ctx).await }
     }
     route_openapi_metadata!(S);
  }

@@ -12,6 +12,12 @@ use serde_json::Value;
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
         crate::endpoint::definition(
+            "generatePasskeyAuthenticationOptions",
+            "passkeyGenerateAuthenticateOptions",
+            Some("/passkey/generate-authenticate-options"),
+            HttpMethod::Get,
+        ),
+        crate::endpoint::definition(
             "generatePasskeyRegistrationOptions",
             "generatePasskeyRegistrationOptions",
             Some("/passkey/generate-register-options"),
@@ -116,6 +122,25 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
 }
 
 impl PasskeyPlugin {
+    /// Issue an authentication challenge, optionally limiting browser hints to the signed owner.
+    #[must_use]
+    pub fn generate_passkey_authentication_options_endpoint() -> ServerEndpoint<Value> {
+        ServerEndpoint::new("passkey", "generatePasskeyAuthenticationOptions")
+    }
+
+    pub(super) async fn authentication_options_endpoint<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let output = self.generate_authentication_options(call, ctx).await?;
+        let mut response = EndpointResponse::json(&alibi_core::utils::json::from_slice::<
+            alibi_core::utils::json::JsValue,
+        >(&output.body)?)?;
+        response.merge_headers(output.headers);
+        Ok(response)
+    }
+
     /// Generate a challenge for registering a credential under the current owner.
     #[must_use]
     pub fn generate_passkey_registration_options_endpoint() -> ServerEndpoint<Value> {

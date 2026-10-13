@@ -304,13 +304,39 @@ compatScenario(
       rejectedLabels.push(rejected);
     }
 
+    async function serverAuthOptions(cookie?: string) {
+      return owner.fetch(`${ctx.baseURL}/__test/server-api/passkey-auth-options`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          body: { userId: attackerSignup.data!.user.id },
+          query: { userId: user.id },
+          ...(cookie ? { headers: { cookie } } : {}),
+        }),
+      });
+    }
+    const ownerHints = await serverAuthOptions(ownerCookie);
+    expect(ownerHints.status).toBe(200);
+    expect(((await ownerHints.json()) as any).allowCredentials).toEqual([
+      { id: passkey.credentialID, type: "public-key", transports: ["internal"] },
+    ]);
+    const foreignHints = await serverAuthOptions(attackerCookie);
+    expect(foreignHints.status).toBe(200);
+    expect(((await foreignHints.json()) as any).allowCredentials).toBeUndefined();
     await owner.client.signOut();
     expect((await owner.client.getSession()).data).toBeNull();
 
-    const authOptions = await ctx.rawRequest({
-      actor: "owner",
-      path: "/api/auth/passkey/generate-authenticate-options",
-    });
+    const authOptionResponse = await serverAuthOptions();
+    const authOptions = {
+      status: authOptionResponse.status,
+      body: (await authOptionResponse.json()) as any,
+    };
+    expect(authOptions.body.allowCredentials).toBeUndefined();
+    expect(
+      authOptionResponse.headers
+        .getSetCookie()
+        .some((cookie) => cookie.includes("better-auth-passkey=")),
+    ).toBe(true);
     expect(authOptions.status).toBe(200);
 
     const assertion = authenticator.authenticate(authOptions.body, ctx.baseURL);
