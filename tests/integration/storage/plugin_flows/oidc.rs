@@ -349,8 +349,8 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
         .collect();
     assert_eq!(form["refresh_token"], "initial-refresh");
     let profile = OAuthAccountApi::account_info(&owner, select(), auth.context()).await?;
-    assert_eq!(body(&profile)["account"]["accountId"], "oidc-subject");
-    assert_eq!(body(&profile)["user"]["email"], "oidc@example.test");
+    assert_eq!(profile.account.account_id, "oidc-subject");
+    assert_eq!(profile.user["email"], "oidc@example.test");
     let logout = call(
         &auth,
         request(
