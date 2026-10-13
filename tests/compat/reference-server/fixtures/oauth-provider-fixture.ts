@@ -43,6 +43,8 @@ export function oauthProviderDiscovery(baseURL: string) {
         ] as const,
     ),
   );
-  return async (mode: string) =>
-    instances.get(mode)!.api.getOAuthServerConfig({ asResponse: true });
+  return async (mode: string, operation = "getOAuthServerConfig") =>
+    operation === "getOpenIdConfig"
+      ? instances.get(mode)!.api.getOpenIdConfig({ asResponse: true })
+      : instances.get(mode)!.api.getOAuthServerConfig({ asResponse: true });
 }

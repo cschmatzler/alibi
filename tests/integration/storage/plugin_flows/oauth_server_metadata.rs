@@ -95,6 +95,47 @@ async fn oauth_server_discovery_tracks_configured_policy_without_writes<B: Backe
             );
             assert_eq!(output["backchannel_logout_supported"], false);
         }
+        let oidc = auth
+            .dispatch_endpoint(
+                OAuthProviderPlugin::get_open_id_config_endpoint(),
+                alibi::endpoint::EndpointOptions::default(),
+            )
+            .await;
+        if mode == "oauth" || mode == "configured" {
+            let error = oidc.unwrap_err();
+            assert_eq!(error.error.status_code(), 404);
+            assert!(error.body_absent);
+            assert_eq!(
+                error
+                    .headers
+                    .as_ref()
+                    .unwrap()
+                    .get("content-type")
+                    .map(String::as_str),
+                Some("application/json")
+            );
+        } else {
+            let document = oidc?.decode()?;
+            assert_eq!(document["issuer"], format!("{ORIGIN}/api/auth"));
+            assert_eq!(
+                document["userinfo_endpoint"],
+                format!("{ORIGIN}/api/auth/oauth2/userinfo")
+            );
+            assert_eq!(document["claims_parameter_supported"], true);
+            assert_eq!(document["subject_types_supported"], json!(["public"]));
+            assert_eq!(
+                document["id_token_signing_alg_values_supported"],
+                json!([if mode == "disabled" { "HS256" } else { "EdDSA" }])
+            );
+            for claim in ["sub", "sid", "name", "email_verified"] {
+                assert!(
+                    document["claims_supported"]
+                        .as_array()
+                        .unwrap()
+                        .contains(&json!(claim))
+                );
+            }
+        }
         assert_eq!(
             db.tables(&["users", "accounts", "sessions", "verifications", "jwks"])
                 .await?,
