@@ -7,6 +7,7 @@ mod provider_list;
 mod provider_read;
 mod provider_update;
 mod registration_saml;
+mod saml_sign_in;
 mod sign_in;
 mod sp_metadata;
 use alibi_core::endpoint::{
@@ -30,6 +31,8 @@ pub struct SsoConfig {
     pub domain_verification_token_prefix: String,
     pub default_override_user_info: bool,
     pub redirect_uri: Option<String>,
+    pub saml_enable_in_response_to_validation: bool,
+    pub saml_request_ttl: chrono::Duration,
 }
 impl Default for SsoConfig {
     fn default() -> Self {
@@ -40,6 +43,8 @@ impl Default for SsoConfig {
             domain_verification_token_prefix: "better-auth-token".into(),
             default_override_user_info: false,
             redirect_uri: None,
+            saml_enable_in_response_to_validation: true,
+            saml_request_ttl: chrono::Duration::minutes(5),
         }
     }
 }

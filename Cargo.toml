@@ -141,6 +141,7 @@ url = { workspace = true }
 tracing = { workspace = true }
 [dev-dependencies]
 quick-xml = "=0.41.0"
+flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
 rsa = { workspace = true }
 # Enable adapters and passkeys for repository tests without changing downstream defaults.
 alibi = { path = ".", features = ["axum", "poem", "seaorm", "passkey"] }
