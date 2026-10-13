@@ -494,9 +494,8 @@
           "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
           "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
-          "OAuth proxy exchanges on production then consumes preview state for only the provider owner",
-          "OAuth proxy linking follows the saved authenticated owner without creating any session",
           "OAuth proxy restoration and session failures preserve exact stages rows and retry",
+          "OAuth proxy linking follows the saved authenticated owner without creating any session",
           "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
           "apple provider refresh rotates stored credentials and excludes foreign owners",
           "apple real code exchange persists tokens and consumes callback state",
@@ -2432,7 +2431,6 @@
           "OAuth proxy linking follows the saved authenticated owner without creating any session",
           "OAuth proxy restoration and session failures preserve exact stages rows and retry",
           "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
-          "OAuth proxy exchanges on production then consumes preview state for only the provider owner",
           "OAuth proxy cookie state authenticates nonce consumes expiry and retains Source replay semantics",
           "OAuth proxy cookie linking restores the saved owner across browser session changes"
         ],
@@ -2449,7 +2447,6 @@
           "OAuth proxy linking follows the saved authenticated owner without creating any session",
           "OAuth proxy restoration and session failures preserve exact stages rows and retry",
           "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
-          "OAuth proxy exchanges on production then consumes preview state for only the provider owner",
           "OAuth proxy cookie state authenticates nonce consumes expiry and retains Source replay semantics",
           "OAuth proxy cookie linking restores the saved owner across browser session changes"
         ]
@@ -2486,7 +2483,7 @@
       "implemented": true,
       "evidence": {
         "success": [
-          "device verify accepts a hyphenated user code",
+          "device verification normalizes punctuation and case in default user codes",
           "device approve flow returns a bearer token",
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
@@ -3825,10 +3822,7 @@
           "OpenAPI openapi-plugins-teams generates the complete configured document and reference frame",
           "OpenAPI openapi-plugins-configured generates the complete configured document and reference frame"
         ],
-        "rejection": [
-          "OpenAPI disabling the reference preserves the public schema endpoint",
-          "OpenAPI openapi-configured generates the complete configured document and reference frame"
-        ],
+        "rejection": "OpenAPI openapi-configured generates the complete configured document and reference frame",
         "authorization": {
           "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
         },
@@ -4717,7 +4711,7 @@
       "implemented": true,
       "evidence": {
         "success": [
-          "device approve flow returns a bearer token",
+          "device requests pre-bound to a user cannot be claimed by another user",
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
@@ -4727,19 +4721,19 @@
         "rejection": [
           "device approve blocks already-processed codes",
           "device endpoint schemas preserve OAuth validation and media type errors",
-          "device decisions require the claiming user and redact other actors",
+          "device requests pre-bound to a user cannot be claimed by another user",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
           "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision"
         ],
         "authorization": [
-          "device decisions require the claiming user and redact other actors",
+          "device requests pre-bound to a user cannot be claimed by another user",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
           "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision"
         ],
         "state": [
-          "device approve flow returns a bearer token",
+          "device requests pre-bound to a user cannot be claimed by another user",
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
@@ -4754,7 +4748,7 @@
       "implemented": true,
       "evidence": {
         "success": [
-          "device approve blocks already-processed codes",
+          "device grant fields survive owner review and atomic application redemption with replay denial",
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "device configuration controls client validation lifetime polling and verification URL parameters",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
@@ -4785,24 +4779,13 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": [
-          "device deny flow returns access_denied",
-          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
-        ],
+        "success": "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision",
         "rejection": [
-          "device deny flow returns access_denied",
-          "device endpoint schemas preserve OAuth validation and media type errors",
-          "device decisions require the claiming user and redact other actors",
-          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
+          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision",
+          "device endpoint schemas preserve OAuth validation and media type errors"
         ],
-        "authorization": [
-          "device decisions require the claiming user and redact other actors",
-          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
-        ],
-        "state": [
-          "device deny flow returns access_denied",
-          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
-        ]
+        "authorization": "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision",
+        "state": "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
       }
     },
     {
@@ -4810,16 +4793,9 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": [
-          "device approve flow returns a bearer token",
-          "device custom asynchronous generators preserve exact codes and reject normalized aliases",
-          "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
-          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
-          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision",
-          "device empty generators persist usable codes and preserve client binding through consumption"
-        ],
+        "success": "overlapping approved device polls atomically consume one grant and create exactly one session",
         "rejection": [
-          "device approve flow returns a bearer token",
+          "device grant fields survive owner review and atomic application redemption with replay denial",
           "device configuration controls client validation lifetime polling and verification URL parameters",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
@@ -4832,7 +4808,7 @@
           "notApplicable": "Authorized by the one-time code or token it consumes, not by a session; rejection covers invalid proofs."
         },
         "state": [
-          "device approve flow returns a bearer token",
+          "device grant fields survive owner review and atomic application redemption with replay denial",
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "device configuration controls client validation lifetime polling and verification URL parameters",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
@@ -5152,11 +5128,8 @@
       "implemented": true,
       "evidence": {
         "success": [
-          "multiple browser sessions retain accounts switch active identity and revoke with fallback",
-          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
           "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
-          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
-          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
+          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
           "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
           "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner"
         ],
@@ -5190,12 +5163,9 @@
       "implemented": true,
       "evidence": {
         "success": [
-          "multiple browser sessions retain accounts switch active identity and revoke with fallback",
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
-          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
-          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
-          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
           "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
           "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner",
           "multi-session-fractional raw limit controls proofs without evicting stored sessions",
@@ -5247,7 +5217,7 @@
       "implemented": true,
       "evidence": {
         "success": [
-          "One Tap official client binds verified Google accounts and persisted sessions",
+          "One Tap immutable audience configuration and hosted domains",
           "One Tap disabled signup preserves existing account ownership",
           "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials",
           "anonymous one-tap verified login transfers only the actual anonymous owner and preserves rejected proof state"
@@ -5265,13 +5235,12 @@
         "state": [
           "One Tap respects persisted admin bans and existing two-factor session behavior",
           "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials",
-          "One Tap official client binds verified Google accounts and persisted sessions",
+          "One Tap immutable audience configuration and hosted domains",
           "One Tap disabled signup preserves existing account ownership",
           "One Tap verifies raw JavaScript payload numbers and literal private keys",
           "One Tap protected header processing preserves Google JWKS lookup order",
           "One Tap cryptographic and Google claim rejections leave identities unchanged",
           "One Tap callback origin and request validation precede Google JWKS reads",
-          "One Tap immutable audience configuration and hosted domains",
           "One Tap required email verification commits identity before delivery and session",
           "One Tap explicit signup mail suppression preserves verification denial side effects",
           "One Tap implicit linking applies configured profile sync and preserves local identity",
@@ -5977,7 +5946,7 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "passkey registration authentication ownership and deletion round trip",
+        "success": "passkey current publicKey authority and request admission preserve genuine ceremony order",
         "rejection": "passkey client surface matches TS for options and management errors",
         "authorization": "passkey registration authentication ownership and deletion round trip",
         "state": "passkey registration authentication ownership and deletion round trip"
@@ -5989,7 +5958,7 @@
       "implemented": true,
       "evidence": {
         "success": [
-          "passkey registration authentication ownership and deletion round trip",
+          "passkey current publicKey authority and request admission preserve genuine ceremony order",
           "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
           "passkey rejected cryptographic attempts consume challenges without credential or session writes",
           "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners",
@@ -6021,7 +5990,7 @@
           "client IP client-ip-trusted passkey login applies initialized policy after a genuine signature"
         ],
         "rejection": [
-          "passkey registration authentication ownership and deletion round trip",
+          "passkey current publicKey authority and request admission preserve genuine ceremony order",
           "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
           "passkey rejected cryptographic attempts consume challenges without credential or session writes",
           "passkey passkey-auth-forbidden callback rejects after real proof and burns challenge without counter session or cookie writes",
@@ -6072,47 +6041,7 @@
           "passkey callback deletion completes the original owner session after a no-row counter write and rejects replay and retry",
           "passkey deletion callback cannot run for a wrong credential challenge or signature"
         ],
-        "state": [
-          "passkey registration authentication ownership and deletion round trip",
-          "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
-          "passkey rejected cryptographic attempts consume challenges without credential or session writes",
-          "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners",
-          "passkey passkey-auth-forbidden callback rejects after real proof and burns challenge without counter session or cookie writes",
-          "passkey passkey-auth-public-error callback rejects after real proof and burns challenge without counter session or cookie writes",
-          "passkey passkey-auth-internal-error callback rejects after real proof and burns challenge without counter session or cookie writes",
-          "passkey verified callback awaits real stored reads before counter and session while body claims cannot switch credential owner",
-          "passkey cryptographic challenge and signature failures never invoke application callback and cannot reuse consumed context",
-          "passkey callback may change persisted credential ownership and metadata without changing the verified session owner",
-          "passkey signed uv-absent authenticates original owner without historical verifier restrictions",
-          "passkey signed backup-upgrade-backed authenticates original owner without historical verifier restrictions",
-          "passkey signed backup-downgrade authenticates original owner without historical verifier restrictions",
-          "passkey Source verifier rejects actual signed invalid flags presence RP origins challenge signature and counters before callbacks",
-          "passkey overlapping issued challenges verify against the current saved counter rather than a stale generation snapshot",
-          "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
-          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history",
-          "passkey none-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "passkey packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication",
-          "passkey eddsa-none-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
-          "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
-          "core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges",
-          "anonymous passkey verified login transfers only the actual anonymous owner and preserves rejected proof state",
-          "passkey raw authority Ed25519Alg7 none preserves signed tags and full lifecycle",
-          "passkey raw authority Ed25519 none preserves signed tags and full lifecycle",
-          "passkey raw authority ES256 none preserves signed tags and full lifecycle",
-          "passkey raw authority Ed25519Alg7 packed preserves signed tags and full lifecycle",
-          "passkey raw authority Ed25519 packed preserves signed tags and full lifecycle",
-          "passkey raw authority ES256 packed preserves signed tags and full lifecycle",
-          "passkey raw authority Ed25519Alg7 packed statement8 preserves signed tags and full lifecycle",
-          "passkey callback deletion completes the original owner session after a no-row counter write and rejects replay and retry",
-          "passkey failed application deletion aborts authentication while the retained credential remains retryable with a fresh challenge",
-          "passkey deletion callback cannot run for a wrong credential challenge or signature",
-          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
-          "client IP client-ip-disabled passkey login applies initialized policy after a genuine signature",
-          "client IP client-ip-trusted passkey login applies initialized policy after a genuine signature"
-        ]
+        "state": "passkey RP configuration options governs real registration and authentication"
       }
     },
     {
@@ -6121,7 +6050,7 @@
       "implemented": true,
       "evidence": {
         "success": [
-          "passkey registration authentication ownership and deletion round trip",
+          "passkey current publicKey authority and request admission preserve genuine ceremony order",
           "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
           "passkey rejected cryptographic attempts consume challenges without credential or session writes",
           "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
@@ -6198,42 +6127,7 @@
           "passkey raw authority ES256 packed preserves signed tags and full lifecycle",
           "passkey raw authority Ed25519Alg7 packed statement8 preserves signed tags and full lifecycle"
         ],
-        "state": [
-          "passkey registration authentication ownership and deletion round trip",
-          "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
-          "passkey rejected cryptographic attempts consume challenges without credential or session writes",
-          "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
-          "passkey foreign owner, expired challenge and wrong ceremony retire the actual persisted generation",
-          "passkey registration policy resolves a proven existing owner and creates its real session with callback facts",
-          "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
-          "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
-          "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior",
-          "passkey none-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "passkey packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication",
-          "passkey registration rejects actual packed signature failures malformed proofs flags origins and wrong owner before writes",
-          "passkey eddsa-none-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
-          "passkey Ed448 packed self attestation rejects genuine false and malformed signatures before callback enrollment or session",
-          "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
-          "passkey Ed25519Curve8 packed self attestation rejects genuine false and malformed signatures before callback enrollment or session",
-          "passkey raw curve8 none admission validates the actual ceremony before callback persistence and owner issuance",
-          "passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks",
-          "passkey raw none passkey-first-trusted-origin verifies current request origin and configured precedence",
-          "passkey raw none passkey-first-configured-origin verifies current request origin and configured precedence",
-          "core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges",
-          "passkey raw authority Ed25519Alg7 none preserves signed tags and full lifecycle",
-          "passkey raw authority Ed25519 none preserves signed tags and full lifecycle",
-          "passkey raw authority ES256 none preserves signed tags and full lifecycle",
-          "passkey raw authority Ed25519Alg7 packed preserves signed tags and full lifecycle",
-          "passkey raw authority Ed25519 packed preserves signed tags and full lifecycle",
-          "passkey raw authority ES256 packed preserves signed tags and full lifecycle",
-          "passkey raw authority Ed25519Alg7 packed statement8 preserves signed tags and full lifecycle",
-          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
-          "client IP client-ip-disabled passkey login applies initialized policy after a genuine signature",
-          "client IP client-ip-trusted passkey login applies initialized policy after a genuine signature"
-        ]
+        "state": "passkey RP configuration options governs real registration and authentication"
       }
     },
     {
@@ -6819,8 +6713,6 @@
           "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
           "anonymous issuance inherits only a real signed browser-session preference",
-          "anonymous standard official client issues repeats and deletes only its actual authenticated owner",
-          "anonymous attributes official client issues repeats and deletes only its actual authenticated owner",
           "anonymous upgrade transfers original completed user and session snapshots before cleanup",
           "compact version-api issuance failure rolls email transaction back and does not link the authenticated anonymous account",
           "compact version-ordinary issuance failure rolls email transaction back and does not link the authenticated anonymous account",
@@ -6830,15 +6722,12 @@
         ],
         "rejection": [
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
-          "anonymous standard official client issues repeats and deletes only its actual authenticated owner",
-          "anonymous attributes official client issues repeats and deletes only its actual authenticated owner"
+          "identity validation anonymous creation rejects before identity writes and consumes only genuine applicable proof"
         ],
         "authorization": "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
         "state": [
           "anonymous upgrade transfers original completed user and session snapshots before cleanup",
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
-          "anonymous standard official client issues repeats and deletes only its actual authenticated owner",
-          "anonymous attributes official client issues repeats and deletes only its actual authenticated owner",
           "anonymous issuance inherits only a real signed browser-session preference",
           "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
           "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
@@ -7362,7 +7251,6 @@
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
           "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
           "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
-          "OAuth proxy exchanges on production then consumes preview state for only the provider owner",
           "OAuth proxy restoration and session failures preserve exact stages rows and retry",
           "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
           "apple JWKS rotation is observed on each signed token admission",
@@ -8596,7 +8484,6 @@
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
           "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
           "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
-          "OAuth proxy exchanges on production then consumes preview state for only the provider owner",
           "OAuth proxy restoration and session failures preserve exact stages rows and retry",
           "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
           "apple JWKS rotation is observed on each signed token admission",
@@ -10287,7 +10174,7 @@
       "implemented": true,
       "evidence": {
         "success": [
-          "two-factor disable deletes factor and trust state and rotates the authoritative session",
+          "renamed two-factor table and fields own enrollment, TOTP, OTP, backup, trust and disable",
           "two-factor disable requires a persistent cookie session and rejects API key emulation",
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
           "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
@@ -10420,11 +10307,10 @@
       "implemented": true,
       "evidence": {
         "success": [
-          "two-factor generate-backup-codes replaces the backup code set for enabled users",
+          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
           "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
           "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
-          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-negative applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
@@ -10461,7 +10347,6 @@
       "implemented": true,
       "evidence": {
         "success": [
-          "two-factor enrollment returns URIs and keeps the user disabled until verification",
           "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership",
           "default TOTP URI preserves reserved issuer bytes and explicit default parameters",
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
@@ -10502,7 +10387,7 @@
           "two-factor default OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor ignore OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor observe OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
-          "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
+          "renamed two-factor table and fields own enrollment, TOTP, OTP, backup, trust and disable",
           "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries",
           "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
           "two-factor pending otp expired default cleanup preserves the actual lookup snapshot and failure stage",
@@ -10589,7 +10474,7 @@
       "implemented": true,
       "evidence": {
         "success": [
-          "two-factor verify-backup-code signs the user in and consumes the used code",
+          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor challenge budget spans factors and invalidates the exhausted challenge before a valid code",
           "two-factor lockout settings preserve fractional thresholds, zero defaults, disabled budgets and successful resets in persisted state",
           "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
@@ -10597,7 +10482,6 @@
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
           "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
           "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
-          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
@@ -10609,7 +10493,7 @@
           "two-factor pending backup newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ],
         "rejection": [
-          "two-factor verify-backup-code signs the user in and consumes the used code",
+          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor challenge budget spans factors and invalidates the exhausted challenge before a valid code",
           "two-factor lockout settings preserve fractional thresholds, zero defaults, disabled budgets and successful resets in persisted state",
           "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
@@ -10618,7 +10502,6 @@
           "two-factor pending backup preserves an identical-message application Forbidden after consumption",
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
           "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
-          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-negative applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
@@ -10632,7 +10515,7 @@
           "two-factor pending backup newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ],
         "authorization": [
-          "two-factor verify-backup-code signs the user in and consumes the used code",
+          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor pending backup session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
           "two-factor pending backup preserves an identical-message application Forbidden after consumption",
           "two-factor pending backup expired default cleanup preserves the actual lookup snapshot and failure stage",
@@ -10681,7 +10564,7 @@
           "two-factor default OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor ignore OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor observe OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
-          "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
+          "renamed two-factor table and fields own enrollment, TOTP, OTP, backup, trust and disable",
           "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries",
           "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
           "two-factor pending otp expired default cleanup preserves the actual lookup snapshot and failure stage",

@@ -200,17 +200,23 @@ compatScenario(
     });
     expect(attackerSignup.error).toBeNull();
 
-    async function serverDelete(body: unknown, cookie?: string) {
-      const response = await owner.fetch(`${ctx.baseURL}/__test/server-api/passkey-delete`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ body, ...(cookie ? { headers: { cookie } } : {}) }),
-      });
+    async function serverDelete(body: unknown, cookie?: string, http = false) {
+      const response = await (http ? ctx.actor("http-passkey") : owner).fetch(
+        `${ctx.baseURL}${http ? "/api/auth/passkey/delete-passkey" : "/__test/server-api/passkey-delete"}`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...(http ? { cookie: cookie ?? "" } : {}),
+          },
+          body: JSON.stringify(http ? body : { body, ...(cookie ? { headers: { cookie } } : {}) }),
+        },
+      );
       expect(response.headers.get("set-cookie")).toBeNull();
       const text = await response.text();
       return { status: response.status, body: text ? JSON.parse(text) : null, absent: text === "" };
     }
-    const forbiddenDelete = await serverDelete({ id: passkey.id }, attackerCookie);
+    const forbiddenDelete = await serverDelete({ id: passkey.id }, attackerCookie, true);
     expect(forbiddenDelete.status).toBe(401);
     expect(forbiddenDelete.absent).toBe(true);
     const malformedDelete = await serverDelete({ id: 42 }, ownerCookie);
@@ -241,12 +247,18 @@ compatScenario(
       { id: passkey.id, userId: user.id, credentialID: passkey.credentialID, name: "Laptop" },
     ]);
 
-    async function serverUpdate(body: unknown, cookie?: string) {
-      const response = await owner.fetch(`${ctx.baseURL}/__test/server-api/passkey-update`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ body, ...(cookie ? { headers: { cookie } } : {}) }),
-      });
+    async function serverUpdate(body: unknown, cookie?: string, http = false) {
+      const response = await (http ? ctx.actor("http-passkey") : owner).fetch(
+        `${ctx.baseURL}${http ? "/api/auth/passkey/update-passkey" : "/__test/server-api/passkey-update"}`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...(http ? { cookie: cookie ?? "" } : {}),
+          },
+          body: JSON.stringify(http ? body : { body, ...(cookie ? { headers: { cookie } } : {}) }),
+        },
+      );
       expect(response.headers.get("set-cookie")).toBeNull();
       return { status: response.status, body: (await response.json()) as any };
     }
@@ -264,6 +276,7 @@ compatScenario(
     const forbiddenUpdate = await serverUpdate(
       { id: passkey.id, name: "Hijacked" },
       attackerCookie,
+      true,
     );
     expect(forbiddenUpdate.status).toBe(401);
     expect(forbiddenUpdate.body.code).toBe("YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY");
@@ -426,6 +439,7 @@ compatScenario(
     const deleted = await serverDelete(
       { id: passkey.id, userId: attackerSignup.data!.user.id },
       ownerCookie,
+      true,
     );
     expect(deleted.status).toBe(200);
     expect(deleted.body).toEqual({ status: true });

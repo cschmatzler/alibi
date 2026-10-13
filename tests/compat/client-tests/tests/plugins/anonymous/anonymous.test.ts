@@ -141,15 +141,13 @@ for (const mode of ["standard", "attributes"] as const) {
 
       const foreignBefore = await ctx.readUserState({ userId: foreignSignup.data!.user.id });
       async function remove(headers?: Record<string, string>, body?: unknown) {
-        const response = await primary.fetch(`${ctx.baseURL}/__test/server-api/anonymous-delete`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            profile: primary.profile,
-            ...(headers ? { headers } : {}),
-            ...(body ? { body } : {}),
-          }),
-        });
+        const response = await ctx
+          .actor("http-delete", primary.profile)
+          .fetch(`${ctx.baseURL}${authProfilePath(primary.profile)}/delete-anonymous-user`, {
+            method: "POST",
+            headers: { "content-type": "application/json", cookie: headers?.cookie ?? "" },
+            body: JSON.stringify(body ?? {}),
+          });
         return {
           status: response.status,
           body: (await response.json()) as any,
