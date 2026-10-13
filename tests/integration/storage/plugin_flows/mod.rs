@@ -411,3 +411,5 @@ mod oauth_logout;
 mod oauth_logout_confirmation;
 
 mod oauth_session_retirement;
+
+mod oauth_refresh_grant;

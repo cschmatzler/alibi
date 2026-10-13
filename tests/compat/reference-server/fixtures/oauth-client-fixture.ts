@@ -330,6 +330,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
                 authTime: row.authTime ?? null,
                 resources: row.resources ?? null,
                 revoked: row.revoked ?? null,
+                rotatedAt:row.rotatedAt ?? null,
               }
             : null,
         ),

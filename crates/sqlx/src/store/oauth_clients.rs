@@ -10,6 +10,25 @@ use alibi_core::{
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
+    async fn claim_oauth_refresh_rotation(
+        &self,
+        token: &str,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<bool> {
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "UPDATE ");
+        sql.ident("oauthRefreshToken");
+        sql.push(" SET ");
+        sql.assign("revoked", at);
+        sql.push(", ");
+        sql.assign("rotatedAt", at);
+        sql.push(" WHERE ");
+        sql.compare("oauthRefreshToken", "token", " = ", token);
+        sql.push(" AND ");
+        sql.ident("revoked");
+        sql.push(" IS NULL");
+        Ok(self.exec().execute(sql).await? > 0)
+    }
+
     async fn mark_oauth_token_revoked(
         &self,
         kind: alibi_core::store::OAuthTokenKind,
