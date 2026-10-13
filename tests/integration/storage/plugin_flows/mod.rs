@@ -355,3 +355,5 @@ mod oauth_client_list;
 mod oauth_client_delete;
 
 mod oauth_client_secret_rotation;
+
+mod oauth_client_update;

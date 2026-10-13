@@ -77,4 +77,22 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
             .map(TryInto::try_into)
             .transpose()
     }
+    async fn update_oauth_client_metadata(
+        &self,
+        client_id: &str,
+        metadata: serde_json::Value,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<OAuthClient>> {
+        let Some(client) = self.get_oauth_client(client_id).await? else {
+            return Ok(None);
+        };
+        let mut active = ActiveRow::new();
+        active.set("id", client.id);
+        active.set("metadata", serde_json::to_string(&metadata)?);
+        active.set("updated_at", updated_at);
+        model::update::<Model>(self.exec(), &active)
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+    }
 }
