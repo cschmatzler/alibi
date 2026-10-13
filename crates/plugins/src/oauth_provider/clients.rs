@@ -722,18 +722,7 @@ impl OAuthProviderPlugin {
             .without_error_body()
             .with_header("Content-Type", "application/json"));
         }
-        let mut output: serde_json::Map<String, Value> = serde_json::from_value(client.metadata)?;
-        _ = output.insert("client_id".into(), json!(client.client_id));
-        _ = output.insert("user_id".into(), json!(client.user_id));
-        _ = output.insert(
-            "client_id_issued_at".into(),
-            json!(client.created_at.timestamp()),
-        );
-        if client.client_secret.is_some() {
-            _ = output.insert("client_secret_expires_at".into(), json!(0));
-        }
-        _ = output.remove("client_secret");
-        EndpointResponse::json(&Value::Object(output))
+        EndpointResponse::json(&client_read_metadata(client)?)
     }
 }
 
@@ -779,5 +768,43 @@ impl OAuthProviderPlugin {
         _ = display.insert("client_id".into(), json!(client.client_id));
         _ = display.insert("redirect_uris".into(), json!([]));
         EndpointResponse::json(&Value::Object(display))
+    }
+}
+
+fn client_read_metadata(client: alibi_core::store::OAuthClient) -> AuthResult<Value> {
+    let mut output: serde_json::Map<String, Value> = serde_json::from_value(client.metadata)?;
+    _ = output.insert("client_id".into(), json!(client.client_id));
+    _ = output.insert("user_id".into(), json!(client.user_id));
+    _ = output.insert(
+        "client_id_issued_at".into(),
+        json!(client.created_at.timestamp()),
+    );
+    if client.client_secret.is_some() {
+        _ = output.insert("client_secret_expires_at".into(), json!(0));
+    }
+    _ = output.remove("client_secret");
+    Ok(Value::Object(output))
+}
+impl OAuthProviderPlugin {
+    /// List durable clients belonging to the authenticated user.
+    #[must_use]
+    pub fn get_oauth_clients_endpoint() -> ServerEndpoint<Value> {
+        ServerEndpoint::new("oauth-provider", "getOAuthClients")
+    }
+    pub(super) async fn list_clients<S: AuthSchema>(
+        &self,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
+        let clients = ctx
+            .database
+            .list_oauth_clients_by_user(user.id().as_ref())
+            .await?;
+        let output: Vec<Value> = clients
+            .into_iter()
+            .map(client_read_metadata)
+            .collect::<AuthResult<_>>()?;
+        EndpointResponse::json(&output)
     }
 }

@@ -33,4 +33,9 @@ pub trait OAuthClientStore: Send + Sync {
             "OAuth client persistence is not supported by this store",
         ))
     }
+    async fn list_oauth_clients_by_user(&self, _user_id: &str) -> AuthResult<Vec<OAuthClient>> {
+        Err(AuthError::config(
+            "OAuth client persistence is not supported by this store",
+        ))
+    }
 }

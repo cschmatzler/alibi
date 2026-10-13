@@ -39,4 +39,17 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
             .map(TryInto::try_into)
             .transpose()
     }
+    async fn list_oauth_clients_by_user(&self, user_id: &str) -> AuthResult<Vec<OAuthClient>> {
+        let mut sql = model::select_model::<Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "user_id", " = ", user_id);
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
+        self.exec()
+            .fetch_all::<Model>(sql)
+            .await?
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect()
+    }
 }

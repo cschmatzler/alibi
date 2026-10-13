@@ -9,7 +9,7 @@ use alibi_core::{
     store::{CreateOAuthClient, OAuthClient, OAuthClientStore},
 };
 use async_trait::async_trait;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QuerySelect, Set};
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
     async fn create_oauth_client(&self, data: CreateOAuthClient) -> AuthResult<OAuthClient> {
@@ -38,5 +38,19 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             .map_err(map_db_err)?
             .map(TryInto::try_into)
             .transpose()
+    }
+    async fn list_oauth_clients_by_user(&self, user_id: &str) -> AuthResult<Vec<OAuthClient>> {
+        Entity::find()
+            .filter(Column::UserId.eq(user_id))
+            .limit(
+                u64::try_from(self.config().advanced.database.default_find_many_limit)
+                    .unwrap_or(u64::MAX),
+            )
+            .all(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect()
     }
 }

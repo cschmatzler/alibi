@@ -476,4 +476,6 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
 impl alibi::store::OAuthClientStore for ApplicationStore {
  async fn create_oauth_client(&self,data:alibi::store::CreateOAuthClient)->AuthResult<alibi::store::OAuthClient> {self.inner.create_oauth_client(data).await}
  async fn get_oauth_client(&self,client_id:&str)->AuthResult<Option<alibi::store::OAuthClient>> {self.inner.get_oauth_client(client_id).await}
+ async fn list_oauth_clients_by_user(&self,user_id:&str)->AuthResult<Vec<alibi::store::OAuthClient>> {self.inner.list_oauth_clients_by_user(user_id).await}
+
 }
