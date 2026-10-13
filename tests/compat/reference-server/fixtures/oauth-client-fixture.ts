@@ -12,9 +12,37 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     plugins: [username(), jwt(), oauthProvider({ loginPage: "/login", consentPage: "/consent" })],
   };
   await (await getMigrations(options)).runMigrations();
-  const auth = betterAuth(options);
+  const auths = {
+    default: betterAuth(options),
+    dynamic: betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          allowDynamicClientRegistration: true,
+        }),
+      ],
+    }),
+    public: betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          allowDynamicClientRegistration: true,
+          allowUnauthenticatedClientRegistration: true,
+        }),
+      ],
+    }),
+  };
   return async (request: Request) => {
     const input = await request.json();
+    const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
     if (input.action === "signup") {
       return auth.api.signUpEmail({ body: input.body, asResponse: true });
     }
@@ -29,7 +57,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           row
             ? {
                 clientId: row.clientId,
-                userId: row.userId,
+                userId: row.userId ?? null,
                 clientName: row.name,
                 redirectUris: row.redirectUris,
                 client_secret: row.clientSecret ?? null,
@@ -38,6 +66,13 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         ),
         { headers: { "content-type": "application/json" } },
       );
+    }
+    if (input.action === "register") {
+      return auth.api.registerOAuthClient({
+        body: input.body,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
     }
     if (input.action === "update") {
       return auth.api.updateOAuthClient({

@@ -232,11 +232,18 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             AuthRoute::get("/oauth2/get-clients", "getOAuthClients"),
             AuthRoute::post("/oauth2/delete-client", "deleteOAuthClient"),
             AuthRoute::post("/oauth2/update-client", "updateOAuthClient"),
+            AuthRoute::post("/oauth2/register", "registerOAuthClient"),
             AuthRoute::post("/oauth2/client/rotate-secret", "rotateClientSecret"),
         ]
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "registerOAuthClient",
+                "registerOAuthClient",
+                Some("/oauth2/register"),
+                HttpMethod::Post,
+            ),
             crate::endpoint::definition(
                 "updateOAuthClient",
                 "updateOAuthClient",
@@ -326,6 +333,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "registerOAuthClient" {
+            return Box::pin(self.register_client(call.body(), call, ctx)).await;
+        }
         if call.operation_id() == "updateOAuthClient" {
             return Box::pin(self.update_client(call.body_as()?, call, ctx)).await;
         }
@@ -365,6 +375,14 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/oauth2/register" && *req.method() == HttpMethod::Post {
+            let body: alibi_core::utils::json::JsValue = req.body_as_json()?;
+            return Ok(Some(
+                Box::pin(self.register_client(Some(&body), req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
         if req.path() == "/oauth2/update-client" && *req.method() == HttpMethod::Post {
             let body: alibi_core::utils::json::JsValue = req.body_as_json()?;
             let input =

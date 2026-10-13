@@ -87,47 +87,8 @@ impl OAuthProviderPlugin {
             Ok(metadata) => metadata,
             Err(response) => return Ok(response),
         };
-        let auth = metadata
-            .get("token_endpoint_auth_method")
-            .and_then(Value::as_str)
-            .unwrap_or("client_secret_basic");
-        let client_id = random_credential();
-        let plaintext = (!["none", "private_key_jwt"].contains(&auth)).then(random_credential);
-        let stored = plaintext
-            .as_deref()
-            .map(|secret| {
-                if self.config.disable_jwt_plugin {
-                    crate::token_crypto::encrypt_with_config(secret, &ctx.config)
-                } else {
-                    Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(secret.as_bytes())))
-                }
-            })
-            .transpose()?;
-        let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
-            .ok_or_else(|| AuthError::internal("Invalid client creation timestamp"))?;
-        let user_id = user.id().as_ref().to_owned();
-        let client = ctx
-            .database
-            .create_oauth_client(alibi_core::store::CreateOAuthClient {
-                client_id,
-                user_id: Some(user_id),
-                client_secret: stored,
-                metadata: Value::Object(metadata),
-                created_at: now,
-            })
-            .await?;
-        let mut output: serde_json::Map<String, Value> = serde_json::from_value(client.metadata)?;
-        _ = output.insert("client_id".into(), json!(client.client_id));
-        _ = output.insert("user_id".into(), json!(client.user_id));
-        _ = output.insert(
-            "client_id_issued_at".into(),
-            json!(client.created_at.timestamp()),
-        );
-        if let Some(secret) = plaintext {
-            _ = output.insert("client_secret".into(), json!(secret));
-            _ = output.insert("client_secret_expires_at".into(), json!(0));
-        }
-        Ok(EndpointResponse::json(&Value::Object(output))?.with_status(201))
+        self.persist_client(metadata, Some(user.id().as_ref().to_owned()), ctx)
+            .await
     }
 }
 fn random_credential() -> String {
@@ -895,6 +856,38 @@ impl OAuthProviderPlugin {
                 "When 'code' response type is used, 'authorization_code' grant type must be included",
             ).map(Err);
         }
+        if metadata.get("subject_type").and_then(Value::as_str) == Some("pairwise") {
+            if self
+                .config
+                .pairwise_secret
+                .as_ref()
+                .is_none_or(String::is_empty)
+            {
+                return protocol_error(
+                    "invalid_client_metadata",
+                    "pairwise subject_type requires server pairwiseSecret configuration",
+                )
+                .map(Err);
+            }
+            let mut hosts = Vec::new();
+            for redirect in &redirects {
+                if let Some(uri) = redirect.as_str()
+                    && let Ok(url) = url::Url::parse(uri)
+                {
+                    let host = format!(
+                        "{}:{}",
+                        url.host_str().unwrap_or_default(),
+                        url.port().map_or_else(String::new, |port| port.to_string())
+                    );
+                    if !hosts.contains(&host) {
+                        hosts.push(host);
+                    }
+                }
+            }
+            if hosts.len() > 1 {
+                return protocol_error("invalid_client_metadata","pairwise clients with redirect_uris on different hosts require a sector_identifier_uri, which is not yet supported. All redirect_uris must share the same host.").map(Err);
+            }
+        }
         if let Some(scope) = metadata.get("scope").and_then(Value::as_str) {
             for scope in scope.split(' ').filter(|scope| !scope.is_empty()) {
                 if !self.config.scopes.iter().any(|allowed| allowed == scope) {
@@ -1050,4 +1043,235 @@ impl OAuthProviderPlugin {
         };
         EndpointResponse::json(&client_read_metadata(client)?)
     }
+}
+
+impl OAuthProviderPlugin {
+    async fn persist_client<S: AuthSchema>(
+        &self,
+        metadata: serde_json::Map<String, Value>,
+        user_id: Option<String>,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let auth = metadata
+            .get("token_endpoint_auth_method")
+            .and_then(Value::as_str)
+            .unwrap_or("client_secret_basic");
+        let client_id = random_credential();
+        let plaintext = (!["none", "private_key_jwt"].contains(&auth)).then(random_credential);
+        let stored = plaintext
+            .as_deref()
+            .map(|secret| {
+                if self.config.disable_jwt_plugin {
+                    crate::token_crypto::encrypt_with_config(secret, &ctx.config)
+                } else {
+                    Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(secret.as_bytes())))
+                }
+            })
+            .transpose()?;
+        let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
+            .ok_or_else(|| AuthError::internal("Invalid client creation timestamp"))?;
+        let client = ctx
+            .database
+            .create_oauth_client(alibi_core::store::CreateOAuthClient {
+                client_id,
+                user_id,
+                client_secret: stored,
+                metadata: Value::Object(metadata),
+                created_at: now,
+            })
+            .await?;
+        let mut output: serde_json::Map<String, Value> = serde_json::from_value(client.metadata)?;
+        _ = output.insert("client_id".into(), json!(client.client_id));
+        if let Some(user_id) = client.user_id {
+            _ = output.insert("user_id".into(), json!(user_id));
+        }
+        _ = output.insert(
+            "client_id_issued_at".into(),
+            json!(client.created_at.timestamp()),
+        );
+        if let Some(secret) = plaintext {
+            _ = output.insert("client_secret".into(), json!(secret));
+            _ = output.insert("client_secret_expires_at".into(), json!(0));
+        }
+        Ok(EndpointResponse::json(&Value::Object(output))?.with_status(201))
+    }
+    /// Register a client under the provider's dynamic-registration policy.
+    pub fn register_oauth_client_endpoint(
+        input: &CreateOAuthClientInput,
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("oauth-provider", "registerOAuthClient").with_body(input)
+    }
+    pub(super) async fn register_client<S: AuthSchema>(
+        &self,
+        body: Option<&JsValue>,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let mut metadata = match registration_metadata(body)? {
+            Ok(metadata) => metadata,
+            Err(response) => return Ok(response),
+        };
+        req.queue_response_header("Cache-Control", "no-store");
+        req.queue_response_header("Pragma", "no-cache");
+        if !self.config.allow_dynamic_client_registration {
+            return status_protocol_error(403, "access_denied", "Client registration is disabled");
+        }
+        let session = Box::pin(ctx.require_cached_session(req)).await.ok();
+        if session.is_none() && !self.config.allow_unauthenticated_client_registration {
+            return Ok(EndpointResponse::error(AuthError::Api {
+                status: 401,
+                code: None,
+                message: String::new(),
+            })
+            .with_error_body(alibi_core::utils::json::parse_value(
+                r#"{"error_description":"Authentication required for client registration"}"#,
+            )?)
+            .with_header("WWW-Authenticate", "Bearer"));
+        }
+        if session.is_none()
+            && metadata
+                .get("grant_types")
+                .and_then(Value::as_array)
+                .is_some_and(|grants| grants.contains(&json!("client_credentials")))
+        {
+            return status_protocol_error(
+                400,
+                "invalid_client_metadata",
+                "client_credentials grant requires authenticated registration",
+            );
+        }
+        if metadata
+            .get("scope")
+            .and_then(Value::as_str)
+            .is_none_or(str::is_empty)
+        {
+            _ = metadata.insert("scope".into(), json!(self.config.scopes.join(" ")));
+        }
+        let mut metadata = match self.admit_metadata(metadata, ctx)? {
+            Ok(metadata) => metadata,
+            Err(response) => return Ok(response),
+        };
+        if let Some(resources) = body
+            .and_then(|body| body.get("resources"))
+            .and_then(JsValue::as_array)
+            && let Some(resource) = resources.first().and_then(JsValue::as_str)
+        {
+            return status_protocol_error(
+                400,
+                "invalid_target",
+                &format!("requested resource {resource} is not allowed for client registration"),
+            );
+        }
+        _ = metadata.insert("scope".into(), json!(self.config.scopes.join(" ")));
+        let user_id = session.map(|(user, _)| user.id().as_ref().to_owned());
+        self.persist_client(metadata, user_id, ctx).await
+    }
+}
+fn registration_metadata(
+    body: Option<&JsValue>,
+) -> AuthResult<Result<serde_json::Map<String, Value>, EndpointResponse>> {
+    let validated = match validate(body) {
+        Ok(value) => value,
+        Err(error) => {
+            let message = error.error_payload().2;
+            let first = message.split("; ").next().unwrap_or(&message);
+            let (path, issue) = first
+                .strip_prefix("[body.")
+                .and_then(|text| text.split_once("] "))
+                .unwrap_or_else(|| ("", first.trim_start_matches("[body] ")));
+            let error = if path.starts_with("redirect_uris")
+                || path.starts_with("post_logout_redirect_uris")
+            {
+                "invalid_redirect_uri"
+            } else if path == "software_statement" {
+                "invalid_software_statement"
+            } else {
+                "invalid_client_metadata"
+            };
+            let description = if path.is_empty() {
+                issue.to_owned()
+            } else if let Some(expected) = issue
+                .strip_prefix("Invalid input: expected ")
+                .and_then(|text| text.split_once(','))
+            {
+                format!("{path} must be a {}", expected.0)
+            } else {
+                format!("{path}: {issue}")
+            };
+            return status_protocol_error(400, error, &description).map(Err);
+        }
+    };
+    let mut metadata: serde_json::Map<String, Value> =
+        alibi_core::utils::json::from_value(validated)?;
+    if metadata
+        .get("client_name")
+        .and_then(Value::as_str)
+        .is_some_and(|name| name.trim().is_empty())
+    {
+        return status_protocol_error(
+            400,
+            "invalid_client_metadata",
+            "client_name: client_name cannot be empty",
+        )
+        .map(Err);
+    }
+    if let Some(subject) = body.and_then(|body| body.get("subject_type")) {
+        if !subject
+            .as_str()
+            .is_some_and(|value| ["public", "pairwise"].contains(&value))
+        {
+            return status_protocol_error(
+                400,
+                "invalid_client_metadata",
+                "subject_type must be one of: public, pairwise",
+            )
+            .map(Err);
+        }
+        _ = metadata.insert("subject_type".into(), json!(subject.as_str()));
+    }
+    if let Some(value) = body.and_then(|body| body.get("resources")) {
+        let Some(resources) = value.as_array() else {
+            return status_protocol_error(400, "invalid_target", "resources must be a array")
+                .map(Err);
+        };
+        for (index, value) in resources.iter().enumerate() {
+            let Some(uri) = value.as_str() else {
+                return status_protocol_error(
+                    400,
+                    "invalid_target",
+                    &format!("resources[{index}] must be a string"),
+                )
+                .map(Err);
+            };
+            let error = match url::Url::parse(uri) {
+                Err(_) => Some("resource must be an absolute URI"),
+                Ok(url) => {
+                    if uri.contains('#') {
+                        Some("resource must not contain a fragment")
+                    } else if ["javascript", "data", "vbscript"].contains(&url.scheme()) {
+                        Some("resource cannot use javascript:, data:, or vbscript: scheme")
+                    } else {
+                        None
+                    }
+                }
+            };
+            if let Some(error) = error {
+                return status_protocol_error(
+                    400,
+                    "invalid_target",
+                    &format!("resources[{index}]: {error}"),
+                )
+                .map(Err);
+            }
+        }
+    }
+    if body.and_then(|body| body.get("skip_consent")).is_some() {
+        return status_protocol_error(
+            400,
+            "invalid_client_metadata",
+            "skip_consent must be a never",
+        )
+        .map(Err);
+    }
+    Ok(Ok(metadata))
 }
