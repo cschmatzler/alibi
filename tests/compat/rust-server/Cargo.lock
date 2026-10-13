@@ -177,6 +177,7 @@ dependencies = [
  "p256 0.14.0",
  "p384 0.14.0",
  "p521",
+ "quick-xml",
  "rand 0.10.3",
  "rand_core 0.6.4",
  "regex",
@@ -3591,6 +3592,15 @@ checksum = "4dcd034599e63b970727f70d79e02d62390a4a84f7c6b827c27c46d5ac3fa622"
 dependencies = [
  "ar_archive_writer",
  "cc",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]
