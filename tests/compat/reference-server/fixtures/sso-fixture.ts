@@ -87,47 +87,51 @@ export async function ssoFixture(base: BetterAuthOptions) {
     ...options,
     plugins: [username(), sso({ disableImplicitSignUp: true })],
   };
-  const configuredOptions = {
+  const configuredProviderDefinitions = [
+    {
+      providerId: "configured-oidc",
+      domain: "oidc.company.test",
+      oidcConfig: {
+        issuer: idp.base,
+        clientId: "enterprise-client",
+        clientSecret: "stored-secret",
+        pkce: true,
+        authorizationEndpoint: `${idp.base}/authorize`,
+        tokenEndpoint: `${idp.base}/token`,
+        jwksEndpoint: `${idp.base}/jwks`,
+        userInfoEndpoint: `${idp.base}/userinfo`,
+        tokenEndpointAuthentication: "client_secret_basic" as const,
+      },
+    },
+    {
+      providerId: "configured-saml",
+      domain: "saml.company.test",
+      samlConfig: {
+        issuer: "https://sp.example.test/entity",
+        entryPoint: "https://idp.example.test/sso",
+        cert: await Bun.file(
+          new URL("../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
+        ).text(),
+        idpMetadata: { entityID: "https://idp.example.test/entity" },
+        wantAssertionsSigned: true,
+      },
+    },
+  ];
+  const configuredOptions = (changed = false) => ({
     ...options,
     plugins: [
       username(),
       sso({
         domainVerification: { enabled: true },
-        defaultSSO: [
-          {
-            providerId: "configured-oidc",
-            domain: "oidc.company.test",
-            oidcConfig: {
-              issuer: idp.base,
-              clientId: "enterprise-client",
-              clientSecret: "stored-secret",
-              pkce: true,
-              authorizationEndpoint: `${idp.base}/authorize`,
-              tokenEndpoint: `${idp.base}/token`,
-              jwksEndpoint: `${idp.base}/jwks`,
-              userInfoEndpoint: `${idp.base}/userinfo`,
-              tokenEndpointAuthentication: "client_secret_basic" as const,
-            },
-          },
-          {
-            providerId: "configured-saml",
-            domain: "saml.company.test",
-            samlConfig: {
-              issuer: "https://sp.example.test/entity",
-              entryPoint: "https://idp.example.test/sso",
-              cert: await Bun.file(
-                new URL("../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
-              ).text(),
-              idpMetadata: { entityID: "https://idp.example.test/entity" },
-              wantAssertionsSigned: true,
-            },
-          },
-        ],
+        defaultSSO: configuredProviderDefinitions.map((provider) =>
+          changed ? { ...provider, domain: `changed.${provider.domain}` } : provider,
+        ),
       }),
     ],
-  };
+  });
   const instances = new Map([
-    ["configured", betterAuth(configuredOptions)],
+    ["configured-changed", betterAuth(configuredOptions(true))],
+    ["configured", betterAuth(configuredOptions())],
     ["default", betterAuth(options)],
     ["no-signup", betterAuth(noSignupOptions)],
     ["validation", betterAuth(validationOptions)],
@@ -142,25 +146,27 @@ export async function ssoFixture(base: BetterAuthOptions) {
   const handle = async (request: Request) => {
     const input = await request.json();
     const mode =
-      input.mode === "configured"
-        ? "configured"
-        : input.mode === "no-signup"
-          ? "no-signup"
-          : input.mode === "validation"
-            ? "validation"
-            : input.mode === "trusted-claims"
-              ? "trusted-claims"
-              : input.mode === "signed-request-slo"
-                ? "signed-request-slo"
-                : input.mode === "signed-slo"
-                  ? "signed-slo"
-                  : input.mode === "domain"
-                    ? "domain"
-                    : input.mode === "shared"
-                      ? "shared"
-                      : input.mode === "slo"
-                        ? "slo"
-                        : "default";
+      input.mode === "configured-changed"
+        ? "configured-changed"
+        : input.mode === "configured"
+          ? "configured"
+          : input.mode === "no-signup"
+            ? "no-signup"
+            : input.mode === "validation"
+              ? "validation"
+              : input.mode === "trusted-claims"
+                ? "trusted-claims"
+                : input.mode === "signed-request-slo"
+                  ? "signed-request-slo"
+                  : input.mode === "signed-slo"
+                    ? "signed-slo"
+                    : input.mode === "domain"
+                      ? "domain"
+                      : input.mode === "shared"
+                        ? "shared"
+                        : input.mode === "slo"
+                          ? "slo"
+                          : "default";
     const auth = instances.get(mode)!;
     if (input.action === "validation-reset") {
       validationEvents.length = 0;

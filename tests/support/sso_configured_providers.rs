@@ -21,3 +21,11 @@ pub(crate) fn providers(base: &str) -> Vec<SsoDefaultProvider> {
         },
     ]
 }
+
+pub(crate) fn changed_providers(base: &str) -> Vec<SsoDefaultProvider> {
+    let mut configured = providers(base);
+    for provider in &mut configured {
+        provider.domain = format!("changed.{}", provider.domain);
+    }
+    configured
+}
