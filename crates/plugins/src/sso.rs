@@ -8,6 +8,8 @@ mod domain_verification;
 mod domains;
 mod idp_metadata_xml;
 mod idp_services;
+mod private_key;
+pub use private_key::SsoPrivateKey;
 mod provider_delete;
 mod provider_list;
 mod provider_read;
@@ -41,6 +43,7 @@ pub struct SsoDefaultProvider {
     pub domain: String,
     pub oidc_config: Option<Value>,
     pub saml_config: Option<Value>,
+    pub private_key: Option<SsoPrivateKey>,
 }
 #[derive(Clone, Debug)]
 pub struct SsoConfig {

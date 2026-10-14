@@ -15,7 +15,7 @@ use rsa::{
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-const ALGORITHMS: &[&str] = &[
+pub(crate) const ALGORITHMS: &[&str] = &[
     "RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512", "EdDSA",
 ];
 

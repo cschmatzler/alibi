@@ -1,4 +1,4 @@
-import { createHash, randomUUID, sign } from "node:crypto";
+import { createHash, randomUUID, sign, verify } from "node:crypto";
 export function ssoOidcFixture() {
   let email = "sso-employee@example.test";
   let idTokenCase = "none";
@@ -45,14 +45,23 @@ export function ssoOidcFixture() {
         callback.searchParams.set("state", url.searchParams.get("state") ?? "");
         return new Response(null, { status: 302, headers: { location: callback.toString() } });
       }
-      if (url.pathname === "/token") {
+      if (url.pathname === "/token" || url.pathname === "/token-jwt") {
         const form = Object.fromEntries(new URLSearchParams(await request.text()));
         exchanges.push({ authorization: request.headers.get("authorization"), form });
         const stored = codes.get(form.code);
         codes.delete(form.code);
+        const authenticated =
+          url.pathname === "/token-jwt"
+            ? request.headers.get("authorization") === null &&
+              !Object.hasOwn(form, "client_secret") &&
+              form.client_id === "enterprise-client" &&
+              form.client_assertion_type ===
+                "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" &&
+              (await verifyClientAssertion(form.client_assertion!, url.toString()))
+            : request.headers.get("authorization") ===
+              "Basic ZW50ZXJwcmlzZS1jbGllbnQ6c3RvcmVkLXNlY3JldA==";
         if (
-          request.headers.get("authorization") !==
-            "Basic ZW50ZXJwcmlzZS1jbGllbnQ6c3RvcmVkLXNlY3JldA==" ||
+          !authenticated ||
           !stored ||
           createHash("sha256")
             .update(form.code_verifier ?? "")
@@ -161,4 +170,39 @@ async function signedIdToken(
   const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
   const data = `${header}.${payload}`;
   return `${data}.${sign("RSA-SHA256", Buffer.from(data), privateKey).toString("base64url")}`;
+}
+
+async function verifyClientAssertion(token: string, audience: string) {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return false;
+    const header = JSON.parse(Buffer.from(parts[0]!, "base64url").toString());
+    const claims = JSON.parse(Buffer.from(parts[1]!, "base64url").toString());
+    const now = Math.floor(Date.now() / 1000);
+    if (
+      header.alg !== "RS256" ||
+      header.typ !== "JWT" ||
+      header.kid !== "sso-key" ||
+      claims.iss !== "enterprise-client" ||
+      claims.sub !== "enterprise-client" ||
+      claims.aud !== audience ||
+      claims.iat > now + 2 ||
+      claims.iat < now - 5 ||
+      claims.exp !== claims.iat + 120 ||
+      !/^[-0-9a-f]{36}$/.test(claims.jti)
+    ) {
+      return false;
+    }
+    const cert = await Bun.file(
+      new URL("../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
+    ).text();
+    return verify(
+      "RSA-SHA256",
+      Buffer.from(`${parts[0]}.${parts[1]}`),
+      cert,
+      Buffer.from(parts[2]!, "base64url"),
+    );
+  } catch {
+    return false;
+  }
 }

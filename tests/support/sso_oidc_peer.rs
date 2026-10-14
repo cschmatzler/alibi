@@ -44,21 +44,135 @@ pub(super) async fn start() -> Peer {
     let token_codes = codes;
     let token_tokens = tokens.clone();
     let log = exchanges.clone();
-    let app=Router::new().route("/authorize",get(move|Query(query):Query<HashMap<String,String>>|{let codes=authorize_codes.clone();let email=authorize_email.clone();let case=authorize_case.clone();let profile=authorize_profile.clone();async move{
- if query.get("client_id").map(String::as_str)!=Some("enterprise-client")||query.get("code_challenge_method").map(String::as_str)!=Some("S256"){return StatusCode::BAD_REQUEST.into_response();}
- let Some(challenge)=query.get("code_challenge")else{return StatusCode::BAD_REQUEST.into_response();};let Some(callback)=query.get("redirect_uri")else{return StatusCode::BAD_REQUEST.into_response();};
- let code=uuid::Uuid::new_v4().to_string();_ = codes.lock().unwrap().insert(code.clone(),(challenge.clone(),email.lock().unwrap().clone(),case.lock().unwrap().clone(),profile.lock().unwrap().clone()));let mut location=url::Url::parse(callback).unwrap();_ = location.query_pairs_mut().append_pair("code",&code).append_pair("state",query.get("state").map_or("",String::as_str));
- (StatusCode::FOUND,[("location",location.to_string())]).into_response()
- }})).route("/token",post(move|headers:HeaderMap,Form(form):Form<HashMap<String,String>>|{let codes=token_codes.clone();let tokens=token_tokens.clone();let exchanges=log.clone();let issuer=token_issuer.clone();async move{
- exchanges.lock().unwrap().push(serde_json::json!({"authorization":headers.get("authorization").and_then(|header|header.to_str().ok()),"form":form}));
- if headers.get("authorization").and_then(|value|value.to_str().ok())!=Some("Basic ZW50ZXJwcmlzZS1jbGllbnQ6c3RvcmVkLXNlY3JldA=="){return failure();}
- let Some(code)=form.get("code")else{return failure();};let Some((challenge,email,case,profile))=codes.lock().unwrap().remove(code)else{return failure();};
- let Some(verifier)=form.get("code_verifier")else{return failure();};if base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier.as_bytes()))!=challenge{return failure();}
- let profile=profile.unwrap_or_else(||serde_json::json!({"sub":"employee-subject","email":email,"email_verified":true,"name":"SSO employee"}));let token=uuid::Uuid::new_v4().to_string();_ = tokens.lock().unwrap().insert(token.clone(),profile.clone());let mut output=serde_json::json!({"access_token":token,"token_type":"Bearer","expires_in":3600,"scope":"openid email"});if case!="none"{output["id_token"]=serde_json::json!(signed_id_token(&issuer,&email,&case,&profile));}Json(output).into_response()
- }})).route("/userinfo",get(move|headers:HeaderMap|{let tokens=tokens.clone();async move{
- let token=headers.get("authorization").and_then(|value|value.to_str().ok()).and_then(|value|value.strip_prefix("Bearer ")).unwrap_or("");
- let email=tokens.lock().unwrap().get(token).cloned();match email{Some(profile)=>Json(profile).into_response(),None=>StatusCode::UNAUTHORIZED.into_response()}
- }})).route("/jwks",get(||async{Json(serde_json::from_str::<serde_json::Value>(include_str!("../fixtures/one-tap/jwks.json")).unwrap())}));
+    let token_handler = post(
+        move |headers: HeaderMap,
+              axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
+              Form(form): Form<HashMap<String, String>>| {
+            let codes = token_codes.clone();
+            let tokens = token_tokens.clone();
+            let exchanges = log.clone();
+            let issuer = token_issuer.clone();
+            async move {
+                exchanges.lock().unwrap().push(serde_json::json!({"authorization":headers.get("authorization").and_then(|header|header.to_str().ok()),"form":form}));
+                let authorization = headers
+                    .get("authorization")
+                    .and_then(|value| value.to_str().ok());
+                let authenticated = if uri.path() == "/token-jwt" {
+                    authorization.is_none()
+                        && !form.contains_key("client_secret")
+                        && form.get("client_id").map(String::as_str) == Some("enterprise-client")
+                        && form.get("client_assertion_type").map(String::as_str)
+                            == Some("urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
+                        && form.get("client_assertion").is_some_and(|assertion| {
+                            verify_client_assertion(assertion, &format!("{issuer}/token-jwt"))
+                        })
+                } else {
+                    authorization == Some("Basic ZW50ZXJwcmlzZS1jbGllbnQ6c3RvcmVkLXNlY3JldA==")
+                };
+                if !authenticated {
+                    return failure();
+                }
+                let Some(code) = form.get("code") else {
+                    return failure();
+                };
+                let Some((challenge, email, case, profile)) = codes.lock().unwrap().remove(code)
+                else {
+                    return failure();
+                };
+                let Some(verifier) = form.get("code_verifier") else {
+                    return failure();
+                };
+                if base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .encode(sha2::Sha256::digest(verifier.as_bytes()))
+                    != challenge
+                {
+                    return failure();
+                }
+                let profile=profile.unwrap_or_else(||serde_json::json!({"sub":"employee-subject","email":email,"email_verified":true,"name":"SSO employee"}));
+                let token = uuid::Uuid::new_v4().to_string();
+                _ = tokens
+                    .lock()
+                    .unwrap()
+                    .insert(token.clone(), profile.clone());
+                let mut output = serde_json::json!({"access_token":token,"token_type":"Bearer","expires_in":3600,"scope":"openid email"});
+                if case != "none" {
+                    output["id_token"] =
+                        serde_json::json!(signed_id_token(&issuer, &email, &case, &profile));
+                }
+                Json(output).into_response()
+            }
+        },
+    );
+    let app = Router::new()
+        .route(
+            "/authorize",
+            get(move |Query(query): Query<HashMap<String, String>>| {
+                let codes = authorize_codes.clone();
+                let email = authorize_email.clone();
+                let case = authorize_case.clone();
+                let profile = authorize_profile.clone();
+                async move {
+                    if query.get("client_id").map(String::as_str) != Some("enterprise-client")
+                        || query.get("code_challenge_method").map(String::as_str) != Some("S256")
+                    {
+                        return StatusCode::BAD_REQUEST.into_response();
+                    }
+                    let Some(challenge) = query.get("code_challenge") else {
+                        return StatusCode::BAD_REQUEST.into_response();
+                    };
+                    let Some(callback) = query.get("redirect_uri") else {
+                        return StatusCode::BAD_REQUEST.into_response();
+                    };
+                    let code = uuid::Uuid::new_v4().to_string();
+                    _ = codes.lock().unwrap().insert(
+                        code.clone(),
+                        (
+                            challenge.clone(),
+                            email.lock().unwrap().clone(),
+                            case.lock().unwrap().clone(),
+                            profile.lock().unwrap().clone(),
+                        ),
+                    );
+                    let mut location = url::Url::parse(callback).unwrap();
+                    _ = location
+                        .query_pairs_mut()
+                        .append_pair("code", &code)
+                        .append_pair("state", query.get("state").map_or("", String::as_str));
+                    (StatusCode::FOUND, [("location", location.to_string())]).into_response()
+                }
+            }),
+        )
+        .route("/token", token_handler.clone())
+        .route("/token-jwt", token_handler)
+        .route(
+            "/userinfo",
+            get(move |headers: HeaderMap| {
+                let tokens = tokens.clone();
+                async move {
+                    let token = headers
+                        .get("authorization")
+                        .and_then(|value| value.to_str().ok())
+                        .and_then(|value| value.strip_prefix("Bearer "))
+                        .unwrap_or("");
+                    let email = tokens.lock().unwrap().get(token).cloned();
+                    match email {
+                        Some(profile) => Json(profile).into_response(),
+                        None => StatusCode::UNAUTHORIZED.into_response(),
+                    }
+                }
+            }),
+        )
+        .route(
+            "/jwks",
+            get(|| async {
+                Json(
+                    serde_json::from_str::<serde_json::Value>(include_str!(
+                        "../fixtures/one-tap/jwks.json"
+                    ))
+                    .unwrap(),
+                )
+            }),
+        );
     let app = app.route("/.well-known/openid-configuration",get(move || {
         let issuer = discovery_issuer.clone();
         let case = discovery_mode.lock().unwrap().clone();
@@ -143,4 +257,47 @@ fn signed_id_token(issuer: &str, email: &str, case: &str, profile: &serde_json::
         base64::engine::general_purpose::URL_SAFE_NO_PAD
             .encode(algorithm.sign(&key, input.as_bytes()).unwrap())
     )
+}
+
+fn verify_client_assertion(token: &str, audience: &str) -> bool {
+    let verify = || -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        let parts = token.split('.').collect::<Vec<_>>();
+        if parts.len() != 3 {
+            return Ok(false);
+        }
+        let header: serde_json::Value = serde_json::from_slice(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(parts[0])?,
+        )?;
+        let claims: serde_json::Value = serde_json::from_slice(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(parts[1])?,
+        )?;
+        let now = chrono::Utc::now().timestamp() as f64;
+        let iat = claims["iat"].as_f64().unwrap_or_default();
+        if header["alg"] != "RS256"
+            || header["typ"] != "JWT"
+            || header["kid"] != "sso-key"
+            || claims["iss"] != "enterprise-client"
+            || claims["sub"] != "enterprise-client"
+            || claims["aud"] != audience
+            || iat > now + 2.0
+            || iat < now - 5.0
+            || claims["exp"].as_f64() != Some(iat + 120.0)
+            || uuid::Uuid::parse_str(claims["jti"].as_str().unwrap_or_default()).is_err()
+        {
+            return Ok(false);
+        }
+        let key = bergshamra::keys::loader::load_x509_cert_pem(include_bytes!(
+            "../compat/fixtures/salesforce-transport/leaf.pem"
+        ))?;
+        let signature = bergshamra::crypto::AlgorithmRegistry::signature(
+            "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+        )?;
+        let data = format!("{}.{}", parts[0], parts[1]);
+        Ok(signature.verify(
+            &key.software_key()?.ok_or("Missing verifier key")?,
+            data.as_bytes(),
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(parts[2])?,
+        )?)
+    };
+    verify().unwrap_or(false)
 }
