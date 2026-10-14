@@ -24,7 +24,8 @@ backend_tests!(
     sso_configured_providers_issue_bound_state_and_complete_oidc_and_saml_login,
     sso_configured_state_rejects_reconfigured_authority_before_identity_writes,
     sso_private_key_jwt_authenticates_actual_token_requests_and_rejects_missing_key,
-    sso_private_key_resolver_admits_persisted_clients_and_resolves_each_token_request
+    sso_private_key_resolver_admits_persisted_clients_and_resolves_each_token_request,
+    sso_user_provisioning_observes_first_and_every_login_after_success
 );
 async fn sso_callback_redeems_bound_code_and_creates_usable_session<B: Backend>(
     db: Db,
@@ -1507,6 +1508,154 @@ async fn sso_private_key_resolver_admits_persisted_clients_and_resolves_each_tok
                 .unwrap()
                 .contains("PRIVATE KEY")
         );
+    }
+    B::close(connection).await
+}
+
+async fn sso_user_provisioning_observes_first_and_every_login_after_success<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let idp = peer::start().await;
+    let policy = super::sso_provisioning_policy::Policy::default();
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET)
+        .base_url(ORIGIN)
+        .trusted_origin(&idp.base);
+    for every in [false, true] {
+        let auth = AuthBuilder::<B::Schema>::new(config.clone())
+            .store(B::store(Arc::new(config.clone()), &connection))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+            .plugin(super::auth_probe::fast_password())
+            .plugin(SessionManagementPlugin::new())
+            .plugin(SsoPlugin::with_config(SsoConfig {
+                provision_user: Some(alibi::plugins::SsoProvisioner(Arc::new(policy.clone()))),
+                provision_user_on_every_login: every,
+                ..Default::default()
+            }))
+            .build()
+            .await?;
+        let owner = signup(&auth, &format!("provision-owner-{every}@example.test")).await;
+        for saml in [false, true] {
+            policy.events.lock().unwrap().clear();
+            let provider = format!("provision-{every}-{saml}");
+            let email = format!("provision-{every}-{saml}@example.test");
+            *idp.email.lock().unwrap() = email.clone();
+            let input = if saml {
+                json!({"providerId":provider,"issuer":"https://sp.example.test/entity","domain":"example.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem"),"idpMetadata":{"entityID":"https://idp.example.test/entity"},"wantAssertionsSigned":true}})
+            } else {
+                json!({"providerId":provider,"issuer":idp.base,"domain":"example.test","oidcConfig":{"clientId":"enterprise-client","clientSecret":"stored-secret","skipDiscovery":true,"authorizationEndpoint":format!("{}/authorize",idp.base),"tokenEndpoint":format!("{}/token",idp.base),"jwksEndpoint":format!("{}/jwks",idp.base),"userInfoEndpoint":format!("{}/userinfo",idp.base)}})
+            };
+            let registered = Box::pin(auth.dispatch_endpoint(
+                SsoPlugin::register_sso_provider_endpoint(&input)?,
+                EndpointOptions {
+                    headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+                    ..Default::default()
+                },
+            ))
+            .await?
+            .into_response()?;
+            assert_eq!(registered.status, 200);
+            assert!(policy.events.lock().unwrap().is_empty());
+            let mut user_id = String::new();
+            for index in 0..2 {
+                let started = Box::pin(auth.dispatch_endpoint(
+                    SsoPlugin::sign_in_sso_endpoint(
+                        &json!({"providerId":provider,"callbackURL":format!("{ORIGIN}/complete")}),
+                    )?,
+                    EndpointOptions::default(),
+                ))
+                .await?
+                .into_response()?;
+                assert_eq!(
+                    policy.events.lock().unwrap().len(),
+                    if index == 0 { 0 } else { 1 }
+                );
+                let endpoint = if saml {
+                    SsoPlugin::acs_endpoint(
+                        &provider,
+                        &super::saml_idp::grant(
+                            body(&started)["url"].as_str().unwrap(),
+                            &email,
+                            false,
+                        )?,
+                    )?
+                } else {
+                    let grant = reqwest::Client::builder()
+                        .redirect(reqwest::redirect::Policy::none())
+                        .build()?
+                        .get(body(&started)["url"].as_str().unwrap())
+                        .send()
+                        .await?;
+                    let url = url::Url::parse(grant.headers().get("location").unwrap().to_str()?)?;
+                    SsoPlugin::callback_sso_endpoint(
+                        &provider,
+                        &json!(
+                            url.query_pairs()
+                                .into_owned()
+                                .collect::<std::collections::HashMap<_, _>>()
+                        ),
+                    )?
+                };
+                let completed = Box::pin(auth.dispatch_endpoint(
+                    endpoint,
+                    EndpointOptions {
+                        headers: Some([("cookie".into(), cookies(&started))].into_iter().collect()),
+                        ..Default::default()
+                    },
+                ))
+                .await?
+                .into_response()?;
+                assert_eq!(
+                    url::Url::parse(completed.headers.get("location").unwrap())?.path(),
+                    "/complete"
+                );
+                let session = call(
+                    &auth,
+                    request("/get-session", None, &cookies(&completed)),
+                    200,
+                )
+                .await;
+                let current_id = body(&session)["user"]["id"].as_str().unwrap().to_owned();
+                if index == 0 {
+                    user_id = current_id;
+                } else {
+                    assert_eq!(current_id, user_id);
+                }
+                let events = policy.events.lock().unwrap().clone();
+                assert_eq!(events.len(), if every { index + 1 } else { 1 });
+                for event in events {
+                    assert_eq!(event["userId"], user_id);
+                    assert_eq!(event["email"], email);
+                    assert_eq!(event["providerId"], provider);
+                    assert_eq!(
+                        event["userInfo"]["id"],
+                        if saml {
+                            email.as_str()
+                        } else {
+                            "employee-subject"
+                        }
+                    );
+                    assert_eq!(event["userInfo"]["email"], email);
+                    assert_eq!(event["userInfo"]["name"], "SSO employee");
+                    assert_eq!(event["tokenPresent"], !saml);
+                    if saml {
+                        assert!(event["accessToken"].is_null());
+                    } else {
+                        assert!(
+                            event["accessToken"]
+                                .as_str()
+                                .is_some_and(|token| !token.is_empty())
+                        );
+                    }
+                }
+                assert!(
+                    store
+                        .get_account(&provider, if saml { &email } else { "employee-subject" })
+                        .await?
+                        .is_some()
+                );
+            }
+        }
     }
     B::close(connection).await
 }

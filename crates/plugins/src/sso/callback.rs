@@ -458,6 +458,8 @@ impl SsoPlugin {
                 return fail(&code, description);
             }
         };
+        self.provision(&issued, &user, Some(&tokens), &provider)
+            .await?;
         let destination = if issued.is_register {
             payload
                 .new_user_url

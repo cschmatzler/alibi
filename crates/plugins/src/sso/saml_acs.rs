@@ -307,6 +307,7 @@ impl SsoPlugin {
                 return error_redirect(target, &code, description, clear.as_deref(), ctx);
             }
         };
+        self.provision(&issued, &user, None, &provider).await?;
         if self.config.saml_enable_single_logout {
             let key = format!("saml-session:{provider_id}:{}", user.id);
             let mut data = json!({"sessionId":issued.session.id,"sessionToken":issued.session.token,"providerId":provider_id,"nameID":user.id});
