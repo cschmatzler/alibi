@@ -80,7 +80,8 @@ async function samlSigner(wrongKey: boolean) {
 export async function signedLogout(xml: string, wrongKey: boolean) {
   const signer = await samlSigner(wrongKey);
   signer.addReference({
-    xpath: "/*[local-name()='LogoutResponse' or local-name()='LogoutRequest']",
+    xpath:
+      "/*[local-name()='LogoutResponse' or local-name()='LogoutRequest' or local-name()='Response']",
     transforms: [
       "http://www.w3.org/2000/09/xmldsig#enveloped-signature",
       "http://www.w3.org/2001/10/xml-exc-c14n#",
