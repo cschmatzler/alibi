@@ -476,3 +476,7 @@ mod sso_mutation_policy;
 mod sso_user_resolution;
 #[path = "../../../support/sso_user_resolution_policy.rs"]
 mod sso_user_resolution_policy;
+
+#[path = "../../../support/sso_provider_limit_policy.rs"]
+mod sso_provider_limit_policy;
+mod sso_provider_limits;
