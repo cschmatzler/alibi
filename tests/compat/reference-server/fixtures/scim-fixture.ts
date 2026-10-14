@@ -95,6 +95,8 @@ export async function scimFixture(base: BetterAuthOptions) {
         for (const [id, cid, domain, display, external] of [
           ["group-a", "conn-a", "tenant-a", "Admins", "administrators"],
           ["group-b", "conn-a", "tenant-a", "Admin backups", "administrators-b"],
+          ["group-e", "conn-a", "tenant-a", "Editors", "editors"],
+          ["group-g", "conn-a", "tenant-a", "Guests", "guests"],
           ["group-c", "conn-a", "tenant-b", "Foreign domain", "foreign-domain"],
           ["group-d", "conn-other", "tenant-a", "Foreign connection", "foreign-connection"],
         ] as const) {

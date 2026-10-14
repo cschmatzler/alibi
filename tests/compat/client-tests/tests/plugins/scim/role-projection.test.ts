@@ -44,12 +44,22 @@ compatScenario(
         },
         role: "admin",
       },
+      {
+        source: { type: "group", id: "group-e", externalId: "editors", displayName: "Editors" },
+        role: "admin",
+      },
+      {
+        source: { type: "group", id: "group-g", externalId: "guests", displayName: "Guests" },
+        role: "admin",
+      },
     ];
     expect(states[0].grants).toEqual(grants);
     const observations = (await (await control("role-observations")).json()) as any;
     expect(observations.mapped.map((input: any) => input.source.id)).toEqual([
       "group-a",
       "group-b",
+      "group-e",
+      "group-g",
     ]);
     expect(observations.checked.map((input: any) => input.role)).toEqual(["admin", "missing"]);
     for (const input of observations.mapped) {
@@ -60,7 +70,7 @@ compatScenario(
     }
     const storage = async () => (await (await control("projection-storage")).json()) as any;
     const before = await storage();
-    expect(before.grants).toHaveLength(2);
+    expect(before.grants).toHaveLength(4);
     for (const grant of before.grants) {
       expect(grant.role).toBe("admin");
       expect(grant.scimUserId).toBe("scim-alias-a");

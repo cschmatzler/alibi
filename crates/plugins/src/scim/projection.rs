@@ -350,7 +350,15 @@ async fn apply_roles<S: AuthSchema>(
         }
     }
     let mut ordered = desired.into_iter().collect::<Vec<_>>();
-    ordered.sort_by(|left, right| left.0.cmp(&right.0));
+    // The reference orders base64url grant keys with String.localeCompare,
+    // whose default collation puts lowercase letters before later uppercase
+    // letters by alphabetic weight rather than by their ASCII byte values.
+    let collator = icu_collator::Collator::try_new(
+        icu_collator::CollatorPreferences::default(),
+        icu_collator::options::CollatorOptions::default(),
+    )
+    .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?;
+    ordered.sort_by(|left, right| collator.compare(&left.0, &right.0));
     prepared.state.grants = ordered.into_iter().map(|(_, (_, state))| state).collect();
     Ok(())
 }

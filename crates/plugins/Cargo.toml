@@ -93,6 +93,7 @@ bergshamra = { version = "=0.9.2", default-features = false, features = ["rustcr
 quick-xml = "=0.41.0"
 flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
 hickory-resolver = { version = "0.26.3", default-features = false, features = ["tokio", "system-config"] }
+icu_collator = "2.3.1"
 
 [dev-dependencies]
 # Path-only on purpose: alibi-seaorm depends on alibi-core, so a
