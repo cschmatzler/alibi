@@ -47,6 +47,8 @@ export async function scimFixture(base: BetterAuthOptions) {
   const roleMapped: unknown[] = [];
   const roleChecked: unknown[] = [];
   let roleStage = 0;
+  const verifierInputs: unknown[] = [];
+  let verifierClaims: any = undefined;
   return async (request: Request): Promise<Response | undefined> => {
     const path = new URL(request.url).pathname;
     if (path.startsWith("/__test/profiles/scim/api/auth/")) return auth.handler(request);
@@ -109,6 +111,101 @@ export async function scimFixture(base: BetterAuthOptions) {
         return new Response(JSON.stringify({ configured: true }), {
           headers: { "content-type": "application/json" },
         });
+      }
+      if (query.get("operation") === "configure-verifier") {
+        options.plugins = [
+          scim({
+            connections: [
+              {
+                id: "declared",
+                provisioningDomainId: "tenant-declared",
+                credentials: [{ id: "static", token: "static-token" }],
+              },
+            ],
+            authentication: {
+              verifyBearerToken: async (input, context) => {
+                verifierInputs.push({
+                  token: input.token,
+                  method: input.method,
+                  path: input.path,
+                  headers: Object.fromEntries(input.headers),
+                });
+                const owner = await context.database.findOne<any>({
+                  model: "user",
+                  where: [{ field: "email", value: "verifier-owner@example.com" }],
+                });
+                await context.database.update({
+                  model: "user",
+                  where: [{ field: "id", value: owner.id }],
+                  update: { name: "Verified remote" },
+                });
+                if (verifierClaims !== undefined) return verifierClaims;
+                return input.token === "oauth-dynamic"
+                  ? {
+                      connection: { id: "dynamic", provisioningDomainId: "tenant-dynamic" },
+                      credentialId: "remote",
+                      scopes: ["scim.groups.read"],
+                    }
+                  : {
+                      connectionId: "declared",
+                      credentialId: "remote",
+                      scopes: ["scim.groups.read"],
+                    };
+              },
+            },
+          }),
+        ];
+        auth = betterAuth(options);
+        return new Response(JSON.stringify({ configured: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "verifier-claims") {
+        const input = (await request.json()) as any;
+        verifierClaims = input.claims;
+        if (input.sdkDate && verifierClaims && "expiresAt" in verifierClaims) {
+          verifierClaims.expiresAt = new Date(verifierClaims.expiresAt);
+        }
+        return new Response(JSON.stringify({ changed: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "verifier-inputs") {
+        return new Response(JSON.stringify(verifierInputs), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "seed-verifier-groups") {
+        await auth.api.signUpEmail({
+          body: {
+            email: "verifier-owner@example.com",
+            password: "a-native-password-123",
+            name: "Verifier owner",
+          },
+        });
+        for (const [id, domain] of [
+          ["declared", "tenant-declared"],
+          ["dynamic", "tenant-dynamic"],
+        ]) {
+          options.database
+            .query(
+              "INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,orderKey,createdAt,updatedAt) VALUES (?,?,?,0,'Verified Group',?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
+            )
+            .run(id, id, domain, id, id);
+        }
+        return new Response(JSON.stringify({ seeded: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "verifier-user") {
+        return new Response(
+          JSON.stringify(
+            options.database
+              .query("SELECT name FROM user WHERE email='verifier-owner@example.com'")
+              .get(),
+          ),
+          { headers: { "content-type": "application/json" } },
+        );
       }
       if (query.get("operation") === "reject-managed-usage") {
         options.database.exec(

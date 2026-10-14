@@ -6,9 +6,11 @@ use alibi_core::{
 };
 use async_trait::async_trait;
 use serde_json::{Value, json};
+mod authentication;
 mod managed;
 mod projection;
 mod resources;
+pub use authentication::{ScimBearerTokenVerificationInput, ScimBearerTokenVerifier};
 pub use managed::{ScimManagedConnectionInput, ScimManagedCredentialRotationInput};
 pub use projection::{
     ConfiguredScimPlugin, ScimAuthorizationSource, ScimIdentity, ScimIdentitySource,
@@ -83,6 +85,7 @@ impl ScimManagedConnectionOptions {
 pub struct ScimPlugin {
     managed_connections: Option<ScimManagedConnectionOptions>,
     connections: Vec<ScimConnectionOptions>,
+    has_token_verifier: bool,
 }
 impl ScimPlugin {
     #[must_use]
@@ -90,6 +93,7 @@ impl ScimPlugin {
         Self {
             managed_connections: None,
             connections: Vec::new(),
+            has_token_verifier: false,
         }
     }
     #[must_use]

@@ -53,6 +53,7 @@ pub struct ConfiguredScimPlugin<S: AuthSchema> {
     projection: Option<Arc<dyn ScimProjection<S>>>,
     identity: Option<Arc<dyn ScimIdentity<S>>>,
     roles: Option<Arc<dyn ScimRoleProjection<S>>>,
+    verifier: Option<Arc<dyn super::ScimBearerTokenVerifier<S>>>,
 }
 impl ScimPlugin {
     #[must_use]
@@ -65,6 +66,7 @@ impl ScimPlugin {
             projection: Some(projection),
             identity: None,
             roles: None,
+            verifier: None,
         }
     }
 }
@@ -79,10 +81,33 @@ impl ScimPlugin {
             projection: None,
             identity: Some(identity),
             roles: None,
+            verifier: None,
+        }
+    }
+}
+impl ScimPlugin {
+    #[must_use]
+    pub fn authentication<S: AuthSchema>(
+        mut self,
+        verifier: Arc<dyn super::ScimBearerTokenVerifier<S>>,
+    ) -> ConfiguredScimPlugin<S> {
+        self.has_token_verifier = true;
+        ConfiguredScimPlugin {
+            base: self,
+            projection: None,
+            identity: None,
+            roles: None,
+            verifier: Some(verifier),
         }
     }
 }
 impl<S: AuthSchema> ConfiguredScimPlugin<S> {
+    #[must_use]
+    pub fn authentication(mut self, verifier: Arc<dyn super::ScimBearerTokenVerifier<S>>) -> Self {
+        self.base.has_token_verifier = true;
+        self.verifier = Some(verifier);
+        self
+    }
     #[must_use]
     pub fn identity(mut self, identity: Arc<dyn ScimIdentity<S>>) -> Self {
         self.identity = Some(identity);
@@ -116,6 +141,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ConfiguredScimPlugin<S> {
     }
     async fn on_init(&self, ctx: &mut AuthInitContext<S>) -> AuthResult<()> {
         self.base.on_init(ctx).await?;
+        if let Some(verifier) = &self.verifier {
+            ctx.extensions
+                .insert(super::authentication::ScimBearerVerifierHandle(
+                    verifier.clone(),
+                ));
+        }
         if let Some(projection) = &self.projection {
             ctx.extensions
                 .insert(ScimProjectionHandle(projection.clone(), self.roles.clone()));

@@ -128,6 +128,71 @@ impl ScimPlugin {
             scopes: Some(scopes),
         }))
     }
+    fn resolve_verified_connection(&self, claims: &JsValue) -> Option<ResolvedConnection> {
+        let has_id = claims.get("connectionId").is_some();
+        let has_connection = claims.get("connection").is_some();
+        if has_id == has_connection {
+            return None;
+        }
+        if !identifier(claims.get("credentialId")?.as_str()?) {
+            return None;
+        }
+        let JsValue::Array(raw_scopes) = claims.get("scopes")? else {
+            return None;
+        };
+        let scopes = raw_scopes
+            .iter()
+            .map(|scope| scope.as_str().map(str::to_owned))
+            .collect::<Option<Vec<_>>>()?;
+        if !valid_scopes(&scopes) {
+            return None;
+        }
+        if let Some(expiry) = claims.get("expiresAt") {
+            let JsValue::Date(expiry) = expiry else {
+                return None;
+            };
+            if expiry.timestamp_millis() <= chrono::Utc::now().timestamp_millis() {
+                return None;
+            }
+        }
+        let (id, domain) = if has_id {
+            let id = claims.get("connectionId")?.as_str()?;
+            if !identifier(id) {
+                return None;
+            }
+            let connection = self
+                .connections
+                .iter()
+                .find(|connection| connection.id == id)?;
+            (
+                connection.id.clone(),
+                connection
+                    .provisioning_domain_id
+                    .clone()
+                    .unwrap_or_else(|| connection.id.clone()),
+            )
+        } else {
+            let connection = claims.get("connection")?;
+            let id = connection.get("id")?.as_str()?;
+            let domain = connection.get("provisioningDomainId")?.as_str()?;
+            if !identifier(id)
+                || !identifier(domain)
+                || id.starts_with("ba_scim_connection_")
+                || self
+                    .connections
+                    .iter()
+                    .any(|connection| connection.id == id)
+            {
+                return None;
+            }
+            (id.into(), domain.into())
+        };
+        Some(ResolvedConnection {
+            id,
+            domain,
+            scopes: Some(scopes),
+        })
+    }
     pub(super) fn validate_connections(&self) -> AuthResult<()> {
         let mut ids = std::collections::HashSet::new();
         let mut tokens = std::collections::HashSet::new();
@@ -142,7 +207,7 @@ impl ScimPlugin {
                     "Static SCIM connection ids cannot use the reserved \"ba_scim_connection_\" prefix.",
                 ));
             }
-            if connection.credentials.is_empty() {
+            if connection.credentials.is_empty() && !self.has_token_verifier {
                 return Err(AuthError::config(
                     "SCIM connections require a static credential or bearer token verifier.",
                 ));
@@ -242,6 +307,49 @@ impl ScimPlugin {
                 }) => return Ok(error(status, &message, None)),
                 Err(error) => return Err(error),
             };
+        }
+        if principal.is_none()
+            && !bearer.starts_with("ba_scim_credential_")
+            && let Some(verifier) = ctx
+                .extensions
+                .get::<super::authentication::ScimBearerVerifierHandle<S>>()
+        {
+            let path = call
+                .path()
+                .unwrap_or("")
+                .split('/')
+                .map(|part| {
+                    part.strip_prefix('{')
+                        .and_then(|part| part.strip_suffix('}'))
+                        .map_or_else(|| part.to_owned(), |name| format!(":{name}"))
+                })
+                .collect::<Vec<_>>()
+                .join("/");
+            let input = super::ScimBearerTokenVerificationInput {
+                token: bearer.into(),
+                method: call.method().cloned().unwrap_or(HttpMethod::Get),
+                path,
+                headers: call
+                    .headers()
+                    .into_iter()
+                    .flat_map(|headers| headers.iter())
+                    .map(|(name, value)| {
+                        (
+                            name.to_ascii_lowercase(),
+                            value
+                                .trim_matches(|character| matches!(character, ' ' | '\t'))
+                                .to_owned(),
+                        )
+                    })
+                    .collect(),
+            };
+            if let Some(claims) = verifier
+                .0
+                .verify_bearer_token(&input, ctx.database.as_ref())
+                .await?
+            {
+                principal = self.resolve_verified_connection(&claims);
+            }
         }
         let Some(connection) = principal else {
             return Ok(unauthorized("Invalid SCIM bearer token"));

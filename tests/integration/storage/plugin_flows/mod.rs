@@ -526,3 +526,5 @@ mod scim_terminal_binding;
 mod scim_group_read;
 
 mod scim_managed_bearer;
+
+mod scim_bearer_verifier;
