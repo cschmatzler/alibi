@@ -3,7 +3,7 @@ import { expect } from "bun:test";
 import { Cookie } from "tough-cookie";
 
 import { compatScenario } from "../../../support/scenario";
-for (const mode of ["storage-schema", "storage-swap"]) {
+for (const mode of ["storage-schema", "storage-swap", "storage-domain-swap"]) {
   compatScenario(
     `${mode} SSO provider storage owns registration, DNS writes, updates and deletion`,
     async (ctx) => {
@@ -67,11 +67,22 @@ for (const mode of ["storage-schema", "storage-swap"]) {
         headers,
         body: { providerId: body.providerId },
       });
-      expect(verified.status).toBe(204);
+      expect(verified.status).toBe(mode === "storage-domain-swap" ? 409 : 204);
+      if (mode === "storage-domain-swap") {
+        expect(await verified.json()).toEqual({
+          code: "SSO_PROVIDER_CHANGED",
+          message:
+            "SSO provider changed while domain verification was in progress. Reload the provider and try again",
+        });
+      }
+      const pending = (await (
+        await control({ action: "proof", identifier: "_better-auth-token-mapped-provider" })
+      ).json()) as any;
+      expect(pending.value).toBe(registered.domainVerificationToken);
       const confirmed = (await (
         await control({ action: "row", providerId: body.providerId })
       ).json()) as any;
-      expect(confirmed.domainVerified).toBe(true);
+      expect(confirmed.domainVerified).toBe(mode !== "storage-domain-swap");
       const updated = await control({
         action: "update",
         headers,
