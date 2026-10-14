@@ -70,7 +70,7 @@ where
         }
     }
     async fn list_sso_providers(&self) -> AuthResult<Vec<SsoProvider>> {
-        let mut sql = model::select_model::<Model>(self.exec());
+        let mut sql = provider_select(self.exec());
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
         self.exec()
@@ -89,12 +89,10 @@ where
         active.set("oidcConfig", row.oidc_config);
         active.set("samlConfig", row.saml_config);
         active.set("domainVerified", row.domain_verified);
-        model::insert::<Model>(self.exec(), &active)
-            .await
-            .map(Into::into)
+        insert_provider(self.exec(), &active).await.map(Into::into)
     }
     async fn get_sso_provider(&self, provider_id: &str) -> AuthResult<Option<SsoProvider>> {
-        let mut sql = model::select_model::<Model>(self.exec());
+        let mut sql = provider_select(self.exec());
         sql.push(" WHERE ");
         sql.compare(Model::TABLE, "providerId", " = ", provider_id);
         self.exec()
@@ -103,7 +101,7 @@ where
             .map(|row| row.map(Into::into))
     }
     async fn list_sso_providers_by_user(&self, user_id: &str) -> AuthResult<Vec<SsoProvider>> {
-        let mut sql = model::select_model::<Model>(self.exec());
+        let mut sql = provider_select(self.exec());
         sql.push(" WHERE ");
         sql.compare(Model::TABLE, "userId", " = ", user_id);
         sql.push(" LIMIT ");
@@ -136,7 +134,7 @@ where
         if exec.execute(lock).await? == 0 {
             return Ok(None);
         }
-        let mut read = model::select_model::<Model>(exec);
+        let mut read = provider_select(exec);
         read.push(" WHERE ");
         read.compare(Model::TABLE, "id", " = ", id);
         let row: SsoProvider = exec
@@ -183,7 +181,7 @@ where
         active.set("oidcConfig", update.provider.oidc_config);
         active.set("samlConfig", update.provider.saml_config);
         active.set("domainVerified", update.provider.domain_verified);
-        model::update::<Model>(exec, &active)
+        update_provider(exec, &active)
             .await
             .map(|row| row.map(Into::into))
     }
@@ -220,4 +218,73 @@ where
         _ = exec.execute(provider).await?;
         Ok(true)
     }
+}
+
+fn provider_columns(sql: &mut crate::sql::Sql, qualified: bool) {
+    for (index, column) in Model::COLUMN_NAMES.iter().enumerate() {
+        if index > 0 {
+            sql.push(", ");
+        }
+        if qualified {
+            sql.column(Model::TABLE, column);
+        } else {
+            sql.ident(column);
+        }
+        sql.push(" AS ");
+        sql.ident(column);
+    }
+}
+fn provider_select(exec: crate::pool::Exec<'_>) -> crate::sql::Sql {
+    let mut sql = crate::sql::Sql::with(exec.engine(), "SELECT ");
+    provider_columns(&mut sql, true);
+    sql.push(" FROM ");
+    sql.ident(Model::TABLE);
+    sql
+}
+async fn insert_provider(exec: crate::pool::Exec<'_>, active: &ActiveRow) -> AuthResult<Model> {
+    let mut sql = crate::sql::Sql::with(exec.engine(), "INSERT INTO ");
+    sql.ident(Model::TABLE);
+    sql.push(" (");
+    let fields = active.present().collect::<Vec<_>>();
+    sql.column_list(&fields.iter().map(|(column, _)| *column).collect::<Vec<_>>());
+    sql.push(") VALUES (");
+    for (index, (column, value)) in fields.into_iter().enumerate() {
+        if index > 0 {
+            sql.push(", ");
+        }
+        model::bind_model_value::<Model>(&mut sql, column, value.clone());
+    }
+    sql.push(") RETURNING ");
+    provider_columns(&mut sql, false);
+    exec.fetch_optional::<Model>(sql)
+        .await?
+        .ok_or_else(|| alibi_core::AuthError::internal("Provider was not inserted"))
+}
+async fn update_provider(
+    exec: crate::pool::Exec<'_>,
+    active: &ActiveRow,
+) -> AuthResult<Option<Model>> {
+    let id = active
+        .get("id")
+        .and_then(crate::model::ActiveValue::value)
+        .cloned()
+        .ok_or_else(|| {
+            alibi_core::AuthError::internal("Provider update requires its primary key")
+        })?;
+    let mut sql = crate::sql::Sql::with(exec.engine(), "UPDATE ");
+    sql.ident(Model::TABLE);
+    sql.push(" SET ");
+    for (index, (column, value)) in active.changed().enumerate() {
+        if index > 0 {
+            sql.push(", ");
+        }
+        sql.ident(column);
+        sql.push(" = ");
+        model::bind_model_value::<Model>(&mut sql, column, value.clone());
+    }
+    sql.push(" WHERE ");
+    sql.compare(Model::TABLE, "id", " = ", id);
+    sql.push(" RETURNING ");
+    provider_columns(&mut sql, false);
+    exec.fetch_optional::<Model>(sql).await
 }

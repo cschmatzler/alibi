@@ -1,6 +1,6 @@
 //! Statement-level namespace policy, retained across nested transactions.
 use super::map_db_err;
-use alibi_core::config::TwoFactorDatabaseConfig;
+use alibi_core::config::{SsoProviderDatabaseConfig, TwoFactorDatabaseConfig};
 use alibi_core::error::AuthResult;
 use async_trait::async_trait;
 use sea_orm::{
@@ -15,6 +15,7 @@ pub(crate) struct Scoped<C> {
     pub(super) inner: C,
     pub(super) schema: Option<String>,
     pub(super) factor: Option<TwoFactorDatabaseConfig>,
+    pub(super) sso_provider: Option<SsoProviderDatabaseConfig>,
 }
 pub(super) type ScopedConnection = Scoped<DatabaseConnection>;
 pub(super) type ScopedTransaction = Scoped<DatabaseTransaction>;
@@ -26,6 +27,10 @@ impl<C: ConnectionTrait> Scoped<C> {
     fn sql(&self, mut sql: String) -> Result<String, DbErr> {
         if let Some(mapping) = &self.factor {
             sql = alibi_core::database_sql::map_two_factor(&sql, mapping)
+                .map_err(|error| DbErr::Custom(error.to_string()))?;
+        }
+        if let Some(mapping) = &self.sso_provider {
+            sql = alibi_core::database_sql::map_sso_provider(&sql, mapping)
                 .map_err(|error| DbErr::Custom(error.to_string()))?;
         }
         if self.inner.get_database_backend() == DbBackend::Postgres
@@ -41,6 +46,7 @@ impl<C: ConnectionTrait> Scoped<C> {
             inner,
             schema: self.schema.clone(),
             factor: self.factor.clone(),
+            sso_provider: self.sso_provider.clone(),
         }
     }
 

@@ -301,6 +301,12 @@ impl<'a> Exec<'a> {
         {
             sql = alibi_core::database_sql::map_two_factor(&sql, mapping)?;
         }
+        if let Some(mapping) = self
+            .config
+            .and_then(|config| config.advanced.database.sso_provider.as_ref())
+        {
+            sql = alibi_core::database_sql::map_sso_provider(&sql, mapping)?;
+        }
         if self.engine() == Engine::Postgres
             && let Some(schema) = self.schema_name()
         {

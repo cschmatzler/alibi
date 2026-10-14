@@ -120,12 +120,14 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         let config = config.into();
         let schema = config.advanced.database.schema_name.clone();
         let factor = config.advanced.database.two_factor.clone();
+        let sso_provider = config.advanced.database.sso_provider.clone();
         Self {
             config,
             db: ScopedConnection {
                 inner: db,
                 schema,
                 factor,
+                sso_provider,
             },
             hooks: Vec::new(),
             _schema: PhantomData,
@@ -237,6 +239,25 @@ impl<S: AuthSchema> SchemaMigrator for SeaOrmStore<S> {
             }
             transaction.commit().await.map_err(map_db_err)?;
         }
+        if let Some(mapping) = &self.config.advanced.database.sso_provider {
+            use sea_orm::ConnectionTrait;
+            let commands = mapping.migration_statements()?;
+            let transaction = self.db.begin().await.map_err(map_db_err)?;
+            if transaction
+                .has_table("ssoProvider")
+                .await
+                .map_err(map_db_err)?
+            {
+                for command in commands {
+                    _ = transaction
+                        .execute_unprepared(&command)
+                        .await
+                        .map_err(map_db_err)?;
+                }
+            }
+            transaction.commit().await.map_err(map_db_err)?;
+        }
+
         Ok(())
     }
 }

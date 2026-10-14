@@ -88,17 +88,52 @@ pub fn map_two_factor(
     sql: &str,
     mapping: &crate::config::TwoFactorDatabaseConfig,
 ) -> AuthResult<String> {
-    struct Mapper<'a>(&'a crate::config::TwoFactorDatabaseConfig);
+    let columns = mapping
+        .columns
+        .iter()
+        .map(|(name, value)| {
+            (
+                crate::config::two_factor_column(name).to_owned(),
+                value.clone(),
+            )
+        })
+        .collect();
+    map_model(sql, "twoFactor", &mapping.table_name, &columns)
+}
+/// Apply SSO storage mapping while retaining canonical typed result aliases.
+pub fn map_sso_provider(
+    sql: &str,
+    mapping: &crate::config::SsoProviderDatabaseConfig,
+) -> AuthResult<String> {
+    let columns = mapping
+        .columns
+        .iter()
+        .map(|(name, value)| {
+            (
+                crate::config::sso_provider_column(name).to_owned(),
+                value.clone(),
+            )
+        })
+        .collect();
+    map_model(sql, "ssoProvider", &mapping.table_name, &columns)
+}
+fn map_model(
+    sql: &str,
+    canonical: &str,
+    table_name: &str,
+    columns: &std::collections::HashMap<String, String>,
+) -> AuthResult<String> {
+    struct Mapper<'a> {
+        canonical: &'a str,
+        table_name: &'a str,
+        columns: &'a std::collections::HashMap<String, String>,
+    }
     impl Mapper<'_> {
         fn identifier(&self, identifier: &mut Ident) {
-            let physical = if identifier.value == "twoFactor" {
-                Some(&self.0.table_name)
+            let physical = if identifier.value == self.canonical {
+                Some(self.table_name)
             } else {
-                self.0
-                    .columns
-                    .iter()
-                    .find(|(name, _)| crate::config::two_factor_column(name) == identifier.value)
-                    .map(|(_, value)| value)
+                self.columns.get(&identifier.value).map(String::as_str)
             };
             if let Some(physical) = physical {
                 *identifier = Ident::with_quote('"', physical);
@@ -159,7 +194,9 @@ pub fn map_two_factor(
     const DML: [&str; 5] = ["SELECT", "INSERT", "UPDATE", "DELETE", "WITH"];
     let tokens = Tokenizer::new(&GenericDialect {}, sql)
         .tokenize()
-        .map_err(|error| AuthError::internal(format!("Cannot tokenize factor SQL: {error}")))?;
+        .map_err(|error| {
+            AuthError::internal(format!("Cannot tokenize mapped auth SQL: {error}"))
+        })?;
     let is_dml = tokens
         .iter()
         .find(|token| !matches!(token, Token::Whitespace(_)))
@@ -170,7 +207,7 @@ pub fn map_two_factor(
         return Ok(sql.to_owned());
     }
     let mut statements = Parser::parse_sql(&GenericDialect {}, sql)
-        .map_err(|error| AuthError::internal(format!("Cannot map factor SQL: {error}")))?;
+        .map_err(|error| AuthError::internal(format!("Cannot map auth SQL: {error}")))?;
     for statement in &mut statements {
         // DDL is performed explicitly by the schema migrator; values never trigger mapping.
         if !matches!(
@@ -185,12 +222,16 @@ pub fn map_two_factor(
         let mut target = false;
         _ = visit_relations(statement, |name| {
             target |= name.0.iter().any(
-                |part| matches!(part, ObjectNamePart::Identifier(id) if id.value == "twoFactor"),
+                |part| matches!(part, ObjectNamePart::Identifier(id) if id.value == canonical),
             );
             ControlFlow::<()>::Continue(())
         });
         if target {
-            _ = statement.visit(&mut Mapper(mapping));
+            _ = statement.visit(&mut Mapper {
+                canonical,
+                table_name,
+                columns,
+            });
         }
     }
     Ok(statements

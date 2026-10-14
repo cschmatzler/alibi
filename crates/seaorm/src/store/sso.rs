@@ -9,7 +9,9 @@ use alibi_core::{
     store::{SsoProvider, SsoProviderStore},
 };
 use async_trait::async_trait;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QuerySelect, Set};
+use sea_orm::{
+    ColumnTrait, EntityTrait, Iterable, QueryFilter, QuerySelect, QueryTrait, Select, Set,
+};
 #[async_trait]
 impl<S: AuthSchema> SsoProviderStore for SeaOrmStore<S>
 where
@@ -74,7 +76,7 @@ where
         }
     }
     async fn list_sso_providers(&self) -> AuthResult<Vec<SsoProvider>> {
-        Entity::find()
+        provider_select()
             .limit(
                 u64::try_from(self.config().advanced.database.default_find_many_limit)
                     .unwrap_or(u64::MAX),
@@ -85,7 +87,7 @@ where
             .map_err(map_db_err)
     }
     async fn create_sso_provider(&self, row: SsoProvider) -> AuthResult<SsoProvider> {
-        sso_provider::ActiveModel {
+        let active = sso_provider::ActiveModel {
             id: Set(row.id),
             issuer: Set(row.issuer),
             domain: Set(row.domain),
@@ -95,14 +97,20 @@ where
             oidc_config: Set(row.oidc_config),
             saml_config: Set(row.saml_config),
             domain_verified: Set(row.domain_verified),
-        }
-        .insert(self.scoped_connection())
-        .await
-        .map(Into::into)
-        .map_err(map_db_err)
+        };
+        let backend = self.scoped_connection().get_database_backend();
+        let mut query = Entity::insert(active);
+        _ = QueryTrait::query(&mut query).returning(provider_returning());
+        Entity::find()
+            .from_raw_sql(query.build(backend))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .map(Into::into)
+            .ok_or_else(|| alibi_core::AuthError::internal("Provider was not inserted"))
     }
     async fn get_sso_provider(&self, provider_id: &str) -> AuthResult<Option<SsoProvider>> {
-        Entity::find()
+        provider_select()
             .filter(Column::ProviderId.eq(provider_id))
             .one(self.scoped_connection())
             .await
@@ -110,7 +118,7 @@ where
             .map_err(map_db_err)
     }
     async fn list_sso_providers_by_user(&self, user_id: &str) -> AuthResult<Vec<SsoProvider>> {
-        Entity::find()
+        provider_select()
             .filter(Column::UserId.eq(user_id))
             .limit(
                 u64::try_from(self.config().advanced.database.default_find_many_limit)
@@ -146,7 +154,8 @@ where
         if locked.rows_affected == 0 {
             return Ok(None);
         }
-        let row: SsoProvider = Entity::find_by_id(id)
+        let row: SsoProvider = provider_select()
+            .filter(Column::Id.eq(id))
             .one(connection)
             .await
             .map_err(map_db_err)?
@@ -188,11 +197,14 @@ where
             domain_verified: Set(update.provider.domain_verified),
             ..Default::default()
         };
-        active
-            .update(connection)
+        let mut query = Entity::update_many().set(active).filter(Column::Id.eq(id));
+        _ = QueryTrait::query(&mut query).returning(provider_returning());
+        Entity::find()
+            .from_raw_sql(query.build(connection.get_database_backend()))
+            .one(connection)
             .await
-            .map(|row| Some(row.into()))
             .map_err(map_db_err)
+            .map(|row| row.map(Into::into))
     }
     pub(super) async fn delete_sso_provider_with<C: sea_orm::ConnectionTrait>(
         &self,
@@ -221,4 +233,23 @@ where
             .map_err(map_db_err)?;
         Ok(true)
     }
+}
+
+fn provider_select() -> Select<Entity> {
+    use sea_orm::sea_query::Expr;
+    let mut select = Entity::find().select_only();
+    for column in Column::iter() {
+        select = select.column_as(Expr::col((Entity, column)), column);
+    }
+    select
+}
+fn provider_returning() -> sea_orm::sea_query::ReturningClause {
+    use sea_orm::{
+        IdenStatic,
+        sea_query::{Expr, Query},
+    };
+    Query::returning().exprs(Column::iter().map(|column| {
+        let name = column.as_str();
+        Expr::cust(format!("\"{name}\" AS \"{name}\""))
+    }))
 }

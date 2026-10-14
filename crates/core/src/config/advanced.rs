@@ -156,6 +156,9 @@ pub struct AdvancedDatabaseConfig {
     /// Optional physical table and column mapping for two-factor credentials.
     pub two_factor: Option<TwoFactorDatabaseConfig>,
 
+    /// Optional physical table and column mapping for durable SSO providers.
+    pub sso_provider: Option<SsoProviderDatabaseConfig>,
+
     /// Use persistent serial identifiers when no explicit generation strategy is set.
     /// Numeric invitation IDs require email verification by default.
     pub use_number_id: bool,
@@ -186,6 +189,7 @@ impl Default for AdvancedDatabaseConfig {
             default_find_many_limit: 100,
             schema_name: None,
             two_factor: None,
+            sso_provider: None,
             use_number_id: false,
             generate_id: None,
         }
@@ -242,6 +246,77 @@ pub(crate) fn two_factor_column(name: &str) -> &str {
         "user_id" => "userId",
         "failed_verification_count" => "failedVerificationCount",
         "locked_until" => "lockedUntil",
+        name => name,
+    }
+}
+
+/// Physical storage policy for the bundled SSO provider model.
+#[derive(Debug, Clone)]
+pub struct SsoProviderDatabaseConfig {
+    pub table_name: String,
+    /// Canonical `snake_case` names mapped to application-owned column names.
+    pub columns: std::collections::HashMap<String, String>,
+}
+impl Default for SsoProviderDatabaseConfig {
+    fn default() -> Self {
+        Self {
+            table_name: "ssoProvider".into(),
+            columns: std::collections::HashMap::default(),
+        }
+    }
+}
+impl SsoProviderDatabaseConfig {
+    /// Rename the bundled provider relation and its configured columns atomically.
+    pub fn migration_statements(&self) -> crate::AuthResult<Vec<String>> {
+        const COLUMNS: &[&str] = &[
+            "id",
+            "issuer",
+            "domain",
+            "provider_id",
+            "user_id",
+            "organization_id",
+            "oidc_config",
+            "saml_config",
+            "domain_verified",
+        ];
+        if self.table_name.is_empty()
+            || self
+                .columns
+                .iter()
+                .any(|(name, column)| !COLUMNS.contains(&name.as_str()) || column.is_empty())
+        {
+            return Err(AuthError::config("Invalid SSO provider storage mapping"));
+        }
+        let quote = |name: &str| format!("\"{}\"", name.replace('"', "\"\""));
+        let table = quote(&self.table_name);
+        let mut sql = Vec::new();
+        if self.table_name != "ssoProvider" {
+            sql.push(format!("ALTER TABLE \"ssoProvider\" RENAME TO {table}"));
+        }
+        for name in COLUMNS {
+            if let Some(column) = self
+                .columns
+                .get(*name)
+                .filter(|column| column.as_str() != sso_provider_column(name))
+            {
+                sql.push(format!(
+                    "ALTER TABLE {table} RENAME COLUMN {} TO {}",
+                    quote(sso_provider_column(name)),
+                    quote(column)
+                ));
+            }
+        }
+        Ok(sql)
+    }
+}
+pub(crate) fn sso_provider_column(name: &str) -> &str {
+    match name {
+        "provider_id" => "providerId",
+        "user_id" => "userId",
+        "organization_id" => "organizationId",
+        "oidc_config" => "oidcConfig",
+        "saml_config" => "samlConfig",
+        "domain_verified" => "domainVerified",
         name => name,
     }
 }

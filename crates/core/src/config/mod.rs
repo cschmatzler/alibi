@@ -1,6 +1,6 @@
 mod account;
 mod advanced;
-pub(crate) use advanced::two_factor_column;
+pub(crate) use advanced::{sso_provider_column, two_factor_column};
 mod client_ip;
 mod id;
 mod identity;
@@ -11,7 +11,7 @@ mod session;
 pub use account::{AccountConfig, AccountLinkingConfig, OAuthStateStrategy};
 pub use advanced::{
     AdvancedConfig, AdvancedDatabaseConfig, CookieAttributes, CookieOverride, CrossSubDomainConfig,
-    IpAddressConfig, SameSite, TwoFactorDatabaseConfig,
+    IpAddressConfig, SameSite, SsoProviderDatabaseConfig, TwoFactorDatabaseConfig,
 };
 #[doc(hidden)]
 pub use id::serial_id_statements;
