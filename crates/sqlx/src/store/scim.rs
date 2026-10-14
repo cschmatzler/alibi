@@ -18,6 +18,28 @@ use async_trait::async_trait;
 use chrono::SubsecRound;
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
+    async fn find_scim_identity_tombstone(
+        &self,
+        connection: &str,
+        key: &str,
+    ) -> AuthResult<Option<alibi_core::store::ScimIdentityTombstone>> {
+        let exec = self.exec();
+        let mut sql = model::select_model::<super::entities::scim_identity_tombstone::Model>(exec);
+        sql.push(" WHERE ");
+        sql.compare("scimIdentityTombstone", "connectionId", " = ", connection);
+        sql.push(" AND ");
+        sql.compare("scimIdentityTombstone", "externalIdKey", " = ", key);
+        model::limit_one(&mut sql);
+        Ok(exec
+            .fetch_optional::<super::entities::scim_identity_tombstone::Model>(sql)
+            .await?
+            .map(|row| alibi_core::store::ScimIdentityTombstone {
+                id: row.id,
+                provisioning_domain_id: row.provisioning_domain_id,
+                user_id: row.user_id,
+                profile: row.profile,
+            }))
+    }
     async fn scim_user_domain_stable(&self, connection: &str, domain: &str) -> AuthResult<bool> {
         use super::entities::scim_user as user;
         let mut sql = model::select_model::<user::Model>(self.exec());

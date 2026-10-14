@@ -18,6 +18,25 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
+    async fn find_scim_identity_tombstone(
+        &self,
+        connection: &str,
+        key: &str,
+    ) -> AuthResult<Option<alibi_core::store::ScimIdentityTombstone>> {
+        use super::entities::scim_identity_tombstone as tombstone;
+        Ok(tombstone::Entity::find()
+            .filter(tombstone::Column::ConnectionId.eq(connection))
+            .filter(tombstone::Column::ExternalIdKey.eq(key))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .map(|row| alibi_core::store::ScimIdentityTombstone {
+                id: row.id,
+                provisioning_domain_id: row.provisioning_domain_id,
+                user_id: row.user_id,
+                profile: row.profile,
+            }))
+    }
     async fn scim_user_domain_stable(&self, connection: &str, domain: &str) -> AuthResult<bool> {
         use super::entities::scim_user as user;
         Ok(user::Entity::find()

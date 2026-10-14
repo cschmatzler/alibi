@@ -31,7 +31,7 @@ pub(super) fn read(user: &ScimUserRecord) -> Option<Value> {
     };
     canonical(&raw)
 }
-fn canonical(raw: &Value) -> Option<Value> {
+pub(super) fn canonical(raw: &Value) -> Option<Value> {
     let raw = raw.as_object()?;
     let schemas = raw.get("schemas")?.as_array()?;
     if schemas.is_empty() || schemas.len() > 2 {

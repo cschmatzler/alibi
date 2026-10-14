@@ -43,15 +43,15 @@ pub use oauth_clients::{
 };
 pub use org_extensions::{OrganizationRoleStore, TeamStore, team_membership_key};
 pub use scim::{
-    CreateScimGroup, CreateScimManagedConnection, CreateScimProjectionGrant,
+    CreateScimGroup, CreateScimManagedConnection, CreateScimProjectionGrant, CreateScimUser,
     DecommissionScimManagedConnection, ReplaceScimGroup, RevokeScimManagedCredential,
     RotateScimManagedCredential, ScimAuthorizationSource, ScimConnectionBinding,
     ScimGroupMemberRecord, ScimGroupMemberships, ScimGroupPage, ScimGroupRecord,
-    ScimIdentitySource, ScimIdentityState, ScimManagedConnection, ScimManagedConnectionEvent,
-    ScimManagedConnectionState, ScimManagedCreation, ScimManagedCredential, ScimManagedStore,
-    ScimProjectedUserState, ScimProjectionCandidate, ScimProjectionPreparedUser,
-    ScimRoleExistenceInput, ScimRoleMappingInput, ScimUserPage, ScimUserRecord,
-    scim_group_membership_key,
+    ScimIdentitySource, ScimIdentityState, ScimIdentityTombstone, ScimManagedConnection,
+    ScimManagedConnectionEvent, ScimManagedConnectionState, ScimManagedCreation,
+    ScimManagedCredential, ScimManagedStore, ScimProjectedUserState, ScimProjectionCandidate,
+    ScimProjectionPreparedUser, ScimRoleExistenceInput, ScimRoleMappingInput, ScimUserPage,
+    ScimUserRecord, scim_group_membership_key,
 };
 #[cfg(feature = "redis-cache")]
 pub use secondary_storage::RedisAdapter;

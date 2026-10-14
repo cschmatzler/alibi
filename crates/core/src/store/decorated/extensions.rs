@@ -824,6 +824,15 @@ impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> crate::store::ScimManagedStore for PluginStore<S> {
+    async fn find_scim_identity_tombstone(
+        &self,
+        connection: &str,
+        key: &str,
+    ) -> AuthResult<Option<crate::store::ScimIdentityTombstone>> {
+        self.inner
+            .find_scim_identity_tombstone(connection, key)
+            .await
+    }
     async fn scim_user_domain_stable(&self, connection: &str, domain: &str) -> AuthResult<bool> {
         self.inner.scim_user_domain_stable(connection, domain).await
     }

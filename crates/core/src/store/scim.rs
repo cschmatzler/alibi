@@ -127,6 +127,38 @@ pub struct ScimUserRecord {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+/// Normalized canonical User creation, committed with its identity subject.
+pub struct CreateScimUser {
+    pub connection_id: String,
+    pub provisioning_domain_id: String,
+    pub user_id: String,
+    pub connection_user_key: String,
+    pub user_name: String,
+    pub user_name_key: String,
+    pub primary_email: String,
+    pub work_email_value_index: String,
+    pub email_value_index: String,
+    pub display_name: String,
+    pub formatted_name: String,
+    pub given_name: Option<String>,
+    pub family_name: Option<String>,
+    pub serialized_emails: String,
+    pub serialized_attributes: Option<String>,
+    pub external_id: Option<String>,
+    pub external_id_key: Option<String>,
+    pub active: bool,
+    pub order_key: String,
+    pub created_at: DateTime<Utc>,
+    pub manage_profile: bool,
+    pub tombstone_id: Option<String>,
+}
+#[derive(Clone)]
+pub struct ScimIdentityTombstone {
+    pub id: String,
+    pub provisioning_domain_id: String,
+    pub user_id: String,
+    pub profile: String,
+}
 /// Prepared durable Group creation inside a provisioning transaction.
 pub struct CreateScimGroup {
     pub connection_id: String,
@@ -178,6 +210,16 @@ pub struct ScimGroupMemberships {
 }
 #[async_trait]
 pub trait ScimManagedStore: Send + Sync {
+    async fn find_scim_identity_tombstone(
+        &self,
+        _connection: &str,
+        _key: &str,
+    ) -> AuthResult<Option<ScimIdentityTombstone>> {
+        Err(AuthError::not_implemented(
+            "SCIM identity tombstones are unsupported",
+        ))
+    }
+
     async fn scim_user_domain_stable(&self, _connection: &str, _domain: &str) -> AuthResult<bool> {
         Err(AuthError::config(
             "SCIM resource persistence is not supported by this store",

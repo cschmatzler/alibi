@@ -65,20 +65,25 @@ export async function scimFixture(base: BetterAuthOptions) {
           "configure-role-projection",
           "configure-group-create-projection",
           "configure-user-delete",
+          "configure-user-create",
         ].includes(query.get("operation") ?? "")
       ) {
         options.plugins = [
           scim({
-            connections: ["configure-group-create-projection", "configure-user-delete"].includes(
-              query.get("operation") ?? "",
-            )
+            connections: [
+              "configure-group-create-projection",
+              "configure-user-delete",
+              "configure-user-create",
+            ].includes(query.get("operation") ?? "")
               ? [
                   {
                     id: "conn-a",
                     provisioningDomainId: "tenant-a",
                     credentials: [{ id: "reader", token: "group-reader" }],
                   },
-                  ...(query.get("operation") === "configure-user-delete"
+                  ...(["configure-user-delete", "configure-user-create"].includes(
+                    query.get("operation") ?? "",
+                  )
                     ? [
                         {
                           id: "conn-b",
@@ -111,6 +116,41 @@ export async function scimFixture(base: BetterAuthOptions) {
                       });
                       identityStates.push(input);
                       if (identityFails) throw new Error("application rejected identity");
+                    },
+                  },
+                }
+              : {}),
+            ...(query.get("operation") === "configure-user-create"
+              ? {
+                  identity: {
+                    resolveUser: async (input: any, context: any) => {
+                      const external = input.resource.externalId;
+                      if (external === "resolve-fails") {
+                        throw new Error("application rejected resolution");
+                      }
+                      if (external === "link-missing") {
+                        return {
+                          action: "link" as const,
+                          userId: "missing-user",
+                          profile: "preserve" as const,
+                        };
+                      }
+                      if (
+                        !["Alias", "Alias2"].includes(input.resource.userName) ||
+                        input.resource.primaryEmail !== "alias@example.com"
+                      ) {
+                        throw new Error("incorrect resolver resource");
+                      }
+                      const user = await context.database.findOne({
+                        model: "user",
+                        where: [{ field: "email", value: "new-work@example.com" }],
+                      });
+                      return {
+                        action: "link" as const,
+                        userId: user.id,
+                        profile:
+                          external === "link-manage" ? ("manage" as const) : ("preserve" as const),
+                      };
                     },
                   },
                 }
@@ -280,6 +320,30 @@ export async function scimFixture(base: BetterAuthOptions) {
           asResponse: true as const,
         };
         return auth.api.deleteSCIMGroup(parameters);
+      }
+      if (query.get("operation") === "user-create-state") {
+        const users = options.database
+          .query("SELECT id,email,name,emailVerified FROM user ORDER BY email")
+          .all()
+          .map((row: any) => ({ ...row, emailVerified: Boolean(row.emailVerified) }));
+        const count = (table: string) =>
+          (options.database.query(`SELECT COUNT(*) AS n FROM ${table}`).get() as any).n;
+        return fixtureJson({
+          users,
+          sources: count("scimUser"),
+          subjects: count("scimSubject"),
+          tombstones: count("scimIdentityTombstone"),
+        });
+      }
+      if (query.get("operation") === "createSCIMUser") {
+        const input = (await request.json()) as any;
+        return auth.api.createSCIMUser({
+          body: input.body,
+          query: input.query,
+          headers:
+            input.token === undefined ? undefined : { authorization: `Bearer ${input.token}` },
+          asResponse: true,
+        });
       }
       if (query.get("operation") === "createSCIMGroup") {
         const input = (await request.json()) as any;

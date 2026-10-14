@@ -33,8 +33,32 @@ pub trait ScimRoleProjection<S: AuthSchema>: Send + Sync {
         database: &dyn AuthTransaction<S>,
     ) -> AuthResult<bool>;
 }
+/// The application chooses whether provisioning creates or links an authentication User.
+#[derive(Clone)]
+pub enum ScimIdentityResolution {
+    Create,
+    Link {
+        user_id: String,
+        manage_profile: bool,
+    },
+}
+/// Canonical provider attributes supplied to the application identity resolver.
+pub struct ScimIdentityResolutionInput {
+    pub connection_id: String,
+    pub provisioning_domain_id: String,
+    pub resource: serde_json::Value,
+}
 #[async_trait]
 pub trait ScimIdentity<S: AuthSchema>: Send + Sync {
+    /// Resolve a new provisioning source before its mutation transaction begins.
+    async fn resolve_user(
+        &self,
+        _input: &ScimIdentityResolutionInput,
+        _database: &dyn alibi_core::AuthStore<S>,
+    ) -> AuthResult<ScimIdentityResolution> {
+        Ok(ScimIdentityResolution::Create)
+    }
+
     async fn reconcile_user(
         &self,
         input: &ScimIdentityState,
