@@ -31,14 +31,11 @@ impl SsoPlugin {
             .and_then(|config| serde_json::from_str::<Value>(config).ok())
             .filter(|config| !config.is_null())
             .ok_or_else(|| api(400, "Invalid SAML configuration"))?;
-        if config
-            .get("spMetadata")
-            .and_then(|metadata| metadata.get("metadata"))
-            .and_then(Value::as_str)
-            .is_some_and(|xml| !xml.is_empty())
-        {
-            return Err(AuthError::not_implemented(
-                "Custom SAML service-provider metadata is not implemented",
+        _ = super::sp_metadata_xml::from_config(&config)?;
+        if let Some(xml) = super::sp_metadata_xml::xml(&config) {
+            return Ok(EndpointResponse::from_http_response(
+                alibi_core::AuthResponse::text(200, xml)
+                    .with_header("content-type", "application/xml"),
             ));
         }
         let entity = config

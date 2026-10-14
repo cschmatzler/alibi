@@ -141,6 +141,11 @@ pub(super) fn verify(
             }
         }
     }
+    let metadata = super::sp_metadata_xml::from_config(config).map_err(|_| invalid())?;
+    let want_assertions_signed = metadata.as_ref().map_or_else(
+        || config.get("wantAssertionsSigned") == Some(&json!(true)),
+        |sp| sp.want_assertions_signed,
+    );
     let signatures = doc
         .descendants(root)
         .into_iter()
@@ -151,7 +156,7 @@ pub(super) fn verify(
         .count();
     if verified.len() != signatures
         || (!assertion_signed && !response_signed)
-        || config.get("wantAssertionsSigned") == Some(&json!(true)) && !assertion_signed
+        || want_assertions_signed && !assertion_signed
     {
         return Err(invalid());
     }
@@ -216,12 +221,17 @@ pub(super) fn verify(
             }
         }
     }
-    let entity = config
-        .get("spMetadata")
-        .and_then(|metadata| metadata.get("entityID"))
-        .and_then(Value::as_str)
-        .filter(|entity| !entity.is_empty())
-        .or_else(|| config.get("issuer").and_then(Value::as_str))
+    let entity = metadata
+        .as_ref()
+        .map(|sp| sp.entity_id.as_str())
+        .or_else(|| {
+            config
+                .get("spMetadata")
+                .and_then(|metadata| metadata.get("entityID"))
+                .and_then(Value::as_str)
+                .filter(|entity| !entity.is_empty())
+                .or_else(|| config.get("issuer").and_then(Value::as_str))
+        })
         .ok_or_else(invalid)?;
     let expected = [Some(entity), config.get("audience").and_then(Value::as_str)];
     let audiences = conditions.map_or_else(Vec::new, |node| {
@@ -259,16 +269,22 @@ pub(super) fn verify(
             "SAML assertion is missing bearer SubjectConfirmationData",
         ));
     }
+    let recipient_matches = |candidate: &str| {
+        candidate == recipient
+            || metadata
+                .as_ref()
+                .is_some_and(|sp| sp.post_services.iter().any(|url| url == candidate))
+    };
     if !confirmations
         .iter()
-        .any(|node| attribute(&doc, *node, "Recipient") == Some(recipient))
+        .any(|node| attribute(&doc, *node, "Recipient").is_some_and(recipient_matches))
     {
         return Err(binding(
             "SAML bearer SubjectConfirmationData Recipient does not match this Service Provider",
         ));
     }
     if attribute(&doc, root, "Destination")
-        .is_some_and(|destination| !destination.is_empty() && destination != recipient)
+        .is_some_and(|destination| !destination.is_empty() && !recipient_matches(destination))
     {
         return Err(binding(
             "SAML response Destination does not match this Service Provider",

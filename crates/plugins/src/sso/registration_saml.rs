@@ -144,7 +144,11 @@ fn certificate_shape(value: &Value) -> AuthResult<()> {
         ))
     }
 }
-pub(super) fn prepare(config: &Value, issuer: &str) -> AuthResult<String> {
+pub(super) fn prepare(
+    config: &Value,
+    issuer: &str,
+    max_metadata_size: usize,
+) -> AuthResult<String> {
     for field in ["signatureAlgorithm", "digestAlgorithm"] {
         if let Some(algorithm) = config
             .get(field)
@@ -212,15 +216,20 @@ pub(super) fn prepare(config: &Value, issuer: &str) -> AuthResult<String> {
     if xml.is_none() && config.get("cert").is_none() && idp.get("cert").is_none() {
         return Err(AuthError::Api{status:400,code:Some("CERT_SOURCE_MISSING".into()),message:"samlConfig requires either a signing certificate (cert or idpMetadata.cert) or an idpMetadata.metadata XML document.".into()});
     }
-    if xml.is_some()
-        || config
-            .get("spMetadata")
-            .and_then(|metadata| metadata.get("metadata"))
-            .and_then(Value::as_str)
-            .is_some_and(|xml| !xml.is_empty())
-    {
+    for (kind, metadata) in [("IdP", xml), ("SP", super::sp_metadata_xml::xml(config))] {
+        if metadata.is_some_and(|xml| xml.len() > max_metadata_size) {
+            return Err(api(
+                400,
+                &format!(
+                    "{kind} metadata exceeds maximum allowed size ({max_metadata_size} bytes)"
+                ),
+            ));
+        }
+    }
+    _ = super::sp_metadata_xml::from_config(config)?;
+    if xml.is_some() {
         return Err(AuthError::not_implemented(
-            "SAML XML metadata admission is not implemented",
+            "SAML IdP XML metadata admission is not implemented",
         ));
     }
     let mut output = config

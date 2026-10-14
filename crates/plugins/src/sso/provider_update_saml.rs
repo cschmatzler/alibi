@@ -4,6 +4,7 @@ pub(super) fn prepare(
     existing: &SsoProvider,
     updates: &Value,
     issuer: Option<&str>,
+    max_metadata_size: usize,
 ) -> AuthResult<(String, bool)> {
     let current: Value = existing
         .saml_config
@@ -54,7 +55,7 @@ pub(super) fn prepare(
     }
     _ = merged.insert("issuer".into(), json!(issuer));
     let updated = Value::Object(merged);
-    let raw = super::registration_saml::prepare(&updated, issuer)?;
+    let raw = super::registration_saml::prepare(&updated, issuer, max_metadata_size)?;
     if updated
         .get("idpMetadata")
         .and_then(|metadata| metadata.get("entityID"))
@@ -91,11 +92,13 @@ fn identity(config: &Value) -> Value {
     });
     anchors.sort();
     let sp = config.get("spMetadata");
+    let metadata = super::sp_metadata_xml::from_config(config).ok().flatten();
     json!({"audience":config.get("audience"), "callbackUrl":config.get("callbackUrl"),
         "idpEntityId":config.get("idpMetadata").and_then(|idp|idp.get("entityID")),
         "idpRedirectService":config.get("entryPoint"),
-        "spEntityId":sp.and_then(|sp|sp.get("entityID")).or_else(||config.get("issuer")),
-        "spNameIDFormat":config.get("identifierFormat"),
-        "wantAssertionsSigned":config.get("wantAssertionsSigned")==Some(&json!(true)),
+        "spEntityId":metadata.as_ref().map(|sp|json!(sp.entity_id)).or_else(||sp.and_then(|sp|sp.get("entityID")).or_else(||config.get("issuer")).cloned()),
+        "spNameIDFormat":metadata.as_ref().and_then(|sp|sp.name_id_formats.first().map(|name|json!(name))).or_else(||config.get("identifierFormat").cloned()),
+        "spPostServices":metadata.as_ref().map_or_else(||config.get("callbackUrl").and_then(Value::as_str).map(|url|vec![url.to_owned()]).unwrap_or_default(), |sp|sp.post_services.clone()),
+        "wantAssertionsSigned":metadata.as_ref().map_or_else(||config.get("wantAssertionsSigned")==Some(&json!(true)),|sp|sp.want_assertions_signed),
         "trustAnchors":anchors})
 }
