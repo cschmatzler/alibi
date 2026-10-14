@@ -44,7 +44,8 @@ pub use scim::{
     ScimGroupRecord, ScimIdentitySource, ScimIdentityState, ScimManagedConnection,
     ScimManagedConnectionEvent, ScimManagedConnectionState, ScimManagedCreation,
     ScimManagedCredential, ScimManagedStore, ScimProjectedUserState, ScimProjectionCandidate,
-    ScimProjectionPreparedUser, ScimRoleExistenceInput, ScimRoleMappingInput, ScimUserRecord,
+    ScimProjectionPreparedUser, ScimRoleExistenceInput, ScimRoleMappingInput, ScimUserPage,
+    ScimUserRecord,
 };
 #[cfg(feature = "redis-cache")]
 pub use secondary_storage::RedisAdapter;

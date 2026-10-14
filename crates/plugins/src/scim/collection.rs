@@ -2,7 +2,7 @@
 use alibi_core::utils::json::JsValue;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
-pub(super) struct GroupQuery {
+pub(super) struct CollectionQuery {
     pub start_index: i64,
     pub count: i64,
     pub filters: Vec<(String, String)>,
@@ -153,7 +153,11 @@ fn conjunction(filter: &str) -> Result<Vec<&str>, QueryError> {
     output.push(final_expression);
     Ok(output)
 }
-fn equality(expression: &str, connection: &str) -> Result<(String, String), QueryError> {
+fn equality(
+    expression: &str,
+    connection: &str,
+    kind: &str,
+) -> Result<(String, String), QueryError> {
     let mut operation = None;
     for word in words(expression)? {
         if !surrounded(expression, &word) {
@@ -181,15 +185,36 @@ fn equality(expression: &str, connection: &str) -> Result<(String, String), Quer
     }
     let lower = attribute.to_lowercase();
     let normalized = lower
-        .strip_prefix("urn:ietf:params:scim:schemas:core:2.0:group:")
+        .strip_prefix(&format!(
+            "urn:ietf:params:scim:schemas:core:2.0:{}:",
+            kind.to_lowercase()
+        ))
         .unwrap_or(&lower);
+    // JavaScript \s includes BOM and excludes NEL; Rust's Unicode class differs.
+    let whitespace_normalized: String = normalized
+        .chars()
+        .map(|character| {
+            if alibi_core::utils::javascript::is_whitespace(character) {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect();
+    let work_email = kind == "User"
+        && regex::Regex::new(r#"(?i)^emails\[ *type +eq +"work" *\]\.value$"#)
+            .map_err(|error_value| error(error_value.to_string(), "invalidFilter"))?
+            .is_match(&whitespace_normalized);
     let field = match normalized {
+        _ if work_email => "workEmailValueIndex",
         "id" => "id",
-        "displayname" => "displayNameKey",
+        "displayname" if kind == "Group" => "displayNameKey",
+        "username" if kind == "User" => "userNameKey",
+        "emails.value" if kind == "User" => "emailValueIndex",
         "externalid" => "externalIdKey",
         _ => {
             return Err(error(
-                format!("filter attribute {attribute} is not supported for Group"),
+                format!("filter attribute {attribute} is not supported for {kind}"),
                 "invalidFilter",
             ));
         }
@@ -207,6 +232,26 @@ fn equality(expression: &str, connection: &str) -> Result<(String, String), Quer
         )
     })?;
     let prepared = match field {
+        "emailValueIndex" | "workEmailValueIndex" => format!(
+            "|{}|",
+            URL_SAFE_NO_PAD.encode(Sha256::digest(
+                serde_json::to_vec(&[
+                    "scim-email-value",
+                    &alibi_core::utils::javascript::trim(value).to_lowercase()
+                ])
+                .map_err(|error_value| error(error_value.to_string(), "invalidFilter"))?
+            ))
+        ),
+        "userNameKey" => URL_SAFE_NO_PAD.encode(Sha256::digest(
+            serde_json::to_vec(&["scim-user-name", connection, &value.to_lowercase()])
+                .map_err(|error_value| error(error_value.to_string(), "invalidFilter"))?,
+        )),
+        "externalIdKey" if kind == "User" && !value.is_empty() => {
+            URL_SAFE_NO_PAD.encode(Sha256::digest(
+                serde_json::to_vec(&["scim-user-external-id", connection, value])
+                    .map_err(|error_value| error(error_value.to_string(), "invalidFilter"))?,
+            ))
+        }
         "displayNameKey" => URL_SAFE_NO_PAD.encode(Sha256::digest(
             serde_json::to_vec(&["scim-group-display-name", connection, &value.to_lowercase()])
                 .map_err(|_| {
@@ -232,7 +277,20 @@ fn equality(expression: &str, connection: &str) -> Result<(String, String), Quer
 pub(super) fn parse_group(
     query: Option<&JsValue>,
     connection: &str,
-) -> Result<GroupQuery, QueryError> {
+) -> Result<CollectionQuery, QueryError> {
+    parse(query, connection, "Group")
+}
+pub(super) fn parse_user(
+    query: Option<&JsValue>,
+    connection: &str,
+) -> Result<CollectionQuery, QueryError> {
+    parse(query, connection, "User")
+}
+fn parse(
+    query: Option<&JsValue>,
+    connection: &str,
+    kind: &str,
+) -> Result<CollectionQuery, QueryError> {
     let start_index = integer(
         query.and_then(|query| query.get("startIndex")),
         "startIndex",
@@ -247,10 +305,10 @@ pub(super) fn parse_group(
         .filter(|filter| !alibi_core::utils::javascript::trim(filter).is_empty())
     {
         for expression in conjunction(filter)? {
-            filters.push(equality(expression, connection)?);
+            filters.push(equality(expression, connection, kind)?);
         }
     }
-    Ok(GroupQuery {
+    Ok(CollectionQuery {
         start_index,
         count,
         filters,

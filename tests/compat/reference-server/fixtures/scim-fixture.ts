@@ -114,6 +114,82 @@ export async function scimFixture(base: BetterAuthOptions) {
           headers: { "content-type": "application/json" },
         });
       }
+      if (query.get("operation") === "listSCIMUsers") {
+        const input = (await request.json()) as any;
+        return auth.api.listSCIMUsers({
+          query: input.query,
+          headers:
+            input.token === undefined ? undefined : { authorization: `Bearer ${input.token}` },
+          asResponse: true,
+        });
+      }
+      if (query.get("operation") === "seed-user-list") {
+        const owner = await auth.api.signUpEmail({
+          body: {
+            email: "user-list-owner@example.com",
+            password: "a-native-password-123",
+            name: "User owner",
+          },
+        });
+        const key = (parts: string[]) =>
+          createHash("sha256").update(JSON.stringify(parts)).digest("base64url");
+        for (const [id, cid, name, order] of [
+          ["carol", "conn-a", "Carol", "3"],
+          ["alice", "conn-a", "Alice", "1"],
+          ["bob", "conn-a", "Bob", "2"],
+          ["foreign", "conn-b", "Foreign", "0"],
+        ]) {
+          const work = `work-${id}@example.com`;
+          const home = `home-${id}@example.com`;
+          const external = `external-${id}`;
+          const workKey = key(["scim-email-value", work]);
+          const index = `|${[workKey, key(["scim-email-value", home])].sort().join("|")}|`;
+          const emails = JSON.stringify([
+            { value: work, type: "work", primary: true },
+            { value: home, type: "home", primary: false },
+          ]);
+          options.database
+            .query(
+              "INSERT INTO scimUser (id,connectionId,provisioningDomainId,userId,connectionUserKey,userName,userNameKey,primaryEmail,workEmailValueIndex,emailValueIndex,displayName,formattedName,serializedEmails,externalId,externalIdKey,active,orderKey,createdAt,updatedAt) VALUES (?,?,'tenant-a',?,?,?,?,?,?,?,?,?,?,?, ?,1,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
+            )
+            .run(
+              id,
+              cid,
+              owner.user.id,
+              id,
+              name,
+              key(["scim-user-name", cid, name.toLowerCase()]),
+              work,
+              `|${workKey}|`,
+              index,
+              name,
+              name,
+              emails,
+              external,
+              key(["scim-user-external-id", cid, external]),
+              order,
+            );
+        }
+        return new Response(JSON.stringify({ seeded: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "corrupt-user-list") {
+        options.database.exec(
+          "UPDATE scimUser SET serializedAttributes='not-json' WHERE id='carol'",
+        );
+        return new Response(JSON.stringify({ corrupt: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "drift-user-list") {
+        options.database.exec(
+          "UPDATE scimUser SET provisioningDomainId='drifted' WHERE id='carol'",
+        );
+        return new Response(JSON.stringify({ changed: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
       if (query.get("operation") === "listSCIMGroups") {
         const input = (await request.json()) as any;
         return auth.api.listSCIMGroups({

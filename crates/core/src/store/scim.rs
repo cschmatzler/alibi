@@ -141,6 +141,10 @@ pub struct ScimGroupMemberRecord {
     pub id: String,
     pub display_name: String,
 }
+pub struct ScimUserPage {
+    pub total_results: i64,
+    pub users: Vec<ScimUserRecord>,
+}
 pub struct ScimGroupPage {
     pub total_results: i64,
     pub groups: Vec<ScimGroupRecord>,
@@ -151,6 +155,23 @@ pub struct ScimGroupMemberships {
 }
 #[async_trait]
 pub trait ScimManagedStore: Send + Sync {
+    async fn scim_user_domain_stable(&self, _connection: &str, _domain: &str) -> AuthResult<bool> {
+        Err(AuthError::config(
+            "SCIM resource persistence is not supported by this store",
+        ))
+    }
+    async fn list_scim_users(
+        &self,
+        _connection: &str,
+        _filters: &[(String, String)],
+        _offset: i64,
+        _count: i64,
+    ) -> AuthResult<ScimUserPage> {
+        Err(AuthError::config(
+            "SCIM resource persistence is not supported by this store",
+        ))
+    }
+
     async fn scim_group_domain_stable(&self, _connection: &str, _domain: &str) -> AuthResult<bool> {
         Err(AuthError::config(
             "SCIM resource persistence is not supported by this store",

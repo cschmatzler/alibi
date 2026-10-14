@@ -18,6 +18,85 @@ use async_trait::async_trait;
 use chrono::SubsecRound;
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
+    async fn scim_user_domain_stable(&self, connection: &str, domain: &str) -> AuthResult<bool> {
+        use super::entities::scim_user as user;
+        let mut sql = model::select_model::<user::Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare("scimUser", "connectionId", " = ", connection);
+        sql.push(" AND ");
+        sql.compare("scimUser", "provisioningDomainId", " <> ", domain);
+        model::limit_one(&mut sql);
+        Ok(self
+            .exec()
+            .fetch_optional::<user::Model>(sql)
+            .await?
+            .is_none())
+    }
+    async fn list_scim_users(
+        &self,
+        connection: &str,
+        filters: &[(String, String)],
+        offset: i64,
+        count: i64,
+    ) -> AuthResult<alibi_core::store::ScimUserPage> {
+        use super::entities::scim_user as user;
+        let predicates = |sql: &mut Sql| {
+            sql.push(" WHERE ");
+            sql.compare("scimUser", "connectionId", " = ", connection);
+            for (field, value) in filters {
+                sql.push(" AND ");
+                if matches!(field.as_str(), "emailValueIndex" | "workEmailValueIndex") {
+                    sql.compare("scimUser", field, " LIKE ", format!("%{value}%"));
+                } else {
+                    sql.compare("scimUser", field, " = ", value.clone());
+                }
+            }
+        };
+        let mut total = Sql::with(self.exec().engine(), "SELECT COUNT(*) FROM ");
+        total.ident("scimUser");
+        predicates(&mut total);
+        let total_results = self
+            .exec()
+            .fetch_scalar::<i64>(total)
+            .await?
+            .unwrap_or_default();
+        let users = if count == 0 {
+            Vec::new()
+        } else {
+            let mut sql = model::select_model::<user::Model>(self.exec());
+            predicates(&mut sql);
+            sql.push(" ORDER BY ");
+            sql.column("scimUser", "orderKey");
+            sql.push(" ASC LIMIT ");
+            sql.bind(count);
+            sql.push(" OFFSET ");
+            sql.bind(offset);
+            self.exec().fetch_all::<user::Model>(sql).await?
+        };
+        Ok(alibi_core::store::ScimUserPage {
+            total_results,
+            users: users
+                .into_iter()
+                .map(|row| alibi_core::store::ScimUserRecord {
+                    id: row.id,
+                    connection_id: row.connection_id,
+                    provisioning_domain_id: row.provisioning_domain_id,
+                    user_name: row.user_name,
+                    display_name: row.display_name,
+                    active: row.active,
+                    external_id: row.external_id,
+                    formatted_name: row.formatted_name,
+                    given_name: row.given_name,
+                    family_name: row.family_name,
+                    serialized_emails: row.serialized_emails,
+                    serialized_attributes: row.serialized_attributes,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                })
+                .collect(),
+        })
+    }
+
     async fn scim_group_domain_stable(&self, connection: &str, domain: &str) -> AuthResult<bool> {
         use super::entities::scim_group as group;
         let mut sql = model::select_model::<group::Model>(self.exec());
