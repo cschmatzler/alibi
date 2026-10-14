@@ -18,6 +18,51 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
+    async fn find_scim_managed_credential(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<alibi_core::store::ScimManagedCredential>> {
+        Ok(credential::Entity::find()
+            .filter(credential::Column::CredentialId.eq(id))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .map(Into::into))
+    }
+    async fn find_scim_active_managed_connection(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<alibi_core::store::ScimManagedConnection>> {
+        Ok(connection::Entity::find()
+            .filter(connection::Column::Id.eq(id))
+            .filter(connection::Column::Status.eq("active"))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .map(Into::into))
+    }
+    async fn record_scim_credential_use(
+        &self,
+        id: &str,
+        previous: Option<chrono::DateTime<chrono::Utc>>,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<()> {
+        let query = credential::Entity::update_many()
+            .col_expr(credential::Column::LastUsedAt, Expr::value(at))
+            .filter(credential::Column::Id.eq(id))
+            .filter(credential::Column::Status.eq("active"));
+        let query = if let Some(previous) = previous {
+            query.filter(credential::Column::LastUsedAt.eq(previous))
+        } else {
+            query.filter(credential::Column::LastUsedAt.is_null())
+        };
+        _ = query
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        Ok(())
+    }
+
     async fn get_scim_group(
         &self,
         id: &str,

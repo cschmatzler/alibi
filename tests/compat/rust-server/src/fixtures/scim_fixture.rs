@@ -64,6 +64,27 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     *auth.lock().await=Arc::new(fresh);return Json(json!({"restarted":true})).into_response();
                 }
                 let auth=auth.lock().await.clone();
+                if query.get("operation").is_some_and(|operation|operation=="reject-managed-usage") {
+                    _=database.execute_unprepared("CREATE TRIGGER reject_scim_usage BEFORE UPDATE ON scimManagedCredential WHEN NEW.lastUsedAt IS NOT NULL BEGIN SELECT RAISE(ABORT,'fixture rejected usage'); END").await.unwrap();return Json(json!({"installed":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="accept-managed-usage") {
+                    _=database.execute_unprepared("DROP TRIGGER reject_scim_usage").await.unwrap();return Json(json!({"removed":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="seed-managed-group") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();
+                    _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,orderKey,createdAt,updatedAt) VALUES ('managed-group',?,'tenant-managed',0,'Managed Staff','managed-group','managed-group','2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",[input["connectionId"].as_str().unwrap().into()])).await.unwrap();return Json(json!({"seeded":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="managed-bearer-policy") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();
+                    for field in ["serializedScopes","hashVersion","status","expiresAt","lastUsedAt"] {
+                        if let Some(value)=input.get(field) {
+                            let value:alibi::seaorm::sea_orm::Value=if let Some(value)=value.as_str(){value.into()}else{Option::<String>::None.into()};
+                            _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),format!("UPDATE scimManagedCredential SET {field}=? WHERE credentialId=?"),[value,input["credentialId"].as_str().unwrap().into()])).await.unwrap();
+                        }
+                    }
+                    if let Some(status)=input.get("connectionStatus"){_=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"UPDATE scimManagedConnection SET status=? WHERE connectionId=?",[status.as_str().unwrap().into(),input["connectionId"].as_str().unwrap().into()])).await.unwrap();}
+                    return Json(json!({"changed":true})).into_response();
+                }
                 if query.get("operation").is_some_and(|operation|operation=="oversize-group-read") {
                     _=database.execute_unprepared("WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM seq WHERE n<1001) INSERT INTO scimGroupMember (id,connectionId,groupId,scimUserId,membershipKey,createdAt) SELECT 'cap-'||CAST(n AS TEXT),'conn-a','staff','member-a','cap-'||CAST(n AS TEXT),'2026-01-02T03:04:05.000Z' FROM seq").await.unwrap();return Json(json!({"oversized":true})).into_response();
                 }

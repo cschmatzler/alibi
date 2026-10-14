@@ -110,6 +110,55 @@ export async function scimFixture(base: BetterAuthOptions) {
           headers: { "content-type": "application/json" },
         });
       }
+      if (query.get("operation") === "reject-managed-usage") {
+        options.database.exec(
+          "CREATE TRIGGER reject_scim_usage BEFORE UPDATE ON scimManagedCredential WHEN NEW.lastUsedAt IS NOT NULL BEGIN SELECT RAISE(ABORT,'fixture rejected usage'); END",
+        );
+        return new Response(JSON.stringify({ installed: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "accept-managed-usage") {
+        options.database.exec("DROP TRIGGER reject_scim_usage");
+        return new Response(JSON.stringify({ removed: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "seed-managed-group") {
+        const input = (await request.json()) as any;
+        options.database
+          .query(
+            "INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,orderKey,createdAt,updatedAt) VALUES ('managed-group',?,'tenant-managed',0,'Managed Staff','managed-group','managed-group','2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
+          )
+          .run(input.connectionId);
+        return new Response(JSON.stringify({ seeded: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "managed-bearer-policy") {
+        const input = (await request.json()) as any;
+        for (const field of [
+          "serializedScopes",
+          "hashVersion",
+          "status",
+          "expiresAt",
+          "lastUsedAt",
+        ] as const) {
+          if (field in input) {
+            options.database
+              .query(`UPDATE scimManagedCredential SET ${field}=? WHERE credentialId=?`)
+              .run(input[field], input.credentialId);
+          }
+        }
+        if ("connectionStatus" in input) {
+          options.database
+            .query("UPDATE scimManagedConnection SET status=? WHERE connectionId=?")
+            .run(input.connectionStatus, input.connectionId);
+        }
+        return new Response(JSON.stringify({ changed: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
       if (query.get("operation") === "oversize-group-read") {
         options.database.exec(
           "WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM seq WHERE n<1001) INSERT INTO scimGroupMember (id,connectionId,groupId,scimUserId,membershipKey,createdAt) SELECT 'cap-'||CAST(n AS TEXT),'conn-a','staff','member-a','cap-'||CAST(n AS TEXT),'2026-01-02T03:04:05.000Z' FROM seq",

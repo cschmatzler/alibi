@@ -824,6 +824,29 @@ impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> crate::store::ScimManagedStore for PluginStore<S> {
+    async fn find_scim_managed_credential(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<crate::store::ScimManagedCredential>> {
+        self.inner.find_scim_managed_credential(id).await
+    }
+    async fn find_scim_active_managed_connection(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<crate::store::ScimManagedConnection>> {
+        self.inner.find_scim_active_managed_connection(id).await
+    }
+    async fn record_scim_credential_use(
+        &self,
+        id: &str,
+        previous: Option<chrono::DateTime<chrono::Utc>>,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<()> {
+        self.inner
+            .record_scim_credential_use(id, previous, at)
+            .await
+    }
+
     async fn active_scim_connection_binding(
         &self,
         id: &str,

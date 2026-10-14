@@ -524,3 +524,5 @@ mod scim_role_projection;
 mod scim_terminal_binding;
 
 mod scim_group_read;
+
+mod scim_managed_bearer;

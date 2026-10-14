@@ -31,7 +31,7 @@ fn connections() -> Vec<ScimConnectionOptions> {
         },
     ]
 }
-async fn read<S: AuthSchema>(
+pub(super) async fn read<S: AuthSchema>(
     auth: &Alibi<S>,
     id: &str,
     query: &Value,
