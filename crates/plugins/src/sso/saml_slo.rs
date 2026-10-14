@@ -150,15 +150,15 @@ impl SsoPlugin {
         } else {
             self.config.saml_want_logout_request_signed
         };
+        // A Redirect message needs a detached signature over the original query.
+        // This callback, like the reference, cannot substitute an XML signature.
+        if !post && required {
+            return Err(invalid());
+        }
         if !signatures.is_empty() {
             verify_signature(&doc, &xml, root, &config).map_err(|()| invalid())?;
         } else if required {
             return Err(invalid());
-        }
-        if !post && string("Signature").is_some() {
-            return Err(AuthError::not_implemented(
-                "SAML redirect signature verification is not implemented",
-            ));
         }
         if is_response {
             let status = children(&doc, root, PROTOCOL, "Status")

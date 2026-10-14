@@ -178,14 +178,21 @@ export async function ssoFixture(base: BetterAuthOptions) {
       );
     }
     if (input.action === "acs-http" || input.action === "slo-http") {
+      const url = new URL(
+        `${options.baseURL}${options.basePath ?? "/api/auth"}/sso/saml2/sp/${input.action === "slo-http" ? "slo" : "acs"}/${input.params.providerId}`,
+      );
+      const get = input.method === "GET";
+      if (get) url.search = new URLSearchParams(input.query).toString();
       return auth.handler(
         new Request(
-          `${options.baseURL}${options.basePath ?? "/api/auth"}/sso/saml2/sp/${input.action === "slo-http" ? "slo" : "acs"}/${input.params.providerId}`,
-          {
-            method: "POST",
-            headers: { ...input.headers, "content-type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams(input.body),
-          },
+          url,
+          get
+            ? { method: "GET", headers: input.headers }
+            : {
+                method: "POST",
+                headers: { ...input.headers, "content-type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams(input.body),
+              },
         ),
       );
     }
