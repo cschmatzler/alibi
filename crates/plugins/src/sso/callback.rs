@@ -197,13 +197,32 @@ impl SsoPlugin {
             .and_then(Value::as_str)
             == Some("private_key_jwt")
         {
-            let key = self
+            let mut key = self
                 .config
                 .default_providers
                 .iter()
                 .find(|provider| provider.provider_id == provider_id)
-                .and_then(|provider| provider.private_key.as_ref());
-            let Some(key) = key.filter(|key| key.has_material()) else {
+                .and_then(|provider| provider.private_key.clone());
+            if key.is_none()
+                && let Some(resolver) = &self.config.resolve_private_key
+            {
+                key = resolver
+                    .0
+                    .resolve(super::SsoPrivateKeyContext {
+                        provider_id: provider_id.into(),
+                        key_id: config
+                            .get("privateKeyId")
+                            .and_then(Value::as_str)
+                            .map(str::to_owned),
+                        issuer: config
+                            .get("issuer")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .into(),
+                    })
+                    .await?;
+            }
+            let Some(key) = key.filter(super::SsoPrivateKey::has_material) else {
                 return fail("invalid_provider", Some("no_private_key_available"));
             };
             Some(key.assertion(&config).map_err(AuthError::internal)?)

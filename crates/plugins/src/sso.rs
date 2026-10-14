@@ -9,7 +9,7 @@ mod domains;
 mod idp_metadata_xml;
 mod idp_services;
 mod private_key;
-pub use private_key::SsoPrivateKey;
+pub use private_key::{SsoKeyResolver, SsoPrivateKey, SsoPrivateKeyContext, SsoPrivateKeyResolver};
 mod provider_delete;
 mod provider_list;
 mod provider_read;
@@ -48,6 +48,7 @@ pub struct SsoDefaultProvider {
 #[derive(Clone, Debug)]
 pub struct SsoConfig {
     pub default_providers: Vec<SsoDefaultProvider>,
+    pub resolve_private_key: Option<SsoKeyResolver>,
     pub providers_limit: usize,
     pub domain_verification: bool,
     /// Override the system DNS servers, for example for an enterprise DNS zone.
@@ -72,6 +73,7 @@ impl Default for SsoConfig {
     fn default() -> Self {
         Self {
             default_providers: Vec::new(),
+            resolve_private_key: None,
             providers_limit: 10,
             domain_verification: false,
             domain_verification_dns_servers: Vec::new(),
@@ -220,7 +222,7 @@ impl SsoPlugin {
             if method!="private_key_jwt" && config.get("clientSecret").and_then(Value::as_str).is_none_or(str::is_empty) {
                 return Err(api(400,"clientSecret is required when using client_secret_basic or client_secret_post authentication"));
             }
-            if method=="private_key_jwt" {return Err(api(400,"private_key_jwt authentication requires either a resolvePrivateKey callback or a privateKey in defaultSSO"));}
+            if method=="private_key_jwt" && !self.private_key_source_configured(provider_id) {return Err(api(400,"private_key_jwt authentication requires either a resolvePrivateKey callback or a privateKey in defaultSSO"));}
             let mut output=serde_json::Map::new();
             for field in ["clientId","clientSecret","authorizationEndpoint","tokenEndpoint","privateKeyId","privateKeyAlgorithm","jwksEndpoint","pkce","mapping","scopes","userInfoEndpoint"] {
                 if let Some(value)=config.get(field) { _=output.insert(field.into(),value.clone()); }

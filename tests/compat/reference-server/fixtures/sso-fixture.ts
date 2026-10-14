@@ -164,7 +164,25 @@ export async function ssoFixture(base: BetterAuthOptions) {
       }),
     ],
   });
+  const keyEvents: any[] = [];
+  let keyEnabled = true;
+  const privateKeyPem = await Bun.file(
+    new URL("../../fixtures/salesforce-transport/key.pem", import.meta.url),
+  ).text();
+  const resolverOptions = {
+    ...options,
+    plugins: [
+      username(),
+      sso({
+        async resolvePrivateKey(context) {
+          keyEvents.push({ ...context });
+          return keyEnabled ? { privateKeyPem, kid: "resolved-kid", algorithm: "PS256" } : {};
+        },
+      }),
+    ],
+  };
   const instances = new Map([
+    ["key-resolver", betterAuth(resolverOptions)],
     ["configured-jwt", betterAuth(await jwtOptions(true))],
     ["configured-jwt-missing", betterAuth(await jwtOptions(false))],
     ["configured-changed", betterAuth(configuredOptions(true))],
@@ -183,32 +201,52 @@ export async function ssoFixture(base: BetterAuthOptions) {
   const handle = async (request: Request) => {
     const input = await request.json();
     const mode =
-      input.mode === "configured-jwt"
-        ? "configured-jwt"
-        : input.mode === "configured-jwt-missing"
-          ? "configured-jwt-missing"
-          : input.mode === "configured-changed"
-            ? "configured-changed"
-            : input.mode === "configured"
-              ? "configured"
-              : input.mode === "no-signup"
-                ? "no-signup"
-                : input.mode === "validation"
-                  ? "validation"
-                  : input.mode === "trusted-claims"
-                    ? "trusted-claims"
-                    : input.mode === "signed-request-slo"
-                      ? "signed-request-slo"
-                      : input.mode === "signed-slo"
-                        ? "signed-slo"
-                        : input.mode === "domain"
-                          ? "domain"
-                          : input.mode === "shared"
-                            ? "shared"
-                            : input.mode === "slo"
-                              ? "slo"
-                              : "default";
+      input.mode === "key-resolver"
+        ? "key-resolver"
+        : input.mode === "configured-jwt"
+          ? "configured-jwt"
+          : input.mode === "configured-jwt-missing"
+            ? "configured-jwt-missing"
+            : input.mode === "configured-changed"
+              ? "configured-changed"
+              : input.mode === "configured"
+                ? "configured"
+                : input.mode === "no-signup"
+                  ? "no-signup"
+                  : input.mode === "validation"
+                    ? "validation"
+                    : input.mode === "trusted-claims"
+                      ? "trusted-claims"
+                      : input.mode === "signed-request-slo"
+                        ? "signed-request-slo"
+                        : input.mode === "signed-slo"
+                          ? "signed-slo"
+                          : input.mode === "domain"
+                            ? "domain"
+                            : input.mode === "shared"
+                              ? "shared"
+                              : input.mode === "slo"
+                                ? "slo"
+                                : "default";
     const auth = instances.get(mode)!;
+    if (input.action === "key-reset") {
+      keyEvents.length = 0;
+      keyEnabled = true;
+      return new Response(JSON.stringify({ configured: true }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "key-enabled") {
+      keyEnabled = input.enabled;
+      return new Response(JSON.stringify({ configured: true }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "key-events") {
+      return new Response(JSON.stringify(keyEvents), {
+        headers: { "content-type": "application/json" },
+      });
+    }
     if (input.action === "validation-reset") {
       validationEvents.length = 0;
       validationDenyReturning = false;

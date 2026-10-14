@@ -450,3 +450,6 @@ mod sso_dns;
 
 #[path = "../../../support/sso_configured_providers.rs"]
 mod sso_configured_providers;
+
+#[path = "../../../support/sso_key_resolver.rs"]
+mod sso_key_resolver;
