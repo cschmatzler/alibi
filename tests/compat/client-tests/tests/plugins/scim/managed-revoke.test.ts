@@ -21,8 +21,8 @@ compatScenario("SCIM managed revocation is idempotent and domain scoped", async 
   });
   expect(response.status).toBe(200);
   const created = (await response.json()) as any;
-  const cid = created.connection.connectionId,
-    kid = created.credential.credentialId;
+  const cid = created.connection.connectionId;
+  const kid = created.credential.credentialId;
   const revoke = (domain: string, credential: string) =>
     control("revokeSCIMManagedCredential", {
       body: {
