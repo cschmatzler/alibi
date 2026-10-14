@@ -23,6 +23,27 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         post(move |Query(query): Query<HashMap<String, String>>| {
             let auth = auth.clone();
             async move {
+                if query
+                    .get("operation")
+                    .is_some_and(|operation| operation == "getSCIMResourceType")
+                {
+                    let output = auth
+                        .dispatch_endpoint(
+                            ScimPlugin::resource_type_endpoint(
+                                query.get("id").map_or("", String::as_str),
+                            )
+                            .unwrap(),
+                            EndpointOptions::default(),
+                        )
+                        .await;
+                    return match output {
+                        Ok(output) => (axum::http::StatusCode::OK, Json(output.value().clone())),
+                        Err(error) => (
+                            axum::http::StatusCode::from_u16(error.error.status_code()).unwrap(),
+                            Json(*error.body.unwrap()),
+                        ),
+                    };
+                }
                 let output = auth
                     .dispatch_endpoint(
                         if query
@@ -37,7 +58,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     )
                     .await
                     .unwrap();
-                Json(output.value().clone())
+                (axum::http::StatusCode::OK, Json(output.value().clone()))
             }
         }),
     ))
