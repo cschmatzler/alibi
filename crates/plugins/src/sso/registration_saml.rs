@@ -35,11 +35,6 @@ fn validate_config(input: &JsValue, partial: bool) -> AuthResult<JsValue> {
             required: !partial,
         },
         JsonField {
-            name: "spMetadata",
-            kind: JsonFieldKind::Record,
-            required: false,
-        },
-        JsonField {
             name: "mapping",
             kind: JsonFieldKind::Record,
             required: false,
@@ -74,6 +69,30 @@ fn validate_config(input: &JsValue, partial: bool) -> AuthResult<JsValue> {
         return Err(crate::endpoint::validation(
             "callbackUrl must not contain a fragment",
         ));
+    }
+    if let Some(metadata) = input.get("spMetadata") {
+        let metadata = crate::endpoint::validate_fields(
+            Some(metadata),
+            "body.samlConfig.spMetadata",
+            &[
+                JsonField::string("metadata", false),
+                JsonField::string("entityID", false),
+                JsonField::string("binding", false),
+                JsonField::string("privateKey", false),
+                JsonField::string("privateKeyPass", false),
+                JsonField {
+                    name: "isAssertionEncrypted",
+                    kind: JsonFieldKind::Boolean,
+                    required: false,
+                },
+                JsonField::string("encPrivateKey", false),
+                JsonField::string("encPrivateKeyPass", false),
+            ],
+        )?;
+        _ = value
+            .as_object_mut()
+            .ok_or_else(|| crate::endpoint::validation("Invalid SAML configuration"))?
+            .insert("spMetadata".into(), metadata.to_json_value()?);
     }
     if let Some(cert) = input.get("cert") {
         let cert = cert.to_json_value()?;
