@@ -131,7 +131,14 @@ async fn scim_group_read_authenticates_and_projects_owned_members<B: Backend>(
         ("member-b", "2026-01-02T03:04:05.002Z"),
         ("member-c", "2026-01-02T03:04:05.003Z"),
     ] {
-        _=db.execute("INSERT INTO \"scimGroupMember\" (\"id\",\"connectionId\",\"groupId\",\"scimUserId\",\"membershipKey\",\"createdAt\") VALUES ($1,'conn-a','staff',$1,$1,$2)",&[id,time]).await?;
+        _=db.execute("INSERT INTO \"scimGroupMember\" (\"id\",\"connectionId\",\"groupId\",\"scimUserId\",\"membershipKey\",\"createdAt\") VALUES ($1,'conn-a','staff',$1,$1,'2026-01-02T03:04:05.000Z')",&[id]).await?;
+        db.set_timestamp(
+            "scimGroupMember",
+            "createdAt",
+            ("id", id),
+            chrono::DateTime::parse_from_rfc3339(time)?.with_timezone(&chrono::Utc),
+        )
+        .await?;
     }
     let response = read(&auth, "staff", &json!({}), Some("group-reader")).await?;
     assert_eq!(response.status, 200);
@@ -217,7 +224,7 @@ async fn scim_group_read_authenticates_and_projects_owned_members<B: Backend>(
     let bindings: Value = serde_json::from_str(&db.table("scimConnectionBinding").await?)?;
     assert_eq!(bindings.as_array().unwrap().len(), 1);
     assert_eq!(bindings[0]["decommissionStatus"], "active");
-    _ = db.execute("WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM seq WHERE n<1001) INSERT INTO \"scimGroupMember\" (\"id\",\"connectionId\",\"groupId\",\"scimUserId\",\"membershipKey\",\"createdAt\") SELECT 'cap-'||CAST(n AS TEXT),'conn-a','staff','member-a','cap-'||CAST(n AS TEXT),'2026-01-02T03:04:05.000Z' FROM seq", &[]).await?;
+    _ = db.execute("WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM seq WHERE n<1001) INSERT INTO \"scimGroupMember\" (\"id\",\"connectionId\",\"groupId\",\"scimUserId\",\"membershipKey\",\"createdAt\") SELECT 'cap-'||CAST(n AS TEXT),'conn-a','staff','member-a','cap-'||CAST(n AS TEXT),(SELECT \"createdAt\" FROM \"scimUser\" WHERE \"id\"='member-a') FROM seq", &[]).await?;
     let oversized = read(&auth, "staff", &json!({}), Some("group-reader")).await?;
     assert_eq!(oversized.status, 500);
     assert_eq!(
