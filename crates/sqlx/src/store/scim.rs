@@ -18,6 +18,64 @@ use async_trait::async_trait;
 use chrono::SubsecRound;
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
+    async fn find_scim_managed_credential(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<alibi_core::store::ScimManagedCredential>> {
+        let mut sql = model::select_model::<credential::Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare("scimManagedCredential", "credentialId", " = ", id);
+        model::limit_one(&mut sql);
+        Ok(self
+            .exec()
+            .fetch_optional::<credential::Model>(sql)
+            .await?
+            .map(Into::into))
+    }
+    async fn find_scim_active_managed_connection(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<alibi_core::store::ScimManagedConnection>> {
+        let mut sql = model::select_model::<connection::Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare("scimManagedConnection", "id", " = ", id);
+        sql.push(" AND ");
+        sql.compare("scimManagedConnection", "status", " = ", "active");
+        model::limit_one(&mut sql);
+        Ok(self
+            .exec()
+            .fetch_optional::<connection::Model>(sql)
+            .await?
+            .map(Into::into))
+    }
+    async fn record_scim_credential_use(
+        &self,
+        id: &str,
+        previous: Option<chrono::DateTime<chrono::Utc>>,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<()> {
+        let mut sql = Sql::with(self.exec().engine(), "UPDATE ");
+        sql.ident("scimManagedCredential");
+        sql.push(" SET ");
+        sql.ident("lastUsedAt");
+        sql.push(" = ");
+        sql.bind(at);
+        sql.push(" WHERE ");
+        sql.compare("scimManagedCredential", "id", " = ", id);
+        sql.push(" AND ");
+        sql.compare("scimManagedCredential", "status", " = ", "active");
+        sql.push(" AND ");
+        if let Some(previous) = previous {
+            sql.compare("scimManagedCredential", "lastUsedAt", " = ", previous);
+        } else {
+            sql.column("scimManagedCredential", "lastUsedAt");
+            sql.push(" IS NULL");
+        }
+        model::returning::<credential::Model>(&mut sql);
+        _ = self.exec().fetch_optional::<credential::Model>(sql).await?;
+        Ok(())
+    }
+
     async fn get_scim_group(
         &self,
         id: &str,

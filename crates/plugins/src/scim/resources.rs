@@ -4,7 +4,8 @@ use alibi_core::endpoint::{EndpointCall, EndpointResponse};
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::SecondsFormat;
+use chrono::{SecondsFormat, SubsecRound};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 const GROUP_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:Group";
@@ -40,7 +41,93 @@ fn valid_scopes(scopes: &[String]) -> bool {
             ) && !scopes.iter().take(index).any(|previous| previous == scope)
         })
 }
+struct ResolvedConnection {
+    id: String,
+    domain: String,
+    scopes: Option<Vec<String>>,
+}
 impl ScimPlugin {
+    async fn verify_managed_bearer<S: AuthSchema>(
+        &self,
+        token: &str,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<ResolvedConnection>> {
+        let Some(options) = &self.managed_connections else {
+            return Ok(None);
+        };
+        let Some((id, secret)) = token.split_once('.') else {
+            return Ok(None);
+        };
+        let Some(suffix) = id.strip_prefix("ba_scim_credential_") else {
+            return Ok(None);
+        };
+        let valid = |value: &str| {
+            !value.is_empty()
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        };
+        if !valid(suffix) || !valid(secret) {
+            return Ok(None);
+        }
+        let Some(credential) = ctx.database.find_scim_managed_credential(id).await? else {
+            return Ok(None);
+        };
+        if credential.hash_version != "v1"
+            || credential.status != "active"
+            || credential.expires_at.timestamp_millis() <= chrono::Utc::now().timestamp_millis()
+        {
+            return Ok(None);
+        }
+        let Ok(digest) = URL_SAFE_NO_PAD.decode(&credential.token_digest) else {
+            return Ok(None);
+        };
+        let mut mac =
+            <Hmac<Sha256> as KeyInit>::new_from_slice(options.credential_hash_secret.as_bytes())
+                .map_err(|error| AuthError::internal(error.to_string()))?;
+        mac.update(token.as_bytes());
+        if mac.verify_slice(&digest).is_err() {
+            return Ok(None);
+        }
+        let Some(connection) = ctx
+            .database
+            .find_scim_active_managed_connection(&credential.connection_record_id)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let now = chrono::Utc::now().trunc_subsecs(3);
+        let due = credential.last_used_at.is_none_or(|previous| {
+            i128::from(previous.timestamp_millis())
+                + i128::from(options.last_used_write_interval_seconds) * 1000
+                <= i128::from(now.timestamp_millis())
+        });
+        if due {
+            let _accounting = ctx
+                .database
+                .record_scim_credential_use(&credential.id, credential.last_used_at, now)
+                .await;
+        }
+        // The reference accounts for use before parsing the persisted scope policy.
+        let scopes: Vec<String> =
+            serde_json::from_str(&credential.serialized_scopes).map_err(|_| AuthError::Api {
+                status: 500,
+                code: None,
+                message: "Managed SCIM credential scope policy is invalid".into(),
+            })?;
+        if !valid_scopes(&scopes) {
+            return Err(AuthError::Api {
+                status: 500,
+                code: None,
+                message: "Managed SCIM credential scope policy is invalid".into(),
+            });
+        }
+        Ok(Some(ResolvedConnection {
+            id: connection.connection_id,
+            domain: connection.provisioning_domain_id,
+            scopes: Some(scopes),
+        }))
+    }
     pub(super) fn validate_connections(&self) -> AuthResult<()> {
         let mut ids = std::collections::HashSet::new();
         let mut tokens = std::collections::HashSet::new();
@@ -139,7 +226,24 @@ impl ScimPlugin {
                 }
             }
         }
-        let Some((connection, credential)) = principal else {
+        let mut principal = principal.map(|(connection, credential)| ResolvedConnection {
+            id: connection.id.clone(),
+            domain: connection
+                .provisioning_domain_id
+                .clone()
+                .unwrap_or_else(|| connection.id.clone()),
+            scopes: credential.scopes.clone(),
+        });
+        if principal.is_none() && bearer.starts_with("ba_scim_credential_") {
+            principal = match self.verify_managed_bearer(bearer, ctx).await {
+                Ok(principal) => principal,
+                Err(AuthError::Api {
+                    status, message, ..
+                }) => return Ok(error(status, &message, None)),
+                Err(error) => return Err(error),
+            };
+        }
+        let Some(connection) = principal else {
             return Ok(unauthorized("Invalid SCIM bearer token"));
         };
         let resource = if call.path().is_some_and(|path| path.contains("/Groups")) {
@@ -156,7 +260,7 @@ impl ScimPlugin {
             "write"
         };
         let required = format!("scim.{resource}.{operation}");
-        if credential
+        if connection
             .scopes
             .as_ref()
             .is_some_and(|scopes| !scopes.contains(&required))
@@ -167,10 +271,7 @@ impl ScimPlugin {
                 None,
             ));
         }
-        let domain = connection
-            .provisioning_domain_id
-            .as_deref()
-            .unwrap_or(&connection.id);
+        let domain = connection.domain.as_str();
         let key = URL_SAFE_NO_PAD.encode(Sha256::digest(serde_json::to_vec(&[
             "scim-connection",
             &connection.id,

@@ -130,6 +130,33 @@ pub struct ScimGroupMemberships {
 }
 #[async_trait]
 pub trait ScimManagedStore: Send + Sync {
+    async fn find_scim_managed_credential(
+        &self,
+        _credential_id: &str,
+    ) -> AuthResult<Option<ScimManagedCredential>> {
+        Err(AuthError::config(
+            "Managed SCIM persistence is not supported by this store",
+        ))
+    }
+    async fn find_scim_active_managed_connection(
+        &self,
+        _id: &str,
+    ) -> AuthResult<Option<ScimManagedConnection>> {
+        Err(AuthError::config(
+            "Managed SCIM persistence is not supported by this store",
+        ))
+    }
+    async fn record_scim_credential_use(
+        &self,
+        _id: &str,
+        _previous: Option<DateTime<Utc>>,
+        _at: DateTime<Utc>,
+    ) -> AuthResult<()> {
+        Err(AuthError::config(
+            "Managed SCIM persistence is not supported by this store",
+        ))
+    }
+
     async fn active_scim_connection_binding(
         &self,
         _id: &str,
