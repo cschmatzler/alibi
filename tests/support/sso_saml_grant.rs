@@ -14,6 +14,22 @@ pub(super) fn grant_with_verified(
     wrong_key: bool,
     verified: Option<&[&str]>,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    grant_with_correlation(authorization, email, wrong_key, verified, true)
+}
+pub(super) fn unsolicited_grant(
+    authorization: &str,
+    email: &str,
+    wrong_key: bool,
+) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    grant_with_correlation(authorization, email, wrong_key, None, false)
+}
+fn grant_with_correlation(
+    authorization: &str,
+    email: &str,
+    wrong_key: bool,
+    verified: Option<&[&str]>,
+    correlated: bool,
+) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
     let url = url::Url::parse(authorization)?;
     let query = url
         .query_pairs()
@@ -71,6 +87,11 @@ pub(super) fn grant_with_verified(
     let xml = format!(
         r#"<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="{response_id}" Version="2.0" IssueInstant="{instant}" Destination="{recipient}" InResponseTo="{request_id}"><saml:Issuer>https://idp.example.test/entity</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status><saml:Assertion ID="{assertion_id}" Version="2.0" IssueInstant="{instant}"><saml:Issuer>https://idp.example.test/entity</saml:Issuer>{signature}<saml:Subject><saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">{email}</saml:NameID><saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"><saml:SubjectConfirmationData InResponseTo="{request_id}" Recipient="{recipient}" NotOnOrAfter="{expires}"/></saml:SubjectConfirmation></saml:Subject><saml:Conditions NotBefore="{before}" NotOnOrAfter="{expires}"><saml:AudienceRestriction><saml:Audience>{issuer}</saml:Audience></saml:AudienceRestriction></saml:Conditions><saml:AuthnStatement AuthnInstant="{instant}" SessionIndex="session-index"><saml:AuthnContext><saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</saml:AuthnContextClassRef></saml:AuthnContext></saml:AuthnStatement><saml:AttributeStatement><saml:Attribute Name="email"><saml:AttributeValue>{email}</saml:AttributeValue></saml:Attribute><saml:Attribute Name="displayName"><saml:AttributeValue>SSO employee</saml:AttributeValue></saml:Attribute>{verification}</saml:AttributeStatement></saml:Assertion></samlp:Response>"#
     );
+    let xml = if correlated {
+        xml
+    } else {
+        xml.replace(&format!(" InResponseTo=\"{request_id}\""), "")
+    };
     let signed = sign_xml(&xml, wrong_key)?;
     Ok(
         serde_json::json!({"SAMLResponse":base64::engine::general_purpose::STANDARD.encode(signed),"RelayState":query["RelayState"],"assertionId":assertion_id,"requestId":request_id}),
