@@ -28,6 +28,52 @@ async fn sso_registration_persists_owner_and_rejects_duplicate_and_reserved_ids<
         headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
         ..Default::default()
     };
+    for field in [
+        "authorizationEndpoint",
+        "tokenEndpoint",
+        "userInfoEndpoint",
+        "jwksEndpoint",
+        "discoveryEndpoint",
+    ] {
+        for (value, detail) in [
+            ("not-a-url", "must be valid"),
+            (
+                "ftp://idp.example.com/endpoint",
+                "must use the http or https supported protocols",
+            ),
+        ] {
+            let provider_id = format!(
+                "invalid-{field}-{}",
+                if value == "not-a-url" {
+                    "syntax"
+                } else {
+                    "protocol"
+                }
+            );
+            let mut invalid = input.clone();
+            invalid["providerId"] = json!(provider_id);
+            invalid["oidcConfig"][field] = json!(value);
+            let response = match Box::pin(auth.dispatch_endpoint(
+                alibi::plugins::SsoPlugin::register_sso_provider_endpoint(&invalid)?,
+                options.clone(),
+            ))
+            .await
+            {
+                Ok(output) => output.into_response()?,
+                Err(error) => error.error.to_auth_response(),
+            };
+            assert_eq!(response.status, 400);
+            assert_eq!(
+                body(&response),
+                if value == "not-a-url" {
+                    json!({"code":"VALIDATION_ERROR","message":format!("[body.oidcConfig.{field}] Invalid URL")})
+                } else {
+                    json!({"code":"discovery_invalid_url","message":format!(r#"Invalid OIDC endpoint URL: The url "{field}" {detail}: {value}"#)})
+                }
+            );
+            assert!(store.get_sso_provider(&provider_id).await?.is_none());
+        }
+    }
     let created = Box::pin(auth.dispatch_endpoint(endpoint.clone(), options.clone()))
         .await?
         .into_response()?;

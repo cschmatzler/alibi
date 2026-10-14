@@ -39,6 +39,34 @@ compatScenario(
         pkce: true,
       },
     };
+    for (const field of [
+      "authorizationEndpoint",
+      "tokenEndpoint",
+      "userInfoEndpoint",
+      "jwksEndpoint",
+      "discoveryEndpoint",
+    ]) {
+      for (const [value, detail] of [
+        ["not-a-url", "must be valid"],
+        ["ftp://idp.example.com/endpoint", "must use the http or https supported protocols"],
+      ]) {
+        const providerId = `invalid-${field}-${value === "not-a-url" ? "syntax" : "protocol"}`;
+        const rejected = await control({
+          headers: { cookie },
+          body: { ...body, providerId, oidcConfig: { ...body.oidcConfig, [field]: value } },
+        });
+        expect(rejected.status).toBe(400);
+        expect(await rejected.json()).toEqual(
+          value === "not-a-url"
+            ? { code: "VALIDATION_ERROR", message: `[body.oidcConfig.${field}] Invalid URL` }
+            : {
+                code: "discovery_invalid_url",
+                message: `Invalid OIDC endpoint URL: The url "${field}" ${detail}: ${value}`,
+              },
+        );
+        expect(await (await control({ action: "row", providerId })).json()).toBe(null);
+      }
+    }
     const created = await control({ body, headers: { cookie } });
     expect(created.status).toBe(200);
     const provider = (await created.json()) as any;

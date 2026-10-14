@@ -223,6 +223,7 @@ impl SsoPlugin {
             return Err(api(422, "SSO provider with this providerId already exists"));
         }
         let oidc_input = if let Some(config) = body.get("oidcConfig") {
+            discovery::validate_endpoint_protocols(config)?;
             Some(
                 if config.get("skipDiscovery").and_then(Value::as_bool) == Some(true) {
                     config.clone()
@@ -394,6 +395,15 @@ fn validate(input: Option<&JsValue>) -> AuthResult<JsValue> {
                 },
             ],
         )?;
+        for field in discovery::ENDPOINT_FIELDS {
+            if let Some(value) = config.get(field).and_then(JsValue::as_str)
+                && url::Url::parse(value).is_err()
+            {
+                return Err(super::endpoint::validation(format!(
+                    "[body.oidcConfig.{field}] Invalid URL"
+                )));
+            }
+        }
     }
     if let Some(config) = output.get("samlConfig") {
         let parsed = registration_saml::validate(config)?;
