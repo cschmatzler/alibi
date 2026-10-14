@@ -3,8 +3,12 @@ export function ssoOidcFixture() {
   let email = "sso-employee@example.test";
   let idTokenCase = "none";
   let discoveryCase = "valid";
-  const codes = new Map<string, { challenge: string; email: string; tokenCase: string }>();
-  const tokens = new Map<string, string>();
+  let profile: Record<string, unknown> | null = null;
+  const codes = new Map<
+    string,
+    { challenge: string; email: string; tokenCase: string; profile: Record<string, unknown> | null }
+  >();
+  const tokens = new Map<string, Record<string, unknown>>();
   const exchanges: any[] = [];
   const server = Bun.serve({
     port: 0,
@@ -35,7 +39,7 @@ export function ssoOidcFixture() {
         const redirect = url.searchParams.get("redirect_uri");
         if (!challenge || !redirect) return new Response(null, { status: 400 });
         const code = randomUUID();
-        codes.set(code, { challenge, email, tokenCase: idTokenCase });
+        codes.set(code, { challenge, email, tokenCase: idTokenCase, profile });
         const callback = new URL(redirect);
         callback.searchParams.set("code", code);
         callback.searchParams.set("state", url.searchParams.get("state") ?? "");
@@ -57,7 +61,13 @@ export function ssoOidcFixture() {
           return Response.json({ error: "invalid_grant" }, { status: 400 });
         }
         const token = randomUUID();
-        tokens.set(token, stored.email);
+        const grantedProfile = stored.profile ?? {
+          sub: "employee-subject",
+          email: stored.email,
+          email_verified: true,
+          name: "SSO employee",
+        };
+        tokens.set(token, grantedProfile);
         const output: any = {
           access_token: token,
           token_type: "Bearer",
@@ -65,7 +75,12 @@ export function ssoOidcFixture() {
           scope: "openid email",
         };
         if (stored.tokenCase !== "none") {
-          output.id_token = await signedIdToken(url.origin, stored.email, stored.tokenCase);
+          output.id_token = await signedIdToken(
+            url.origin,
+            stored.email,
+            stored.tokenCase,
+            grantedProfile,
+          );
         }
         return Response.json(output);
       }
@@ -77,14 +92,7 @@ export function ssoOidcFixture() {
       if (url.pathname === "/userinfo") {
         const token = request.headers.get("authorization")?.replace(/^Bearer /, "");
         const user = token ? tokens.get(token) : undefined;
-        return user
-          ? Response.json({
-              sub: "employee-subject",
-              email: user,
-              email_verified: true,
-              name: "SSO employee",
-            })
-          : new Response(null, { status: 401 });
+        return user ? Response.json(user) : new Response(null, { status: 401 });
       }
       return new Response(null, { status: 404 });
     },
@@ -92,6 +100,9 @@ export function ssoOidcFixture() {
   server.unref();
   return {
     base: `http://127.0.0.1:${server.port}`,
+    setProfile(value: Record<string, unknown> | null) {
+      profile = value;
+    },
     setDiscoveryCase(value: string) {
       discoveryCase = value;
     },
@@ -108,7 +119,12 @@ export function ssoOidcFixture() {
   };
 }
 
-async function signedIdToken(issuer: string, email: string, tokenCase: string) {
+async function signedIdToken(
+  issuer: string,
+  email: string,
+  tokenCase: string,
+  profile: Record<string, unknown>,
+) {
   const now = Math.floor(Date.now() / 1000);
   const claims: any = {
     iss: issuer,
@@ -120,6 +136,7 @@ async function signedIdToken(issuer: string, email: string, tokenCase: string) {
     iat: now,
     exp: now + 3600,
   };
+  Object.assign(claims, profile);
   if (tokenCase === "issuer") claims.iss = "https://wrong-issuer.example.test";
   if (tokenCase === "audience") claims.aud = "other-client";
   if (tokenCase === "expired") claims.exp = now - 3600;

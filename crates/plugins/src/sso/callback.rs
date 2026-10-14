@@ -273,6 +273,7 @@ impl SsoPlugin {
                     .get("mapping")
                     .and_then(|mapping| mapping.get(name))
                     .and_then(Value::as_str)
+                    .filter(|field| !field.is_empty())
                     .unwrap_or(default)
                     .to_owned()
             };
@@ -291,7 +292,10 @@ impl SsoPlugin {
                     .ok_or_else(|| AuthError::internal("missing_user_info"))?,
                 name: text("name", "name"),
                 image: text("image", "picture"),
-                email_verified: false,
+                email_verified: self.config.trust_email_verified
+                    && super::provider_email_verified(
+                        profile.get(field("emailVerified", "email_verified")),
+                    ),
                 additional_fields: serde_json::Map::new(),
             };
             let tokens = OAuthTokenSet {

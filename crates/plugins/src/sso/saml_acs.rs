@@ -225,12 +225,26 @@ impl SsoPlugin {
                 .unwrap_or_else(|| chrono::Utc::now() + chrono::Duration::minutes(10));
             if !ctx.verifications().reserve(alibi_core::CreateVerification{identifier:format!("saml-used-assertion:{assertion}"),value:serde_json::to_string(&json!({"assertionId":assertion,"issuer":identity.issuer,"providerId":provider_id,"usedAt":chrono::Utc::now().timestamp_millis(),"expiresAt":expires_at.timestamp_millis()}))?,expires_at}).await?{return fail("replay_detected",Some("SAML assertion has already been used"));}
         }
+        let verified = config
+            .get("mapping")
+            .and_then(|mapping| mapping.get("emailVerified"))
+            .and_then(Value::as_str)
+            .filter(|field| !field.is_empty())
+            .and_then(|field| identity.attributes.get(field))
+            .and_then(|value| {
+                if let Some(values) = value.as_array() {
+                    values.first()
+                } else {
+                    Some(value)
+                }
+            });
+        let verified = self.config.trust_email_verified && super::provider_email_verified(verified);
         let user = OAuthUserInfo {
             id: identity.id,
             email: identity.email,
             name: Some(identity.name),
             image: None,
-            email_verified: false,
+            email_verified: verified,
             additional_fields: serde_json::Map::new(),
         };
         let mut scoped = ctx.clone();

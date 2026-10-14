@@ -37,6 +37,7 @@ pub struct SsoConfig {
     pub domain_verification_dns_servers: Vec<std::net::SocketAddr>,
     pub domain_verification_token_prefix: String,
     pub default_override_user_info: bool,
+    pub trust_email_verified: bool,
     pub redirect_uri: Option<String>,
     pub saml_enable_in_response_to_validation: bool,
     pub saml_request_ttl: chrono::Duration,
@@ -56,6 +57,7 @@ impl Default for SsoConfig {
             domain_verification_dns_servers: Vec::new(),
             domain_verification_token_prefix: "better-auth-token".into(),
             default_override_user_info: false,
+            trust_email_verified: false,
             redirect_uri: None,
             saml_enable_in_response_to_validation: true,
             saml_request_ttl: chrono::Duration::minutes(5),
@@ -270,6 +272,9 @@ impl SsoPlugin {
         _ = object.insert("redirectURI".into(), json!(redirect));
         EndpointResponse::json(&output)
     }
+}
+fn provider_email_verified(value: Option<&Value>) -> bool {
+    value.is_some_and(|value| value.as_bool() == Some(true) || value.as_str() == Some("true"))
 }
 fn required_string<'a>(value: &'a Value, name: &str) -> AuthResult<&'a str> {
     value
