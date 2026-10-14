@@ -30,11 +30,6 @@ fn validate_config(input: &JsValue, partial: bool) -> AuthResult<JsValue> {
         .collect::<Vec<_>>();
     fields.extend([
         JsonField {
-            name: "mapping",
-            kind: JsonFieldKind::Record,
-            required: false,
-        },
-        JsonField {
             name: "wantAssertionsSigned",
             kind: JsonFieldKind::Boolean,
             required: false,
@@ -45,9 +40,12 @@ fn validate_config(input: &JsValue, partial: bool) -> AuthResult<JsValue> {
             required: false,
         },
     ]);
-    let parsed = crate::endpoint::validate_fields(Some(input), "body.samlConfig", &fields)?;
-    if let Some(mapping) = parsed.get("mapping") {
-        _ = super::mapping_schema::saml(mapping)?;
+    let mut parsed = crate::endpoint::validate_fields(Some(input), "body.samlConfig", &fields)?;
+    if let Some(mapping) = input.get("mapping") {
+        let mapping = super::mapping_schema::saml(mapping)?;
+        if let JsValue::Object(fields) = &mut parsed {
+            _ = fields.insert("mapping".into(), mapping);
+        }
     }
     let mut value = parsed.to_json_value()?;
     if value

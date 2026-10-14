@@ -50,6 +50,22 @@ async fn mapping_admission_flow<B: Backend>(db: Db, saml: bool) -> TestResult {
     assert_eq!(config["mapping"], input[protocol]["mapping"]);
     let cases = [
         (
+            json!(null),
+            "[body.oidcConfig.mapping] Invalid input: expected object, received null",
+        ),
+        (
+            json!([]),
+            "[body.oidcConfig.mapping] Invalid input: expected object, received array",
+        ),
+        (
+            json!("mapping"),
+            "[body.oidcConfig.mapping] Invalid input: expected object, received string",
+        ),
+        (
+            json!(12),
+            "[body.oidcConfig.mapping] Invalid input: expected object, received number",
+        ),
+        (
             json!({"email":"mail"}),
             "[body.oidcConfig.mapping.name] Invalid input: expected string, received undefined",
         ),
@@ -78,7 +94,11 @@ async fn mapping_admission_flow<B: Backend>(db: Db, saml: bool) -> TestResult {
         let message = oidc_message
             .replace("oidcConfig", protocol)
             .replace(".image]", if saml { ".firstName]" } else { ".image]" });
-        if saml && let Some(image) = mapping.as_object_mut().unwrap().remove("image") {
+        if saml
+            && let Some(image) = mapping
+                .as_object_mut()
+                .and_then(|mapping| mapping.remove("image"))
+        {
             mapping["firstName"] = image;
         }
 
