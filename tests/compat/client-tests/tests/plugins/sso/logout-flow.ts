@@ -11,7 +11,7 @@ export async function samlLogoutFlow(
   complete: boolean,
   signed = false,
   rollover = false,
-  binding: "post" | "redirect" = "post",
+  binding: "post" | "redirect" | "post-optional-signature" = "post",
 ) {
   const actor = ctx.actor();
   const control = (input: Record<string, unknown>) =>
@@ -194,6 +194,13 @@ export async function samlLogoutFlow(
           await control({ action: "proof", identifier: `saml-logout-request:${request["@_ID"]}` })
         ).json(),
       ).toEqual(proof);
+    }
+    if (binding === "post-optional-signature") {
+      response = (
+        (await (
+          await control({ action: "sign-saml-logout", xml: responseXml, wrongKey: true })
+        ).json()) as any
+      ).SAMLResponse;
     }
     const completeInput =
       binding === "redirect"

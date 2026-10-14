@@ -14,7 +14,9 @@ backend_tests!(
     sso_saml_rollover_accepts_later_trusted_certificate_for_login_and_logout,
     sso_idp_logout_requires_trusted_signature_before_session_retirement,
     sso_idp_logout_http_form_accepts_external_origin_and_retires_matching_session,
-    sso_logout_redirect_ignores_optional_signature_and_retires_real_proof
+    sso_logout_redirect_ignores_optional_signature_and_retires_real_proof,
+    sso_logout_optional_xml_signature_does_not_override_disabled_response_check,
+    sso_idp_logout_optional_xml_signature_does_not_override_disabled_request_check
 );
 async fn sso_logout_uses_acs_session_index_and_retires_session<B: Backend>(db: Db) -> TestResult {
     logout_flow::<B>(db, LogoutCase::Initiation).await
@@ -39,6 +41,11 @@ async fn sso_logout_redirect_ignores_optional_signature_and_retires_real_proof<B
 ) -> TestResult {
     logout_flow::<B>(db, LogoutCase::Redirect).await
 }
+async fn sso_logout_optional_xml_signature_does_not_override_disabled_response_check<B: Backend>(
+    db: Db,
+) -> TestResult {
+    logout_flow::<B>(db, LogoutCase::OptionalSignature).await
+}
 #[derive(Clone, Copy)]
 enum LogoutCase {
     Initiation,
@@ -46,6 +53,7 @@ enum LogoutCase {
     RequiredSignature,
     Rollover,
     Redirect,
+    OptionalSignature,
 }
 async fn logout_flow<B: Backend>(db: Db, case: LogoutCase) -> TestResult {
     let complete = !matches!(case, LogoutCase::Initiation);
@@ -277,6 +285,9 @@ async fn logout_flow<B: Backend>(db: Db, case: LogoutCase) -> TestResult {
             assert_eq!(retained.value(), proof.value());
             assert_eq!(retained.expires_at(), proof.expires_at());
         }
+        if matches!(case, LogoutCase::OptionalSignature) {
+            response = idp::signed_logout(&response_xml, true)?;
+        }
         if matches!(case, LogoutCase::Redirect) {
             use std::io::Write as _;
             let mut compressor =
@@ -356,21 +367,37 @@ async fn logout_flow<B: Backend>(db: Db, case: LogoutCase) -> TestResult {
 async fn sso_idp_logout_matches_session_index_before_retiring_session<B: Backend>(
     db: Db,
 ) -> TestResult {
-    idp_logout_flow::<B>(db, false, false).await
+    idp_logout_flow::<B>(db, IdpLogoutCase::Unsigned).await
 }
 async fn sso_idp_logout_requires_trusted_signature_before_session_retirement<B: Backend>(
     db: Db,
 ) -> TestResult {
-    idp_logout_flow::<B>(db, true, false).await
+    idp_logout_flow::<B>(db, IdpLogoutCase::RequiredSignature).await
 }
 async fn sso_idp_logout_http_form_accepts_external_origin_and_retires_matching_session<
     B: Backend,
 >(
     db: Db,
 ) -> TestResult {
-    idp_logout_flow::<B>(db, false, true).await
+    idp_logout_flow::<B>(db, IdpLogoutCase::Http).await
 }
-async fn idp_logout_flow<B: Backend>(db: Db, signed: bool, http: bool) -> TestResult {
+async fn sso_idp_logout_optional_xml_signature_does_not_override_disabled_request_check<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    idp_logout_flow::<B>(db, IdpLogoutCase::OptionalSignature).await
+}
+#[derive(Clone, Copy)]
+enum IdpLogoutCase {
+    Unsigned,
+    RequiredSignature,
+    Http,
+    OptionalSignature,
+}
+async fn idp_logout_flow<B: Backend>(db: Db, case: IdpLogoutCase) -> TestResult {
+    let signed = matches!(case, IdpLogoutCase::RequiredSignature);
+    let http = matches!(case, IdpLogoutCase::Http | IdpLogoutCase::OptionalSignature);
     let (connection, store) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(SsoPlugin::with_config(SsoConfig {
@@ -465,6 +492,9 @@ async fn idp_logout_flow<B: Backend>(db: Db, signed: bool, http: bool) -> TestRe
                 );
             }
             encoded = idp::signed_logout(&xml, false)?;
+        }
+        if matches!(case, IdpLogoutCase::OptionalSignature) {
+            encoded = idp::signed_logout(&xml, true)?;
         }
         let output = if http {
             let mut incoming =

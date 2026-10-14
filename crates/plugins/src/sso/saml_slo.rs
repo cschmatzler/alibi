@@ -155,10 +155,11 @@ impl SsoPlugin {
         if !post && required {
             return Err(invalid());
         }
-        if !signatures.is_empty() {
+        if required {
+            if signatures.is_empty() {
+                return Err(invalid());
+            }
             verify_signature(&doc, &xml, root, &config).map_err(|()| invalid())?;
-        } else if required {
-            return Err(invalid());
         }
         if is_response {
             let status = children(&doc, root, PROTOCOL, "Status")
