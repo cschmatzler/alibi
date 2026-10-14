@@ -464,3 +464,5 @@ mod sso_oidc_peer;
 
 #[path = "../../../support/sso_saml_encryption.rs"]
 mod sso_saml_encryption;
+
+mod sso_endpoint_admission;

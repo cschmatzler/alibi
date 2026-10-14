@@ -3,6 +3,7 @@ import { expect } from "bun:test";
 import { Cookie } from "tough-cookie";
 
 import { compatScenario } from "../../../support/scenario";
+import { privateEndpointURLs, privateEndpointError } from "./private-endpoint-input";
 compatScenario(
   "SSO registration persists owned OIDC configuration and rejects duplicate and reserved providers",
   async (ctx) => {
@@ -67,6 +68,73 @@ compatScenario(
         expect(await (await control({ action: "row", providerId })).json()).toBe(null);
       }
     }
+    for (const field of [
+      "authorizationEndpoint",
+      "tokenEndpoint",
+      "userInfoEndpoint",
+      "jwksEndpoint",
+      "discoveryEndpoint",
+    ]) {
+      for (const [index, value] of privateEndpointURLs.entries()) {
+        const providerId = `private-${field}-${index}`;
+        const response = await control({
+          headers: { cookie },
+          body: { ...body, providerId, oidcConfig: { ...body.oidcConfig, [field]: value } },
+        });
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual(privateEndpointError(field, value));
+        expect(await (await control({ action: "row", providerId })).json()).toBe(null);
+      }
+    }
+    const trustedId = "trusted-private-endpoints";
+    const trustedEndpoints = Object.fromEntries(
+      [
+        "authorizationEndpoint",
+        "tokenEndpoint",
+        "userInfoEndpoint",
+        "jwksEndpoint",
+        "discoveryEndpoint",
+      ].map((field) => [field, `${ctx.baseURL}/${field}`]),
+    );
+    const trusted = await control({
+      headers: { cookie },
+      body: {
+        ...body,
+        providerId: trustedId,
+        oidcConfig: { ...body.oidcConfig, ...trustedEndpoints },
+      },
+    });
+    expect(trusted.status).toBe(200);
+    const changedEndpoints = Object.fromEntries(
+      Object.keys(trustedEndpoints).map((field) => [field, `${ctx.baseURL}/changed/${field}`]),
+    );
+    const changed = await control({
+      action: "update",
+      headers: { cookie },
+      body: { providerId: trustedId, oidcConfig: changedEndpoints },
+    });
+    expect(changed.status).toBe(200);
+    const trustedRow = (await (
+      await control({ action: "row", providerId: trustedId })
+    ).json()) as any;
+    expect(JSON.parse(trustedRow.oidcConfig)).toMatchObject(changedEndpoints);
+    const publicId = "public-ip-endpoints";
+    const publicEndpoints = Object.fromEntries(
+      Object.keys(trustedEndpoints).map((field) => [field, `https://[64:ff9b:2::1]/${field}`]),
+    );
+    const publicProvider = await control({
+      headers: { cookie },
+      body: {
+        ...body,
+        providerId: publicId,
+        oidcConfig: { ...body.oidcConfig, ...publicEndpoints },
+      },
+    });
+    expect(publicProvider.status).toBe(200);
+    const publicRow = (await (
+      await control({ action: "row", providerId: publicId })
+    ).json()) as any;
+    expect(JSON.parse(publicRow.oidcConfig)).toMatchObject(publicEndpoints);
     const created = await control({ body, headers: { cookie } });
     expect(created.status).toBe(200);
     const provider = (await created.json()) as any;

@@ -7,14 +7,24 @@ pub(super) const ENDPOINT_FIELDS: &[&str] = &[
     "jwksEndpoint",
     "discoveryEndpoint",
 ];
-pub(super) fn validate_endpoint_protocols(input: &Value) -> AuthResult<()> {
+pub(super) fn validate_endpoints(input: &Value, trusted: &impl Fn(&str) -> bool) -> AuthResult<()> {
     for field in ENDPOINT_FIELDS {
         if let Some(value) = input
             .get(*field)
             .and_then(Value::as_str)
             .filter(|value| !value.is_empty())
         {
-            _ = absolute(field, value)?;
+            let url = absolute(field, value)?;
+            let host = url.host_str().unwrap_or_default();
+            if !super::endpoint_host::public(host) && !trusted(url.as_str()) {
+                return Err(failure(
+                    400,
+                    "discovery_private_host",
+                    format!(
+                        "The {field} URL ({url}) is not publicly routable: {host}. If this is an internal IdP, add its origin to trustedOrigins."
+                    ),
+                ));
+            }
         }
     }
     Ok(())

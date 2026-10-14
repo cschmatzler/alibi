@@ -29,6 +29,11 @@ impl SsoPlugin {
             .authorize_provider_id(provider_id, user.id().as_ref(), ctx)
             .await?;
         let body = input.to_json_value()?;
+        if let Some(config) = body.get("oidcConfig") {
+            super::discovery::validate_endpoints(config, &|url| {
+                ctx.config.is_redirect_target_trusted(url)
+            })?;
+        }
         let max_metadata_size = self.config.saml_max_metadata_size;
         let private_key_configured = self.private_key_source_configured(provider_id);
         let prepare = move |existing: &SsoProvider| {
@@ -71,7 +76,6 @@ fn prepare_update(
         identity_changed |= changed;
     }
     if let Some(updates) = body.get("oidcConfig") {
-        super::discovery::validate_endpoint_protocols(updates)?;
         let current: Value = existing
             .oidc_config
             .as_deref()
