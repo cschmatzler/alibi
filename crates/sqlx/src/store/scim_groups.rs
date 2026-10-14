@@ -13,6 +13,86 @@ use alibi_core::{
     store::{CreateScimGroup, ScimGroupRecord, ScimProjectionPreparedUser},
 };
 impl<S: AuthSchema> SqlxStore<S> {
+    pub(super) async fn delete_scim_group_with_exec(
+        &self,
+        exec: Exec<'_>,
+        id: &str,
+        connection: &str,
+        domain: &str,
+        roles: bool,
+    ) -> AuthResult<Vec<ScimProjectionPreparedUser>> {
+        let mut sql = model::select_model::<group::Model>(exec);
+        sql.push(" WHERE ");
+        sql.compare("scimGroup", "id", " = ", id);
+        sql.push(" AND ");
+        sql.compare("scimGroup", "connectionId", " = ", connection);
+        model::limit_one(&mut sql);
+        let current = exec
+            .fetch_optional::<group::Model>(sql)
+            .await?
+            .ok_or_else(|| AuthError::Api {
+                status: 404,
+                code: None,
+                message: "SCIM Group not found".into(),
+            })?;
+        if current.provisioning_domain_id != domain {
+            return Err(AuthError::Api {
+                status: 409,
+                code: None,
+                message: "The connection provisioningDomainId changed after resources were created"
+                    .into(),
+            });
+        }
+        let mut sql = Sql::with(exec.engine(), "UPDATE ");
+        sql.ident("scimGroup");
+        sql.push(" SET ");
+        sql.ident("revision");
+        sql.push(" = ");
+        sql.ident("revision");
+        sql.push(" + 1 WHERE ");
+        sql.compare("scimGroup", "id", " = ", id);
+        sql.push(" AND ");
+        sql.compare("scimGroup", "connectionId", " = ", connection);
+        sql.push(" AND ");
+        sql.compare("scimGroup", "revision", " = ", current.revision);
+        if exec.execute(sql).await? == 0 {
+            return Err(AuthError::internal(
+                "The SCIM Group changed concurrently; retry the request.",
+            ));
+        }
+        let mut sql = model::select_model::<member::Model>(exec);
+        sql.push(" WHERE ");
+        sql.compare("scimGroupMember", "connectionId", " = ", connection);
+        sql.push(" AND ");
+        sql.compare("scimGroupMember", "groupId", " = ", id);
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
+        let members = exec
+            .fetch_all::<member::Model>(sql)
+            .await?
+            .into_iter()
+            .map(|member| member.scim_user_id)
+            .collect::<Vec<_>>();
+        _ = self
+            .scim_projection_user_ids_with_exec(exec, domain, &members, true)
+            .await?;
+        let mut sql = Sql::with(exec.engine(), "DELETE FROM ");
+        sql.ident("scimGroupMember");
+        sql.push(" WHERE ");
+        sql.compare("scimGroupMember", "connectionId", " = ", connection);
+        sql.push(" AND ");
+        sql.compare("scimGroupMember", "groupId", " = ", id);
+        _ = exec.execute(sql).await?;
+        let mut sql = Sql::with(exec.engine(), "DELETE FROM ");
+        sql.ident("scimGroup");
+        sql.push(" WHERE ");
+        sql.compare("scimGroup", "id", " = ", id);
+        sql.push(" AND ");
+        sql.compare("scimGroup", "connectionId", " = ", connection);
+        _ = exec.execute(sql).await?;
+        self.prepare_scim_projection_after_lock_with_exec(exec, domain, &members, roles, true)
+            .await
+    }
     pub(super) async fn create_scim_group_with_exec(
         &self,
         exec: Exec<'_>,

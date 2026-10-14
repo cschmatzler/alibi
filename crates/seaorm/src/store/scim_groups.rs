@@ -16,6 +16,79 @@ use sea_orm::{
     QuerySelect, Set, sea_query::Expr,
 };
 impl<S: AuthSchema> SeaOrmStore<S> {
+    pub(super) async fn delete_scim_group_with_connection<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        id: &str,
+        connection: &str,
+        domain: &str,
+        roles: bool,
+    ) -> AuthResult<Vec<ScimProjectionPreparedUser>> {
+        let current = group::Entity::find()
+            .filter(group::Column::Id.eq(id))
+            .filter(group::Column::ConnectionId.eq(connection))
+            .one(db)
+            .await
+            .map_err(map_db_err)?
+            .ok_or_else(|| AuthError::Api {
+                status: 404,
+                code: None,
+                message: "SCIM Group not found".into(),
+            })?;
+        if current.provisioning_domain_id != domain {
+            return Err(AuthError::Api {
+                status: 409,
+                code: None,
+                message: "The connection provisioningDomainId changed after resources were created"
+                    .into(),
+            });
+        }
+        let locked = group::Entity::update_many()
+            .col_expr(
+                group::Column::Revision,
+                Expr::col(group::Column::Revision).add(1),
+            )
+            .filter(group::Column::Id.eq(id))
+            .filter(group::Column::ConnectionId.eq(connection))
+            .filter(group::Column::Revision.eq(current.revision))
+            .exec(db)
+            .await
+            .map_err(map_db_err)?;
+        if locked.rows_affected == 0 {
+            return Err(AuthError::internal(
+                "The SCIM Group changed concurrently; retry the request.",
+            ));
+        }
+        let limit = u64::try_from(self.config.advanced.database.default_find_many_limit)
+            .unwrap_or(u64::MAX);
+        let members = member::Entity::find()
+            .filter(member::Column::ConnectionId.eq(connection))
+            .filter(member::Column::GroupId.eq(id))
+            .limit(limit)
+            .all(db)
+            .await
+            .map_err(map_db_err)?
+            .into_iter()
+            .map(|member| member.scim_user_id)
+            .collect::<Vec<_>>();
+        _ = self
+            .scim_projection_user_ids_with_connection(db, domain, &members, true)
+            .await?;
+        _ = member::Entity::delete_many()
+            .filter(member::Column::ConnectionId.eq(connection))
+            .filter(member::Column::GroupId.eq(id))
+            .exec(db)
+            .await
+            .map_err(map_db_err)?;
+        _ = group::Entity::delete_many()
+            .filter(group::Column::Id.eq(id))
+            .filter(group::Column::ConnectionId.eq(connection))
+            .exec(db)
+            .await
+            .map_err(map_db_err)?;
+        self.prepare_scim_projection_after_lock_with_connection(db, domain, &members, roles, true)
+            .await
+    }
     pub(super) async fn create_scim_group_with_connection<C: ConnectionTrait>(
         &self,
         db: &C,

@@ -4,7 +4,7 @@ use alibi::endpoint::{EndpointOptions, EndpointResponse};
 use alibi::plugins::ScimPlugin;
 backend_tests!(scim_group_create_persists_members_and_rolls_back_invalid_ownership);
 postgres_tests!(scim_group_create_persists_members_and_rolls_back_invalid_ownership);
-async fn create<S: AuthSchema>(
+pub(super) async fn create<S: AuthSchema>(
     auth: &Alibi<S>,
     value: &Value,
     query: &Value,
@@ -74,16 +74,7 @@ async fn scim_group_create_persists_members_and_rolls_back_invalid_ownership<B: 
         body(&denied)["detail"],
         "Group members must reference a SCIM User"
     );
-    let signed = body(&signup(&auth, "group-create-owner@example.com").await);
-    let uid = signed["user"]["id"].as_str().unwrap();
-    _=db.execute("INSERT INTO \"scimSubject\" (\"id\",\"userId\",\"revision\",\"createdAt\",\"updatedAt\") VALUES ('group-create-subject',$1,0,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",&[uid]).await?;
-    for (id, cid, domain, display) in [
-        ("member-a", "conn-a", "tenant-a", "Inactive member"),
-        ("member-b", "conn-b", "tenant-a", "Foreign member"),
-        ("member-c", "conn-a", "tenant-b", "Other domain member"),
-    ] {
-        _=db.execute("INSERT INTO \"scimUser\" (\"id\",\"connectionId\",\"provisioningDomainId\",\"userId\",\"connectionUserKey\",\"userName\",\"userNameKey\",\"primaryEmail\",\"workEmailValueIndex\",\"emailValueIndex\",\"displayName\",\"formattedName\",\"serializedEmails\",\"active\",\"orderKey\",\"createdAt\",\"updatedAt\") VALUES ($1,$2,$3,$4,$1,$1,$1,'group-create-owner@example.com','[]','[]',$5,$5,'[]',false,$1,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",&[id,cid,domain,uid,display]).await?;
-    }
+    seed(&db, &auth).await?;
     let response = create(&auth, &input, &json!({}), Some("group-reader")).await?;
     assert_eq!(response.status, 201);
     let resource = body(&response);
@@ -246,7 +237,7 @@ async fn scim_group_create_persists_members_and_rolls_back_invalid_ownership<B: 
     Ok(())
 }
 
-struct GroupProjection(Arc<std::sync::atomic::AtomicBool>);
+pub(super) struct GroupProjection(pub(super) Arc<std::sync::atomic::AtomicBool>);
 #[async_trait::async_trait]
 impl<S: AuthSchema> alibi::plugins::scim::ScimProjection<S> for GroupProjection {
     async fn reconcile_user(
@@ -280,4 +271,18 @@ impl<S: AuthSchema> alibi::plugins::scim::ScimProjection<S> for GroupProjection 
         }
         Ok(())
     }
+}
+
+pub(super) async fn seed<S: AuthSchema>(db: &Db, auth: &Alibi<S>) -> TestResult {
+    let signed = body(&signup(auth, "group-create-owner@example.com").await);
+    let uid = signed["user"]["id"].as_str().unwrap();
+    _=db.execute("INSERT INTO \"scimSubject\" (\"id\",\"userId\",\"revision\",\"createdAt\",\"updatedAt\") VALUES ('group-create-subject',$1,0,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",&[uid]).await?;
+    for (id, cid, domain, display) in [
+        ("member-a", "conn-a", "tenant-a", "Inactive member"),
+        ("member-b", "conn-b", "tenant-a", "Foreign member"),
+        ("member-c", "conn-a", "tenant-b", "Other domain member"),
+    ] {
+        _=db.execute("INSERT INTO \"scimUser\" (\"id\",\"connectionId\",\"provisioningDomainId\",\"userId\",\"connectionUserKey\",\"userName\",\"userNameKey\",\"primaryEmail\",\"workEmailValueIndex\",\"emailValueIndex\",\"displayName\",\"formattedName\",\"serializedEmails\",\"active\",\"orderKey\",\"createdAt\",\"updatedAt\") VALUES ($1,$2,$3,$4,$1,$1,$1,'group-create-owner@example.com','[]','[]',$5,$5,'[]',false,$1,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",&[id,cid,domain,uid,display]).await?;
+    }
+    Ok(())
 }

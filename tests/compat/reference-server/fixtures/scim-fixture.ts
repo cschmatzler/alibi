@@ -131,8 +131,8 @@ export async function scimFixture(base: BetterAuthOptions) {
         });
       }
       if (query.get("operation") === "group-create-projection-fails") {
-        projectionFails = true;
-        return fixtureJson({ failing: true });
+        projectionFails = ((await request.json()) as any).fail !== false;
+        return fixtureJson({ failing: projectionFails });
       }
       if (query.get("operation") === "group-create-owner") {
         return fixtureJson(
@@ -140,6 +140,17 @@ export async function scimFixture(base: BetterAuthOptions) {
             .query("SELECT name FROM user WHERE email='group-create-owner@example.com'")
             .get(),
         );
+      }
+      if (query.get("operation") === "deleteSCIMGroup") {
+        const input = (await request.json()) as any;
+        const parameters = {
+          params: input.params,
+          query: input.query,
+          headers:
+            input.token === undefined ? undefined : { authorization: `Bearer ${input.token}` },
+          asResponse: true as const,
+        };
+        return auth.api.deleteSCIMGroup(parameters);
       }
       if (query.get("operation") === "createSCIMGroup") {
         const input = (await request.json()) as any;
