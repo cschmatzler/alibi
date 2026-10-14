@@ -530,3 +530,5 @@ mod scim_managed_bearer;
 mod scim_bearer_verifier;
 
 mod scim_user_read;
+
+mod scim_group_list;

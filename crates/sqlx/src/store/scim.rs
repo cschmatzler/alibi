@@ -18,6 +18,74 @@ use async_trait::async_trait;
 use chrono::SubsecRound;
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
+    async fn scim_group_domain_stable(&self, connection: &str, domain: &str) -> AuthResult<bool> {
+        use super::entities::scim_group as group;
+        let mut sql = model::select_model::<group::Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare("scimGroup", "connectionId", " = ", connection);
+        sql.push(" AND ");
+        sql.compare("scimGroup", "provisioningDomainId", " <> ", domain);
+        model::limit_one(&mut sql);
+        Ok(self
+            .exec()
+            .fetch_optional::<group::Model>(sql)
+            .await?
+            .is_none())
+    }
+    async fn list_scim_groups(
+        &self,
+        connection: &str,
+        filters: &[(String, String)],
+        offset: i64,
+        count: i64,
+    ) -> AuthResult<alibi_core::store::ScimGroupPage> {
+        use super::entities::scim_group as group;
+        let predicates = |sql: &mut Sql| {
+            sql.push(" WHERE ");
+            sql.compare("scimGroup", "connectionId", " = ", connection);
+            for (field, value) in filters {
+                sql.push(" AND ");
+                sql.compare("scimGroup", field, " = ", value.clone());
+            }
+        };
+        let mut total = Sql::with(self.exec().engine(), "SELECT COUNT(*) FROM ");
+        total.ident("scimGroup");
+        predicates(&mut total);
+        let total_results = self
+            .exec()
+            .fetch_scalar::<i64>(total)
+            .await?
+            .unwrap_or_default();
+        let groups = if count == 0 {
+            Vec::new()
+        } else {
+            let mut sql = model::select_model::<group::Model>(self.exec());
+            predicates(&mut sql);
+            sql.push(" ORDER BY ");
+            sql.column("scimGroup", "orderKey");
+            sql.push(" ASC LIMIT ");
+            sql.bind(count);
+            sql.push(" OFFSET ");
+            sql.bind(offset);
+            self.exec().fetch_all::<group::Model>(sql).await?
+        };
+        Ok(alibi_core::store::ScimGroupPage {
+            total_results,
+            groups: groups
+                .into_iter()
+                .map(|row| alibi_core::store::ScimGroupRecord {
+                    id: row.id,
+                    connection_id: row.connection_id,
+                    provisioning_domain_id: row.provisioning_domain_id,
+                    display_name: row.display_name,
+                    external_id: row.external_id,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                })
+                .collect(),
+        })
+    }
+
     async fn get_scim_user(
         &self,
         id: &str,

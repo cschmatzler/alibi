@@ -268,7 +268,10 @@ impl ScimPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<Result<ResolvedConnection, Box<EndpointResponse>>> {
         // Query shape validation precedes authentication in the TS endpoint.
-        if let Some(detail) = query_shape_error(call.query()) {
+        if let Some(detail) = query_shape_error(
+            call.query(),
+            matches!(call.operation_id(), "listSCIMGroups" | "listSCIMUsers"),
+        ) {
             return Ok(Err(Box::new(error(400, &detail, Some("invalidValue")))));
         }
         let authorization = call
@@ -489,6 +492,19 @@ impl ScimPlugin {
             Ok(value) => value,
             Err(detail) => return Ok(error(400, &detail, Some("invalidValue"))),
         };
+        match Self::render_group(ctx, group, &projection).await {
+            Ok(resource) => Ok(EndpointResponse::json(&resource)?.with_header(MARKER, "1")),
+            Err(AuthError::Api {
+                status, message, ..
+            }) => Ok(error(status, &message, None)),
+            Err(error) => Err(error),
+        }
+    }
+    async fn render_group<S: AuthSchema>(
+        ctx: &AuthContext<S>,
+        group: alibi_core::store::ScimGroupRecord,
+        projection: &Projection,
+    ) -> AuthResult<Value> {
         let base = format!(
             "{}{}",
             ctx.config.base_url.trim_end_matches('/'),
@@ -504,14 +520,14 @@ impl ScimPlugin {
         if projection.members_requested() {
             let memberships = ctx
                 .database
-                .scim_group_members(&group.id, &connection.id)
+                .scim_group_members(&group.id, &group.connection_id)
                 .await?;
             if memberships.persisted_count > 1000 {
-                return Ok(error(
-                    500,
-                    "Persisted SCIM Group membership exceeds the server limit",
-                    None,
-                ));
+                return Err(AuthError::Api {
+                    status: 500,
+                    code: None,
+                    message: "Persisted SCIM Group membership exceeds the server limit".into(),
+                });
             }
             let mut members = Vec::new();
             for member in memberships.members {
@@ -521,7 +537,56 @@ impl ScimPlugin {
                 .as_object_mut()
                 .map(|object| object.insert("members".into(), Value::Array(members)));
         }
-        Ok(EndpointResponse::json(&projection.apply(output))?.with_header(MARKER, "1"))
+        Ok(projection.apply(output))
+    }
+    pub(super) async fn list_groups<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let connection = match self.authenticate_connection(call, ctx).await? {
+            Ok(connection) => connection,
+            Err(response) => return Ok(*response),
+        };
+        if !ctx
+            .database
+            .scim_group_domain_stable(&connection.id, &connection.domain)
+            .await?
+        {
+            return Ok(error(
+                409,
+                "The connection provisioningDomainId changed after resources were created",
+                None,
+            ));
+        }
+        let query = match super::collection::parse_group(call.query(), &connection.id) {
+            Ok(query) => query,
+            Err(error_value) => return Ok(error(400, &error_value.detail, Some(error_value.kind))),
+        };
+        let projection = match Projection::parse(call.query(), GROUP_SCHEMA) {
+            Ok(projection) => projection,
+            Err(detail) => return Ok(error(400, &detail, Some("invalidValue"))),
+        };
+        let page = ctx
+            .database
+            .list_scim_groups(
+                &connection.id,
+                &query.filters,
+                query.start_index - 1,
+                query.count,
+            )
+            .await?;
+        let mut resources = Vec::new();
+        for group in page.groups {
+            match Self::render_group(ctx, group, &projection).await {
+                Ok(resource) => resources.push(resource),
+                Err(AuthError::Api {
+                    status, message, ..
+                }) => return Ok(error(status, &message, None)),
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(EndpointResponse::json(&serde_json::json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:ListResponse"],"totalResults":page.total_results,"startIndex":query.start_index,"itemsPerPage":resources.len(),"Resources":resources}))?.with_header(MARKER,"1"))
     }
 }
 fn bearer_token(header: &str) -> Option<&str> {
@@ -565,7 +630,7 @@ fn resource_url(base: &str, kind: &str, id: &str) -> AuthResult<String> {
         .map_err(|error| AuthError::internal(error.to_string()))?
         .to_string())
 }
-fn query_shape_error(query: Option<&JsValue>) -> Option<String> {
+fn query_shape_error(query: Option<&JsValue>, collection: bool) -> Option<String> {
     let query = query?;
     let JsValue::Object(_) = query else {
         return Some(format!(
@@ -579,6 +644,24 @@ fn query_shape_error(query: Option<&JsValue>) -> Option<String> {
             let valid = matches!(value, JsValue::String(_))
                 || matches!(value,JsValue::Array(values) if values.iter().all(|value| matches!(value,JsValue::String(_))));
             if !valid {
+                errors.push(format!("[query.{name}] Invalid input"));
+            }
+        }
+    }
+    if collection {
+        if let Some(value) = query.get("filter")
+            && !matches!(value, JsValue::String(_))
+        {
+            errors.push(format!(
+                "[query.filter] Invalid input: expected string, received {}",
+                crate::authentication_helpers::json_type(Some(value))
+            ));
+        }
+        for name in ["startIndex", "count"] {
+            if let Some(value) = query.get(name)
+                && !(matches!(value, JsValue::String(_))
+                    || matches!(value,JsValue::Number(number) if number.is_finite()))
+            {
                 errors.push(format!("[query.{name}] Invalid input"));
             }
         }
