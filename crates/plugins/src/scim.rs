@@ -1,8 +1,8 @@
 //! SCIM server discovery operations.
 use alibi_core::endpoint::{EndpointCall, EndpointDefinition, EndpointResponse, ServerEndpoint};
 use alibi_core::{
-    AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
-    HttpMethod,
+    AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
+    AuthSchema, HttpMethod,
 };
 use async_trait::async_trait;
 use serde_json::{Value, json};
@@ -23,6 +23,34 @@ impl ScimPlugin {
     #[must_use]
     pub const fn resource_types_endpoint() -> ServerEndpoint<Value> {
         ServerEndpoint::new("scim", "getSCIMResourceTypes")
+    }
+    /// Read one case-sensitive SCIM resource type through the server API.
+    /// # Errors
+    /// Returns an error if the path parameters cannot be serialized.
+    pub fn resource_type_endpoint(id: &str) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("scim", "getSCIMResourceType")
+            .with_params(&json!({"resourceTypeId":id}))
+    }
+    fn resource_type<S: AuthSchema>(
+        ctx: &AuthContext<S>,
+        id: Option<&str>,
+    ) -> AuthResult<EndpointResponse> {
+        let types = Self::resource_types(ctx);
+        let resource = types
+            .get("Resources")
+            .and_then(Value::as_array)
+            .and_then(|types| {
+                types
+                    .iter()
+                    .find(|resource| resource.get("id").and_then(Value::as_str) == id)
+            });
+        let response = if let Some(resource) = resource {
+            EndpointResponse::json(resource)?
+        } else {
+            EndpointResponse::error(AuthError::Api {status:404,code:None,message:"Resource type not found".into()})
+                .with_error_body(alibi_core::utils::json::parse_value(&json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:Error"],"status":"404","detail":"Resource type not found"}).to_string())?)
+        };
+        Ok(response.with_header("content-type", "application/scim+json"))
     }
     fn resource_types<S: AuthSchema>(ctx: &AuthContext<S>) -> Value {
         let base = format!(
@@ -56,6 +84,10 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         vec![
             AuthRoute::get("/scim/v2/ResourceTypes", "getSCIMResourceTypes"),
             AuthRoute::get(
+                "/scim/v2/ResourceTypes/{resourceTypeId}",
+                "getSCIMResourceType",
+            ),
+            AuthRoute::get(
                 "/scim/v2/ServiceProviderConfig",
                 "getSCIMServiceProviderConfig",
             ),
@@ -63,6 +95,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "getSCIMResourceType",
+                "getSCIMResourceType",
+                Some("/scim/v2/ResourceTypes/:resourceTypeId"),
+                HttpMethod::Get,
+            ),
             crate::endpoint::definition(
                 "getSCIMResourceTypes",
                 "getSCIMResourceTypes",
@@ -82,6 +120,14 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "getSCIMResourceType" {
+            return Self::resource_type(
+                ctx,
+                call.params()
+                    .and_then(|params| params.get("resourceTypeId"))
+                    .and_then(alibi_core::utils::json::JsValue::as_str),
+            );
+        }
         let value = if call.operation_id() == "getSCIMResourceTypes" {
             Self::resource_types(ctx)
         } else {
@@ -94,6 +140,11 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.method() == &HttpMethod::Get
+            && let Some(id) = req.path().strip_prefix("/scim/v2/ResourceTypes/")
+        {
+            return Ok(Some(Self::resource_type(ctx, Some(id))?.to_response()?));
+        }
         if req.method() != &HttpMethod::Get
             || !matches!(
                 req.path(),
