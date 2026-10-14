@@ -51,3 +51,36 @@ impl SsoPrivateKey {
         .into_assertion()
     }
 }
+
+/// Parameters supplied to an application-owned SSO signing-key resolver.
+#[derive(Clone, Debug)]
+pub struct SsoPrivateKeyContext {
+    pub provider_id: String,
+    pub key_id: Option<String>,
+    pub issuer: String,
+}
+#[async_trait::async_trait]
+pub trait SsoPrivateKeyResolver: Send + Sync {
+    async fn resolve(
+        &self,
+        context: SsoPrivateKeyContext,
+    ) -> alibi_core::AuthResult<Option<SsoPrivateKey>>;
+}
+#[derive(Clone)]
+pub struct SsoKeyResolver(pub std::sync::Arc<dyn SsoPrivateKeyResolver>);
+impl std::fmt::Debug for SsoKeyResolver {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SsoKeyResolver")
+            .finish_non_exhaustive()
+    }
+}
+
+impl super::SsoPlugin {
+    pub(super) fn private_key_source_configured(&self, provider_id: &str) -> bool {
+        self.config.resolve_private_key.is_some()
+            || self.config.default_providers.iter().any(|provider| {
+                provider.provider_id == provider_id && provider.private_key.is_some()
+            })
+    }
+}

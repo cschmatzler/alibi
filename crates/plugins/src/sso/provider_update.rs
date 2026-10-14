@@ -30,8 +30,10 @@ impl SsoPlugin {
             .await?;
         let body = input.to_json_value()?;
         let max_metadata_size = self.config.saml_max_metadata_size;
-        let prepare =
-            move |existing: &SsoProvider| prepare_update(existing, &body, max_metadata_size);
+        let private_key_configured = self.private_key_source_configured(provider_id);
+        let prepare = move |existing: &SsoProvider| {
+            prepare_update(existing, &body, max_metadata_size, private_key_configured)
+        };
         let updated = ctx
             .database
             .update_sso_provider(&authorized.id, provider_id, &prepare)
@@ -44,6 +46,7 @@ fn prepare_update(
     existing: &SsoProvider,
     body: &Value,
     max_metadata_size: usize,
+    private_key_configured: bool,
 ) -> AuthResult<SsoProviderUpdate> {
     let mut provider = existing.clone();
     let mut identity_changed = false;
@@ -115,7 +118,7 @@ fn prepare_update(
                 "clientSecret is required when using client_secret_basic or client_secret_post authentication",
             ));
         }
-        if method == "private_key_jwt" {
+        if method == "private_key_jwt" && !private_key_configured {
             return Err(api(
                 400,
                 "private_key_jwt authentication requires either a resolvePrivateKey callback or a privateKey in defaultSSO",

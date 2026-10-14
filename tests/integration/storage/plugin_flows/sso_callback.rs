@@ -23,7 +23,8 @@ backend_tests!(
     sso_verified_domain_links_subdomain_accounts_without_trusting_foreign_email,
     sso_configured_providers_issue_bound_state_and_complete_oidc_and_saml_login,
     sso_configured_state_rejects_reconfigured_authority_before_identity_writes,
-    sso_private_key_jwt_authenticates_actual_token_requests_and_rejects_missing_key
+    sso_private_key_jwt_authenticates_actual_token_requests_and_rejects_missing_key,
+    sso_private_key_resolver_admits_persisted_clients_and_resolves_each_token_request
 );
 async fn sso_callback_redeems_bound_code_and_creates_usable_session<B: Backend>(
     db: Db,
@@ -1354,6 +1355,134 @@ async fn sso_private_key_jwt_authenticates_actual_token_requests_and_rejects_mis
             );
         }
         assert!(store.get_sso_provider("configured-jwt").await?.is_none());
+    }
+    B::close(connection).await
+}
+
+async fn sso_private_key_resolver_admits_persisted_clients_and_resolves_each_token_request<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    use alibi::plugins::SsoKeyResolver;
+    use std::sync::atomic::Ordering;
+    let idp = peer::start().await;
+    let keys = super::sso_key_resolver::Policy::default();
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET)
+        .base_url(ORIGIN)
+        .trusted_origin(&idp.base);
+    let auth = AuthBuilder::<B::Schema>::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(SsoPlugin::with_config(SsoConfig {
+            resolve_private_key: Some(SsoKeyResolver(Arc::new(keys.clone()))),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "key-resolver-owner@example.test").await;
+    let registration = json!({"providerId":"resolved-jwt","issuer":idp.base,"domain":"company.test","oidcConfig":{"clientId":"enterprise-client","skipDiscovery":true,"pkce":true,"authorizationEndpoint":format!("{}/authorize",idp.base),"tokenEndpoint":format!("{}/token-jwt",idp.base),"jwksEndpoint":format!("{}/jwks",idp.base),"userInfoEndpoint":format!("{}/userinfo",idp.base),"tokenEndpointAuthentication":"private_key_jwt","privateKeyId":"sso-key","privateKeyAlgorithm":"RS256"}});
+    let created = Box::pin(auth.dispatch_endpoint(
+        SsoPlugin::register_sso_provider_endpoint(&registration)?,
+        EndpointOptions {
+            headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(created.status, 200);
+    assert!(keys.events.lock().unwrap().is_empty());
+    let updated = Box::pin(auth.dispatch_endpoint(
+        SsoPlugin::update_sso_provider_endpoint(
+            &json!({"providerId":"resolved-jwt","oidcConfig":{"clientSecret":"must-not-send"}}),
+        )?,
+        EndpointOptions {
+            headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(updated.status, 200);
+    assert!(keys.events.lock().unwrap().is_empty());
+    let original = store.get_sso_provider("resolved-jwt").await?.unwrap();
+    for (index, enabled) in [(0, true), (1, true), (2, false)] {
+        keys.enabled.store(enabled, Ordering::SeqCst);
+        keys.events.lock().unwrap().clear();
+        idp.exchanges.lock().unwrap().clear();
+        let email = format!("key-resolver-{index}@company.test");
+        let subject = format!("resolver-subject-{index}");
+        *idp.profile.lock().unwrap() = Some(
+            json!({"sub":subject,"email":email,"email_verified":false,"name":"Resolved key employee"}),
+        );
+        let started=Box::pin(auth.dispatch_endpoint(SsoPlugin::sign_in_sso_endpoint(&json!({"providerId":"resolved-jwt","callbackURL":format!("{ORIGIN}/complete"),"errorCallbackURL":format!("{ORIGIN}/failed")}))?,EndpointOptions::default())).await?.into_response()?;
+        assert!(keys.events.lock().unwrap().is_empty());
+        let grant = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?
+            .get(body(&started)["url"].as_str().unwrap())
+            .send()
+            .await?;
+        assert_eq!(grant.status(), 302);
+        let url = url::Url::parse(grant.headers().get("location").unwrap().to_str()?)?;
+        let query = url
+            .query_pairs()
+            .into_owned()
+            .collect::<std::collections::HashMap<_, _>>();
+        let completed = Box::pin(auth.dispatch_endpoint(
+            SsoPlugin::callback_sso_endpoint("resolved-jwt", &json!(query))?,
+            EndpointOptions {
+                headers: Some([("cookie".into(), cookies(&started))].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(
+            *keys.events.lock().unwrap(),
+            vec![json!({"providerId":"resolved-jwt","keyId":"sso-key","issuer":idp.base})]
+        );
+        let location = url::Url::parse(completed.headers.get("location").unwrap())?;
+        if enabled {
+            assert_eq!(location.path(), "/complete");
+            let session = call(
+                &auth,
+                request("/get-session", None, &cookies(&completed)),
+                200,
+            )
+            .await;
+            assert_eq!(body(&session)["user"]["email"], email);
+            assert_eq!(idp.exchanges.lock().unwrap().len(), 1);
+            assert!(store.get_account("resolved-jwt", &subject).await?.is_some());
+        } else {
+            assert_eq!(location.path(), "/failed");
+            assert_eq!(
+                location
+                    .query_pairs()
+                    .find(|(name, _)| name == "error_description")
+                    .unwrap()
+                    .1,
+                "no_private_key_available"
+            );
+            assert!(idp.exchanges.lock().unwrap().is_empty());
+            assert!(store.get_account("resolved-jwt", &subject).await?.is_none());
+            assert!(store.get_user_by_email(&email).await?.is_none());
+        }
+        assert_eq!(
+            store.get_sso_provider("resolved-jwt").await?.unwrap(),
+            original
+        );
+        assert!(
+            !original
+                .oidc_config
+                .as_deref()
+                .unwrap()
+                .contains("PRIVATE KEY")
+        );
     }
     B::close(connection).await
 }
