@@ -1,7 +1,8 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomUUID, sign } from "node:crypto";
 export function ssoOidcFixture() {
   let email = "sso-employee@example.test";
-  const codes = new Map<string, { challenge: string; email: string }>();
+  let idTokenCase = "none";
+  const codes = new Map<string, { challenge: string; email: string; tokenCase: string }>();
   const tokens = new Map<string, string>();
   const exchanges: any[] = [];
   const server = Bun.serve({
@@ -20,7 +21,7 @@ export function ssoOidcFixture() {
         const redirect = url.searchParams.get("redirect_uri");
         if (!challenge || !redirect) return new Response(null, { status: 400 });
         const code = randomUUID();
-        codes.set(code, { challenge, email });
+        codes.set(code, { challenge, email, tokenCase: idTokenCase });
         const callback = new URL(redirect);
         callback.searchParams.set("code", code);
         callback.searchParams.set("state", url.searchParams.get("state") ?? "");
@@ -43,12 +44,21 @@ export function ssoOidcFixture() {
         }
         const token = randomUUID();
         tokens.set(token, stored.email);
-        return Response.json({
+        const output: any = {
           access_token: token,
           token_type: "Bearer",
           expires_in: 3600,
           scope: "openid email",
-        });
+        };
+        if (stored.tokenCase !== "none") {
+          output.id_token = await signedIdToken(url.origin, stored.email, stored.tokenCase);
+        }
+        return Response.json(output);
+      }
+      if (url.pathname === "/jwks") {
+        return Response.json(
+          await Bun.file(new URL("../../../fixtures/one-tap/jwks.json", import.meta.url)).json(),
+        );
       }
       if (url.pathname === "/userinfo") {
         const token = request.headers.get("authorization")?.replace(/^Bearer /, "");
@@ -68,6 +78,9 @@ export function ssoOidcFixture() {
   server.unref();
   return {
     base: `http://127.0.0.1:${server.port}`,
+    setIdTokenCase(value: string) {
+      idTokenCase = value;
+    },
     setEmail(value: string) {
       email = value;
       exchanges.length = 0;
@@ -76,4 +89,42 @@ export function ssoOidcFixture() {
       return [...exchanges];
     },
   };
+}
+
+async function signedIdToken(issuer: string, email: string, tokenCase: string) {
+  const now = Math.floor(Date.now() / 1000);
+  const claims: any = {
+    iss: issuer,
+    aud: "enterprise-client",
+    sub: "employee-subject",
+    email,
+    email_verified: true,
+    name: "SSO employee",
+    iat: now,
+    exp: now + 3600,
+  };
+  if (tokenCase === "issuer") claims.iss = "https://wrong-issuer.example.test";
+  if (tokenCase === "audience") claims.aud = "other-client";
+  if (tokenCase === "expired") claims.exp = now - 3600;
+  if (tokenCase === "authorized-party") claims.azp = "other-client";
+  if (tokenCase === "multi-audience" || tokenCase === "valid-multi-audience") {
+    claims.aud = ["enterprise-client", "other-client"];
+    if (tokenCase === "valid-multi-audience") claims.azp = "enterprise-client";
+  }
+  if (tokenCase === "subject") delete claims.sub;
+  if (tokenCase === "userinfo-mismatch") claims.sub = "other-subject";
+  const privateKey = await Bun.file(
+    new URL(
+      tokenCase === "signature"
+        ? "../../../fixtures/one-tap/wrong-private-key.pem"
+        : "../../../fixtures/one-tap/private-key.pem",
+      import.meta.url,
+    ),
+  ).text();
+  const header = Buffer.from(
+    JSON.stringify({ alg: "RS256", typ: "JWT", kid: "one-tap-local-rs256" }),
+  ).toString("base64url");
+  const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
+  const data = `${header}.${payload}`;
+  return `${data}.${sign("RSA-SHA256", Buffer.from(data), privateKey).toString("base64url")}`;
 }
