@@ -45,6 +45,7 @@ impl SsoPlugin {
             .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
             .filter(|value| !value.is_null())
             .ok_or_else(|| error(404, "SAML_PROVIDER_NOT_FOUND", "SAML provider not found"))?;
+        let config = super::idp_metadata_xml::effective(&config)?;
         let metadata = super::sp_metadata_xml::from_config(&config)?;
         let services = config
             .get("idpMetadata")

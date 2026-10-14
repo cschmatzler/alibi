@@ -227,11 +227,6 @@ pub(super) fn prepare(
         }
     }
     _ = super::sp_metadata_xml::from_config(config)?;
-    if xml.is_some() {
-        return Err(AuthError::not_implemented(
-            "SAML IdP XML metadata admission is not implemented",
-        ));
-    }
     let mut output = config
         .as_object()
         .cloned()

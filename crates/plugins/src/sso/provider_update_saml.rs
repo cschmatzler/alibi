@@ -58,18 +58,25 @@ pub(super) fn prepare(
     let raw = super::registration_saml::prepare(&updated, issuer, max_metadata_size)?;
     if updated
         .get("idpMetadata")
-        .and_then(|metadata| metadata.get("entityID"))
+        .and_then(|idp| idp.get("metadata"))
         .and_then(Value::as_str)
         .is_none_or(str::is_empty)
+        && updated
+            .get("idpMetadata")
+            .and_then(|metadata| metadata.get("entityID"))
+            .and_then(Value::as_str)
+            .is_none_or(str::is_empty)
     {
         return Err(api(
             400,
             "SAML manual IdP configuration requires idpMetadata.entityID; issuer identifies the service provider and cannot identify the IdP",
         ));
     }
-    Ok((raw, identity(&current) != identity(&updated)))
+    Ok((raw, identity(&current)? != identity(&updated)?))
 }
-fn identity(config: &Value) -> Value {
+fn identity(config: &Value) -> AuthResult<Value> {
+    let effective = super::idp_metadata_xml::effective(config)?;
+    let config = &effective;
     let certs = config
         .get("idpMetadata")
         .and_then(|idp| idp.get("cert"))
@@ -93,7 +100,8 @@ fn identity(config: &Value) -> Value {
     anchors.sort();
     let sp = config.get("spMetadata");
     let metadata = super::sp_metadata_xml::from_config(config).ok().flatten();
-    json!({"audience":config.get("audience"), "callbackUrl":config.get("callbackUrl"),
+    Ok(
+        json!({"audience":config.get("audience"), "callbackUrl":config.get("callbackUrl"),
         "idpEntityId":config.get("idpMetadata").and_then(|idp|idp.get("entityID")),
         "idpRedirectService":super::idp_services::identity(config,"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"),
         "idpPostService":super::idp_services::identity(config,"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"),
@@ -101,5 +109,6 @@ fn identity(config: &Value) -> Value {
         "spNameIDFormat":metadata.as_ref().and_then(|sp|sp.name_id_formats.first().map(|name|json!(name))).or_else(||config.get("identifierFormat").cloned()),
         "spPostServices":metadata.as_ref().map_or_else(||config.get("callbackUrl").and_then(Value::as_str).map(|url|vec![url.to_owned()]).unwrap_or_default(), |sp|sp.post_services.clone()),
         "wantAssertionsSigned":metadata.as_ref().map_or_else(||config.get("wantAssertionsSigned")==Some(&json!(true)),|sp|sp.want_assertions_signed),
-        "trustAnchors":anchors})
+        "trustAnchors":anchors}),
+    )
 }

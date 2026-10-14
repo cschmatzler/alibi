@@ -29,6 +29,8 @@ impl SsoPlugin {
                 "additionalParams is not supported for SAML providers; the SAML AuthnRequest is signed and cannot carry caller-supplied query parameters.",
             ));
         }
+        let effective = super::idp_metadata_xml::effective(config)?;
+        let config = &effective;
         let metadata = super::sp_metadata_xml::from_config(config)?;
         let signed = metadata.as_ref().map_or_else(
             || config.get("authnRequestsSigned") == Some(&json!(true)),
@@ -78,16 +80,6 @@ impl SsoPlugin {
         let cookie_name =
             alibi_core::utils::cookie_utils::related_cookie_name(&ctx.config, "relay_state");
         let cookie = issue_state(&payload, &state, &cookie_name, ctx).await?;
-        if config
-            .get("idpMetadata")
-            .and_then(|metadata| metadata.get("metadata"))
-            .and_then(Value::as_str)
-            .is_some_and(|xml| !xml.is_empty())
-        {
-            return Err(AuthError::not_implemented(
-                "SAML XML metadata authorization is not implemented",
-            ));
-        }
         let service = super::idp_services::identity(
             config,
             "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",

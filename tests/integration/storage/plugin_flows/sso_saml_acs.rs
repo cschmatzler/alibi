@@ -5,15 +5,29 @@ use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::SsoPlugin;
 use alibi::{
     AuthAccount, AuthVerification,
-    store::{AccountStore, VerificationStore},
+    store::{AccountStore, SsoProviderStore, VerificationStore},
 };
 backend_tests!(
     sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay,
-    sso_trusted_saml_verification_requires_mapping_and_exact_first_true_attribute
+    sso_trusted_saml_verification_requires_mapping_and_exact_first_true_attribute,
+    sso_saml_acs_uses_xml_idp_authority_and_signing_certificate
 );
 async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B: Backend>(
     db: Db,
 ) -> TestResult {
+    acs_flow::<B>(db, false).await
+}
+async fn sso_saml_acs_uses_xml_idp_authority_and_signing_certificate<B: Backend>(
+    db: Db,
+) -> TestResult {
+    acs_flow::<B>(db, true).await
+}
+async fn acs_flow<B: Backend>(db: Db, xml_metadata: bool) -> TestResult {
+    let provider_id = if xml_metadata {
+        "xml-acs-provider"
+    } else {
+        "acs-provider"
+    };
     let (connection, store) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(SsoPlugin::new())
@@ -21,7 +35,20 @@ async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B:
         .await?;
     let owner = signup(&auth, "saml-acs-owner@example.test").await;
     let cert = include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem");
-    let input = json!({"providerId":"acs-provider","issuer":"https://sp.example.test/entity","domain":"company.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":cert,"idpMetadata":{"entityID":"https://idp.example.test/entity"},"wantAssertionsSigned":true,"callbackUrl":format!("{ORIGIN}/complete")}});
+    let mut input = json!({"providerId":provider_id,"issuer":"https://sp.example.test/entity","domain":"company.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":cert,"idpMetadata":{"entityID":"https://idp.example.test/entity"},"wantAssertionsSigned":true,"callbackUrl":format!("{ORIGIN}/complete")}});
+    if xml_metadata {
+        let certificate = cert
+            .lines()
+            .filter(|line| !line.starts_with("-----"))
+            .collect::<String>();
+        let metadata = format!(
+            r#"<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" entityID="https://idp.example.test/entity"><md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol" WantAuthnRequestsSigned="false"><md:KeyDescriptor use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>{certificate}</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor><md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.test/from-xml"/></md:IDPSSODescriptor></md:EntityDescriptor>"#
+        );
+        input["samlConfig"]["entryPoint"] = json!("https://unused.example.test/entrypoint");
+        _ = input["samlConfig"].as_object_mut().unwrap().remove("cert");
+        input["samlConfig"]["idpMetadata"] =
+            json!({"entityID":"https://unused.example.test/entity","metadata":metadata});
+    }
     let created = Box::pin(auth.dispatch_endpoint(
         SsoPlugin::register_sso_provider_endpoint(&input)?,
         EndpointOptions {
@@ -38,11 +65,20 @@ async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B:
         } else {
             "saml-employee@example.test"
         };
-        let started=Box::pin(auth.dispatch_endpoint(SsoPlugin::sign_in_sso_endpoint(&json!({"providerId":"acs-provider","providerType":"saml","callbackURL":format!("{ORIGIN}/complete"),"errorCallbackURL":format!("{ORIGIN}/failed")}))?,EndpointOptions::default())).await?.into_response()?;
+        let started=Box::pin(auth.dispatch_endpoint(SsoPlugin::sign_in_sso_endpoint(&json!({"providerId":provider_id,"providerType":"saml","callbackURL":format!("{ORIGIN}/complete"),"errorCallbackURL":format!("{ORIGIN}/failed")}))?,EndpointOptions::default())).await?.into_response()?;
         assert_eq!(started.status, 200);
+        let authorization = url::Url::parse(body(&started)["url"].as_str().unwrap())?;
+        assert_eq!(
+            authorization.origin().ascii_serialization(),
+            "https://idp.example.test"
+        );
+        assert_eq!(
+            authorization.path(),
+            if xml_metadata { "/from-xml" } else { "/sso" }
+        );
         let grant = idp::grant(body(&started)["url"].as_str().unwrap(), email, wrong_key)?;
         let endpoint = ServerEndpoint::<Value>::new("sso", "acsEndpoint")
-            .with_params(&json!({"providerId":"acs-provider"}))?
+            .with_params(&json!({"providerId":provider_id}))?
             .with_body(
                 &json!({"SAMLResponse":grant["SAMLResponse"],"RelayState":grant["RelayState"]}),
             )?;
@@ -54,7 +90,7 @@ async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B:
                     .append_pair("RelayState", grant["RelayState"].as_str().unwrap())
                     .finish();
                 let mut incoming =
-                    AuthRequest::new(HttpMethod::Post, "/sso/saml2/sp/acs/acs-provider");
+                    AuthRequest::new(HttpMethod::Post, format!("/sso/saml2/sp/acs/{provider_id}"));
                 incoming.headers.extend([
                     (
                         "content-type".into(),
@@ -115,7 +151,7 @@ async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B:
                     .await?
                     .is_none()
             );
-            assert!(store.get_account("acs-provider", email).await?.is_none());
+            assert!(store.get_account(provider_id, email).await?.is_none());
             assert!(
                 !completed
                     .headers
@@ -151,9 +187,9 @@ async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B:
             let proof: Value = serde_json::from_str(used.value())?;
             assert_eq!(proof["assertionId"], grant["assertionId"]);
             assert_eq!(proof["issuer"], "https://idp.example.test/entity");
-            assert_eq!(proof["providerId"], "acs-provider");
+            assert_eq!(proof["providerId"], provider_id);
             let account = store
-                .get_account("acs-provider", email)
+                .get_account(provider_id, email)
                 .await?
                 .ok_or("SAML account missing")?;
             assert_eq!(
@@ -182,6 +218,37 @@ async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B:
         .insert("origin".into(), "https://idp.example.test".into());
     _ = call(&auth, rejected, 403).await;
     authenticated(&auth, &cookies(&owner), "saml-acs-owner@example.test").await;
+    if xml_metadata {
+        let row = store.get_sso_provider(provider_id).await?.unwrap();
+        let stored: Value = serde_json::from_str(row.saml_config.as_deref().unwrap())?;
+        assert_eq!(
+            stored["idpMetadata"]["entityID"],
+            "https://unused.example.test/entity"
+        );
+        assert_eq!(
+            stored["entryPoint"],
+            "https://unused.example.test/entrypoint"
+        );
+        assert_eq!(
+            stored["idpMetadata"]["metadata"],
+            input["samlConfig"]["idpMetadata"]["metadata"]
+        );
+        let xml = stored["idpMetadata"]["metadata"].as_str().unwrap();
+        for changed in [
+            xml.replace(
+                "https://idp.example.test/entity",
+                "https://other-idp.example.test/entity",
+            ),
+            xml.replace(
+                "https://idp.example.test/from-xml",
+                "https://other-idp.example.test/sso",
+            ),
+        ] {
+            let rejected = Box::pin(auth.dispatch_endpoint(SsoPlugin::update_sso_provider_endpoint(&json!({"providerId":provider_id,"samlConfig":{"idpMetadata":{"metadata":changed}}}))?,EndpointOptions { headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default() })).await.unwrap_err();
+            assert_eq!(rejected.error.status_code(), 409);
+            assert_eq!(store.get_sso_provider(provider_id).await?.unwrap(), row);
+        }
+    }
     B::close(connection).await
 }
 
