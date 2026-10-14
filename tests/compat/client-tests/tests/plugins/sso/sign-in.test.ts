@@ -134,6 +134,29 @@ compatScenario(
       .update(state)
       .digest("base64");
     expect(signed).toBe(`${state}.${signature}`);
+    for (const selector of [
+      { domain: " engineering.COMPANY.com " },
+      { email: "employee@engineering.subsidiary.com" },
+      { domain: "COMPANY.COM" },
+    ]) {
+      const selected = await control({
+        action: "sign-in",
+        body: { ...selector, callbackURL: input.callbackURL },
+      });
+      expect(selected.status).toBe(200);
+      const selectedURL = new URL(((await selected.json()) as any).url);
+      expect(selectedURL.origin).toBe("https://idp.example.com");
+      expect(selectedURL.searchParams.get("redirect_uri")).toBe(
+        `${ctx.baseURL}/api/auth/sso/callback/signin-provider`,
+      );
+    }
+    for (const domain of ["notcompany.com", "company.com.attacker.test", "unrelated.test"]) {
+      const denied = await control({
+        action: "sign-in",
+        body: { domain, callbackURL: input.callbackURL },
+      });
+      expect(denied.status).toBe(404);
+    }
     const missing = await control({
       action: "sign-in",
       body: { providerId: "missing-provider", callbackURL: input.callbackURL },
