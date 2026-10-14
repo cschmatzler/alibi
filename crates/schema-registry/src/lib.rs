@@ -731,3 +731,6 @@ pub const POSTGRES_RATE_LIMIT_SCHEMA: &str = include_str!("../schema/postgres_ra
 
 pub const SQLITE_SSO_SCHEMA: &str = include_str!("../schema/sqlite_sso.sql");
 pub const POSTGRES_SSO_SCHEMA: &str = include_str!("../schema/postgres_sso.sql");
+
+pub const SQLITE_SCIM_MANAGED_SCHEMA: &str = include_str!("../schema/sqlite_scim_managed.sql");
+pub const POSTGRES_SCIM_MANAGED_SCHEMA: &str = include_str!("../schema/postgres_scim_managed.sql");

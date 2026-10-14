@@ -6,13 +6,52 @@ use alibi_core::{
 };
 use async_trait::async_trait;
 use serde_json::{Value, json};
+mod managed;
+pub use managed::ScimManagedConnectionInput;
 
+/// Policy for the framework-managed provisioning credential catalog.
+#[derive(Clone)]
+pub struct ScimManagedConnectionOptions {
+    pub credential_hash_secret: String,
+    pub max_active_credentials: usize,
+    pub last_used_write_interval_seconds: u64,
+}
+impl std::fmt::Debug for ScimManagedConnectionOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ScimManagedConnectionOptions")
+            .field("max_active_credentials", &self.max_active_credentials)
+            .field(
+                "last_used_write_interval_seconds",
+                &self.last_used_write_interval_seconds,
+            )
+            .finish_non_exhaustive()
+    }
+}
+impl ScimManagedConnectionOptions {
+    #[must_use]
+    pub fn new(secret: impl Into<String>) -> Self {
+        Self {
+            credential_hash_secret: secret.into(),
+            max_active_credentials: 5,
+            last_used_write_interval_seconds: 300,
+        }
+    }
+}
 #[derive(Clone, Debug, Default)]
-pub struct ScimPlugin;
+pub struct ScimPlugin {
+    managed_connections: Option<ScimManagedConnectionOptions>,
+}
 impl ScimPlugin {
     #[must_use]
     pub const fn new() -> Self {
-        Self
+        Self {
+            managed_connections: None,
+        }
+    }
+    #[must_use]
+    pub fn managed_connections(mut self, options: ScimManagedConnectionOptions) -> Self {
+        self.managed_connections = Some(options);
+        self
     }
     /// Discover the installed SCIM protocol capabilities without credentials.
     #[must_use]
@@ -146,6 +185,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
             crate::endpoint::definition(
+                "createSCIMManagedConnection",
+                "createSCIMManagedConnection",
+                None,
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
                 "getSCIMSchema",
                 "getSCIMSchema",
                 Some("/scim/v2/Schemas/:schemaId"),
@@ -177,11 +222,43 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
             ),
         ]
     }
+    fn validate_endpoint(
+        &self,
+        call: &EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
+        if call.operation_id() == "createSCIMManagedConnection" {
+            managed::validate(call)
+        } else {
+            Ok(alibi_core::endpoint::EndpointInput {
+                body: call.body().cloned(),
+                query: call.query().cloned(),
+            })
+        }
+    }
+    async fn on_init(&self, _ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
+        if let Some(options) = &self.managed_connections {
+            if options.credential_hash_secret.encode_utf16().count() < 32 {
+                return Err(AuthError::config(
+                    "SCIM managed credentialHashSecret must contain at least 32 characters.",
+                ));
+            }
+            if !(1..=100).contains(&options.max_active_credentials) {
+                return Err(AuthError::config(
+                    "SCIM managed maxActiveCredentials must be an integer between 1 and 100.",
+                ));
+            }
+        }
+        Ok(())
+    }
     async fn on_endpoint(
         &self,
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "createSCIMManagedConnection" {
+            return self.create_managed_connection(call, ctx).await;
+        }
         if call.operation_id() == "getSCIMSchema" {
             return Self::schema(
                 ctx,

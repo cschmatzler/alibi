@@ -6,6 +6,7 @@ mod jwks;
 mod migrations;
 pub mod oauth_clients;
 mod org_extensions;
+pub mod scim;
 mod secondary_sessions;
 pub mod secondary_storage;
 mod session_deletion;
@@ -36,6 +37,10 @@ pub use oauth_clients::{
     OAuthResource, OAuthToken, OAuthTokenKind,
 };
 pub use org_extensions::{OrganizationRoleStore, TeamStore, team_membership_key};
+pub use scim::{
+    CreateScimManagedConnection, ScimManagedConnection, ScimManagedCreation, ScimManagedCredential,
+    ScimManagedStore,
+};
 #[cfg(feature = "redis-cache")]
 pub use secondary_storage::RedisAdapter;
 pub use secondary_storage::{CacheAdapter, MemoryCacheAdapter};
@@ -58,6 +63,7 @@ pub trait AuthStore<S: AuthSchema>:
     + InvitationStore
     + OAuthClientStore
     + SsoProviderStore
+    + ScimManagedStore
     + TeamStore
     + OrganizationRoleStore
     + WalletAddressStore
@@ -84,6 +90,7 @@ where
         + InvitationStore
         + OAuthClientStore
         + SsoProviderStore
+        + ScimManagedStore
         + TeamStore
         + OrganizationRoleStore
         + WalletAddressStore

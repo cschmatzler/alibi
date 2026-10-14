@@ -676,3 +676,5 @@ pub(crate) fn bind_page(
 }
 
 mod sso;
+
+mod scim;
