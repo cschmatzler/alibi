@@ -116,3 +116,5 @@ pub(crate) mod sso_fixture;
 
 #[path = "../../../../support/sso_dns.rs"]
 pub(crate) mod sso_dns_fixture;
+
+pub(crate) mod scim_fixture;

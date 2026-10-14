@@ -499,3 +499,5 @@ mod sso_storage_schema;
 mod sso_additional_fields;
 #[path = "../../../support/sso_additional_fields.rs"]
 mod sso_additional_fields_config;
+
+mod scim_discovery;

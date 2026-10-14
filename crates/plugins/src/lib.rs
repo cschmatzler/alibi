@@ -81,6 +81,7 @@ pub mod passkey;
 pub mod password_management;
 mod passwordless_numeric;
 pub mod phone_number;
+pub mod scim;
 pub mod session_management;
 pub mod siwe;
 pub mod sso;
@@ -325,6 +326,7 @@ pub(crate) struct StatusResponse {
     status: bool,
 }
 
+pub use scim::ScimPlugin;
 pub use sso::{
     SsoAccountKey, SsoConfig, SsoDefaultProvider, SsoDeprecatedAlgorithmBehavior, SsoKeyResolver,
     SsoMutationAction, SsoMutationGuard, SsoMutationProvider, SsoOrganizationProvisioning,
