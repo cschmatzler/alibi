@@ -5,7 +5,8 @@ backend_tests!(
     scim_service_provider_config_exposes_reference_capabilities,
     scim_resource_types_are_public_and_include_enterprise_user,
     scim_resource_type_lookup_matches_reference_errors,
-    scim_schema_listing_exposes_complete_standard_attribute_contracts
+    scim_schema_listing_exposes_complete_standard_attribute_contracts,
+    scim_schema_lookup_decodes_ids_and_preserves_exact_errors
 );
 async fn scim_service_provider_config_exposes_reference_capabilities<B: Backend>(
     db: Db,
@@ -250,5 +251,86 @@ async fn scim_schema_listing_exposes_complete_standard_attribute_contracts<B: Ba
         output.value(),
         &alibi::utils::json::parse_value(&document.to_string())?
     );
+    Ok(())
+}
+
+async fn scim_schema_lookup_decodes_ids_and_preserves_exact_errors<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = builder::<B>(&connection)
+        .plugin(alibi::plugins::ScimPlugin::new())
+        .build()
+        .await?;
+    let endpoint = |id: &str| alibi::plugins::ScimPlugin::schema_endpoint(id);
+    for (id, name, count) in [
+        ("urn:ietf:params:scim:schemas:core:2.0:User", "User", 14),
+        (
+            "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+            "EnterpriseUser",
+            6,
+        ),
+        ("urn:ietf:params:scim:schemas:core:2.0:Group", "Group", 2),
+    ] {
+        for parameter in [id.to_owned(), id.replace(':', "%3A")] {
+            let response = call(
+                &auth,
+                request(&format!("/scim/v2/Schemas/{parameter}"), None, ""),
+                200,
+            )
+            .await;
+            assert_eq!(
+                response.headers.get("content-type").map(String::as_str),
+                Some("application/scim+json")
+            );
+            let schema = body(&response);
+            assert_eq!(schema["id"], id);
+            assert_eq!(schema["name"], name);
+            assert_eq!(
+                schema["schemas"],
+                json!(["urn:ietf:params:scim:schemas:core:2.0:Schema"])
+            );
+            assert_eq!(schema["attributes"].as_array().unwrap().len(), count);
+            assert_eq!(
+                schema["meta"],
+                json!({"resourceType":"Schema","location":format!("{ORIGIN}/api/auth/scim/v2/Schemas/{id}")})
+            );
+            let direct = auth
+                .dispatch_endpoint(endpoint(&parameter)?, EndpointOptions::default())
+                .await?;
+            assert_eq!(
+                direct.value(),
+                &alibi::utils::json::parse_value(&schema.to_string())?
+            );
+        }
+    }
+    for id in [
+        "Unknown",
+        "urn:ietf:params:scim:schemas:core:2.0:user",
+        "%ZZ",
+        "%2575rn:ietf:params:scim:schemas:core:2.0:User",
+    ] {
+        let expected = json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:Error"],"status":"404","detail":"Schema not found"});
+        let response = call(
+            &auth,
+            request(&format!("/scim/v2/Schemas/{id}"), None, ""),
+            404,
+        )
+        .await;
+        assert_eq!(body(&response), expected);
+        assert_eq!(
+            response.headers.get("content-type").map(String::as_str),
+            Some("application/scim+json")
+        );
+        let error = auth
+            .dispatch_endpoint(endpoint(id)?, EndpointOptions::default())
+            .await
+            .unwrap_err();
+        assert_eq!(error.error.status_code(), 404);
+        assert_eq!(
+            error.body.as_deref(),
+            Some(&alibi::utils::json::parse_value(&expected.to_string())?)
+        );
+    }
     Ok(())
 }

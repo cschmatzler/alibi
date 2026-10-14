@@ -23,16 +23,25 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         post(move |Query(query): Query<HashMap<String, String>>| {
             let auth = auth.clone();
             async move {
-                if query
-                    .get("operation")
-                    .is_some_and(|operation| operation == "getSCIMResourceType")
-                {
+                if query.get("operation").is_some_and(|operation| {
+                    matches!(operation.as_str(), "getSCIMResourceType" | "getSCIMSchema")
+                }) {
                     let output = auth
                         .dispatch_endpoint(
-                            ScimPlugin::resource_type_endpoint(
-                                query.get("id").map_or("", String::as_str),
-                            )
-                            .unwrap(),
+                            if query
+                                .get("operation")
+                                .is_some_and(|operation| operation == "getSCIMSchema")
+                            {
+                                ScimPlugin::schema_endpoint(
+                                    query.get("id").map_or("", String::as_str),
+                                )
+                                .unwrap()
+                            } else {
+                                ScimPlugin::resource_type_endpoint(
+                                    query.get("id").map_or("", String::as_str),
+                                )
+                                .unwrap()
+                            },
                             EndpointOptions::default(),
                         )
                         .await;

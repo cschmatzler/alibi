@@ -22,6 +22,21 @@ export async function scimFixture(base: BetterAuthOptions) {
           headers: { "content-type": "application/json" },
         });
       }
+      if (query.get("operation") === "getSCIMSchema") {
+        try {
+          const value = await auth.api.getSCIMSchema({
+            params: { schemaId: query.get("id") ?? "" },
+          });
+          return new Response(JSON.stringify(value), {
+            headers: { "content-type": "application/json" },
+          });
+        } catch (error: any) {
+          return new Response(JSON.stringify(error.body), {
+            status: error.statusCode,
+            headers: { "content-type": "application/json" },
+          });
+        }
+      }
       if (query.get("operation") === "getSCIMResourceType") {
         try {
           const value = await auth.api.getSCIMResourceType({

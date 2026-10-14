@@ -50,6 +50,34 @@ impl ScimPlugin {
             json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:ListResponse"],"totalResults":schemas.len(),"startIndex":1,"itemsPerPage":schemas.len(),"Resources":schemas}),
         )
     }
+    /// Read a SCIM schema by its raw or URI-encoded identifier.
+    /// # Errors
+    /// Returns an error if path parameters cannot be serialized.
+    pub fn schema_endpoint(id: &str) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("scim", "getSCIMSchema").with_params(&json!({"schemaId":id}))
+    }
+    fn schema<S: AuthSchema>(ctx: &AuthContext<S>, id: &str) -> AuthResult<EndpointResponse> {
+        let decoded = urlencoding::decode(id).unwrap_or(std::borrow::Cow::Borrowed(id));
+        let schemas = Self::schemas(ctx)?;
+        let schema = schemas
+            .get("Resources")
+            .and_then(Value::as_array)
+            .and_then(|schemas| {
+                schemas.iter().find(|schema| {
+                    schema.get("id").and_then(Value::as_str) == Some(decoded.as_ref())
+                })
+            });
+        Self::discovery_result(schema, "Schema not found")
+    }
+    fn discovery_result(resource: Option<&Value>, detail: &str) -> AuthResult<EndpointResponse> {
+        let response = if let Some(resource) = resource {
+            EndpointResponse::json(resource)?
+        } else {
+            EndpointResponse::error(AuthError::Api {status:404,code:None,message:detail.into()})
+                .with_error_body(alibi_core::utils::json::parse_value(&json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:Error"],"status":"404","detail":detail}).to_string())?)
+        };
+        Ok(response.with_header("content-type", "application/scim+json"))
+    }
     /// Read one case-sensitive SCIM resource type through the server API.
     /// # Errors
     /// Returns an error if the path parameters cannot be serialized.
@@ -70,13 +98,7 @@ impl ScimPlugin {
                     .iter()
                     .find(|resource| resource.get("id").and_then(Value::as_str) == id)
             });
-        let response = if let Some(resource) = resource {
-            EndpointResponse::json(resource)?
-        } else {
-            EndpointResponse::error(AuthError::Api {status:404,code:None,message:"Resource type not found".into()})
-                .with_error_body(alibi_core::utils::json::parse_value(&json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:Error"],"status":"404","detail":"Resource type not found"}).to_string())?)
-        };
-        Ok(response.with_header("content-type", "application/scim+json"))
+        Self::discovery_result(resource, "Resource type not found")
     }
     fn resource_types<S: AuthSchema>(ctx: &AuthContext<S>) -> Value {
         let base = format!(
@@ -109,6 +131,7 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
             AuthRoute::get("/scim/v2/Schemas", "getSCIMSchemas"),
+            AuthRoute::get("/scim/v2/Schemas/{schemaId}", "getSCIMSchema"),
             AuthRoute::get("/scim/v2/ResourceTypes", "getSCIMResourceTypes"),
             AuthRoute::get(
                 "/scim/v2/ResourceTypes/{resourceTypeId}",
@@ -122,6 +145,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "getSCIMSchema",
+                "getSCIMSchema",
+                Some("/scim/v2/Schemas/:schemaId"),
+                HttpMethod::Get,
+            ),
             crate::endpoint::definition(
                 "getSCIMSchemas",
                 "getSCIMSchemas",
@@ -153,6 +182,15 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "getSCIMSchema" {
+            return Self::schema(
+                ctx,
+                call.params()
+                    .and_then(|params| params.get("schemaId"))
+                    .and_then(alibi_core::utils::json::JsValue::as_str)
+                    .unwrap_or(""),
+            );
+        }
         if call.operation_id() == "getSCIMSchemas" {
             return Ok(EndpointResponse::json(&Self::schemas(ctx)?)?
                 .with_header("content-type", "application/scim+json"));
@@ -177,6 +215,11 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.method() == &HttpMethod::Get
+            && let Some(id) = req.path().strip_prefix("/scim/v2/Schemas/")
+        {
+            return Ok(Some(Self::schema(ctx, id)?.to_response()?));
+        }
         if req.method() == &HttpMethod::Get
             && let Some(id) = req.path().strip_prefix("/scim/v2/ResourceTypes/")
         {
