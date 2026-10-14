@@ -1,3 +1,4 @@
+use super::entities::{scim_group as group, scim_group_member as membership};
 use super::{
     SqlxStore,
     entities::{
@@ -17,6 +18,7 @@ impl<S: AuthSchema> SqlxStore<S> {
         exec: Exec<'_>,
         domain: &str,
         ids: &[String],
+        roles: bool,
     ) -> AuthResult<Vec<ScimProjectionPreparedUser>> {
         if ids.is_empty() {
             return Ok(Vec::new());
@@ -125,6 +127,39 @@ impl<S: AuthSchema> SqlxStore<S> {
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
         let grants = exec.fetch_all::<grant::Model>(sql).await?;
+        let active_ids = users
+            .iter()
+            .filter(|user| user.active && !retired.contains(&user.connection_id))
+            .map(|user| user.id.clone())
+            .collect::<Vec<_>>();
+        let memberships = if roles && !active_ids.is_empty() {
+            let mut sql = model::select_model::<membership::Model>(exec);
+            sql.push(" WHERE ");
+            sql.column("scimGroupMember", "scimUserId");
+            sql.push(" IN ");
+            sql.bind_list(active_ids);
+            sql.push(" LIMIT ");
+            sql.bind(self.find_many_limit());
+            exec.fetch_all::<membership::Model>(sql).await?
+        } else {
+            Vec::new()
+        };
+        let group_ids = memberships
+            .iter()
+            .map(|member| member.group_id.clone())
+            .collect::<std::collections::HashSet<_>>();
+        let groups = if group_ids.is_empty() {
+            Vec::new()
+        } else {
+            let mut sql = model::select_model::<group::Model>(exec);
+            sql.push(" WHERE ");
+            sql.column("scimGroup", "id");
+            sql.push(" IN ");
+            sql.bind_list(group_ids);
+            sql.push(" LIMIT ");
+            sql.bind(self.find_many_limit());
+            exec.fetch_all::<group::Model>(sql).await?
+        };
         Ok(user_ids
             .into_iter()
             .map(|user_id| {
@@ -146,6 +181,43 @@ impl<S: AuthSchema> SqlxStore<S> {
                     .filter(|grant| grant.user_id == user_id)
                     .map(|grant| grant.id.clone())
                     .collect();
+                let existing_grants = grants
+                    .iter()
+                    .filter(|grant| grant.user_id == user_id)
+                    .map(|grant| (grant.id.clone(), grant.grant_key.clone()))
+                    .collect();
+                let mut role_sources = Vec::new();
+                for member in &memberships {
+                    let Some(user) = users.iter().find(|user| {
+                        user.id == member.scim_user_id
+                            && user.user_id == user_id
+                            && user.active
+                            && !retired.contains(&user.connection_id)
+                    }) else {
+                        continue;
+                    };
+                    let Some(group) = groups.iter().find(|group| {
+                        group.id == member.group_id
+                            && group.connection_id == user.connection_id
+                            && group.provisioning_domain_id == domain
+                    }) else {
+                        continue;
+                    };
+                    role_sources.push(alibi_core::store::ScimRoleMappingInput {
+                        connection_id: user.connection_id.clone(),
+                        provisioning_domain_id: domain.into(),
+                        scim_user_id: user.id.clone(),
+                        user_id: user.user_id.clone(),
+                        source: alibi_core::store::ScimAuthorizationSource::Group {
+                            id: group.id.clone(),
+                            external_id: group
+                                .external_id
+                                .clone()
+                                .filter(|value| !value.is_empty()),
+                            display_name: group.display_name.clone(),
+                        },
+                    });
+                }
                 ScimProjectionPreparedUser {
                     state: ScimProjectedUserState {
                         provisioning_domain_id: domain.into(),
@@ -155,9 +227,38 @@ impl<S: AuthSchema> SqlxStore<S> {
                         grants: Vec::new(),
                     },
                     removed_grant_ids,
+                    existing_grants,
+                    role_sources,
                 }
             })
             .collect())
+    }
+    pub(super) async fn create_scim_projection_grant_with_exec(
+        &self,
+        exec: Exec<'_>,
+        data: alibi_core::store::CreateScimProjectionGrant,
+    ) -> AuthResult<()> {
+        use crate::model::ActiveRow;
+        let mut row = ActiveRow::new();
+        row.set(
+            "id",
+            self.generated_id(exec, "scimProjectionGrant", "scimProjectionGrant", "id")
+                .await?
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        );
+        row.set("connectionId", data.connection_id);
+        row.set("provisioningDomainId", data.provisioning_domain_id);
+        row.set("scimUserId", data.scim_user_id);
+        row.set("userId", data.user_id);
+        row.set("sourceKind", "group");
+        row.set("sourceId", data.source_id);
+        row.set("sourceValue", Some(data.source_value));
+        row.set("role", data.role);
+        row.set("grantKey", data.grant_key);
+        row.set("createdAt", data.created_at);
+        row.set("updatedAt", data.created_at);
+        _ = model::insert::<grant::Model>(exec, &row).await?;
+        Ok(())
     }
     pub(super) async fn remove_scim_projection_grants_with_exec(
         &self,

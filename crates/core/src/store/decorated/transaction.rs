@@ -130,8 +130,15 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         &self,
         domain: &str,
         ids: &[String],
+        roles: bool,
     ) -> AuthResult<Vec<crate::store::ScimProjectionPreparedUser>> {
-        self.inner.prepare_scim_projection(domain, ids).await
+        self.inner.prepare_scim_projection(domain, ids, roles).await
+    }
+    async fn create_scim_projection_grant(
+        &self,
+        data: crate::store::CreateScimProjectionGrant,
+    ) -> AuthResult<()> {
+        self.inner.create_scim_projection_grant(data).await
     }
     async fn remove_scim_projection_grants(
         &self,

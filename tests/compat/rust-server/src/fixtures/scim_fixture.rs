@@ -2,6 +2,7 @@ use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::plugins::ScimPlugin;
 use alibi::plugins::scim::{ScimManagedConnectionOptions, ScimProjectedUserState, ScimProjection};
+use alibi::plugins::scim::{ScimRoleExistenceInput, ScimRoleMappingInput, ScimRoleProjection};
 use alibi::seaorm::sea_orm::DatabaseConnection;
 use alibi::seaorm::sea_orm::{ConnectionTrait, Statement};
 use alibi::store::AuthTransaction;
@@ -14,7 +15,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::{
     Mutex,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU8, Ordering},
 };
 pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
     let path = "/__test/profiles/scim/api/auth";
@@ -32,22 +33,35 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     let restart_config = base.clone().base_path(path);
     let projection_states = Arc::new(Mutex::new(Vec::<ScimProjectedUserState>::new()));
     let projection_fails = Arc::new(AtomicBool::new(false));
+    let role_observations = Arc::new(Mutex::new(json!({"mapped":[],"checked":[]})));
+    let role_stage = Arc::new(AtomicU8::new(0));
     Ok(router.route(
         "/__test/server-api/scim",
         post(move |Query(query): Query<HashMap<String, String>>, bytes: axum::body::Bytes| {
             let database=database.clone();
             let auth = restart_auth.clone();
             let config=restart_config.clone();
-            let projection_states=projection_states.clone();let projection_fails=projection_fails.clone();
+            let projection_states=projection_states.clone();let projection_fails=projection_fails.clone();let role_observations=role_observations.clone();let role_stage=role_stage.clone();
             async move {
-                if query.get("operation").is_some_and(|operation|operation=="configure-projection") {
-                    let fresh=AuthBuilder::<crate::TestSchema>::new(config.clone()).store(crate::backend::store(config,database.clone())).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).plugin(alibi::plugins::EmailPasswordPlugin::new()).plugin(ScimPlugin::new().managed_connections(managed_options()).projection::<crate::TestSchema>(Arc::new(FixtureProjection{states:projection_states.clone(),fails:projection_fails.clone()}))).build().await.unwrap();*auth.lock().await=Arc::new(fresh);return Json(json!({"configured":true})).into_response();
+                if query.get("operation").is_some_and(|operation|matches!(operation.as_str(),"configure-projection"|"configure-role-projection")) {
+                    let mut plugin=ScimPlugin::new().managed_connections(managed_options()).projection::<crate::TestSchema>(Arc::new(FixtureProjection{states:projection_states.clone(),fails:projection_fails.clone()}));if query.get("operation").is_some_and(|operation|operation=="configure-role-projection"){plugin=plugin.roles(Arc::new(FixtureRoles{observations:role_observations.clone(),stage:role_stage.clone()}));}
+                    let fresh=AuthBuilder::<crate::TestSchema>::new(config.clone()).store(crate::backend::store(config,database.clone())).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).plugin(alibi::plugins::EmailPasswordPlugin::new()).plugin(plugin).build().await.unwrap();*auth.lock().await=Arc::new(fresh);return Json(json!({"configured":true})).into_response();
                 }
                 if query.get("operation").is_some_and(|operation|operation=="restart-managed") {
                     let fresh=AuthBuilder::<crate::TestSchema>::new(config.clone()).store(crate::backend::store(config,database.clone())).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).plugin(ScimPlugin::new().managed_connections(managed_options())).build().await.unwrap();
                     *auth.lock().await=Arc::new(fresh);return Json(json!({"restarted":true})).into_response();
                 }
                 let auth=auth.lock().await.clone();
+                if query.get("operation").is_some_and(|operation|operation=="seed-role-groups") {
+                    for(id,cid,domain,display,external)in[("group-a","conn-a","tenant-a","Admins","administrators"),("group-b","conn-a","tenant-a","Admin backups","administrators-b"),("group-c","conn-a","tenant-b","Foreign domain","foreign-domain"),("group-d","conn-other","tenant-a","Foreign connection","foreign-connection")]{
+                        _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,externalId,externalIdKey,orderKey,createdAt,updatedAt) VALUES (?,?,?,0,?,?,?,?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",vec![id.into(),cid.into(),domain.into(),display.into(),id.into(),external.into(),id.into(),id.into()])).await.unwrap();
+                        _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimGroupMember (id,connectionId,groupId,scimUserId,membershipKey,createdAt) VALUES (?,'conn-a',?,'scim-alias-a',?,'2026-01-02T03:04:05.000Z')",[id.into(),id.into(),id.into()])).await.unwrap();
+                    }
+                    return Json(json!({"seeded":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="role-observations") {let observations=role_observations.lock().unwrap().clone();return Json(observations).into_response();}
+                if query.get("operation").is_some_and(|operation|operation=="rename-role-source") {_=database.execute_unprepared("UPDATE scimGroup SET externalId='administrators-renamed' WHERE id='group-a'").await.unwrap();return Json(json!({"renamed":true})).into_response();}
+                if query.get("operation").is_some_and(|operation|operation=="role-failure-stage") {let input:Value=serde_json::from_slice(&bytes).unwrap();let stage=input["stage"].as_u64().unwrap() as u8;role_stage.store(stage,Ordering::SeqCst);return Json(json!({"stage":stage})).into_response();}
                 if query.get("operation").is_some_and(|operation|operation=="seed-projection") {
                     let output=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("email-password","signUpEmail").with_body(&json!({"email":"projection-owner@example.com","password":"a-native-password-123","name":"Native owner"})).unwrap(),EndpointOptions::default()).await.unwrap().into_response().unwrap();let signed:Value=serde_json::from_slice(&output.body).unwrap();let uid=signed["user"]["id"].as_str().unwrap();
                     _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimSubject (id,userId,revision,createdAt,updatedAt) VALUES ('projection-subject',?,0,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",[uid.into()])).await.unwrap();
@@ -383,4 +397,56 @@ async fn query_json_rows(database: &DatabaseConnection, sql: &str) -> Value {
             .map(|row| serde_json::from_str(&row.try_get::<String>("", "row").unwrap()).unwrap())
             .collect(),
     )
+}
+
+struct FixtureRoles {
+    observations: Arc<Mutex<Value>>,
+    stage: Arc<AtomicU8>,
+}
+#[async_trait::async_trait]
+impl ScimRoleProjection<crate::TestSchema> for FixtureRoles {
+    async fn map(
+        &self,
+        input: &ScimRoleMappingInput,
+        database: &dyn AuthTransaction<crate::TestSchema>,
+    ) -> AuthResult<Option<Vec<String>>> {
+        self.observations.lock().unwrap()["mapped"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::to_value(input).unwrap());
+        if self.stage.load(Ordering::SeqCst) == 1 {
+            _ = database
+                .update_user(
+                    &input.user_id,
+                    alibi::UpdateUser {
+                        name: Some("Should roll back mapping".into()),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            return Err(alibi::AuthError::internal("application rejected mapping"));
+        }
+        Ok(Some(vec![
+            " admin ".into(),
+            "".into(),
+            "admin".into(),
+            "missing".into(),
+        ]))
+    }
+    async fn exists(
+        &self,
+        input: &ScimRoleExistenceInput,
+        _database: &dyn AuthTransaction<crate::TestSchema>,
+    ) -> AuthResult<bool> {
+        self.observations.lock().unwrap()["checked"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::to_value(input).unwrap());
+        if self.stage.load(Ordering::SeqCst) == 2 {
+            return Err(alibi::AuthError::internal(
+                "application rejected validation",
+            ));
+        }
+        Ok(input.role == "admin")
+    }
 }

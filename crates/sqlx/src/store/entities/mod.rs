@@ -41,3 +41,7 @@ pub mod scim_user;
 pub mod scim_subject;
 
 pub mod scim_projection_grant;
+
+pub mod scim_group;
+
+pub mod scim_group_member;

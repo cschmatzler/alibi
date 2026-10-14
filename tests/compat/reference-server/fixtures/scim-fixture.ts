@@ -23,12 +23,17 @@ export async function scimFixture(base: BetterAuthOptions) {
   let auth = betterAuth(options);
   const projectionStates: unknown[] = [];
   let projectionFails = false;
+  const roleMapped: unknown[] = [];
+  const roleChecked: unknown[] = [];
+  let roleStage = 0;
   return async (request: Request): Promise<Response | undefined> => {
     const path = new URL(request.url).pathname;
     if (path.startsWith("/__test/profiles/scim/api/auth/")) return auth.handler(request);
     if (path === "/__test/server-api/scim") {
       const query = new URL(request.url).searchParams;
-      if (query.get("operation") === "configure-projection") {
+      if (
+        ["configure-projection", "configure-role-projection"].includes(query.get("operation") ?? "")
+      ) {
         options.plugins = [
           scim({
             connections: [],
@@ -38,6 +43,29 @@ export async function scimFixture(base: BetterAuthOptions) {
               maxActiveCredentials: 2,
             },
             projection: {
+              ...(query.get("operation") === "configure-role-projection"
+                ? {
+                    roles: {
+                      map: async (input: any, context: any) => {
+                        roleMapped.push(input);
+                        if (roleStage === 1) {
+                          await context.database.update({
+                            model: "user",
+                            where: [{ field: "id", value: input.userId }],
+                            update: { name: "Should roll back mapping" },
+                          });
+                          throw new Error("application rejected mapping");
+                        }
+                        return [" admin ", "", "admin", "missing"];
+                      },
+                      exists: async (input: any) => {
+                        roleChecked.push(input);
+                        if (roleStage === 2) throw new Error("application rejected validation");
+                        return input.role === "admin";
+                      },
+                    },
+                  }
+                : {}),
               reconcileUser: async (input, context) => {
                 await context.database.update({
                   model: "user",
@@ -58,6 +86,48 @@ export async function scimFixture(base: BetterAuthOptions) {
         ];
         auth = betterAuth(options);
         return new Response(JSON.stringify({ configured: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "seed-role-groups") {
+        for (const [id, cid, domain, display, external] of [
+          ["group-a", "conn-a", "tenant-a", "Admins", "administrators"],
+          ["group-b", "conn-a", "tenant-a", "Admin backups", "administrators-b"],
+          ["group-c", "conn-a", "tenant-b", "Foreign domain", "foreign-domain"],
+          ["group-d", "conn-other", "tenant-a", "Foreign connection", "foreign-connection"],
+        ] as const) {
+          options.database
+            .query(
+              "INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,externalId,externalIdKey,orderKey,createdAt,updatedAt) VALUES (?,?,?,0,?,?,?,?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
+            )
+            .run(id, cid, domain, display, id, external, id, id);
+          options.database
+            .query(
+              "INSERT INTO scimGroupMember (id,connectionId,groupId,scimUserId,membershipKey,createdAt) VALUES (?,'conn-a',?,'scim-alias-a',?,'2026-01-02T03:04:05.000Z')",
+            )
+            .run(id, id, id);
+        }
+        return new Response(JSON.stringify({ seeded: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "role-observations") {
+        return new Response(JSON.stringify({ mapped: roleMapped, checked: roleChecked }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "rename-role-source") {
+        options.database.exec(
+          "UPDATE scimGroup SET externalId='administrators-renamed' WHERE id='group-a'",
+        );
+        return new Response(JSON.stringify({ renamed: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "role-failure-stage") {
+        const input = (await request.json()) as any;
+        roleStage = input.stage;
+        return new Response(JSON.stringify({ stage: roleStage }), {
           headers: { "content-type": "application/json" },
         });
       }
