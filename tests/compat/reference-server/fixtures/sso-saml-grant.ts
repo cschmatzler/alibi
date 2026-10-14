@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, sign as signBytes } from "node:crypto";
 import { inflateRawSync } from "node:zlib";
 
 import { XMLParser } from "fast-xml-parser";
@@ -9,6 +9,7 @@ export async function samlGrant(
   wrongKey: boolean,
   verified?: string[],
   unsolicited = false,
+  unsupportedSignature = false,
 ) {
   const url = new URL(authorization);
   const request = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true }).parse(
@@ -35,7 +36,7 @@ export async function samlGrant(
       : `<saml:Attribute Name="verified-mailbox">${verified.map((value) => `<saml:AttributeValue>${esc(value)}</saml:AttributeValue>`).join("")}</saml:Attribute>`;
   let xml = `<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="${responseId}" Version="2.0" IssueInstant="${instant}" Destination="${esc(recipient)}" InResponseTo="${esc(requestId)}"><saml:Issuer>https://idp.example.test/entity</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status><saml:Assertion ID="${assertionId}" Version="2.0" IssueInstant="${instant}"><saml:Issuer>https://idp.example.test/entity</saml:Issuer><saml:Subject><saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">${esc(email)}</saml:NameID><saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"><saml:SubjectConfirmationData InResponseTo="${esc(requestId)}" Recipient="${esc(recipient)}" NotOnOrAfter="${expires}"/></saml:SubjectConfirmation></saml:Subject><saml:Conditions NotBefore="${before}" NotOnOrAfter="${expires}"><saml:AudienceRestriction><saml:Audience>${esc(issuer)}</saml:Audience></saml:AudienceRestriction></saml:Conditions><saml:AuthnStatement AuthnInstant="${instant}" SessionIndex="session-index"><saml:AuthnContext><saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</saml:AuthnContextClassRef></saml:AuthnContext></saml:AuthnStatement><saml:AttributeStatement><saml:Attribute Name="email"><saml:AttributeValue>${esc(email)}</saml:AttributeValue></saml:Attribute><saml:Attribute Name="displayName"><saml:AttributeValue>SSO employee</saml:AttributeValue></saml:Attribute>${verification}</saml:AttributeStatement></saml:Assertion></samlp:Response>`;
   if (unsolicited) xml = xml.replaceAll(` InResponseTo="${esc(requestId)}"`, "");
-  const signer = await samlSigner(wrongKey);
+  const signer = await samlSigner(wrongKey, unsupportedSignature);
   signer.addReference({
     xpath: "//*[local-name()='Assertion']",
     transforms: [
@@ -59,7 +60,7 @@ export async function samlGrant(
   };
 }
 
-async function samlSigner(wrongKey: boolean) {
+async function samlSigner(wrongKey: boolean, unsupportedSignature = false) {
   const privateKey = await Bun.file(
     new URL(
       wrongKey
@@ -71,12 +72,25 @@ async function samlSigner(wrongKey: boolean) {
   const cert = await Bun.file(
     new URL("../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
   ).text();
-  return new SignedXml({
+  const signer = new SignedXml({
     privateKey,
     publicCert: cert,
-    signatureAlgorithm: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+    signatureAlgorithm: unsupportedSignature
+      ? "http://www.w3.org/2001/04/xmldsig-more#rsa-md5"
+      : "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
     canonicalizationAlgorithm: "http://www.w3.org/2001/10/xml-exc-c14n#",
   });
+  if (unsupportedSignature) {
+    (signer.SignatureAlgorithms as any)["http://www.w3.org/2001/04/xmldsig-more#rsa-md5"] = class {
+      getAlgorithmName() {
+        return "http://www.w3.org/2001/04/xmldsig-more#rsa-md5";
+      }
+      getSignature(signedInfo: string, key: any) {
+        return signBytes("RSA-MD5", Buffer.from(signedInfo), key).toString("base64");
+      }
+    };
+  }
+  return signer;
 }
 
 export async function signedLogout(xml: string, wrongKey: boolean) {

@@ -2,7 +2,20 @@
 use alibi::plugins::SsoSamlEncryptionPolicy;
 pub(crate) fn policy(mode: &str) -> SsoSamlEncryptionPolicy {
     let mut policy = SsoSamlEncryptionPolicy::default();
-    if mode.contains("policy-key-denied") {
+    if mode.contains("deprecated-data-") {
+        policy.on_deprecated = if mode.ends_with("allow") {
+            alibi::plugins::SsoDeprecatedAlgorithmBehavior::Allow
+        } else if mode.ends_with("warn") {
+            alibi::plugins::SsoDeprecatedAlgorithmBehavior::Warn
+        } else {
+            alibi::plugins::SsoDeprecatedAlgorithmBehavior::Reject
+        };
+        if mode.ends_with("override") {
+            policy.allowed_data_encryption_algorithms = Some(vec![
+                "http://www.w3.org/2001/04/xmlenc#tripledes-cbc".into(),
+            ]);
+        }
+    } else if mode.contains("policy-key-denied") {
         policy.allowed_key_encryption_algorithms =
             Some(vec!["http://www.w3.org/2001/04/xmlenc#rsa-1_5".into()]);
     } else if mode.contains("policy-data-denied") {

@@ -5,6 +5,12 @@ import { Cookie } from "tough-cookie";
 import { compatScenario } from "../../../support/scenario";
 import { encryptSamlGrant } from "./encrypt-saml-grant";
 for (const mode of [
+  "unsupported-legacy-signature",
+  "encrypted-deprecated-data-reject",
+  "encrypted-deprecated-data-allow",
+  "encrypted-deprecated-data-warn",
+  "encrypted-deprecated-data-override",
+
   "encrypted-policy-key-denied",
   "encrypted-policy-data-denied",
   "encrypted-policy-key-allowed",
@@ -27,8 +33,12 @@ for (const mode of [
   "encrypted-wrong-pass",
   "encrypted-missing-pass",
 ]) {
+  const signatureDenied = mode === "unsupported-legacy-signature";
+  const deprecated = mode.startsWith("encrypted-deprecated-");
+  const deprecatedRejected = mode.endsWith("deprecated-data-reject");
   const policyDenied =
-    mode.includes("encrypted-policy-") && !mode.includes("allowed") && !mode.includes("outer");
+    deprecatedRejected ||
+    (mode.includes("encrypted-policy-") && !mode.includes("allowed") && !mode.includes("outer"));
   const policyKey = mode.includes("policy-key");
   const outerPolicy = mode.includes("policy-outer");
   const xmlMetadata = mode === "xml";
@@ -50,7 +60,7 @@ for (const mode of [
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            mode: mode.startsWith("encrypted-policy-") ? mode : "default",
+            mode: mode.startsWith("encrypted-policy-") || deprecated ? mode : "default",
             ...input,
           }),
           redirect: "manual",
@@ -73,21 +83,23 @@ for (const mode of [
       const cert = await Bun.file(
         new URL("../../../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
       ).text();
-      const providerId = mode.startsWith("encrypted-policy-")
-        ? mode
-        : mode === "encrypted-response" ||
-            mode === "encrypted-outer-only" ||
-            mode.startsWith("encrypted-aes-")
-          ? `${mode}-acs-provider`
-          : keyFailure
+      const providerId = signatureDenied
+        ? "unsupported-legacy-signature-provider"
+        : mode.startsWith("encrypted-policy-") || deprecated
+          ? mode
+          : mode === "encrypted-response" ||
+              mode === "encrypted-outer-only" ||
+              mode.startsWith("encrypted-aes-")
             ? `${mode}-acs-provider`
-            : mode === "encrypted-key"
-              ? "encrypted-key-acs-provider"
-              : encrypted
-                ? "encrypted-acs-provider"
-                : xmlMetadata
-                  ? "xml-acs-provider"
-                  : "acs-provider";
+            : keyFailure
+              ? `${mode}-acs-provider`
+              : mode === "encrypted-key"
+                ? "encrypted-key-acs-provider"
+                : encrypted
+                  ? "encrypted-acs-provider"
+                  : xmlMetadata
+                    ? "xml-acs-provider"
+                    : "acs-provider";
       const certificate = cert
         .split("\n")
         .filter((line) => !line.startsWith("-----"))
@@ -169,14 +181,24 @@ for (const mode of [
         expect(authorizationURL.pathname).toBe(xmlMetadata ? "/from-xml" : "/sso");
         const authorization = ((await started.json()) as any).url;
         let grant = (await (
-          await control({ action: "saml-grant", authorization, email, wrongKey })
+          await control({
+            action: "saml-grant",
+            authorization,
+            email,
+            wrongKey,
+            unsupportedSignature: signatureDenied,
+          })
         ).json()) as any;
         if (encrypted) {
           grant = encryptSamlGrant(
             grant,
             cert,
             mode === "encrypted-outer-only",
-            mode.startsWith("encrypted-aes-") ? mode.slice("encrypted-".length) : "aes-256-gcm",
+            deprecated
+              ? "des-ede3-cbc"
+              : mode.startsWith("encrypted-aes-")
+                ? mode.slice("encrypted-".length)
+                : "aes-256-gcm",
           );
           if (mode === "encrypted-tampered") {
             const xml = Buffer.from(grant.SAMLResponse, "base64").toString();
@@ -224,9 +246,14 @@ for (const mode of [
         const account = (await (
           await control({ action: "saml-account-row", providerId, accountId: email })
         ).json()) as any;
-        if (wrongKey || keyFailure || policyDenied) {
+        if (wrongKey || keyFailure || policyDenied || signatureDenied) {
           expect(location.pathname).toBe("/failed");
-          if (policyDenied && !wrongKey) {
+          if (deprecatedRejected && !wrongKey) {
+            expect(location.searchParams.get("error")).toBe("saml_deprecated_algorithm");
+            expect(location.searchParams.get("error_description")).toBe(
+              "SAML response uses deprecated data encryption algorithm: http://www.w3.org/2001/04/xmlenc#tripledes-cbc. Please configure your IdP to use AES-GCM.",
+            );
+          } else if (policyDenied && !wrongKey) {
             expect(location.searchParams.get("error")).toBe("saml_algorithm_not_allowed");
             expect(location.searchParams.get("error_description")).toBe(
               policyKey

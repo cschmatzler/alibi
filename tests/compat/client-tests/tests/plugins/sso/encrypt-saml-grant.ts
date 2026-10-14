@@ -29,8 +29,9 @@ export function encryptSamlGrant(
     assertion = assertion.replace(/<ds:Signature\b[^>]*>[\s\S]*?<\/ds:Signature>/, "");
   }
   const gcm = algorithm.endsWith("gcm");
-  const secret = randomBytes(algorithm.includes("128") ? 16 : 32);
-  const iv = randomBytes(gcm ? 12 : 16);
+  const tripleDes = algorithm === "des-ede3-cbc";
+  const secret = randomBytes(tripleDes ? 24 : algorithm.includes("128") ? 16 : 32);
+  const iv = randomBytes(tripleDes ? 8 : gcm ? 12 : 16);
   const cipher = createCipheriv(algorithm, secret, iv);
   const ciphertext = Buffer.concat([
     iv,
@@ -48,7 +49,9 @@ export function encryptSamlGrant(
     },
     secret,
   );
-  const algorithmURI = `http://www.w3.org/${gcm ? "2009/xmlenc11" : "2001/04/xmlenc"}#${algorithm.replace("aes-", "aes")}`;
+  const algorithmURI = tripleDes
+    ? "http://www.w3.org/2001/04/xmlenc#tripledes-cbc"
+    : `http://www.w3.org/${gcm ? "2009/xmlenc11" : "2001/04/xmlenc"}#${algorithm.replace("aes-", "aes")}`;
   const envelope = `<saml:EncryptedAssertion><xenc:EncryptedData xmlns:xenc="http://www.w3.org/2001/04/xmlenc#" Type="http://www.w3.org/2001/04/xmlenc#Element"><xenc:EncryptionMethod Algorithm="${algorithmURI}"/><ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><xenc:EncryptedKey><xenc:EncryptionMethod Algorithm="http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p"/><xenc:CipherData><xenc:CipherValue>${wrapped.toString("base64")}</xenc:CipherValue></xenc:CipherData></xenc:EncryptedKey></ds:KeyInfo><xenc:CipherData><xenc:CipherValue>${ciphertext.toString("base64")}</xenc:CipherValue></xenc:CipherData></xenc:EncryptedData></saml:EncryptedAssertion>`;
   return {
     ...grant,

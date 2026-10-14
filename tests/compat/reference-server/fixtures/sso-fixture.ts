@@ -375,6 +375,11 @@ export async function ssoFixture(base: BetterAuthOptions) {
             }
           : { allowedSignatureAlgorithms: [], allowedDigestAlgorithms: [] };
   const encryptionModes = [
+    "encrypted-deprecated-data-reject",
+    "encrypted-deprecated-data-allow",
+    "encrypted-deprecated-data-warn",
+    "encrypted-deprecated-data-override",
+
     "encrypted-policy-key-denied",
     "encrypted-policy-data-denied",
     "encrypted-policy-key-allowed",
@@ -384,17 +389,32 @@ export async function ssoFixture(base: BetterAuthOptions) {
     "encrypted-policy-outer-key-denied",
   ];
   const encryptionAlgorithms = (mode: string) =>
-    mode.includes("policy-key-denied")
-      ? { allowedKeyEncryptionAlgorithms: ["http://www.w3.org/2001/04/xmlenc#rsa-1_5"] }
-      : mode.includes("policy-data-denied")
-        ? { allowedDataEncryptionAlgorithms: ["http://www.w3.org/2009/xmlenc11#aes128-gcm"] }
-        : mode.includes("policy-key-allowed")
-          ? { allowedKeyEncryptionAlgorithms: ["http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p"] }
-          : mode.includes("policy-data-allowed")
-            ? { allowedDataEncryptionAlgorithms: ["http://www.w3.org/2009/xmlenc11#aes256-gcm"] }
-            : mode.includes("policy-data-empty")
-              ? { allowedDataEncryptionAlgorithms: [] }
-              : { allowedKeyEncryptionAlgorithms: [] };
+    mode.includes("deprecated-data-")
+      ? mode.endsWith("override")
+        ? {
+            onDeprecated: "reject" as const,
+            allowedDataEncryptionAlgorithms: ["http://www.w3.org/2001/04/xmlenc#tripledes-cbc"],
+          }
+        : {
+            onDeprecated: (mode.endsWith("allow")
+              ? "allow"
+              : mode.endsWith("warn")
+                ? "warn"
+                : "reject") as "allow" | "warn" | "reject",
+          }
+      : mode.includes("policy-key-denied")
+        ? { allowedKeyEncryptionAlgorithms: ["http://www.w3.org/2001/04/xmlenc#rsa-1_5"] }
+        : mode.includes("policy-data-denied")
+          ? { allowedDataEncryptionAlgorithms: ["http://www.w3.org/2009/xmlenc11#aes128-gcm"] }
+          : mode.includes("policy-key-allowed")
+            ? {
+                allowedKeyEncryptionAlgorithms: ["http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p"],
+              }
+            : mode.includes("policy-data-allowed")
+              ? { allowedDataEncryptionAlgorithms: ["http://www.w3.org/2009/xmlenc11#aes256-gcm"] }
+              : mode.includes("policy-data-empty")
+                ? { allowedDataEncryptionAlgorithms: [] }
+                : { allowedKeyEncryptionAlgorithms: [] };
   const instances = new Map([
     ...encryptionModes.map(
       (mode) =>
@@ -714,6 +734,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
             Boolean(input.wrongKey),
             input.verified,
             Boolean(input.unsolicited),
+            Boolean(input.unsupportedSignature),
           ),
         ),
         { headers: { "content-type": "application/json" } },

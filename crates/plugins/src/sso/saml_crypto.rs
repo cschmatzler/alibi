@@ -474,6 +474,28 @@ pub(super) fn validate_signature_references(
 ) -> Result<(), Failure> {
     // Same-document, whole-node references prevent file/network resolution and filtered-claim signatures.
     for node in doc.descendants(root) {
+        // Cipher support must not enable signature/digest algorithms absent
+        // from the pinned XML signature verifier.
+        use bergshamra::core::algorithm;
+        if doc.element(node).is_some_and(|element| {
+            element.name.matches(Some(DSIG), "SignatureMethod")
+                || element.name.matches(Some(DSIG), "DigestMethod")
+        }) && attribute(doc, node, "Algorithm").is_some_and(|uri| {
+            [
+                algorithm::RSA_MD5,
+                algorithm::RSA_RIPEMD160,
+                algorithm::ECDSA_RIPEMD160,
+                algorithm::HMAC_MD5,
+                algorithm::HMAC_RIPEMD160,
+                algorithm::DSA_SHA1,
+                algorithm::DSA_SHA256,
+                algorithm::MD5,
+                algorithm::RIPEMD160,
+            ]
+            .contains(&uri)
+        }) {
+            return Err(invalid());
+        }
         if doc
             .element(node)
             .is_some_and(|element| element.name.matches(Some(DSIG), "Reference"))
