@@ -290,6 +290,10 @@ impl<'a> Exec<'a> {
         self.config = Some(config);
         self
     }
+    pub(crate) fn sso_fields(self) -> Option<&'a alibi_core::field_policy::SessionFields> {
+        self.config
+            .map(|config| &config.advanced.database.sso_provider_fields)
+    }
     pub(crate) fn schema_name(self) -> Option<&'a str> {
         self.config
             .and_then(|config| config.advanced.database.schema_name.as_deref())

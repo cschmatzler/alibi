@@ -1,4 +1,5 @@
 //! Enterprise single-sign-on provider registration.
+mod additional_fields;
 mod callback;
 mod callback_id_token;
 mod configured;
@@ -212,6 +213,11 @@ impl SsoPlugin {
                 "You have reached the maximum number of SSO providers",
             ));
         }
+        let extras = additional_fields::parse(
+            &ctx.config.advanced.database.sso_provider_fields,
+            input,
+            true,
+        )?;
         let body = input.to_json_value()?;
         let provider_id = required_string(&body, "providerId")?;
         let issuer = required_string(&body, "issuer")?;
@@ -320,9 +326,14 @@ impl SsoPlugin {
                 oidc_config: oidc,
                 saml_config: saml,
                 domain_verified: self.config.domain_verification.then_some(false),
+                additional_fields: extras,
             })
             .await?;
         let mut output = serde_json::to_value(&provider)?;
+        additional_fields::filter(
+            &ctx.config.advanced.database.sso_provider_fields,
+            &mut output,
+        );
         let object = output
             .as_object_mut()
             .ok_or_else(|| AuthError::internal("SSO provider serialization failed"))?;
@@ -638,7 +649,7 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
     fn validate_endpoint(
         &self,
         call: &EndpointCall,
-        _ctx: &AuthContext<S>,
+        ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointInput> {
         if call.operation_id() == "sloEndpoint" {
             return Ok(EndpointInput {
@@ -687,7 +698,16 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         }
         if call.operation_id() == "updateSSOProvider" {
             return Ok(EndpointInput {
-                body: Some(provider_update::validate_update(call.body())?),
+                body: Some({
+                    let mut output = provider_update::validate_update(call.body())?;
+                    additional_fields::validate_and_copy(
+                        &ctx.config.advanced.database.sso_provider_fields,
+                        call.body(),
+                        &mut output,
+                        false,
+                    )?;
+                    output
+                }),
                 query: call.query().cloned(),
             });
         }
@@ -716,7 +736,16 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
             });
         }
         Ok(EndpointInput {
-            body: Some(validate(call.body())?),
+            body: Some({
+                let mut output = validate(call.body())?;
+                additional_fields::validate_and_copy(
+                    &ctx.config.advanced.database.sso_provider_fields,
+                    call.body(),
+                    &mut output,
+                    true,
+                )?;
+                output
+            }),
             query: call.query().cloned(),
         })
     }

@@ -374,6 +374,34 @@ export async function ssoFixture(base: BetterAuthOptions) {
     ],
   };
   await (await getMigrations(storageOptions)).runMigrations();
+  const additionalDatabase = new Database(":memory:");
+  const additionalOptions = {
+    ...options,
+    database: additionalDatabase,
+    plugins: [
+      username(),
+      sso({
+        schema: {
+          ssoProvider: {
+            additionalFields: {
+              label: { type: "string" as const, required: true, fieldName: "application_label" },
+              privateNote: { type: "string" as const, required: false, returned: false },
+              managed: {
+                type: "boolean" as const,
+                required: false,
+                input: false,
+                defaultValue: false,
+              },
+              tier: { type: "number" as const, required: false, defaultValue: 2 },
+              tags: { type: "string[]" as const, required: false },
+              settings: { type: "json" as const, required: false },
+            },
+          },
+        },
+      }),
+    ],
+  };
+  await (await getMigrations(additionalOptions)).runMigrations();
   const globalModes = [
     "idp-global-relative-true",
     "idp-global-relative-false",
@@ -446,6 +474,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
                 : { allowedKeyEncryptionAlgorithms: [] };
   const instances = new Map([
     ["storage-schema", betterAuth(storageOptions)],
+    ["additional-fields", betterAuth(additionalOptions)],
     ...encryptionModes.map(
       (mode) =>
         [
@@ -558,6 +587,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
     }
     const mode = [
       "storage-schema",
+      "additional-fields",
       ...encryptionModes,
       ...algorithmModes,
       ...globalModes,
@@ -1047,25 +1077,27 @@ export async function ssoFixture(base: BetterAuthOptions) {
       instances.set(
         mode,
         betterAuth(
-          mode === "storage-schema"
-            ? storageOptions
-            : mode === "no-signup"
-              ? noSignupOptions
-              : mode === "validation"
-                ? validationOptions
-                : mode === "trusted-claims"
-                  ? trustedClaimsOptions
-                  : mode === "signed-request-slo"
-                    ? signedRequestSloOptions
-                    : mode === "signed-slo"
-                      ? signedSloOptions
-                      : mode === "domain"
-                        ? domainOptions
-                        : mode === "shared"
-                          ? sharedOptions
-                          : mode === "slo"
-                            ? sloOptions
-                            : options,
+          mode === "additional-fields"
+            ? additionalOptions
+            : mode === "storage-schema"
+              ? storageOptions
+              : mode === "no-signup"
+                ? noSignupOptions
+                : mode === "validation"
+                  ? validationOptions
+                  : mode === "trusted-claims"
+                    ? trustedClaimsOptions
+                    : mode === "signed-request-slo"
+                      ? signedRequestSloOptions
+                      : mode === "signed-slo"
+                        ? signedSloOptions
+                        : mode === "domain"
+                          ? domainOptions
+                          : mode === "shared"
+                            ? sharedOptions
+                            : mode === "slo"
+                              ? sloOptions
+                              : options,
         ),
       );
       return new Response(JSON.stringify({ restarted: true }), {

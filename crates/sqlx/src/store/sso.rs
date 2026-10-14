@@ -74,11 +74,12 @@ where
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
         self.exec()
-            .fetch_all::<Model>(sql)
+            .fetch_all::<ProviderRow>(sql)
             .await
-            .map(|rows| rows.into_iter().map(Into::into).collect())
+            .and_then(|rows| rows.into_iter().map(ProviderRow::into_provider).collect())
     }
     async fn create_sso_provider(&self, row: SsoProvider) -> AuthResult<SsoProvider> {
+        let extra = row.additional_fields;
         let mut active = ActiveRow::new();
         active.set("id", row.id);
         active.set("issuer", row.issuer);
@@ -89,16 +90,16 @@ where
         active.set("oidcConfig", row.oidc_config);
         active.set("samlConfig", row.saml_config);
         active.set("domainVerified", row.domain_verified);
-        insert_provider(self.exec(), &active).await.map(Into::into)
+        insert_provider(self.exec(), &active, &extra).await
     }
     async fn get_sso_provider(&self, provider_id: &str) -> AuthResult<Option<SsoProvider>> {
         let mut sql = provider_select(self.exec());
         sql.push(" WHERE ");
         sql.compare(Model::TABLE, "providerId", " = ", provider_id);
         self.exec()
-            .fetch_optional::<Model>(sql)
+            .fetch_optional::<ProviderRow>(sql)
             .await
-            .map(|row| row.map(Into::into))
+            .and_then(|row| row.map(ProviderRow::into_provider).transpose())
     }
     async fn list_sso_providers_by_user(&self, user_id: &str) -> AuthResult<Vec<SsoProvider>> {
         let mut sql = provider_select(self.exec());
@@ -107,9 +108,9 @@ where
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
         self.exec()
-            .fetch_all::<Model>(sql)
+            .fetch_all::<ProviderRow>(sql)
             .await
-            .map(|rows| rows.into_iter().map(Into::into).collect())
+            .and_then(|rows| rows.into_iter().map(ProviderRow::into_provider).collect())
     }
 }
 
@@ -138,10 +139,10 @@ where
         read.push(" WHERE ");
         read.compare(Model::TABLE, "id", " = ", id);
         let row: SsoProvider = exec
-            .fetch_optional::<Model>(read)
+            .fetch_optional::<ProviderRow>(read)
             .await?
             .ok_or_else(|| alibi_core::AuthError::not_found("Provider not found"))?
-            .into();
+            .into_provider()?;
         Ok(Some(row))
     }
     pub(super) async fn update_sso_provider_with(
@@ -174,6 +175,7 @@ where
                 });
             }
         }
+        let extra = update.provider.additional_fields;
         let mut active = ActiveRow::new();
         active.set("id", id);
         active.set("issuer", update.provider.issuer);
@@ -181,9 +183,7 @@ where
         active.set("oidcConfig", update.provider.oidc_config);
         active.set("samlConfig", update.provider.saml_config);
         active.set("domainVerified", update.provider.domain_verified);
-        update_provider(exec, &active)
-            .await
-            .map(|row| row.map(Into::into))
+        update_provider(exec, &active, &extra).await
     }
     pub(super) async fn delete_sso_provider_with(
         &self,
@@ -220,7 +220,25 @@ where
     }
 }
 
-fn provider_columns(sql: &mut crate::sql::Sql, qualified: bool) {
+#[derive(sqlx::FromRow)]
+struct ProviderRow {
+    #[sqlx(flatten)]
+    model: Model,
+    __alibi_sso_fields: String,
+}
+impl ProviderRow {
+    fn into_provider(self) -> AuthResult<SsoProvider> {
+        let mut provider: SsoProvider = self.model.into();
+        provider.additional_fields = serde_json::from_str(&self.__alibi_sso_fields)?;
+        Ok(provider)
+    }
+}
+fn provider_columns(
+    sql: &mut crate::sql::Sql,
+    qualified: bool,
+    fields: Option<&alibi_core::field_policy::SessionFields>,
+) {
+    use alibi_core::store::{SsoFieldType, sso_field_column};
     for (index, column) in Model::COLUMN_NAMES.iter().enumerate() {
         if index > 0 {
             sql.push(", ");
@@ -233,37 +251,125 @@ fn provider_columns(sql: &mut crate::sql::Sql, qualified: bool) {
         sql.push(" AS ");
         sql.ident(column);
     }
+    sql.push(", CAST(");
+    let postgres = sql.engine() == crate::pool::Engine::Postgres;
+    sql.push(if postgres {
+        "jsonb_build_object("
+    } else {
+        "json_object("
+    });
+    if let Some(fields) = fields {
+        for (index, (name, field)) in fields.0.iter().enumerate() {
+            if index > 0 {
+                sql.push(", ");
+            }
+            sql.bind(name);
+            sql.push(", ");
+            let kind = SsoFieldType::from_config(field);
+            let emit = |sql: &mut crate::sql::Sql| {
+                let column = sso_field_column(name, field);
+                if qualified {
+                    sql.column(Model::TABLE, column);
+                } else {
+                    sql.ident(column);
+                }
+            };
+            if !postgres && kind == SsoFieldType::Boolean {
+                sql.push("json(CASE WHEN ");
+                emit(sql);
+                sql.push(" IS NULL THEN 'null' WHEN ");
+                emit(sql);
+                sql.push(" THEN 'true' ELSE 'false' END)");
+            } else if !postgres && kind == SsoFieldType::Json {
+                sql.push("json(");
+                emit(sql);
+                sql.push(")");
+            } else {
+                emit(sql);
+            }
+        }
+    }
+    sql.push(") AS TEXT) AS ");
+    sql.ident("__alibi_sso_fields");
 }
 fn provider_select(exec: crate::pool::Exec<'_>) -> crate::sql::Sql {
     let mut sql = crate::sql::Sql::with(exec.engine(), "SELECT ");
-    provider_columns(&mut sql, true);
+    provider_columns(&mut sql, true, exec.sso_fields());
     sql.push(" FROM ");
     sql.ident(Model::TABLE);
     sql
 }
-async fn insert_provider(exec: crate::pool::Exec<'_>, active: &ActiveRow) -> AuthResult<Model> {
+async fn extra_bindings(
+    exec: crate::pool::Exec<'_>,
+    extra: &serde_json::Map<String, serde_json::Value>,
+) -> AuthResult<Vec<(String, crate::value::SqlValue)>> {
+    use crate::value::ColumnKind;
+    use alibi_core::store::{SsoFieldType, sso_field_column};
+    let mut values = Vec::new();
+    if let Some(fields) = exec.sso_fields() {
+        for (name, field) in &fields.0 {
+            if let Some(value) = extra.get(name) {
+                let kind = match SsoFieldType::from_config(field) {
+                    SsoFieldType::String => ColumnKind::Text,
+                    SsoFieldType::Boolean => ColumnKind::Boolean,
+                    SsoFieldType::Number => ColumnKind::Number,
+                    SsoFieldType::Json => ColumnKind::Json,
+                    SsoFieldType::Date => ColumnKind::Other,
+                };
+                let raw = crate::additional_fields::raw_value(
+                    &alibi_core::utils::json::JsValue::from(value.clone()),
+                )?;
+                values.push((
+                    sso_field_column(name, field).to_owned(),
+                    crate::additional_fields::prepare_value(exec, kind, raw).await?,
+                ));
+            }
+        }
+    }
+    Ok(values)
+}
+async fn insert_provider(
+    exec: crate::pool::Exec<'_>,
+    active: &ActiveRow,
+    extra: &serde_json::Map<String, serde_json::Value>,
+) -> AuthResult<SsoProvider> {
     let mut sql = crate::sql::Sql::with(exec.engine(), "INSERT INTO ");
     sql.ident(Model::TABLE);
     sql.push(" (");
-    let fields = active.present().collect::<Vec<_>>();
-    sql.column_list(&fields.iter().map(|(column, _)| *column).collect::<Vec<_>>());
+    let mut fields = active
+        .present()
+        .map(|(column, value)| (column.to_owned(), value.clone()))
+        .collect::<Vec<_>>();
+    fields.extend(extra_bindings(exec, extra).await?);
+    sql.column_list(
+        &fields
+            .iter()
+            .map(|(column, _)| column.as_str())
+            .collect::<Vec<_>>(),
+    );
     sql.push(") VALUES (");
     for (index, (column, value)) in fields.into_iter().enumerate() {
         if index > 0 {
             sql.push(", ");
         }
-        model::bind_model_value::<Model>(&mut sql, column, value.clone());
+        if Model::COLUMN_NAMES.contains(&column.as_str()) {
+            model::bind_model_value::<Model>(&mut sql, &column, value);
+        } else {
+            sql.bind(value);
+        }
     }
     sql.push(") RETURNING ");
-    provider_columns(&mut sql, false);
-    exec.fetch_optional::<Model>(sql)
+    provider_columns(&mut sql, false, exec.sso_fields());
+    exec.fetch_optional::<ProviderRow>(sql)
         .await?
-        .ok_or_else(|| alibi_core::AuthError::internal("Provider was not inserted"))
+        .ok_or_else(|| alibi_core::AuthError::internal("Provider was not inserted"))?
+        .into_provider()
 }
 async fn update_provider(
     exec: crate::pool::Exec<'_>,
     active: &ActiveRow,
-) -> AuthResult<Option<Model>> {
+    extra: &serde_json::Map<String, serde_json::Value>,
+) -> AuthResult<Option<SsoProvider>> {
     let id = active
         .get("id")
         .and_then(crate::model::ActiveValue::value)
@@ -274,17 +380,29 @@ async fn update_provider(
     let mut sql = crate::sql::Sql::with(exec.engine(), "UPDATE ");
     sql.ident(Model::TABLE);
     sql.push(" SET ");
-    for (index, (column, value)) in active.changed().enumerate() {
+    let mut fields = active
+        .changed()
+        .map(|(column, value)| (column.to_owned(), value.clone()))
+        .collect::<Vec<_>>();
+    fields.extend(extra_bindings(exec, extra).await?);
+    for (index, (column, value)) in fields.into_iter().enumerate() {
         if index > 0 {
             sql.push(", ");
         }
-        sql.ident(column);
+        sql.ident(&column);
         sql.push(" = ");
-        model::bind_model_value::<Model>(&mut sql, column, value.clone());
+        if Model::COLUMN_NAMES.contains(&column.as_str()) {
+            model::bind_model_value::<Model>(&mut sql, &column, value);
+        } else {
+            sql.bind(value);
+        }
     }
     sql.push(" WHERE ");
     sql.compare(Model::TABLE, "id", " = ", id);
     sql.push(" RETURNING ");
-    provider_columns(&mut sql, false);
-    exec.fetch_optional::<Model>(sql).await
+    provider_columns(&mut sql, false, exec.sso_fields());
+    exec.fetch_optional::<ProviderRow>(sql)
+        .await?
+        .map(ProviderRow::into_provider)
+        .transpose()
 }

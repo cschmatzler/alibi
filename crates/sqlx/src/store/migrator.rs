@@ -164,3 +164,27 @@ pub(crate) async fn has_table(exec: Exec<'_>, table: &str) -> AuthResult<bool> {
     sql.bind(table);
     Ok(exec.fetch_scalar::<i64>(sql).await?.unwrap_or_default() > 0)
 }
+
+pub(crate) async fn has_column(exec: Exec<'_>, table: &str, column: &str) -> AuthResult<bool> {
+    let mut sql = Sql::new(exec.engine());
+    match exec.engine() {
+        Engine::Sqlite => {
+            sql.push("SELECT COUNT(*) FROM pragma_table_info(");
+            sql.bind(table);
+            sql.push(") WHERE name = ");
+        }
+        Engine::Postgres => {
+            sql.push("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = ");
+            if let Some(schema) = exec.schema_name() {
+                sql.bind(schema);
+            } else {
+                sql.push("CURRENT_SCHEMA()");
+            }
+            sql.push(" AND table_name = ");
+            sql.bind(table);
+            sql.push(" AND column_name = ");
+        }
+    }
+    sql.bind(column);
+    Ok(exec.fetch_scalar::<i64>(sql).await?.unwrap_or_default() > 0)
+}
