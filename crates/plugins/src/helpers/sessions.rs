@@ -74,12 +74,22 @@ pub async fn response_session<S: alibi_core::AuthSchema>(
     Ok(Some(IssuedSession { user, session }))
 }
 
+fn completion_extensions() -> impl Iterator<Item = alibi_core::types::RequestExtensions> {
+    alibi_core::hooks::current_request_hook_context()
+        .map(|request| request.extensions)
+        .into_iter()
+        .chain(
+            alibi_core::endpoint::current_endpoint_call_context()
+                .map(|call| call.extensions().clone()),
+        )
+}
+
 pub(crate) fn record_completed_session<S: alibi_core::AuthSchema>(
     user: &S::User,
     session: &S::Session,
 ) {
-    if let Some(request) = alibi_core::hooks::current_request_hook_context() {
-        request.extensions.insert(CompletedSession::<S> {
+    for extensions in completion_extensions() {
+        extensions.insert(CompletedSession::<S> {
             user: user.clone(),
             session: session.clone(),
             user_view: None,
@@ -93,8 +103,8 @@ pub(crate) fn record_completed_session_record<S: alibi_core::AuthSchema>(
     user: &alibi_core::AdapterRecord<S::User>,
     session: &alibi_core::AdapterRecord<S::Session>,
 ) {
-    if let Some(request) = alibi_core::hooks::current_request_hook_context() {
-        request.extensions.insert(CompletedSession::<S> {
+    for extensions in completion_extensions() {
+        extensions.insert(CompletedSession::<S> {
             user: user.stored().clone(),
             session: session.stored().clone(),
             user_view: None,
@@ -109,22 +119,23 @@ pub(crate) fn record_completed_session_record<S: alibi_core::AuthSchema>(
 pub(crate) fn record_completed_session_user_view<S: alibi_core::AuthSchema>(
     original_user: &impl AuthUser,
     session: &impl alibi_core::AuthSession,
-    view: alibi_core::wire::UserView,
+    view: &alibi_core::wire::UserView,
 ) {
     use alibi_core::AuthSession;
-    if let Some(request) = alibi_core::hooks::current_request_hook_context()
-        && let Some(completed) = request.extensions.get::<CompletedSession<S>>()
-        && completed.user.id() == original_user.id()
-        && view.id == original_user.id().as_ref()
-        && completed.session.token() == session.token()
-    {
-        request.extensions.insert(CompletedSession::<S> {
-            user: completed.user.clone(),
-            session: completed.session.clone(),
-            user_view: Some(view),
-            user_record: completed.user_record.clone(),
-            session_record: completed.session_record.clone(),
-        });
+    for extensions in completion_extensions() {
+        if let Some(completed) = extensions.get::<CompletedSession<S>>()
+            && completed.user.id() == original_user.id()
+            && view.id == original_user.id().as_ref()
+            && completed.session.token() == session.token()
+        {
+            extensions.insert(CompletedSession::<S> {
+                user: completed.user.clone(),
+                session: completed.session.clone(),
+                user_view: Some(view.clone()),
+                user_record: completed.user_record.clone(),
+                session_record: completed.session_record.clone(),
+            });
+        }
     }
 }
 

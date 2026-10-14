@@ -209,7 +209,7 @@ pub(crate) async fn renew_session_snapshot<S: alibi_core::AuthSchema>(
         && let Some(original) = ctx.database.get_user_by_id(&user.id).await?
     {
         crate::helpers::record_completed_session::<S>(&original, &stored);
-        crate::helpers::record_completed_session_user_view::<S>(&original, &stored, user.clone());
+        crate::helpers::record_completed_session_user_view::<S>(&original, &stored, user);
     }
     Ok(())
 }

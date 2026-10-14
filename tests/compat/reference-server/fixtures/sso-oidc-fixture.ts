@@ -28,7 +28,7 @@ export function ssoOidcFixture() {
         if (discoveryCase === "issuer") document.issuer = "https://wrong-issuer.example.test";
         return Response.json(document);
       }
-      if (url.pathname === "/authorize") {
+      if (url.pathname === "/authorize" || url.pathname === "/oauth/authorize") {
         if (
           url.searchParams.get("client_id") !== "enterprise-client" ||
           url.searchParams.get("code_challenge_method") !== "S256"
@@ -45,7 +45,11 @@ export function ssoOidcFixture() {
         callback.searchParams.set("state", url.searchParams.get("state") ?? "");
         return new Response(null, { status: 302, headers: { location: callback.toString() } });
       }
-      if (url.pathname === "/token" || url.pathname === "/token-jwt") {
+      if (
+        url.pathname === "/token" ||
+        url.pathname === "/token-jwt" ||
+        url.pathname === "/oauth/token"
+      ) {
         const form = Object.fromEntries(new URLSearchParams(await request.text()));
         exchanges.push({ authorization: request.headers.get("authorization"), form });
         const stored = codes.get(form.code);
@@ -59,7 +63,10 @@ export function ssoOidcFixture() {
                 "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" &&
               (await verifyClientAssertion(form.client_assertion!, url.toString()))
             : request.headers.get("authorization") ===
-              "Basic ZW50ZXJwcmlzZS1jbGllbnQ6c3RvcmVkLXNlY3JldA==";
+                "Basic ZW50ZXJwcmlzZS1jbGllbnQ6c3RvcmVkLXNlY3JldA==" ||
+              (url.pathname === "/oauth/token" &&
+                form.client_id === "enterprise-client" &&
+                form.client_secret === "stored-secret");
         if (
           !authenticated ||
           !stored ||
@@ -98,7 +105,7 @@ export function ssoOidcFixture() {
           await Bun.file(new URL("../../../fixtures/one-tap/jwks.json", import.meta.url)).json(),
         );
       }
-      if (url.pathname === "/userinfo") {
+      if (url.pathname === "/userinfo" || url.pathname === "/api/v4/user") {
         const token = request.headers.get("authorization")?.replace(/^Bearer /, "");
         const user = token ? tokens.get(token) : undefined;
         return user ? Response.json(user) : new Response(null, { status: 401 });
