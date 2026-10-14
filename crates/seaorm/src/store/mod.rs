@@ -256,6 +256,30 @@ where
     S::Session: SeaOrmSessionModel,
     S::Verification: SeaOrmVerificationModel,
 {
+    async fn lock_sso_provider(
+        &self,
+        id: &str,
+        provider_id: &str,
+    ) -> AuthResult<Option<alibi_core::store::SsoProvider>> {
+        self.store
+            .lock_sso_provider_with(self.tx, id, provider_id)
+            .await
+    }
+    async fn update_sso_provider(
+        &self,
+        update: alibi_core::store::SsoProviderUpdate,
+    ) -> AuthResult<Option<alibi_core::store::SsoProvider>> {
+        self.store.update_sso_provider_with(self.tx, update).await
+    }
+    async fn delete_sso_provider_and_accounts(
+        &self,
+        id: &str,
+        provider_id: &str,
+    ) -> AuthResult<bool> {
+        self.store
+            .delete_sso_provider_with(self.tx, id, provider_id)
+            .await
+    }
     async fn list_jwks(&self) -> AuthResult<Vec<Jwk>> {
         self.store.list_jwks_with_connection(self.tx).await
     }

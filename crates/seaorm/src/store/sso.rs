@@ -34,60 +34,13 @@ where
         provider_id: &str,
         prepare: &alibi_core::store::SsoProviderUpdateWork,
     ) -> AuthResult<Option<SsoProvider>> {
-        use crate::schema::SeaOrmAccountModel;
         use sea_orm::TransactionTrait;
         let tx = self.scoped_connection().begin().await.map_err(map_db_err)?;
         let outcome = async {
-            let locked = Entity::update_many()
-                .col_expr(
-                    Column::ProviderId,
-                    sea_orm::sea_query::Expr::value(provider_id),
-                )
-                .filter(Column::Id.eq(id))
-                .filter(Column::ProviderId.eq(provider_id))
-                .exec(&tx)
-                .await
-                .map_err(map_db_err)?;
-            if locked.rows_affected == 0 {
+            let Some(row) = self.lock_sso_provider_with(&tx, id, provider_id).await? else {
                 return Ok(None);
-            }
-            let row: SsoProvider = Entity::find_by_id(id)
-                .one(&tx)
-                .await
-                .map_err(map_db_err)?
-                .ok_or_else(|| alibi_core::AuthError::not_found("Provider not found"))?
-                .into();
-            let update = prepare(&row)?;
-            if update.identity_changed
-                && <S::Account as SeaOrmAccountModel>::Entity::find()
-                    .filter(S::Account::provider_id_column().eq(provider_id))
-                    .one(&tx)
-                    .await
-                    .map_err(map_db_err)?
-                    .is_some()
-            {
-                return Err(alibi_core::AuthError::Api {
-                    status: 409,
-                    code: None,
-                    message:
-                        "Cannot change SSO provider identity fields while linked accounts exist"
-                            .into(),
-                });
-            }
-            let active = sso_provider::ActiveModel {
-                id: Set(id.into()),
-                issuer: Set(update.provider.issuer),
-                domain: Set(update.provider.domain),
-                oidc_config: Set(update.provider.oidc_config),
-                saml_config: Set(update.provider.saml_config),
-                domain_verified: Set(update.provider.domain_verified),
-                ..Default::default()
             };
-            active
-                .update(&tx)
-                .await
-                .map(|row| Some(row.into()))
-                .map_err(map_db_err)
+            self.update_sso_provider_with(&tx, prepare(&row)?).await
         }
         .await;
         match outcome {
@@ -106,41 +59,13 @@ where
         id: &str,
         provider_id: &str,
     ) -> AuthResult<bool> {
-        use crate::schema::SeaOrmAccountModel;
         use sea_orm::TransactionTrait;
         let tx = self.scoped_connection().begin().await.map_err(map_db_err)?;
-        let outcome = async {
-            let locked = Entity::update_many()
-                .col_expr(
-                    Column::ProviderId,
-                    sea_orm::sea_query::Expr::value(provider_id),
-                )
-                .filter(Column::Id.eq(id))
-                .filter(Column::ProviderId.eq(provider_id))
-                .exec(&tx)
-                .await
-                .map_err(map_db_err)?;
-            if locked.rows_affected == 0 {
-                return Ok(false);
-            }
-            _ = <S::Account as SeaOrmAccountModel>::Entity::delete_many()
-                .filter(S::Account::provider_id_column().eq(provider_id))
-                .exec(&tx)
-                .await
-                .map_err(map_db_err)?;
-            _ = Entity::delete_many()
-                .filter(Column::Id.eq(id))
-                .filter(Column::ProviderId.eq(provider_id))
-                .exec(&tx)
-                .await
-                .map_err(map_db_err)?;
-            Ok(true)
-        }
-        .await;
+        let outcome = self.delete_sso_provider_with(&tx, id, provider_id).await;
         match outcome {
-            Ok(deleted) => {
+            Ok(value) => {
                 tx.commit().await.map_err(map_db_err)?;
-                Ok(deleted)
+                Ok(value)
             }
             Err(error) => {
                 tx.rollback().await.map_err(map_db_err)?;
@@ -195,5 +120,105 @@ where
             .await
             .map(|rows| rows.into_iter().map(Into::into).collect())
             .map_err(map_db_err)
+    }
+}
+
+impl<S: AuthSchema> SeaOrmStore<S>
+where
+    S::Account: crate::schema::SeaOrmAccountModel,
+{
+    pub(super) async fn lock_sso_provider_with<C: sea_orm::ConnectionTrait>(
+        &self,
+        connection: &C,
+        id: &str,
+        provider_id: &str,
+    ) -> AuthResult<Option<SsoProvider>> {
+        let locked = Entity::update_many()
+            .col_expr(
+                Column::ProviderId,
+                sea_orm::sea_query::Expr::value(provider_id),
+            )
+            .filter(Column::Id.eq(id))
+            .filter(Column::ProviderId.eq(provider_id))
+            .exec(connection)
+            .await
+            .map_err(map_db_err)?;
+        if locked.rows_affected == 0 {
+            return Ok(None);
+        }
+        let row: SsoProvider = Entity::find_by_id(id)
+            .one(connection)
+            .await
+            .map_err(map_db_err)?
+            .ok_or_else(|| alibi_core::AuthError::not_found("Provider not found"))?
+            .into();
+        Ok(Some(row))
+    }
+    pub(super) async fn update_sso_provider_with<C: sea_orm::ConnectionTrait>(
+        &self,
+        connection: &C,
+        update: alibi_core::store::SsoProviderUpdate,
+    ) -> AuthResult<Option<SsoProvider>> {
+        use crate::schema::SeaOrmAccountModel;
+        let id = update.provider.id.clone();
+        let id = id.as_str();
+        let provider_id = update.provider.provider_id.clone();
+        let provider_id = provider_id.as_str();
+        if update.identity_changed
+            && <S::Account as SeaOrmAccountModel>::Entity::find()
+                .filter(S::Account::provider_id_column().eq(provider_id))
+                .one(connection)
+                .await
+                .map_err(map_db_err)?
+                .is_some()
+        {
+            return Err(alibi_core::AuthError::Api {
+                status: 409,
+                code: None,
+                message: "Cannot change SSO provider identity fields while linked accounts exist"
+                    .into(),
+            });
+        }
+        let active = sso_provider::ActiveModel {
+            id: Set(id.into()),
+            issuer: Set(update.provider.issuer),
+            domain: Set(update.provider.domain),
+            oidc_config: Set(update.provider.oidc_config),
+            saml_config: Set(update.provider.saml_config),
+            domain_verified: Set(update.provider.domain_verified),
+            ..Default::default()
+        };
+        active
+            .update(connection)
+            .await
+            .map(|row| Some(row.into()))
+            .map_err(map_db_err)
+    }
+    pub(super) async fn delete_sso_provider_with<C: sea_orm::ConnectionTrait>(
+        &self,
+        connection: &C,
+        id: &str,
+        provider_id: &str,
+    ) -> AuthResult<bool> {
+        use crate::schema::SeaOrmAccountModel;
+        if self
+            .lock_sso_provider_with(connection, id, provider_id)
+            .await?
+            .is_none()
+        {
+            return Ok(false);
+        }
+        _ = <S::Account as SeaOrmAccountModel>::Entity::delete_many()
+            .filter(S::Account::provider_id_column().eq(provider_id))
+            .exec(connection)
+            .await
+            .map_err(map_db_err)?;
+        _ = Entity::delete_many()
+            .filter(Column::Id.eq(id))
+            .filter(Column::ProviderId.eq(provider_id))
+            .exec(connection)
+            .await
+            .map_err(map_db_err)?;
+        Ok(true)
     }
 }
