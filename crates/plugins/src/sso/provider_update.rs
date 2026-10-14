@@ -272,6 +272,7 @@ pub(super) fn validate_update(input: Option<&JsValue>) -> AuthResult<JsValue> {
             .get("oidcConfig")
             .and_then(|config| config.get("scopes"))
         {
+            super::oidc_scopes::validate(scopes)?;
             _ = normalized.insert("scopes".into(), scopes.clone());
         }
         if let JsValue::Object(object) = &mut output {

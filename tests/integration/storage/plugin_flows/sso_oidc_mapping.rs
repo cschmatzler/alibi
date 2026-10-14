@@ -5,19 +5,25 @@ use alibi::plugins::SsoPlugin;
 use alibi::store::SsoProviderStore;
 backend_tests!(
     sso_oidc_mapping_admission_requires_identity_fields_and_preserves_config,
-    sso_saml_mapping_admission_requires_identity_fields_and_preserves_config
+    sso_saml_mapping_admission_requires_identity_fields_and_preserves_config,
+    sso_oidc_scopes_admission_requires_string_arrays_and_preserves_config
 );
 async fn sso_oidc_mapping_admission_requires_identity_fields_and_preserves_config<B: Backend>(
     db: Db,
 ) -> TestResult {
-    mapping_admission_flow::<B>(db, false).await
+    mapping_admission_flow::<B>(db, false, false).await
 }
 async fn sso_saml_mapping_admission_requires_identity_fields_and_preserves_config<B: Backend>(
     db: Db,
 ) -> TestResult {
-    mapping_admission_flow::<B>(db, true).await
+    mapping_admission_flow::<B>(db, true, false).await
 }
-async fn mapping_admission_flow<B: Backend>(db: Db, saml: bool) -> TestResult {
+async fn sso_oidc_scopes_admission_requires_string_arrays_and_preserves_config<B: Backend>(
+    db: Db,
+) -> TestResult {
+    mapping_admission_flow::<B>(db, false, true).await
+}
+async fn mapping_admission_flow<B: Backend>(db: Db, saml: bool, scopes: bool) -> TestResult {
     let (connection, store) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(SsoPlugin::new())
@@ -34,6 +40,10 @@ async fn mapping_admission_flow<B: Backend>(db: Db, saml: bool) -> TestResult {
         _ = input.as_object_mut().unwrap().remove("oidcConfig");
         input["samlConfig"] = json!({"entryPoint":"https://idp.example.test/sso","cert":include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem"),"idpMetadata":{"entityID":"https://idp.example.test/entity"},"mapping":{"email":"mail","name":"label","firstName":"given","lastName":"surname","extraFields":{"department":"dept"}}});
     }
+    let field = if scopes { "scopes" } else { "mapping" };
+    if scopes {
+        input[protocol][field] = json!(["openid", "email"]);
+    }
     let created = Box::pin(auth.dispatch_endpoint(
         SsoPlugin::register_sso_provider_endpoint(&input)?,
         owned.clone(),
@@ -47,49 +57,78 @@ async fn mapping_admission_flow<B: Backend>(db: Db, saml: bool) -> TestResult {
     } else {
         row.oidc_config.as_deref().unwrap()
     })?;
-    assert_eq!(config["mapping"], input[protocol]["mapping"]);
-    let cases = [
-        (
-            json!(null),
-            "[body.oidcConfig.mapping] Invalid input: expected object, received null",
-        ),
-        (
-            json!([]),
-            "[body.oidcConfig.mapping] Invalid input: expected object, received array",
-        ),
-        (
-            json!("mapping"),
-            "[body.oidcConfig.mapping] Invalid input: expected object, received string",
-        ),
-        (
-            json!(12),
-            "[body.oidcConfig.mapping] Invalid input: expected object, received number",
-        ),
-        (
-            json!({"email":"mail"}),
-            "[body.oidcConfig.mapping.name] Invalid input: expected string, received undefined",
-        ),
-        (
-            json!({"name":"label"}),
-            "[body.oidcConfig.mapping.email] Invalid input: expected string, received undefined",
-        ),
-        (
-            json!({"email":3,"name":"label"}),
-            "[body.oidcConfig.mapping.email] Invalid input: expected string, received number",
-        ),
-        (
-            json!({"email":"mail","name":"label","image":false}),
-            "[body.oidcConfig.mapping.image] Invalid input: expected string, received boolean",
-        ),
-        (
-            json!({"email":"mail","name":"label","extraFields":[]}),
-            "[body.oidcConfig.mapping.extraFields] Invalid input: expected record, received array",
-        ),
-        (
-            json!({"email":"mail","name":"label","unknown":"field"}),
-            r#"[body.oidcConfig.mapping] Unrecognized key: "unknown""#,
-        ),
-    ];
+    assert_eq!(config[field], input[protocol][field]);
+    let cases = if scopes {
+        vec![
+            (
+                json!(null),
+                "[body.oidcConfig.scopes] Invalid input: expected array, received null",
+            ),
+            (
+                json!("openid"),
+                "[body.oidcConfig.scopes] Invalid input: expected array, received string",
+            ),
+            (
+                json!(12),
+                "[body.oidcConfig.scopes] Invalid input: expected array, received number",
+            ),
+            (
+                json!({}),
+                "[body.oidcConfig.scopes] Invalid input: expected array, received object",
+            ),
+            (
+                json!(["openid", false]),
+                "[body.oidcConfig.scopes.1] Invalid input: expected string, received boolean",
+            ),
+            (
+                json!([null, 12]),
+                "[body.oidcConfig.scopes.0] Invalid input: expected string, received null; [body.oidcConfig.scopes.1] Invalid input: expected string, received number",
+            ),
+        ]
+    } else {
+        vec![
+            (
+                json!(null),
+                "[body.oidcConfig.mapping] Invalid input: expected object, received null",
+            ),
+            (
+                json!([]),
+                "[body.oidcConfig.mapping] Invalid input: expected object, received array",
+            ),
+            (
+                json!("mapping"),
+                "[body.oidcConfig.mapping] Invalid input: expected object, received string",
+            ),
+            (
+                json!(12),
+                "[body.oidcConfig.mapping] Invalid input: expected object, received number",
+            ),
+            (
+                json!({"email":"mail"}),
+                "[body.oidcConfig.mapping.name] Invalid input: expected string, received undefined",
+            ),
+            (
+                json!({"name":"label"}),
+                "[body.oidcConfig.mapping.email] Invalid input: expected string, received undefined",
+            ),
+            (
+                json!({"email":3,"name":"label"}),
+                "[body.oidcConfig.mapping.email] Invalid input: expected string, received number",
+            ),
+            (
+                json!({"email":"mail","name":"label","image":false}),
+                "[body.oidcConfig.mapping.image] Invalid input: expected string, received boolean",
+            ),
+            (
+                json!({"email":"mail","name":"label","extraFields":[]}),
+                "[body.oidcConfig.mapping.extraFields] Invalid input: expected record, received array",
+            ),
+            (
+                json!({"email":"mail","name":"label","unknown":"field"}),
+                r#"[body.oidcConfig.mapping] Unrecognized key: "unknown""#,
+            ),
+        ]
+    };
     for (index, (mut mapping, oidc_message)) in cases.into_iter().enumerate() {
         let message = oidc_message
             .replace("oidcConfig", protocol)
@@ -105,7 +144,7 @@ async fn mapping_admission_flow<B: Backend>(db: Db, saml: bool) -> TestResult {
         let provider_id = format!("invalid-mapping-{index}");
         let mut invalid = input.clone();
         invalid["providerId"] = json!(provider_id);
-        invalid[protocol]["mapping"] = mapping.clone();
+        invalid[protocol][field] = mapping.clone();
         let registered = match Box::pin(auth.dispatch_endpoint(
             SsoPlugin::register_sso_provider_endpoint(&invalid)?,
             owned.clone(),
@@ -123,7 +162,7 @@ async fn mapping_admission_flow<B: Backend>(db: Db, saml: bool) -> TestResult {
         assert!(store.get_sso_provider(&provider_id).await?.is_none());
         let updated = match Box::pin(auth.dispatch_endpoint(
             SsoPlugin::update_sso_provider_endpoint(
-                &json!({"providerId":"mapping-provider",(protocol):{"mapping":mapping}}),
+                &json!({"providerId":"mapping-provider",(protocol):{(field):mapping}}),
             )?,
             owned.clone(),
         ))
@@ -141,6 +180,22 @@ async fn mapping_admission_flow<B: Backend>(db: Db, saml: bool) -> TestResult {
             store.get_sso_provider("mapping-provider").await?.unwrap(),
             row
         );
+    }
+    if scopes {
+        for values in [json!([]), json!(["openid", "", "email", "openid"])] {
+            let updated = Box::pin(auth.dispatch_endpoint(
+                SsoPlugin::update_sso_provider_endpoint(
+                    &json!({"providerId":"mapping-provider","oidcConfig":{"scopes":values}}),
+                )?,
+                owned.clone(),
+            ))
+            .await?
+            .into_response()?;
+            assert_eq!(updated.status, 200);
+            let persisted = store.get_sso_provider("mapping-provider").await?.unwrap();
+            let config: Value = serde_json::from_str(persisted.oidc_config.as_deref().unwrap())?;
+            assert_eq!(config["scopes"], values);
+        }
     }
     B::close(connection).await
 }

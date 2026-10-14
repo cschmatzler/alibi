@@ -13,6 +13,7 @@ mod idp_metadata_xml;
 mod idp_services;
 mod mapping_schema;
 mod mutation_guard;
+mod oidc_scopes;
 mod user_resolution;
 pub use mutation_guard::{
     SsoMutationAction, SsoMutationGuard, SsoMutationProvider, SsoProviderMutation,
@@ -413,6 +414,9 @@ fn validate(input: Option<&JsValue>) -> AuthResult<JsValue> {
                 },
             ],
         )?;
+        if let Some(scopes) = config.get("scopes") {
+            oidc_scopes::validate(scopes)?;
+        }
         if let Some(mapping) = config.get("mapping") {
             _ = mapping_schema::oidc(mapping)?;
         }
