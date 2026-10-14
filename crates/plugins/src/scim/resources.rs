@@ -262,21 +262,21 @@ impl ScimPlugin {
         }
         Ok(())
     }
-    pub(super) async fn get_group<S: AuthSchema>(
+    async fn authenticate_connection<S: AuthSchema>(
         &self,
         call: &EndpointCall,
         ctx: &AuthContext<S>,
-    ) -> AuthResult<EndpointResponse> {
+    ) -> AuthResult<Result<ResolvedConnection, Box<EndpointResponse>>> {
         // Query shape validation precedes authentication in the TS endpoint.
         if let Some(detail) = query_shape_error(call.query()) {
-            return Ok(error(400, &detail, Some("invalidValue")));
+            return Ok(Err(Box::new(error(400, &detail, Some("invalidValue")))));
         }
         let authorization = call
             .headers()
             .and_then(|headers| headers.get("authorization"));
         let bearer = authorization.and_then(|header| bearer_token(header));
         let Some(bearer) = bearer else {
-            return Ok(unauthorized("SCIM bearer token is required"));
+            return Ok(Err(Box::new(unauthorized("SCIM bearer token is required"))));
         };
         let mut principal = None;
         // Continue comparing all configured credentials after finding a principal.
@@ -304,7 +304,7 @@ impl ScimPlugin {
                 Ok(principal) => principal,
                 Err(AuthError::Api {
                     status, message, ..
-                }) => return Ok(error(status, &message, None)),
+                }) => return Ok(Err(Box::new(error(status, &message, None)))),
                 Err(error) => return Err(error),
             };
         }
@@ -352,7 +352,7 @@ impl ScimPlugin {
             }
         }
         let Some(connection) = principal else {
-            return Ok(unauthorized("Invalid SCIM bearer token"));
+            return Ok(Err(Box::new(unauthorized("Invalid SCIM bearer token"))));
         };
         let resource = if call.path().is_some_and(|path| path.contains("/Groups")) {
             "groups"
@@ -373,11 +373,11 @@ impl ScimPlugin {
             .as_ref()
             .is_some_and(|scopes| !scopes.contains(&required))
         {
-            return Ok(error(
+            return Ok(Err(Box::new(error(
                 403,
                 &format!("The SCIM bearer token is missing the {required} scope"),
                 None,
-            ));
+            ))));
         }
         let domain = connection.domain.as_str();
         let key = URL_SAFE_NO_PAD.encode(Sha256::digest(serde_json::to_vec(&[
@@ -389,15 +389,85 @@ impl ScimPlugin {
             .active_scim_connection_binding(&connection.id, domain, &key)
             .await?;
         if binding.connection_id != connection.id || binding.provisioning_domain_id != domain {
-            return Ok(error(
+            return Ok(Err(Box::new(error(
                 409,
                 "The connection provisioningDomainId changed after the connection was first used",
                 None,
-            ));
+            ))));
         }
         if binding.decommission_status != "active" {
-            return Ok(unauthorized("SCIM connection is decommissioned"));
+            return Ok(Err(Box::new(unauthorized(
+                "SCIM connection is decommissioned",
+            ))));
         }
+        Ok(Ok(connection))
+    }
+    pub(super) async fn get_user<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let connection = match self.authenticate_connection(call, ctx).await? {
+            Ok(connection) => connection,
+            Err(response) => return Ok(*response),
+        };
+        let id = call
+            .params()
+            .and_then(|params| params.get("userId"))
+            .and_then(JsValue::as_str)
+            .unwrap_or("");
+        let Some(user) = ctx.database.get_scim_user(id, &connection.id).await? else {
+            return Ok(error(404, "SCIM User not found", None));
+        };
+        if user.provisioning_domain_id != connection.domain {
+            return Ok(error(
+                409,
+                "The connection provisioningDomainId changed after resources were created",
+                None,
+            ));
+        }
+        let projection = match Projection::parse(call.query(), super::user_attributes::USER_SCHEMA)
+        {
+            Ok(projection) => projection,
+            Err(detail) => return Ok(error(400, &detail, Some("invalidValue"))),
+        };
+        let Some(mut attributes) = super::user_attributes::read(&user) else {
+            return Ok(error(
+                500,
+                "Stored SCIM User attribute state is invalid",
+                None,
+            ));
+        };
+        let base = format!(
+            "{}{}",
+            ctx.config.base_url.trim_end_matches('/'),
+            ctx.config.base_path.trim_end_matches('/')
+        );
+        if let Some(object) = attributes.as_object_mut() {
+            if let Some(enterprise) = object.remove("enterprise") {
+                _ = object.insert(super::user_attributes::ENTERPRISE_SCHEMA.into(), enterprise);
+            }
+            _ = object.insert("id".into(), Value::String(user.id.clone()));
+            if let Some(external) = user.external_id.filter(|value| !value.is_empty()) {
+                _ = object.insert("externalId".into(), Value::String(external));
+            }
+            _ = object.insert("userName".into(), Value::String(user.user_name));
+            _ = object.insert("displayName".into(), Value::String(user.display_name));
+            _ = object.insert("active".into(), Value::Bool(user.active));
+            _=object.insert("meta".into(),serde_json::json!({"resourceType":"User","created":user.created_at.to_rfc3339_opts(SecondsFormat::Millis,true),"lastModified":user.updated_at.to_rfc3339_opts(SecondsFormat::Millis,true),"location":resource_url(&base,"Users",&user.id)?}));
+        }
+        Ok(EndpointResponse::json(&projection.apply(attributes))?.with_header(MARKER, "1"))
+    }
+    pub(super) async fn get_group<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let connection = match self.authenticate_connection(call, ctx).await? {
+            Ok(connection) => connection,
+            Err(response) => return Ok(*response),
+        };
+        let domain = connection.domain.as_str();
         let id = call
             .params()
             .and_then(|params| params.get("groupId"))
@@ -415,7 +485,7 @@ impl ScimPlugin {
             ));
         }
         // Semantic projection errors intentionally follow resource lookup.
-        let projection = match Projection::parse(call.query()) {
+        let projection = match Projection::parse(call.query(), GROUP_SCHEMA) {
             Ok(value) => value,
             Err(detail) => return Ok(error(400, &detail, Some("invalidValue"))),
         };
@@ -520,14 +590,16 @@ struct Projection {
     paths: Vec<Vec<String>>,
 }
 impl Projection {
-    fn parse(query: Option<&JsValue>) -> Result<Self, String> {
+    fn parse(query: Option<&JsValue>, schema: &str) -> Result<Self, String> {
         let attributes = attribute_paths(
             query.and_then(|query| query.get("attributes")),
             "attributes",
+            schema,
         )?;
         let excluded = attribute_paths(
             query.and_then(|query| query.get("excludedAttributes")),
             "excludedAttributes",
+            schema,
         )?;
         if !attributes.is_empty() && !excluded.is_empty() {
             return Err("attributes and excludedAttributes cannot be used together".into());
@@ -591,7 +663,11 @@ impl Projection {
         selected
     }
 }
-fn attribute_paths(input: Option<&JsValue>, parameter: &str) -> Result<Vec<Vec<String>>, String> {
+fn attribute_paths(
+    input: Option<&JsValue>,
+    parameter: &str,
+    schema: &str,
+) -> Result<Vec<Vec<String>>, String> {
     let values = match input {
         Some(JsValue::String(value)) => vec![value.as_str()],
         Some(JsValue::Array(values)) => values.iter().filter_map(JsValue::as_str).collect(),
@@ -614,10 +690,35 @@ fn attribute_paths(input: Option<&JsValue>, parameter: &str) -> Result<Vec<Vec<S
                 ));
             }
             let lower = path.to_lowercase();
-            let normalized = lower
-                .strip_prefix(&format!("{}:", GROUP_SCHEMA.to_lowercase()))
-                .unwrap_or(&lower);
-            let segments = normalized.split('.').map(str::to_owned).collect::<Vec<_>>();
+            let enterprise = super::user_attributes::ENTERPRISE_SCHEMA.to_lowercase();
+            let mut normalized = lower
+                .strip_prefix(&format!("{}:", schema.to_lowercase()))
+                .unwrap_or(&lower)
+                .to_owned();
+            if schema == super::user_attributes::USER_SCHEMA {
+                if let Some(relative) = lower.strip_prefix(&format!("{enterprise}:")) {
+                    normalized = format!("{enterprise}.{relative}");
+                } else if lower == "manager" || lower.starts_with("manager.") {
+                    normalized = format!("{enterprise}.{lower}");
+                }
+            }
+            let segments = if schema == super::user_attributes::USER_SCHEMA
+                && (normalized == enterprise || normalized.starts_with(&format!("{enterprise}.")))
+            {
+                std::iter::once(enterprise.clone())
+                    .chain(
+                        normalized
+                            .strip_prefix(&enterprise)
+                            .unwrap_or("")
+                            .trim_start_matches('.')
+                            .split('.')
+                            .filter(|part| !part.is_empty())
+                            .map(str::to_owned),
+                    )
+                    .collect::<Vec<_>>()
+            } else {
+                normalized.split('.').map(str::to_owned).collect::<Vec<_>>()
+            };
             if !paths.contains(&segments) {
                 paths.push(segments);
             }

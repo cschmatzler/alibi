@@ -49,6 +49,7 @@ export async function scimFixture(base: BetterAuthOptions) {
   let roleStage = 0;
   const verifierInputs: unknown[] = [];
   let verifierClaims: any = undefined;
+  let userReadAttributes = "";
   return async (request: Request): Promise<Response | undefined> => {
     const path = new URL(request.url).pathname;
     if (path.startsWith("/__test/profiles/scim/api/auth/")) return auth.handler(request);
@@ -109,6 +110,86 @@ export async function scimFixture(base: BetterAuthOptions) {
         ];
         auth = betterAuth(options);
         return new Response(JSON.stringify({ configured: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "user-read-attributes") {
+        const input = (await request.json()) as any;
+        options.database
+          .query("UPDATE scimUser SET serializedAttributes=? WHERE id='rich'")
+          .run(input.restore ? userReadAttributes : input.serializedAttributes);
+        return new Response(JSON.stringify({ changed: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "getSCIMUser") {
+        const input = (await request.json()) as any;
+        return auth.api.getSCIMUser({
+          params: input.params,
+          query: input.query,
+          headers:
+            input.token === undefined ? undefined : { authorization: `Bearer ${input.token}` },
+          asResponse: true,
+        });
+      }
+      if (query.get("operation") === "seed-user-read") {
+        const owner = await auth.api.signUpEmail({
+          body: {
+            email: "user-read-owner@example.com",
+            password: "a-native-password-123",
+            name: "User owner",
+          },
+        });
+        const attributes = {
+          schemas: [
+            "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+            "urn:ietf:params:scim:schemas:core:2.0:User",
+          ],
+          name: { formatted: " Alice Example ", givenName: " Alice ", ignored: "drop" },
+          emails: [{ value: "Alice@example.com", primary: true, type: "WORK", ignored: "drop" }],
+          title: " Principal ",
+          phoneNumbers: [{ value: " +1 555 ", type: "WORK", primary: true }],
+          addresses: [{ streetAddress: " 1 Road ", type: "WORK", primary: true }],
+          roles: [{ value: " admin ", display: " Admin ", type: "CUSTOM", primary: true }],
+          enterprise: {
+            employeeNumber: [" 42 "],
+            organization: " Example ",
+            manager: { value: " manager ", displayName: "drop" },
+          },
+          userName: "spoof",
+          active: true,
+        };
+        for (const [id, cid, domain] of [
+          ["rich", "conn-a", "tenant-a"],
+          ["legacy", "conn-a", "tenant-a"],
+          ["corrupt", "conn-a", "tenant-a"],
+          ["foreign", "conn-b", "tenant-a"],
+          ["drift", "conn-a", "tenant-b"],
+        ]) {
+          options.database
+            .query(
+              "INSERT INTO scimUser (id,connectionId,provisioningDomainId,userId,connectionUserKey,userName,userNameKey,primaryEmail,workEmailValueIndex,emailValueIndex,displayName,formattedName,givenName,serializedEmails,active,orderKey,createdAt,updatedAt) VALUES (?,?,?,?,?,'alice',?,'Alice@example.com','[]','[]','Alice from row',' Legacy Name ',' Legacy ',?,0,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
+            )
+            .run(
+              id,
+              cid,
+              domain,
+              owner.user.id,
+              id,
+              id,
+              JSON.stringify([{ value: "legacy@example.com", primary: true }]),
+              id,
+            );
+        }
+        options.database
+          .query(
+            "UPDATE scimUser SET serializedAttributes=?,externalId='external-alice' WHERE id='rich'",
+          )
+          .run((userReadAttributes = JSON.stringify(attributes)));
+        options.database.exec(
+          "UPDATE scimUser SET serializedAttributes='not-json' WHERE id='corrupt'",
+        );
+        return new Response(JSON.stringify({ seeded: true }), {
           headers: { "content-type": "application/json" },
         });
       }

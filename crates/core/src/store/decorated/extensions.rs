@@ -824,6 +824,14 @@ impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> crate::store::ScimManagedStore for PluginStore<S> {
+    async fn get_scim_user(
+        &self,
+        id: &str,
+        connection: &str,
+    ) -> AuthResult<Option<crate::store::ScimUserRecord>> {
+        self.inner.get_scim_user(id, connection).await
+    }
+
     async fn find_scim_managed_credential(
         &self,
         id: &str,

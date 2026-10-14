@@ -18,6 +18,37 @@ use async_trait::async_trait;
 use chrono::SubsecRound;
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
+    async fn get_scim_user(
+        &self,
+        id: &str,
+        connection: &str,
+    ) -> AuthResult<Option<alibi_core::store::ScimUserRecord>> {
+        use super::entities::scim_user as user;
+        let mut sql = model::select_model::<user::Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare("scimUser", "id", " = ", id);
+        sql.push(" AND ");
+        sql.compare("scimUser", "connectionId", " = ", connection);
+        model::limit_one(&mut sql);
+        let row = self.exec().fetch_optional::<user::Model>(sql).await?;
+        Ok(row.map(|row| alibi_core::store::ScimUserRecord {
+            id: row.id,
+            connection_id: row.connection_id,
+            provisioning_domain_id: row.provisioning_domain_id,
+            user_name: row.user_name,
+            display_name: row.display_name,
+            active: row.active,
+            external_id: row.external_id,
+            formatted_name: row.formatted_name,
+            given_name: row.given_name,
+            family_name: row.family_name,
+            serialized_emails: row.serialized_emails,
+            serialized_attributes: row.serialized_attributes,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }))
+    }
+
     async fn find_scim_managed_credential(
         &self,
         id: &str,
