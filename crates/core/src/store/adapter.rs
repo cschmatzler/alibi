@@ -54,7 +54,9 @@ pub fn parse_optional_rfc3339(
 /// An after-hook deferred until the enclosing auth transaction commits.
 pub enum AfterHook<S: AuthSchema> {
     UserCreated(S::User),
+    UserUpdated(S::User),
     AccountCreated(S::Account),
+    AccountUpdated(S::Account),
     SessionCreated(S::Session),
     SessionUpdated(S::Session),
     SessionUpdateMissing(String),
@@ -75,7 +77,12 @@ impl<S: AuthSchema> AfterHook<S> {
     ) -> AuthResult<()> {
         match self {
             Self::UserCreated(user) => hook.after_create_user(user, ctx).await,
+            Self::UserUpdated(user) => hook
+                .after_update_user(user, ctx)
+                .await
+                .map_err(callback_error),
             Self::AccountCreated(account) => hook.after_create_account(account, ctx).await,
+            Self::AccountUpdated(account) => hook.after_update_account(account, ctx).await,
             Self::SessionCreated(session) => hook
                 .after_create_session(session, ctx)
                 .await
@@ -127,9 +134,27 @@ impl<S: AuthSchema> AfterHookQueue<S> {
         hooks: &[Arc<dyn DatabaseHooks<S, B>>],
         ctx: &DatabaseHookContext<'_, B>,
     ) -> AuthResult<()> {
+        self.run_with_policy(hooks, ctx, crate::store::AfterCommitErrorPolicy::Propagate)
+            .await
+    }
+    /// Run queued hooks, optionally reporting errors after durable commit.
+    ///
+    /// # Errors
+    /// Returns hook errors when propagation is selected.
+    pub async fn run_with_policy<B: HookBackend>(
+        self,
+        hooks: &[Arc<dyn DatabaseHooks<S, B>>],
+        ctx: &DatabaseHookContext<'_, B>,
+        policy: crate::store::AfterCommitErrorPolicy,
+    ) -> AuthResult<()> {
         for event in self.0.into_inner() {
             for hook in hooks {
-                event.dispatch(hook.as_ref(), ctx).await?;
+                if let Err(error) = event.dispatch(hook.as_ref(), ctx).await {
+                    if policy == crate::store::AfterCommitErrorPolicy::Propagate {
+                        return Err(error);
+                    }
+                    tracing::error!("Committed transaction after-hook failed");
+                }
             }
         }
         Ok(())

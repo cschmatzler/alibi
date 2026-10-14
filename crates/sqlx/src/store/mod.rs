@@ -229,6 +229,44 @@ where
     S::Session: SqlxSessionModel,
     S::Verification: SqlxVerificationModel,
 {
+    async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
+        self.store
+            .get_user_by_email_with_connection(Exec::tx(self.tx), email)
+            .await
+    }
+    async fn get_account(
+        &self,
+        provider: &str,
+        account_id: &str,
+    ) -> AuthResult<Option<S::Account>> {
+        self.store
+            .get_account_with_connection(Exec::tx(self.tx), provider, account_id)
+            .await
+    }
+    async fn update_user(&self, id: &str, update: alibi_core::UpdateUser) -> AuthResult<S::User> {
+        let user = self
+            .store
+            .update_user_with_connection(Exec::tx(self.tx), Some(self.tx), id, update)
+            .await?;
+        self.pending_after
+            .push(AfterHook::UserUpdated(user.clone()))
+            .await;
+        Ok(user)
+    }
+    async fn update_account(
+        &self,
+        id: &str,
+        update: alibi_core::UpdateAccount,
+    ) -> AuthResult<S::Account> {
+        let account = self
+            .store
+            .update_account_with_connection(Exec::tx(self.tx), Some(self.tx), id, update)
+            .await?;
+        self.pending_after
+            .push(AfterHook::AccountUpdated(account.clone()))
+            .await;
+        Ok(account)
+    }
     async fn lock_sso_provider(
         &self,
         id: &str,
@@ -472,6 +510,17 @@ where
         &self,
         work: Box<TransactionWork<S>>,
     ) -> AuthResult<BoxedTransactionValue> {
+        self.transaction_boxed_with_policy(
+            work,
+            alibi_core::store::AfterCommitErrorPolicy::Propagate,
+        )
+        .await
+    }
+    async fn transaction_boxed_with_policy(
+        &self,
+        work: Box<TransactionWork<S>>,
+        policy: alibi_core::store::AfterCommitErrorPolicy,
+    ) -> AuthResult<BoxedTransactionValue> {
         let tx = self.begin(false).await?;
         let tx_store = SqlxStoreTransaction {
             store: self,
@@ -486,7 +535,7 @@ where
                 // After hooks run only once the auth writes are durable, in
                 // operation order; rollback drops them.
                 pending_after
-                    .run(self.hooks(), &self.hook_context(None))
+                    .run_with_policy(self.hooks(), &self.hook_context(None), policy)
                     .await?;
                 Ok(value)
             }

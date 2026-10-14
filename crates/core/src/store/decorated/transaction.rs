@@ -126,6 +126,76 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
 
 #[async_trait]
 impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
+    async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
+        self.inner.get_user_by_email(email).await
+    }
+    async fn get_account(
+        &self,
+        provider: &str,
+        account_id: &str,
+    ) -> AuthResult<Option<S::Account>> {
+        self.inner.get_account(provider, account_id).await
+    }
+    async fn get_user_by_email_record(
+        &self,
+        email: &str,
+    ) -> AuthResult<Option<AdapterRecord<S::User>>> {
+        let Some(model) = self.get_user_by_email(email).await? else {
+            return Ok(None);
+        };
+        Ok(Some(self.transaction_user_record(model).await?))
+    }
+    async fn get_account_record(
+        &self,
+        provider: &str,
+        account_id: &str,
+    ) -> AuthResult<Option<AdapterRecord<S::Account>>> {
+        let Some(model) = self.get_account(provider, account_id).await? else {
+            return Ok(None);
+        };
+        Ok(Some(self.record_store.account_record(model).await?))
+    }
+    async fn update_user(&self, id: &str, mut update: crate::UpdateUser) -> AuthResult<S::User> {
+        self.record_store
+            .field_policies()
+            .user
+            .attach(&mut update.additional_fields, false);
+        for transform in &self.record_store.transforms.updates {
+            update = transform(id, update)?;
+        }
+        self.inner.update_user(id, update).await
+    }
+    async fn update_account(
+        &self,
+        id: &str,
+        mut update: crate::UpdateAccount,
+    ) -> AuthResult<S::Account> {
+        self.record_store
+            .field_policies()
+            .account
+            .attach(&mut update.additional_fields, false);
+        self.inner.update_account(id, update).await
+    }
+    async fn update_user_record(
+        &self,
+        id: &str,
+        update: crate::UpdateUser,
+    ) -> AuthResult<AdapterRecord<S::User>> {
+        let model = self.update_user(id, update).await?;
+        let record = self.transaction_user_record(model).await?;
+        self.observe(AdapterEvent::UserUpdated(record.clone()))?;
+        Ok(record)
+    }
+    async fn update_account_record(
+        &self,
+        id: &str,
+        update: crate::UpdateAccount,
+    ) -> AuthResult<AdapterRecord<S::Account>> {
+        let model = self.update_account(id, update).await?;
+        let record = self.record_store.account_record(model).await?;
+        self.observe(AdapterEvent::AccountUpdated(record.clone()))?;
+        Ok(record)
+    }
     async fn lock_sso_provider(
         &self,
         id: &str,
@@ -428,6 +498,14 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
         &self,
         work: Box<TransactionWork<S>>,
     ) -> AuthResult<BoxedTransactionValue> {
+        self.transaction_boxed_with_policy(work, crate::store::AfterCommitErrorPolicy::Propagate)
+            .await
+    }
+    async fn transaction_boxed_with_policy(
+        &self,
+        work: Box<TransactionWork<S>>,
+        policy: crate::store::AfterCommitErrorPolicy,
+    ) -> AuthResult<BoxedTransactionValue> {
         let creates = self.transforms.creates.clone();
         let adapter_defaults = self.transforms.adapter_defaults.clone();
         let config = Arc::clone(&self.config);
@@ -442,23 +520,26 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
         let records_in_transaction = Arc::clone(&pending_records);
         let value = self
             .inner
-            .transaction_boxed(Box::new(move |inner| {
-                Box::pin(async move {
-                    let transaction = PluginTransaction {
-                        inner,
-                        config,
-                        creates,
-                        adapter_defaults,
-                        pending_sessions: pending_in_transaction,
-                        pending_scopes: scopes_in_transaction,
-                        session_fields,
-                        adapter_fields,
-                        record_store,
-                        pending_records: records_in_transaction,
-                    };
-                    work(&transaction).await
-                })
-            }))
+            .transaction_boxed_with_policy(
+                Box::new(move |inner| {
+                    Box::pin(async move {
+                        let transaction = PluginTransaction {
+                            inner,
+                            config,
+                            creates,
+                            adapter_defaults,
+                            pending_sessions: pending_in_transaction,
+                            pending_scopes: scopes_in_transaction,
+                            session_fields,
+                            adapter_fields,
+                            record_store,
+                            pending_records: records_in_transaction,
+                        };
+                        work(&transaction).await
+                    })
+                }),
+                policy,
+            )
             .await?;
         // Publish scope updates only after adapter success. Concurrent logout wins.
         {
@@ -484,7 +565,12 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
         for session in sessions {
             self.remember_ephemeral_session(&session)?;
             for callback in &self.session_callbacks.callbacks {
-                callback.after_create(&session, self).await?;
+                if let Err(error) = callback.after_create(&session, self).await {
+                    if policy == crate::store::AfterCommitErrorPolicy::Propagate {
+                        return Err(error);
+                    }
+                    tracing::error!("Committed session after-hook failed");
+                }
             }
         }
         let records = std::mem::take(
@@ -493,7 +579,17 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
                 .map_err(|_| AuthError::internal("Adapter callback queue poisoned"))?,
         );
         for record in records {
-            self.observe(record).await?;
+            if let AdapterEvent::UserUpdated(user) = &record
+                && self.refresh_cached_user(user.stored()).await.is_err()
+            {
+                tracing::error!("Failed to refresh committed user sessions in secondary storage");
+            }
+            if let Err(error) = self.observe(record).await {
+                if policy == crate::store::AfterCommitErrorPolicy::Propagate {
+                    return Err(error);
+                }
+                tracing::error!("Committed adapter after-hook failed");
+            }
         }
         Ok(value)
     }

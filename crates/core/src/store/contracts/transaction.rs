@@ -22,6 +22,68 @@ pub type TransactionWork<S> =
 
 #[async_trait]
 pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
+    async fn get_user_by_email(&self, _email: &str) -> AuthResult<Option<S::User>> {
+        Err(AuthError::NotImplemented(
+            "Transactional user lookup is unsupported".into(),
+        ))
+    }
+    async fn get_account(
+        &self,
+        _provider: &str,
+        _account_id: &str,
+    ) -> AuthResult<Option<S::Account>> {
+        Err(AuthError::NotImplemented(
+            "Transactional account lookup is unsupported".into(),
+        ))
+    }
+    async fn update_user(&self, _id: &str, _update: crate::UpdateUser) -> AuthResult<S::User> {
+        Err(AuthError::NotImplemented(
+            "Transactional user updates are unsupported".into(),
+        ))
+    }
+    async fn update_account(
+        &self,
+        _id: &str,
+        _update: crate::UpdateAccount,
+    ) -> AuthResult<S::Account> {
+        Err(AuthError::NotImplemented(
+            "Transactional account updates are unsupported".into(),
+        ))
+    }
+    async fn get_user_by_email_record(
+        &self,
+        email: &str,
+    ) -> AuthResult<Option<AdapterRecord<S::User>>> {
+        self.get_user_by_email(email)
+            .await?
+            .map(AdapterRecord::physical)
+            .transpose()
+    }
+    async fn get_account_record(
+        &self,
+        provider: &str,
+        account_id: &str,
+    ) -> AuthResult<Option<AdapterRecord<S::Account>>> {
+        self.get_account(provider, account_id)
+            .await?
+            .map(AdapterRecord::physical)
+            .transpose()
+    }
+    async fn update_user_record(
+        &self,
+        id: &str,
+        update: crate::UpdateUser,
+    ) -> AuthResult<AdapterRecord<S::User>> {
+        AdapterRecord::physical(self.update_user(id, update).await?)
+    }
+    async fn update_account_record(
+        &self,
+        id: &str,
+        update: crate::UpdateAccount,
+    ) -> AuthResult<AdapterRecord<S::Account>> {
+        AdapterRecord::physical(self.update_account(id, update).await?)
+    }
+
     /// Lock and read a persisted enterprise provider on this transaction's connection.
     async fn lock_sso_provider(
         &self,
@@ -287,12 +349,31 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     }
 }
 
+/// How to handle callback errors after the database has committed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AfterCommitErrorPolicy {
+    Propagate,
+    Report,
+}
 #[async_trait]
 pub trait TransactionStore<S: AuthSchema>: Send + Sync {
     async fn transaction_boxed(
         &self,
         work: Box<TransactionWork<S>>,
     ) -> AuthResult<BoxedTransactionValue>;
+    async fn transaction_boxed_with_policy(
+        &self,
+        work: Box<TransactionWork<S>>,
+        policy: AfterCommitErrorPolicy,
+    ) -> AuthResult<BoxedTransactionValue> {
+        if policy == AfterCommitErrorPolicy::Propagate {
+            self.transaction_boxed(work).await
+        } else {
+            Err(AuthError::NotImplemented(
+                "Reporting committed transaction hook failures is unsupported".into(),
+            ))
+        }
+    }
 }
 
 /// # Errors
@@ -306,13 +387,34 @@ where
         + Send
         + 'static,
 {
+    transaction_with_policy(store, AfterCommitErrorPolicy::Propagate, work).await
+}
+/// Run typed work while selecting the treatment of errors after commit.
+///
+/// # Errors
+/// Propagates transaction errors and rejects an unexpected result type.
+pub async fn transaction_with_policy<S, T, F>(
+    store: &dyn AuthStore<S>,
+    policy: AfterCommitErrorPolicy,
+    work: F,
+) -> AuthResult<T>
+where
+    S: AuthSchema,
+    T: Send + 'static,
+    F: for<'tx> FnOnce(&'tx dyn AuthTransaction<S>) -> TypedTransactionFuture<'tx, T>
+        + Send
+        + 'static,
+{
     let value = store
-        .transaction_boxed(Box::new(move |tx| {
-            Box::pin(async move {
-                let result: BoxedTransactionValue = Box::new(work(tx).await?);
-                Ok(result)
-            })
-        }))
+        .transaction_boxed_with_policy(
+            Box::new(move |tx| {
+                Box::pin(async move {
+                    let result: BoxedTransactionValue = Box::new(work(tx).await?);
+                    Ok(result)
+                })
+            }),
+            policy,
+        )
         .await?;
 
     value

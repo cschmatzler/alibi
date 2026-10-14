@@ -468,9 +468,8 @@ where
     }
 
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
-        let email = normalize_user_email(email);
-        let sql = self.user_lookup(S::User::email_column(), email);
-        self.exec().fetch_optional(sql).await
+        self.get_user_by_email_with_connection(self.exec(), email)
+            .await
     }
 
     async fn get_user_by_username(&self, username: &str) -> AuthResult<Option<S::User>> {
@@ -488,62 +487,9 @@ where
         self.exec().fetch_optional(sql).await
     }
 
-    async fn update_user(&self, id: &str, mut update: UpdateUser) -> AuthResult<S::User> {
-        update.email = update.email.map(|email| normalize_user_email(&email));
-        _ = S::User::parse_id(id)?;
-        let hook_context = self.hook_context(None);
-        for hook in self.hooks() {
-            if hook
-                .before_update_user(id, &mut update, &hook_context)
-                .await
-                .map_err(alibi_core::store::adapter::callback_error)?
-                .is_cancelled()
-            {
-                return Err(cancelled_by_hook("user update"));
-            }
-        }
-        if let Some(username) = update.username.as_mut() {
-            *username = username.to_lowercase();
-        }
-        let Some(model) = find_user_by_id::<S::User>(self.exec(), id, Lock::None).await? else {
-            return Err(AuthError::UserNotFound);
-        };
-
-        let mut active = model.into_active();
-        let mut fields = std::mem::take(&mut update.additional_fields);
-        fields.apply_adapter_transforms_async().await?;
-        let provider_name = update.provider_name.take();
-        let provider_image = update.provider_image.take();
-        let provider_verification = update.provider_email_verified.take();
-        S::User::apply_update(&mut active, update, Utc::now());
-        stage_provider_verification::<S::User>(
-            &mut active,
-            provider_verification,
-            self.exec().engine(),
-        )?;
-        stage_provider_text::<S::User>(self.exec(), &mut active, provider_name, provider_image)
-            .await?;
-        let backend = self.exec().engine();
-        for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
-            let value = crate::additional_fields::prepare_value(
-                self.exec(),
-                <S::User as SqlxModel>::column_kind(column),
-                value,
-            )
-            .await?;
-            S::User::set_additional_field(&mut active, column, value, backend)?;
-        }
-        S::User::prepare_json_metadata(&mut active, backend)?;
-
-        let user = model::update::<S::User>(self.exec(), &active)
-            .await?
-            .ok_or_else(record_not_updated)?;
-        for hook in self.hooks() {
-            hook.after_update_user(&user, &hook_context)
-                .await
-                .map_err(alibi_core::store::adapter::callback_error)?;
-        }
-        Ok(user)
+    async fn update_user(&self, id: &str, update: UpdateUser) -> AuthResult<S::User> {
+        self.update_user_with_connection(self.exec(), None, id, update)
+            .await
     }
 
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
@@ -675,4 +621,87 @@ fn bind_filter_values(sql: &mut Sql, values: Vec<SqlValue>, cast: Option<&str>) 
         }
     }
     sql.push(")");
+}
+
+impl<S> SqlxStore<S>
+where
+    S: AuthSchema,
+    S::User: crate::schema::SqlxUserModel,
+{
+    pub(super) async fn update_user_with_connection(
+        &self,
+        exec: Exec<'_>,
+        tx: Option<&SqlxTransaction>,
+        id: &str,
+        mut update: UpdateUser,
+    ) -> AuthResult<S::User> {
+        update.email = update.email.map(|email| normalize_user_email(&email));
+        _ = S::User::parse_id(id)?;
+        let hook_context = self.hook_context(tx);
+        for hook in self.hooks() {
+            if hook
+                .before_update_user(id, &mut update, &hook_context)
+                .await
+                .map_err(alibi_core::store::adapter::callback_error)?
+                .is_cancelled()
+            {
+                return Err(cancelled_by_hook("user update"));
+            }
+        }
+        if let Some(username) = update.username.as_mut() {
+            *username = username.to_lowercase();
+        }
+        let Some(model) = find_user_by_id::<S::User>(exec, id, Lock::None).await? else {
+            return Err(AuthError::UserNotFound);
+        };
+
+        let mut active = model.into_active();
+        let mut fields = std::mem::take(&mut update.additional_fields);
+        fields.apply_adapter_transforms_async().await?;
+        let provider_name = update.provider_name.take();
+        let provider_image = update.provider_image.take();
+        let provider_verification = update.provider_email_verified.take();
+        S::User::apply_update(&mut active, update, Utc::now());
+        stage_provider_verification::<S::User>(&mut active, provider_verification, exec.engine())?;
+        stage_provider_text::<S::User>(exec, &mut active, provider_name, provider_image).await?;
+        let backend = exec.engine();
+        for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
+            let value = crate::additional_fields::prepare_value(
+                exec,
+                <S::User as SqlxModel>::column_kind(column),
+                value,
+            )
+            .await?;
+            S::User::set_additional_field(&mut active, column, value, backend)?;
+        }
+        S::User::prepare_json_metadata(&mut active, backend)?;
+
+        let user = model::update::<S::User>(exec, &active)
+            .await?
+            .ok_or_else(record_not_updated)?;
+        if tx.is_none() {
+            for hook in self.hooks() {
+                hook.after_update_user(&user, &hook_context)
+                    .await
+                    .map_err(alibi_core::store::adapter::callback_error)?;
+            }
+        }
+        Ok(user)
+    }
+}
+
+impl<S> SqlxStore<S>
+where
+    S: AuthSchema,
+    S::User: crate::schema::SqlxUserModel,
+{
+    pub(super) async fn get_user_by_email_with_connection(
+        &self,
+        exec: Exec<'_>,
+        email: &str,
+    ) -> AuthResult<Option<S::User>> {
+        let email = normalize_user_email(email);
+        let sql = self.user_lookup(S::User::email_column(), email);
+        exec.fetch_optional(sql).await
+    }
 }

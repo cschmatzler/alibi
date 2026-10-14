@@ -23,8 +23,9 @@ pub use organization::{
 pub use passkey::PasskeyStore;
 pub use session::SessionStore;
 pub use transaction::{
-    AuthTransaction, BoxedTransactionValue, TransactionFuture, TransactionStore, TransactionWork,
-    TypedTransactionFuture, transaction,
+    AfterCommitErrorPolicy, AuthTransaction, BoxedTransactionValue, TransactionFuture,
+    TransactionStore, TransactionWork, TypedTransactionFuture, transaction,
+    transaction_with_policy,
 };
 pub use two_factor::TwoFactorStore;
 pub use user::{NumericTextInput, UserStore};
