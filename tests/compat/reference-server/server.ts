@@ -70,6 +70,7 @@ import { microsoftProviderFixture } from "./fixtures/microsoft-provider-fixture"
 import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixture";
 import { naverProviderFixture } from "./fixtures/naver-provider-fixture";
 import { notionProviderFixture } from "./fixtures/notion-provider-fixture";
+import { scimFixture } from "./fixtures/scim-fixture";
 import { ssoFixture } from "./fixtures/sso-fixture";
 import { oauthClientFixture } from "./fixtures/oauth-client-fixture";
 import { oauthPopupFixture } from "./fixtures/oauth-popup-fixture";
@@ -3054,6 +3055,7 @@ const openApiInstances = openApiProfiles(PORT, database);
 const oauthProviderMetadata = oauthProviderDiscovery(`http://localhost:${PORT}`);
 const oauthClients = await oauthClientFixture(authOptions);
 const ssoControl = await ssoFixture(authOptions);
+const scimControl = await scimFixture(authOptions);
 
 const passkeyControls = passkeyFixture(database);
 const server = Bun.serve({
@@ -3065,6 +3067,8 @@ const server = Bun.serve({
     await capturePasswordlessRequest(request);
     try {
       const url = new URL(request.url);
+      const scimResponse = await scimControl(request);
+      if (scimResponse) return scimResponse;
       const grantResponse = await deviceGrant.handle(request);
       if (grantResponse) return grantResponse;
       const deletionResponse = await deletionHooks.handle(request);
