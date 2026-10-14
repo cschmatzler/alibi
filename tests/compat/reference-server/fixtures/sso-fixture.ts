@@ -59,7 +59,13 @@ export async function ssoFixture(base: BetterAuthOptions) {
         if (data.source.method !== "oauth" && !data.source.method.startsWith("sso-")) return;
         validationEvents.push(
           JSON.parse(
-            JSON.stringify({ source: data.source, name: data.user.name, email: data.user.email }),
+            JSON.stringify({
+              source: data.source,
+              name: data.user.name,
+              email: data.user.email,
+              requestPresent: Boolean(context.request),
+              path: context.path,
+            }),
           ),
         );
         if (
