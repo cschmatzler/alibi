@@ -132,6 +132,7 @@ dependencies = [
  "hmac 0.13.0",
  "http",
  "hybrid-array",
+ "icu_collator",
  "indexmap 2.14.2",
  "jsonwebtoken",
  "percent-encoding",

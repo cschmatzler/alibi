@@ -143,9 +143,9 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                 .await
                 .map_err(map_db_err)?
         };
-        Ok(user_ids
+        user_ids
             .into_iter()
-            .map(|user_id| {
+            .map(|user_id| -> AuthResult<ScimProjectionPreparedUser> {
                 let mut sources = users
                     .iter()
                     .filter(|user| {
@@ -158,7 +158,7 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                         active: user.active,
                     })
                     .collect::<Vec<_>>();
-                sources.sort_by(|left, right| left.id.cmp(&right.id));
+                alibi_core::store::scim::sort_scim_sources(&mut sources)?;
                 let removed_grant_ids = grants
                     .iter()
                     .filter(|grant| grant.user_id == user_id)
@@ -201,7 +201,7 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                         },
                     });
                 }
-                ScimProjectionPreparedUser {
+                Ok(ScimProjectionPreparedUser {
                     state: ScimProjectedUserState {
                         provisioning_domain_id: domain.into(),
                         user_id,
@@ -212,9 +212,9 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                     removed_grant_ids,
                     existing_grants,
                     role_sources,
-                }
+                })
             })
-            .collect())
+            .collect()
     }
     pub(super) async fn create_scim_projection_grant_with_connection<C: ConnectionTrait>(
         &self,

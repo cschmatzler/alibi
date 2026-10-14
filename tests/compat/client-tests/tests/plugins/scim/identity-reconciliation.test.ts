@@ -12,7 +12,11 @@ compatScenario(
         body: JSON.stringify(input),
       });
     expect(await (await control("configure-identity")).json()).toEqual({ configured: true });
-    const owner = (await (await control("seed-projection")).json()) as any;
+    const owner = (await (
+      await control("seed-projection", {
+        sourceIds: ["scim-alias-a", "scim-alias-ä", "scim-alias-Z"],
+      })
+    ).json()) as any;
     expect(await (await control("prepare-active-bindings")).json()).toEqual({ prepared: true });
     expect(await (await control("claim-profile-source")).json()).toEqual({ claimed: true });
     const storage = async () => (await (await control("projection-storage")).json()) as any;
@@ -30,13 +34,13 @@ compatScenario(
       active: true,
       sources: [
         {
-          id: "scim-alias-b",
+          id: "scim-alias-ä",
           connectionId: "conn-b",
           provisioningDomainId: "tenant-a",
           active: false,
         },
         {
-          id: "scim-alias-c",
+          id: "scim-alias-Z",
           connectionId: "conn-c",
           provisioningDomainId: "tenant-b",
           active: true,

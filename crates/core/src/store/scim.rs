@@ -255,6 +255,20 @@ pub struct ScimIdentitySource {
     pub provisioning_domain_id: String,
     pub active: bool,
 }
+/// Order callback sources like the reference's `String.localeCompare`.
+///
+/// # Errors
+/// Returns an error if the compiled collation data cannot be loaded.
+pub fn sort_scim_sources(sources: &mut [ScimIdentitySource]) -> AuthResult<()> {
+    let collator = icu_collator::Collator::try_new(
+        icu_collator::CollatorPreferences::default(),
+        icu_collator::options::CollatorOptions::default(),
+    )
+    .map_err(|error| AuthError::internal(error.to_string()))?;
+    sources.sort_by(|left, right| collator.compare(&left.id, &right.id));
+    Ok(())
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScimProjectedUserState {

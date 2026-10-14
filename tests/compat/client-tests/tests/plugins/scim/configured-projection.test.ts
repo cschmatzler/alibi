@@ -12,7 +12,11 @@ compatScenario(
         body: JSON.stringify(input),
       });
     expect(await (await control("configure-projection")).json()).toEqual({ configured: true });
-    const seeded = (await (await control("seed-projection")).json()) as any;
+    const seeded = (await (
+      await control("seed-projection", {
+        sourceIds: ["scim-alias-ä", "scim-alias-Z", "scim-alias-c"],
+      })
+    ).json()) as any;
     const response = await control("reconcileSCIMProjection", {
       body: { provisioningDomainId: "  tenant-a  " },
     });
@@ -30,13 +34,13 @@ compatScenario(
       active: true,
       sources: [
         {
-          id: "scim-alias-a",
+          id: "scim-alias-ä",
           connectionId: "conn-a",
           provisioningDomainId: "tenant-a",
           active: true,
         },
         {
-          id: "scim-alias-b",
+          id: "scim-alias-Z",
           connectionId: "conn-b",
           provisioningDomainId: "tenant-a",
           active: false,
@@ -58,7 +62,7 @@ compatScenario(
     expect(observed[1].active).toBe(false);
     expect(observed[1].sources).toEqual([
       {
-        id: "scim-alias-b",
+        id: "scim-alias-Z",
         connectionId: "conn-b",
         provisioningDomainId: "tenant-a",
         active: false,
