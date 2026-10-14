@@ -4,9 +4,25 @@ import { Cookie } from "tough-cookie";
 
 import { compatScenario } from "../../../support/scenario";
 import { encryptSamlGrant } from "./encrypt-saml-grant";
-for (const mode of ["manual", "xml", "encrypted", "encrypted-key"]) {
+for (const mode of [
+  "manual",
+  "xml",
+  "encrypted",
+  "encrypted-key",
+  "encrypted-missing-key",
+  "encrypted-wrong-key",
+  "encrypted-wrong-pass",
+  "encrypted-missing-pass",
+]) {
   const xmlMetadata = mode === "xml";
   const encrypted = mode.startsWith("encrypted");
+  const keyFailure = [
+    "encrypted-missing-key",
+    "encrypted-wrong-key",
+    "encrypted-wrong-pass",
+    "encrypted-missing-pass",
+  ].includes(mode);
+  const passwordKey = mode === "encrypted-key" || mode.endsWith("-pass");
   compatScenario(
     `SAML ${mode} ACS redeems signed requests, rejects wrong keys and prevents replay`,
     async (ctx) => {
@@ -36,8 +52,9 @@ for (const mode of ["manual", "xml", "encrypted", "encrypted-key"]) {
       const cert = await Bun.file(
         new URL("../../../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
       ).text();
-      const providerId =
-        mode === "encrypted-key"
+      const providerId = keyFailure
+        ? `${mode}-acs-provider`
+        : mode === "encrypted-key"
           ? "encrypted-key-acs-provider"
           : encrypted
             ? "encrypted-acs-provider"
@@ -64,16 +81,27 @@ for (const mode of ["manual", "xml", "encrypted", "encrypted-key"]) {
               ? {
                   spMetadata: {
                     isAssertionEncrypted: true,
-                    encPrivateKey: await Bun.file(
-                      new URL(
-                        mode === "encrypted-key"
-                          ? "../../../../fixtures/salesforce-transport/encrypted-key.pem"
-                          : "../../../../fixtures/salesforce-transport/key.pem",
-                        import.meta.url,
-                      ),
-                    ).text(),
-                    ...(mode === "encrypted-key"
-                      ? { encPrivateKeyPass: "sso-test-passphrase" }
+                    ...(mode === "encrypted-missing-key"
+                      ? {}
+                      : {
+                          encPrivateKey: await Bun.file(
+                            new URL(
+                              passwordKey
+                                ? "../../../../fixtures/salesforce-transport/encrypted-key.pem"
+                                : mode === "encrypted-wrong-key"
+                                  ? "../../../../fixtures/passkey-attestation/ca-key.pem"
+                                  : "../../../../fixtures/salesforce-transport/key.pem",
+                              import.meta.url,
+                            ),
+                          ).text(),
+                        }),
+                    ...(passwordKey && mode !== "encrypted-missing-pass"
+                      ? {
+                          encPrivateKeyPass:
+                            mode === "encrypted-wrong-pass"
+                              ? "incorrect-passphrase"
+                              : "sso-test-passphrase",
+                        }
                       : {}),
                   },
                 }
@@ -142,7 +170,7 @@ for (const mode of ["manual", "xml", "encrypted", "encrypted-key"]) {
         const account = (await (
           await control({ action: "saml-account-row", providerId, accountId: email })
         ).json()) as any;
-        if (wrongKey) {
+        if (wrongKey || keyFailure) {
           expect(location.pathname).toBe("/failed");
           expect(location.searchParams.get("error")).toBe("saml_error");
           expect(location.searchParams.get("error_description")).toBe("Invalid SAML response");
