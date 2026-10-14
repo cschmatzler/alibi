@@ -10,7 +10,8 @@ mod managed;
 mod projection;
 pub use managed::{ScimManagedConnectionInput, ScimManagedCredentialRotationInput};
 pub use projection::{
-    ConfiguredScimPlugin, ScimIdentitySource, ScimProjectedUserState, ScimProjection,
+    ConfiguredScimPlugin, ScimAuthorizationSource, ScimIdentitySource, ScimProjectedUserState,
+    ScimProjection, ScimRoleExistenceInput, ScimRoleMappingInput, ScimRoleProjection,
 };
 
 /// Policy for the framework-managed provisioning credential catalog.

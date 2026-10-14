@@ -1,3 +1,4 @@
+use super::entities::{scim_group as group, scim_group_member as membership};
 use super::{
     SeaOrmStore,
     entities::{
@@ -20,6 +21,7 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         db: &C,
         domain: &str,
         ids: &[String],
+        roles: bool,
     ) -> AuthResult<Vec<ScimProjectionPreparedUser>> {
         if ids.is_empty() {
             return Ok(Vec::new());
@@ -112,6 +114,35 @@ impl<S: AuthSchema> SeaOrmStore<S> {
             .all(db)
             .await
             .map_err(map_db_err)?;
+        let active_ids = users
+            .iter()
+            .filter(|user| user.active && !retired.contains(&user.connection_id))
+            .map(|user| user.id.clone())
+            .collect::<Vec<_>>();
+        let memberships = if roles && !active_ids.is_empty() {
+            membership::Entity::find()
+                .filter(membership::Column::ScimUserId.is_in(active_ids))
+                .limit(limit)
+                .all(db)
+                .await
+                .map_err(map_db_err)?
+        } else {
+            Vec::new()
+        };
+        let group_ids = memberships
+            .iter()
+            .map(|member| member.group_id.clone())
+            .collect::<std::collections::HashSet<_>>();
+        let groups = if group_ids.is_empty() {
+            Vec::new()
+        } else {
+            group::Entity::find()
+                .filter(group::Column::Id.is_in(group_ids))
+                .limit(limit)
+                .all(db)
+                .await
+                .map_err(map_db_err)?
+        };
         Ok(user_ids
             .into_iter()
             .map(|user_id| {
@@ -133,6 +164,43 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                     .filter(|grant| grant.user_id == user_id)
                     .map(|grant| grant.id.clone())
                     .collect();
+                let existing_grants = grants
+                    .iter()
+                    .filter(|grant| grant.user_id == user_id)
+                    .map(|grant| (grant.id.clone(), grant.grant_key.clone()))
+                    .collect();
+                let mut role_sources = Vec::new();
+                for member in &memberships {
+                    let Some(user) = users.iter().find(|user| {
+                        user.id == member.scim_user_id
+                            && user.user_id == user_id
+                            && user.active
+                            && !retired.contains(&user.connection_id)
+                    }) else {
+                        continue;
+                    };
+                    let Some(group) = groups.iter().find(|group| {
+                        group.id == member.group_id
+                            && group.connection_id == user.connection_id
+                            && group.provisioning_domain_id == domain
+                    }) else {
+                        continue;
+                    };
+                    role_sources.push(alibi_core::store::ScimRoleMappingInput {
+                        connection_id: user.connection_id.clone(),
+                        provisioning_domain_id: domain.into(),
+                        scim_user_id: user.id.clone(),
+                        user_id: user.user_id.clone(),
+                        source: alibi_core::store::ScimAuthorizationSource::Group {
+                            id: group.id.clone(),
+                            external_id: group
+                                .external_id
+                                .clone()
+                                .filter(|value| !value.is_empty()),
+                            display_name: group.display_name.clone(),
+                        },
+                    });
+                }
                 ScimProjectionPreparedUser {
                     state: ScimProjectedUserState {
                         provisioning_domain_id: domain.into(),
@@ -142,9 +210,39 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                         grants: Vec::new(),
                     },
                     removed_grant_ids,
+                    existing_grants,
+                    role_sources,
                 }
             })
             .collect())
+    }
+    pub(super) async fn create_scim_projection_grant_with_connection<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        data: alibi_core::store::CreateScimProjectionGrant,
+    ) -> AuthResult<()> {
+        use sea_orm::{ActiveModelTrait, Set};
+        _ = grant::ActiveModel {
+            id: Set(self
+                .generated_id(db, "scimProjectionGrant", "scimProjectionGrant", "id")
+                .await?
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
+            connection_id: Set(data.connection_id),
+            provisioning_domain_id: Set(data.provisioning_domain_id),
+            scim_user_id: Set(data.scim_user_id),
+            user_id: Set(data.user_id),
+            source_kind: Set("group".into()),
+            source_id: Set(data.source_id),
+            source_value: Set(Some(data.source_value)),
+            role: Set(data.role),
+            grant_key: Set(data.grant_key),
+            created_at: Set(data.created_at),
+            updated_at: Set(data.created_at),
+        }
+        .insert(db)
+        .await
+        .map_err(map_db_err)?;
+        Ok(())
     }
     pub(super) async fn remove_scim_projection_grants_with_connection<C: ConnectionTrait>(
         &self,

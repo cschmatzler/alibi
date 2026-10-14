@@ -268,4 +268,47 @@ pub struct ScimProjectionCandidate {
 pub struct ScimProjectionPreparedUser {
     pub state: ScimProjectedUserState,
     pub removed_grant_ids: Vec<String>,
+    pub existing_grants: Vec<(String, String)>,
+    pub role_sources: Vec<ScimRoleMappingInput>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum ScimAuthorizationSource {
+    Group {
+        id: String,
+        #[serde(rename = "externalId", skip_serializing_if = "Option::is_none")]
+        external_id: Option<String>,
+        #[serde(rename = "displayName")]
+        display_name: String,
+    },
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScimRoleMappingInput {
+    pub connection_id: String,
+    pub provisioning_domain_id: String,
+    pub scim_user_id: String,
+    pub user_id: String,
+    pub source: ScimAuthorizationSource,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScimRoleExistenceInput {
+    pub connection_id: String,
+    pub provisioning_domain_id: String,
+    pub role: String,
+}
+
+#[derive(Clone)]
+pub struct CreateScimProjectionGrant {
+    pub connection_id: String,
+    pub provisioning_domain_id: String,
+    pub scim_user_id: String,
+    pub user_id: String,
+    pub source_id: String,
+    pub source_value: String,
+    pub role: String,
+    pub grant_key: String,
+    pub created_at: DateTime<Utc>,
 }

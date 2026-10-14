@@ -26,9 +26,18 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         _domain: &str,
         _ids: &[String],
+        _roles: bool,
     ) -> AuthResult<Vec<crate::store::ScimProjectionPreparedUser>> {
         Err(AuthError::not_implemented(
             "Transactional SCIM projection is unsupported",
+        ))
+    }
+    async fn create_scim_projection_grant(
+        &self,
+        _data: crate::store::CreateScimProjectionGrant,
+    ) -> AuthResult<()> {
+        Err(AuthError::not_implemented(
+            "Transactional SCIM grants are unsupported",
         ))
     }
     async fn remove_scim_projection_grants(

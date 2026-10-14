@@ -276,9 +276,18 @@ where
         &self,
         domain: &str,
         ids: &[String],
+        roles: bool,
     ) -> AuthResult<Vec<alibi_core::store::ScimProjectionPreparedUser>> {
         self.store
-            .prepare_scim_projection_with_exec(Exec::tx(self.tx), domain, ids)
+            .prepare_scim_projection_with_exec(Exec::tx(self.tx), domain, ids, roles)
+            .await
+    }
+    async fn create_scim_projection_grant(
+        &self,
+        data: alibi_core::store::CreateScimProjectionGrant,
+    ) -> AuthResult<()> {
+        self.store
+            .create_scim_projection_grant_with_exec(Exec::tx(self.tx), data)
             .await
     }
     async fn remove_scim_projection_grants(
