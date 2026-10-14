@@ -9,7 +9,7 @@ use std::sync::Arc;
 #[path="../../../../support/sso_saml_grant.rs"]mod saml_grant;
 #[path="../../../../support/sso_validation_policy.rs"]mod validation_policy;
 async fn instance(config:&AuthConfig,database:&DatabaseConnection,mode:&str,dns:std::net::SocketAddr,policy:&validation_policy::Policy)->AuthResult<Alibi<TestSchema>> {
- let mut configured=config.clone();if mode=="validation" {configured.user_validation=Some(Arc::new(policy.clone()));}let config=configured;
+ let mut configured=config.clone();if mode=="domain" {configured.account.account_linking.require_local_email_verified=false;}if mode=="validation" {configured.user_validation=Some(Arc::new(policy.clone()));}let config=configured;
  AuthBuilder::<TestSchema>::new(config.clone()).store(crate::backend::store::<TestSchema>(config.clone(),database.clone())).plugin(EmailPasswordPlugin::new()).plugin(SessionManagementPlugin::new()).plugin(SsoPlugin::with_config(SsoConfig{disable_implicit_sign_up:mode=="no-signup",trust_email_verified:mode=="trusted-claims",saml_enable_single_logout:matches!(mode,"slo"|"signed-slo"|"signed-request-slo"),saml_want_logout_response_signed:mode=="signed-slo",saml_want_logout_request_signed:mode=="signed-request-slo",redirect_uri:(mode=="shared").then(||"/sso/callback".into()),domain_verification:mode=="domain",domain_verification_dns_servers:vec![dns],..Default::default()})).build().await
 }
 pub(crate) async fn router(config:&AuthConfig,database:DatabaseConnection)->AuthResult<Router> {

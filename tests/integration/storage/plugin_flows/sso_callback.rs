@@ -19,7 +19,8 @@ backend_tests!(
     sso_runtime_discovery_rejects_bad_documents_and_hydrates_login_without_persisting,
     sso_trusted_oidc_email_verification_accepts_only_exact_true_claims,
     sso_validation_receives_protocol_source_before_identity_writes,
-    sso_signup_policy_gates_new_identity_and_honors_oidc_explicit_requests
+    sso_signup_policy_gates_new_identity_and_honors_oidc_explicit_requests,
+    sso_verified_domain_links_subdomain_accounts_without_trusting_foreign_email
 );
 async fn sso_callback_redeems_bound_code_and_creates_usable_session<B: Backend>(
     db: Db,
@@ -803,6 +804,168 @@ async fn sso_signup_policy_gates_new_identity_and_honors_oidc_explicit_requests<
                 .await;
                 assert_eq!(body(&session)["user"]["email"], email);
                 assert!(store.get_account(provider, &subject).await?.is_some());
+            }
+        }
+    }
+    B::close(connection).await
+}
+
+async fn sso_verified_domain_links_subdomain_accounts_without_trusting_foreign_email<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let idp = peer::start().await;
+    let dns = super::sso_dns::start().await;
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let mut config = AuthConfig::new(SECRET)
+        .base_url(ORIGIN)
+        .trusted_origin(&idp.base);
+    config.account.account_linking.require_local_email_verified = false;
+    let auth = AuthBuilder::<B::Schema>::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(SsoPlugin::with_config(SsoConfig {
+            domain_verification: true,
+            domain_verification_dns_servers: vec![dns.address],
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "domain-link-owner@example.test").await;
+    let owned = EndpointOptions {
+        headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+        ..Default::default()
+    };
+    let cert = include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem");
+    for saml in [false, true] {
+        let provider = if saml {
+            "domain-link-saml"
+        } else {
+            "domain-link-oidc"
+        };
+        let registration = if saml {
+            json!({"providerId":provider,"issuer":"https://sp.example.test/entity","domain":"company.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":cert,"idpMetadata":{"entityID":"https://idp.example.test/entity"},"wantAssertionsSigned":true}})
+        } else {
+            json!({"providerId":provider,"issuer":idp.base,"domain":"company.test","oidcConfig":{"clientId":"enterprise-client","clientSecret":"stored-secret","skipDiscovery":true,"authorizationEndpoint":format!("{}/authorize",idp.base),"tokenEndpoint":format!("{}/token",idp.base),"jwksEndpoint":format!("{}/jwks",idp.base),"userInfoEndpoint":format!("{}/userinfo",idp.base)}})
+        };
+        let created = Box::pin(auth.dispatch_endpoint(
+            SsoPlugin::register_sso_provider_endpoint(&registration)?,
+            owned.clone(),
+        ))
+        .await?
+        .into_response()?;
+        let token = body(&created)["domainVerificationToken"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        *dns.records.lock().unwrap() = vec![vec![format!("_better-auth-token-{provider}={token}")]];
+        let verified = Box::pin(
+            auth.dispatch_endpoint(SsoPlugin::verify_domain_endpoint(provider)?, owned.clone()),
+        )
+        .await?
+        .into_response()?;
+        assert_eq!(verified.status, 204);
+        assert_eq!(
+            store
+                .get_sso_provider(provider)
+                .await?
+                .unwrap()
+                .domain_verified,
+            Some(true)
+        );
+        for (index, domain) in [
+            "company.test",
+            "engineering.company.test",
+            "notcompany.test",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let email = format!("domain-link-{saml}-{index}@{domain}");
+            let existing = signup(&auth, &email).await;
+            let existing_id = body(&existing)["user"]["id"].clone();
+            let subject = if saml {
+                email.clone()
+            } else {
+                format!("domain-link-{index}")
+            };
+            *idp.profile.lock().unwrap() = Some(
+                json!({"sub":subject,"email":email,"email_verified":false,"name":"SSO employee"}),
+            );
+            let started = Box::pin(auth.dispatch_endpoint(SsoPlugin::sign_in_sso_endpoint(&json!({"providerId":provider,"callbackURL":format!("{ORIGIN}/complete"),"errorCallbackURL":format!("{ORIGIN}/failed")}))?,EndpointOptions::default())).await?.into_response()?;
+            let endpoint = if saml {
+                SsoPlugin::acs_endpoint(
+                    provider,
+                    &super::saml_idp::grant(
+                        body(&started)["url"].as_str().unwrap(),
+                        &email,
+                        false,
+                    )?,
+                )?
+            } else {
+                let grant = reqwest::Client::builder()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()?
+                    .get(body(&started)["url"].as_str().unwrap())
+                    .send()
+                    .await?;
+                assert_eq!(grant.status(), 302);
+                let url = url::Url::parse(grant.headers().get("location").unwrap().to_str()?)?;
+                let query = url
+                    .query_pairs()
+                    .into_owned()
+                    .collect::<std::collections::HashMap<_, _>>();
+                SsoPlugin::callback_sso_endpoint(provider, &json!(query))?
+            };
+            let completed = Box::pin(auth.dispatch_endpoint(
+                endpoint,
+                EndpointOptions {
+                    headers: Some([("cookie".into(), cookies(&started))].into_iter().collect()),
+                    ..Default::default()
+                },
+            ))
+            .await?
+            .into_response()?;
+            let location = url::Url::parse(completed.headers.get("location").unwrap())?;
+            let error = location
+                .query_pairs()
+                .find(|(key, _)| key == "error")
+                .map(|(_, value)| value.into_owned());
+            if index == 2 {
+                assert_eq!(
+                    error.as_deref(),
+                    Some(if saml {
+                        "account_not_linked"
+                    } else {
+                        "account not linked"
+                    })
+                );
+                assert!(store.get_account(provider, &subject).await?.is_none());
+                assert!(completed.headers.get_all("set-cookie").all(|raw| {
+                    raw.split(';')
+                        .next()
+                        .and_then(|pair| pair.strip_prefix("better-auth.session_token="))
+                        .is_none_or(str::is_empty)
+                }));
+            } else {
+                assert_eq!(error, None);
+                let session = call(
+                    &auth,
+                    request("/get-session", None, &cookies(&completed)),
+                    200,
+                )
+                .await;
+                assert_eq!(body(&session)["user"]["id"], existing_id);
+                assert_eq!(
+                    store
+                        .get_account(provider, &subject)
+                        .await?
+                        .unwrap()
+                        .user_id()
+                        .as_ref(),
+                    existing_id.as_str().unwrap()
+                );
             }
         }
     }
