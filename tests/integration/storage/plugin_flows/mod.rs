@@ -512,4 +512,5 @@ mod scim_managed_list;
 
 mod scim_managed_get;
 
+mod scim_managed_revoke;
 mod scim_managed_rotate;

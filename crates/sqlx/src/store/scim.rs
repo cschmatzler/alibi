@@ -15,8 +15,163 @@ use alibi_core::{
     store::{CreateScimManagedConnection, ScimManagedCreation, ScimManagedStore},
 };
 use async_trait::async_trait;
+use chrono::SubsecRound;
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
+    async fn revoke_scim_managed_credential(
+        &self,
+        data: alibi_core::store::RevokeScimManagedCredential,
+    ) -> AuthResult<Option<alibi_core::store::ScimManagedConnection>> {
+        self.in_transaction(true, async move |tx| {
+            let exec = Exec::tx(tx);
+            let mut sql = model::select_model::<connection::Model>(exec);
+            sql.push(" WHERE ");
+            sql.compare(
+                "scimManagedConnection",
+                "connectionId",
+                " = ",
+                data.connection_id,
+            );
+            sql.push(" AND ");
+            sql.compare(
+                "scimManagedConnection",
+                "provisioningDomainId",
+                " = ",
+                data.provisioning_domain_id,
+            );
+            model::limit_one(&mut sql);
+            if exec.engine() == crate::pool::Engine::Postgres {
+                sql.push(" FOR UPDATE");
+            }
+            let mut connection = exec
+                .fetch_optional::<connection::Model>(sql)
+                .await?
+                .ok_or_else(|| alibi_core::AuthError::Api {
+                    status: 404,
+                    code: None,
+                    message: "Managed SCIM connection not found".into(),
+                })?;
+            let mut sql = model::select_model::<credential::Model>(exec);
+            sql.push(" WHERE ");
+            sql.compare(
+                "scimManagedCredential",
+                "credentialId",
+                " = ",
+                data.credential_id.clone(),
+            );
+            sql.push(" AND ");
+            sql.compare(
+                "scimManagedCredential",
+                "connectionRecordId",
+                " = ",
+                connection.id.clone(),
+            );
+            model::limit_one(&mut sql);
+            let credential = exec
+                .fetch_optional::<credential::Model>(sql)
+                .await?
+                .ok_or_else(|| alibi_core::AuthError::Api {
+                    status: 404,
+                    code: None,
+                    message: "Managed SCIM connection not found".into(),
+                })?;
+            if credential.status == "revoked" {
+                return Ok(Some(connection.into()));
+            }
+            if connection.status != "active" || credential.status != "active" {
+                return Err(alibi_core::store::scim::scim_managed_conflict(
+                    "Managed SCIM credential is not active",
+                ));
+            }
+            let mut sql = Sql::with(exec.engine(), "UPDATE ");
+            sql.ident("scimManagedConnection");
+            sql.push(" SET ");
+            sql.ident("revision");
+            sql.push(" = ");
+            sql.ident("revision");
+            sql.push(" + 1 WHERE ");
+            sql.compare("scimManagedConnection", "id", " = ", connection.id.clone());
+            sql.push(" AND ");
+            sql.compare("scimManagedConnection", "status", " = ", "active");
+            sql.push(" AND ");
+            sql.compare(
+                "scimManagedConnection",
+                "revision",
+                " = ",
+                connection.revision,
+            );
+            if exec.execute(sql).await? == 0 {
+                return Ok(None);
+            }
+            connection.revision += 1;
+            let revoked_at = chrono::Utc::now().trunc_subsecs(3);
+            let mut sql = Sql::with(exec.engine(), "UPDATE ");
+            sql.ident("scimManagedCredential");
+            sql.push(" SET ");
+            for (index, (column, value)) in [
+                ("status", "revoked".to_string()),
+                (
+                    "activeSlotKey",
+                    format!("{}:inactive", credential.credential_id),
+                ),
+                ("revokedBy", data.actor_id.clone()),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                if index > 0 {
+                    sql.push(", ");
+                }
+                sql.ident(column);
+                sql.push(" = ");
+                sql.bind(value);
+            }
+            sql.push(", ");
+            sql.ident("revokedAt");
+            sql.push(" = ");
+            sql.bind(revoked_at);
+            sql.push(" WHERE ");
+            sql.compare("scimManagedCredential", "id", " = ", credential.id);
+            sql.push(" AND ");
+            sql.compare("scimManagedCredential", "status", " = ", "active");
+            sql.push(" AND ");
+            sql.compare(
+                "scimManagedCredential",
+                "activeSlotKey",
+                " = ",
+                credential.active_slot_key,
+            );
+            if exec.execute(sql).await? == 0 {
+                return Ok(None);
+            }
+            let mut row = ActiveRow::new();
+            row.set(
+                "id",
+                self.generated_id(
+                    exec,
+                    "scimManagedConnectionEvent",
+                    "scimManagedConnectionEvent",
+                    "id",
+                )
+                .await?
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            );
+            row.set("connectionRecordId", connection.id.clone());
+            row.set(
+                "eventKey",
+                format!("{}:{}", connection.id, connection.revision),
+            );
+            row.set("sequence", connection.revision);
+            row.set("type", "credential.revoked");
+            row.set("actorId", data.actor_id);
+            row.set("credentialId", Some(data.credential_id));
+            row.set("createdAt", revoked_at);
+            _ = model::insert::<event::Model>(exec, &row).await?;
+            Ok(Some(connection.into()))
+        })
+        .await
+    }
+
     async fn rotate_scim_managed_credential(
         &self,
         data: alibi_core::store::RotateScimManagedCredential,

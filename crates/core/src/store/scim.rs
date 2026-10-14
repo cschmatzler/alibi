@@ -61,6 +61,13 @@ pub struct RotateScimManagedCredential {
     pub created_at: DateTime<Utc>,
     pub max_active_credentials: usize,
 }
+#[derive(Clone)]
+pub struct RevokeScimManagedCredential {
+    pub connection_id: String,
+    pub provisioning_domain_id: String,
+    pub credential_id: String,
+    pub actor_id: String,
+}
 pub struct ScimManagedConnectionState {
     pub connection: ScimManagedConnection,
     pub credentials: Vec<ScimManagedCredential>,
@@ -71,6 +78,15 @@ pub struct ScimManagedCreation {
 }
 #[async_trait]
 pub trait ScimManagedStore: Send + Sync {
+    async fn revoke_scim_managed_credential(
+        &self,
+        _data: RevokeScimManagedCredential,
+    ) -> AuthResult<Option<ScimManagedConnection>> {
+        Err(AuthError::config(
+            "Managed SCIM persistence is not supported by this store",
+        ))
+    }
+
     async fn rotate_scim_managed_credential(
         &self,
         _data: RotateScimManagedCredential,

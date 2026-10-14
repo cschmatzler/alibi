@@ -44,7 +44,10 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
     let body = call.body().ok_or_else(|| {
         crate::endpoint::validation("[body] Invalid input: expected object, received undefined")
     })?;
-    if call.operation_id() == "getSCIMManagedConnection" {
+    if matches!(
+        call.operation_id(),
+        "getSCIMManagedConnection" | "revokeSCIMManagedCredential"
+    ) {
         let id = body.get("connectionId");
         let Some(id) = id.and_then(JsValue::as_str) else {
             return Err(crate::endpoint::validation(format!(
@@ -62,18 +65,40 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                 "[body.connectionId] Too big: expected string to have <=255 characters",
             ));
         }
+        let mut extra = indexmap::IndexMap::new();
+        if call.operation_id() == "revokeSCIMManagedCredential" {
+            let value = body.get("credentialId");
+            let credential = value.and_then(JsValue::as_str).ok_or_else(|| {
+                crate::endpoint::validation(format!(
+                    "[body.credentialId] Invalid input: expected string, received {}",
+                    crate::authentication_helpers::json_type(value)
+                ))
+            })?;
+            if !credential.starts_with("ba_scim_credential_") {
+                return Err(crate::endpoint::validation(
+                    r#"[body.credentialId] Invalid string: must start with "ba_scim_credential_""#,
+                ));
+            }
+            if credential.encode_utf16().count() > 255 {
+                return Err(crate::endpoint::validation(
+                    "[body.credentialId] Too big: expected string to have <=255 characters",
+                ));
+            }
+            _ = extra.insert("credentialId".into(), JsValue::String(credential.into()));
+            _ = extra.insert(
+                "actorId".into(),
+                JsValue::String(body_string(body, "actorId", 1)?),
+            );
+        }
+        extra.extend([
+            ("connectionId".into(), JsValue::String(id.into())),
+            (
+                "provisioningDomainId".into(),
+                JsValue::String(body_string(body, "provisioningDomainId", 1)?),
+            ),
+        ]);
         return Ok(EndpointInput {
-            body: Some(JsValue::Object(
-                [
-                    ("connectionId".into(), JsValue::String(id.into())),
-                    (
-                        "provisioningDomainId".into(),
-                        JsValue::String(body_string(body, "provisioningDomainId", 1)?),
-                    ),
-                ]
-                .into_iter()
-                .collect(),
-            )),
+            body: Some(JsValue::Object(extra)),
             query: call.query().cloned(),
         });
     }
@@ -169,6 +194,62 @@ fn random_string(length: usize) -> String {
         .collect()
 }
 impl ScimPlugin {
+    /// Revoke one domain-owned credential through the trusted server API.
+    /// # Errors
+    /// Returns an error if the arguments cannot be serialized.
+    pub fn revoke_managed_credential_endpoint(
+        id: &str,
+        domain: &str,
+        credential: &str,
+        actor: &str,
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("scim","revokeSCIMManagedCredential").with_body(&serde_json::json!({"connectionId":id,"provisioningDomainId":domain,"credentialId":credential,"actorId":actor}))
+    }
+    pub(super) async fn revoke_managed_credential<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        _ = self
+            .managed_connections
+            .as_ref()
+            .ok_or_else(|| AuthError::Api {
+                status: 400,
+                code: None,
+                message: "SCIM managed connections are not configured".into(),
+            })?;
+        let body = call
+            .body()
+            .ok_or_else(|| AuthError::internal("Validated body missing"))?;
+        let data = alibi_core::store::RevokeScimManagedCredential {
+            connection_id: body
+                .get("connectionId")
+                .and_then(JsValue::as_str)
+                .unwrap_or_default()
+                .into(),
+            credential_id: body
+                .get("credentialId")
+                .and_then(JsValue::as_str)
+                .unwrap_or_default()
+                .into(),
+            provisioning_domain_id: body_string(body, "provisioningDomainId", 1)?,
+            actor_id: body_string(body, "actorId", 1)?,
+        };
+        for _ in 0..5 {
+            if ctx
+                .database
+                .revoke_scim_managed_credential(data.clone())
+                .await?
+                .is_some()
+            {
+                return self.get_managed_connection(call, ctx).await;
+            }
+        }
+        Err(alibi_core::store::scim::scim_managed_conflict(
+            "Managed SCIM connection changed repeatedly during credential revocation",
+        ))
+    }
+
     /// Trusted rotation arguments with an actual Date expiry.
     /// # Errors
     /// Returns an error if the arguments cannot be serialized.
