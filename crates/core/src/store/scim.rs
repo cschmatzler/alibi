@@ -112,6 +112,15 @@ pub struct ScimManagedCreation {
 }
 #[async_trait]
 pub trait ScimManagedStore: Send + Sync {
+    async fn recover_empty_scim_decommission(
+        &self,
+        _binding: ScimConnectionBinding,
+    ) -> AuthResult<Option<ScimConnectionBinding>> {
+        Err(AuthError::config(
+            "SCIM binding persistence is not supported by this store",
+        ))
+    }
+
     async fn decommission_scim_managed_connection(
         &self,
         _data: DecommissionScimManagedConnection,

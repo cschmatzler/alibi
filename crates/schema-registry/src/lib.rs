@@ -737,3 +737,7 @@ pub const POSTGRES_SCIM_MANAGED_SCHEMA: &str = include_str!("../schema/postgres_
 
 pub const SQLITE_SCIM_BINDING_SCHEMA: &str = include_str!("../schema/sqlite_scim_binding.sql");
 pub const POSTGRES_SCIM_BINDING_SCHEMA: &str = include_str!("../schema/postgres_scim_binding.sql");
+
+pub const SQLITE_SCIM_CANONICAL_SCHEMA: &str = include_str!("../schema/sqlite_scim_canonical.sql");
+pub const POSTGRES_SCIM_CANONICAL_SCHEMA: &str =
+    include_str!("../schema/postgres_scim_canonical.sql");

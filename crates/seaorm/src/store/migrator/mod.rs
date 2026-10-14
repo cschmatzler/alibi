@@ -13,6 +13,7 @@ impl MigratorTrait for AuthMigrator {
             Box::new(SsoMigration),
             Box::new(ScimManagedMigration),
             Box::new(ScimBindingMigration),
+            Box::new(ScimCanonicalMigration),
         ]
     }
     fn migration_table_name() -> DynIden {
@@ -223,4 +224,16 @@ migration!(
     ScimBindingMigration,
     alibi_schema_registry::SQLITE_SCIM_BINDING_SCHEMA,
     alibi_schema_registry::POSTGRES_SCIM_BINDING_SCHEMA
+);
+
+struct ScimCanonicalMigration;
+impl MigrationName for ScimCanonicalMigration {
+    fn name(&self) -> &'static str {
+        "m20261014_000006_typescript_scim_canonical_schema"
+    }
+}
+migration!(
+    ScimCanonicalMigration,
+    alibi_schema_registry::SQLITE_SCIM_CANONICAL_SCHEMA,
+    alibi_schema_registry::POSTGRES_SCIM_CANONICAL_SCHEMA
 );

@@ -350,11 +350,11 @@ impl ScimPlugin {
             "scim-connection",
             id,
         ])?));
-        let binding = ctx
+        let mut binding = ctx
             .database
             .terminal_scim_connection_binding(id, domain, &key)
             .await?;
-        let leased = binding.decommission_status == "reconciling"
+        let mut leased = binding.decommission_status == "reconciling"
             && binding
                 .decommission_lease_id
                 .as_ref()
@@ -363,9 +363,39 @@ impl ScimPlugin {
                 .decommission_lease_expires_at
                 .is_some_and(|expiry| expiry > Utc::now().trunc_subsecs(3));
         if binding.decommission_status != "complete" && !leased {
-            return Err(AuthError::config(
-                "SCIM projection reconciliation is not supported by this store",
-            ));
+            let mut recovered = false;
+            for _ in 0..10 {
+                if let Some(completed) = ctx
+                    .database
+                    .recover_empty_scim_decommission(binding.clone())
+                    .await?
+                {
+                    binding = completed;
+                    recovered = true;
+                    break;
+                }
+                binding = ctx
+                    .database
+                    .terminal_scim_connection_binding(id, domain, &key)
+                    .await?;
+                leased = binding.decommission_status == "reconciling"
+                    && binding
+                        .decommission_lease_id
+                        .as_ref()
+                        .is_some_and(|id| !id.is_empty())
+                    && binding
+                        .decommission_lease_expires_at
+                        .is_some_and(|expiry| expiry > Utc::now().trunc_subsecs(3));
+                if binding.decommission_status == "complete" || leased {
+                    recovered = true;
+                    break;
+                }
+            }
+            if !recovered {
+                return Err(AuthError::internal(format!(
+                    "SCIM connection \"{id}\" changed repeatedly while decommissioning; retry the operation."
+                )));
+            }
         }
         EndpointResponse::json(
             &serde_json::json!({"connectionId":binding.connection_id,"provisioningDomainId":binding.provisioning_domain_id,"status":binding.decommission_status,"decommissionedAt":binding.decommissioned_at,"completedAt":binding.decommission_completed_at,"retryAfter":if leased {binding.decommission_lease_expires_at}else{None},"reconciledUsers":binding.decommission_reconciled_user_count,"batches":binding.decommission_batch_count}),

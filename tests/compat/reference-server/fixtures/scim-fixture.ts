@@ -131,6 +131,54 @@ export async function scimFixture(base: BetterAuthOptions) {
           headers: { "content-type": "application/json" },
         });
       }
+      if (query.get("operation") === "expire-binding-lease") {
+        const input = (await request.json()) as any;
+        options.database
+          .query(
+            "UPDATE scimConnectionBinding SET decommissionLeaseExpiresAt=? WHERE connectionId=?",
+          )
+          .run("2000-01-01T00:00:00.000Z", input.connectionId);
+        return new Response(JSON.stringify({ expired: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "reject-binding-completion") {
+        const input = (await request.json()) as any;
+        options.database
+          .query(
+            "UPDATE scimConnectionBinding SET decommissionStatus='reconciling',decommissionLeaseId='failed-worker',decommissionCompletedAt=NULL,decommissionLeaseExpiresAt=? WHERE connectionId=?",
+          )
+          .run("2000-01-01T00:00:00.000Z", input.connectionId);
+        options.database.exec(
+          "CREATE TRIGGER reject_scim_binding_completion BEFORE UPDATE ON scimConnectionBinding WHEN NEW.decommissionStatus='complete' AND OLD.decommissionStatus='reconciling' BEGIN SELECT RAISE(ABORT,'fixture rejected binding completion'); END",
+        );
+        return new Response(JSON.stringify({ installed: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "accept-binding-completion") {
+        options.database.exec("DROP TRIGGER reject_scim_binding_completion");
+        return new Response(JSON.stringify({ removed: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "binding-completion-failure") {
+        const input = (await request.json()) as any;
+        try {
+          await auth.api.decommissionSCIMConnection({ body: input.body });
+          return new Response(JSON.stringify({ failed: false }), {
+            headers: { "content-type": "application/json" },
+          });
+        } catch (error) {
+          return new Response(
+            JSON.stringify({
+              failed: true,
+              rejectedCompletion: String(error).includes("fixture rejected binding completion"),
+            }),
+            { headers: { "content-type": "application/json" } },
+          );
+        }
+      }
       if (query.get("operation") === "binding-storage") {
         return new Response(
           JSON.stringify(options.database.query("SELECT * FROM scimConnectionBinding").all()),
