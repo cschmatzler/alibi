@@ -64,6 +64,7 @@ pub(crate) async fn router(config:&AuthConfig,database:DatabaseConnection)->Auth
  if input["action"]=="validation-deny" {policy.deny_returning.store(input["enabled"].as_bool().unwrap(),std::sync::atomic::Ordering::SeqCst);return Json(serde_json::json!({"configured":true})).into_response();}
  if input["action"]=="validation-events" {return Json(policy.events.lock().unwrap().clone()).into_response();}
  if input["action"]=="sign-saml-logout" {return Json(serde_json::json!({"SAMLResponse":saml_grant::signed_logout(input["xml"].as_str().unwrap(),input["wrongKey"].as_bool().unwrap_or(false)).unwrap()})).into_response();}
+ if input["action"]=="social-callback-http" {let mut request=alibi::AuthRequest::new(alibi::HttpMethod::Get,"/callback/gitlab");request.headers=serde_json::from_value(input["headers"].clone()).unwrap();request.set_query_pairs(serde_json::from_value::<std::collections::HashMap<String,String>>(input["query"].clone()).unwrap());return auth.handle_request(request).await.unwrap().into_response();}
  if input["action"]=="sign-out-http"{let mut request=alibi::AuthRequest::new(alibi::HttpMethod::Post,"/sign-out");request.headers=serde_json::from_value(input["headers"].clone()).unwrap();request.headers.insert("content-type".into(),"application/json".into());request.body=Some(b"{}".to_vec());return auth.handle_request(request).await.unwrap().into_response();}
  if input["action"]=="acs-http"||input["action"]=="slo-http"{
  let get=input["method"]=="GET";let params=if get{&input["query"]}else{&input["body"]};

@@ -460,6 +460,22 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         }
         Ok(None)
     }
+    async fn after_request(
+        &self,
+        request: &AuthRequest,
+        ctx: &AuthContext<S>,
+        response: AuthResponse,
+    ) -> AuthResult<AuthResponse> {
+        if request.path().starts_with("/callback/")
+            && let Some(completed) = request
+                .extensions()
+                .get::<crate::helpers::CompletedSession<S>>()
+        {
+            self.assign_social_domain_organization(completed.user.id().as_ref(), ctx)
+                .await?;
+        }
+        Ok(response)
+    }
     fn endpoint_hooks(&self) -> Vec<&dyn alibi_core::endpoint::EndpointHook<S>> {
         vec![self]
     }
