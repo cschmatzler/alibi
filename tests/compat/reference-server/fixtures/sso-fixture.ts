@@ -23,6 +23,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
   const dns = await ssoDnsFixture();
   const domainOptions = {
     ...options,
+    account: { accountLinking: { requireLocalEmailVerified: false } },
     plugins: [username(), sso({ domainVerification: { enabled: true } })],
   };
   await (await getMigrations(domainOptions)).runMigrations();

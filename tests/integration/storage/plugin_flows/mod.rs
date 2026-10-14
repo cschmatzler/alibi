@@ -444,3 +444,6 @@ mod sso_callback;
 
 #[path = "../../../support/sso_saml_grant.rs"]
 mod saml_idp;
+
+#[path = "../../../support/sso_dns.rs"]
+mod sso_dns;

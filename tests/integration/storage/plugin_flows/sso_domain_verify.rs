@@ -2,49 +2,15 @@
 use super::*;
 use alibi::endpoint::EndpointOptions;
 use alibi::plugins::{SsoConfig, SsoPlugin};
-use hickory_proto::{
-    op::{Message, OpCode},
-    rr::{RData, Record, rdata::TXT},
-};
 backend_tests!(sso_domain_verify_checks_txt_records_and_commits_provider_state);
 postgres_tests!(sso_domain_verify_checks_txt_records_and_commits_provider_state);
 async fn sso_domain_verify_checks_txt_records_and_commits_provider_state<B: Backend>(
     db: Db,
 ) -> TestResult {
-    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await?;
-    let address = socket.local_addr()?;
-    let records = Arc::new(Mutex::new(Vec::<Vec<String>>::new()));
-    let queries = Arc::new(Mutex::new(Vec::<String>::new()));
-    let entries = records.clone();
-    let seen = queries.clone();
-    let dns = tokio::spawn(async move {
-        let mut buffer = vec![0u8; 4096];
-        loop {
-            let Ok((length, peer)) = socket.recv_from(&mut buffer).await else {
-                break;
-            };
-            let Ok(query) = Message::from_vec(&buffer[..length]) else {
-                continue;
-            };
-            let mut response = Message::response(query.metadata.id, OpCode::Query);
-            response.metadata.recursion_available = true;
-            for question in query.queries {
-                let name = question.name.clone();
-                seen.lock().unwrap().push(name.to_utf8());
-                _ = response.add_query(question);
-                for chunks in entries.lock().unwrap().iter() {
-                    _ = response.add_answer(Record::from_rdata(
-                        name.clone(),
-                        0,
-                        RData::TXT(TXT::new(chunks.clone())),
-                    ));
-                }
-            }
-            if let Ok(packet) = response.to_vec() {
-                _ = socket.send_to(&packet, peer).await;
-            }
-        }
-    });
+    let dns = super::sso_dns::start().await;
+    let address = dns.address;
+    let records = &dns.records;
+    let queries = &dns.queries;
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(SsoPlugin::with_config(SsoConfig {
@@ -109,7 +75,7 @@ async fn sso_domain_verify_checks_txt_records_and_commits_provider_state<B: Back
             .lock()
             .unwrap()
             .iter()
-            .all(|name| name == "_better-auth-token-verify-provider.company.com.")
+            .all(|name| name == "_better-auth-token-verify-provider.company.com")
     );
     assert!(!queries.lock().unwrap().is_empty());
     let repeated = Box::pin(auth.dispatch_endpoint(endpoint, owned.clone()))
@@ -127,6 +93,5 @@ async fn sso_domain_verify_checks_txt_records_and_commits_provider_state<B: Back
     .await
     .unwrap_err();
     assert_eq!(request.error.status_code(), 409);
-    dns.abort();
     B::close(connection).await
 }

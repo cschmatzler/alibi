@@ -255,12 +255,11 @@ impl SsoPlugin {
             .trusted_providers
             .retain(|id| id != provider_id);
         if provider.domain_verified == Some(true)
-            && user.email.split('@').nth(1).is_some_and(|domain| {
-                provider
-                    .domain
-                    .split(',')
-                    .any(|value| value.trim().eq_ignore_ascii_case(domain))
-            })
+            && user
+                .email
+                .split('@')
+                .nth(1)
+                .is_some_and(|domain| super::domains::matches(domain, &provider.domain))
         {
             config
                 .account
