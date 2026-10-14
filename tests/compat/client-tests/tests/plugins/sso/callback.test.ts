@@ -3,7 +3,7 @@ import { expect } from "bun:test";
 import { Cookie } from "tough-cookie";
 
 import { compatScenario } from "../../../support/scenario";
-for (const mode of ["default", "shared"]) {
+for (const mode of ["default", "shared", "default-pkce"]) {
   compatScenario(
     `SSO ${mode} callback redeems a real PKCE code and creates a usable session`,
     async (ctx) => {
@@ -42,7 +42,7 @@ for (const mode of ["default", "shared"]) {
             clientId: "enterprise-client",
             clientSecret: "stored-secret",
             skipDiscovery: true,
-            pkce: true,
+            ...(mode === "default-pkce" ? {} : { pkce: true }),
             scopes: ["openid", "email"],
             authorizationEndpoint: `${idp.base}/authorize`,
             tokenEndpoint: `${idp.base}/token`,
