@@ -12,12 +12,13 @@ mod managed;
 mod projection;
 mod resources;
 mod user_attributes;
+mod user_profile;
 pub use authentication::{ScimBearerTokenVerificationInput, ScimBearerTokenVerifier};
 pub use managed::{ScimManagedConnectionInput, ScimManagedCredentialRotationInput};
 pub use projection::{
-    ConfiguredScimPlugin, ScimAuthorizationSource, ScimIdentity, ScimIdentitySource,
-    ScimIdentityState, ScimProjectedUserState, ScimProjection, ScimRoleExistenceInput,
-    ScimRoleMappingInput, ScimRoleProjection,
+    ConfiguredScimPlugin, ScimAuthorizationSource, ScimIdentity, ScimIdentityResolution,
+    ScimIdentityResolutionInput, ScimIdentitySource, ScimIdentityState, ScimProjectedUserState,
+    ScimProjection, ScimRoleExistenceInput, ScimRoleMappingInput, ScimRoleProjection,
 };
 
 /// A static inbound provisioning credential.
@@ -131,6 +132,11 @@ impl ScimPlugin {
     /// Returns an error if parameters cannot be serialized.
     pub fn delete_group_endpoint(id: &str) -> AuthResult<ServerEndpoint<()>> {
         ServerEndpoint::new("scim", "deleteSCIMGroup").with_params(&json!({"groupId":id}))
+    }
+    /// Provision a connection-owned canonical SCIM User.
+    #[must_use]
+    pub const fn create_user_endpoint() -> ServerEndpoint<Value> {
+        ServerEndpoint::new("scim", "createSCIMUser")
     }
     /// Create a connection-owned canonical SCIM Group.
     #[must_use]
@@ -275,7 +281,8 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
         // SCIM emits protocol-specific admission errors in its request handler.
-        if route.path == "/scim/v2/Groups"
+        if route.path == "/scim/v2/Users"
+            || route.path == "/scim/v2/Groups"
             || (route.path.starts_with("/scim/v2/Groups/")
                 && matches!(route.method, HttpMethod::Put | HttpMethod::Patch))
         {
@@ -286,6 +293,7 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
+            AuthRoute::post("/scim/v2/Users", "createSCIMUser"),
             AuthRoute::post("/scim/v2/Groups", "createSCIMGroup"),
             AuthRoute::delete("/scim/v2/Users/{userId}", "deleteSCIMUser"),
             AuthRoute::put("/scim/v2/Groups/{groupId}", "replaceSCIMGroup"),
@@ -337,6 +345,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
                 "deleteSCIMGroup",
                 Some("/scim/v2/Groups/:groupId"),
                 HttpMethod::Delete,
+            ),
+            crate::endpoint::definition(
+                "createSCIMUser",
+                "createSCIMUser",
+                Some("/scim/v2/Users"),
+                HttpMethod::Post,
             ),
             crate::endpoint::definition(
                 "createSCIMGroup",
@@ -512,6 +526,9 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         if call.operation_id() == "deleteSCIMGroup" {
             return self.delete_group(call, ctx).await;
         }
+        if call.operation_id() == "createSCIMUser" {
+            return self.create_user(call, ctx).await;
+        }
         if call.operation_id() == "createSCIMGroup" {
             return self.create_group(call, ctx).await;
         }
@@ -646,6 +663,18 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
             return Ok(Some(
                 response.with_header("content-type", "application/scim+json"),
             ));
+        }
+        if req.method() == &HttpMethod::Post && req.path() == "/scim/v2/Users" {
+            let call = EndpointCall::from_http_request(
+                req,
+                &AuthRoute::post("/scim/v2/Users", "createSCIMUser"),
+            );
+            let response = if let Some(error) = resources::mutation_request_error(req, &call) {
+                error
+            } else {
+                self.create_user(&call, ctx).await?
+            };
+            return Ok(Some(resources::to_http_response(&response)?));
         }
         if req.method() == &HttpMethod::Post && req.path() == "/scim/v2/Groups" {
             let call = EndpointCall::from_http_request(

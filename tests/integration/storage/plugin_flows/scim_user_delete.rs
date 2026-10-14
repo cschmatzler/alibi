@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicBool, Ordering};
 backend_tests!(scim_user_delete_preserves_tombstones_and_retires_only_inactive_identity_sessions);
 postgres_tests!(scim_user_delete_preserves_tombstones_and_retires_only_inactive_identity_sessions);
-async fn delete<S: AuthSchema>(
+pub(super) async fn delete<S: AuthSchema>(
     auth: &Alibi<S>,
     id: &str,
     token: Option<&str>,

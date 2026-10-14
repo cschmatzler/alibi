@@ -22,6 +22,19 @@ pub type TransactionWork<S> =
 
 #[async_trait]
 pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
+    async fn create_scim_user(
+        &self,
+        _data: crate::store::CreateScimUser,
+        _roles: bool,
+    ) -> AuthResult<(
+        crate::store::ScimUserRecord,
+        Vec<crate::store::ScimProjectionPreparedUser>,
+    )> {
+        Err(AuthError::not_implemented(
+            "Transactional SCIM User creation is unsupported",
+        ))
+    }
+
     async fn delete_scim_user(
         &self,
         _id: &str,

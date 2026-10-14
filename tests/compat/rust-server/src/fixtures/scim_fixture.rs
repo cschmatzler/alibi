@@ -86,8 +86,9 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     *verifier_claims.lock().unwrap()=Some(claims);return Json(json!({"changed":true})).into_response();
                 }
                 if query.get("operation").is_some_and(|operation|operation=="verifier-inputs") {let inputs=verifier_inputs.lock().unwrap().clone();return Json(inputs).into_response();}
-                if query.get("operation").is_some_and(|operation|matches!(operation.as_str(),"configure-projection"|"configure-role-projection"|"configure-group-create-projection"|"configure-user-delete")) {
-                    let base=ScimPlugin::new().managed_connections(managed_options());let base=if query.get("operation").is_some_and(|operation|matches!(operation.as_str(),"configure-group-create-projection"|"configure-user-delete")){base.connections(resource_connections())}else{base};let mut plugin=base.projection::<crate::TestSchema>(Arc::new(FixtureProjection{states:projection_states.clone(),fails:projection_fails.clone()}));if query.get("operation").is_some_and(|operation|operation=="configure-role-projection"){plugin=plugin.roles(Arc::new(FixtureRoles{observations:role_observations.clone(),stage:role_stage.clone()}));}
+                if query.get("operation").is_some_and(|operation|matches!(operation.as_str(),"configure-projection"|"configure-role-projection"|"configure-group-create-projection"|"configure-user-delete"|"configure-user-create")) {
+                    let base=ScimPlugin::new().managed_connections(managed_options());let base=if query.get("operation").is_some_and(|operation|matches!(operation.as_str(),"configure-group-create-projection"|"configure-user-delete"|"configure-user-create")){base.connections(resource_connections())}else{base};let mut plugin=base.projection::<crate::TestSchema>(Arc::new(FixtureProjection{states:projection_states.clone(),fails:projection_fails.clone()}));if query.get("operation").is_some_and(|operation|operation=="configure-role-projection"){plugin=plugin.roles(Arc::new(FixtureRoles{observations:role_observations.clone(),stage:role_stage.clone()}));}
+                    if query.get("operation").is_some_and(|operation|operation=="configure-user-create"){plugin=plugin.identity(Arc::new(CreateIdentity));}
                     if query.get("operation").is_some_and(|operation|operation=="configure-user-delete"){plugin=plugin.identity(Arc::new(FixtureIdentity{states:identity_states.clone(),fails:identity_fails.clone()}));}
                     let fresh=AuthBuilder::<crate::TestSchema>::new(config.clone()).store(crate::backend::store(config,database.clone())).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).plugin(alibi::plugins::EmailPasswordPlugin::new()).plugin(plugin).build().await.unwrap();*auth.lock().await=Arc::new(fresh);return Json(json!({"configured":true})).into_response();
                 }
@@ -128,6 +129,15 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 if query.get("operation").is_some_and(|operation|operation=="deleteSCIMGroup") {
                     let input:Value=serde_json::from_slice(&bytes).unwrap();let headers=input["token"].as_str().map(|token|[("authorization".into(),format!("Bearer {token}"))].into_iter().collect());
                     return match auth.dispatch_endpoint(ScimPlugin::delete_group_endpoint(input["params"]["groupId"].as_str().unwrap()).unwrap().with_query(&input["query"]).unwrap(),EndpointOptions{headers,..Default::default()}).await{Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>{let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}if let Some(headers)=error.headers{response.merge_headers(headers);}response.to_response().unwrap().into_response()}};
+                }
+                if query.get("operation").is_some_and(|operation|operation=="user-create-state") {
+                    let mut users=query_json_rows(&database,"SELECT json_object('id',id,'email',email,'name',name,'emailVerified',emailVerified) AS row FROM user ORDER BY email").await;
+                    for row in users.as_array_mut().unwrap(){row["emailVerified"]=json!(row["emailVerified"].as_bool().unwrap_or_else(||row["emailVerified"].as_i64()==Some(1)));}
+                    let mut state=json!({"users":users});for(table,key)in[("scimUser","sources"),("scimSubject","subjects"),("scimIdentityTombstone","tombstones")]{let rows=query_json_rows(&database,&format!("SELECT json_object('n',COUNT(*)) AS row FROM {table}")).await;state[key]=rows[0]["n"].clone();}return Json(state).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="createSCIMUser") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();let headers=input["token"].as_str().map(|token|[("authorization".into(),format!("Bearer {token}"))].into_iter().collect());
+                    return match auth.dispatch_endpoint(ScimPlugin::create_user_endpoint().with_body(&input["body"]).unwrap().with_query(&input.get("query").cloned().unwrap_or_else(||json!({}))).unwrap(),EndpointOptions{headers,..Default::default()}).await{Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>{let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}if let Some(headers)=error.headers{response.merge_headers(headers);}response.to_response().unwrap().into_response()}};
                 }
                 if query.get("operation").is_some_and(|operation|operation=="createSCIMGroup") {
                     let input:Value=serde_json::from_slice(&bytes).unwrap();let headers=input["token"].as_str().map(|token|[("authorization".into(),format!("Bearer {token}"))].into_iter().collect());
@@ -766,4 +776,19 @@ impl<S: alibi::AuthSchema> ScimBearerTokenVerifier<S> for FixtureVerifier {
             json!({"connectionId":"declared","credentialId":"remote","scopes":["scim.groups.read"]})
         })))
     }
+}
+
+struct CreateIdentity;
+#[async_trait::async_trait]
+impl<S:alibi::AuthSchema> alibi::plugins::scim::ScimIdentity<S> for CreateIdentity {
+ async fn resolve_user(&self,input:&alibi::plugins::scim::ScimIdentityResolutionInput,database:&dyn alibi::store::AuthStore<S>)->alibi::AuthResult<alibi::plugins::scim::ScimIdentityResolution>{
+  use alibi::{AuthUser,AuthError};use alibi::plugins::scim::ScimIdentityResolution as Resolution;
+  let external=input.resource["externalId"].as_str().unwrap_or("");
+  if external=="resolve-fails"{return Err(AuthError::internal("application rejected resolution"));}
+  if external=="link-missing"{return Ok(Resolution::Link{user_id:"missing-user".into(),manage_profile:false});}
+  if !matches!(input.resource["userName"].as_str(),Some("Alias"|"Alias2")) || input.resource["primaryEmail"]!="alias@example.com"{return Err(AuthError::internal("incorrect resolver resource"));}
+  let user=database.get_user_by_email("new-work@example.com").await?.ok_or_else(||AuthError::internal("resolver target missing"))?;
+  Ok(Resolution::Link{user_id:user.id().to_string(),manage_profile:external=="link-manage"})
+ }
+ async fn reconcile_user(&self,_input:&alibi::plugins::scim::ScimIdentityState,_database:&dyn alibi::store::AuthTransaction<S>)->alibi::AuthResult<()>{Ok(())}
 }

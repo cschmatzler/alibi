@@ -337,6 +337,18 @@ where
         _ = exec.execute(sql).await?;
         Ok(())
     }
+    async fn create_scim_user(
+        &self,
+        data: alibi_core::store::CreateScimUser,
+        roles: bool,
+    ) -> AuthResult<(
+        alibi_core::store::ScimUserRecord,
+        Vec<alibi_core::store::ScimProjectionPreparedUser>,
+    )> {
+        self.store
+            .create_scim_user_with_exec(Exec::tx(self.tx), data, roles)
+            .await
+    }
     async fn delete_scim_user(
         &self,
         id: &str,
@@ -787,4 +799,5 @@ mod scim;
 mod scim_decommission;
 mod scim_groups;
 mod scim_projection;
+mod scim_user_create;
 mod scim_users;

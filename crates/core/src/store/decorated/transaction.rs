@@ -182,6 +182,16 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .await
     }
 
+    async fn create_scim_user(
+        &self,
+        data: crate::store::CreateScimUser,
+        roles: bool,
+    ) -> AuthResult<(
+        crate::store::ScimUserRecord,
+        Vec<crate::store::ScimProjectionPreparedUser>,
+    )> {
+        self.inner.create_scim_user(data, roles).await
+    }
     async fn delete_scim_user(
         &self,
         id: &str,
