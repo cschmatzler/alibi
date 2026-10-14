@@ -5,6 +5,7 @@ import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { Cookie } from "tough-cookie";
 
 import type { ScenarioContext } from "../../../support/scenario";
+import { idpXMLMetadata } from "./idp-metadata-input";
 import { customSPMetadata } from "./sp-metadata-input";
 
 export async function samlLogoutFlow(
@@ -12,7 +13,7 @@ export async function samlLogoutFlow(
   complete: boolean,
   signed = false,
   rollover = false,
-  binding: "post" | "redirect" | "post-optional-signature" | "custom-sp" = "post",
+  binding: "post" | "redirect" | "post-optional-signature" | "custom-sp" | "xml-idp" = "post",
 ) {
   const actor = ctx.actor();
   const control = (input: Record<string, unknown>) =>
@@ -49,24 +50,33 @@ export async function samlLogoutFlow(
         ...(binding === "custom-sp"
           ? { spMetadata: customSPMetadata(ctx.baseURL, "logout-provider") }
           : {}),
-        entryPoint: "https://idp.example.test/sso",
-        cert: rollover
-          ? [
-              await Bun.file(
-                new URL("../../../../fixtures/passkey-attestation/ca.pem", import.meta.url),
-              ).text(),
-              cert,
-            ]
-          : cert,
-        idpMetadata: {
-          entityID: "https://idp.example.test/entity",
-          singleLogoutService: [
-            {
-              Binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
-              Location: "https://idp.example.test/logout",
-            },
-          ],
-        },
+        entryPoint:
+          binding === "xml-idp"
+            ? "https://unused.example.test/sso"
+            : "https://idp.example.test/sso",
+        cert:
+          binding === "xml-idp"
+            ? undefined
+            : rollover
+              ? [
+                  await Bun.file(
+                    new URL("../../../../fixtures/passkey-attestation/ca.pem", import.meta.url),
+                  ).text(),
+                  cert,
+                ]
+              : cert,
+        idpMetadata:
+          binding === "xml-idp"
+            ? idpXMLMetadata(cert)
+            : {
+                entityID: "https://idp.example.test/entity",
+                singleLogoutService: [
+                  {
+                    Binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+                    Location: "https://idp.example.test/logout",
+                  },
+                ],
+              },
         wantAssertionsSigned: true,
       },
     },
