@@ -17,6 +17,50 @@ use alibi_core::{
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
+    async fn get_scim_managed_connection(
+        &self,
+        id: &str,
+        domain: &str,
+    ) -> AuthResult<Option<alibi_core::store::ScimManagedConnectionState>> {
+        let exec = self.exec();
+        let mut sql = model::select_model::<connection::Model>(exec);
+        sql.push(" WHERE ");
+        sql.compare("scimManagedConnection", "connectionId", " = ", id);
+        sql.push(" AND ");
+        sql.compare(
+            "scimManagedConnection",
+            "provisioningDomainId",
+            " = ",
+            domain,
+        );
+        model::limit_one(&mut sql);
+        let Some(connection) = exec.fetch_optional::<connection::Model>(sql).await? else {
+            return Ok(None);
+        };
+        let mut sql = model::select_model::<credential::Model>(exec);
+        sql.push(" WHERE ");
+        sql.compare(
+            "scimManagedCredential",
+            "connectionRecordId",
+            " = ",
+            connection.id.clone(),
+        );
+        sql.push(" ORDER BY ");
+        sql.ident("createdAt");
+        sql.push(" DESC LIMIT ");
+        sql.bind(self.find_many_limit());
+        let credentials = exec
+            .fetch_all::<credential::Model>(sql)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        Ok(Some(alibi_core::store::ScimManagedConnectionState {
+            connection: connection.into(),
+            credentials,
+        }))
+    }
+
     async fn list_scim_managed_connections(
         &self,
         domain: &str,

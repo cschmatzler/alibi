@@ -185,6 +185,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
             crate::endpoint::definition(
+                "getSCIMManagedConnection",
+                "getSCIMManagedConnection",
+                None,
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
                 "listSCIMManagedConnections",
                 "listSCIMManagedConnections",
                 None,
@@ -235,7 +241,9 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
         if matches!(
             call.operation_id(),
-            "createSCIMManagedConnection" | "listSCIMManagedConnections"
+            "createSCIMManagedConnection"
+                | "listSCIMManagedConnections"
+                | "getSCIMManagedConnection"
         ) {
             managed::validate(call)
         } else {
@@ -265,6 +273,9 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "getSCIMManagedConnection" {
+            return self.get_managed_connection(call, ctx).await;
+        }
         if call.operation_id() == "listSCIMManagedConnections" {
             return self.list_managed_connections(call, ctx).await;
         }

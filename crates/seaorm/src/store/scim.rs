@@ -17,6 +17,39 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
+    async fn get_scim_managed_connection(
+        &self,
+        id: &str,
+        domain: &str,
+    ) -> AuthResult<Option<alibi_core::store::ScimManagedConnectionState>> {
+        let Some(connection) = connection::Entity::find()
+            .filter(connection::Column::ConnectionId.eq(id))
+            .filter(connection::Column::ProvisioningDomainId.eq(domain))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+        else {
+            return Ok(None);
+        };
+        let credentials = credential::Entity::find()
+            .filter(credential::Column::ConnectionRecordId.eq(connection.id.clone()))
+            .order_by_desc(credential::Column::CreatedAt)
+            .limit(
+                u64::try_from(self.config.advanced.database.default_find_many_limit)
+                    .unwrap_or(u64::MAX),
+            )
+            .all(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        Ok(Some(alibi_core::store::ScimManagedConnectionState {
+            connection: connection.into(),
+            credentials,
+        }))
+    }
+
     async fn list_scim_managed_connections(
         &self,
         domain: &str,

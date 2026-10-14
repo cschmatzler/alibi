@@ -49,12 +49,26 @@ pub struct CreateScimManagedConnection {
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
 }
+pub struct ScimManagedConnectionState {
+    pub connection: ScimManagedConnection,
+    pub credentials: Vec<ScimManagedCredential>,
+}
 pub struct ScimManagedCreation {
     pub connection: ScimManagedConnection,
     pub credential: ScimManagedCredential,
 }
 #[async_trait]
 pub trait ScimManagedStore: Send + Sync {
+    async fn get_scim_managed_connection(
+        &self,
+        _id: &str,
+        _domain: &str,
+    ) -> AuthResult<Option<ScimManagedConnectionState>> {
+        Err(AuthError::config(
+            "Managed SCIM persistence is not supported by this store",
+        ))
+    }
+
     async fn list_scim_managed_connections(
         &self,
         _domain: &str,

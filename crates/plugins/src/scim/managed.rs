@@ -44,6 +44,39 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
     let body = call.body().ok_or_else(|| {
         crate::endpoint::validation("[body] Invalid input: expected object, received undefined")
     })?;
+    if call.operation_id() == "getSCIMManagedConnection" {
+        let id = body.get("connectionId");
+        let Some(id) = id.and_then(JsValue::as_str) else {
+            return Err(crate::endpoint::validation(format!(
+                "[body.connectionId] Invalid input: expected string, received {}",
+                crate::authentication_helpers::json_type(id)
+            )));
+        };
+        if !id.starts_with("ba_scim_connection_") {
+            return Err(crate::endpoint::validation(
+                r#"[body.connectionId] Invalid string: must start with "ba_scim_connection_""#,
+            ));
+        }
+        if id.encode_utf16().count() > 255 {
+            return Err(crate::endpoint::validation(
+                "[body.connectionId] Too big: expected string to have <=255 characters",
+            ));
+        }
+        return Ok(EndpointInput {
+            body: Some(JsValue::Object(
+                [
+                    ("connectionId".into(), JsValue::String(id.into())),
+                    (
+                        "provisioningDomainId".into(),
+                        JsValue::String(body_string(body, "provisioningDomainId", 1)?),
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+            )),
+            query: call.query().cloned(),
+        });
+    }
     if call.operation_id() == "listSCIMManagedConnections" {
         return Ok(EndpointInput {
             body: Some(JsValue::Object(
@@ -111,6 +144,86 @@ fn random_string(length: usize) -> String {
         .collect()
 }
 impl ScimPlugin {
+    /// Read domain-owned connection metadata and its current credential policy.
+    /// # Errors
+    /// Returns an error if the arguments cannot be serialized.
+    pub fn get_managed_connection_endpoint(
+        id: &str,
+        domain: &str,
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("scim", "getSCIMManagedConnection")
+            .with_body(&serde_json::json!({"connectionId":id,"provisioningDomainId":domain}))
+    }
+    pub(super) async fn get_managed_connection<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        _ = self
+            .managed_connections
+            .as_ref()
+            .ok_or_else(|| AuthError::Api {
+                status: 400,
+                code: None,
+                message: "SCIM managed connections are not configured".into(),
+            })?;
+        let body = call
+            .body()
+            .ok_or_else(|| AuthError::internal("Validated body missing"))?;
+        let id = body
+            .get("connectionId")
+            .and_then(JsValue::as_str)
+            .ok_or_else(|| AuthError::internal("Validated ID missing"))?;
+        let state = ctx
+            .database
+            .get_scim_managed_connection(id, &body_string(body, "provisioningDomainId", 1)?)
+            .await?
+            .ok_or_else(|| AuthError::Api {
+                status: 404,
+                code: None,
+                message: "Managed SCIM connection not found".into(),
+            })?;
+        let mut connection = serde_json::to_value(state.connection)?;
+        if let Value::Object(values) = &mut connection {
+            _ = values.remove("id");
+            _ = values.remove("revision");
+        }
+        let mut credentials = Vec::new();
+        for credential in state.credentials {
+            let scopes: Vec<String> = serde_json::from_str(&credential.serialized_scopes)
+                .map_err(|_| invalid_scope_policy())?;
+            if scopes.is_empty()
+                || scopes.iter().any(|scope| {
+                    !matches!(
+                        scope.as_str(),
+                        "scim.users.read"
+                            | "scim.users.write"
+                            | "scim.groups.read"
+                            | "scim.groups.write"
+                    )
+                })
+                || scopes
+                    .iter()
+                    .collect::<std::collections::HashSet<_>>()
+                    .len()
+                    != scopes.len()
+            {
+                return Err(invalid_scope_policy());
+            }
+            let status = if credential.status == "active"
+                && credential.expires_at <= Utc::now().trunc_subsecs(3)
+            {
+                "expired"
+            } else {
+                &credential.status
+            };
+            credentials.push(serde_json::json!({"credentialId":credential.credential_id,"status":status,"scopes":scopes,"expiresAt":credential.expires_at,"createdAt":credential.created_at,"createdBy":credential.created_by,"lastUsedAt":credential.last_used_at,"revokedAt":credential.revoked_at,"revokedBy":credential.revoked_by}));
+        }
+        EndpointResponse::json(
+            &serde_json::json!({"connection":connection,"credentials":credentials}),
+        )
+    }
+
     /// List durable connection metadata belonging to one provisioning domain.
     /// # Errors
     /// Returns an error if the input cannot be serialized.
@@ -243,5 +356,13 @@ impl ScimPlugin {
         EndpointResponse::json(
             &serde_json::json!({"connection":connection,"credential":{"credentialId":credential.credential_id,"status":credential.status,"scopes":scopes,"expiresAt":credential.expires_at,"createdAt":credential.created_at,"createdBy":credential.created_by,"lastUsedAt":credential.last_used_at,"revokedAt":credential.revoked_at,"revokedBy":credential.revoked_by},"token":token}),
         )
+    }
+}
+
+fn invalid_scope_policy() -> AuthError {
+    AuthError::Api {
+        status: 500,
+        code: None,
+        message: "Managed SCIM credential scope policy is invalid".into(),
     }
 }
