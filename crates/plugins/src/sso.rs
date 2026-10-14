@@ -42,6 +42,8 @@ mod provider_update_saml;
 mod registration_saml;
 mod saml_acs;
 mod saml_crypto;
+mod signing_algorithms;
+pub use signing_algorithms::{SsoDeprecatedAlgorithmBehavior, SsoSamlSigningPolicy};
 mod saml_decryption;
 mod saml_logout;
 mod saml_sign_in;
@@ -92,6 +94,7 @@ pub struct SsoConfig {
     pub redirect_uri: Option<String>,
     pub saml_enable_in_response_to_validation: bool,
     pub saml_allow_idp_initiated: bool,
+    pub saml_signing_policy: SsoSamlSigningPolicy,
     pub saml_idp_initiated_callback_url: Option<String>,
     pub saml_request_ttl: chrono::Duration,
     pub saml_clock_skew: chrono::Duration,
@@ -124,6 +127,7 @@ impl Default for SsoConfig {
             redirect_uri: None,
             saml_enable_in_response_to_validation: true,
             saml_allow_idp_initiated: false,
+            saml_signing_policy: SsoSamlSigningPolicy::default(),
             saml_idp_initiated_callback_url: None,
             saml_request_ttl: chrono::Duration::minutes(5),
             saml_clock_skew: chrono::Duration::minutes(5),
@@ -293,6 +297,7 @@ impl SsoPlugin {
         let saml = body
             .get("samlConfig")
             .map(|config| {
+                signing_algorithms::validate(config, &self.config.saml_signing_policy)?;
                 registration_saml::prepare(config, issuer, self.config.saml_max_metadata_size)
             })
             .transpose()?;

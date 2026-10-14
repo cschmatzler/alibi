@@ -137,63 +137,6 @@ pub(super) fn prepare(
     issuer: &str,
     max_metadata_size: usize,
 ) -> AuthResult<String> {
-    for field in ["signatureAlgorithm", "digestAlgorithm"] {
-        if let Some(algorithm) = config
-            .get(field)
-            .and_then(Value::as_str)
-            .filter(|value| !value.is_empty())
-        {
-            let short = algorithm.to_ascii_lowercase();
-            let known = if field == "signatureAlgorithm" {
-                matches!(
-                    short.as_str(),
-                    "sha1"
-                        | "sha256"
-                        | "sha384"
-                        | "sha512"
-                        | "rsa-sha1"
-                        | "rsa-sha256"
-                        | "rsa-sha384"
-                        | "rsa-sha512"
-                        | "ecdsa-sha256"
-                        | "ecdsa-sha384"
-                        | "ecdsa-sha512"
-                ) || [
-                    "http://www.w3.org/2000/09/xmldsig#rsa-sha1",
-                    "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
-                    "http://www.w3.org/2001/04/xmldsig-more#rsa-sha384",
-                    "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512",
-                    "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256",
-                    "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha384",
-                    "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha512",
-                ]
-                .contains(&algorithm)
-            } else {
-                matches!(short.as_str(), "sha1" | "sha256" | "sha384" | "sha512")
-                    || [
-                        "http://www.w3.org/2000/09/xmldsig#sha1",
-                        "http://www.w3.org/2001/04/xmlenc#sha256",
-                        "http://www.w3.org/2001/04/xmldsig-more#sha384",
-                        "http://www.w3.org/2001/04/xmlenc#sha512",
-                    ]
-                    .contains(&algorithm)
-            };
-            if !known {
-                return Err(AuthError::Api {
-                    status: 400,
-                    code: Some("SAML_UNKNOWN_ALGORITHM".into()),
-                    message: format!(
-                        "SAML {} algorithm not recognized: {algorithm}",
-                        if field == "signatureAlgorithm" {
-                            "signature"
-                        } else {
-                            "digest"
-                        }
-                    ),
-                });
-            }
-        }
-    }
     let idp = config
         .get("idpMetadata")
         .ok_or_else(|| api(400, "Invalid SAML configuration"))?;

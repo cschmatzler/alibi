@@ -353,7 +353,38 @@ export async function ssoFixture(base: BetterAuthOptions) {
     "idp-global-unsafe-true",
     "idp-global-unsafe-false",
   ];
+  const algorithmModes = [
+    "algorithm-strict",
+    "algorithm-reject",
+    "algorithm-override",
+    "algorithm-empty",
+  ];
+  const signingAlgorithms = (mode: string) =>
+    mode === "algorithm-strict"
+      ? {
+          allowedSignatureAlgorithms: ["http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"],
+          allowedDigestAlgorithms: ["sha256"],
+        }
+      : mode === "algorithm-reject"
+        ? { onDeprecated: "reject" as const }
+        : mode === "algorithm-override"
+          ? {
+              onDeprecated: "reject" as const,
+              allowedSignatureAlgorithms: ["sha1"],
+              allowedDigestAlgorithms: ["http://www.w3.org/2000/09/xmldsig#sha1"],
+            }
+          : { allowedSignatureAlgorithms: [], allowedDigestAlgorithms: [] };
   const instances = new Map([
+    ...algorithmModes.map(
+      (mode) =>
+        [
+          mode,
+          betterAuth({
+            ...options,
+            plugins: [username(), sso({ saml: { algorithms: signingAlgorithms(mode) } })],
+          }),
+        ] as const,
+    ),
     ...globalModes.map(
       (mode) =>
         [
@@ -445,6 +476,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
       });
     }
     const mode = [
+      ...algorithmModes,
       ...globalModes,
       "idp-initiated",
       "provider-limits",
