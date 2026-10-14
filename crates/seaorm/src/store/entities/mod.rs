@@ -33,3 +33,5 @@ pub mod scim_managed_connection;
 pub mod scim_managed_credential;
 
 pub mod scim_managed_connection_event;
+
+pub mod scim_connection_binding;

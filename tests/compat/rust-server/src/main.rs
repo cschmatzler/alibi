@@ -334,6 +334,7 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
             "oauthResource",
             "oauthClient",
             "ssoProvider",
+            "scimConnectionBinding",
             "scimManagedConnectionEvent",
             "scimManagedCredential",
             "scimManagedConnection",

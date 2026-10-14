@@ -18,6 +18,71 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
+    async fn terminal_scim_connection_binding(
+        &self,
+        id: &str,
+        domain: Option<&str>,
+        key: &str,
+    ) -> AuthResult<alibi_core::store::ScimConnectionBinding> {
+        use super::entities::scim_connection_binding as binding;
+        let find = async || {
+            binding::Entity::find()
+                .filter(binding::Column::ConnectionKey.eq(key))
+                .one(self.scoped_connection())
+                .await
+                .map_err(map_db_err)
+        };
+        if let Some(row) = find().await? {
+            let binding = row.into();
+            alibi_core::store::scim::validate_scim_binding_domain(&binding, domain)?;
+            return Ok(binding);
+        }
+        let domain = domain.ok_or_else(|| {
+            alibi_core::AuthError::internal(format!(
+                "SCIM connection \"{id}\" has no persisted binding."
+            ))
+        })?;
+        let now = chrono::Utc::now().trunc_subsecs(3);
+        let row = binding::ActiveModel {
+            id: Set(self
+                .generated_id(
+                    self.scoped_connection(),
+                    "scimConnectionBinding",
+                    "scimConnectionBinding",
+                    "id",
+                )
+                .await?
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
+            connection_id: Set(id.into()),
+            connection_key: Set(key.into()),
+            provisioning_domain_id: Set(domain.into()),
+            created_at: Set(now),
+            decommission_status: Set("complete".into()),
+            decommissioned_at: Set(Some(now)),
+            decommission_completed_at: Set(Some(now)),
+            decommission_reconciled_user_count: Set(0),
+            decommission_batch_count: Set(0),
+            decommission_revision: Set(0),
+            ..Default::default()
+        };
+        match row
+            .insert(self.scoped_connection())
+            .await
+            .map_err(map_db_err)
+        {
+            Ok(row) => Ok(row.into()),
+            Err(error) => {
+                if let Some(row) = find().await? {
+                    let binding = row.into();
+                    alibi_core::store::scim::validate_scim_binding_domain(&binding, Some(domain))?;
+                    Ok(binding)
+                } else {
+                    Err(error)
+                }
+            }
+        }
+    }
+
     async fn list_scim_managed_connection_events(
         &self,
         id: &str,

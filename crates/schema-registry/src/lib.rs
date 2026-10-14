@@ -734,3 +734,6 @@ pub const POSTGRES_SSO_SCHEMA: &str = include_str!("../schema/postgres_sso.sql")
 
 pub const SQLITE_SCIM_MANAGED_SCHEMA: &str = include_str!("../schema/sqlite_scim_managed.sql");
 pub const POSTGRES_SCIM_MANAGED_SCHEMA: &str = include_str!("../schema/postgres_scim_managed.sql");
+
+pub const SQLITE_SCIM_BINDING_SCHEMA: &str = include_str!("../schema/sqlite_scim_binding.sql");
+pub const POSTGRES_SCIM_BINDING_SCHEMA: &str = include_str!("../schema/postgres_scim_binding.sql");
