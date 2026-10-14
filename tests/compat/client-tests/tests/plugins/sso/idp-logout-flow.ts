@@ -4,7 +4,12 @@ import { XMLParser } from "fast-xml-parser";
 import { Cookie } from "tough-cookie";
 
 import type { ScenarioContext } from "../../../support/scenario";
-export async function idpLogoutFlow(ctx: ScenarioContext, signed: boolean, http = false) {
+export async function idpLogoutFlow(
+  ctx: ScenarioContext,
+  signature: "absent" | "required" | "ignored",
+  http = false,
+) {
+  const signed = signature === "required";
   const actor = ctx.actor();
   const control = (input: Record<string, unknown>) =>
     actor.fetch(`${ctx.baseURL}/__test/server-api/sso`, {
@@ -116,6 +121,11 @@ export async function idpLogoutFlow(ctx: ScenarioContext, signed: boolean, http 
         expect(retained.session.id).toBe(session.id);
       }
       encodedRequest = await sign(false);
+    }
+    if (signature === "ignored") {
+      encodedRequest = (
+        (await (await control({ action: "sign-saml-logout", xml, wrongKey: true })).json()) as any
+      ).SAMLResponse;
     }
     const response = await control({
       action: http ? "slo-http" : "slo",
