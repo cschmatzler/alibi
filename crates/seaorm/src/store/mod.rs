@@ -346,7 +346,10 @@ where
             .advance_scim_decommission_with_connection(self.tx, binding, lease, cursor, count, more)
             .await
     }
-    async fn reconcile_scim_identity(&self, user_id: &str) -> AuthResult<bool> {
+    async fn reconcile_scim_identity(
+        &self,
+        user_id: &str,
+    ) -> AuthResult<alibi_core::store::ScimIdentityState> {
         self.store
             .reconcile_scim_identity_with_connection(self.tx, user_id)
             .await

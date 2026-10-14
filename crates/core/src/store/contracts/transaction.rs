@@ -60,7 +60,10 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
             "Transactional SCIM checkpoints are unsupported",
         ))
     }
-    async fn reconcile_scim_identity(&self, _user_id: &str) -> AuthResult<bool> {
+    async fn reconcile_scim_identity(
+        &self,
+        _user_id: &str,
+    ) -> AuthResult<crate::store::ScimIdentityState> {
         Err(AuthError::not_implemented(
             "Transactional SCIM identity is unsupported",
         ))

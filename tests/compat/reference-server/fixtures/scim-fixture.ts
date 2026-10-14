@@ -23,6 +23,8 @@ export async function scimFixture(base: BetterAuthOptions) {
   let auth = betterAuth(options);
   const projectionStates: unknown[] = [];
   let projectionFails = false;
+  const identityStates: unknown[] = [];
+  let identityFails = false;
   const roleMapped: unknown[] = [];
   const roleChecked: unknown[] = [];
   let roleStage = 0;
@@ -153,6 +155,57 @@ export async function scimFixture(base: BetterAuthOptions) {
         const input = (await request.json()) as any;
         projectionFails = input.fail;
         return new Response(JSON.stringify({ failing: projectionFails }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "configure-identity") {
+        options.plugins = [
+          scim({
+            connections: [],
+            authentication: { verifyBearerToken: async () => null },
+            managedConnections: {
+              credentialHashSecret: "managed-scim-credential-hmac-secret-32-chars",
+              maxActiveCredentials: 2,
+            },
+            identity: {
+              reconcileUser: async (input, context) => {
+                await context.database.update({
+                  model: "user",
+                  where: [{ field: "id", value: input.userId }],
+                  update: {
+                    name: identityFails
+                      ? "Should roll back identity"
+                      : input.active
+                        ? "Identity active"
+                        : "Identity inactive",
+                  },
+                });
+                identityStates.push(input);
+                if (identityFails) throw new Error("application rejected identity");
+              },
+            },
+          }),
+        ];
+        auth = betterAuth(options);
+        return new Response(JSON.stringify({ configured: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "identity-states") {
+        return new Response(JSON.stringify(identityStates), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "identity-toggle-failure") {
+        const input = (await request.json()) as any;
+        identityFails = input.fail;
+        return new Response(JSON.stringify({ failing: identityFails }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "claim-profile-source") {
+        options.database.exec("UPDATE scimSubject SET profileSourceId='scim-alias-a'");
+        return new Response(JSON.stringify({ claimed: true }), {
           headers: { "content-type": "application/json" },
         });
       }

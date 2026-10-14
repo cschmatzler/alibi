@@ -160,7 +160,10 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .advance_scim_decommission(binding, lease, cursor, count, more)
             .await
     }
-    async fn reconcile_scim_identity(&self, user_id: &str) -> AuthResult<bool> {
+    async fn reconcile_scim_identity(
+        &self,
+        user_id: &str,
+    ) -> AuthResult<crate::store::ScimIdentityState> {
         self.inner.reconcile_scim_identity(user_id).await
     }
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
