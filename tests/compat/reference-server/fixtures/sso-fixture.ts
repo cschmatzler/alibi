@@ -345,7 +345,37 @@ export async function ssoFixture(base: BetterAuthOptions) {
       }),
     ],
   };
+  const globalModes = [
+    "idp-global-relative-true",
+    "idp-global-relative-false",
+    "idp-global-absolute-true",
+    "idp-global-absolute-false",
+    "idp-global-unsafe-true",
+    "idp-global-unsafe-false",
+  ];
   const instances = new Map([
+    ...globalModes.map(
+      (mode) =>
+        [
+          mode,
+          betterAuth({
+            ...options,
+            plugins: [
+              username(),
+              sso({
+                saml: {
+                  allowIdpInitiated: mode.endsWith("true"),
+                  idpInitiatedCallbackUrl: mode.includes("relative")
+                    ? "/global-complete"
+                    : mode.includes("absolute")
+                      ? `${new URL(base.baseURL as string).origin}/global-complete`
+                      : "https://untrusted.example.test/hijack",
+                },
+              }),
+            ],
+          }),
+        ] as const,
+    ),
     [
       "idp-initiated",
       betterAuth({ ...options, plugins: [username(), sso({ saml: { allowIdpInitiated: true } })] }),
@@ -415,6 +445,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
       });
     }
     const mode = [
+      ...globalModes,
       "idp-initiated",
       "provider-limits",
       "user-resolution",

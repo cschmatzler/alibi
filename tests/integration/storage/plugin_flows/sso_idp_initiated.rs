@@ -6,22 +6,53 @@ use alibi::{
     AuthVerification,
     store::{AccountStore, VerificationStore},
 };
-backend_tests!(sso_idp_initiated_saml_requires_opt_in_and_trusted_nonreplayed_assertions);
+backend_tests!(
+    sso_idp_initiated_saml_requires_opt_in_and_trusted_nonreplayed_assertions,
+    sso_global_saml_callback_obeys_provider_precedence_and_trusted_fallbacks
+);
 async fn sso_idp_initiated_saml_requires_opt_in_and_trusted_nonreplayed_assertions<B: Backend>(
     db: Db,
 ) -> TestResult {
+    idp_initiated_flow::<B>(&db, None).await
+}
+async fn sso_global_saml_callback_obeys_provider_precedence_and_trusted_fallbacks<B: Backend>(
+    db: Db,
+) -> TestResult {
+    for global in ["relative", "absolute", "unsafe"] {
+        idp_initiated_flow::<B>(&db, Some(global)).await?;
+    }
+    Ok(())
+}
+async fn idp_initiated_flow<B: Backend>(db: &Db, global: Option<&str>) -> TestResult {
+    let tag = global.unwrap_or("default");
     let (connection, store) = db.migrated::<B>(SECRET).await?;
     for allowed in [true, false] {
         let auth = super::auth_probe::fast_builder::<B>(&connection)
             .plugin(SsoPlugin::with_config(SsoConfig {
                 saml_allow_idp_initiated: allowed,
+                saml_idp_initiated_callback_url: global.map(|kind| match kind {
+                    "relative" => "/global-complete".into(),
+                    "absolute" => format!("{ORIGIN}/global-complete"),
+                    _ => "https://untrusted.example.test/hijack".into(),
+                }),
                 ..Default::default()
             }))
             .build()
             .await?;
-        let owner = signup(&auth, &format!("unsolicited-owner-{allowed}@example.test")).await;
-        let provider_id = format!("unsolicited-{allowed}");
-        let registration = json!({"providerId":provider_id,"issuer":"https://idp.example.test/entity","domain":"company.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem"),"idpMetadata":{"entityID":"https://idp.example.test/entity"},"idpInitiatedCallbackUrl":"/idp-complete"}});
+        let owner = signup(
+            &auth,
+            &format!("unsolicited-owner-{tag}-{allowed}@example.test"),
+        )
+        .await;
+        let provider_id = format!("unsolicited-{tag}-{allowed}");
+        let mut registration = json!({"providerId":provider_id,"issuer":"https://idp.example.test/entity","domain":"company.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem"),"idpMetadata":{"entityID":"https://idp.example.test/entity"},"idpInitiatedCallbackUrl":"/idp-complete"}});
+        if global.is_some() {
+            _ = registration["samlConfig"]
+                .as_object_mut()
+                .unwrap()
+                .remove("idpInitiatedCallbackUrl");
+            registration["samlConfig"]["callbackUrl"] = json!("/legacy-complete");
+        }
         let created = Box::pin(auth.dispatch_endpoint(
             SsoPlugin::register_sso_provider_endpoint(&registration)?,
             EndpointOptions {
@@ -32,8 +63,12 @@ async fn sso_idp_initiated_saml_requires_opt_in_and_trusted_nonreplayed_assertio
         .await?
         .into_response()?;
         assert_eq!(created.status, 200);
-        for (http, wrong_key) in [(false, false), (true, false), (false, true), (true, true)] {
-            let email = format!("unsolicited-{allowed}-{http}-{wrong_key}@example.test");
+        for (http, wrong_key) in [(false, false), (false, true), (true, false), (true, true)] {
+            if global.is_some() && http {
+                let updated=Box::pin(auth.dispatch_endpoint(SsoPlugin::update_sso_provider_endpoint(&json!({"providerId":provider_id,"samlConfig":{"idpInitiatedCallbackUrl":"/provider-complete"}}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await?.into_response()?;
+                assert_eq!(updated.status, 200);
+            }
+            let email = format!("unsolicited-{tag}-{allowed}-{http}-{wrong_key}@example.test");
             let started=Box::pin(auth.dispatch_endpoint(SsoPlugin::sign_in_sso_endpoint(&json!({"providerId":provider_id,"providerType":"saml","callbackURL":format!("{ORIGIN}/unused-relay")}))?,EndpointOptions::default())).await?.into_response()?;
             assert_eq!(started.status, 200);
             let grant = super::saml_idp::unsolicited_grant(
@@ -77,7 +112,16 @@ async fn sso_idp_initiated_saml_requires_opt_in_and_trusted_nonreplayed_assertio
             assert_eq!(completed.status, 302);
             let location =
                 url::Url::parse(ORIGIN)?.join(completed.headers.get("location").unwrap())?;
-            assert_eq!(location.path(), "/idp-complete");
+            let expected = if global.is_none() {
+                "/idp-complete"
+            } else if http {
+                "/provider-complete"
+            } else if global == Some("unsafe") {
+                "/legacy-complete"
+            } else {
+                "/global-complete"
+            };
+            assert_eq!(location.path(), expected);
             let used = store
                 .get_latest_verification_by_identifier(&format!(
                     "saml-used-assertion:{}",

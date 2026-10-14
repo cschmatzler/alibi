@@ -106,6 +106,7 @@ impl SsoPlugin {
                 config
                     .get("idpInitiatedCallbackUrl")
                     .and_then(Value::as_str),
+                self.config.saml_idp_initiated_callback_url.as_deref(),
                 config.get("callbackUrl").and_then(Value::as_str),
             ],
             &callback,
