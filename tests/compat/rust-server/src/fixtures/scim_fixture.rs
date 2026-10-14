@@ -46,6 +46,17 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"UPDATE scimManagedConnection SET createdAt=? WHERE connectionId=?",["2000-01-01T00:00:00.000Z".into(),input["connectionId"].as_str().unwrap().into()])).await.unwrap();
                     return Json(json!({"aged":true})).into_response();
                 }
+                if query.get("operation").is_some_and(|operation|operation=="credential-state") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();
+                    let (sql,value)=if let Some(policy)=input.get("policy"){("UPDATE scimManagedCredential SET serializedScopes=? WHERE credentialId=?",policy.as_str().unwrap())}else{("UPDATE scimManagedCredential SET expiresAt=? WHERE credentialId=?","2000-01-01T00:00:00.000Z")};
+                    _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),sql,[value.into(),input["credentialId"].as_str().unwrap().into()])).await.unwrap();
+                    return Json(json!({"changed":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="getSCIMManagedConnection") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();
+                    let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","getSCIMManagedConnection").with_body(&input["body"]).unwrap(),EndpointOptions::default()).await;
+                    return match result {Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>error.error.to_auth_response().into_response()};
+                }
                 if query.get("operation").is_some_and(|operation|operation=="listSCIMManagedConnections") {
                     let input:Value=serde_json::from_slice(&bytes).unwrap();
                     let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","listSCIMManagedConnections").with_body(&input["body"]).unwrap(),EndpointOptions::default()).await;

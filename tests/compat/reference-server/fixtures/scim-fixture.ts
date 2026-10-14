@@ -40,6 +40,25 @@ export async function scimFixture(base: BetterAuthOptions) {
           headers: { "content-type": "application/json" },
         });
       }
+      if (query.get("operation") === "credential-state") {
+        const input = (await request.json()) as any;
+        if (input.policy !== undefined) {
+          options.database
+            .query("UPDATE scimManagedCredential SET serializedScopes=? WHERE credentialId=?")
+            .run(input.policy, input.credentialId);
+        } else {
+          options.database
+            .query("UPDATE scimManagedCredential SET expiresAt=? WHERE credentialId=?")
+            .run("2000-01-01T00:00:00.000Z", input.credentialId);
+        }
+        return new Response(JSON.stringify({ changed: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "getSCIMManagedConnection") {
+        const input = (await request.json()) as any;
+        return auth.api.getSCIMManagedConnection({ body: input.body, asResponse: true });
+      }
       if (query.get("operation") === "listSCIMManagedConnections") {
         const input = (await request.json()) as any;
         return auth.api.listSCIMManagedConnections({ body: input.body, asResponse: true });
