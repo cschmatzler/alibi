@@ -4,12 +4,13 @@ mod callback_id_token;
 mod configured;
 mod discovery;
 mod domain_confirmation;
-mod domain_membership;
 mod domain_verification;
 mod domains;
+mod hooks;
 mod idp_metadata_xml;
 mod idp_services;
 mod organization_provisioning;
+mod saml_signout;
 pub use organization_provisioning::{
     SsoOrganizationProvisioning, SsoOrganizationRoleResolver, SsoRoleResolver,
 };
@@ -448,6 +449,16 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
             ));
         }
         routes
+    }
+    async fn before_request(
+        &self,
+        request: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<alibi_core::BeforeRequestAction>> {
+        if request.path() == "/sign-out" && self.config.saml_enable_single_logout {
+            self.clear_saml_signout_tracking(request, ctx).await?;
+        }
+        Ok(None)
     }
     fn endpoint_hooks(&self) -> Vec<&dyn alibi_core::endpoint::EndpointHook<S>> {
         vec![self]

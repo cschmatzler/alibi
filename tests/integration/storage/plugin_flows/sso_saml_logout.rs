@@ -20,7 +20,10 @@ backend_tests!(
     sso_logout_custom_sp_metadata_drives_request_issuer_and_nameid_format,
     sso_idp_logout_custom_sp_metadata_drives_response_issuer,
     sso_logout_idp_xml_uses_xml_service_and_trusted_signature,
-    sso_idp_logout_xml_uses_xml_service_and_trusted_signature
+    sso_idp_logout_xml_uses_xml_service_and_trusted_signature,
+    sso_local_signout_api_retires_tracking_without_touching_other_sessions,
+    sso_local_signout_http_retires_tracking_without_touching_other_sessions,
+    sso_local_signout_disabled_slo_preserves_tracking
 );
 async fn sso_logout_uses_acs_session_index_and_retires_session<B: Backend>(db: Db) -> TestResult {
     logout_flow::<B>(db, LogoutCase::Initiation).await
@@ -60,8 +63,24 @@ async fn sso_logout_idp_xml_uses_xml_service_and_trusted_signature<B: Backend>(
 ) -> TestResult {
     logout_flow::<B>(db, LogoutCase::IdpXml).await
 }
+async fn sso_local_signout_api_retires_tracking_without_touching_other_sessions<B: Backend>(
+    db: Db,
+) -> TestResult {
+    logout_flow::<B>(db, LogoutCase::LocalApi).await
+}
+async fn sso_local_signout_http_retires_tracking_without_touching_other_sessions<B: Backend>(
+    db: Db,
+) -> TestResult {
+    logout_flow::<B>(db, LogoutCase::LocalHttp).await
+}
+async fn sso_local_signout_disabled_slo_preserves_tracking<B: Backend>(db: Db) -> TestResult {
+    logout_flow::<B>(db, LogoutCase::LocalDisabled).await
+}
 #[derive(Clone, Copy)]
 enum LogoutCase {
+    LocalApi,
+    LocalHttp,
+    LocalDisabled,
     Initiation,
     Post,
     RequiredSignature,
@@ -164,6 +183,62 @@ async fn logout_flow<B: Backend>(db: Db, case: LogoutCase) -> TestResult {
             .value(),
         key
     );
+    if matches!(
+        case,
+        LogoutCase::LocalApi | LogoutCase::LocalHttp | LogoutCase::LocalDisabled
+    ) {
+        let disabled = if matches!(case, LogoutCase::LocalDisabled) {
+            Some(
+                super::auth_probe::fast_builder::<B>(&connection)
+                    .plugin(SsoPlugin::new())
+                    .build()
+                    .await?,
+            )
+        } else {
+            None
+        };
+        let signout_auth = disabled.as_ref().unwrap_or(&auth);
+        let signed_out = if matches!(case, LogoutCase::LocalHttp) {
+            call(
+                signout_auth,
+                request("/sign-out", Some(json!({})), &cookie),
+                200,
+            )
+            .await
+        } else {
+            Box::pin(
+                signout_auth.dispatch_endpoint(
+                    ServerEndpoint::<Value>::new("session-management", "signOut")
+                        .with_body(&json!({}))?,
+                    EndpointOptions {
+                        headers: Some([("cookie".into(), cookie.clone())].into_iter().collect()),
+                        ..Default::default()
+                    },
+                ),
+            )
+            .await?
+            .into_response()?
+        };
+        assert_eq!(signed_out.status, 200);
+        assert_eq!(body(&signed_out), json!({"success":true}));
+        let tracking = store.get_latest_verification_by_identifier(&key).await?;
+        let reverse = store.get_latest_verification_by_identifier(&lookup).await?;
+        if matches!(case, LogoutCase::LocalDisabled) {
+            assert_eq!(tracking.unwrap().value(), stored.value());
+            assert_eq!(reverse.unwrap().value(), key);
+        } else {
+            assert!(tracking.is_none());
+            assert!(reverse.is_none());
+        }
+        let retired = call(&auth, request("/get-session", None, &cookie), 200).await;
+        assert_eq!(body(&retired), Value::Null);
+        let retained = call(&auth, request("/get-session", None, &cookies(&owner)), 200).await;
+        assert_eq!(
+            body(&retained)["user"]["email"],
+            "saml-logout-owner@example.test"
+        );
+        return B::close(connection).await;
+    }
     let before = chrono::Utc::now();
     let output = Box::pin(
         auth.dispatch_endpoint(
