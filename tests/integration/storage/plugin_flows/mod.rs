@@ -468,3 +468,7 @@ mod sso_saml_encryption;
 mod sso_endpoint_admission;
 
 mod sso_oidc_mapping;
+
+mod sso_mutation_guard;
+#[path = "../../../support/sso_mutation_policy.rs"]
+mod sso_mutation_policy;

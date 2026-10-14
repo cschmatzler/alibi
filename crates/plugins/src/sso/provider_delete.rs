@@ -15,11 +15,41 @@ impl SsoPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let provider = self.authorized_provider(input, request, ctx).await?;
-        if !ctx
-            .database
-            .delete_sso_provider_and_accounts(&provider.id, &provider.provider_id)
+        let guard = self
+            .config
+            .guard_provider_mutation
+            .as_ref()
+            .map(super::SsoMutationGuard::resolve::<S>)
+            .transpose()?;
+        let deleted = if let Some(guard) = guard {
+            let verified = self.config.domain_verification;
+            alibi_core::store::transaction(ctx.database.as_ref(), move |database| {
+                Box::pin(async move {
+                    let existing = database
+                        .lock_sso_provider(&provider.id, &provider.provider_id)
+                        .await?
+                        .ok_or_else(|| api(404, "Provider not found"))?;
+                    super::mutation_guard::run(
+                        guard.as_ref(),
+                        &existing,
+                        super::SsoMutationAction::Delete,
+                        None,
+                        verified,
+                        database,
+                    )
+                    .await?;
+                    database
+                        .delete_sso_provider_and_accounts(&existing.id, &existing.provider_id)
+                        .await
+                })
+            })
             .await?
-        {
+        } else {
+            ctx.database
+                .delete_sso_provider_and_accounts(&provider.id, &provider.provider_id)
+                .await?
+        };
+        if !deleted {
             return Err(api(404, "Provider not found"));
         }
         EndpointResponse::json(&json!({"success":true}))

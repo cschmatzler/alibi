@@ -39,11 +39,45 @@ impl SsoPlugin {
         let prepare = move |existing: &SsoProvider| {
             prepare_update(existing, &body, max_metadata_size, private_key_configured)
         };
-        let updated = ctx
-            .database
-            .update_sso_provider(&authorized.id, provider_id, &prepare)
+        let guard = self
+            .config
+            .guard_provider_mutation
+            .as_ref()
+            .map(super::SsoMutationGuard::resolve::<S>)
+            .transpose()?;
+        let updated = if let Some(guard) = guard {
+            let id = authorized.id.clone();
+            let provider_id = provider_id.to_owned();
+            let verified = self.config.domain_verification;
+            alibi_core::store::transaction(ctx.database.as_ref(), move |database| {
+                Box::pin(async move {
+                    let existing = database
+                        .lock_sso_provider(&id, &provider_id)
+                        .await?
+                        .ok_or_else(|| api(404, "Provider not found"))?;
+                    let update = prepare(&existing)?;
+                    super::mutation_guard::run(
+                        guard.as_ref(),
+                        &existing,
+                        super::SsoMutationAction::Update,
+                        Some(update.identity_changed),
+                        verified,
+                        database,
+                    )
+                    .await?;
+                    database
+                        .update_sso_provider(update)
+                        .await?
+                        .ok_or_else(|| api(404, "Provider not found"))
+                })
+            })
             .await?
-            .ok_or_else(|| api(404, "Provider not found"))?;
+        } else {
+            ctx.database
+                .update_sso_provider(&authorized.id, provider_id, &prepare)
+                .await?
+                .ok_or_else(|| api(404, "Provider not found"))?
+        };
         EndpointResponse::json(&super::provider_read::sanitize(&updated, ctx)?)
     }
 }

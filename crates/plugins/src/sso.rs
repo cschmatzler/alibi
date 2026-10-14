@@ -12,6 +12,11 @@ mod idp_metadata_validation;
 mod idp_metadata_xml;
 mod idp_services;
 mod mapping_schema;
+mod mutation_guard;
+pub use mutation_guard::{
+    SsoMutationAction, SsoMutationGuard, SsoMutationProvider, SsoProviderMutation,
+    SsoProviderMutationGuard,
+};
 mod organization_provisioning;
 mod saml_signout;
 pub use organization_provisioning::{
@@ -62,6 +67,7 @@ pub struct SsoConfig {
     pub default_providers: Vec<SsoDefaultProvider>,
     pub resolve_private_key: Option<SsoKeyResolver>,
     pub provision_user: Option<SsoProvisioner>,
+    pub guard_provider_mutation: Option<SsoMutationGuard>,
     pub provision_user_on_every_login: bool,
     pub organization_provisioning: SsoOrganizationProvisioning,
     pub providers_limit: usize,
@@ -90,6 +96,7 @@ impl Default for SsoConfig {
             default_providers: Vec::new(),
             resolve_private_key: None,
             provision_user: None,
+            guard_provider_mutation: None,
             provision_user_on_every_login: false,
             organization_provisioning: SsoOrganizationProvisioning::default(),
             providers_limit: 10,
