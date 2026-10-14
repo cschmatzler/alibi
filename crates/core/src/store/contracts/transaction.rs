@@ -22,6 +22,21 @@ pub type TransactionWork<S> =
 
 #[async_trait]
 pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
+    async fn patch_scim_group(
+        &self,
+        _id: &str,
+        _connection: &str,
+        _domain: &str,
+        _patch: crate::store::ScimGroupPatch,
+        _roles: bool,
+    ) -> AuthResult<(
+        crate::store::ScimGroupRecord,
+        Vec<crate::store::ScimProjectionPreparedUser>,
+    )> {
+        Err(AuthError::not_implemented(
+            "Transactional SCIM Group patching is unsupported",
+        ))
+    }
     async fn replace_scim_group(
         &self,
         _id: &str,

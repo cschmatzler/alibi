@@ -476,6 +476,131 @@ impl ScimPlugin {
         }
         Ok(projection.apply(attributes))
     }
+    pub(super) async fn patch_group<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let operations = match group_patch_body(call.body()) {
+            Ok(value) => value,
+            Err(detail) => return Ok(error(400, &detail, Some("invalidValue"))),
+        };
+        let connection = match self.authenticate_connection(call, ctx).await? {
+            Ok(connection) => connection,
+            Err(response) => return Ok(*response),
+        };
+        let projection = match Projection::parse(call.query(), GROUP_SCHEMA) {
+            Ok(value) => value,
+            Err(detail) => return Ok(error(400, &detail, Some("invalidValue"))),
+        };
+        let id = call
+            .params()
+            .and_then(|params| params.get("groupId"))
+            .and_then(JsValue::as_str)
+            .unwrap_or("");
+        let Some(group) = ctx.database.get_scim_group(id, &connection.id).await? else {
+            return Ok(error(404, "SCIM Group not found", None));
+        };
+        if group.provisioning_domain_id != connection.domain {
+            return Ok(error(
+                409,
+                "The connection provisioningDomainId changed after resources were created",
+                None,
+            ));
+        }
+        let patch = match alibi_core::store::prepare_scim_group_patch(operations) {
+            Ok(value) => value,
+            Err(AuthError::Api {
+                status,
+                message,
+                code,
+            }) => return Ok(error(status, &message, code.as_deref())),
+            Err(error) => return Err(error),
+        };
+        let configured = ctx
+            .extensions
+            .get::<super::projection::ScimProjectionHandle<S>>();
+        let roles = configured.as_ref().is_some_and(|handle| handle.1.is_some());
+        for attempt in 0..3 {
+            let id = id.to_owned();
+            let cid = connection.id.clone();
+            let domain = connection.domain.clone();
+            let key = scoped_key(&["scim-connection", &cid])?;
+            let configured = configured.clone();
+            let patch = patch.clone();
+            let result =
+                alibi_core::store::transaction::<S, _, _>(ctx.database.as_ref(), move |database| {
+                    Box::pin(async move {
+                        let (group, states) = database
+                            .patch_scim_group(&id, &cid, &domain, patch, roles)
+                            .await?;
+                        reconcile_group_states(database, &domain, states, configured).await?;
+                        database.fence_scim_connection(&cid, &key).await?;
+                        Ok(group)
+                    })
+                })
+                .await;
+            match result {
+                Ok(group) => {
+                    let base = format!(
+                        "{}{}",
+                        ctx.config.base_url.trim_end_matches('/'),
+                        ctx.config.base_path.trim_end_matches('/')
+                    );
+                    let location = resource_url(&base, "Groups", &group.id)?;
+                    let value = Self::render_group(ctx, group, &projection).await?;
+                    return Ok(EndpointResponse::json(&value)?
+                        .with_header("location", location)
+                        .with_header(MARKER, "1"));
+                }
+                Err(AuthError::Internal(message))
+                    if matches!(
+                        message.as_str(),
+                        "The SCIM Group changed concurrently; retry the request."
+                            | "The SCIM projection subject changed concurrently; retry the request."
+                    ) =>
+                {
+                    if attempt == 2 {
+                        return Ok(error(
+                            409,
+                            "The SCIM Group changed concurrently; retry the request",
+                            None,
+                        ));
+                    }
+                }
+                Err(AuthError::Api {
+                    status,
+                    message,
+                    code,
+                }) => {
+                    return Ok(error(
+                        status,
+                        &message,
+                        code.as_deref().or_else(|| {
+                            if status == 409 && message.ends_with("already exists") {
+                                Some("uniqueness")
+                            } else if status == 400 {
+                                Some("invalidValue")
+                            } else {
+                                None
+                            }
+                        }),
+                    ));
+                }
+                Err(AuthError::CallbackFailure(cause)) => {
+                    let detail = match cause.as_ref() {
+                        AuthError::Api { message, .. } => message.as_str(),
+                        _ => "SCIM projection reconciliation failed",
+                    };
+                    return Ok(error(500, detail, None));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(AuthError::internal(
+            "SCIM mutation retry loop completed without a result",
+        ))
+    }
     pub(super) async fn replace_group<S: AuthSchema>(
         &self,
         call: &EndpointCall,
@@ -1490,4 +1615,88 @@ pub(super) fn to_http_response(
     }
     response.headers = headers;
     Ok(response.with_header("content-type", "application/scim+json"))
+}
+
+fn group_patch_body(
+    body: Option<&JsValue>,
+) -> Result<Vec<alibi_core::store::ScimGroupPatchOperation>, String> {
+    use alibi_core::store::{ScimGroupPatchKind, ScimGroupPatchOperation};
+    let Some(JsValue::Object(body)) = body else {
+        return Err(format!(
+            "[body] Invalid input: expected object, received {}",
+            crate::authentication_helpers::json_type(body)
+        ));
+    };
+    let mut errors = Vec::new();
+    let schema = "urn:ietf:params:scim:api:messages:2.0:PatchOp";
+    match body.get("schemas") {
+        Some(JsValue::Array(schemas)) => {
+            for (index, value) in schemas.iter().enumerate() {
+                if value.as_str() != Some(schema) {
+                    errors.push(format!(
+                        "[body.schemas.{index}] Invalid input: expected \"{schema}\""
+                    ));
+                }
+            }
+            if schemas.len() != 1 {
+                errors.push("[body.schemas] schemas must contain only the PatchOp schema".into());
+            }
+        }
+        value => errors.push(format!(
+            "[body.schemas] Invalid input: expected array, received {}",
+            crate::authentication_helpers::json_type(value)
+        )),
+    }
+    let mut output = Vec::new();
+    match body.get("Operations") {
+        Some(JsValue::Array(operations)) => {
+            for (index, value) in operations.iter().enumerate() {
+                let JsValue::Object(operation) = value else {
+                    errors.push(format!(
+                        "[body.Operations.{index}] Invalid input: expected object, received {}",
+                        crate::authentication_helpers::json_type(Some(value))
+                    ));
+                    continue;
+                };
+                let op = match operation.get("op") {
+                    None => ScimGroupPatchKind::Replace,
+                    Some(JsValue::String(value)) => match value.to_lowercase().as_str() {
+                        "replace" => ScimGroupPatchKind::Replace,
+                        "add" => ScimGroupPatchKind::Add,
+                        "remove" => ScimGroupPatchKind::Remove,
+                        _ => {
+                            errors.push(format!("[body.Operations.{index}.op] Invalid option: expected one of \"replace\"|\"add\"|\"remove\""));
+                            ScimGroupPatchKind::Replace
+                        }
+                    },
+                    value => {
+                        errors.push(format!("[body.Operations.{index}.op] Invalid input: expected string, received {}",crate::authentication_helpers::json_type(value)));
+                        ScimGroupPatchKind::Replace
+                    }
+                };
+                let path = match operation.get("path") {
+                    None => None,
+                    Some(JsValue::String(path)) => Some(path.clone()),
+                    value => {
+                        errors.push(format!("[body.Operations.{index}.path] Invalid input: expected string, received {}",crate::authentication_helpers::json_type(value)));
+                        None
+                    }
+                };
+                output.push(ScimGroupPatchOperation {
+                    op,
+                    path,
+                    value: operation.get("value").cloned(),
+                });
+            }
+        }
+        value => errors.push(format!(
+            "[body.Operations] Invalid input: expected array, received {}",
+            crate::authentication_helpers::json_type(value)
+        )),
+    }
+    if errors.is_empty() {
+        Ok(output)
+    } else {
+        Err(errors.join("; "))
+    }
 }

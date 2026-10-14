@@ -337,6 +337,21 @@ where
         _ = exec.execute(sql).await?;
         Ok(())
     }
+    async fn patch_scim_group(
+        &self,
+        id: &str,
+        connection: &str,
+        domain: &str,
+        patch: alibi_core::store::ScimGroupPatch,
+        roles: bool,
+    ) -> AuthResult<(
+        alibi_core::store::ScimGroupRecord,
+        Vec<alibi_core::store::ScimProjectionPreparedUser>,
+    )> {
+        self.store
+            .patch_scim_group_with_exec(Exec::tx(self.tx), id, connection, domain, patch, roles)
+            .await
+    }
     async fn replace_scim_group(
         &self,
         id: &str,

@@ -7,6 +7,11 @@ mod migrations;
 pub mod oauth_clients;
 mod org_extensions;
 pub mod scim;
+mod scim_group_patch;
+pub use scim_group_patch::{
+    ScimGroupPatch, ScimGroupPatchKind, ScimGroupPatchOperation, apply_scim_group_patch,
+    check_scim_group_cardinality, prepare_scim_group_patch,
+};
 mod secondary_sessions;
 pub mod secondary_storage;
 mod session_deletion;
