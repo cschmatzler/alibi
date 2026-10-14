@@ -326,11 +326,11 @@ pub(crate) struct StatusResponse {
 }
 
 pub use sso::{
-    SsoAccountKey, SsoConfig, SsoDefaultProvider, SsoKeyResolver, SsoMutationAction,
-    SsoMutationGuard, SsoMutationProvider, SsoOrganizationProvisioning,
+    SsoAccountKey, SsoConfig, SsoDefaultProvider, SsoDeprecatedAlgorithmBehavior, SsoKeyResolver,
+    SsoMutationAction, SsoMutationGuard, SsoMutationProvider, SsoOrganizationProvisioning,
     SsoOrganizationRoleResolver, SsoPlugin, SsoPrivateKey, SsoPrivateKeyContext,
     SsoPrivateKeyResolver, SsoProtocol, SsoProviderLimit, SsoProviderLimitResolver,
     SsoProviderMutation, SsoProviderMutationGuard, SsoProvisioner, SsoProvisioningData,
-    SsoResolvedProfile, SsoResolver, SsoRoleResolver, SsoUserProvisioner, SsoUserResolution,
-    SsoUserResolutionInput, SsoUserResolver,
+    SsoResolvedProfile, SsoResolver, SsoRoleResolver, SsoSamlSigningPolicy, SsoUserProvisioner,
+    SsoUserResolution, SsoUserResolutionInput, SsoUserResolver,
 };

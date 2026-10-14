@@ -36,8 +36,15 @@ impl SsoPlugin {
         }
         let max_metadata_size = self.config.saml_max_metadata_size;
         let private_key_configured = self.private_key_source_configured(provider_id);
+        let signing_policy = self.config.saml_signing_policy.clone();
         let prepare = move |existing: &SsoProvider| {
-            prepare_update(existing, &body, max_metadata_size, private_key_configured)
+            prepare_update(
+                existing,
+                &body,
+                max_metadata_size,
+                private_key_configured,
+                &signing_policy,
+            )
         };
         let guard = self
             .config
@@ -86,6 +93,7 @@ fn prepare_update(
     body: &Value,
     max_metadata_size: usize,
     private_key_configured: bool,
+    signing_policy: &super::SsoSamlSigningPolicy,
 ) -> AuthResult<SsoProviderUpdate> {
     let mut provider = existing.clone();
     let mut identity_changed = false;
@@ -100,6 +108,7 @@ fn prepare_update(
         provider.domain = domain.into();
     }
     if let Some(updates) = body.get("samlConfig") {
+        super::signing_algorithms::validate(updates, signing_policy)?;
         let issuer = body
             .get("issuer")
             .and_then(Value::as_str)
