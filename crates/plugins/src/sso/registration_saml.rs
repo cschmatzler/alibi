@@ -30,11 +30,6 @@ fn validate_config(input: &JsValue, partial: bool) -> AuthResult<JsValue> {
         .collect::<Vec<_>>();
     fields.extend([
         JsonField {
-            name: "idpMetadata",
-            kind: JsonFieldKind::Record,
-            required: !partial,
-        },
-        JsonField {
             name: "mapping",
             kind: JsonFieldKind::Record,
             required: false,
@@ -112,39 +107,12 @@ fn validate_config(input: &JsValue, partial: bool) -> AuthResult<JsValue> {
             .ok_or_else(|| crate::endpoint::validation("Invalid SAML configuration"))?;
         _ = object.insert("idpInitiatedCallbackUrl".into(), Value::Null);
     }
-    if let Some(idp) = value.get_mut("idpMetadata").and_then(Value::as_object_mut) {
-        idp.retain(|name, _| {
-            matches!(
-                name.as_str(),
-                "cert"
-                    | "privateKey"
-                    | "privateKeyPass"
-                    | "isAssertionEncrypted"
-                    | "encPrivateKey"
-                    | "encPrivateKeyPass"
-                    | "singleSignOnService"
-                    | "singleLogoutService"
-                    | "metadata"
-                    | "entityID"
-            )
-        });
-        if let Some(cert) = idp.get("cert") {
-            certificate_shape(cert)?;
-        }
-        if !partial
-            && idp
-                .get("metadata")
-                .and_then(Value::as_str)
-                .is_none_or(str::is_empty)
-            && idp
-                .get("entityID")
-                .and_then(Value::as_str)
-                .is_none_or(str::is_empty)
-        {
-            return Err(crate::endpoint::validation(
-                "idpMetadata.entityID is required when IdP metadata XML is not provided",
-            ));
-        }
+    if !partial || input.get("idpMetadata").is_some() {
+        let idp = super::idp_metadata_validation::validate(input.get("idpMetadata"), partial)?;
+        _ = value
+            .as_object_mut()
+            .ok_or_else(|| crate::endpoint::validation("Invalid SAML configuration"))?
+            .insert("idpMetadata".into(), idp.to_json_value()?);
     }
     Ok(alibi_core::utils::json::parse_value(
         &serde_json::to_string(&value)?,

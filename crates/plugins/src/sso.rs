@@ -7,6 +7,7 @@ mod domain_confirmation;
 mod domain_verification;
 mod domains;
 mod hooks;
+mod idp_metadata_validation;
 mod idp_metadata_xml;
 mod idp_services;
 mod organization_provisioning;
