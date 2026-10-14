@@ -13,32 +13,44 @@ backend_tests!(
     sso_logout_required_signature_preserves_proof_until_trusted_completion,
     sso_saml_rollover_accepts_later_trusted_certificate_for_login_and_logout,
     sso_idp_logout_requires_trusted_signature_before_session_retirement,
-    sso_idp_logout_http_form_accepts_external_origin_and_retires_matching_session
+    sso_idp_logout_http_form_accepts_external_origin_and_retires_matching_session,
+    sso_logout_redirect_ignores_optional_signature_and_retires_real_proof
 );
 async fn sso_logout_uses_acs_session_index_and_retires_session<B: Backend>(db: Db) -> TestResult {
-    logout_flow::<B>(db, false, false, false).await
+    logout_flow::<B>(db, LogoutCase::Initiation).await
 }
 async fn sso_logout_response_retires_proof_and_rejects_external_relay<B: Backend>(
     db: Db,
 ) -> TestResult {
-    logout_flow::<B>(db, true, false, false).await
+    logout_flow::<B>(db, LogoutCase::Post).await
 }
 async fn sso_logout_required_signature_preserves_proof_until_trusted_completion<B: Backend>(
     db: Db,
 ) -> TestResult {
-    logout_flow::<B>(db, true, true, false).await
+    logout_flow::<B>(db, LogoutCase::RequiredSignature).await
 }
 async fn sso_saml_rollover_accepts_later_trusted_certificate_for_login_and_logout<B: Backend>(
     db: Db,
 ) -> TestResult {
-    logout_flow::<B>(db, true, true, true).await
+    logout_flow::<B>(db, LogoutCase::Rollover).await
 }
-async fn logout_flow<B: Backend>(
+async fn sso_logout_redirect_ignores_optional_signature_and_retires_real_proof<B: Backend>(
     db: Db,
-    complete: bool,
-    signed: bool,
-    rollover: bool,
 ) -> TestResult {
+    logout_flow::<B>(db, LogoutCase::Redirect).await
+}
+#[derive(Clone, Copy)]
+enum LogoutCase {
+    Initiation,
+    Post,
+    RequiredSignature,
+    Rollover,
+    Redirect,
+}
+async fn logout_flow<B: Backend>(db: Db, case: LogoutCase) -> TestResult {
+    let complete = !matches!(case, LogoutCase::Initiation);
+    let signed = matches!(case, LogoutCase::RequiredSignature | LogoutCase::Rollover);
+    let rollover = matches!(case, LogoutCase::Rollover);
     let (connection, store) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(SsoPlugin::with_config(SsoConfig {
@@ -241,6 +253,66 @@ async fn logout_flow<B: Backend>(
                 assert_eq!(retained.expires_at(), proof.expires_at());
             }
             response = idp::signed_logout(&response_xml, false)?;
+            use std::io::Write as _;
+            let mut compressor =
+                flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+            compressor.write_all(&base64::engine::general_purpose::STANDARD.decode(&response)?)?;
+            let encoded = base64::engine::general_purpose::STANDARD.encode(compressor.finish()?);
+            let mut callback =
+                AuthRequest::new(HttpMethod::Get, "/sso/saml2/sp/slo/logout-provider");
+            callback.set_query_pairs([
+                ("SAMLResponse", encoded.as_str()),
+                (
+                    "SigAlg",
+                    "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+                ),
+                ("Signature", "AA=="),
+            ]);
+            let rejected = call(&auth, callback, 400).await;
+            assert_eq!(body(&rejected)["code"], "INVALID_LOGOUT_RESPONSE");
+            let retained = store
+                .get_latest_verification_by_identifier(&format!("saml-logout-request:{id}"))
+                .await?
+                .ok_or("Required Redirect signature consumed proof")?;
+            assert_eq!(retained.value(), proof.value());
+            assert_eq!(retained.expires_at(), proof.expires_at());
+        }
+        if matches!(case, LogoutCase::Redirect) {
+            use std::io::Write as _;
+            let mut compressor =
+                flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+            compressor.write_all(response_xml.as_bytes())?;
+            let response = base64::engine::general_purpose::STANDARD.encode(compressor.finish()?);
+            let query = url::form_urlencoded::Serializer::new(String::new())
+                .extend_pairs([
+                    ("SAMLResponse", response.as_str()),
+                    ("RelayState", "https://attacker.example/steal"),
+                    (
+                        "SigAlg",
+                        "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+                    ),
+                    ("Signature", "AA=="),
+                ])
+                .finish();
+            let mut callback =
+                AuthRequest::new(HttpMethod::Get, "/sso/saml2/sp/slo/logout-provider");
+            callback.set_query_pairs(url::form_urlencoded::parse(query.as_bytes()).into_owned());
+            _ = callback
+                .headers
+                .insert("origin".into(), "https://idp.example.test".into());
+            let completed = call(&auth, callback.clone(), 302).await;
+            assert_eq!(
+                completed.headers.get("location").map(String::as_str),
+                Some(ORIGIN)
+            );
+            assert!(
+                store
+                    .get_latest_verification_by_identifier(&format!("saml-logout-request:{id}"))
+                    .await?
+                    .is_none()
+            );
+            _ = call(&auth, callback, 302).await;
+            return B::close(connection).await;
         }
         let endpoint = ServerEndpoint::<Value>::new("sso", "sloEndpoint")
             .with_params(&json!({"providerId":"logout-provider"}))?

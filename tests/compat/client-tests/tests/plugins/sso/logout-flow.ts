@@ -1,5 +1,5 @@
 import { expect } from "bun:test";
-import { inflateRawSync } from "node:zlib";
+import { inflateRawSync, deflateRawSync } from "node:zlib";
 
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { Cookie } from "tough-cookie";
@@ -11,6 +11,7 @@ export async function samlLogoutFlow(
   complete: boolean,
   signed = false,
   rollover = false,
+  binding: "post" | "redirect" = "post",
 ) {
   const actor = ctx.actor();
   const control = (input: Record<string, unknown>) =>
@@ -176,13 +177,44 @@ export async function samlLogoutFlow(
         ).toEqual(proof);
       }
       response = await sign(false);
+      const rejectedRedirect = await control({
+        action: "slo-http",
+        method: "GET",
+        params: { providerId: "logout-provider" },
+        query: {
+          SAMLResponse: deflateRawSync(Buffer.from(response, "base64")).toString("base64"),
+          SigAlg: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+          Signature: "AA==",
+        },
+        headers: { origin: "https://idp.example.test" },
+      });
+      expect(rejectedRedirect.status).toBe(400);
+      expect(
+        await (
+          await control({ action: "proof", identifier: `saml-logout-request:${request["@_ID"]}` })
+        ).json(),
+      ).toEqual(proof);
     }
-    const completeInput = {
-      action: "slo",
-      params: { providerId: "logout-provider" },
-      body: { SAMLResponse: response, RelayState: "https://attacker.example/steal" },
-      headers: {},
-    };
+    const completeInput =
+      binding === "redirect"
+        ? {
+            action: "slo-http",
+            method: "GET",
+            params: { providerId: "logout-provider" },
+            query: {
+              SAMLResponse: deflateRawSync(responseXml).toString("base64"),
+              RelayState: "https://attacker.example/steal",
+              SigAlg: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+              Signature: "AA==",
+            },
+            headers: { origin: "https://idp.example.test" },
+          }
+        : {
+            action: "slo",
+            params: { providerId: "logout-provider" },
+            body: { SAMLResponse: response, RelayState: "https://attacker.example/steal" },
+            headers: {},
+          };
     const completedLogout = await control(completeInput);
     expect(completedLogout.status).toBe(302);
     expect(completedLogout.headers.get("location")).toBe(ctx.baseURL);
