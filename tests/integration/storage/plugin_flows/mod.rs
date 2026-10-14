@@ -482,3 +482,5 @@ mod sso_provider_limit_policy;
 mod sso_provider_limits;
 
 mod sso_idp_initiated;
+
+mod sso_saml_algorithms;
