@@ -112,6 +112,16 @@ pub struct ScimManagedCreation {
 }
 #[async_trait]
 pub trait ScimManagedStore: Send + Sync {
+    async fn scim_projection_candidates(
+        &self,
+        _domain: &str,
+        _cursor: Option<&str>,
+    ) -> AuthResult<Vec<ScimProjectionCandidate>> {
+        Err(AuthError::config(
+            "SCIM projection persistence is not supported by this store",
+        ))
+    }
+
     async fn recover_empty_scim_decommission(
         &self,
         _binding: ScimConnectionBinding,
@@ -230,4 +240,32 @@ pub fn validate_scim_binding_domain(
         )));
     }
     Ok(())
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScimIdentitySource {
+    pub id: String,
+    pub connection_id: String,
+    pub provisioning_domain_id: String,
+    pub active: bool,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScimProjectedUserState {
+    pub provisioning_domain_id: String,
+    pub user_id: String,
+    pub active: bool,
+    pub sources: Vec<ScimIdentitySource>,
+    pub grants: Vec<serde_json::Value>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ScimProjectionCandidate {
+    pub id: String,
+    pub user_id: String,
+}
+pub struct ScimProjectionPreparedUser {
+    pub state: ScimProjectedUserState,
+    pub removed_grant_ids: Vec<String>,
 }

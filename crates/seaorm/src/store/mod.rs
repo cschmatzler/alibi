@@ -308,6 +308,25 @@ where
     S::Session: SeaOrmSessionModel,
     S::Verification: SeaOrmVerificationModel,
 {
+    async fn prepare_scim_projection(
+        &self,
+        domain: &str,
+        ids: &[String],
+    ) -> AuthResult<Vec<alibi_core::store::ScimProjectionPreparedUser>> {
+        self.store
+            .prepare_scim_projection_with_connection(self.tx, domain, ids)
+            .await
+    }
+    async fn remove_scim_projection_grants(
+        &self,
+        domain: &str,
+        user_id: &str,
+        ids: &[String],
+    ) -> AuthResult<()> {
+        self.store
+            .remove_scim_projection_grants_with_connection(self.tx, domain, user_id, ids)
+            .await
+    }
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
         self.store
             .get_user_by_email_with_connection(self.tx, email)
@@ -678,3 +697,4 @@ pub(crate) fn bind_page(
 mod sso;
 
 mod scim;
+mod scim_projection;

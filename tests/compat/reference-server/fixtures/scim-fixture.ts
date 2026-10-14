@@ -21,11 +21,114 @@ export async function scimFixture(base: BetterAuthOptions) {
   };
   await (await getMigrations(options)).runMigrations();
   let auth = betterAuth(options);
+  const projectionStates: unknown[] = [];
+  let projectionFails = false;
   return async (request: Request): Promise<Response | undefined> => {
     const path = new URL(request.url).pathname;
     if (path.startsWith("/__test/profiles/scim/api/auth/")) return auth.handler(request);
     if (path === "/__test/server-api/scim") {
       const query = new URL(request.url).searchParams;
+      if (query.get("operation") === "configure-projection") {
+        options.plugins = [
+          scim({
+            connections: [],
+            authentication: { verifyBearerToken: async () => null },
+            managedConnections: {
+              credentialHashSecret: "managed-scim-credential-hmac-secret-32-chars",
+              maxActiveCredentials: 2,
+            },
+            projection: {
+              reconcileUser: async (input, context) => {
+                await context.database.update({
+                  model: "user",
+                  where: [{ field: "id", value: input.userId }],
+                  update: {
+                    name: projectionFails
+                      ? "Should roll back"
+                      : input.active
+                        ? "Projected active"
+                        : "Projected inactive",
+                  },
+                });
+                projectionStates.push(input);
+                if (projectionFails) throw new Error("application rejected projection");
+              },
+            },
+          }),
+        ];
+        auth = betterAuth(options);
+        return new Response(JSON.stringify({ configured: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "seed-projection") {
+        const signed = await auth.api.signUpEmail({
+          body: {
+            email: "projection-owner@example.com",
+            password: "a-native-password-123",
+            name: "Native owner",
+          },
+        });
+        const uid = signed.user.id;
+        options.database
+          .query(
+            "INSERT INTO scimSubject (id,userId,revision,createdAt,updatedAt) VALUES ('projection-subject',?,0,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
+          )
+          .run(uid);
+        for (const [id, cid, domain, active] of [
+          ["scim-alias-a", "conn-a", "tenant-a", 1],
+          ["scim-alias-b", "conn-b", "tenant-a", 0],
+          ["scim-alias-c", "conn-c", "tenant-b", 1],
+        ] as const) {
+          options.database
+            .query(
+              "INSERT INTO scimUser (id,connectionId,provisioningDomainId,userId,connectionUserKey,userName,userNameKey,primaryEmail,workEmailValueIndex,emailValueIndex,displayName,formattedName,serializedEmails,active,orderKey,createdAt,updatedAt) VALUES (?,?,?,?,?,'projection-owner@example.com',?,'projection-owner@example.com','[]','[]','Owner','Owner','[]',?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
+            )
+            .run(id, cid, domain, uid, id, id, active, id);
+        }
+        options.database
+          .query(
+            "INSERT INTO scimProjectionGrant (id,connectionId,provisioningDomainId,scimUserId,userId,sourceKind,sourceId,role,grantKey,createdAt,updatedAt) VALUES ('legacy-grant','conn-a','tenant-a','scim-alias-a',?,'group','retired-group','legacy-role','legacy-grant','2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
+          )
+          .run(uid);
+        return new Response(JSON.stringify({ userId: uid }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "projection-fails") {
+        const owner = options.database
+          .query("SELECT id FROM user WHERE email='projection-owner@example.com'")
+          .get() as any;
+        options.database
+          .query(
+            "INSERT INTO scimProjectionGrant (id,connectionId,provisioningDomainId,scimUserId,userId,sourceKind,sourceId,role,grantKey,createdAt,updatedAt) VALUES ('failure-grant','conn-a','tenant-a','scim-alias-a',?,'group','retired-group','legacy-role','failure-grant','2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
+          )
+          .run(owner.id);
+        projectionFails = true;
+        return new Response(JSON.stringify({ failing: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "projection-states") {
+        return new Response(JSON.stringify(projectionStates), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "projection-storage") {
+        return new Response(
+          JSON.stringify({
+            users: options.database
+              .query("SELECT id,name FROM user WHERE email='projection-owner@example.com'")
+              .all(),
+            subjects: options.database.query("SELECT * FROM scimSubject").all(),
+            scimUsers: options.database
+              .query("SELECT id,connectionId,provisioningDomainId,userId,active FROM scimUser")
+              .all(),
+            grants: options.database.query("SELECT * FROM scimProjectionGrant").all(),
+          }),
+          { headers: { "content-type": "application/json" } },
+        );
+      }
       if (query.get("operation") === "restart-managed") {
         auth = betterAuth(options);
         return new Response(JSON.stringify({ restarted: true }), {

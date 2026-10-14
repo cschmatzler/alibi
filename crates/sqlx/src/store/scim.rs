@@ -18,6 +18,34 @@ use async_trait::async_trait;
 use chrono::SubsecRound;
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
+    async fn scim_projection_candidates(
+        &self,
+        domain: &str,
+        cursor: Option<&str>,
+    ) -> AuthResult<Vec<alibi_core::store::ScimProjectionCandidate>> {
+        use super::entities::scim_user;
+        let mut sql = model::select_model::<scim_user::Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare("scimUser", "provisioningDomainId", " = ", domain);
+        if let Some(cursor) = cursor {
+            sql.push(" AND ");
+            sql.compare("scimUser", "userId", " > ", cursor);
+        }
+        sql.push(" ORDER BY ");
+        sql.ident("userId");
+        sql.push(" ASC LIMIT 51");
+        Ok(self
+            .exec()
+            .fetch_all::<scim_user::Model>(sql)
+            .await?
+            .into_iter()
+            .map(|row| alibi_core::store::ScimProjectionCandidate {
+                id: row.id,
+                user_id: row.user_id,
+            })
+            .collect())
+    }
+
     async fn recover_empty_scim_decommission(
         &self,
         mut binding: alibi_core::store::ScimConnectionBinding,
