@@ -5,12 +5,26 @@ use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::oauth::{OAuthCallbackInput, OAuthProvider};
 use alibi::plugins::{OAuthPlugin, SsoConfig, SsoPlugin};
 use alibi::store::{AccountStore, MemberStore};
-backend_tests!(sso_verified_domain_assigns_social_users_and_rejects_ambiguous_organizations);
+backend_tests!(
+    sso_verified_domain_assigns_social_users_and_rejects_ambiguous_organizations,
+    sso_verified_domain_assigns_http_social_users_and_rejects_ambiguous_organizations
+);
 async fn sso_verified_domain_assigns_social_users_and_rejects_ambiguous_organizations<
     B: Backend,
 >(
     db: Db,
 ) -> TestResult {
+    domain_membership_flow::<B>(db, false).await
+}
+async fn sso_verified_domain_assigns_http_social_users_and_rejects_ambiguous_organizations<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    domain_membership_flow::<B>(db, true).await
+}
+async fn domain_membership_flow<B: Backend>(db: Db, http: bool) -> TestResult {
+    let transport = if http { "http" } else { "api" };
     let idp = peer::start().await;
     let dns = super::sso_dns::start().await;
     let (connection, store) = db.migrated::<B>(SECRET).await?;
@@ -44,21 +58,21 @@ async fn sso_verified_domain_assigns_social_users_and_rejects_ambiguous_organiza
             .await?;
         let owner = signup(&auth, &format!("domain-owner-{case}@example.test")).await;
         let owner_cookie = cookies(&owner);
-        let domain = format!("{case}.company.test");
+        let domain = format!("{case}-{transport}.company.test");
         let mut organizations = Vec::new();
         for target in 0..if case == "ambiguous" { 2 } else { 1 } {
             let organization = call(
                 &auth,
                 request(
                     "/organization/create",
-                    Some(json!({"name":"Domain company","slug":format!("domain-{case}-{target}")})),
+                    Some(json!({"name":"Domain company","slug":format!("domain-{case}-{transport}-{target}")})),
                     &owner_cookie,
                 ),
                 200,
             )
             .await;
             let organization_id = body(&organization)["id"].as_str().unwrap().to_owned();
-            let provider = format!("domain-{case}-{target}");
+            let provider = format!("domain-{case}-{transport}-{target}");
             let registered=Box::pin(auth.dispatch_endpoint(SsoPlugin::register_sso_provider_endpoint(&json!({"providerId":provider,"organizationId":organization_id,"issuer":idp.base,"domain":domain,"oidcConfig":{"clientId":"enterprise-client","clientSecret":"stored-secret","skipDiscovery":true,"pkce":true}}))?,EndpointOptions {headers:Some([("cookie".into(),owner_cookie.clone())].into_iter().collect()),..Default::default()})).await?.into_response()?;
             assert_eq!(registered.status, 200);
             let token = body(&registered)["domainVerificationToken"]
@@ -87,7 +101,7 @@ async fn sso_verified_domain_assigns_social_users_and_rejects_ambiguous_organiza
             organizations.push(organization_id);
         }
         let email = format!("employee@{domain}");
-        let subject = 710 + index;
+        let subject = if http { 810 } else { 710 } + index;
         *idp.profile.lock().unwrap() = Some(
             json!({"id":subject,"email":email,"email_verified":case!="unverified","name":"Domain employee","state":"active","locked":false}),
         );
@@ -101,22 +115,30 @@ async fn sso_verified_domain_assigns_social_users_and_rejects_ambiguous_organiza
             .await?;
         assert_eq!(grant.status(), 302);
         let url = url::Url::parse(grant.headers().get("location").unwrap().to_str()?)?;
-        let query: OAuthCallbackInput = serde_json::from_value(json!(
-            url.query_pairs()
-                .into_owned()
-                .collect::<std::collections::HashMap<_, _>>()
-        ))?;
-        let completed = Box::pin(auth.dispatch_endpoint(
-            OAuthPlugin::callback_oauth_endpoint("gitlab", Some(&query))?,
-            EndpointOptions {
-                headers: Some([("cookie".into(), cookies(&started))].into_iter().collect()),
-                ..Default::default()
-            },
-        ))
-        .await
-        .unwrap_err();
-        let mut response = AuthResponse::new(completed.error.status_code());
-        response.headers = completed.headers.unwrap_or_default();
+        let response = if http {
+            let mut request = AuthRequest::new(HttpMethod::Get, "/callback/gitlab");
+            _ = request.headers.insert("cookie".into(), cookies(&started));
+            request.set_query_pairs(url.query_pairs().into_owned());
+            auth.handle_request(request).await?
+        } else {
+            let query: OAuthCallbackInput = serde_json::from_value(json!(
+                url.query_pairs()
+                    .into_owned()
+                    .collect::<std::collections::HashMap<_, _>>()
+            ))?;
+            let completed = Box::pin(auth.dispatch_endpoint(
+                OAuthPlugin::callback_oauth_endpoint("gitlab", Some(&query))?,
+                EndpointOptions {
+                    headers: Some([("cookie".into(), cookies(&started))].into_iter().collect()),
+                    ..Default::default()
+                },
+            ))
+            .await
+            .unwrap_err();
+            let mut response = AuthResponse::new(completed.error.status_code());
+            response.headers = completed.headers.unwrap_or_default();
+            response
+        };
         assert_eq!(response.status, 302);
         assert_eq!(
             url::Url::parse(response.headers.get("location").unwrap())?.path(),

@@ -588,6 +588,14 @@ export async function ssoFixture(base: BetterAuthOptions) {
     if (input.action === "social-start") {
       return auth.api.signInSocial({ body: input.body, asResponse: true });
     }
+    if (input.action === "social-callback-http") {
+      return auth.handler(
+        new Request(
+          `${base.baseURL}${base.basePath ?? "/api/auth"}/callback/gitlab?${new URLSearchParams(input.query)}`,
+          { headers: input.headers },
+        ),
+      );
+    }
     if (input.action === "social-callback") {
       return auth.api.callbackOAuth({
         params: { id: "gitlab" },

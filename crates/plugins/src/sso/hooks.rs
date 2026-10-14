@@ -33,32 +33,38 @@ impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for SsoPlugin {
         ctx: &AuthContext<S>,
         response: EndpointResponse,
     ) -> AuthResult<EndpointResponse> {
+        if let Some(completed) = call
+            .extensions()
+            .get::<crate::helpers::CompletedSession<S>>()
+        {
+            self.assign_social_domain_organization(completed.user.id().as_ref(), ctx)
+                .await?;
+        }
+        Ok(response)
+    }
+}
+impl SsoPlugin {
+    pub(super) async fn assign_social_domain_organization<S: AuthSchema>(
+        &self,
+        user_id: &str,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<()> {
         if !self.config.domain_verification
             || self.config.organization_provisioning.disabled
             || ctx
                 .get_metadata(crate::organization::METADATA_ENABLED)
                 .is_none()
         {
-            return Ok(response);
+            return Ok(());
         }
-        let Some(completed) = call
-            .extensions()
-            .get::<crate::helpers::CompletedSession<S>>()
-        else {
-            return Ok(response);
-        };
-        let Some(user) = ctx
-            .database
-            .get_user_by_id_record(completed.user.id().as_ref())
-            .await?
-        else {
-            return Ok(response);
+        let Some(user) = ctx.database.get_user_by_id_record(user_id).await? else {
+            return Ok(());
         };
         if !user.email_verified() {
-            return Ok(response);
+            return Ok(());
         }
         let Some(domain) = user.email().and_then(super::domains::email_domain) else {
-            return Ok(response);
+            return Ok(());
         };
         let mut providers: Vec<_> = ctx
             .database
@@ -79,7 +85,7 @@ impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for SsoPlugin {
             .filter_map(|provider| provider.organization_id.as_deref())
             .collect();
         if organizations.len() != 1 {
-            return Ok(response);
+            return Ok(());
         }
         providers.sort_by(|left, right| left.provider_id.cmp(&right.provider_id));
         if let Some(provider) = providers.first() {
@@ -92,6 +98,6 @@ impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for SsoPlugin {
             )
             .await?;
         }
-        Ok(response)
+        Ok(())
     }
 }
