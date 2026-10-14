@@ -201,6 +201,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
     if (input.action === "idp") {
       if (input.email) idp.setEmail(input.email);
       idp.setIdTokenCase(input.idTokenCase ?? "none");
+      idp.setDiscoveryCase(input.discoveryCase ?? "valid");
       return new Response(JSON.stringify({ base: idp.base }), {
         headers: { "content-type": "application/json" },
       });

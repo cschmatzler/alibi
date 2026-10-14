@@ -1,6 +1,7 @@
 //! Enterprise single-sign-on provider registration.
 mod callback;
 mod callback_id_token;
+mod discovery;
 mod domain_confirmation;
 mod domain_verification;
 mod provider_delete;
@@ -174,10 +175,18 @@ impl SsoPlugin {
         if ctx.database.get_sso_provider(provider_id).await?.is_some() {
             return Err(api(422, "SSO provider with this providerId already exists"));
         }
-        let oidc=body.get("oidcConfig").map(|config| {
-            if config.get("skipDiscovery").and_then(Value::as_bool)!=Some(true) {
-                return Err(AuthError::not_implemented("OIDC discovery is not implemented"));
-            }
+        let oidc_input = if let Some(config) = body.get("oidcConfig") {
+            Some(
+                if config.get("skipDiscovery").and_then(Value::as_bool) == Some(true) {
+                    config.clone()
+                } else {
+                    discovery::resolve(config, issuer, ctx).await?
+                },
+            )
+        } else {
+            None
+        };
+        let oidc=oidc_input.as_ref().map(|config| {
             let method=config.get("tokenEndpointAuthentication").and_then(Value::as_str).unwrap_or("client_secret_basic");
             if method!="private_key_jwt" && config.get("clientSecret").and_then(Value::as_str).is_none_or(str::is_empty) {
                 return Err(api(400,"clientSecret is required when using client_secret_basic or client_secret_post authentication"));
@@ -188,7 +197,8 @@ impl SsoPlugin {
                 if let Some(value)=config.get(field) { _=output.insert(field.into(),value.clone()); }
             }
             _=output.insert("pkce".into(),config.get("pkce").cloned().unwrap_or_else(||json!(true)));
-            _=output.insert("issuer".into(),json!(issuer));
+            let stored_issuer = if config.get("skipDiscovery").and_then(Value::as_bool)==Some(true) {issuer} else {config.get("issuer").and_then(Value::as_str).unwrap_or(issuer)};
+            _=output.insert("issuer".into(),json!(stored_issuer));
             _=output.insert("tokenEndpointAuthentication".into(),json!(method));
             _=output.insert("discoveryEndpoint".into(),config.get("discoveryEndpoint").cloned().unwrap_or_else(||json!(format!("{issuer}/.well-known/openid-configuration"))));
             _=output.insert("overrideUserInfo".into(),json!(body.get("overrideUserInfo").and_then(Value::as_bool).unwrap_or(false)||self.config.default_override_user_info));
