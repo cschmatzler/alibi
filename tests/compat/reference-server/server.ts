@@ -1937,6 +1937,8 @@ const TEAM_PROFILES = [
   "org-deletion-disabled",
   "org-teams",
   "org-teams-no-default",
+  "org-teams-disabled",
+  "org-roles-without-teams",
   "org-teams-limited",
   "org-teams-removable",
   "org-teams-dynamic",
@@ -2040,7 +2042,7 @@ const teamProfiles = new Map(
               }
             : {}),
           teams: {
-            enabled: true,
+            enabled: name !== "org-teams-disabled" && name !== "org-roles-without-teams",
             defaultTeam: { enabled: !numeric && name !== "org-teams-no-default" },
             ...(numeric
               ? name.includes("-async-")
@@ -2577,6 +2579,44 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       ...(body?.headers ? { headers: new Headers(body.headers as Record<string, string>) } : {}),
       asResponse: true,
     });
+  }
+  if (
+    url.pathname === "/__test/server-api/organization-feature-surface" &&
+    request.method === "POST"
+  ) {
+    const input = await readJson(request);
+    const selected = [...teamProfiles.entries()].find(([name]) => name === input?.profile)?.[1]
+      .auth;
+    if (!selected) {
+      return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
+    }
+    const operations = [
+      "createTeam",
+      "updateTeam",
+      "removeTeam",
+      "listOrganizationTeams",
+      "listUserTeams",
+      "listTeamMembers",
+      "setActiveTeam",
+      "addTeamMember",
+      "removeTeamMember",
+      "createOrgRole",
+      "getOrgRole",
+      "listOrgRoles",
+      "deleteOrgRole",
+      "updateOrgRole",
+    ];
+    return jsonResponse(
+      {
+        operations: Object.fromEntries(
+          operations.map((name) => [
+            name,
+            typeof (selected.api as unknown as Record<string, unknown>)[name] === "function",
+          ]),
+        ),
+      },
+      { headers: { "content-type": "application/json" } },
+    );
   }
   if (url.pathname === "/__test/organization-api" && request.method === "POST") {
     const body = await readJson(request);

@@ -395,6 +395,8 @@ pub(crate) async fn profiles(
         "org-team-factory",
         "org-teams",
         "org-teams-no-default",
+        "org-teams-disabled",
+        "org-roles-without-teams",
         "org-teams-limited",
         "org-teams-removable",
         "org-teams-dynamic",
@@ -420,7 +422,7 @@ pub(crate) async fn profiles(
         let mut organization = OrganizationConfig {
             disable_organization_deletion: name == "org-deletion-disabled",
             teams: TeamsConfig {
-                enabled: true,
+                enabled: name != "org-teams-disabled" && name != "org-roles-without-teams",
                 create_default_team: !numeric && name != "org-teams-no-default",
                 maximum_teams: if numeric { numeric_value(name) } else { None },
                 maximum_members_per_team: if numeric { numeric_value(name) } else { None },
@@ -734,6 +736,7 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
         );
     }
     let selection_profiles = profiles.clone();
+    let surface_profiles = profiles.clone();
     let operation_profiles = profiles.clone();
     let operation_database = database.clone();
     let team_backups = Arc::new(tokio::sync::Mutex::new(
@@ -972,6 +975,18 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                     },
                 };
                 match result { Ok(value) => (StatusCode::OK, Json(value)), Err(error) if signed => (StatusCode::from_u16(error.status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR), Json(json!({"status":error.status_code()}))), Err(error) => failure(error) }
+            }
+        }))
+        .route("/__test/server-api/organization-feature-surface", post(move|Json(input):Json<Value>|{
+            let profiles=surface_profiles.clone();async move{
+                let name=input.get("profile").and_then(Value::as_str).unwrap_or("org-teams-disabled");
+                let Some(profile)=profiles.iter().find(|profile|profile.name==name)else{return failure(AuthError::bad_request("Unknown fixture profile")).into_response();};
+                let mut operations=serde_json::Map::new();
+                for operation in ["createTeam","updateTeam","removeTeam","listOrganizationTeams","listUserTeams","listTeamMembers","setActiveTeam","addTeamMember","removeTeamMember","createOrgRole","getOrgRole","listOrgRoles","deleteOrgRole","updateOrgRole"]{
+                    let result=profile.auth.dispatch_endpoint(alibi::endpoint::ServerEndpoint::<Value>::new("organization",operation),alibi::endpoint::EndpointOptions::default()).await;
+                    let available=match result{Ok(_)=>true,Err(error)=>error.error.status_code()!=404};_=operations.insert(operation.into(),json!(available));
+                }
+                Json(json!({"operations":operations})).into_response()
             }
         }))
         .route("/__test/server-api/organization-set-active-team", post(move |Json(input): Json<Value>| {

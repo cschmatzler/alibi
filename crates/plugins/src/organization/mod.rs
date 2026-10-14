@@ -298,7 +298,18 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
         endpoint::definitions()
             .into_iter()
             .filter(|endpoint| {
-                (endpoint.name != "listOrganizationTeams" || self.config.teams.enabled)
+                (!matches!(
+                    endpoint.name,
+                    "createTeam"
+                        | "updateTeam"
+                        | "removeTeam"
+                        | "listOrganizationTeams"
+                        | "listUserTeams"
+                        | "listTeamMembers"
+                        | "setActiveTeam"
+                        | "addTeamMember"
+                        | "removeTeamMember"
+                ) || self.config.teams.enabled)
                     && (!matches!(
                         endpoint.name,
                         "createOrgRole"
